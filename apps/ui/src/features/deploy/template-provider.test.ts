@@ -134,7 +134,7 @@ test("listTemplateCatalog maps localized legacy template fields", async () => {
           ],
         },
       })
-    )) as typeof fetch;
+    )) as unknown as typeof fetch;
 
   const catalog = await listTemplateCatalog({ language: "en" });
 
@@ -329,7 +329,7 @@ test("deployTemplateInstance surfaces nested provider errors", async () => {
         },
         { status: 500 }
       )
-    )) as typeof fetch;
+    )) as unknown as typeof fetch;
 
   await assert.rejects(
     () =>
@@ -355,7 +355,7 @@ test("deployTemplateInstance prefers the provider Kubernetes diagnostic", async 
         },
         { status: 500 }
       )
-    )) as typeof fetch;
+    )) as unknown as typeof fetch;
 
   await assert.rejects(
     () =>

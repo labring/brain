@@ -43,7 +43,9 @@ export const EXPANDABLE_TYPES: ReadonlySet<NodeType> = new Set([
 ]);
 
 /** Convert a DB Service to a root-level TreeNodeData. */
-export function dbServiceToNode(dbService: DbAccessService): TreeNodeData {
+export function dbServiceToNode(
+  dbService: Pick<DbAccessService, "dbServiceKey" | "displayName">
+): TreeNodeData {
   return {
     dbServiceKey: dbService.dbServiceKey,
     id: dbService.dbServiceKey,

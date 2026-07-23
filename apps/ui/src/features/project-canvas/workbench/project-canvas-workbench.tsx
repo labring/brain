@@ -84,11 +84,11 @@ export function ProjectCanvasWorkbench({
         if (surfaceIntent == null) {
           return { status: "ignored" as const };
         }
-        projectCanvas.actions.openSurfaceIntent(surfaceIntent, "assistant");
+        openSurfaceIntent(surfaceIntent, "assistant");
         return { status: "handled" as const };
       },
     }),
-    [projectCanvas.actions.openSurfaceIntent, projectId]
+    [openSurfaceIntent, projectId]
   );
   useProjectSidePaneSurface(projectCanvasSidePaneSurface);
   return (

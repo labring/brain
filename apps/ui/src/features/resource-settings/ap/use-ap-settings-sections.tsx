@@ -34,6 +34,7 @@ import {
   getBrowserPendingSettingsStore,
   type PendingSettingsOwnerIdentity,
   type PendingSettingsUpdateEntry,
+  usePendingSettingsEntries,
 } from "../pending-settings-updates";
 import type {
   SettingsLeaveGuardHandle,
@@ -171,6 +172,11 @@ const EMPTY_AP_NETWORK: ApNetwork = {
   privatePort: 80,
   publicAddresses: [],
 };
+// Stable defaults: these props feed identity-compared render-phase sync
+// guards, so a fresh `[]` per render would loop the guard forever.
+const EMPTY_COMMAND_LINES: readonly string[] = [];
+const EMPTY_CONFIG_MAP_MOUNTS: readonly ApConfigMapMount[] = [];
+const EMPTY_STORAGE_MOUNTS: readonly ApStorageMount[] = [];
 
 function isApSettingsDraftDomain(
   domain: string
@@ -337,9 +343,9 @@ function scrollFirstUnsavedSettingIntoView(selector: string) {
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This provider-local assembler coordinates shared AP Settings draft, save, reveal, and leave-guard state across split sections.
 export function useApSettingsSections({
   addDbDsnReferenceIntent,
-  args = [],
-  command = [],
-  configMaps = [],
+  args = EMPTY_COMMAND_LINES,
+  command = EMPTY_COMMAND_LINES,
+  configMaps = EMPTY_CONFIG_MAP_MOUNTS,
   envRawSource,
   image,
   onImageChange,
@@ -364,7 +370,7 @@ export function useApSettingsSections({
   dbDsnReferenceSources = [],
   sectionFocus = "all",
   showImageSection = true,
-  storage = [],
+  storage = EMPTY_STORAGE_MOUNTS,
   submissionOwner,
   workloadKind = "deployment",
 }: ApSettingsSectionsProps): ApSettingsSectionsModel {
@@ -382,6 +388,10 @@ export function useApSettingsSections({
   const submissionEntries = useSettingsSubmissionEntries(
     submissionOwner,
     submissionStore
+  );
+  const acceptedPendingEntries = usePendingSettingsEntries(
+    submissionOwner,
+    pendingSettingsStore
   );
   const initialCommittedReplicaStrategy = useMemo(
     () =>
@@ -421,17 +431,13 @@ export function useApSettingsSections({
       workloadKind,
     ]
   );
-  const initialAcceptedPendingEntries =
-    submissionOwner == null
-      ? []
-      : (pendingSettingsStore?.list(submissionOwner) ?? []);
   const initialAcceptedPendingOverlay = useMemo(
     () =>
       apAcceptedPendingTargets(
         initialObservedSettingsDraft,
-        initialAcceptedPendingEntries
+        acceptedPendingEntries
       ),
-    [initialAcceptedPendingEntries, initialObservedSettingsDraft]
+    [acceptedPendingEntries, initialObservedSettingsDraft]
   );
   const initialSubmissionTargets = useMemo(
     () => apSettingsSubmissionTargets(submissionEntries),
@@ -468,7 +474,6 @@ export function useApSettingsSections({
   );
   const imageInputId = useId();
   const envDraftKeyPrefix = useId();
-  const envDraftKeyCounter = useRef(0);
   const [draftConfigMaps, setDraftConfigMaps] = useState<ApConfigMapMount[]>(
     () => normalizeConfigMapDraftRows(initialSettingsDraft.configMaps)
   );
@@ -522,20 +527,23 @@ export function useApSettingsSections({
       readOnly,
     ]
   );
+  // The shared draft-row key counter is seeded past the initial rows so later
+  // Add/reorder actions never collide with the keys minted below.
+  const envDraftKeyCounter = useRef(initialEnvDraft.rows.length);
   // Seed per-row edit state for AP environment reference rows added by a canvas
   // Add Reference intent so they open editable on first render. Computed once;
-  // createEnvDraftKeys advances the shared key counter, so this owns the initial
-  // envDraftKeys too.
-  const initialEnvEditState = useRef<{
+  // the initial keys use a local counter, so this owns the initial envDraftKeys
+  // too.
+  const [initialEnvEditState] = useState<{
     expanded: Set<string>;
     keys: string[];
     newKeys: Set<string>;
-  } | null>(null);
-  if (initialEnvEditState.current === null) {
+  }>(() => {
+    const keyCounter = { current: 0 };
     const keys = createEnvDraftKeys(
       initialEnvDraft.rows.length,
       envDraftKeyPrefix,
-      envDraftKeyCounter
+      keyCounter
     );
     const expanded = new Set<string>();
     const newKeys = new Set<string>();
@@ -546,8 +554,8 @@ export function useApSettingsSections({
         newKeys.add(key);
       }
     }
-    initialEnvEditState.current = { expanded, keys, newKeys };
-  }
+    return { expanded, keys, newKeys };
+  });
   const [envEditorMode, setEnvEditorMode] = useState<EnvEditorMode>(() =>
     parseApEnvRawSource(initialEnvDraft.rawSource).valid ? "structured" : "raw"
   );
@@ -563,7 +571,7 @@ export function useApSettingsSections({
     () => initialEnvDraft.rows
   );
   const [envDraftKeys, setEnvDraftKeys] = useState<string[]>(
-    () => initialEnvEditState.current?.keys ?? []
+    () => initialEnvEditState.keys
   );
   const [revealedEnvValues, setRevealedEnvValues] = useState<
     Map<number, string>
@@ -577,10 +585,10 @@ export function useApSettingsSections({
   // an existing row on Cancel. Local to the Settings Draft — the bottom Update
   // (or non-commit Save) is still the only write.
   const [expandedEnvKeys, setExpandedEnvKeys] = useState<Set<string>>(
-    () => new Set(initialEnvEditState.current?.expanded)
+    () => new Set(initialEnvEditState.expanded)
   );
   const [newEnvKeys, setNewEnvKeys] = useState<Set<string>>(
-    () => new Set(initialEnvEditState.current?.newKeys)
+    () => new Set(initialEnvEditState.newKeys)
   );
   const envEditSnapshots = useRef<Map<string, { name: string; value: string }>>(
     new Map()
@@ -604,69 +612,121 @@ export function useApSettingsSections({
     )
   );
 
-  useEffect(() => {
-    if (expandedConfigKeys.size === 0) {
-      setConfigSubmitBlocked(false);
-    }
-  }, [expandedConfigKeys]);
-
-  useEffect(() => {
-    if (expandedEnvKeys.size === 0) {
-      setEnvSubmitBlocked(false);
-    }
-  }, [expandedEnvKeys]);
-
-  useEffect(() => {
-    if (settingsCommitMode) {
-      return;
-    }
-    setDraftImage(image);
-  }, [image, settingsCommitMode]);
-
-  useEffect(() => {
-    if (settingsCommitMode) {
-      return;
-    }
-    setDraftNetwork(network);
-  }, [network, settingsCommitMode]);
-
-  useEffect(() => {
-    if (settingsCommitMode) {
-      return;
-    }
-    setDraftCommand(normalizeCommandDraftLines(command));
-    setDraftArgs(normalizeCommandDraftLines(args));
-    const nextConfigMaps = normalizeConfigMapDraftRows(configMaps);
-    setDraftConfigMaps(nextConfigMaps);
-    setConfigMapDraftKeys(createDraftRowKeys(nextConfigMaps.length, "cm"));
-    setExpandedConfigKeys(new Set());
-    setNewConfigKeys(new Set());
-    configEditSnapshots.current = new Map();
+  if (expandedConfigKeys.size === 0 && configSubmitBlocked) {
     setConfigSubmitBlocked(false);
-    const nextStorage = normalizeStorageDraftRows(storage);
-    setDraftStorage(nextStorage);
-    setStorageDraftKeys(createDraftRowKeys(nextStorage.length, "storage"));
-  }, [args, command, configMaps, settingsCommitMode, storage]);
+  }
 
+  if (expandedEnvKeys.size === 0 && envSubmitBlocked) {
+    setEnvSubmitBlocked(false);
+  }
+
+  const [imageSyncSignal, setImageSyncSignal] = useState<{
+    commit: boolean;
+    image: string;
+  } | null>(null);
+  if (
+    imageSyncSignal === null ||
+    imageSyncSignal.image !== image ||
+    imageSyncSignal.commit !== settingsCommitMode
+  ) {
+    setImageSyncSignal({ commit: settingsCommitMode, image });
+    if (!settingsCommitMode) {
+      setDraftImage(image);
+    }
+  }
+
+  // Sync signatures compare by value, not identity: the enclosing provider
+  // rebuilds the hook options object on every render, so identity comparisons
+  // would re-fire (and, during render-phase updates, loop) on unchanged data.
+  const networkSyncSignature = JSON.stringify(network ?? null);
+  const [networkSyncSignal, setNetworkSyncSignal] = useState<{
+    commit: boolean;
+    signature: string;
+  } | null>(null);
+  if (
+    networkSyncSignal === null ||
+    networkSyncSignal.signature !== networkSyncSignature ||
+    networkSyncSignal.commit !== settingsCommitMode
+  ) {
+    setNetworkSyncSignal({
+      commit: settingsCommitMode,
+      signature: networkSyncSignature,
+    });
+    if (!settingsCommitMode) {
+      setDraftNetwork(network);
+    }
+  }
+
+  const commandSyncSignature = JSON.stringify([
+    args,
+    command,
+    configMaps,
+    storage,
+  ]);
+  const [commandSyncSignal, setCommandSyncSignal] = useState<{
+    commit: boolean;
+    signature: string;
+  } | null>(null);
+  if (
+    commandSyncSignal === null ||
+    commandSyncSignal.signature !== commandSyncSignature ||
+    commandSyncSignal.commit !== settingsCommitMode
+  ) {
+    setCommandSyncSignal({
+      commit: settingsCommitMode,
+      signature: commandSyncSignature,
+    });
+    if (!settingsCommitMode) {
+      setDraftCommand(normalizeCommandDraftLines(command));
+      setDraftArgs(normalizeCommandDraftLines(args));
+      const nextConfigMaps = normalizeConfigMapDraftRows(configMaps);
+      setDraftConfigMaps(nextConfigMaps);
+      setConfigMapDraftKeys(createDraftRowKeys(nextConfigMaps.length, "cm"));
+      setExpandedConfigKeys(new Set());
+      setNewConfigKeys(new Set());
+      setConfigSubmitBlocked(false);
+      const nextStorage = normalizeStorageDraftRows(storage);
+      setDraftStorage(nextStorage);
+      setStorageDraftKeys(createDraftRowKeys(nextStorage.length, "storage"));
+    }
+  }
   useEffect(() => {
-    if (settingsCommitMode) {
+    if (commandSyncSignal?.commit) {
       return;
     }
-    setDraftCpu(cpuQuota.value);
-    setDraftMem(memoryQuota.value);
-    setDraftReplicaStrategy(
-      normalizeReplicaStrategy(
-        replicaStrategy,
-        replicasQuota?.value ?? DEFAULT_FIXED_REPLICAS
-      )
-    );
-  }, [
+    configEditSnapshots.current = new Map();
+  }, [commandSyncSignal]);
+
+  const cpuSyncSignature = JSON.stringify([
     cpuQuota.value,
     memoryQuota.value,
-    replicaStrategy,
-    replicasQuota,
-    settingsCommitMode,
+    replicaStrategy ?? null,
+    replicasQuota?.value ?? null,
   ]);
+  const [cpuSyncSignal, setCpuSyncSignal] = useState<{
+    commit: boolean;
+    signature: string;
+  } | null>(null);
+  if (
+    cpuSyncSignal === null ||
+    cpuSyncSignal.signature !== cpuSyncSignature ||
+    cpuSyncSignal.commit !== settingsCommitMode
+  ) {
+    setCpuSyncSignal({
+      commit: settingsCommitMode,
+      signature: cpuSyncSignature,
+    });
+    if (!settingsCommitMode) {
+      setDraftCpu(cpuQuota.value);
+      setDraftMem(memoryQuota.value);
+      setDraftReplicaStrategy(
+        normalizeReplicaStrategy(
+          replicaStrategy,
+          replicasQuota?.value ?? DEFAULT_FIXED_REPLICAS
+        )
+      );
+    }
+  }
 
   useEffect(() => {
     if (settingsCommitMode) {
@@ -947,10 +1007,6 @@ export function useApSettingsSections({
       workloadKind,
     ]
   );
-  const acceptedPendingEntries =
-    submissionOwner == null
-      ? []
-      : (pendingSettingsStore?.list(submissionOwner) ?? []);
   const acceptedPendingOverlay = useMemo(
     () =>
       apAcceptedPendingTargets(observedSettingsDraft, acceptedPendingEntries),

@@ -18,7 +18,7 @@ test("open project surface tool routes typed AP terminal intents through the sur
     {
       openAssistantIntent: (intent) => {
         received.push(intent);
-        return { status: "handled" };
+        return Promise.resolve({ status: "handled" });
       },
     }
   );

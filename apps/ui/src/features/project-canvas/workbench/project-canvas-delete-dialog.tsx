@@ -1,7 +1,7 @@
 "use client";
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 
 export interface ProjectCanvasApDeleteTarget {
   displayName: string;
@@ -69,13 +69,15 @@ function ProjectCanvasDeleteDialog({
   verificationText,
 }: ProjectCanvasDeleteDialogProps) {
   const [verificationValue, setVerificationValue] = useState("");
+  const [prevOpen, setPrevOpen] = useState(open);
   const confirmDisabled = verificationValue !== verificationText;
 
-  useEffect(() => {
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setVerificationValue("");
     }
-  }, [open]);
+  }
 
   return (
     <AppDialog.Root onOpenChange={onOpenChange} open={open}>

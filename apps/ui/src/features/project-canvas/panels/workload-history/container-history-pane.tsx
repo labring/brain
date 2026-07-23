@@ -246,6 +246,9 @@ export function ContainerHistoryPane({
   const [yamlLoading, setYamlLoading] = useState(false);
   const [showAllVersions, setShowAllVersions] = useState(false);
   const hasVersionOverflow = rows.length > HISTORY_VISIBLE_COUNT;
+  if (!hasVersionOverflow && showAllVersions) {
+    setShowAllVersions(false);
+  }
   const visibleRows = showAllVersions
     ? rows
     : rows.slice(0, HISTORY_VISIBLE_COUNT);
@@ -285,12 +288,6 @@ export function ContainerHistoryPane({
   const reviewHashPreview = reviewRow === null ? "" : reviewRow.versionHash;
 
   useEffect(() => {
-    if (rows.length <= HISTORY_VISIBLE_COUNT) {
-      setShowAllVersions(false);
-    }
-  }, [rows.length]);
-
-  useEffect(() => {
     if (!(reviewOpen && reviewRow !== null)) {
       return;
     }
@@ -298,21 +295,25 @@ export function ContainerHistoryPane({
     let cancelled = false;
 
     const inlineText = versionReviewText(reviewRow).trim();
-    if (inlineText !== "") {
-      setYamlBody(inlineText);
-      setYamlError(null);
-      setYamlLoading(false);
-      return;
+    if (inlineText !== "" || onLoadConfigYaml === undefined) {
+      queueMicrotask(() => {
+        if (cancelled) {
+          return;
+        }
+        setYamlBody(inlineText);
+        setYamlError(null);
+        setYamlLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
-    if (onLoadConfigYaml === undefined) {
-      setYamlBody("");
-      setYamlError(null);
-      setYamlLoading(false);
-      return;
-    }
-
-    setYamlLoading(true);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setYamlLoading(true);
+      }
+    });
     onLoadConfigYaml(reviewRow.versionHash)
       .then((text) => {
         if (cancelled) {

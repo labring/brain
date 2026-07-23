@@ -27,12 +27,6 @@ function settingsEntryKey(
   return `${target.kind}:${target.namespace}:${target.name}:${entry.view ?? ""}`;
 }
 
-function settingsProviderForEntry(
-  entry: Extract<ProjectSideSurfaceEntry, { kind: "settings" }>
-): SettingsProvider | null {
-  return SETTINGS_PROVIDERS[entry.target.kind] ?? null;
-}
-
 type SettingsHostChromeModel = Omit<
   SettingsViewModel,
   "footer" | "leaveGuard" | "sections"
@@ -81,7 +75,9 @@ export function SettingsHost({
   readOnly?: boolean;
   sessionEvents?: SettingsSessionEvents;
 }) {
-  const Provider = settingsProviderForEntry(entry);
+  // Member lookup (not a helper call) so the linter can prove the provider
+  // components are module-level statics.
+  const Provider = SETTINGS_PROVIDERS[entry.target.kind] ?? null;
   const entryKey = settingsEntryKey(entry);
   const [modelState, setModelState] = useState<{
     key: string;

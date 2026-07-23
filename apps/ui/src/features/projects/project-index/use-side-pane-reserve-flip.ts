@@ -2,6 +2,16 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+function playFlipFromOffset(column: HTMLElement, offsetX: number) {
+  column.style.transition = "none";
+  column.style.transform = `translateX(${offsetX}px)`;
+  // Flush the inverted position so the next assignment animates from it.
+  column.getBoundingClientRect();
+  column.style.transition =
+    "transform var(--project-surface-motion-enter-duration) var(--project-surface-motion-ease)";
+  column.style.transform = "";
+}
+
 /**
  * FLIP the centered explorer column when the side-pane reserve snaps: the new
  * layout (width, container-query padding) lands in a single pass instead of
@@ -47,13 +57,7 @@ export function useSidePaneReserveFlip(sidePaneOpen: boolean) {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       return;
     }
-    column.style.transition = "none";
-    column.style.transform = `translateX(${prevLeft - newLeft}px)`;
-    // Flush the inverted position so the next assignment animates from it.
-    column.getBoundingClientRect();
-    column.style.transition =
-      "transform var(--project-surface-motion-enter-duration) var(--project-surface-motion-ease)";
-    column.style.transform = "";
+    playFlipFromOffset(column, prevLeft - newLeft);
   }, [sidePaneOpen]);
 
   return containerRef;

@@ -31,11 +31,14 @@ function leaveActionForRequirement(
   return requirement.action === "close" ? "close" : "switch";
 }
 
+const anySideEntrySupported = () => true;
+
 export function useProjectSideRouteState(options?: {
   isSideEntrySupported?: (entry: ProjectSideSurfaceEntry) => boolean;
   requestSidePaneLeave?: ProjectSidePaneLeaveRequest;
 }) {
-  const isSideEntrySupported = options?.isSideEntrySupported ?? (() => true);
+  const isSideEntrySupported =
+    options?.isSideEntrySupported ?? anySideEntrySupported;
   const requestSidePaneLeave = options?.requestSidePaneLeave;
   const [query, setQuery] = useQueryStates({
     [PROJECT_SIDE_QUERY_KEY]: parseAsString,

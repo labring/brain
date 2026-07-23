@@ -125,20 +125,19 @@ export function useDbServiceBackupWorkflow({
     () => existingDbServiceNames ?? [runtime.databaseWorkloadName],
     [existingDbServiceNames, runtime.databaseWorkloadName]
   );
+  // The identity is a pure join of stable fields, so recomputing on object
+  // identity changes yields the same string.
   const refreshIdentity = useMemo(
     () =>
       dbServiceBackupRefreshIdentity({
         projectId: runtime.projectId,
         source: runtime.dbService,
       }),
-    [
-      runtime.dbService.name,
-      runtime.dbService.namespace,
-      runtime.dbService.uid,
-      runtime.projectId,
-    ]
+    [runtime.dbService, runtime.projectId]
   );
-  activeRefreshIdentityRef.current = refreshIdentity;
+  useEffect(() => {
+    activeRefreshIdentityRef.current = refreshIdentity;
+  }, [refreshIdentity]);
   const currentProductResource =
     latestProductResource?.refreshIdentity === refreshIdentity
       ? latestProductResource.value

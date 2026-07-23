@@ -237,9 +237,11 @@ export const WorkloadEventsPane = memo(function WorkloadEventsPane({
   const states = containerStatesFromNode(node);
   const name = states?.name ?? "Workload";
   const namespace = states?.namespace?.trim() || ns;
+  const workloadName = states?.name;
   const target = useMemo(
-    () => (states?.name && namespace ? { name: states.name, namespace } : null),
-    [namespace, states?.name]
+    () =>
+      workloadName && namespace ? { name: workloadName, namespace } : null,
+    [namespace, workloadName]
   );
   const { data, error, isLoading } = useAPWorkloadEvents({
     kubeconfig,

@@ -101,7 +101,7 @@ test("restore submit reports API conflict detail", async () => {
         title: "DB Service name already exists",
       },
       { status: 409 }
-    )) as typeof fetch;
+    )) as unknown as typeof fetch;
 
   await assert.rejects(
     transport({ kubeconfig: "kubeconfig" }).restoreBackup({
@@ -193,7 +193,7 @@ test("DB Service backup delete reports API conflict detail", async () => {
         title: "DB Service Backup is not deletable",
       },
       { status: 409 }
-    )) as typeof fetch;
+    )) as unknown as typeof fetch;
 
   await assert.rejects(
     transport({ kubeconfig: "kubeconfig" }).deleteBackup({

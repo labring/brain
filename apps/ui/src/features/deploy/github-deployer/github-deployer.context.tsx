@@ -6,7 +6,6 @@ import {
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -60,14 +59,13 @@ export function GithubDeployerRoot({
   const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
   const [disconnectSubmitting, setDisconnectSubmitting] = useState(false);
 
-  useEffect(() => {
-    setSelectedRepoId((prev) => {
-      if (states.repos.some((r) => r.id === prev)) {
-        return prev;
-      }
-      return states.repos[0]?.id ?? "";
-    });
-  }, [states.repos]);
+  const [prevRepos, setPrevRepos] = useState(states.repos);
+  if (states.repos !== prevRepos) {
+    setPrevRepos(states.repos);
+    if (!states.repos.some((r) => r.id === selectedRepoId)) {
+      setSelectedRepoId(states.repos[0]?.id ?? "");
+    }
+  }
 
   const resolvedActions = useMemo(
     () => ({

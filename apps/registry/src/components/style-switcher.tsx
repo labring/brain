@@ -58,7 +58,6 @@ function StyleBrandIcon({
 
   return (
     <div className={frame}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- public brand assets per style */}
       {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: letter fallback on load error */}
       {/* biome-ignore lint/performance/noImgElement: dynamic public/ URLs; next/image needs static src or full URL config */}
       <img

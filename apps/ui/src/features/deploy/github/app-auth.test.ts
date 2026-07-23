@@ -1,4 +1,3 @@
-// @ts-expect-error bun exposes mock at runtime; direct tsc in this repo lacks bun:test types.
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";

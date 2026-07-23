@@ -1,7 +1,7 @@
 "use client";
 
 import type { Node } from "@xyflow/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { useProjectCanvasNodeCommands } from "@/features/project-canvas/workbench/node-commands-react";
 import { CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED } from "./constants";
@@ -58,11 +58,12 @@ export function useCanvasNodeExpansion({
   const defaultExpanded =
     data.layout?.expanded ?? CANVAS_RESOURCE_NODE_DEFAULT_EXPANDED;
   const [expandedState, setExpandedState] = useState(defaultExpanded);
-  useEffect(() => {
-    setExpandedState((current) =>
-      current === defaultExpanded ? current : defaultExpanded
-    );
-  }, [defaultExpanded]);
+  const [prevDefaultExpanded, setPrevDefaultExpanded] =
+    useState(defaultExpanded);
+  if (prevDefaultExpanded !== defaultExpanded) {
+    setPrevDefaultExpanded(defaultExpanded);
+    setExpandedState(defaultExpanded);
+  }
 
   const onExpandedChange = useCallback(
     (expanded: boolean) => {

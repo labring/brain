@@ -124,12 +124,19 @@ export function useDeploymentTaskTimeline(
   const [isLoading, setIsLoading] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
 
-  useEffect(() => {
-    if (!enabled || input.taskId == null) {
+  const [prevEnabled, setPrevEnabled] = useState(enabled);
+  if (enabled !== prevEnabled) {
+    setPrevEnabled(enabled);
+    if (!enabled) {
       setData(null);
       setError(null);
       setIsLoading(false);
       setIsReconnecting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!enabled || input.taskId == null) {
       return;
     }
 

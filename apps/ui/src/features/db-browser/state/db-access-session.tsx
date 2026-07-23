@@ -11,6 +11,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
 } from "react";
 import {
   createDbAccessViewStateRegistry,
@@ -152,10 +153,19 @@ export function DbAccessSessionProvider({
     }),
     [dbServiceKey, runtime.database.name, runtime.databaseWorkloadName]
   );
-  const viewStateRegistry = useMemo(
-    () => createDbAccessViewStateRegistry(),
-    [dbServiceKey]
-  );
+  // One registry per DB service: recreated via keyed state (a plain useMemo
+  // would need dbServiceKey as an unused — and thus flagged — dependency).
+  const [viewStateRegistryState, setViewStateRegistryState] = useState(() => ({
+    key: dbServiceKey,
+    registry: createDbAccessViewStateRegistry(),
+  }));
+  if (viewStateRegistryState.key !== dbServiceKey) {
+    setViewStateRegistryState({
+      key: dbServiceKey,
+      registry: createDbAccessViewStateRegistry(),
+    });
+  }
+  const viewStateRegistry = viewStateRegistryState.registry;
   const store = useMemo(() => {
     const nextStore = createStore();
     nextStore.set(

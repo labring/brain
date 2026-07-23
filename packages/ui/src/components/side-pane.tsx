@@ -147,12 +147,40 @@ export function SidePane({
 }
 
 export function SidePanePresence({ children }: { children: ReactNode }) {
-  const initialChildren = isRenderablePane(children) ? children : null;
-  const [renderedChildren, setRenderedChildren] =
-    useState<ReactNode>(initialChildren);
-  const [open, setOpen] = useState(initialChildren !== null);
+  const hasChildren = isRenderablePane(children);
+
+  // Mirror of the latest renderable children; keeps painting them through the
+  // exit transition after the caller clears the pane.
+  const [lastChildren, setLastChildren] = useState<ReactNode>(
+    hasChildren ? children : null
+  );
+  // Drives the open transforms: false paints the closed position, and the
+  // opening effect flips it true a frame later so the slide can transition.
+  const [slideIn, setSlideIn] = useState(hasChildren);
   const [glowPhase, setGlowPhase] = useState<SidePaneGlowPhase>(null);
-  const presentRef = useRef(initialChildren !== null);
+  // True once the close transition has finished and the pane may unmount.
+  const [exited, setExited] = useState(!hasChildren);
+  const [prevPresent, setPrevPresent] = useState(hasChildren);
+
+  if (hasChildren && children !== lastChildren) {
+    setLastChildren(children);
+  }
+
+  // Presence transitions adjust state during render so the first frame of an
+  // open already paints the closed transform and the first frame of a close
+  // already paints the exit; effects below only run the timer choreography.
+  if (prevPresent !== hasChildren) {
+    setPrevPresent(hasChildren);
+    if (hasChildren) {
+      setExited(false);
+      setSlideIn(false);
+      setGlowPhase(null);
+    } else {
+      setGlowPhase("exit");
+    }
+  }
+
+  const presentRef = useRef(hasChildren);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openFrameRef = useRef<number | null>(null);
   const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -176,34 +204,24 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
         glowTimerRef.current = null;
       }
     };
-    const hasChildren = isRenderablePane(children);
 
-    if (hasChildren) {
+    if (isRenderablePane(children)) {
       const wasPresent = presentRef.current;
-      const opening = openFrameRef.current !== null;
       presentRef.current = true;
       clearCloseTimer();
-      clearGlowTimer();
-      setRenderedChildren(children);
 
       if (wasPresent) {
-        if (opening) {
-          return;
-        }
-        setOpen(true);
-        setGlowPhase(null);
         return;
       }
 
+      clearGlowTimer();
       clearOpenFrame();
-      setOpen(false);
-      setGlowPhase(null);
       // Let the closed transform paint before opening; otherwise light pages can
       // batch both states into a jump instead of a transition.
       openFrameRef.current = requestAnimationFrame(() => {
         openFrameRef.current = requestAnimationFrame(() => {
           openFrameRef.current = null;
-          setOpen(true);
+          setSlideIn(true);
           setGlowPhase("enter");
           glowTimerRef.current = setTimeout(
             () => {
@@ -228,15 +246,14 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
     clearOpenFrame();
     clearGlowTimer();
     const closeMs = projectSurfaceMotionMs();
-    setOpen(false);
-    setGlowPhase("exit");
     glowTimerRef.current = setTimeout(() => {
       glowTimerRef.current = null;
       setGlowPhase(null);
     }, closeMs);
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
-      setRenderedChildren(null);
+      setLastChildren(null);
+      setExited(true);
     }, closeMs);
   }, [children]);
 
@@ -255,12 +272,14 @@ export function SidePanePresence({ children }: { children: ReactNode }) {
     []
   );
 
-  if (!isRenderablePane(renderedChildren)) {
+  const renderedChildren = hasChildren ? children : lastChildren;
+
+  if (exited || !isRenderablePane(renderedChildren)) {
     return null;
   }
 
   return (
-    <SidePaneMotionContext.Provider value={open}>
+    <SidePaneMotionContext.Provider value={hasChildren && slideIn}>
       <SidePaneGlowPhaseContext.Provider value={glowPhase}>
         {renderedChildren}
       </SidePaneGlowPhaseContext.Provider>

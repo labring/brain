@@ -34,7 +34,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { StyleSwitcher } from "@/components/style-switcher";
 import { useRegistryStyle } from "@/context/registry-style-context";
 
@@ -128,14 +128,20 @@ export default function AppSidebar({
   }, [registrySections, selectedStyle]);
 
   /** `undefined` / missing = open by default; only `false` keeps a group collapsed. */
-  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(() =>
+    openGroupFromPathname(pathname)
+  );
+  const [prevPathname, setPrevPathname] = useState(pathname);
 
-  useEffect(() => {
+  // Navigating expands the active route's group during render, on top of
+  // whatever the user has toggled since the last navigation.
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
     setGroupOpen((prev) => ({
       ...prev,
       ...openGroupFromPathname(pathname),
     }));
-  }, [pathname]);
+  }
 
   const setGroupOpenKey = (key: string, open: boolean) => {
     setGroupOpen((prev) => ({

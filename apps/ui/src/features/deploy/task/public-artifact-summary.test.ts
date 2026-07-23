@@ -23,7 +23,7 @@ const TEMPLATE_SUMMARY = {
         type: "string",
       },
     ],
-    kind: "sealos-template",
+    kind: "sealos-template" as const,
     templateName: "demo",
   },
   outputJson: { templateYaml: "raw" },

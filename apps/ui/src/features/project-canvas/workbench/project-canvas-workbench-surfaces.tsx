@@ -214,6 +214,10 @@ function ProjectCanvasDrawerSlot({
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openFrameRef = useRef<number | null>(null);
 
+  if (drawer !== null && drawer !== renderedDrawer) {
+    setRenderedDrawer(drawer);
+  }
+
   useEffect(() => {
     const clearCloseTimer = () => {
       if (closeTimerRef.current !== null) {
@@ -233,7 +237,6 @@ function ProjectCanvasDrawerSlot({
       presentRef.current = true;
       clearCloseTimer();
       clearOpenFrame();
-      setRenderedDrawer(drawer);
 
       if (wasPresent) {
         setOpen(true);

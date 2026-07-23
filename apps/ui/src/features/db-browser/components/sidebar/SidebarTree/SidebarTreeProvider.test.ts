@@ -37,23 +37,8 @@ function object(
 
 test("DB Service root node uses db_service type", () => {
   const node = dbServiceToNode({
-    databaseName: "app",
     dbServiceKey,
     displayName: "postgres-main",
-    engineType: "POSTGRES",
-    runtime: {
-      database: { displayEngine: "PostgreSQL", name: "app" },
-      databaseWorkloadName: "postgres-main",
-      databaseWorkloadNamespace: "database-system",
-      dbService: {
-        name: "postgres-main",
-        namespace: "database-system",
-      },
-      engine: "POSTGRES",
-      kubeconfig: "kube",
-      namespace: "project-ns",
-      projectId: "project-uid",
-    },
   });
 
   assert.equal(node.type, "db_service");

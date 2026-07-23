@@ -5,6 +5,7 @@ import {
   assertProjectHasNoManagedResources,
   deleteProjectManagedResources,
   ProjectDeleteBlockedError,
+  type ProjectDeleteFetch,
   ProjectManagedResourceCleanupError,
 } from "./delete-guard";
 
@@ -50,7 +51,7 @@ function apDbResourceItems(url: URL) {
 
 test("project delete guard blocks deletion when managed resources still exist", async () => {
   const calls: string[] = [];
-  const fetchImpl: typeof fetch = (url) => {
+  const fetchImpl: ProjectDeleteFetch = (url) => {
     calls.push(String(url));
     const parsed = new URL(String(url));
     return Promise.resolve(
@@ -115,7 +116,7 @@ test("project delete guard blocks deletion when managed resources still exist", 
 });
 
 test("project delete guard allows deletion when no managed resources exist", async () => {
-  const fetchImpl: typeof fetch = () =>
+  const fetchImpl: ProjectDeleteFetch = () =>
     Promise.resolve(
       new Response(JSON.stringify({ items: [] }), { status: 200 })
     );
@@ -134,7 +135,7 @@ test("project delete guard does not double encode kubeconfig authorization", asy
   const encodedKubeconfig = encodeURIComponent(
     "apiVersion: v1\nkind: Config\n"
   );
-  const fetchImpl: typeof fetch = (_url, init) => {
+  const fetchImpl: ProjectDeleteFetch = (_url, init) => {
     const headers = new Headers(init?.headers);
     calls.push(headers.get("Authorization") ?? "");
     return Promise.resolve(
@@ -180,7 +181,7 @@ test("project delete guard requires an API base URL", async () => {
 });
 
 test("project delete guard surfaces downstream cleanup errors", async () => {
-  const fetchImpl: typeof fetch = (url) => {
+  const fetchImpl: ProjectDeleteFetch = (url) => {
     const parsed = new URL(String(url));
     if (parsed.searchParams.get("kind") === "persistentvolumeclaims") {
       return Promise.resolve(
@@ -217,7 +218,7 @@ test("project delete guard surfaces downstream cleanup errors", async () => {
 
 test("project managed resource cleanup deletes direct resources, template Instances, then labeled template children", async () => {
   const calls: string[] = [];
-  const fetchImpl: typeof fetch = (url, init) => {
+  const fetchImpl: ProjectDeleteFetch = (url, init) => {
     calls.push(`${init?.method ?? "GET"} ${String(url)}`);
     const parsed = new URL(String(url));
     if (init?.method === "DELETE") {
@@ -284,7 +285,7 @@ test("project managed resource cleanup deletes direct resources, template Instan
 });
 
 test("project managed resource cleanup tolerates already-deleted children", async () => {
-  const fetchImpl: typeof fetch = (url, init) => {
+  const fetchImpl: ProjectDeleteFetch = (url, init) => {
     if (init?.method === "DELETE") {
       return Promise.resolve(
         new Response(JSON.stringify({ error: "not found" }), {

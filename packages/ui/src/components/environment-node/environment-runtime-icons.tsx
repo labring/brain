@@ -90,6 +90,26 @@ export function getEnvironmentRuntimeIcon(
   );
 }
 
+/**
+ * Renders the runtime's icon. Prefer this over calling
+ * `getEnvironmentRuntimeIcon` in JSX position: the icons are module-level
+ * components, and going through a component keeps that provable for React.
+ */
+export function EnvironmentRuntimeIconGlyph({
+  runtimeKey,
+  ...props
+}: RuntimeIconProps & { runtimeKey: EnvironmentRuntimeKey | undefined }) {
+  const Icon = runtimeKey
+    ? (ENVIRONMENT_RUNTIME_ICONS[
+        normalizeEnvironmentRuntimeKey(
+          runtimeKey
+        ) as keyof typeof ENVIRONMENT_RUNTIME_ICONS
+      ] ?? EnvironmentFallbackIcon)
+    : EnvironmentFallbackIcon;
+
+  return <Icon {...props} />;
+}
+
 export function getEnvironmentRuntimeTone(
   runtimeKey: EnvironmentRuntimeKey | undefined
 ): EnvironmentRuntimeTone {

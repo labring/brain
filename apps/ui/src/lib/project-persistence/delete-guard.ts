@@ -7,10 +7,17 @@ import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 
 const TRAILING_PERIOD_RE = /\.$/;
 
+// Call signature only: the guard never touches fetch statics (e.g. preconnect),
+// so mocks don't have to carry them.
+export type ProjectDeleteFetch = (
+  input: RequestInfo | URL,
+  init?: RequestInit
+) => Promise<Response>;
+
 export interface ProjectDeleteGuardInput {
   apiBaseUrl?: string;
   encodedKubeconfig: string;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: ProjectDeleteFetch;
   id: string;
   namespace: string;
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { ApEnvVar } from "@/features/resource-settings/ap/environment-section";
 import { PLATFORM_ADDRESS_ID_RE } from "@/features/resource-settings/ap/lib/platform-address";
 import {
   apMergePatchFromJsonPatchOps,
@@ -194,7 +195,12 @@ test("AP settings draft removes unused compiled DB helpers with a deleted refere
   const ops = patchOpsForApSettingsDraft(
     { input: { env: previousEnv, envRawSource: previousRawSource } },
     { env: [], envRawSource: "" },
-    { env: previousEnv, envRawSource: previousRawSource },
+    // previousEnv doubles as the K8s wire records above; valueFrom-only rows
+    // omit the draft model's required `value`.
+    {
+      env: previousEnv as readonly ApEnvVar[],
+      envRawSource: previousRawSource,
+    },
     {
       dbDsnReferenceSources: [
         {
@@ -1638,6 +1644,41 @@ test("AP settings draft ignores Custom Domain read-model metadata", () => {
     },
   } as const;
 
+  // Hoisted so the read-model-only fields (privateAddress, statuses) ride along
+  // like they do in production, where structural typing lets non-literal values
+  // carry extra fields the patcher must ignore.
+  const nextNetworkWithReadModelMetadata = {
+    appListeningPorts: [{ privateAddress: "http://api:80", port: 80 }],
+    customDomains: [
+      {
+        certificate: { status: "ready" },
+        cnameTarget: "api.example.com",
+        dns: {
+          status: "verified",
+          target: "api.example.com",
+          verifiedAt: "2026-06-12T00:00:00.000Z",
+        },
+        domain: "www.example.com",
+        id: "cd_def456",
+        platformAddressId: "pa_abc123",
+        routing: { status: "ready" },
+        status: "running",
+        targetPort: 80,
+      },
+    ],
+    privateAddress: "http://api:80",
+    publicAddresses: [
+      {
+        host: "api.example.com",
+        id: "pa_abc123",
+        port: 80,
+        status: "running",
+        type: "platform",
+        url: "https://api.example.com/",
+      },
+    ],
+  };
+
   const ops = patchOpsForApSettingsDraft(
     {
       input: {
@@ -1654,39 +1695,7 @@ test("AP settings draft ignores Custom Domain read-model metadata", () => {
         },
       },
     },
-    {
-      network: {
-        appListeningPorts: [{ privateAddress: "http://api:80", port: 80 }],
-        customDomains: [
-          {
-            certificate: { status: "ready" },
-            cnameTarget: "api.example.com",
-            dns: {
-              status: "verified",
-              target: "api.example.com",
-              verifiedAt: "2026-06-12T00:00:00.000Z",
-            },
-            domain: "www.example.com",
-            id: "cd_def456",
-            platformAddressId: "pa_abc123",
-            routing: { status: "ready" },
-            status: "running",
-            targetPort: 80,
-          },
-        ],
-        privateAddress: "http://api:80",
-        publicAddresses: [
-          {
-            host: "api.example.com",
-            id: "pa_abc123",
-            port: 80,
-            status: "running",
-            type: "platform",
-            url: "https://api.example.com/",
-          },
-        ],
-      },
-    },
+    { network: nextNetworkWithReadModelMetadata },
     previous
   );
 

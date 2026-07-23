@@ -145,7 +145,15 @@ function useRedisKeyQuery({
   }, [currentPage, objectRef, pageSize, runtime, sort.column, sort.direction]);
 
   useEffect(() => {
-    fetchData();
+    let active = true;
+    queueMicrotask(() => {
+      if (active) {
+        fetchData();
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, [fetchData, refreshVersion]);
 
   return {

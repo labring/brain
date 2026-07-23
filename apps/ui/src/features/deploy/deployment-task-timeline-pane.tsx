@@ -500,15 +500,14 @@ function useResourceCardOpen(status: DeploymentResultResourceCardStatus) {
   const [autoOpen, setAutoOpen] = useState(() =>
     defaultResourceCardOpen(status)
   );
+  const [previousStatus, setPreviousStatus] = useState(status);
 
-  useEffect(() => {
-    if (manualOpen !== null) {
-      return;
-    }
-    if (defaultResourceCardOpen(status)) {
+  if (status !== previousStatus) {
+    setPreviousStatus(status);
+    if (manualOpen === null && defaultResourceCardOpen(status)) {
       setAutoOpen(true);
     }
-  }, [manualOpen, status]);
+  }
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     setManualOpen(nextOpen);
@@ -921,20 +920,30 @@ function DeploymentConfigurationForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previousValuesKey, setPreviousValuesKey] = useState<{
+    inputs: typeof inputs;
+    plan: typeof plan;
+    showForm: boolean;
+  } | null>(null);
 
-  useEffect(() => {
-    if (!showForm) {
-      setValues({});
-      return;
-    }
-    const initialValues = Object.fromEntries(
-      inputs.map((input) => [
-        input.key,
-        plan?.args?.[input.key] ?? inputInitialValue(input),
-      ])
+  if (
+    previousValuesKey === null ||
+    previousValuesKey.inputs !== inputs ||
+    previousValuesKey.plan !== plan ||
+    previousValuesKey.showForm !== showForm
+  ) {
+    setPreviousValuesKey({ inputs, plan, showForm });
+    setValues(
+      showForm
+        ? Object.fromEntries(
+            inputs.map((input) => [
+              input.key,
+              plan?.args?.[input.key] ?? inputInitialValue(input),
+            ])
+          )
+        : {}
     );
-    setValues(initialValues);
-  }, [inputs, plan, showForm]);
+  }
 
   if (!showForm || inputs.length === 0) {
     return null;

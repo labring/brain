@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@workspace/ui/components/button";
+import { useHydrated } from "@workspace/ui/hooks/use-hydrated";
 import { cn } from "@workspace/ui/lib/utils";
 import { Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
@@ -54,17 +55,13 @@ function Preview({
 }) {
   const [resetKey, setResetKey] = useState(0);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!showMaximize) {
-      setIsMaximized(false);
-    }
-  }, [showMaximize]);
+  // Losing the maximize control also exits full-screen; adjust during render
+  // so the overlay never paints without its control.
+  if (!showMaximize && isMaximized) {
+    setIsMaximized(false);
+  }
 
   useEffect(() => {
     if (!(showMaximize && isMaximized)) {

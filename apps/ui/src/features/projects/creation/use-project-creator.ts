@@ -171,6 +171,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   const templateCatalog = useTemplateCatalog({
     enabled: integrationState.templateEnabled,
   });
+  const catalogTemplates = templateCatalog.templates;
 
   const openCreationPane = useCallback(
     (
@@ -470,11 +471,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     async (input: {
       repo: GithubDeployerRepo;
       settings: TemplateDeploymentSettings;
-      template: (typeof templateCatalog.templates)[number];
+      template: (typeof catalogTemplates)[number];
     }) => {
       const matchedTemplate = findTemplateForGithubRepo({
         repo: input.repo,
-        templates: templateCatalog.templates,
+        templates: catalogTemplates,
       });
       if (
         matchedTemplate?.name !== input.template.name ||
@@ -514,7 +515,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       completeProjectCreation,
       existingProjects,
       runDeployment,
-      templateCatalog.templates,
+      catalogTemplates,
     ]
   );
 

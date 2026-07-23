@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { ApNetwork } from "./ap-network-model";
 import {
   apPendingTargetForDomain,
   apPendingTargetsForDirtyDomains,
@@ -53,36 +54,37 @@ test("AP pending adapter extracts dirty domains and overlays authored environmen
 });
 
 test("AP pending adapter ignores network lifecycle status when extracting dirty domains", () => {
+  const baseNetwork: ApNetwork = {
+    customDomains: [
+      {
+        cnameTarget: "target.example.dev",
+        dns: {
+          status: "verified",
+          target: "target.example.dev",
+          verifiedAt: "2026-06-24T01:00:00.000Z",
+        },
+        domain: "www.example.com",
+        id: "custom-1",
+        platformAddressId: "platform-1",
+        targetPort: 8080,
+      },
+    ],
+    privatePort: 8080,
+    publicAddresses: [{ id: "platform-1", port: 8080 }],
+  };
   const base: ApSettingsDraft = {
     cpuCores: 1,
     env: [],
     image: "ghcr.io/acme/api:v1",
     memoryMib: 512,
-    network: {
-      customDomains: [
-        {
-          cnameTarget: "target.example.dev",
-          dns: {
-            status: "verified",
-            target: "target.example.dev",
-            verifiedAt: "2026-06-24T01:00:00.000Z",
-          },
-          domain: "www.example.com",
-          id: "custom-1",
-          platformAddressId: "platform-1",
-          targetPort: 8080,
-        },
-      ],
-      privatePort: 8080,
-      publicAddresses: [{ id: "platform-1", port: 8080 }],
-    },
+    network: baseNetwork,
   };
-  const baseDomain = base.network.customDomains?.[0];
+  const baseDomain = baseNetwork.customDomains?.[0];
   assert.ok(baseDomain);
   const draft: ApSettingsDraft = {
     ...base,
     network: {
-      ...base.network,
+      ...baseNetwork,
       customDomains: [
         {
           ...baseDomain,

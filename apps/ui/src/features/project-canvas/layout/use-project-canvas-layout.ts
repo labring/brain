@@ -2,7 +2,13 @@
 
 import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
 import type { Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useInsertionEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 
@@ -16,7 +22,10 @@ import {
   canvasLayoutNodesSignature,
 } from "@/features/project-canvas/layout/layout-node-equality";
 import { canvasLayoutNodeFromNode } from "@/features/project-canvas/layout/merge";
-import { createCanvasLayoutNodeSaveScheduler } from "@/features/project-canvas/layout/scheduler";
+import {
+  type CanvasLayoutNodeSaveScheduler,
+  createCanvasLayoutNodeSaveScheduler,
+} from "@/features/project-canvas/layout/scheduler";
 import type { CanvasLayoutDocument, PlacementCommand } from "./types";
 
 const NODE_LAYOUT_SAVE_DEBOUNCE_MS = 600;
@@ -215,19 +224,45 @@ export function useProjectCanvasLayout(options: {
     [saveNodes]
   );
 
-  const scheduler = useMemo(
-    () =>
-      createCanvasLayoutNodeSaveScheduler({
-        clearTimeout: (handle) =>
-          clearTimeout(handle as ReturnType<typeof setTimeout>),
-        delayMs: NODE_LAYOUT_SAVE_DEBOUNCE_MS,
-        save: saveNodes,
-        setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-      }),
-    [saveNodes]
+  // The save-target identity, matching the SWR key. A pending debounced save
+  // must die with its target: namespace/credential switches reuse this
+  // component instance, and flushing through saveNodesRef would write the
+  // previous target's nodes into the next target's document.
+  const saveTargetKey = useMemo(
+    () => `${credentialKey}\u0000${namespace}\u0000${projectId}`,
+    [credentialKey, namespace, projectId]
   );
 
-  useEffect(() => () => scheduler.cancel(), [scheduler]);
+  const saveNodesRef = useRef(saveNodes);
+  const saveTargetKeyRef = useRef(saveTargetKey);
+  useInsertionEffect(() => {
+    saveNodesRef.current = saveNodes;
+    saveTargetKeyRef.current = saveTargetKey;
+  }, [saveNodes, saveTargetKey]);
+
+  // Two layers: the keyed effect cancels the pending save on target change,
+  // and the fire-time key guard covers the gap that cancel cannot — the
+  // insertion effect above repoints saveNodesRef at commit, while this
+  // effect's cleanup only cancels after paint, so a timer landing between
+  // the two would otherwise flush old nodes through the new target's save.
+  const schedulerRef = useRef<CanvasLayoutNodeSaveScheduler | null>(null);
+  useEffect(() => {
+    const scheduler = createCanvasLayoutNodeSaveScheduler({
+      clearTimeout: (handle) =>
+        clearTimeout(handle as ReturnType<typeof setTimeout>),
+      delayMs: NODE_LAYOUT_SAVE_DEBOUNCE_MS,
+      save: (nodes) =>
+        saveTargetKeyRef.current === saveTargetKey
+          ? saveNodesRef.current(nodes)
+          : Promise.resolve(),
+      setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+    });
+    schedulerRef.current = scheduler;
+    return () => {
+      scheduler.cancel();
+      schedulerRef.current = null;
+    };
+  }, [saveTargetKey]);
 
   const scheduleNodeLayoutSave = useCallback(
     (node: Node, options?: Parameters<typeof canvasLayoutNodeFromNode>[1]) => {
@@ -236,10 +271,10 @@ export function useProjectCanvasLayout(options: {
       }
       const layoutNode = canvasLayoutNodeFromNode(node, options);
       if (layoutNode !== undefined) {
-        scheduler.schedule(layoutNode);
+        schedulerRef.current?.schedule(layoutNode);
       }
     },
-    [enabled, scheduler]
+    [enabled]
   );
 
   return {

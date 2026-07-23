@@ -64,7 +64,9 @@ export function useDataQuery(params: UseDataQueryParams): {
 
   const latestRequestIdRef = useRef(0);
   const visibleColumnsCountRef = useRef(visibleColumnsCount);
-  visibleColumnsCountRef.current = visibleColumnsCount;
+  useEffect(() => {
+    visibleColumnsCountRef.current = visibleColumnsCount;
+  });
 
   const handleSubmitRequest = useCallback(
     async (overridePageOffset?: number) => {
@@ -131,7 +133,15 @@ export function useDataQuery(params: UseDataQueryParams): {
 
   // Fetch on mount and when data-changing params change
   useEffect(() => {
-    handleSubmitRequest();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        handleSubmitRequest();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [handleSubmitRequest, refreshVersion]);
 
   return {

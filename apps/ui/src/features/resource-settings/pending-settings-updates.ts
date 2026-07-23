@@ -1,3 +1,7 @@
+"use client";
+
+import { useMemo, useSyncExternalStore } from "react";
+
 export const PENDING_SETTINGS_SCHEMA_VERSION = 1;
 export const PENDING_SETTINGS_STORAGE_KEY =
   "sealai.project-settings.pending-updates.v1";
@@ -41,11 +45,20 @@ interface PendingSettingsStoreStorage {
 
 export interface PendingSettingsStore {
   clear: (owner: PendingSettingsOwnerIdentity, domain: string) => void;
+  /**
+   * Drops the snapshot cache and notifies listeners. For propagating writes
+   * that bypassed this instance (another tab's `storage` event).
+   */
+  invalidateSnapshot: () => void;
   list: (owner: PendingSettingsOwnerIdentity) => PendingSettingsUpdateEntry[];
   replaceDirtyDomains: (input: {
     owner: PendingSettingsOwnerIdentity;
     updates: readonly PendingSettingsDomainUpdate[];
   }) => PendingSettingsUpdateEntry[];
+  /** All entries; referentially stable until the next mutation. */
+  snapshot: () => readonly PendingSettingsUpdateEntry[];
+  /** Notifies after every mutation through this store instance. */
+  subscribe: (listener: () => void) => () => void;
 }
 
 export type PendingSettingsClassificationStatus =
@@ -158,6 +171,14 @@ export function createPendingSettingsStore({
 }): PendingSettingsStore {
   const read = () =>
     parseDocument(storage.getItem(PENDING_SETTINGS_STORAGE_KEY));
+  const listeners = new Set<() => void>();
+  let cachedEntries: readonly PendingSettingsUpdateEntry[] | null = null;
+  const invalidate = () => {
+    cachedEntries = null;
+    for (const listener of [...listeners]) {
+      listener();
+    }
+  };
 
   return {
     clear(owner, domain) {
@@ -168,9 +189,23 @@ export function createPendingSettingsStore({
         ),
         version: PENDING_SETTINGS_SCHEMA_VERSION,
       });
+      invalidate();
+    },
+    invalidateSnapshot() {
+      invalidate();
     },
     list(owner) {
       return read().entries.filter((entry) => samePendingOwner(entry, owner));
+    },
+    snapshot() {
+      cachedEntries ??= read().entries;
+      return cachedEntries;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
     replaceDirtyDomains({ owner, updates }) {
       if (updates.length === 0) {
@@ -201,16 +236,79 @@ export function createPendingSettingsStore({
         entries: nextEntries,
         version: PENDING_SETTINGS_SCHEMA_VERSION,
       });
+      invalidate();
       return replacements;
     },
   };
 }
 
+const EMPTY_PENDING_ENTRIES: readonly PendingSettingsUpdateEntry[] = [];
+
+function subscribeNothing() {
+  return () => undefined;
+}
+
+function emptyPendingSnapshot(): readonly PendingSettingsUpdateEntry[] {
+  return EMPTY_PENDING_ENTRIES;
+}
+
+/**
+ * The owner's pending entries, kept fresh through the store's subscription:
+ * re-reads exactly when a mutation (any pane, the accept path, or another
+ * tab) lands, instead of on every incidental render.
+ */
+export function usePendingSettingsEntries(
+  owner: PendingSettingsOwnerIdentity | null | undefined,
+  store: PendingSettingsStore | null
+): readonly PendingSettingsUpdateEntry[] {
+  // The server snapshot is always empty: pending entries live in browser
+  // storage the server cannot see, and hydration must render what the server
+  // rendered. Reading the store here instead would make hydration on a
+  // client with persisted entries mismatch the server HTML and rebuild the
+  // settings subtree; the entries arrive via the subscription right after.
+  const snapshot = useSyncExternalStore(
+    store?.subscribe ?? subscribeNothing,
+    store?.snapshot ?? emptyPendingSnapshot,
+    emptyPendingSnapshot
+  );
+
+  return useMemo(() => {
+    if (owner == null) {
+      return EMPTY_PENDING_ENTRIES;
+    }
+    return snapshot.filter((entry) => samePendingOwner(entry, owner));
+  }, [owner, snapshot]);
+}
+
+let browserPendingSettingsStore: {
+  storage: unknown;
+  store: PendingSettingsStore;
+} | null = null;
+
+/**
+ * Browser-global singleton so every consumer shares one subscription surface:
+ * a mutation from any pane (or the submission store's accept path) notifies
+ * all subscribed panes. Cross-tab writes arrive via the `storage` event.
+ * Keyed on the localStorage instance so tests that swap in a fake window get
+ * a fresh store instead of one bound to a previous test's storage.
+ */
 export function getBrowserPendingSettingsStore(): PendingSettingsStore | null {
   if (typeof window === "undefined") {
     return null;
   }
-  return createPendingSettingsStore({ storage: window.localStorage });
+  const storage = window.localStorage;
+  if (browserPendingSettingsStore?.storage !== storage) {
+    const store = createPendingSettingsStore({ storage });
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("storage", (event) => {
+        if (event.key === PENDING_SETTINGS_STORAGE_KEY || event.key == null) {
+          store.invalidateSnapshot();
+        }
+      });
+    }
+    browserPendingSettingsStore = { storage, store };
+  }
+  return browserPendingSettingsStore.store;
 }
 
 export function classifyPendingSettingsEntry<TTarget>(

@@ -35,9 +35,11 @@ import {
 import type { ApEnvDbDsnSource } from "@/features/resource-settings/ap/lib/ap-env-rows";
 import { settingsDraftSaveFailureMessage } from "@/features/resource-settings/ap/lib/settings-draft-backing";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
+import { useDeadlineNotReached } from "@/lib/use-deadline";
 
 const WORKLOAD_RECONCILE_POLL_MS = 1000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
+const NO_DB_DSN_REFERENCE_SOURCES: ApEnvDbDsnSource[] = [];
 
 export interface UseApWorkloadSettingsOptions {
   dbDsnReferenceSources?: ApEnvDbDsnSource[];
@@ -109,9 +111,11 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   } = options;
   const kubeconfig = options.kubeconfig ?? "";
   const readOnly = options.readOnly === true;
-  const dbDsnReferenceSources = options.dbDsnReferenceSources ?? [];
+  const dbDsnReferenceSources =
+    options.dbDsnReferenceSources ?? NO_DB_DSN_REFERENCE_SOURCES;
   const isApWorkload = workloadKind === "AP";
   const [claimReconcilePollUntil, setClaimReconcilePollUntil] = useState(0);
+  const claimReconcilePolling = useDeadlineNotReached(claimReconcilePollUntil);
 
   const {
     data: claimPayload,
@@ -123,8 +127,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
     kubeconfig,
     name,
     namespace,
-    refreshInterval:
-      claimReconcilePollUntil > Date.now() ? WORKLOAD_RECONCILE_POLL_MS : 0,
+    refreshInterval: claimReconcilePolling ? WORKLOAD_RECONCILE_POLL_MS : 0,
   });
   const {
     data: apsData,
@@ -137,13 +140,13 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
     namespace,
     pollWhileEmpty: false,
     refreshInterval:
-      isApWorkload && claimReconcilePollUntil > Date.now()
-        ? WORKLOAD_RECONCILE_POLL_MS
-        : 0,
+      isApWorkload && claimReconcilePolling ? WORKLOAD_RECONCILE_POLL_MS : 0,
   });
 
   const claimBodyRef = useRef<Record<string, unknown> | undefined>(undefined);
-  claimBodyRef.current = k8sGetClaimBody(claimPayload);
+  useEffect(() => {
+    claimBodyRef.current = k8sGetClaimBody(claimPayload);
+  }, [claimPayload]);
 
   const claimResourceVersion = useMemo(() => {
     const b = k8sGetClaimBody(claimPayload);
@@ -157,12 +160,14 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
 
   const [localOverride, setLocalOverride] =
     useState<Partial<ClaimApSettings> | null>(null);
+  const [committedClaimResourceVersion, setCommittedClaimResourceVersion] =
+    useState(claimResourceVersion);
 
   // Reset optimistic fields when the fetched claim revision changes (refetch / external edit).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — run when `claimResourceVersion` updates
-  useEffect(() => {
+  if (claimResourceVersion !== committedClaimResourceVersion) {
+    setCommittedClaimResourceVersion(claimResourceVersion);
     setLocalOverride(null);
-  }, [claimResourceVersion]);
+  }
 
   const mapped = useMemo(
     () =>

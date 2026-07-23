@@ -11,7 +11,7 @@ import { TimeWheelField } from "@workspace/ui/components/time-wheel-field";
 import { cn } from "@workspace/ui/lib/utils";
 import { format } from "date-fns";
 import { CalendarClock, ChevronDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { DateRange } from "react-day-picker";
 import {
   formatLogWindowLabel,
@@ -58,8 +58,9 @@ export function LogWindowSelector({
   const [draftStartTime, setDraftStartTime] = useState("00:00:00");
   const [draftEndTime, setDraftEndTime] = useState("23:59:59");
 
-  useEffect(() => {
-    if (!open) {
+  function handleOpenChange(nextOpen: boolean) {
+    setOpen(nextOpen);
+    if (!nextOpen) {
       return;
     }
     setActiveField(null);
@@ -69,7 +70,7 @@ export function LogWindowSelector({
     setDraftRange({ from: start, to: end });
     setDraftStartTime(format(start, "HH:mm:ss"));
     setDraftEndTime(format(end, "HH:mm:ss"));
-  }, [open, value]);
+  }
 
   const draft = draftBounds(draftRange, draftStartTime, draftEndTime);
 
@@ -87,7 +88,7 @@ export function LogWindowSelector({
   }
 
   return (
-    <Popover onOpenChange={setOpen} open={open}>
+    <Popover onOpenChange={handleOpenChange} open={open}>
       <PopoverTrigger
         className={cn(
           "flex h-9 min-w-0 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-input/30 px-3 py-2 text-foreground text-sm outline-none transition-[color,box-shadow] hover:bg-input/50 focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50 aria-expanded:border-blue-400 aria-expanded:ring-[1px] aria-expanded:ring-blue-400/50 aria-expanded:ring-offset-0",
