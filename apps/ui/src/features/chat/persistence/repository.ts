@@ -26,6 +26,8 @@ export const persistAssistantMessageIfLeaseOwned =
   assistantConversationRepository.persistAssistantMessageIfLeaseOwned;
 export const releaseChatStreamLease =
   assistantConversationRepository.releaseChatStreamLease;
+export const renewChatStreamLease =
+  assistantConversationRepository.renewChatStreamLease;
 export const replaceAssistantMessagePartsIfUnchanged =
   assistantConversationRepository.replaceAssistantMessagePartsIfUnchanged;
 export const tryAcquireChatStreamLease =

@@ -56,12 +56,16 @@ let connectionAvailable = true;
 let consumeCalls = 0;
 let forceReplaceConflict = false;
 let history: UIMessage[] = [];
+let heartbeatTick: (() => void) | null = null;
 let leaseAcquireCalls = 0;
 let leaseAcquireMutation: (() => void) | null = null;
 let leaseReleaseCalls = 0;
+let leaseRenewCalls = 0;
+let leaseRenewWait: Promise<TestLease | null> | null = null;
 let modelCalls = 0;
 let modelAbortSignals: (AbortSignal | undefined)[] = [];
 let modelPrompts: unknown[] = [];
+let persistedLease: TestLease | null = null;
 let replaceCalls = 0;
 let streamMode: StreamMode = "success";
 let serviceOwners: TestOwner[] = [];
@@ -292,6 +296,7 @@ mock.module("@/features/chat/persistence/service", () => ({
     lease: TestLease;
     message: UIMessage;
   }) => {
+    persistedLease = input.lease;
     if (activeLease?.token !== input.lease.token) {
       return Promise.resolve(false);
     }
@@ -305,6 +310,10 @@ mock.module("@/features/chat/persistence/service", () => ({
     activeLease = null;
     leaseReleaseCalls += 1;
     return Promise.resolve(true);
+  },
+  renewOwnedChatStreamLease: (lease: TestLease) => {
+    leaseRenewCalls += 1;
+    return leaseRenewWait ?? Promise.resolve(lease);
   },
 }));
 mock.module("@/features/chat/runtime/attach-tool-duration-metrics", () => ({
@@ -477,12 +486,16 @@ beforeEach(() => {
   consumeCalls = 0;
   forceReplaceConflict = false;
   history = [];
+  heartbeatTick = null;
   leaseAcquireCalls = 0;
   leaseAcquireMutation = null;
   leaseReleaseCalls = 0;
+  leaseRenewCalls = 0;
+  leaseRenewWait = null;
   modelCalls = 0;
   modelAbortSignals = [];
   modelPrompts = [];
+  persistedLease = null;
   replaceCalls = 0;
   serviceOwners = [];
   streamMode = "success";
@@ -491,6 +504,85 @@ beforeEach(() => {
   toolsetAvailable = true;
   toolsetOwner = null;
   transformSetup = null;
+});
+
+function interceptHeartbeatTimer() {
+  const originalSetTimeout = globalThis.setTimeout;
+  return spyOn(globalThis, "setTimeout").mockImplementation(((
+    handler: TimerHandler,
+    delay?: number,
+    ...args: unknown[]
+  ) => {
+    if (delay === 60_000) {
+      heartbeatTick = () => {
+        if (typeof handler === "function") {
+          handler(...args);
+        }
+      };
+      return 2_147_483_000 as unknown as ReturnType<typeof setTimeout>;
+    }
+    return originalSetTimeout(handler, delay, ...args);
+  }) as typeof setTimeout);
+}
+
+test("lease heartbeat loss aborts the stream without releasing a replacement lease", async () => {
+  streamMode = "abort";
+  leaseRenewWait = Promise.resolve(null);
+  const timerSpy = interceptHeartbeatTimer();
+  try {
+    const response = await POST(
+      chatRequest(userMessage("user-heartbeat-loss", "inspect the cluster"))
+    );
+    await waitUntil(() => modelAbortSignals.length === 1);
+
+    activeLease = {
+      chatId: CHAT_ID,
+      messageId: `lease-${CHAT_ID}`,
+      parts: [],
+      token: "replacement-after-heartbeat-loss",
+    };
+    heartbeatTick?.();
+    await response.arrayBuffer().catch(() => undefined);
+
+    expect(leaseRenewCalls).toBe(1);
+    expect(modelAbortSignals[0]?.aborted).toBe(true);
+    expect(activeLease?.token).toBe("replacement-after-heartbeat-loss");
+    expect(leaseReleaseCalls).toBe(0);
+  } finally {
+    timerSpy.mockRestore();
+  }
+});
+
+test("finish waits for an in-flight heartbeat and persists with its latest lease", async () => {
+  let finishHeartbeat: ((lease: TestLease | null) => void) | undefined;
+  leaseRenewWait = new Promise<TestLease | null>((resolve) => {
+    finishHeartbeat = resolve;
+  });
+  const timerSpy = interceptHeartbeatTimer();
+  try {
+    const response = await POST(
+      chatRequest(userMessage("user-heartbeat-finish", "inspect the cluster"))
+    );
+    heartbeatTick?.();
+    await waitUntil(() => leaseRenewCalls === 1);
+    const drained = drain(response);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(persistedLease).toBeNull();
+    expect(leaseReleaseCalls).toBe(0);
+    const latestLease = {
+      ...(activeLease as TestLease),
+      parts: [{ text: "renewed-cas-snapshot", type: "text" as const }],
+    };
+    activeLease = latestLease;
+    finishHeartbeat?.(latestLease);
+    await drained;
+
+    expect(persistedLease).toEqual(latestLease);
+    expect(leaseReleaseCalls).toBe(1);
+  } finally {
+    timerSpy.mockRestore();
+  }
 });
 
 test("accepts and streams a canonical client-tool continuation", async () => {

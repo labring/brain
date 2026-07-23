@@ -44,7 +44,7 @@ const db = drizzle(mainPglite, { schema: assistantSchema });
 
 afterAll(() => mainPglite.close());
 
-test("repository never exposes or mutates a foreign conversation, including on message-id collision", async () => {
+test("repository never exposes or mutates a foreign conversation", async () => {
   const migrationsFolder = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../../drizzle"
@@ -62,14 +62,12 @@ test("repository never exposes or mutates a foreign conversation, including on m
     }),
     true
   );
-  assert.equal(
-    await repository.upsertMessageForOwner(bob, "bob-chat", {
-      id: "shared-message-id",
-      role: "assistant",
-      parts: [{ type: "text", text: "Bob secret" }],
-    }),
-    true
-  );
+  await db.insert(assistantChatMessages).values({
+    chatId: "bob-chat",
+    id: "shared-message-id",
+    role: "assistant",
+    parts: [{ type: "text", text: "Bob secret" }],
+  });
   assert.equal(
     await repository.ensureThreadForOwner({
       id: "alice-chat",
@@ -89,22 +87,6 @@ test("repository never exposes or mutates a foreign conversation, including on m
 
   assert.equal(await repository.selectThreadByOwner("bob-chat", alice), null);
   assert.equal(await repository.selectMessagesByOwner(alice, "bob-chat"), null);
-  assert.equal(
-    await repository.upsertMessageForOwner(alice, "bob-chat", {
-      id: "attacker-message",
-      role: "user",
-      parts: [{ type: "text", text: "overwrite foreign chat" }],
-    }),
-    false
-  );
-  assert.equal(
-    await repository.upsertMessageForOwner(alice, "alice-chat", {
-      id: "shared-message-id",
-      role: "user",
-      parts: [{ type: "text", text: "overwrite colliding message" }],
-    }),
-    false
-  );
   assert.equal(
     await repository.updateThreadAiTitleOnceForOwner(
       alice,
@@ -255,6 +237,7 @@ const {
   commitChatMessagesIfLeaseOwned,
   persistAssistantMessageIfLeaseOwned,
   releaseChatStreamLease,
+  renewChatStreamLease,
   replaceAssistantMessagePartsIfUnchanged:
     replaceAssistantMessagePartsIfUnchangedForOwner,
   tryAcquireChatStreamLease: tryAcquireChatStreamLeaseForOwner,
@@ -428,6 +411,21 @@ describe("replaceAssistantMessagePartsIfUnchanged", () => {
 });
 
 describe("chat stream lease", () => {
+  it("rejects renewal after the lease expires according to the database clock", async () => {
+    await seedThread();
+    const expired = await tryAcquireChatStreamLease({
+      chatId: TEST_CHAT_ID,
+      now: new Date("2001-01-01T00:00:00.000Z"),
+      token: "lease-expired-renewal",
+      ttlMs: 1000,
+    });
+    if (expired == null) {
+      throw new Error("expected the expired lease fixture");
+    }
+
+    expect(await renewChatStreamLease(expired)).toBeNull();
+  });
+
   it("allows one concurrent owner and stays hidden from normal history", async () => {
     await seedThread();
     const now = new Date("2026-01-01T00:00:01.000Z");
@@ -521,6 +519,28 @@ describe("chat stream lease", () => {
         role: "assistant",
       },
     ]);
+    expect(await releaseChatStreamLease(replacement)).toBe(true);
+  });
+
+  it("rejects renewal after another owner steals the lease", async () => {
+    await seedThread();
+    const first = await tryAcquireChatStreamLease({
+      chatId: TEST_CHAT_ID,
+      now: new Date("2099-01-01T00:00:00.000Z"),
+      token: "lease-old-renewal",
+      ttlMs: 1000,
+    });
+    const replacement = await tryAcquireChatStreamLease({
+      chatId: TEST_CHAT_ID,
+      now: new Date("2099-01-01T00:00:02.000Z"),
+      token: "lease-new-renewal",
+      ttlMs: 1000,
+    });
+    if (first == null || replacement == null) {
+      throw new Error("expected the replacement lease fixture");
+    }
+
+    expect(await renewChatStreamLease(first)).toBeNull();
     expect(await releaseChatStreamLease(replacement)).toBe(true);
   });
 

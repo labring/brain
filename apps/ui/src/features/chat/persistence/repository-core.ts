@@ -49,6 +49,9 @@ export interface AssistantConversationRepository {
     message: UIMessage;
   }) => Promise<boolean>;
   releaseChatStreamLease: (lease: ChatStreamLease) => Promise<boolean>;
+  renewChatStreamLease: (
+    lease: ChatStreamLease
+  ) => Promise<ChatStreamLease | null>;
   replaceAssistantMessagePartsIfUnchanged: (input: {
     chatId: string;
     expectedParts: UIMessage["parts"];
@@ -78,11 +81,6 @@ export interface AssistantConversationRepository {
     owner: AssistantConversationOwner,
     chatId: string,
     title: string
-  ) => Promise<boolean>;
-  upsertMessageForOwner: (
-    owner: AssistantConversationOwner,
-    chatId: string,
-    message: UIMessage
   ) => Promise<boolean>;
 }
 
@@ -375,48 +373,6 @@ export function createAssistantConversationRepository(
     }));
   };
 
-  const upsertMessageForOwner = (
-    owner: AssistantConversationOwner,
-    chatId: string,
-    message: UIMessage
-  ): Promise<boolean> => {
-    const row = withPersistableId(message);
-    const now = new Date();
-    return getDb().transaction(async (tx) => {
-      if (!(await transactionOwnsThread(tx, chatId, owner))) {
-        return false;
-      }
-
-      const persisted = await tx
-        .insert(assistantChatMessages)
-        .values({
-          id: row.id,
-          chatId,
-          role: row.role,
-          parts: row.parts,
-          createdAt: now,
-        })
-        .onConflictDoUpdate({
-          target: assistantChatMessages.id,
-          set: {
-            role: row.role,
-            parts: row.parts,
-          },
-          setWhere: eq(assistantChatMessages.chatId, chatId),
-        })
-        .returning({ id: assistantChatMessages.id });
-      if (persisted.length === 0) {
-        return false;
-      }
-
-      await tx
-        .update(assistantChats)
-        .set({ updatedAt: now })
-        .where(ownedThreadWhere(chatId, owner));
-      return true;
-    });
-  };
-
   const replaceAssistantMessagePartsIfUnchanged = (input: {
     chatId: string;
     expectedParts: UIMessage["parts"];
@@ -598,6 +554,33 @@ export function createAssistantConversationRepository(
       return released.length > 0;
     });
 
+  const renewChatStreamLease = (
+    lease: ChatStreamLease
+  ): Promise<ChatStreamLease | null> =>
+    getDb().transaction(async (tx) => {
+      if (!(await transactionOwnsThread(tx, lease.chatId, lease.owner))) {
+        return null;
+      }
+
+      const renewed = await tx
+        .update(assistantChatMessages)
+        .set({
+          createdAt: sql`clock_timestamp()`,
+          parts: renewedChatStreamLeaseParts(lease.token),
+        })
+        .where(
+          and(
+            eq(assistantChatMessages.chatId, lease.chatId),
+            eq(assistantChatMessages.id, lease.messageId),
+            sql`${assistantChatMessages.parts} = ${JSON.stringify(lease.parts)}::jsonb`,
+            sql`(${assistantChatMessages.parts} #>> '{0,data,expiresAt}')::timestamptz > clock_timestamp()`
+          )
+        )
+        .returning({ parts: assistantChatMessages.parts });
+      const parts = renewed[0]?.parts;
+      return parts == null ? null : { ...lease, parts };
+    });
+
   const persistAssistantMessageIfLeaseOwned = (input: {
     lease: ChatStreamLease;
     message: UIMessage;
@@ -666,12 +649,12 @@ export function createAssistantConversationRepository(
     ensureThreadForOwner,
     persistAssistantMessageIfLeaseOwned,
     releaseChatStreamLease,
+    renewChatStreamLease,
     replaceAssistantMessagePartsIfUnchanged,
     selectMessagesByOwner,
     selectThreadByOwner,
     selectThreadsByOwner,
     updateThreadAiTitleOnceForOwner,
-    upsertMessageForOwner,
     tryAcquireChatStreamLease,
   };
 }

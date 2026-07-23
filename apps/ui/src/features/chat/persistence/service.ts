@@ -11,6 +11,7 @@ import {
   persistAssistantMessageIfLeaseOwned,
   type ChatStreamLease as RepositoryChatStreamLease,
   releaseChatStreamLease,
+  renewChatStreamLease,
   replaceAssistantMessagePartsIfUnchanged,
   tryAcquireChatStreamLease,
 } from "./repository";
@@ -41,7 +42,6 @@ function normalizedOwner(
   };
 }
 
-export const appendMessageForOwner = service.appendMessage;
 export const bootstrapAssistantSession = service.bootstrap;
 export const ensureAssistantThreadForOwner = service.ensureThread;
 export const listThreadsForOwner = service.listThreads;
@@ -64,6 +64,12 @@ export function releaseOwnedChatStreamLease(
   lease: RepositoryChatStreamLease
 ): Promise<boolean> {
   return releaseChatStreamLease(lease);
+}
+
+export function renewOwnedChatStreamLease(
+  lease: RepositoryChatStreamLease
+): Promise<RepositoryChatStreamLease | null> {
+  return renewChatStreamLease(lease);
 }
 
 export function persistAssistantResponseIfLeaseOwned(input: {

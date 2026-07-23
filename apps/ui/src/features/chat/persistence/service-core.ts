@@ -19,7 +19,6 @@ type AssistantConversationServiceRepository = Pick<
   | "selectThreadByOwner"
   | "selectThreadsByOwner"
   | "updateThreadAiTitleOnceForOwner"
-  | "upsertMessageForOwner"
 >;
 
 export interface AssistantConversationServiceDependencies {
@@ -66,13 +65,6 @@ export function createAssistantConversationService(
 ) {
   const repository = dependencies.repository;
   return {
-    appendMessage: (
-      chatId: string,
-      message: UIMessage,
-      owner: AssistantConversationOwner
-    ): Promise<boolean> =>
-      repository.upsertMessageForOwner(normalizedOwner(owner), chatId, message),
-
     bootstrap: async (
       ownerRaw: AssistantConversationOwner
     ): Promise<AssistantSessionPayload> => {

@@ -11,7 +11,6 @@ type ServiceRepository = Pick<
   | "selectThreadByOwner"
   | "selectThreadsByOwner"
   | "updateThreadAiTitleOnceForOwner"
-  | "upsertMessageForOwner"
 >;
 
 test("first-message creation uses the verified owner and continuing cannot re-key it", async () => {
@@ -47,7 +46,6 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
     selectThreadsByOwner: () => Promise.resolve([]),
     selectMessagesByOwner: () => Promise.resolve(null),
     updateThreadAiTitleOnceForOwner: () => Promise.resolve(false),
-    upsertMessageForOwner: () => Promise.resolve(false),
   } satisfies ServiceRepository;
   const service = createAssistantConversationService({
     generateChatId: () => "generated-chat",
@@ -89,7 +87,6 @@ test("Free Chat Turns remain a namespace allowance instead of an actor allowance
         },
       ]),
     updateThreadAiTitleOnceForOwner: () => Promise.resolve(false),
-    upsertMessageForOwner: () => Promise.resolve(false),
   } satisfies ServiceRepository;
   const service = createAssistantConversationService({
     generateChatId: () => "generated-chat",
@@ -159,7 +156,6 @@ test("automatic titling cannot read or rename another actor's conversation", asy
       titledOwners.push(owner.workspaceActor);
       return Promise.resolve(true);
     },
-    upsertMessageForOwner: () => Promise.resolve(false),
   } satisfies ServiceRepository;
   const service = createAssistantConversationService({
     generateChatId: () => "generated-chat",

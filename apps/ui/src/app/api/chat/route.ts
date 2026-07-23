@@ -28,6 +28,7 @@ import {
   maybeAutoTitleThread,
   persistAssistantResponseIfLeaseOwned,
   releaseOwnedChatStreamLease,
+  renewOwnedChatStreamLease,
 } from "@/features/chat/persistence/service";
 import {
   type AssistantConversationOwner,
@@ -41,6 +42,10 @@ import {
   normalizeAssistantNamespace,
 } from "@/features/chat/persistence/types";
 import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
+import {
+  type ChatStreamLeaseHeartbeat,
+  startChatStreamLeaseHeartbeat,
+} from "@/features/chat/runtime/chat-stream-lease-heartbeat";
 import { jsonError } from "@/features/chat/runtime/errors";
 import { createInjectToolDurationStreamTransform } from "@/features/chat/runtime/inject-tool-duration-stream";
 import {
@@ -344,13 +349,17 @@ function createChatStreamFinishHandler(input: {
   billing: ChatBillingMode;
   chatId: string;
   history: UIMessage[];
-  lease: ChatStreamLease;
+  heartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease>;
   owner: AssistantConversationOwner;
   projectName?: string;
   titleModel: Parameters<typeof maybeAutoTitleThread>[0]["languageModel"];
   toolDurationMsByCallId: Map<string, number>;
 }): UIMessageStreamOnFinishCallback<UIMessage> {
   return async ({ finishReason, isAborted, responseMessage }) => {
+    const lease = await input.heartbeat.stop();
+    if (lease == null) {
+      return;
+    }
     let leaseReleased = false;
     try {
       const interrupted =
@@ -364,7 +373,7 @@ function createChatStreamFinishHandler(input: {
       }
 
       const persisted = await persistAssistantResponseIfLeaseOwned({
-        lease: input.lease,
+        lease,
         message: attachToolDurationMetrics(
           persistable,
           input.toolDurationMsByCallId
@@ -391,7 +400,7 @@ function createChatStreamFinishHandler(input: {
           );
         }
       }
-      await releaseLeaseQuietly(input.lease);
+      await releaseLeaseQuietly(lease);
       leaseReleased = true;
       await maybeAutoTitleThread({
         abortSignal: AbortSignal.timeout(CHAT_TITLE_TIMEOUT_MS),
@@ -404,7 +413,7 @@ function createChatStreamFinishHandler(input: {
       console.error("[api/chat] persist assistant turn:", error);
     } finally {
       if (!leaseReleased) {
-        await releaseLeaseQuietly(input.lease);
+        await releaseLeaseQuietly(lease);
       }
     }
   };
@@ -454,6 +463,7 @@ async function runChatPipeline(input: {
     input.request;
   const { kubeconfig, owner, requestAbortSignal } = input;
   let ownedLease: ChatStreamLease | null = null;
+  let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
   try {
     const threadReady = await ensureAssistantThreadForOwner(chatId, owner);
@@ -525,9 +535,16 @@ async function runChatPipeline(input: {
     }
 
     const toolDurationMsByCallId = new Map<string, number>();
+    const leaseAbortController = new AbortController();
+    leaseHeartbeat = startChatStreamLeaseHeartbeat({
+      abort: (reason) => leaseAbortController.abort(reason),
+      initialLease: ownedLease,
+      renew: renewOwnedChatStreamLease,
+    });
     const streamAbortSignal = AbortSignal.any([
       requestAbortSignal,
       AbortSignal.timeout(CHAT_STREAM_TIMEOUT_MS),
+      leaseAbortController.signal,
     ]);
 
     const result = streamText({
@@ -551,7 +568,7 @@ async function runChatPipeline(input: {
       "X-Chat-Free-Limit": String(freeTier.limit),
     };
 
-    const streamLease = ownedLease;
+    const streamHeartbeat = leaseHeartbeat;
     const response = result.toUIMessageStreamResponse({
       consumeSseStream: consumeStream,
       originalMessages: history,
@@ -561,7 +578,7 @@ async function runChatPipeline(input: {
         billing,
         chatId,
         history,
-        lease: streamLease,
+        heartbeat: streamHeartbeat,
         owner,
         projectName: assistantContext?.projectName,
         titleModel,
@@ -569,9 +586,14 @@ async function runChatPipeline(input: {
       }),
     });
     ownedLease = null;
+    leaseHeartbeat = null;
     rollbackAssistant = null;
     return response;
   } catch (error) {
+    if (leaseHeartbeat != null) {
+      ownedLease = await leaseHeartbeat.stop();
+      leaseHeartbeat = null;
+    }
     await cleanUpFailedChatPipeline({
       chatId,
       lease: ownedLease,

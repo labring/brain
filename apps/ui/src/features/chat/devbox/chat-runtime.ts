@@ -1,5 +1,6 @@
 import "server-only";
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { Sandbox as BashToolSandbox } from "bash-tool";
 import {
@@ -40,11 +41,26 @@ export interface ChatDevboxRuntimeSummary {
 
 export type ChatDevboxSandbox = BashToolSandbox & {
   getDevboxName: () => Promise<string>;
+  runWithAbortSignal: <T>(
+    signal: AbortSignal | undefined,
+    operation: () => Promise<T>
+  ) => Promise<T>;
   stop: () => Promise<void>;
 };
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export function normalizeKubeconfig(kubeconfig: string): string {
@@ -90,13 +106,15 @@ function isDevboxSecretPendingError(error: unknown): error is DevboxApiError {
 
 async function getDevboxWithSecretRetry(
   authNamespace: string,
-  name: string
+  name: string,
+  signal?: AbortSignal
 ): Promise<DevboxInfo> {
   let attempt = 0;
 
   while (true) {
     try {
-      return (await getDevbox(authNamespace, name)).data;
+      signal?.throwIfAborted();
+      return (await getDevbox(authNamespace, name, signal)).data;
     } catch (error) {
       if (
         !isDevboxSecretPendingError(error) ||
@@ -105,23 +123,25 @@ async function getDevboxWithSecretRetry(
         throw error;
       }
       attempt += 1;
-      await sleep(DEVBOX_SECRET_READY_RETRY_DELAY_MS);
+      await sleep(DEVBOX_SECRET_READY_RETRY_DELAY_MS, signal);
     }
   }
 }
 
 async function waitForRunningDevbox(
   authNamespace: string,
-  name: string
+  name: string,
+  signal?: AbortSignal
 ): Promise<DevboxInfo> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < DEVBOX_RUNTIME_READY_TIMEOUT_MS) {
-    const info = await getDevboxWithSecretRetry(authNamespace, name);
+    signal?.throwIfAborted();
+    const info = await getDevboxWithSecretRetry(authNamespace, name, signal);
     if (info.state.phase === "Running") {
       return info;
     }
-    await sleep(DEVBOX_RUNTIME_READY_POLL_MS);
+    await sleep(DEVBOX_RUNTIME_READY_POLL_MS, signal);
   }
 
   throw new Error("Timed out waiting for Devbox runtime");
@@ -129,29 +149,38 @@ async function waitForRunningDevbox(
 
 async function ensureRunningDevbox(
   authNamespace: string,
-  name: string
+  name: string,
+  signal?: AbortSignal
 ): Promise<DevboxInfo> {
-  const info = await getDevboxWithSecretRetry(authNamespace, name);
+  const info = await getDevboxWithSecretRetry(authNamespace, name, signal);
   if (info.state.phase === "Running") {
     return info;
   }
 
   try {
-    await resumeDevbox(authNamespace, name);
+    signal?.throwIfAborted();
+    await resumeDevbox(authNamespace, name, signal);
   } catch (error) {
     if (!(error instanceof DevboxApiError && error.status === 409)) {
       throw error;
     }
   }
 
-  return await waitForRunningDevbox(authNamespace, name);
+  return await waitForRunningDevbox(authNamespace, name, signal);
 }
 
 async function refreshLease(
   authNamespace: string,
-  name: string
+  name: string,
+  signal?: AbortSignal
 ): Promise<void> {
-  await refreshDevboxPause(authNamespace, name, { pauseAt: getPauseAt() });
+  signal?.throwIfAborted();
+  await refreshDevboxPause(
+    authNamespace,
+    name,
+    { pauseAt: getPauseAt() },
+    signal
+  );
 }
 
 function shellQuote(value: string): string {
@@ -177,19 +206,27 @@ async function runDevboxCommand(
   authNamespace: string,
   name: string,
   command: string,
-  timeoutSeconds = DEVBOX_COMMAND_TIMEOUT_SECONDS
+  timeoutSeconds = DEVBOX_COMMAND_TIMEOUT_SECONDS,
+  signal?: AbortSignal
 ) {
-  const response = await execDevbox(authNamespace, name, {
-    command: ["bash", "-lc", command],
-    timeoutSeconds,
-  });
+  signal?.throwIfAborted();
+  const response = await execDevbox(
+    authNamespace,
+    name,
+    {
+      command: ["bash", "-lc", command],
+      timeoutSeconds,
+    },
+    signal
+  );
   return response.data;
 }
 
 async function assertDevboxKubectlReady(
   authNamespace: string,
   name: string,
-  namespace: string
+  namespace: string,
+  signal?: AbortSignal
 ): Promise<void> {
   const result = await runDevboxCommand(
     authNamespace,
@@ -199,7 +236,8 @@ async function assertDevboxKubectlReady(
       "command -v kubectl >/dev/null",
       `kubectl auth can-i get pods -n ${shellQuote(namespace)} >/dev/null`,
     ].join("\n"),
-    DEVBOX_WARMUP_TIMEOUT_SECONDS
+    DEVBOX_WARMUP_TIMEOUT_SECONDS,
+    signal
   );
 
   if (result.exitCode !== 0) {
@@ -215,55 +253,69 @@ async function assertDevboxKubectlReady(
 }
 
 async function ensureChatDevbox(
-  options: ChatDevboxRuntimeOptions
+  options: ChatDevboxRuntimeOptions,
+  signal?: AbortSignal
 ): Promise<{ name: string; skippedExisting: boolean }> {
+  signal?.throwIfAborted();
   const kubeconfig = normalizeKubeconfig(options.kubeconfig);
   const authNamespace = options.namespace;
   const runtimeHash = hashRuntimeIdentity(kubeconfig, options.namespace);
   const name = runtimeName(runtimeHash);
   const upstreamID = runtimeUpstreamId(runtimeHash);
 
-  const existing = (await listDevboxes(authNamespace, upstreamID)).data
+  const existing = (await listDevboxes(authNamespace, upstreamID, signal)).data
     .items[0];
   if (existing != null) {
-    await ensureRunningDevbox(authNamespace, existing.name);
-    await refreshLease(authNamespace, existing.name);
+    await ensureRunningDevbox(authNamespace, existing.name, signal);
+    await refreshLease(authNamespace, existing.name, signal);
     await assertDevboxKubectlReady(
       authNamespace,
       existing.name,
-      options.namespace
+      options.namespace,
+      signal
     );
     return { name: existing.name, skippedExisting: true };
   }
 
-  await createDevbox(authNamespace, {
-    archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
-    env: {
-      SEALAI_ASSISTANT_NAMESPACE: options.namespace,
+  signal?.throwIfAborted();
+  await createDevbox(
+    authNamespace,
+    {
+      archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
+      env: {
+        SEALAI_ASSISTANT_NAMESPACE: options.namespace,
+      },
+      image: getDevboxDefaultImage(),
+      kubeAccess: {
+        enabled: true,
+        roleTemplate: "edit",
+      },
+      labels: [
+        { key: "app.kubernetes.io/managed-by", value: "sealai" },
+        { key: "app.kubernetes.io/component", value: "assistant-runtime" },
+      ],
+      name,
+      pauseAt: getPauseAt(),
+      upstreamID,
     },
-    image: getDevboxDefaultImage(),
-    kubeAccess: {
-      enabled: true,
-      roleTemplate: "edit",
-    },
-    labels: [
-      { key: "app.kubernetes.io/managed-by", value: "sealai" },
-      { key: "app.kubernetes.io/component", value: "assistant-runtime" },
-    ],
-    name,
-    pauseAt: getPauseAt(),
-    upstreamID,
-  });
+    signal
+  );
 
-  await waitForRunningDevbox(authNamespace, name);
-  await assertDevboxKubectlReady(authNamespace, name, options.namespace);
+  await waitForRunningDevbox(authNamespace, name, signal);
+  await assertDevboxKubectlReady(
+    authNamespace,
+    name,
+    options.namespace,
+    signal
+  );
   return { name, skippedExisting: false };
 }
 
 export async function bootstrapChatDevboxIfNeeded(
-  options: ChatDevboxRuntimeOptions
+  options: ChatDevboxRuntimeOptions,
+  signal?: AbortSignal
 ): Promise<ChatDevboxRuntimeSummary> {
-  const result = await ensureChatDevbox(options);
+  const result = await ensureChatDevbox(options, signal);
   return {
     devboxName: result.name,
     skippedExisting: result.skippedExisting,
@@ -273,19 +325,40 @@ export async function bootstrapChatDevboxIfNeeded(
 export function createChatDevboxSandbox(
   options: ChatDevboxRuntimeOptions
 ): ChatDevboxSandbox {
+  const abortSignalStorage = new AsyncLocalStorage<AbortSignal | undefined>();
   let runtimePromise:
     | Promise<{ name: string; skippedExisting: boolean }>
     | undefined;
 
-  const getRuntime = () => {
-    runtimePromise ??= ensureChatDevbox(options);
-    return runtimePromise;
+  const getRuntime = async (signal?: AbortSignal) => {
+    if (runtimePromise === undefined) {
+      runtimePromise = ensureChatDevbox(options, signal);
+    }
+    const pendingRuntime = runtimePromise;
+    try {
+      return await pendingRuntime;
+    } catch (error) {
+      if (runtimePromise === pendingRuntime) {
+        runtimePromise = undefined;
+      }
+      throw error;
+    }
   };
+
+  const getInvocationSignal = () => abortSignalStorage.getStore();
 
   return {
     async executeCommand(command) {
-      const { name } = await getRuntime();
-      const result = await runDevboxCommand(options.namespace, name, command);
+      const signal = getInvocationSignal();
+      signal?.throwIfAborted();
+      const { name } = await getRuntime(signal);
+      const result = await runDevboxCommand(
+        options.namespace,
+        name,
+        command,
+        DEVBOX_COMMAND_TIMEOUT_SECONDS,
+        signal
+      );
       return {
         exitCode: result.exitCode,
         stderr: result.stderr,
@@ -293,16 +366,21 @@ export function createChatDevboxSandbox(
       };
     },
     async getDevboxName() {
-      const { name } = await getRuntime();
+      const signal = getInvocationSignal();
+      signal?.throwIfAborted();
+      const { name } = await getRuntime(signal);
       return name;
     },
     async readFile(path) {
-      const { name } = await getRuntime();
+      const signal = getInvocationSignal();
+      signal?.throwIfAborted();
+      const { name } = await getRuntime(signal);
       const result = await runDevboxCommand(
         options.namespace,
         name,
         readFileCommand(path),
-        DEVBOX_READ_TIMEOUT_SECONDS
+        DEVBOX_READ_TIMEOUT_SECONDS,
+        signal
       );
       if (result.exitCode !== 0) {
         throw new Error(
@@ -311,13 +389,19 @@ export function createChatDevboxSandbox(
       }
       return result.stdout;
     },
+    async runWithAbortSignal(signal, operation) {
+      return await abortSignalStorage.run(signal, operation);
+    },
     async stop() {
       await Promise.resolve();
       runtimePromise = undefined;
     },
     async writeFiles(files) {
-      const { name } = await getRuntime();
+      const signal = getInvocationSignal();
+      signal?.throwIfAborted();
+      const { name } = await getRuntime(signal);
       for (const file of files) {
+        signal?.throwIfAborted();
         if (typeof file.content !== "string") {
           throw new Error("Devbox writeFiles only supports text content.");
         }
@@ -325,7 +409,8 @@ export function createChatDevboxSandbox(
           options.namespace,
           name,
           writeFileCommand(file.path, file.content),
-          DEVBOX_WRITE_TIMEOUT_SECONDS
+          DEVBOX_WRITE_TIMEOUT_SECONDS,
+          signal
         );
         if (result.exitCode !== 0) {
           throw new Error(
