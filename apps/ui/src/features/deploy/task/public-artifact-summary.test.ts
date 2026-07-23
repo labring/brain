@@ -136,22 +136,22 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
     deploymentPlan: {
       inputs: [
         {
-          key: "api_key",
+          key: "configuration-1",
           label: "Configuration value",
           required: true,
           sensitive: true,
           type: "secret",
         },
         {
-          key: "port",
+          key: "configuration-2",
           label: "Configuration value",
           required: false,
           type: "number",
         },
       ],
       kind: "sealos-template",
-      missingInputKeys: ["api_key", "port"],
-      templateName: "demo",
+      missingInputKeys: ["configuration-1", "configuration-2"],
+      templateName: "deployment",
     },
     resources: [
       {
@@ -166,7 +166,7 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
   assert.equal("publicProjectionVersion" in summary, false);
 });
 
-test("trusted public AI blocking inputs remove defaults and unknown fields", () => {
+test("stamped public AI blocking inputs keep generated metadata fail-closed", () => {
   const legacySecret = "legacy-blocking-input-secret";
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
@@ -193,14 +193,12 @@ test("trusted public AI blocking inputs remove defaults and unknown fields", () 
 
   assert.deepEqual(blockingInputs, [
     {
-      description: "API key",
-      id: "API_KEY",
-      key: "API_KEY",
-      label: "API key",
+      id: "configuration-1",
+      key: "configuration-1",
+      label: "Configuration value",
       required: true,
       sensitive: true,
       type: "secret",
-      valueType: "secret",
     },
   ]);
   assert.equal(JSON.stringify(blockingInputs).includes(legacySecret), false);
@@ -281,7 +279,7 @@ test("legacy public AI inputs use opaque aliases", () => {
   );
 });
 
-test("trusted public AI blockers alias identifiers outside the public grammar", () => {
+test("stamped public AI blockers always use opaque identifiers", () => {
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
       {
@@ -302,7 +300,7 @@ test("trusted public AI blockers alias identifiers outside the public grammar", 
     {
       id: "configuration-1",
       key: "configuration-1",
-      label: "API key",
+      label: "Configuration value",
       required: true,
       sensitive: true,
       type: "secret",
@@ -311,7 +309,7 @@ test("trusted public AI blockers alias identifiers outside the public grammar", 
   assert.equal(JSON.stringify(blockingInputs).includes("_API_KEY"), false);
 });
 
-test("AI blocker aliases never collide with trusted canonical keys", () => {
+test("AI blocker aliases do not depend on generated canonical keys", () => {
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
       {
@@ -339,7 +337,80 @@ test("AI blocker aliases never collide with trusted canonical keys", () => {
 
   assert.deepEqual(
     blockingInputs.map((input) => input.key),
-    ["configuration-2", "configuration-2-2"]
+    ["configuration-1", "configuration-2"]
+  );
+});
+
+test("stamped AI plan and blocker metadata cannot publish unknown secrets", () => {
+  const unknownSecret = "repo-secret-marker";
+  const summary = publicDeployTaskArtifactSummary(
+    {
+      deploymentPlan: {
+        inputs: [
+          {
+            description: unknownSecret,
+            key: unknownSecret,
+            label: unknownSecret,
+            options: [unknownSecret],
+            required: true,
+            type: unknownSecret,
+          },
+        ],
+        kind: "sealos-template",
+        missingInputKeys: [unknownSecret],
+        templateName: unknownSecret,
+      },
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
+    { runner: { kind: "ai", runtimeProvider: "devbox" } }
+  );
+  const blockingInputs = publicDeployTaskBlockingInputs(
+    [
+      {
+        description: unknownSecret,
+        id: unknownSecret,
+        key: unknownSecret,
+        label: unknownSecret,
+        options: [unknownSecret],
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        type: "text",
+        valueType: unknownSecret,
+      },
+    ],
+    { runner: { kind: "ai", runtimeProvider: "devbox" } }
+  );
+
+  assert.deepEqual(summary, {
+    deploymentPlan: {
+      inputs: [
+        {
+          key: "configuration-1",
+          label: "Configuration value",
+          required: true,
+          sensitive: true,
+          type: "secret",
+        },
+      ],
+      kind: "sealos-template",
+      missingInputKeys: ["configuration-1"],
+      templateName: "deployment",
+    },
+  });
+  assert.deepEqual(blockingInputs, [
+    {
+      id: "configuration-1",
+      key: "configuration-1",
+      label: "Configuration value",
+      required: true,
+      sensitive: true,
+      type: "secret",
+    },
+  ]);
+  assert.equal(
+    JSON.stringify({ blockingInputs, summary }).includes(unknownSecret),
+    false
   );
 });
 
@@ -518,6 +589,51 @@ test("public AI timeline rebuilds legacy failure events without raw text", () =>
     "Deployment progress updated."
   );
   assert.equal(JSON.stringify(projected).includes(legacySecret), false);
+});
+
+test("public AI timeline rebuilds runner failure events from task failure details", () => {
+  const timeline = {
+    publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+    revision: 7,
+    status: "failed",
+    steps: [
+      {
+        events: [
+          {
+            createdAt: "2026-07-23T00:00:00.000Z",
+            dedupeKey: "deployment_task.failed",
+            id: "runner-failure",
+            message: "untrusted failure text",
+            reason: "DeploymentTaskFailed",
+            severity: "error",
+            source: "runner",
+          },
+        ],
+        id: "analyze-source",
+        label: "Analyze source",
+        order: 1,
+        status: "failed",
+      },
+    ],
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:00.000Z",
+  } satisfies DeploymentTaskTimelineSnapshot;
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    failureReason: "gateway-timeout",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    taskId: "task-ai",
+  });
+
+  assert.deepEqual(projected?.steps[0]?.events[0], {
+    createdAt: "2026-07-23T00:00:00.000Z",
+    dedupeKey: "deployment-task-terminal-failure",
+    id: "analyze-source-event-0",
+    message: "Repository analysis timed out. Redeploy to try again.",
+    reason: "DeploymentTaskFailed",
+    severity: "error",
+    source: "runner",
+  });
 });
 
 test("public timeline leaves non-AI snapshots unchanged", () => {

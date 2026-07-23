@@ -12,8 +12,10 @@ import type {
 } from "./schema";
 import {
   createDeploymentTaskTimelineForRunner,
+  DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentTaskTimelineSnapshot,
   deploymentTimelineFailureStepId,
+  isDeploymentTaskTerminalFailureEventKey,
 } from "./timeline";
 
 export interface DeploymentTaskTimelineTaskRecord {
@@ -35,10 +37,15 @@ function overlayTerminalFailure(
   timeline: DeploymentTaskTimelineSnapshot,
   task: DeploymentTaskTimelineTaskRecord
 ): DeploymentTaskTimelineSnapshot {
+  if (task.status !== "failed" || task.phase == null) {
+    return timeline;
+  }
   if (
-    task.status !== "failed" ||
-    task.phase == null ||
-    timeline.steps.some((step) => step.status === "failed")
+    timeline.steps.some((step) =>
+      step.events.some((event) =>
+        isDeploymentTaskTerminalFailureEventKey(event.dedupeKey)
+      )
+    )
   ) {
     return timeline;
   }
@@ -61,22 +68,18 @@ function overlayTerminalFailure(
       step.id === stepId
         ? {
             ...step,
-            events: step.events.some(
-              (event) => event.dedupeKey === "deployment-task-terminal-failure"
-            )
-              ? step.events
-              : [
-                  ...step.events,
-                  {
-                    createdAt: updatedAt,
-                    dedupeKey: "deployment-task-terminal-failure",
-                    id: "deployment-task-terminal-failure",
-                    message,
-                    reason: "DeploymentTaskFailed",
-                    severity: "error",
-                    source: "runner",
-                  },
-                ],
+            events: [
+              ...step.events,
+              {
+                createdAt: updatedAt,
+                dedupeKey: DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
+                id: DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
+                message,
+                reason: "DeploymentTaskFailed",
+                severity: "error",
+                source: "runner",
+              },
+            ],
             status: "failed" as const,
           }
         : step

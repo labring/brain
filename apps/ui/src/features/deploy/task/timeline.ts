@@ -54,6 +54,18 @@ export interface DeploymentTimelineEvent {
   source?: DeploymentTimelineEventSource;
 }
 
+export const DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY =
+  "deployment-task-terminal-failure";
+
+export function isDeploymentTaskTerminalFailureEventKey(
+  value: unknown
+): boolean {
+  return (
+    value === DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY ||
+    value === "deployment_task.failed"
+  );
+}
+
 export interface DeploymentResultResourceCard {
   events: DeploymentTimelineEvent[];
   id: string;

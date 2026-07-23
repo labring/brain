@@ -45,6 +45,7 @@ export type DeploymentTaskCreatedFrom = "api" | "automation" | "chat" | "ui";
 
 export const CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION = 1;
 export const CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION = 1;
+/** @deprecated AI-generated blocker metadata never grants projection trust. */
 export const CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION = 1;
 export const CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION = 1;
 
@@ -139,7 +140,7 @@ export interface DeployTaskBlockingInput {
   key?: string;
   label: string;
   options?: string[];
-  /** Independent server stamp proving this AI blocker was scrubbed. */
+  /** @deprecated Retained only for rows written before fail-closed projection. */
   publicProjectionVersion?: number;
   required: boolean;
   sensitive?: boolean;

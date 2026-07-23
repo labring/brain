@@ -1042,7 +1042,7 @@ test("partial required input submission stays blocked without launching", async 
       return Promise.resolve();
     },
     taskId: blocked.id,
-    values: { PORT: "8080" },
+    values: { "configuration-1": "8080" },
   });
 
   assert.equal(result.kind, "invalid-input");

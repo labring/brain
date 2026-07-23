@@ -108,7 +108,6 @@ import {
 } from "./runtime-config";
 import {
   CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
-  CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskDeploymentPlan,
   type DeployTaskArtifactSummary,
   type DeployTaskBlockingInput,
@@ -137,6 +136,7 @@ import {
   appendStepEvent,
   applyDeploymentOutputProgressToTimeline,
   applyResultResourceTimeout,
+  DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentResultResourceCard,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
@@ -614,6 +614,7 @@ async function markTimelineStepWithEvent(input: {
   status: Parameters<typeof markTimelineStep>[1]["status"];
   stepId: string;
   taskId: string;
+  timelineDedupeKey?: string;
   timelineStatus?: DeployTaskRow["status"];
 }) {
   const now = new Date().toISOString();
@@ -641,7 +642,7 @@ async function markTimelineStepWithEvent(input: {
         ),
         {
           event: timelineEvent({
-            dedupeKey: input.eventKind,
+            dedupeKey: input.timelineDedupeKey ?? input.eventKind,
             message: input.eventMessage,
             reason: input.eventReason,
             severity: input.eventSeverity,
@@ -681,6 +682,7 @@ async function markDeployTaskFailureTimeline(input: {
     status: "failed",
     stepId,
     taskId: input.task.id,
+    timelineDedupeKey: DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
     timelineStatus: "failed",
   });
   return true;
@@ -2161,13 +2163,7 @@ async function blockForDeploymentInputs(input: {
   summary: DeployTaskArtifactSummary;
   task: DeployTaskRow;
 }) {
-  const blockingInputs = blockingInputsFromDeploymentPlan(
-    input.deploymentPlan
-  ).map((blockingInput) => ({
-    ...blockingInput,
-    publicProjectionVersion:
-      CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
-  }));
+  const blockingInputs = blockingInputsFromDeploymentPlan(input.deploymentPlan);
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.input_required",
     eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,

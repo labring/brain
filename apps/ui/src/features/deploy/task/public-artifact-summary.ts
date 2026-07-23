@@ -4,7 +4,6 @@ import {
 } from "./failure-summary";
 import {
   CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
-  CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
   CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskRunner,
   type DeployTaskArtifactSummary,
@@ -18,15 +17,17 @@ import {
   legacyAiInputAlias,
   withoutSensitiveArgs,
 } from "./sensitive-inputs";
-import type {
-  DeploymentResultResourceCard,
-  DeploymentResultResourceCardStatus,
-  DeploymentResultResourceRef,
-  DeploymentTaskTimelineSnapshot,
-  DeploymentTimelineEvent,
-  DeploymentTimelineEventSeverity,
-  DeploymentTimelineEventSource,
-  DeploymentTimelineStepStatus,
+import {
+  DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
+  type DeploymentResultResourceCard,
+  type DeploymentResultResourceCardStatus,
+  type DeploymentResultResourceRef,
+  type DeploymentTaskTimelineSnapshot,
+  type DeploymentTimelineEvent,
+  type DeploymentTimelineEventSeverity,
+  type DeploymentTimelineEventSource,
+  type DeploymentTimelineStepStatus,
+  isDeploymentTaskTerminalFailureEventKey,
 } from "./timeline";
 
 const AI_ENGINE_RESOLUTION_REASONS = new Set([
@@ -175,17 +176,10 @@ function publicDeploymentPlan(
   };
 }
 
-function publicAiDeploymentPlanInput(
-  value: unknown,
-  trusted: boolean,
-  index: number
-) {
+function publicAiDeploymentPlanInput(value: unknown, index: number) {
   const input = recordValue(value);
   const sourceKey = typeof input?.key === "string" ? input.key : null;
-  const key = trusted
-    ? safeResourceIdentifier(sourceKey)
-    : legacyAiInputAlias(index);
-  if (input == null || sourceKey == null || key == null) {
+  if (input == null || sourceKey == null) {
     return null;
   }
 
@@ -194,42 +188,31 @@ function publicAiDeploymentPlanInput(
     sensitive: input.sensitive === true,
     type: typeof input.type === "string" ? input.type : undefined,
   });
-  const label =
-    trusted && typeof input.label === "string"
-      ? input.label
-      : "Configuration value";
-  let publicType: string | undefined;
-  if (trusted) {
-    publicType = typeof input.type === "string" ? input.type : undefined;
-  } else {
-    publicType = sensitive ? "secret" : "string";
+  const key = legacyAiInputAlias(index);
+  const sourceType =
+    typeof input.type === "string" ? input.type.trim().toLowerCase() : "";
+  let publicType = "string";
+  if (sensitive) {
+    publicType = "secret";
+  } else if (sourceType === "boolean" || sourceType === "number") {
+    publicType = sourceType;
   }
   return {
     input: {
       key,
-      label,
-      ...(trusted && typeof input.description === "string"
-        ? { description: input.description }
-        : {}),
-      ...(trusted &&
-      !sensitive &&
-      Array.isArray(input.options) &&
-      input.options.every((option) => typeof option === "string")
-        ? { options: input.options }
-        : {}),
+      label: "Configuration value",
       ...(typeof input.required === "boolean"
         ? { required: input.required }
         : {}),
       ...(sensitive ? { sensitive: true } : {}),
-      ...(publicType == null ? {} : { type: publicType }),
+      type: publicType,
     },
     sourceKey,
   };
 }
 
 function publicAiDeploymentPlan(
-  plan: DeployTaskArtifactSummary["deploymentPlan"],
-  trusted: boolean
+  plan: DeployTaskArtifactSummary["deploymentPlan"]
 ): DeployTaskArtifactSummary["deploymentPlan"] {
   if (
     plan == null ||
@@ -241,7 +224,7 @@ function publicAiDeploymentPlan(
   }
 
   const projectedInputs = plan.inputs.flatMap((input, index) => {
-    const publicInput = publicAiDeploymentPlanInput(input, trusted, index);
+    const publicInput = publicAiDeploymentPlanInput(input, index);
     return publicInput == null ? [] : [publicInput];
   });
   const inputs = projectedInputs.map((input) => input.input);
@@ -261,7 +244,7 @@ function publicAiDeploymentPlan(
   return {
     kind: "sealos-template",
     inputs,
-    templateName: trusted ? plan.templateName : "deployment",
+    templateName: "deployment",
     ...(missingInputKeys.length === 0 ? {} : { missingInputKeys }),
   };
 }
@@ -282,19 +265,6 @@ function publicAiBlockingInputType(
     : "text";
 }
 
-function publicAiBlockingInputOptions(input: {
-  options: unknown;
-  sensitive: boolean;
-  trusted: boolean;
-}): string[] | undefined {
-  return input.trusted &&
-    !input.sensitive &&
-    Array.isArray(input.options) &&
-    input.options.every((option) => typeof option === "string")
-    ? input.options
-    : undefined;
-}
-
 function publicAiBlockingInput(
   value: unknown,
   publicKey: string
@@ -306,71 +276,32 @@ function publicAiBlockingInput(
   if (input == null || canonicalKey == null) {
     return null;
   }
-  const trusted =
-    input.publicProjectionVersion ===
-    CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION;
   const sourceType = publicAiBlockingInputType(input.type);
   const sensitive = isSensitiveDeploymentInput({
     key: canonicalKey,
     sensitive: input.sensitive === true,
     type: sourceType,
   });
-  const options = publicAiBlockingInputOptions({
-    options: input.options,
-    sensitive,
-    trusted,
-  });
+  const valueType =
+    typeof input.valueType === "string" &&
+    ["boolean", "number"].includes(input.valueType.trim().toLowerCase())
+      ? input.valueType.trim().toLowerCase()
+      : null;
   return {
     id: publicKey,
     key: publicKey,
-    label:
-      trusted && typeof input.label === "string"
-        ? input.label
-        : "Configuration value",
+    label: "Configuration value",
     required: typeof input.required === "boolean" ? input.required : true,
     type: sensitive ? "secret" : sourceType,
-    ...(trusted && typeof input.description === "string"
-      ? { description: input.description }
-      : {}),
-    ...(options == null ? {} : { options }),
     ...(sensitive ? { sensitive: true } : {}),
-    ...(trusted && typeof input.valueType === "string"
-      ? { valueType: input.valueType }
-      : {}),
+    ...(sensitive || valueType == null ? {} : { valueType }),
   };
 }
 
 function publicAiBlockingInputKeys(
   blockingInputs: DeployTaskBlockingInput[]
 ): string[] {
-  const preferredKeys = blockingInputs.map((input) => {
-    const canonicalKey = input.key ?? input.id;
-    return input.publicProjectionVersion ===
-      CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION
-      ? safeResourceIdentifier(canonicalKey)
-      : null;
-  });
-  const reservedKeys = new Set(
-    preferredKeys.filter((key): key is string => key != null)
-  );
-  const usedKeys = new Set<string>();
-
-  return preferredKeys.map((preferredKey, index) => {
-    if (preferredKey != null && !usedKeys.has(preferredKey)) {
-      usedKeys.add(preferredKey);
-      return preferredKey;
-    }
-
-    const baseAlias = legacyAiInputAlias(index);
-    let alias = baseAlias;
-    let suffix = 2;
-    while (reservedKeys.has(alias) || usedKeys.has(alias)) {
-      alias = `${baseAlias}-${suffix}`;
-      suffix += 1;
-    }
-    usedKeys.add(alias);
-    return alias;
-  });
+  return blockingInputs.map((_, index) => legacyAiInputAlias(index));
 }
 
 export function publicDeployTaskBlockingInputs(
@@ -426,10 +357,7 @@ function publicAiDeployTaskArtifactSummary(
   const trusted =
     summary.publicProjectionVersion ===
     CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION;
-  const deploymentPlan = publicAiDeploymentPlan(
-    summary.deploymentPlan,
-    trusted
-  );
+  const deploymentPlan = publicAiDeploymentPlan(summary.deploymentPlan);
   const resources = publicAiResources(summary.resources, trusted);
   return {
     ...(trusted &&
@@ -496,14 +424,15 @@ function publicAiTimelineEvent(input: {
     (kind) =>
       event.dedupeKey === kind || event.dedupeKey?.startsWith(`${kind}:`)
   );
-  const isTerminalFailure =
-    event.dedupeKey === "deployment-task-terminal-failure";
+  const isTerminalFailure = isDeploymentTaskTerminalFailureEventKey(
+    event.dedupeKey
+  );
   let message = "Deployment progress updated.";
   let publicDedupeKey: string | undefined;
   let reason: string | undefined;
   if (isTerminalFailure) {
     message = deploymentFailureMessage(input.failureReason);
-    publicDedupeKey = "deployment-task-terminal-failure";
+    publicDedupeKey = DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY;
     reason = "DeploymentTaskFailed";
   } else if (eventKind != null) {
     message = AI_PUBLIC_EVENT_MESSAGES[eventKind];

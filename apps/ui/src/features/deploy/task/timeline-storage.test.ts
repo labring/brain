@@ -142,6 +142,86 @@ test("deployment task timeline storage overlays engine-resolved failures without
   );
 });
 
+test("deployment task timeline storage adds a terminal event to an already failed step", () => {
+  const timeline = deploymentTaskTimelineFromTaskRecord({
+    failureDetails: {
+      failureMessage: "untrusted legacy copy",
+      reason: "gateway-timeout",
+    },
+    id: "task-timeout",
+    phase: "plan",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "failed",
+    timelineSnapshot: {
+      revision: 9,
+      status: "failed",
+      steps: [
+        {
+          events: [],
+          id: "analyze-source",
+          label: "Analyze source",
+          order: 1,
+          status: "failed",
+        },
+      ],
+      taskId: "task-timeout",
+      updatedAt: "2026-06-17T10:00:05.000Z",
+    },
+    updatedAt: NOW,
+  });
+
+  assert.equal(timeline.revision, 9);
+  assert.equal(
+    timeline.steps[0]?.events[0]?.dedupeKey,
+    "deployment-task-terminal-failure"
+  );
+  assert.equal(
+    timeline.steps[0]?.events[0]?.message,
+    "Repository analysis timed out. Redeploy to try again."
+  );
+});
+
+test("deployment task timeline storage does not duplicate terminal events", () => {
+  for (const dedupeKey of [
+    "deployment-task-terminal-failure",
+    "deployment_task.failed",
+  ]) {
+    const timeline = deploymentTaskTimelineFromTaskRecord({
+      failureDetails: { reason: "gateway-timeout" },
+      id: "task-timeout",
+      phase: "plan",
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      status: "failed",
+      timelineSnapshot: {
+        revision: 9,
+        status: "failed",
+        steps: [
+          {
+            events: [
+              {
+                createdAt: "2026-06-17T10:00:05.000Z",
+                dedupeKey,
+                id: "existing-failure",
+                message: "existing failure",
+              },
+            ],
+            id: "analyze-source",
+            label: "Analyze source",
+            order: 1,
+            status: "failed",
+          },
+        ],
+        taskId: "task-timeout",
+        updatedAt: "2026-06-17T10:00:05.000Z",
+      },
+      updatedAt: NOW,
+    });
+
+    assert.equal(timeline.steps[0]?.events.length, 1);
+    assert.equal(timeline.steps[0]?.events[0]?.dedupeKey, dedupeKey);
+  }
+});
+
 test("AI timeline persistence strips legacy events and cards before stamping", () => {
   const timeline = persistableDeploymentTaskTimeline({
     task: {
