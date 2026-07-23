@@ -1,13 +1,7 @@
 "use client";
 
-import {
-  type UIEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useHydrated } from "@workspace/ui/hooks/use-hydrated";
+import { type UIEvent, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   List,
   type ListImperativeAPI,
@@ -198,10 +192,7 @@ function VirtualizedList({
   isLive: boolean;
   onUserScrollAway: () => void;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useHydrated();
 
   if (!mounted) {
     return <div aria-busy="true" className="h-full min-h-0 w-full" />;

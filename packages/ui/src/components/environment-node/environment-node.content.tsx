@@ -32,8 +32,8 @@ import type {
   EnvironmentNodeQuickActionKey,
 } from "./environment-node.types";
 import {
+  EnvironmentRuntimeIconGlyph,
   type EnvironmentRuntimeTone,
-  getEnvironmentRuntimeIcon,
   getEnvironmentRuntimeTone,
 } from "./environment-runtime-icons";
 
@@ -131,7 +131,6 @@ export function EnvironmentNodeHeaderContent({
   const {
     state: { states },
   } = useEnvironmentNode();
-  const Icon = getEnvironmentRuntimeIcon(states.runtimeKey);
   const runtimeTone = getEnvironmentRuntimeTone(states.runtimeKey);
   const subtitle = formatEnvironmentSubtitle(states);
 
@@ -144,7 +143,12 @@ export function EnvironmentNodeHeaderContent({
             getRuntimeToneClassName(runtimeTone)
           )}
         >
-          <Icon aria-hidden className="size-4" strokeWidth={2} />
+          <EnvironmentRuntimeIconGlyph
+            aria-hidden
+            className="size-4"
+            runtimeKey={states.runtimeKey}
+            strokeWidth={2}
+          />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span

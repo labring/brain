@@ -96,10 +96,13 @@ function composeStopPropagationHandler<Event extends SyntheticEvent>(
   };
 }
 
-function renderCopyFeedbackChildren(
-  children: CanvasNodeCopyFeedbackScopeChildren | undefined,
-  value: CanvasNodeCopyFeedbackValue
-) {
+function CanvasNodeCopyFeedbackChildren({
+  children,
+}: {
+  children?: CanvasNodeCopyFeedbackScopeChildren;
+}) {
+  const value = useCanvasNodeCopyFeedback();
+
   if (typeof children === "function") {
     return children(value);
   }
@@ -169,7 +172,9 @@ export function CanvasNodeCopyFeedbackScope({
 
   return (
     <CanvasNodeCopyFeedbackContext value={value}>
-      {renderCopyFeedbackChildren(children, value)}
+      <CanvasNodeCopyFeedbackChildren>
+        {children}
+      </CanvasNodeCopyFeedbackChildren>
     </CanvasNodeCopyFeedbackContext>
   );
 }

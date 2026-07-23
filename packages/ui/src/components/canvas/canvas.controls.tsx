@@ -225,6 +225,7 @@ export function CanvasControls({
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const { interactionMode, meta, rootRef, setInteractionMode } = useCanvas();
   const chrome = useCanvasNavigationChromePresence();
+  const revealChrome = chrome.reveal;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -245,7 +246,7 @@ export function CanvasControls({
       }
 
       event.preventDefault();
-      chrome.reveal();
+      revealChrome();
       if (shortcut === "pointer" || shortcut === "hand") {
         setInteractionMode(shortcut);
         return;
@@ -271,7 +272,7 @@ export function CanvasControls({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [chrome.reveal, fitView, rootRef, setInteractionMode, zoomIn, zoomOut]);
+  }, [revealChrome, fitView, rootRef, setInteractionMode, zoomIn, zoomOut]);
 
   const modeButton = (mode: CanvasInteractionMode, label: string) => ({
     active: interactionMode === mode,
@@ -368,9 +369,14 @@ const CANVAS_MINIMAP_EXIT_MS = 250;
 function useCanvasMiniMapContentsMounted(hidden: boolean) {
   const [mounted, setMounted] = useState(!hidden);
 
+  // Remount on reveal during render; the effect only schedules the delayed
+  // unmount that lets the exit fade finish.
+  if (!(hidden || mounted)) {
+    setMounted(true);
+  }
+
   useEffect(() => {
     if (!hidden) {
-      setMounted(true);
       return;
     }
     const timeout = window.setTimeout(() => {

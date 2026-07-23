@@ -91,11 +91,6 @@ export function CanvasNodeFrame({
     setResolvedHoverIntent(true);
   }, [clearHoverIntentTimer, dragging, setResolvedHoverIntent]);
 
-  const hideHoverIntent = useCallback(() => {
-    clearHoverIntentTimer();
-    setResolvedHoverIntent(false);
-  }, [clearHoverIntentTimer, setResolvedHoverIntent]);
-
   const scheduleHideHoverIntent = useCallback(() => {
     if (!hoverIntentRef.current) {
       return;
@@ -140,12 +135,6 @@ export function CanvasNodeFrame({
     ]
   );
 
-  useEffect(() => {
-    if (dragging) {
-      hideHoverIntent();
-    }
-  }, [dragging, hideHoverIntent]);
-
   useEffect(() => () => clearHoverIntentTimer(), [clearHoverIntentTimer]);
 
   return (
@@ -154,7 +143,7 @@ export function CanvasNodeFrame({
       data-connectable={connectable || undefined}
       data-dragging={dragging || undefined}
       data-highlighted-connection-side={highlightedConnectionSide}
-      data-hover-intent={hoverIntent || undefined}
+      data-hover-intent={(hoverIntent && !dragging) || undefined}
       data-selected={selected || undefined}
       data-slot="canvas-node-frame"
       data-state={expanded ? "expanded" : "collapsed"}

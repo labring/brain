@@ -26,6 +26,16 @@ export function CanvasProvider({
   const [interactionMode, setInteractionMode] = useState<CanvasInteractionMode>(
     defaultInteractionMode
   );
+  const [prevDefaultInteractionMode, setPrevDefaultInteractionMode] = useState(
+    defaultInteractionMode
+  );
+
+  // A changed default re-arms the mode during render, so consumers never see
+  // a frame of the previous canvas's mode.
+  if (prevDefaultInteractionMode !== defaultInteractionMode) {
+    setPrevDefaultInteractionMode(defaultInteractionMode);
+    setInteractionMode(defaultInteractionMode);
+  }
   const [navigationChromeVisible, setNavigationChromeVisible] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const navigationChromeHoldCountRef = useRef(0);
@@ -70,10 +80,6 @@ export function CanvasProvider({
     setNavigationChromeVisible(true);
     scheduleNavigationChromeIdle();
   }, [scheduleNavigationChromeIdle]);
-
-  useEffect(() => {
-    setInteractionMode(defaultInteractionMode);
-  }, [defaultInteractionMode]);
 
   useEffect(
     () => () => {

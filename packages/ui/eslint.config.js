@@ -1,21 +1,5 @@
 import { config } from "@workspace/eslint-config/base";
 
-const eslintConfig = [
-  ...config,
-  {
-    // Ratchet: pre-existing violations, tracked for burn-down. Re-enable each
-    // rule (delete its line) once the package is clean under it; `bun lint`
-    // then keeps it clean. Counts at time of writing: set-state-in-effect 8,
-    // refs 1, static-components 1, exhaustive-deps 1.
-    // Note: Biome's useExhaustiveDependencies still guards the deps-array
-    // domain repo-wide while exhaustive-deps is off here.
-    rules: {
-      "react-hooks/exhaustive-deps": "off",
-      "react-hooks/refs": "off",
-      "react-hooks/set-state-in-effect": "off",
-      "react-hooks/static-components": "off",
-    },
-  },
-];
+const eslintConfig = [...config];
 
 export default eslintConfig;

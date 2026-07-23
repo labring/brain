@@ -36,7 +36,6 @@ export function MermaidDiagram({
       return;
     }
     let active = true;
-    setFailed(false);
     import("mermaid")
       .then(async ({ default: mermaid }) => {
         mermaid.initialize({
@@ -49,6 +48,7 @@ export function MermaidDiagram({
         const rendered = await mermaid.render(renderId, chart);
         if (active) {
           setSvg(rendered.svg);
+          setFailed(false);
         }
       })
       .catch(() => {
