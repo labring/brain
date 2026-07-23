@@ -371,11 +371,13 @@ function ProjectAssistantChatSession({
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
-        fetch: async (input, init) => {
+        // Wrapper only forwards calls, so fetch statics (preconnect) stay on
+        // the real fetch; the cast satisfies the transport's `typeof fetch`.
+        fetch: (async (input, init) => {
           const response = await fetch(input, init);
           billingHandlerRef.current(response.headers);
           return response;
-        },
+        }) as typeof fetch,
         prepareSendMessagesRequest: ({
           api,
           body,

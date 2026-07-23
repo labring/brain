@@ -33,8 +33,8 @@ function userMessage(text: string, selection?: Selection): UIMessage {
   } as unknown as UIMessage;
 }
 
-function firstText(message: UIMessage): string {
-  const part = message.parts[0];
+function firstText(message: UIMessage | undefined): string {
+  const part = message?.parts[0];
   if (part?.type !== "text") {
     throw new Error("expected a leading text part");
   }
@@ -57,14 +57,14 @@ describe("withSelectedResourceContext", () => {
     expect(text).toContain('name="frontend-app"');
     expect(text).toContain('namespace="ns-x"');
     // the original user text is preserved after the injected block
-    expect(out.parts.at(-1)).toEqual({ type: "text", text: "deploy this" });
+    expect(out?.parts.at(-1)).toEqual({ type: "text", text: "deploy this" });
   });
 
   it("injects nothing when nothing was selected (honest fallback)", () => {
     const input = [userMessage("roll the frontend one back")];
     const [out] = withSelectedResourceContext(input);
     // returned as-is: no leading context part
-    expect(out.parts).toHaveLength(1);
+    expect(out?.parts).toHaveLength(1);
     expect(firstText(out)).toBe("roll the frontend one back");
   });
 

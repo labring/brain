@@ -217,7 +217,7 @@ test("DB Service Backup transport reports API conflict detail", async () => {
         title: "DB Service Backup is not deletable",
       },
       { status: 409 }
-    )) as typeof fetch;
+    )) as unknown as typeof fetch;
 
   await assert.rejects(
     transport().deleteBackup({
