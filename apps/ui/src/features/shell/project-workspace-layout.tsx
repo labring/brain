@@ -666,7 +666,7 @@ function ProjectAssistantChatPane() {
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
   const prevBillingRef = useRef<"free" | "user" | null>(null);
 
-  const sessionResetKey = `${kubeconfig} ${namespaceRaw} ${namespaceReady}`;
+  const sessionResetKey = `${kubeconfig}\u0000${namespaceRaw}\u0000${namespaceReady}`;
   const [prevSessionResetKey, setPrevSessionResetKey] =
     useState(sessionResetKey);
   if (prevSessionResetKey !== sessionResetKey) {
