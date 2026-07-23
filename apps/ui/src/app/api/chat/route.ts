@@ -14,6 +14,10 @@ import {
   isSystemOpenAiConfigured,
 } from "@/features/chat/persistence/free-tier";
 import {
+  freeTierPosture,
+  freeTierPostureAfterTurn,
+} from "@/features/chat/persistence/free-tier-core";
+import {
   appendMessageForOwner,
   ensureAssistantThreadForOwner,
   loadMessagesForOwner,
@@ -136,8 +140,11 @@ export async function POST(req: Request) {
     }
 
     const freeTier = await getFreeTierSnapshot(owner.namespace);
-    const billing: ChatBillingMode =
-      freeTier.remaining > 0 && isSystemOpenAiConfigured() ? "free" : "user";
+    const systemModelConfigured = isSystemOpenAiConfigured();
+    const billing: ChatBillingMode = freeTierPosture(
+      freeTier,
+      systemModelConfigured
+    ).billing;
 
     const storedHistory = await loadMessagesForOwner(chatId, owner);
     if (storedHistory == null) {
@@ -194,14 +201,17 @@ export async function POST(req: Request) {
       },
     });
 
+    // Headers carry the POST-turn posture: the turn spending the last free
+    // turn already reports `user`, so the pane retires the counter at
+    // exhaustion instead of pinning "Free 0/n" until the next message.
+    const clientFreeTier = freeTierPostureAfterTurn(
+      freeTier,
+      systemModelConfigured
+    );
     const responseHeaders: Record<string, string> = {
-      "X-Chat-Billing": billing,
-      "X-Chat-Free-Remaining": String(
-        billing === "free"
-          ? Math.max(0, freeTier.remaining - 1)
-          : freeTier.remaining
-      ),
-      "X-Chat-Free-Limit": String(freeTier.limit),
+      "X-Chat-Billing": clientFreeTier.billing,
+      "X-Chat-Free-Remaining": String(clientFreeTier.remaining),
+      "X-Chat-Free-Limit": String(clientFreeTier.limit),
     };
 
     return result.toUIMessageStreamResponse({

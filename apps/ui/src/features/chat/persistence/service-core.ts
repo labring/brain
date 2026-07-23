@@ -1,5 +1,6 @@
 import type { generateText, UIMessage } from "ai";
 
+import { freeTierPosture } from "./free-tier-core";
 import type {
   AssistantConversationRepository,
   ThreadRow,
@@ -70,14 +71,10 @@ export function createAssistantConversationService(
       const rows = await repository.selectThreadsByOwner(owner);
       // Free Chat Turns deliberately remain keyed only by namespace (ADR 0056).
       const snapshot = await dependencies.getFreeChatTurns(owner.namespace);
-      const freeChatTurns = {
-        billing: (snapshot.remaining > 0 &&
+      const freeChatTurns = freeTierPosture(
+        snapshot,
         dependencies.isSystemModelConfigured()
-          ? "free"
-          : "user") as "free" | "user",
-        remaining: snapshot.remaining,
-        limit: snapshot.limit,
-      };
+      );
       const latest = rows[0];
       if (latest === undefined) {
         return {
