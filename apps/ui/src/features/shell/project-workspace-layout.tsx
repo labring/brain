@@ -727,7 +727,6 @@ function ProjectAssistantChatPane() {
     useState(sessionResetKey);
   if (prevSessionResetKey !== sessionResetKey) {
     setPrevSessionResetKey(sessionResetKey);
-    assistantStateRefreshSequenceRef.current += 1;
     setSession(null);
     setSessionError(false);
     setFreeTier(null);
@@ -735,6 +734,7 @@ function ProjectAssistantChatPane() {
 
   useEffect(() => {
     let cancelled = false;
+    assistantStateRefreshSequenceRef.current += 1;
     prevBillingRef.current = null;
 
     if (!namespaceReady) {
@@ -756,6 +756,7 @@ function ProjectAssistantChatPane() {
 
     return () => {
       cancelled = true;
+      assistantStateRefreshSequenceRef.current += 1;
     };
   }, [kubeconfig, namespaceRaw, namespaceReady]);
 
