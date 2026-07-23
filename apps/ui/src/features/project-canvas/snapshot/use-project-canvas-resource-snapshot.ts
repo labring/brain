@@ -197,7 +197,7 @@ export function useProjectCanvasResourceSnapshot(options: {
     apTransientSinceByKeyRef.current.clear();
     dbTransientSinceByKeyRef.current.clear();
     missingLayoutSinceByOwnerKeyRef.current.clear();
-  }, [labelSelector]);
+  }, [labelSelector, resetWorkloadDiscoveryPollWindow]);
 
   const {
     data: apsData,
@@ -250,12 +250,10 @@ export function useProjectCanvasResourceSnapshot(options: {
   });
   const canvasDeployTasks = deploymentTasksStore.canvasProjections;
 
+  const refreshDeploymentTasks = deploymentTasksStore.refresh;
   const revalidate = useCallback(() => {
-    return Promise.all([
-      refreshWorkloadResources(),
-      deploymentTasksStore.refresh(),
-    ]);
-  }, [deploymentTasksStore.refresh, refreshWorkloadResources]);
+    return Promise.all([refreshWorkloadResources(), refreshDeploymentTasks()]);
+  }, [refreshDeploymentTasks, refreshWorkloadResources]);
 
   const refresh = useCallback(() => {
     setWorkloadReconcilePollUntil(

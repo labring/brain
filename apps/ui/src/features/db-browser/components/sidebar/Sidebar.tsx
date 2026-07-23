@@ -330,9 +330,15 @@ function SidebarInner() {
         return [];
     }
   })();
+  const { dbServiceKey: rootServiceKey, displayName: rootDisplayName } =
+    dbService;
   const rootNode = useMemo(
-    () => dbServiceToNode(dbService),
-    [dbService.dbServiceKey, dbService.displayName]
+    () =>
+      dbServiceToNode({
+        dbServiceKey: rootServiceKey,
+        displayName: rootDisplayName,
+      }),
+    [rootServiceKey, rootDisplayName]
   );
   const treeNodeContext = useMemo(
     () => ({

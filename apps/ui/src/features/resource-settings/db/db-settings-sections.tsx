@@ -46,6 +46,7 @@ import {
   getBrowserPendingSettingsStore,
   type PendingSettingsOwnerIdentity,
   type PendingSettingsUpdateEntry,
+  usePendingSettingsEntries,
 } from "@/features/resource-settings/pending-settings-updates";
 import type {
   SettingsLeaveGuardHandle,
@@ -538,6 +539,10 @@ export function useDatabaseSettingsSections({
     submissionOwner,
     submissionStore
   );
+  const acceptedPendingEntries = usePendingSettingsEntries(
+    submissionOwner,
+    pendingSettingsStore
+  );
   const observedState = useMemo(() => {
     const draft = dbSettingsDraftFromNodeData({
       desired: {
@@ -570,10 +575,6 @@ export function useDatabaseSettingsSections({
     () => dbSettingsSubmissionTargets(submissionEntries),
     [submissionEntries]
   );
-  const acceptedPendingEntries =
-    submissionOwner == null
-      ? []
-      : (pendingSettingsStore?.list(submissionOwner) ?? []);
   const acceptedPendingOverlay = useMemo(
     () => dbAcceptedPendingTargets(observedState.draft, acceptedPendingEntries),
     [acceptedPendingEntries, observedState.draft]

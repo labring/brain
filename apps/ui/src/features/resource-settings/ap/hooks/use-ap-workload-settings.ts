@@ -39,6 +39,7 @@ import { useDeadlineNotReached } from "@/lib/use-deadline";
 
 const WORKLOAD_RECONCILE_POLL_MS = 1000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
+const NO_DB_DSN_REFERENCE_SOURCES: ApEnvDbDsnSource[] = [];
 
 export interface UseApWorkloadSettingsOptions {
   dbDsnReferenceSources?: ApEnvDbDsnSource[];
@@ -110,7 +111,8 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   } = options;
   const kubeconfig = options.kubeconfig ?? "";
   const readOnly = options.readOnly === true;
-  const dbDsnReferenceSources = options.dbDsnReferenceSources ?? [];
+  const dbDsnReferenceSources =
+    options.dbDsnReferenceSources ?? NO_DB_DSN_REFERENCE_SOURCES;
   const isApWorkload = workloadKind === "AP";
   const [claimReconcilePollUntil, setClaimReconcilePollUntil] = useState(0);
   const claimReconcilePolling = useDeadlineNotReached(claimReconcilePollUntil);

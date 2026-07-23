@@ -34,6 +34,7 @@ import {
   getBrowserPendingSettingsStore,
   type PendingSettingsOwnerIdentity,
   type PendingSettingsUpdateEntry,
+  usePendingSettingsEntries,
 } from "../pending-settings-updates";
 import type {
   SettingsLeaveGuardHandle,
@@ -383,6 +384,10 @@ export function useApSettingsSections({
     submissionOwner,
     submissionStore
   );
+  const acceptedPendingEntries = usePendingSettingsEntries(
+    submissionOwner,
+    pendingSettingsStore
+  );
   const initialCommittedReplicaStrategy = useMemo(
     () =>
       replicasQuota == null
@@ -421,17 +426,13 @@ export function useApSettingsSections({
       workloadKind,
     ]
   );
-  const initialAcceptedPendingEntries =
-    submissionOwner == null
-      ? []
-      : (pendingSettingsStore?.list(submissionOwner) ?? []);
   const initialAcceptedPendingOverlay = useMemo(
     () =>
       apAcceptedPendingTargets(
         initialObservedSettingsDraft,
-        initialAcceptedPendingEntries
+        acceptedPendingEntries
       ),
-    [initialAcceptedPendingEntries, initialObservedSettingsDraft]
+    [acceptedPendingEntries, initialObservedSettingsDraft]
   );
   const initialSubmissionTargets = useMemo(
     () => apSettingsSubmissionTargets(submissionEntries),
@@ -947,10 +948,6 @@ export function useApSettingsSections({
       workloadKind,
     ]
   );
-  const acceptedPendingEntries =
-    submissionOwner == null
-      ? []
-      : (pendingSettingsStore?.list(submissionOwner) ?? []);
   const acceptedPendingOverlay = useMemo(
     () =>
       apAcceptedPendingTargets(observedSettingsDraft, acceptedPendingEntries),

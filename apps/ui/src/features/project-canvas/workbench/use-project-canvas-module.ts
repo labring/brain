@@ -261,6 +261,12 @@ export function useProjectCanvasModule({
     namespace,
     projectId,
   });
+  const {
+    saveFirstPlacementNodes,
+    saveLayoutNodes,
+    saveLayoutTransaction,
+    savePlacementCommands,
+  } = projectCanvasLayout;
 
   const canvasCoveredRef = useRef(false);
   const canvasCoverageIdentityRef = useRef({ namespace, projectId });
@@ -290,22 +296,18 @@ export function useProjectCanvasModule({
       return;
     }
     if (layoutIntent.kind === "transaction") {
-      projectCanvasLayout
-        .saveLayoutTransaction({
-          commands: layoutIntent.commands,
-          expectedVersion: layoutIntent.expectedVersion,
-          nodes: layoutIntent.nodes,
-        })
-        .catch(() => undefined);
+      saveLayoutTransaction({
+        commands: layoutIntent.commands,
+        expectedVersion: layoutIntent.expectedVersion,
+        nodes: layoutIntent.nodes,
+      }).catch(() => undefined);
       return;
     }
-    projectCanvasLayout
-      .saveFirstPlacementNodes(layoutIntent.nodes)
-      .catch(() => undefined);
+    saveFirstPlacementNodes(layoutIntent.nodes).catch(() => undefined);
   }, [
     layoutIntent,
-    projectCanvasLayout.saveFirstPlacementNodes,
-    projectCanvasLayout.saveLayoutTransaction,
+    saveFirstPlacementNodes,
+    saveLayoutTransaction,
     resourceSnapshotLoading,
   ]);
 
@@ -390,18 +392,16 @@ export function useProjectCanvasModule({
         kind: "delete" as const,
         owner: resourcePlacementOwner(ref),
       }));
-      projectCanvasLayout
-        .savePlacementCommands(commands)
-        .catch(() => undefined);
+      savePlacementCommands(commands).catch(() => undefined);
     },
-    [projectCanvasLayout.savePlacementCommands]
+    [savePlacementCommands]
   );
 
   const saveAutoLayoutNodes = useCallback(
     (nodes: CanvasLayoutNode[]) => {
-      projectCanvasLayout.saveLayoutNodes(nodes).catch(() => undefined);
+      saveLayoutNodes(nodes).catch(() => undefined);
     },
-    [projectCanvasLayout.saveLayoutNodes]
+    [saveLayoutNodes]
   );
 
   const onNodePositionChange = useStableCallback(
