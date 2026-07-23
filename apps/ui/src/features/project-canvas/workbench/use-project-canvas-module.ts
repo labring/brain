@@ -8,6 +8,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useInsertionEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -97,7 +98,6 @@ import {
 } from "@/features/project-canvas/workbench/workbench-clock";
 import {
   createWorkbenchOrchestrationStore,
-  type WorkbenchOrchestrationEffect,
   type WorkbenchOrchestrationEvent,
   type WorkbenchOrchestrationStore,
 } from "@/features/project-canvas/workbench/workbench-orchestration";
@@ -169,68 +169,81 @@ export function useProjectCanvasModule({
     orchestration.getSnapshot
   );
   const noticeExpiryCancelRef = useRef<(() => void) | null>(null);
-  const runOrchestrationEffects = useStableCallback(
-    (effects: readonly WorkbenchOrchestrationEffect[]) => {
-      for (const effect of effects) {
-        switch (effect.kind) {
-          case "acknowledgeDeployTaskCreated": {
-            acknowledgePendingDeployTaskCreatedEvent(effect.taskId);
-            break;
-          }
-          case "closeSideSurface": {
-            closeSideSurface();
-            break;
-          }
-          case "openDeploymentTaskTimelineRoute": {
-            openSideRoute(effect.entry, effect.canvasSelection, () => {
-              submitOrchestrationEvent({
-                kind: "deploymentTaskTimelineRouteCommitted",
-              });
+  // Effect targets declared later in the hook (closeSideSurface itself
+  // submits events, so plain reordering cannot break the cycle). They reach
+  // the runner through this ref, refreshed by an insertion effect below —
+  // which runs before any effect- or event-time submit can happen.
+  const orchestrationEffectDepsRef = useRef<{
+    closeSideSurface: () => void;
+    openSideRoute: (
+      entry: ProjectSideSurfaceEntry,
+      canvasSelection?: ProjectCanvasSelection | null,
+      onCommitted?: () => void
+    ) => void;
+    revalidate: () => Promise<unknown>;
+    scheduleNodeLayoutSave: (node: Node) => void;
+  } | null>(null);
+  const submitOrchestrationEvent = useStableCallback(function submitEvent(
+    event: WorkbenchOrchestrationEvent
+  ) {
+    const deps = orchestrationEffectDepsRef.current;
+    if (deps === null) {
+      return;
+    }
+    for (const effect of orchestration.dispatch(event)) {
+      switch (effect.kind) {
+        case "acknowledgeDeployTaskCreated": {
+          acknowledgePendingDeployTaskCreatedEvent(effect.taskId);
+          break;
+        }
+        case "closeSideSurface": {
+          deps.closeSideSurface();
+          break;
+        }
+        case "openDeploymentTaskTimelineRoute": {
+          deps.openSideRoute(effect.entry, effect.canvasSelection, () => {
+            submitEvent({
+              kind: "deploymentTaskTimelineRouteCommitted",
             });
-            break;
-          }
-          case "persistCanvasNodeLayout": {
-            projectCanvasLayout.scheduleNodeLayoutSave(effect.node);
-            break;
-          }
-          case "persistDeploymentTaskDockDismissals": {
-            writeBrowserDeploymentTaskDockDismissals({
-              dismissedTaskUpdatedAtById: effect.dismissedTaskUpdatedAtById,
-              namespace,
-              projectId,
-            });
-            break;
-          }
-          case "rescheduleNoticeExpiry": {
-            noticeExpiryCancelRef.current?.();
-            noticeExpiryCancelRef.current =
-              effect.delayMs == null
-                ? null
-                : clock.schedule(() => {
-                    noticeExpiryCancelRef.current = null;
-                    submitOrchestrationEvent({
-                      kind: "noticeExpiryDue",
-                      now: clock.now(),
-                    });
-                  }, effect.delayMs);
-            break;
-          }
-          case "revalidateResourceSnapshot": {
-            revalidate().catch(() => undefined);
-            break;
-          }
-          default: {
-            effect satisfies never;
-          }
+          });
+          break;
+        }
+        case "persistCanvasNodeLayout": {
+          deps.scheduleNodeLayoutSave(effect.node);
+          break;
+        }
+        case "persistDeploymentTaskDockDismissals": {
+          writeBrowserDeploymentTaskDockDismissals({
+            dismissedTaskUpdatedAtById: effect.dismissedTaskUpdatedAtById,
+            namespace,
+            projectId,
+          });
+          break;
+        }
+        case "rescheduleNoticeExpiry": {
+          noticeExpiryCancelRef.current?.();
+          noticeExpiryCancelRef.current =
+            effect.delayMs == null
+              ? null
+              : clock.schedule(() => {
+                  noticeExpiryCancelRef.current = null;
+                  submitEvent({
+                    kind: "noticeExpiryDue",
+                    now: clock.now(),
+                  });
+                }, effect.delayMs);
+          break;
+        }
+        case "revalidateResourceSnapshot": {
+          deps.revalidate().catch(() => undefined);
+          break;
+        }
+        default: {
+          effect satisfies never;
         }
       }
     }
-  );
-  const submitOrchestrationEvent = useStableCallback(
-    (event: WorkbenchOrchestrationEvent) => {
-      runOrchestrationEffects(orchestration.dispatch(event));
-    }
-  );
+  });
   useEffect(
     () => () => {
       noticeExpiryCancelRef.current?.();
@@ -958,6 +971,18 @@ export function useProjectCanvasModule({
     submitOrchestrationEvent,
     surfaceState.side,
   ]);
+
+  // Late-bind the orchestration effect targets (see orchestrationEffectDepsRef
+  // above). Insertion effects run before layout and passive effects, so the
+  // ref is populated before anything can submit an orchestration event.
+  useInsertionEffect(() => {
+    orchestrationEffectDepsRef.current = {
+      closeSideSurface,
+      openSideRoute,
+      revalidate,
+      scheduleNodeLayoutSave: projectCanvasLayout.scheduleNodeLayoutSave,
+    };
+  });
 
   const closeMainSurface = useCallback(() => {
     closeMainRoute();

@@ -14,7 +14,7 @@ import {
 } from "@/features/project-canvas/telemetry/workload-telemetry-node";
 import { useWorkloadTelemetrySnapshot } from "@/features/project-canvas/telemetry/workload-telemetry-react";
 import type { WorkloadTelemetryTarget } from "@/features/project-canvas/telemetry/workload-telemetry-store";
-import { shouldShowDatabaseDeletionDelayHint } from "./database-deletion-warning";
+import { useShowDatabaseDeletionDelayHint } from "./database-deletion-warning";
 import type { CanvasDatabaseNodeData, CanvasDatabaseRfNode } from "./types";
 import { useCanvasNodeExpansion } from "./use-canvas-node-expansion";
 import { useCanvasDatabaseNodeActions } from "./use-database-node-actions";
@@ -66,10 +66,7 @@ export const CanvasDatabaseNode = memo(function CanvasDatabaseNode({
     positionAbsoluteY,
     type,
   });
-  const showDeletionDelayHint = shouldShowDatabaseDeletionDelayHint({
-    nowMs: Date.now(),
-    states,
-  });
+  const showDeletionDelayHint = useShowDatabaseDeletionDelayHint(states);
 
   return (
     <DatabaseNode.Root

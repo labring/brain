@@ -35,6 +35,7 @@ import {
 import type { ApEnvDbDsnSource } from "@/features/resource-settings/ap/lib/ap-env-rows";
 import { settingsDraftSaveFailureMessage } from "@/features/resource-settings/ap/lib/settings-draft-backing";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
+import { useDeadlineNotReached } from "@/lib/use-deadline";
 
 const WORKLOAD_RECONCILE_POLL_MS = 1000;
 const WORKLOAD_RECONCILE_POLL_WINDOW_MS = 30_000;
@@ -112,6 +113,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   const dbDsnReferenceSources = options.dbDsnReferenceSources ?? [];
   const isApWorkload = workloadKind === "AP";
   const [claimReconcilePollUntil, setClaimReconcilePollUntil] = useState(0);
+  const claimReconcilePolling = useDeadlineNotReached(claimReconcilePollUntil);
 
   const {
     data: claimPayload,
@@ -123,8 +125,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
     kubeconfig,
     name,
     namespace,
-    refreshInterval:
-      claimReconcilePollUntil > Date.now() ? WORKLOAD_RECONCILE_POLL_MS : 0,
+    refreshInterval: claimReconcilePolling ? WORKLOAD_RECONCILE_POLL_MS : 0,
   });
   const {
     data: apsData,
@@ -137,9 +138,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
     namespace,
     pollWhileEmpty: false,
     refreshInterval:
-      isApWorkload && claimReconcilePollUntil > Date.now()
-        ? WORKLOAD_RECONCILE_POLL_MS
-        : 0,
+      isApWorkload && claimReconcilePolling ? WORKLOAD_RECONCILE_POLL_MS : 0,
   });
 
   const claimBodyRef = useRef<Record<string, unknown> | undefined>(undefined);
