@@ -74,7 +74,7 @@ export interface DeploymentTimelineStep {
 }
 
 export interface DeploymentTaskTimelineSnapshot {
-  /** Server stamp proving rich AI timeline fields were rebuilt safely. */
+  /** Independent server stamp proving AI timeline fields were rebuilt safely. */
   publicProjectionVersion?: number;
   revision: number;
   status: DeployTaskStatus;

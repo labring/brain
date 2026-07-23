@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
+import { CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION } from "./schema";
+import {
+  deploymentTaskTimelineFromTaskRecord,
+  persistableDeploymentTaskTimeline,
+} from "./timeline-storage";
 
 const NOW = new Date("2026-06-17T10:00:00.000Z");
 
@@ -136,4 +140,120 @@ test("deployment task timeline storage overlays engine-resolved failures without
     timeline.steps[0]?.events[0]?.message,
     "untrusted legacy copy"
   );
+});
+
+test("AI timeline persistence strips legacy events and cards before stamping", () => {
+  const timeline = persistableDeploymentTaskTimeline({
+    task: {
+      id: "task-ai",
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      status: "running",
+      timelineSnapshot: null,
+      updatedAt: NOW,
+    },
+    timeline: {
+      revision: 4,
+      status: "running",
+      steps: [
+        {
+          events: [
+            {
+              createdAt: "2026-06-17T10:00:04.000Z",
+              dedupeKey: "private-secret-dedupe",
+              id: "private-secret-id",
+              message: "private secret message",
+            },
+          ],
+          id: "create-resources",
+          label: "untrusted label",
+          order: 99,
+          resultCards: [
+            {
+              events: [],
+              id: "untrusted-card",
+              required: true,
+              resultRef: {
+                kind: "AP",
+                name: "untrusted-name",
+                namespace: "default",
+              },
+              status: "running",
+              title: "untrusted title",
+            },
+          ],
+          status: "running",
+        },
+      ],
+      taskId: "task-ai",
+      updatedAt: "2026-06-17T10:00:05.000Z",
+    },
+  });
+
+  assert.equal(
+    timeline.publicProjectionVersion,
+    CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION
+  );
+  assert.equal(timeline.steps[0]?.label, "Create resources");
+  assert.equal(timeline.steps[0]?.resultCards, undefined);
+  assert.deepEqual(timeline.steps[0]?.events, [
+    {
+      createdAt: "2026-06-17T10:00:04.000Z",
+      id: "create-resources-event-0",
+      message: "Deployment progress updated.",
+    },
+  ]);
+  assert.equal(JSON.stringify(timeline).includes("private-secret"), false);
+});
+
+test("AI timeline persistence retains allowlisted cards only with its own stamp", () => {
+  const timeline = persistableDeploymentTaskTimeline({
+    task: {
+      id: "task-ai",
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      status: "running",
+      timelineSnapshot: null,
+      updatedAt: NOW,
+    },
+    timeline: {
+      publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+      revision: 4,
+      status: "running",
+      steps: [
+        {
+          events: [],
+          id: "create-resources",
+          label: "untrusted label",
+          order: 99,
+          resultCards: [
+            {
+              events: [],
+              id: "untrusted-card",
+              required: true,
+              resultRef: {
+                kind: "AP",
+                name: "api",
+                namespace: "default",
+              },
+              status: "running",
+              title: "untrusted title",
+            },
+          ],
+          status: "running",
+        },
+      ],
+      taskId: "task-ai",
+      updatedAt: "2026-06-17T10:00:05.000Z",
+    },
+  });
+
+  assert.equal(timeline.steps[0]?.label, "Create resources");
+  assert.deepEqual(timeline.steps[0]?.resultCards?.[0], {
+    events: [],
+    id: "AP:default:api",
+    latestStatusText: "Running",
+    required: true,
+    resultRef: { kind: "AP", name: "api", namespace: "default" },
+    status: "running",
+    title: "Application",
+  });
 });

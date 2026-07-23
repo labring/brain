@@ -11,7 +11,9 @@ import {
   publicDeployTaskTimelineSnapshot,
 } from "./public-artifact-summary";
 import {
-  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
   type DeployTaskArtifactSummary,
   type DeployTaskBlockingInput,
 } from "./schema";
@@ -46,7 +48,9 @@ const TEMPLATE_SUMMARY = {
 } satisfies DeployTaskArtifactSummary;
 
 test("public artifact summary hides generated template internals", () => {
-  const summary = publicDeployTaskArtifactSummary(TEMPLATE_SUMMARY);
+  const summary = publicDeployTaskArtifactSummary(TEMPLATE_SUMMARY, {
+    runner: { kind: "direct" },
+  });
 
   assert.equal(summary.deliveryManifest, undefined);
   assert.deepEqual(summary.buildResult, TEMPLATE_SUMMARY.buildResult);
@@ -106,7 +110,7 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
       entrypointYaml: legacySecret,
       notes: legacySecret,
       outputJson: { token: legacySecret },
-      publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
       resources: [
         {
           apiVersion: "apps/v1",
@@ -177,12 +181,13 @@ test("trusted public AI blocking inputs remove defaults and unknown fields", () 
         sensitive: true,
         type: "secret",
         valueType: "secret",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
         unknown: legacySecret,
       } as DeployTaskBlockingInput,
     ],
     {
       runner: { kind: "ai", runtimeProvider: "devbox" },
-      trustedAiProjection: true,
     }
   );
 
@@ -276,6 +281,68 @@ test("legacy public AI inputs use opaque aliases", () => {
   );
 });
 
+test("trusted public AI blockers alias identifiers outside the public grammar", () => {
+  const blockingInputs = publicDeployTaskBlockingInputs(
+    [
+      {
+        id: "_API_KEY",
+        key: "_API_KEY",
+        label: "API key",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    { runner: { kind: "ai", runtimeProvider: "devbox" } }
+  );
+
+  assert.deepEqual(blockingInputs, [
+    {
+      id: "configuration-1",
+      key: "configuration-1",
+      label: "API key",
+      required: true,
+      sensitive: true,
+      type: "secret",
+    },
+  ]);
+  assert.equal(JSON.stringify(blockingInputs).includes("_API_KEY"), false);
+});
+
+test("AI blocker aliases never collide with trusted canonical keys", () => {
+  const blockingInputs = publicDeployTaskBlockingInputs(
+    [
+      {
+        id: "configuration-2",
+        key: "configuration-2",
+        label: "Port",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        type: "env",
+      },
+      {
+        id: "_API_KEY",
+        key: "_API_KEY",
+        label: "API key",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    { runner: { kind: "ai", runtimeProvider: "devbox" } }
+  );
+
+  assert.deepEqual(
+    blockingInputs.map((input) => input.key),
+    ["configuration-2", "configuration-2-2"]
+  );
+});
+
 test("trusted public AI timeline strips output summaries from every dedupe key", () => {
   const legacySecret = "legacy-timeline-secret";
   const outputPartialDedupeKey = `deployment_task.output_partial:${JSON.stringify(
@@ -285,7 +352,7 @@ test("trusted public AI timeline strips output summaries from every dedupe key",
     deliveryManifest: { apiKey: legacySecret },
   })}`;
   const timeline = {
-    publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+    publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
     revision: 3,
     status: "running",
     steps: [
@@ -471,10 +538,13 @@ test("public timeline leaves non-AI snapshots unchanged", () => {
 });
 
 test("public event payload redacts nested artifact summary", () => {
-  const payload = publicDeployTaskEventPayload({
-    artifactSummary: TEMPLATE_SUMMARY,
-    note: "applied",
-  });
+  const payload = publicDeployTaskEventPayload(
+    {
+      artifactSummary: TEMPLATE_SUMMARY,
+      note: "applied",
+    },
+    { runner: { kind: "direct" } }
+  );
 
   assert.equal(payload.note, "applied");
   assert.deepEqual(payload.artifactSummary, {

@@ -202,9 +202,9 @@ export function createDeployTaskTools(
       const result = await submitTaskInput(engineContext(), {
         actionActor,
         namespace,
-        run: (handle, task, currentBlockingInputKeys, values) =>
+        run: (handle, task, currentBlockingInputs, values) =>
           runTask(handle, {
-            currentBlockingInputKeys,
+            currentBlockingInputs,
             encodedKubeconfig,
             submittedInputValues: values,
             taskId: task.id,

@@ -206,7 +206,16 @@ test("chat submitDeployTaskInput preserves the active blocker keys", async () =>
         await input.run(
           null as never,
           { id: input.taskId } as never,
-          ["API_KEY"],
+          [
+            {
+              id: "API_KEY",
+              key: "API_KEY",
+              label: "API key",
+              required: true,
+              sensitive: true,
+              type: "secret",
+            },
+          ],
           { API_KEY: "secret-value" }
         );
         return {
@@ -230,7 +239,16 @@ test("chat submitDeployTaskInput preserves the active blocker keys", async () =>
   );
 
   assert.deepEqual(runInput, {
-    currentBlockingInputKeys: ["API_KEY"],
+    currentBlockingInputs: [
+      {
+        id: "API_KEY",
+        key: "API_KEY",
+        label: "API key",
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
     encodedKubeconfig: "test-kubeconfig",
     submittedInputValues: { API_KEY: "secret-value" },
     taskId: "task-1",

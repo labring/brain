@@ -26,7 +26,6 @@ import {
   publicDeployTaskTimelineSnapshot,
 } from "./public-artifact-summary";
 import {
-  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskRunner,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
@@ -56,16 +55,7 @@ function nowIso(value: Date | null): string | null {
   return value == null ? null : value.toISOString();
 }
 
-function hasTrustedAiArtifactProjection(row: DeployTaskRow): boolean {
-  return (
-    row.runner.kind === "ai" &&
-    row.artifactSummary.publicProjectionVersion ===
-      CURRENT_AI_PUBLIC_PROJECTION_VERSION
-  );
-}
-
 export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
-  const trustedAiArtifactProjection = hasTrustedAiArtifactProjection(row);
   const failureDetails = publicDeployTaskFailureDetails({
     details: row.failureDetails,
     runner: row.runner,
@@ -89,7 +79,6 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     }),
     blockingInputs: publicDeployTaskBlockingInputs(row.blockingInputs, {
       runner: row.runner,
-      trustedAiProjection: trustedAiArtifactProjection,
     }),
     cancelRequestedAt: nowIso(row.cancelRequestedAt),
     canvasProjection: row.runner.kind === "ai" ? {} : row.canvasProjection,
@@ -137,7 +126,7 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
 
 export function toDeployTaskEventDTO(
   row: DeployTaskEventRow,
-  runner?: DeploymentTaskRunner
+  runner: DeploymentTaskRunner
 ): DeployTaskEventDTO {
   const publicEvent = publicDeployTaskEventFields(
     {

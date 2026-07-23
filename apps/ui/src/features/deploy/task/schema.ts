@@ -44,7 +44,9 @@ export type DeployTaskPhase =
 export type DeploymentTaskCreatedFrom = "api" | "automation" | "chat" | "ui";
 
 export const CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION = 1;
-export const CURRENT_AI_PUBLIC_PROJECTION_VERSION = 1;
+export const CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION = 1;
+export const CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION = 1;
+export const CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION = 1;
 
 /**
  * Immutable credential selection written with a GitHub Deployment Task.
@@ -75,7 +77,7 @@ export interface DeployTaskArtifactSummary {
   entrypointYaml?: string;
   notes?: string;
   outputJson?: unknown;
-  /** Server stamp proving rich AI artifact and input fields were scrubbed. */
+  /** Server stamp proving rich AI artifact fields were scrubbed. */
   publicProjectionVersion?: number;
   resources?: {
     apiVersion: string;
@@ -137,6 +139,8 @@ export interface DeployTaskBlockingInput {
   key?: string;
   label: string;
   options?: string[];
+  /** Independent server stamp proving this AI blocker was scrubbed. */
+  publicProjectionVersion?: number;
   required: boolean;
   sensitive?: boolean;
   type: "confirmation" | "env" | "secret" | "text";

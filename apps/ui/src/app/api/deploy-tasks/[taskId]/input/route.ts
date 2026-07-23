@@ -72,9 +72,9 @@ export async function POST(request: Request, context: RouteContext) {
     {
       actionActor: namespaceResolved.workspaceActor,
       namespace: namespaceResolved.namespace,
-      run: (handle, task, currentBlockingInputKeys, values) =>
+      run: (handle, task, currentBlockingInputs, values) =>
         runDeployTask(handle, {
-          currentBlockingInputKeys,
+          currentBlockingInputs,
           encodedKubeconfig: parsed.data.encodedKubeconfig,
           submittedInputValues: values,
           taskId: task.id,

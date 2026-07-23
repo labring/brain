@@ -65,6 +65,21 @@ export function assertDeployTaskBlockingInputs(
       "Deployment task cannot enter blocked without blocking inputs."
     );
   }
+  const keys = new Set<string>();
+  for (const input of blockingInputs) {
+    const key = (input.key ?? input.id).trim();
+    if (
+      input.id.trim() === "" ||
+      key === "" ||
+      input.label.trim() === "" ||
+      typeof input.required !== "boolean" ||
+      !["confirmation", "env", "secret", "text"].includes(input.type) ||
+      keys.has(key)
+    ) {
+      throw new Error("Deployment task received invalid blocking inputs.");
+    }
+    keys.add(key);
+  }
 }
 
 export interface DeployTaskTransitionEvent {

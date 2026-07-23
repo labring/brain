@@ -2,6 +2,7 @@ import {
   deploymentFailureMessage,
   isDeployTaskFailureReason,
 } from "./failure-summary";
+import { persistableAiDeployTaskTimelineSnapshot } from "./public-artifact-summary";
 import type {
   DeploymentTaskRunner,
   DeploymentTaskSource,
@@ -115,4 +116,23 @@ export function deploymentTaskTimelineFromTaskRecord(
     }),
     task
   );
+}
+
+/**
+ * Persisted AI timelines are rebuilt through their dedicated persistence
+ * projection gate. The timeline stamp is therefore proof about this JSON blob
+ * only; artifact or blocker versions never upgrade it indirectly.
+ */
+export function persistableDeploymentTaskTimeline(input: {
+  task: DeploymentTaskTimelineTaskRecord;
+  timeline: DeploymentTaskTimelineSnapshot;
+}): DeploymentTaskTimelineSnapshot {
+  if (input.task.runner.kind !== "ai") {
+    return input.timeline;
+  }
+  return persistableAiDeployTaskTimelineSnapshot(input.timeline, {
+    failureReason: input.task.failureDetails?.reason,
+    taskId: input.task.id,
+    updatedAt: isoDate(input.task.updatedAt),
+  });
 }

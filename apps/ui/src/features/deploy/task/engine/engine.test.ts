@@ -5,10 +5,13 @@ import { eq } from "drizzle-orm";
 
 import { deploymentFailureMessage } from "../failure-summary";
 import {
-  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
   deployTaskEvents,
   deployTasks,
 } from "../schema";
+import { appendStepEvent } from "../timeline";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
@@ -474,11 +477,11 @@ test("create action inserts, claims inline, launches, and completes through the 
   ]);
 });
 
-test("AI timeline rich fields receive their own projection stamp", async () => {
+test("AI timeline persistence keeps event identity and dedupe semantics", async () => {
   const ctx = testCtx();
   let beforeStamp: number | undefined;
   let afterStamp: number | undefined;
-  let afterStampHasLegacyCards = true;
+  let persistedEvents: Array<{ dedupeKey?: string; id: string }> = [];
   const result = await createDeployTaskAction(ctx, {
     create: {
       namespace: "ns-test",
@@ -487,58 +490,32 @@ test("AI timeline rich fields receive their own projection stamp", async () => {
       target: { kind: "existingProject", projectId: "project-test" },
     },
     run: async (handle) => {
-      await handle.updateTimeline({
-        update: (timeline) => ({
-          ...timeline,
-          revision: timeline.revision + 1,
-        }),
-      });
-      beforeStamp = (await taskById(handle.taskId)).timelineSnapshot
-        ?.publicProjectionVersion;
       const unstampedTimeline = (await taskById(handle.taskId))
         .timelineSnapshot;
       assert.ok(unstampedTimeline);
-      await handle.setState({
-        timelineSnapshot: {
-          ...unstampedTimeline,
-          steps: unstampedTimeline.steps.map((step, index) =>
-            index === 0
-              ? {
-                  ...step,
-                  resultCards: [
-                    {
-                      events: [],
-                      id: "legacy-card",
-                      required: true,
-                      resultRef: {
-                        kind: "AP",
-                        name: "abc",
-                        namespace: "ns-test",
-                      },
-                      status: "running",
-                      title: "legacy-card",
-                    },
-                  ],
-                }
-              : step
-          ),
-        },
-      });
-      await handle.setArtifacts({
-        publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
-      });
-      await handle.updateTimeline({
-        update: (timeline) => ({
-          ...timeline,
-          revision: timeline.revision + 1,
-        }),
-      });
+      beforeStamp = unstampedTimeline.publicProjectionVersion;
+      const event = {
+        createdAt: "2026-06-17T10:00:05.000Z",
+        dedupeKey: "deployment_task.output_partial:same-signature",
+        id: "timeline-event-id",
+        message: "untrusted output detail",
+        source: "runner" as const,
+      };
+      for (let index = 0; index < 2; index += 1) {
+        await handle.updateTimeline({
+          update: (timeline) =>
+            appendStepEvent(timeline, {
+              event,
+              stepId: "generate-deployment",
+              updatedAt: event.createdAt,
+            }),
+        });
+      }
       const stampedTimeline = (await taskById(handle.taskId)).timelineSnapshot;
       afterStamp = stampedTimeline?.publicProjectionVersion;
-      afterStampHasLegacyCards =
-        stampedTimeline?.steps.some(
-          (step) => (step.resultCards?.length ?? 0) > 0
-        ) ?? false;
+      persistedEvents =
+        stampedTimeline?.steps.find((step) => step.id === "generate-deployment")
+          ?.events ?? [];
       await handle.beginApplying();
       await handle.complete();
     },
@@ -550,8 +527,16 @@ test("AI timeline rich fields receive their own projection stamp", async () => {
   }
   await result.launched?.done;
   assert.equal(beforeStamp, undefined);
-  assert.equal(afterStamp, CURRENT_AI_PUBLIC_PROJECTION_VERSION);
-  assert.equal(afterStampHasLegacyCards, false);
+  assert.equal(afterStamp, CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION);
+  assert.deepEqual(persistedEvents, [
+    {
+      createdAt: "2026-06-17T10:00:05.000Z",
+      dedupeKey: "deployment_task.output_partial:same-signature",
+      id: "timeline-event-id",
+      message: "Deployment output files are partially available.",
+      source: "runner",
+    },
+  ]);
 });
 
 test("requesting inputs rejects an empty wait without releasing the lease", async () => {
@@ -933,7 +918,7 @@ test("input submission claims blocked→running in place and hands values in mem
   });
 
   let received: Record<string, unknown> | null = null;
-  let receivedBlockingInputKeys: readonly string[] = [];
+  let receivedBlockingInputs: readonly { key?: string }[] = [];
   let rejectedRunCalled = false;
   for (const values of [{}, { OTHER: "value" }, { DB_PASSWORD: null }]) {
     const rejected = await submitDeployTaskInputAction(ctx, {
@@ -964,9 +949,9 @@ test("input submission claims blocked→running in place and hands values in mem
   const result = await submitDeployTaskInputAction(ctx, {
     actionActor: "bob-cr",
     namespace: "ns-test",
-    run: async (handle, _task, currentBlockingInputKeys, submittedValues) => {
+    run: async (handle, _task, currentBlockingInputs, submittedValues) => {
       received = submittedValues;
-      receivedBlockingInputKeys = currentBlockingInputKeys;
+      receivedBlockingInputs = currentBlockingInputs;
       await handle.beginApplying();
       await handle.complete();
     },
@@ -983,7 +968,10 @@ test("input submission claims blocked→running in place and hands values in mem
   }
   await result.launched.done;
   assert.deepEqual(received, { DB_PASSWORD: "s3cret-value" });
-  assert.deepEqual(receivedBlockingInputKeys, ["DB_PASSWORD"]);
+  assert.deepEqual(
+    receivedBlockingInputs.map((input) => input.key),
+    ["DB_PASSWORD"]
+  );
 
   const stored = await taskById(blocked.id);
   assert.equal(stored.status, "completed");
@@ -1018,6 +1006,199 @@ test("input submission claims blocked→running in place and hands values in mem
   assert.equal(conflict.kind, "conflict");
 });
 
+test("partial required input submission stays blocked without launching", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "PORT",
+        key: "PORT",
+        label: "Port",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        type: "env",
+      },
+      {
+        id: "API_KEY",
+        key: "API_KEY",
+        label: "API key",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let runCalled = false;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
+    },
+    taskId: blocked.id,
+    values: { PORT: "8080" },
+  });
+
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(
+    result.kind === "invalid-input" && result.message,
+    "Submit every required deployment input."
+  );
+  assert.equal(runCalled, false);
+  const stored = await taskById(blocked.id);
+  assert.equal(stored.status, "blocked");
+  assert.deepEqual(stored.blockingInputs, blocked.blockingInputs);
+  assert.equal(
+    (await eventsFor(blocked.id)).some(
+      (event) => event.kind === "deploy_task.input_submitted"
+    ),
+    false
+  );
+});
+
+test("one AI public identifier cannot satisfy two required blockers", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "PORT",
+        key: "PORT",
+        label: "Port",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        type: "env",
+      },
+      {
+        id: "configuration-1",
+        key: "configuration-1",
+        label: "API key",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let runCalled = false;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
+    },
+    taskId: blocked.id,
+    values: { "configuration-1": "one-value-only" },
+  });
+
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(runCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
+});
+
+test("legacy AI public aliases bind each value to exactly one canonical key", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "configuration-2",
+        key: "configuration-2",
+        label: "Port",
+        required: true,
+        type: "env",
+      },
+      {
+        id: "PASSWORD",
+        key: "PASSWORD",
+        label: "Password",
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let received: Record<string, unknown> | null = null;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: async (handle, _task, _currentBlockingInputs, submittedValues) => {
+      received = submittedValues;
+      await handle.beginApplying();
+      await handle.complete();
+    },
+    taskId: blocked.id,
+    values: {
+      "configuration-1": "8080",
+      "configuration-2": "secret-value",
+    },
+  });
+
+  assert.equal(result.kind, "resumed");
+  if (result.kind !== "resumed") {
+    return;
+  }
+  await result.launched.done;
+  assert.deepEqual(received, {
+    "configuration-2": "8080",
+    PASSWORD: "secret-value",
+  });
+});
+
+test("legacy AI blockers with duplicate canonical keys cannot resume", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "shared",
+        key: "shared",
+        label: "Port",
+        required: true,
+        type: "env",
+      },
+      {
+        id: "shared-secret",
+        key: "shared",
+        label: "Password",
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let runCalled = false;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
+    },
+    taskId: blocked.id,
+    values: {
+      "configuration-1": "8080",
+      "configuration-2": "secret-value",
+    },
+  });
+
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(runCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
+});
+
 test("legacy AI input aliases map back only inside the resumed runner", async () => {
   const ctx = testCtx();
   const legacySecretKey = "abc";
@@ -1049,12 +1230,12 @@ test("legacy AI input aliases map back only inside the resumed runner", async ()
   );
 
   let received: Record<string, unknown> | null = null;
-  let receivedBlockingInputKeys: readonly string[] = [];
+  let receivedBlockingInputs: readonly { key?: string }[] = [];
   const result = await submitDeployTaskInputAction(ctx, {
     namespace: "ns-test",
-    run: async (handle, _task, currentBlockingInputKeys, submittedValues) => {
+    run: async (handle, _task, currentBlockingInputs, submittedValues) => {
       received = submittedValues;
-      receivedBlockingInputKeys = currentBlockingInputKeys;
+      receivedBlockingInputs = currentBlockingInputs;
       await handle.beginApplying();
       await handle.complete();
     },
@@ -1068,12 +1249,64 @@ test("legacy AI input aliases map back only inside the resumed runner", async ()
   }
   await result.launched.done;
   assert.deepEqual(received, { [legacySecretKey]: "submitted-secret" });
-  assert.deepEqual(receivedBlockingInputKeys, [legacySecretKey]);
+  assert.deepEqual(
+    receivedBlockingInputs.map((input) => input.key),
+    [legacySecretKey]
+  );
   const inputEvent = (await eventsFor(blocked.id)).find(
     (event) => event.kind === "deploy_task.input_submitted"
   );
   assert.deepEqual(inputEvent?.payload.inputKeys, ["configuration-1"]);
   assert.equal(JSON.stringify(inputEvent).includes(legacySecretKey), false);
+});
+
+test("current AI input aliases restore identifiers outside the public grammar", async () => {
+  const ctx = testCtx();
+  const canonicalKey = "_API_KEY";
+  const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
+    blockingInputs: [
+      {
+        id: canonicalKey,
+        key: canonicalKey,
+        label: "API key",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let received: Record<string, unknown> | null = null;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: async (handle, _task, currentBlockingInputs, submittedValues) => {
+      received = submittedValues;
+      assert.equal(currentBlockingInputs[0]?.key, canonicalKey);
+      await handle.beginApplying();
+      await handle.complete();
+    },
+    taskId: blocked.id,
+    values: { "configuration-1": "submitted-secret" },
+  });
+
+  assert.equal(result.kind, "resumed");
+  if (result.kind !== "resumed") {
+    return;
+  }
+  await result.launched.done;
+  assert.deepEqual(received, { [canonicalKey]: "submitted-secret" });
+  const inputEvent = (await eventsFor(blocked.id)).find(
+    (event) => event.kind === "deploy_task.input_submitted"
+  );
+  assert.deepEqual(inputEvent?.payload.inputKeys, ["configuration-1"]);
+  assert.equal(JSON.stringify(inputEvent).includes(canonicalKey), false);
 });
 
 test("input action treats a task from another namespace as not found", async () => {

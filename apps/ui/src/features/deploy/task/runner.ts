@@ -107,7 +107,8 @@ import {
   getDeployDevboxStorageLimitFromEnv,
 } from "./runtime-config";
 import {
-  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskDeploymentPlan,
   type DeployTaskArtifactSummary,
   type DeployTaskBlockingInput,
@@ -177,8 +178,8 @@ const TEMPLATE_CLEANUP_KINDS = [
 ] as const;
 
 export interface StartDeployTaskRunnerInput {
-  /** Canonical keys from the blocked row immediately before its resume claim. */
-  currentBlockingInputKeys?: readonly string[];
+  /** Authoritative blockers captured immediately before the resume claim. */
+  currentBlockingInputs?: readonly DeployTaskBlockingInput[];
   encodedKubeconfig?: string;
   /**
    * Full create-time template args from the credentialed request (ADR
@@ -2160,7 +2161,13 @@ async function blockForDeploymentInputs(input: {
   summary: DeployTaskArtifactSummary;
   task: DeployTaskRow;
 }) {
-  const blockingInputs = blockingInputsFromDeploymentPlan(input.deploymentPlan);
+  const blockingInputs = blockingInputsFromDeploymentPlan(
+    input.deploymentPlan
+  ).map((blockingInput) => ({
+    ...blockingInput,
+    publicProjectionVersion:
+      CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+  }));
   await markTimelineStepWithEvent({
     eventKind: "deployment_task.input_required",
     eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
@@ -2184,7 +2191,7 @@ async function blockForDeploymentInputs(input: {
 }
 
 async function reblockRejectedSubmittedAiInput(input: {
-  currentBlockingInputKeys?: ReadonlySet<string>;
+  currentBlockingInputs?: readonly DeployTaskBlockingInput[];
   error: unknown;
   submittedInputKeys?: ReadonlySet<string>;
   task: DeployTaskRow;
@@ -2196,26 +2203,24 @@ async function reblockRejectedSubmittedAiInput(input: {
   if (validationError.valueSource !== "provided") {
     return false;
   }
-  const plan = input.task.artifactSummary.deploymentPlan;
+  const currentBlockingInputs = input.currentBlockingInputs ?? [];
+  const authoritativeBlockingInputKeys = new Set(
+    currentBlockingInputs.map((item) => item.key ?? item.id)
+  );
   if (
-    plan == null ||
     input.submittedInputKeys?.has(validationError.inputKey) !== true ||
-    input.currentBlockingInputKeys?.has(validationError.inputKey) !== true
+    !authoritativeBlockingInputKeys.has(validationError.inputKey)
   ) {
     return false;
   }
-  const blockingInputs = blockingInputsFromDeploymentPlan(plan);
-  const rejectedInputIndex = blockingInputs.findIndex(
+  const rejectedInputIndex = currentBlockingInputs.findIndex(
     (item) => (item.key ?? item.id) === validationError.inputKey
   );
-  const rejectedInput = blockingInputs[rejectedInputIndex];
+  const rejectedInput = currentBlockingInputs[rejectedInputIndex];
   if (rejectedInput == null) {
     return false;
   }
-  const inputKey = rejectedInput.key ?? rejectedInput.id;
-  const eventInputKey = aiPublicProjectionIsTrusted({ task: input.task })
-    ? inputKey
-    : legacyAiInputAlias(rejectedInputIndex);
+  const eventInputKey = legacyAiInputAlias(rejectedInputIndex);
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.input_rejected",
     message: "A deployment configuration value was rejected.",
@@ -2223,7 +2228,7 @@ async function reblockRejectedSubmittedAiInput(input: {
     phase: "configure",
   });
   await deployTaskRequestInputs(input.task.id, {
-    blockingInputs,
+    blockingInputs: [...currentBlockingInputs],
     phase: "configure",
   });
   return true;
@@ -2236,7 +2241,7 @@ function aiPublicProjectionIsTrusted(input: {
   return (
     input.generatedByCurrentRunner === true ||
     input.task.artifactSummary.publicProjectionVersion ===
-      CURRENT_AI_PUBLIC_PROJECTION_VERSION
+      CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION
   );
 }
 
@@ -2244,7 +2249,9 @@ function aiPublicProjectionStamp(
   trusted: boolean
 ): Pick<DeployTaskArtifactSummary, "publicProjectionVersion"> {
   return trusted
-    ? { publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION }
+    ? {
+        publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+      }
     : {};
 }
 
@@ -2267,7 +2274,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   kubeconfig: string;
   outputJson: Record<string, unknown>;
   planInputs?: SensitiveDeploymentInputShape[];
-  currentBlockingInputKeys?: ReadonlySet<string>;
+  currentBlockingInputs?: readonly DeployTaskBlockingInput[];
   submittedInputKeys?: ReadonlySet<string>;
   task: DeployTaskRow;
   templateYaml: string;
@@ -2326,7 +2333,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
     }
     if (
       await reblockRejectedSubmittedAiInput({
-        currentBlockingInputKeys: input.currentBlockingInputKeys,
+        currentBlockingInputs: input.currentBlockingInputs,
         error,
         submittedInputKeys: input.submittedInputKeys,
         task: input.task,
@@ -2459,7 +2466,7 @@ async function applyGeneratedAiDeployOutput(input: {
     deliveryManifest: persistable.deliveryManifest,
     deploymentPlan: persistableDeploymentPlan,
     outputJson: persistable.outputJson,
-    publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+    publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
   };
   if ((deploymentPlan.missingInputKeys?.length ?? 0) > 0) {
     await updateDeployTaskState(input.task.id, {
@@ -3349,7 +3356,7 @@ export async function runDeployTask(
             : undefined,
         kubeconfig,
         outputJson,
-        currentBlockingInputKeys: new Set(input.currentBlockingInputKeys ?? []),
+        currentBlockingInputs: input.currentBlockingInputs,
         submittedInputKeys: new Set(Object.keys(submittedInputValues)),
         task: resolvedTask,
         templateYaml: requiredStringValue(outputJson, "templateYaml"),

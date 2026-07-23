@@ -1,7 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 
 import {
-  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskCanvasProjection,
   type DeploymentTaskSource,
   type DeployTaskArtifactSummary,
@@ -16,7 +15,10 @@ import type {
   DeploymentTaskTimelineSnapshot,
   DeploymentTaskTimelineUpdate,
 } from "../timeline";
-import { deploymentTaskTimelineFromTaskRecord } from "../timeline-storage";
+import {
+  deploymentTaskTimelineFromTaskRecord,
+  persistableDeploymentTaskTimeline,
+} from "../timeline-storage";
 import type { DeployTaskEngineContext } from "./context";
 import {
   DeployTaskRunCancelledError,
@@ -60,7 +62,6 @@ export interface DeployTaskHandleStateFields {
    * are fetched, sensitive keys that reached the row are stripped here.
    */
   source?: DeploymentTaskSource;
-  timelineSnapshot?: DeploymentTaskTimelineSnapshot | null;
 }
 
 export interface DeployTaskHandle {
@@ -112,20 +113,6 @@ export interface CreateDeployTaskHandleInput {
   taskId: string;
 }
 
-function timelineWithoutUntrustedResultCards(
-  timeline: DeploymentTaskTimelineSnapshot
-): DeploymentTaskTimelineSnapshot {
-  if (
-    timeline.publicProjectionVersion === CURRENT_AI_PUBLIC_PROJECTION_VERSION
-  ) {
-    return timeline;
-  }
-  return {
-    ...timeline,
-    steps: timeline.steps.map(({ resultCards: _resultCards, ...step }) => step),
-  };
-}
-
 export function createDeployTaskHandle(
   ctx: DeployTaskEngineContext,
   input: CreateDeployTaskHandleInput
@@ -155,6 +142,38 @@ export function createDeployTaskHandle(
     if (row == null) {
       throw new DeployTaskRunSupersededError();
     }
+  }
+
+  async function writeState(
+    fields: DeployTaskHandleStateFields & {
+      timelineSnapshot?: DeploymentTaskTimelineSnapshot | null;
+    }
+  ): Promise<void> {
+    assertLive();
+    const rows = await ctx.db
+      .update(deployTasks)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(
+        and(
+          eq(deployTasks.id, input.taskId),
+          eq(deployTasks.leaseEpoch, input.leaseEpoch),
+          inArray(deployTasks.status, [...DEPLOY_TASK_ACTIVE_STATUSES])
+        )
+      )
+      .returning({
+        id: deployTasks.id,
+        namespace: deployTasks.namespace,
+        projectId: deployTasks.projectId,
+      });
+    const row = rows[0];
+    if (row == null) {
+      throw new DeployTaskRunSupersededError();
+    }
+    await publishDeployTaskChange(ctx, {
+      namespace: row.namespace,
+      projectId: row.projectId,
+      taskId: row.id,
+    });
   }
 
   return {
@@ -314,35 +333,11 @@ export function createDeployTaskHandle(
     },
 
     async setArtifacts(summary) {
-      await this.setState({ artifactSummary: summary });
+      await writeState({ artifactSummary: summary });
     },
 
     async setState(fields) {
-      assertLive();
-      const rows = await ctx.db
-        .update(deployTasks)
-        .set({ ...fields, updatedAt: new Date() })
-        .where(
-          and(
-            eq(deployTasks.id, input.taskId),
-            eq(deployTasks.leaseEpoch, input.leaseEpoch),
-            inArray(deployTasks.status, [...DEPLOY_TASK_ACTIVE_STATUSES])
-          )
-        )
-        .returning({
-          id: deployTasks.id,
-          namespace: deployTasks.namespace,
-          projectId: deployTasks.projectId,
-        });
-      const row = rows[0];
-      if (row == null) {
-        throw new DeployTaskRunSupersededError();
-      }
-      await publishDeployTaskChange(ctx, {
-        namespace: row.namespace,
-        projectId: row.projectId,
-        taskId: row.id,
-      });
+      await writeState(fields);
     },
 
     async updateTimeline(timelineInput) {
@@ -355,23 +350,16 @@ export function createDeployTaskHandle(
       if (existing == null || existing.leaseEpoch !== input.leaseEpoch) {
         throw new DeployTaskRunSupersededError();
       }
-      const trustedAiArtifact =
-        existing.runner.kind === "ai" &&
-        existing.artifactSummary.publicProjectionVersion ===
-          CURRENT_AI_PUBLIC_PROJECTION_VERSION;
-      const currentTimeline = deploymentTaskTimelineFromTaskRecord(existing);
-      const updatedTimeline = timelineInput.update(
-        trustedAiArtifact
-          ? timelineWithoutUntrustedResultCards(currentTimeline)
-          : currentTimeline
-      );
-      const nextTimeline: DeploymentTaskTimelineSnapshot = trustedAiArtifact
-        ? {
-            ...updatedTimeline,
-            publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
-          }
-        : updatedTimeline;
-      await this.setState({
+      const currentTimeline = persistableDeploymentTaskTimeline({
+        task: existing,
+        timeline: deploymentTaskTimelineFromTaskRecord(existing),
+      });
+      const updatedTimeline = timelineInput.update(currentTimeline);
+      const nextTimeline = persistableDeploymentTaskTimeline({
+        task: existing,
+        timeline: updatedTimeline,
+      });
+      await writeState({
         ...(timelineInput.event?.phase == null
           ? {}
           : { phase: timelineInput.event.phase }),

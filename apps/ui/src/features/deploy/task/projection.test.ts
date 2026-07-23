@@ -12,7 +12,7 @@ import {
   toDeploymentTaskProjection,
   upsertDeploymentTaskProjection,
 } from "./projection";
-import { CURRENT_AI_PUBLIC_PROJECTION_VERSION } from "./schema";
+import { CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION } from "./schema";
 
 const NOW = new Date("2026-06-11T10:00:00.000Z");
 
@@ -83,7 +83,7 @@ test("AI deployment projections never trust client-owned canvas fields", () => {
   const projection = toDeploymentTaskProjection(
     deploymentTaskSource({
       artifactSummary: {
-        publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+        publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
       },
       canvasProjection: {
         resultMappings: [

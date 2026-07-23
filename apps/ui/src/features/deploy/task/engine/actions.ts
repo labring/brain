@@ -3,8 +3,8 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
+import { publicDeployTaskBlockingInputs } from "../public-artifact-summary";
 import {
-  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskSource,
   type DeployTaskBlockingInput,
   type DeployTaskRow,
@@ -13,7 +13,6 @@ import {
 } from "../schema";
 import {
   isSensitiveDeploymentInput,
-  legacyAiInputAlias,
   MIN_SENSITIVE_INPUT_LENGTH,
   withoutSensitiveArgs,
 } from "../sensitive-inputs";
@@ -139,7 +138,7 @@ export type DeployTaskRunLauncher = (
 export type SubmitDeployTaskInputRunLauncher = (
   handle: DeployTaskHandle,
   task: DeployTaskRow,
-  currentBlockingInputKeys: readonly string[],
+  currentBlockingInputs: readonly DeployTaskBlockingInput[],
   submittedValues: Record<string, string | number | boolean>
 ) => Promise<void>;
 
@@ -615,15 +614,21 @@ function isSubmittedScalar(value: unknown): value is string | number | boolean {
 function submittedInputValues(
   blockingInputs: DeployTaskBlockingInput[],
   values: Record<string, unknown>,
-  useLegacyAiAliases: boolean
+  publicBlockingInputs: DeployTaskBlockingInput[],
+  strictPublicIdentifiers: boolean
 ): Record<string, string | number | boolean> {
   return Object.fromEntries(
     blockingInputs.flatMap((item, index) => {
       const canonicalKey = item.key ?? item.id;
-      const candidates = useLegacyAiAliases
-        ? [legacyAiInputAlias(index)]
+      const publicInput = publicBlockingInputs[index];
+      const publicKey = publicInput?.key ?? publicInput?.id;
+      const candidates = strictPublicIdentifiers
+        ? [publicKey]
         : [canonicalKey, item.id];
       for (const candidate of new Set(candidates)) {
+        if (candidate == null) {
+          continue;
+        }
         const value = values[candidate];
         if (isSubmittedScalar(value)) {
           return [[canonicalKey, value]];
@@ -657,25 +662,41 @@ function shortSensitiveSubmittedKey(
   return null;
 }
 
-function currentBlockingInputKeys(
-  blockingInputs: DeployTaskBlockingInput[]
-): string[] {
-  return [...new Set(blockingInputs.map((item) => item.key ?? item.id))];
-}
-
 function submittedEventInputKeys(input: {
   blockingInputs: DeployTaskBlockingInput[];
+  publicBlockingInputs: DeployTaskBlockingInput[];
   submittedValues: Record<string, string | number | boolean>;
-  useLegacyAiAliases: boolean;
 }): string[] {
-  if (!input.useLegacyAiAliases) {
-    return Object.keys(input.submittedValues);
-  }
   return input.blockingInputs.flatMap((item, index) =>
     Object.hasOwn(input.submittedValues, item.key ?? item.id)
-      ? [legacyAiInputAlias(index)]
+      ? [
+          input.publicBlockingInputs[index]?.key ??
+            input.publicBlockingInputs[index]?.id ??
+            item.key ??
+            item.id,
+        ]
       : []
   );
+}
+
+function hasEveryRequiredBlockingInput(
+  blockingInputs: DeployTaskBlockingInput[],
+  submittedValues: Record<string, string | number | boolean>
+): boolean {
+  return blockingInputs.every((item) => {
+    if (!item.required) {
+      return true;
+    }
+    const value = submittedValues[item.key ?? item.id];
+    return value !== undefined && String(value).trim() !== "";
+  });
+}
+
+function hasUniqueCanonicalBlockingInputKeys(
+  blockingInputs: DeployTaskBlockingInput[]
+): boolean {
+  const keys = blockingInputs.map((item) => item.key ?? item.id);
+  return new Set(keys).size === keys.length;
 }
 
 /**
@@ -695,15 +716,30 @@ export async function submitDeployTaskInputAction(
   if (row.status !== "blocked" || row.blockingInputs.length === 0) {
     return { kind: "conflict", task: row };
   }
-  const useLegacyAiAliases =
-    row.runner.kind === "ai" &&
-    row.artifactSummary.publicProjectionVersion !==
-      CURRENT_AI_PUBLIC_PROJECTION_VERSION;
-  const blockingInputKeys = currentBlockingInputKeys(row.blockingInputs);
+  const currentBlockingInputs = [...row.blockingInputs];
+  if (!hasUniqueCanonicalBlockingInputKeys(currentBlockingInputs)) {
+    return {
+      kind: "invalid-input",
+      message: "Deployment inputs are unavailable. Redeploy to try again.",
+      task: row,
+    };
+  }
+  const publicBlockingInputs = publicDeployTaskBlockingInputs(
+    currentBlockingInputs,
+    { runner: row.runner }
+  );
+  if (publicBlockingInputs.length !== currentBlockingInputs.length) {
+    return {
+      kind: "invalid-input",
+      message: "Deployment inputs are unavailable. Redeploy to try again.",
+      task: row,
+    };
+  }
   const submittedValues = submittedInputValues(
-    row.blockingInputs,
+    currentBlockingInputs,
     input.values,
-    useLegacyAiAliases
+    publicBlockingInputs,
+    row.runner.kind === "ai"
   );
   const submittedInputKeys = Object.keys(submittedValues);
   if (submittedInputKeys.length === 0) {
@@ -713,23 +749,31 @@ export async function submitDeployTaskInputAction(
       task: row,
     };
   }
+  if (!hasEveryRequiredBlockingInput(currentBlockingInputs, submittedValues)) {
+    return {
+      kind: "invalid-input",
+      message: "Submit every required deployment input.",
+      task: row,
+    };
+  }
   const shortSensitiveKey = shortSensitiveSubmittedKey(
-    row.blockingInputs,
+    currentBlockingInputs,
     submittedValues
   );
   if (shortSensitiveKey != null) {
     return {
       kind: "invalid-input",
-      message: useLegacyAiAliases
-        ? `Sensitive deployment inputs must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`
-        : `Deployment input "${shortSensitiveKey}" must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`,
+      message:
+        row.runner.kind === "ai"
+          ? `Sensitive deployment inputs must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`
+          : `Deployment input "${shortSensitiveKey}" must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`,
       task: row,
     };
   }
   const eventInputKeys = submittedEventInputKeys({
-    blockingInputs: row.blockingInputs,
+    blockingInputs: currentBlockingInputs,
+    publicBlockingInputs,
     submittedValues,
-    useLegacyAiAliases,
   });
 
   await appendDeployTaskEvent(ctx, {
@@ -778,7 +822,7 @@ export async function submitDeployTaskInputAction(
   const launched = launchDeployTaskRun(ctx, {
     claim,
     run: (handle) =>
-      input.run(handle, current, blockingInputKeys, submittedValues),
+      input.run(handle, current, currentBlockingInputs, submittedValues),
   });
   return { kind: "resumed", launched, task: current };
 }

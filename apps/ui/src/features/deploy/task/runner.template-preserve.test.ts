@@ -4,8 +4,10 @@ import YAML from "yaml";
 
 import type { DeployTaskHandle } from "./engine/handle";
 import {
-  CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskDeploymentPlan,
+  type DeployTaskBlockingInput,
   type DeployTaskRow,
 } from "./schema";
 import type { DeploymentTaskTimelineSnapshot } from "./timeline";
@@ -402,6 +404,37 @@ data:
   ready: "true"
 `;
 
+const AI_CURRENT_BLOCKING_INPUTS = {
+  API_KEY: {
+    id: "API_KEY",
+    key: "API_KEY",
+    label: "API key",
+    publicProjectionVersion:
+      CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+    required: true,
+    sensitive: true,
+    type: "secret",
+    valueType: "secret",
+  },
+  PORT: {
+    id: "PORT",
+    key: "PORT",
+    label: "Port",
+    publicProjectionVersion:
+      CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+    required: true,
+    sensitive: false,
+    type: "env",
+    valueType: "number",
+  },
+} satisfies Record<string, DeployTaskBlockingInput>;
+
+function currentAiBlockingInputs(
+  ...keys: Array<keyof typeof AI_CURRENT_BLOCKING_INPUTS>
+): DeployTaskBlockingInput[] {
+  return keys.map((key) => ({ ...AI_CURRENT_BLOCKING_INPUTS[key] }));
+}
+
 function preparedAiInputTaskRow(input?: {
   missingInputKeys?: string[];
   planArgs?: Record<string, string>;
@@ -442,7 +475,8 @@ function preparedAiInputTaskRow(input?: {
       ...(input?.trustedPublicProjection === false
         ? {}
         : {
-            publicProjectionVersion: CURRENT_AI_PUBLIC_PROJECTION_VERSION,
+            publicProjectionVersion:
+              CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
           }),
     },
     blockingInputs: [],
@@ -597,7 +631,7 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     currentRow = aiTaskWithCompletePlanAndInvalidOutput();
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["PORT", "API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: { PORT: "8080" },
       taskId: currentRow.id,
@@ -756,7 +790,7 @@ data:
     });
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["PORT", "API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: { API_KEY: secret, PORT: "8080" },
       taskId: "task-1",
@@ -787,7 +821,7 @@ data:
     });
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["PORT", "API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: {
         API_KEY: "submitted-secret",
@@ -813,7 +847,7 @@ data:
     projectedTimeline = deploymentTaskTimelineFromTaskRecord(currentRow);
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["PORT", "API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: {
         API_KEY: "submitted-secret",
@@ -840,7 +874,7 @@ data:
     currentRow = preparedAiInputTaskRow();
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["PORT", "API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: {
         API_KEY: "secret-that-must-not-persist",
@@ -865,7 +899,7 @@ data:
     );
     expect(rejectedEvent?.payload).toEqual({
       code: "number",
-      inputKey: "PORT",
+      inputKey: "configuration-1",
     });
     expect(JSON.stringify({ rejectedEvent, request })).not.toContain(
       "invalid-port-that-must-not-persist"
@@ -881,7 +915,7 @@ data:
     currentRow = preparedAiInputTaskRow();
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["PORT", "API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: { API_KEY: shortSecret, PORT: "8080" },
       taskId: "task-1",
@@ -894,7 +928,7 @@ data:
     );
     expect(rejectedEvent?.payload).toEqual({
       code: "minimum-length",
-      inputKey: "API_KEY",
+      inputKey: "configuration-2",
     });
     expect(
       JSON.stringify({
@@ -923,7 +957,7 @@ data:
     });
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: { API_KEY: secret },
       taskId: "task-1",
@@ -950,7 +984,7 @@ data:
     });
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: {
         API_KEY: "secret-that-must-not-persist",
@@ -978,7 +1012,7 @@ data:
     });
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: { PORT: "invalid-extra-port" },
       taskId: "task-1",
@@ -1008,7 +1042,7 @@ data:
     });
 
     await runDeployTask(runnerHandle(), {
-      currentBlockingInputKeys: ["API_KEY"],
+      currentBlockingInputs: currentAiBlockingInputs("API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
       submittedInputValues: { API_KEY: "" },
       taskId: "task-1",
