@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { render } from "@testing-library/react/pure";
 import { DATABASE_CONNECTION_MASK } from "@workspace/ui/components/database-node/database-node";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import {
+  actAndDrain,
+  installTestDom,
+  restoreActEnvironment,
+  setActEnvironment,
+} from "@/features/project-canvas/react-test-harness";
 import type { DbSettingsData } from "@/features/resource-settings/db/db-settings-types";
 import { createPendingSettingsStore } from "@/features/resource-settings/pending-settings-updates";
 import { DatabaseSettingsPaneContent } from "./db-settings-sections";
@@ -11,41 +18,6 @@ import { DatabaseSettingsPaneContent } from "./db-settings-sections";
 const noop = () => {
   /* test noop */
 };
-
-class MemoryStorage
-  implements Pick<Storage, "getItem" | "removeItem" | "setItem">
-{
-  readonly values = new Map<string, string>();
-
-  getItem(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-
-  removeItem(key: string): void {
-    this.values.delete(key);
-  }
-
-  setItem(key: string, value: string): void {
-    this.values.set(key, value);
-  }
-}
-
-function withBrowserLocalStorage<T>(storage: MemoryStorage, run: () => T): T {
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: { localStorage: storage },
-  });
-  try {
-    return run();
-  } finally {
-    if (previousWindow == null) {
-      Reflect.deleteProperty(globalThis, "window");
-    } else {
-      Object.defineProperty(globalThis, "window", previousWindow);
-    }
-  }
-}
 
 const CONNECTION_ADDRESS_RE = /Connection Address/;
 const PRIVATE_CONNECTION_RE = /Private Connection/;
@@ -182,46 +154,63 @@ test("database settings pane renders replica counts without unit suffix", () => 
   assert.doesNotMatch(html, NUMERIC_REPLICA_UNIT_VALUE_RE);
 });
 
-test("database settings pane overlays accepted pending settings targets", () => {
-  const storage = new MemoryStorage();
-  const owner = {
-    clusterFingerprint: "stable:test-cluster",
-    kind: "database" as const,
-    name: "postgres",
-    namespace: "default",
-  };
-  createPendingSettingsStore({ now: () => 1000, storage }).replaceDirtyDomains({
-    owner,
-    updates: [
-      {
-        domain: "resources",
-        submittedAgainst: {
-          cpuLimitCores: 1,
-          memoryLimitGi: 2,
-          replicas: 2,
-          storageSizeGi: 20,
+test("database settings pane overlays accepted pending settings targets", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  try {
+    const owner = {
+      clusterFingerprint: "stable:test-cluster",
+      kind: "database" as const,
+      name: "postgres",
+      namespace: "default",
+    };
+    createPendingSettingsStore({
+      now: () => 1000,
+      storage: window.localStorage,
+    }).replaceDirtyDomains({
+      owner,
+      updates: [
+        {
+          domain: "resources",
+          submittedAgainst: {
+            cpuLimitCores: 1,
+            memoryLimitGi: 2,
+            replicas: 2,
+            storageSizeGi: 20,
+          },
+          target: {
+            cpuLimitCores: 1,
+            memoryLimitGi: 2,
+            replicas: 3,
+            storageSizeGi: 20,
+          },
         },
-        target: {
-          cpuLimitCores: 1,
-          memoryLimitGi: 2,
-          replicas: 3,
-          storageSizeGi: 20,
-        },
-      },
-    ],
-  });
-
-  const html = withBrowserLocalStorage(storage, () =>
-    renderPane(
+      ],
+    });
+    const element = (
       <DatabaseSettingsPaneContent
         data={BASE_DATA}
         onSubmitPatch={noop}
         submissionOwner={owner}
       />
-    )
-  );
+    );
 
-  assert.match(html, PENDING_REPLICA_VALUE_RE);
+    // Server markup omits browser-local pending state, so hydration matches
+    // SSR; the overlay arrives through the store snapshot on the client.
+    assert.doesNotMatch(renderPane(element), PENDING_REPLICA_VALUE_RE);
+
+    let rendered: ReturnType<typeof render> | undefined;
+    await actAndDrain(() => {
+      rendered = render(element);
+    });
+    assert.match(rendered?.container.innerHTML ?? "", PENDING_REPLICA_VALUE_RE);
+    await actAndDrain(() => {
+      rendered?.unmount();
+    });
+  } finally {
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
 });
 
 test("database settings pane hides unprovisioned public address while public access is off", () => {

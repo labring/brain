@@ -261,13 +261,15 @@ export function usePendingSettingsEntries(
   owner: PendingSettingsOwnerIdentity | null | undefined,
   store: PendingSettingsStore | null
 ): readonly PendingSettingsUpdateEntry[] {
-  // Server snapshot also reads the store when one exists: real SSR has no
-  // store (empty), while static-markup tests fake a window and expect the
-  // seeded entries to render.
+  // The server snapshot is always empty: pending entries live in browser
+  // storage the server cannot see, and hydration must render what the server
+  // rendered. Reading the store here instead would make hydration on a
+  // client with persisted entries mismatch the server HTML and rebuild the
+  // settings subtree; the entries arrive via the subscription right after.
   const snapshot = useSyncExternalStore(
     store?.subscribe ?? subscribeNothing,
     store?.snapshot ?? emptyPendingSnapshot,
-    store?.snapshot ?? emptyPendingSnapshot
+    emptyPendingSnapshot
   );
 
   return useMemo(() => {

@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { render } from "@testing-library/react/pure";
 import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import {
+  actAndDrain,
+  installTestDom,
+  restoreActEnvironment,
+  setActEnvironment,
+} from "@/features/project-canvas/react-test-harness";
 import { createPendingSettingsStore } from "../pending-settings-updates";
 import {
   apNetworkAfterDeletePublicAddress,
@@ -61,41 +68,6 @@ function TestApSettingsSections({
 const noop = () => {
   /* test noop */
 };
-
-class MemoryStorage
-  implements Pick<Storage, "getItem" | "removeItem" | "setItem">
-{
-  readonly values = new Map<string, string>();
-
-  getItem(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-
-  removeItem(key: string): void {
-    this.values.delete(key);
-  }
-
-  setItem(key: string, value: string): void {
-    this.values.set(key, value);
-  }
-}
-
-function withBrowserLocalStorage<T>(storage: MemoryStorage, run: () => T): T {
-  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-  Object.defineProperty(globalThis, "window", {
-    configurable: true,
-    value: { localStorage: storage },
-  });
-  try {
-    return run();
-  } finally {
-    if (previousWindow == null) {
-      Reflect.deleteProperty(globalThis, "window");
-    } else {
-      Object.defineProperty(globalThis, "window", previousWindow);
-    }
-  }
-}
 
 function editorToken(name: string): string {
   return ["$", "{{", name, "}}"].join("");
@@ -1732,41 +1704,44 @@ test("configFileContentPreview returns the first non-empty trimmed line", () => 
   assert.equal(configFileContentPreview("key: value"), "key: value");
 });
 
-test("AP settings pane overlays accepted pending settings targets", () => {
-  const storage = new MemoryStorage();
-  const owner = {
-    clusterFingerprint: "stable:test-cluster",
-    kind: "ap" as const,
-    name: "api",
-    namespace: "default",
-  };
-  createPendingSettingsStore({ now: () => 1000, storage }).replaceDirtyDomains({
-    owner,
-    updates: [
-      {
-        domain: "launch",
-        submittedAgainst: {
-          args: [],
-          command: [],
-          configMaps: [],
-          image: "ghcr.io/acme/api:latest",
-          storage: [],
-          workloadKind: "deployment",
+test("AP settings pane overlays accepted pending settings targets", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  try {
+    const owner = {
+      clusterFingerprint: "stable:test-cluster",
+      kind: "ap" as const,
+      name: "api",
+      namespace: "default",
+    };
+    createPendingSettingsStore({
+      now: () => 1000,
+      storage: window.localStorage,
+    }).replaceDirtyDomains({
+      owner,
+      updates: [
+        {
+          domain: "launch",
+          submittedAgainst: {
+            args: [],
+            command: [],
+            configMaps: [],
+            image: "ghcr.io/acme/api:latest",
+            storage: [],
+            workloadKind: "deployment",
+          },
+          target: {
+            args: [],
+            command: [],
+            configMaps: [],
+            image: "ghcr.io/acme/api:pending",
+            storage: [],
+            workloadKind: "deployment",
+          },
         },
-        target: {
-          args: [],
-          command: [],
-          configMaps: [],
-          image: "ghcr.io/acme/api:pending",
-          storage: [],
-          workloadKind: "deployment",
-        },
-      },
-    ],
-  });
-
-  const html = withBrowserLocalStorage(storage, () =>
-    renderToStaticMarkup(
+      ],
+    });
+    const element = (
       <TestApSettingsSections
         cpuQuota={{ onValueChange: noop, value: 1 }}
         env={[]}
@@ -1777,10 +1752,24 @@ test("AP settings pane overlays accepted pending settings targets", () => {
         onSettingsDraftCommit={noop}
         submissionOwner={owner}
       />
-    )
-  );
+    );
 
-  assert.match(html, PENDING_AP_IMAGE_RE);
+    // Server markup omits browser-local pending state, so hydration matches
+    // SSR; the overlay arrives through the store snapshot on the client.
+    assert.doesNotMatch(renderToStaticMarkup(element), PENDING_AP_IMAGE_RE);
+
+    let rendered: ReturnType<typeof render> | undefined;
+    await actAndDrain(() => {
+      rendered = render(element);
+    });
+    assert.match(rendered?.container.innerHTML ?? "", PENDING_AP_IMAGE_RE);
+    await actAndDrain(() => {
+      rendered?.unmount();
+    });
+  } finally {
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
 });
 
 test("AP settings pane exposes panel-level draft actions without environment save controls", () => {
