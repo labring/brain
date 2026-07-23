@@ -5,7 +5,6 @@ import {
   Component,
   type ReactNode,
   useCallback,
-  useEffect,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -336,13 +335,15 @@ export function ProjectIndexHorizon() {
   );
 
   const wantsWebgl = !reducedMotion && values.engineWebgl >= 0.5;
-  useEffect(() => {
+  const [prevWantsWebgl, setPrevWantsWebgl] = useState(wantsWebgl);
+  if (wantsWebgl !== prevWantsWebgl) {
+    setPrevWantsWebgl(wantsWebgl);
     if (!wantsWebgl) {
       // Leaving the WebGL engine (dev knob / reduced-motion) resets the
       // attempt; a context-loss "failed" stays sticky otherwise.
       setCanvasPhase("idle");
     }
-  }, [wantsWebgl]);
+  }
 
   const handlePhase = useCallback((phase: HorizonWebglPhase) => {
     setCanvasPhase(phase);

@@ -11,10 +11,17 @@ import { useLayoutEffect, useState } from "react";
  */
 export function useEnterMotionFrames(open: boolean) {
   const [motionOpen, setMotionOpen] = useState(open);
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) {
+      setMotionOpen(false);
+    }
+  }
 
   useLayoutEffect(() => {
     if (!open) {
-      setMotionOpen(false);
       return;
     }
     let frame = requestAnimationFrame(() => {

@@ -16,7 +16,7 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { SquarePen, Upload } from "lucide-react";
-import { memo, useCallback, useEffect, useId, useMemo, useState } from "react";
+import { memo, useCallback, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import YAML from "yaml";
 
@@ -104,10 +104,11 @@ function DeploymentImageSection({
   );
   const [draftImage, setDraftImage] = useState(currentImage);
   const [isUpdating, setIsUpdating] = useState(false);
-
-  useEffect(() => {
+  const [prevCurrentImage, setPrevCurrentImage] = useState(currentImage);
+  if (prevCurrentImage !== currentImage) {
+    setPrevCurrentImage(currentImage);
     setDraftImage(currentImage);
-  }, [currentImage]);
+  }
 
   const trimmedDraft = draftImage.trim();
   const canUpdate =

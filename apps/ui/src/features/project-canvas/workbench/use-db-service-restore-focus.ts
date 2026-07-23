@@ -76,18 +76,21 @@ export function useDbServiceRestoreFocus({
     [nodes, restoredDbServiceViewportFocusTarget]
   );
 
-  useEffect(() => {
+  if (pendingDbServiceRestoreFocus != null) {
     if (
-      pendingDbServiceRestoreFocus == null ||
-      !shouldCancelPendingDbServiceRestoreFocus({
+      shouldCancelPendingDbServiceRestoreFocus({
         main: mainSurface,
         pending: pendingDbServiceRestoreFocus,
       })
     ) {
-      return;
+      setPendingDbServiceRestoreFocus(null);
+    } else if (pendingDbServiceRestoreFocusNode != null) {
+      setPendingDbServiceRestoreFocus(null);
+      setRestoredDbServiceViewportFocusTarget(
+        pendingDbServiceRestoreFocus.restoredTarget
+      );
     }
-    setPendingDbServiceRestoreFocus(null);
-  }, [mainSurface, pendingDbServiceRestoreFocus]);
+  }
 
   useEffect(() => {
     if (pendingDbServiceRestoreFocus == null) {
@@ -103,22 +106,13 @@ export function useDbServiceRestoreFocus({
   }, [pendingDbServiceRestoreFocus]);
 
   useEffect(() => {
-    if (
-      pendingDbServiceRestoreFocus == null ||
-      pendingDbServiceRestoreFocusNode == null
-    ) {
+    if (restoredDbServiceViewportFocusTarget == null) {
       return;
     }
-
-    const restoredTarget = pendingDbServiceRestoreFocus.restoredTarget;
-    setPendingDbServiceRestoreFocus(null);
-    setRestoredDbServiceViewportFocusTarget(restoredTarget);
-    focusCanvasSelection(canvasSelectionForRestoredDbService(restoredTarget));
-  }, [
-    focusCanvasSelection,
-    pendingDbServiceRestoreFocus,
-    pendingDbServiceRestoreFocusNode,
-  ]);
+    focusCanvasSelection(
+      canvasSelectionForRestoredDbService(restoredDbServiceViewportFocusTarget)
+    );
+  }, [focusCanvasSelection, restoredDbServiceViewportFocusTarget]);
 
   const clearRestoredDbServiceViewportFocus = useCallback(() => {
     setRestoredDbServiceViewportFocusTarget(null);

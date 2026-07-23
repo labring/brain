@@ -16,7 +16,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { EllipsisVertical, Pin, PinOff, SquarePen, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import {
   ProjectEditDialog,
@@ -254,11 +254,13 @@ export function ProjectExplorerListItem({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteVerification, setDeleteVerification] = useState("");
 
-  useEffect(() => {
+  const [prevDeleteOpen, setPrevDeleteOpen] = useState(deleteOpen);
+  if (deleteOpen !== prevDeleteOpen) {
+    setPrevDeleteOpen(deleteOpen);
     if (deleteOpen) {
       setDeleteVerification("");
     }
-  }, [deleteOpen]);
+  }
 
   const created = toDate(project.createdAt);
   const iso = Number.isNaN(created.getTime())

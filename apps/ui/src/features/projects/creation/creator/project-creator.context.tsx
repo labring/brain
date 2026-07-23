@@ -297,21 +297,43 @@ export function ProjectCreatorRoot({
     ]
   );
 
-  useEffect(() => {
+  const [displayNameErrorInputs, setDisplayNameErrorInputs] = useState({
+    validate: validateProjectDisplayName,
+    value: projectDisplayName,
+  });
+  if (
+    displayNameErrorInputs.value !== projectDisplayName ||
+    displayNameErrorInputs.validate !== validateProjectDisplayName
+  ) {
+    setDisplayNameErrorInputs({
+      validate: validateProjectDisplayName,
+      value: projectDisplayName,
+    });
     if (projectDisplayNameError != null) {
       setProjectDisplayNameError(
         validateProjectDisplayName(projectDisplayName)
       );
     }
-  }, [projectDisplayName, projectDisplayNameError, validateProjectDisplayName]);
+  }
 
-  useEffect(() => {
+  const [descriptionErrorInputs, setDescriptionErrorInputs] = useState({
+    validate: validateProjectDescription,
+    value: projectDescription,
+  });
+  if (
+    descriptionErrorInputs.value !== projectDescription ||
+    descriptionErrorInputs.validate !== validateProjectDescription
+  ) {
+    setDescriptionErrorInputs({
+      validate: validateProjectDescription,
+      value: projectDescription,
+    });
     if (projectDescriptionError != null) {
       setProjectDescriptionError(
         validateProjectDescription(projectDescription)
       );
     }
-  }, [projectDescription, projectDescriptionError, validateProjectDescription]);
+  }
 
   const dbOptions = useMemo(
     () =>

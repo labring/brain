@@ -135,7 +135,9 @@ export function useDbServiceBackupWorkflow({
       }),
     [runtime.dbService, runtime.projectId]
   );
-  activeRefreshIdentityRef.current = refreshIdentity;
+  useEffect(() => {
+    activeRefreshIdentityRef.current = refreshIdentity;
+  }, [refreshIdentity]);
   const currentProductResource =
     latestProductResource?.refreshIdentity === refreshIdentity
       ? latestProductResource.value

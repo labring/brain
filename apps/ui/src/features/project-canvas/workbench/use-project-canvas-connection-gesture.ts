@@ -110,15 +110,19 @@ export function useProjectCanvasConnectionGesture({
     [isSupportedCanvasConnection]
   );
 
+  const handleSnappedConnectionChange = useStableCallback(
+    (connection: Connection | null) => {
+      snappedConnectionInGestureRef.current = connection;
+    }
+  );
+
   const projectCanvasConnectionLine = useMemo(
     () =>
       createProjectCanvasConnectionLine({
         isSupportedConnection: isSupportedCanvasConnection,
-        onSnappedConnectionChange: (connection) => {
-          snappedConnectionInGestureRef.current = connection;
-        },
+        onSnappedConnectionChange: handleSnappedConnectionChange,
       }),
-    [isSupportedCanvasConnection]
+    [handleSnappedConnectionChange, isSupportedCanvasConnection]
   );
 
   return {

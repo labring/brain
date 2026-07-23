@@ -202,11 +202,13 @@ export function TemplateDeployer({
   );
   const appliedInitialSettingsRef = useRef(initialSettings);
 
-  useEffect(() => {
-    setTemplateName((current) =>
-      current.trim() === "" ? defaultTemplateName(choices) : current
-    );
-  }, [choices]);
+  const [prevChoices, setPrevChoices] = useState(choices);
+  if (choices !== prevChoices) {
+    setPrevChoices(choices);
+    if (templateName.trim() === "") {
+      setTemplateName(defaultTemplateName(choices));
+    }
+  }
 
   useEffect(() => {
     if (appliedInitialSettingsRef.current === initialSettings) {

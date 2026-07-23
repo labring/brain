@@ -22,7 +22,7 @@ import {
   ListTodoIcon,
   XCircleIcon,
 } from "lucide-react";
-import { memo, type ReactNode, useEffect, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 
 import {
   formatToolDurationMs,
@@ -374,18 +374,27 @@ function ChatToolGroupComponent({
     () => !(closeWhenSettled && allSettled && parts.length > 0)
   );
 
-  useEffect(() => {
-    if (userTouched) {
-      return;
+  const [prevAutoInputs, setPrevAutoInputs] = useState({
+    allSettled,
+    anyActive,
+    closeWhenSettled,
+    userTouched,
+  });
+  if (
+    prevAutoInputs.allSettled !== allSettled ||
+    prevAutoInputs.anyActive !== anyActive ||
+    prevAutoInputs.closeWhenSettled !== closeWhenSettled ||
+    prevAutoInputs.userTouched !== userTouched
+  ) {
+    setPrevAutoInputs({ allSettled, anyActive, closeWhenSettled, userTouched });
+    if (!userTouched) {
+      if (anyActive) {
+        setOpen(true);
+      } else if (closeWhenSettled && allSettled) {
+        setOpen(false);
+      }
     }
-    if (anyActive) {
-      setOpen(true);
-      return;
-    }
-    if (closeWhenSettled && allSettled) {
-      setOpen(false);
-    }
-  }, [anyActive, allSettled, closeWhenSettled, userTouched]);
+  }
 
   const count = parts.length;
   const totalDurationMs = sumKnownToolDurationsMs(parts);

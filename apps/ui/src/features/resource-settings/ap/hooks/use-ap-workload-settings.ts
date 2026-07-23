@@ -144,7 +144,9 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   });
 
   const claimBodyRef = useRef<Record<string, unknown> | undefined>(undefined);
-  claimBodyRef.current = k8sGetClaimBody(claimPayload);
+  useEffect(() => {
+    claimBodyRef.current = k8sGetClaimBody(claimPayload);
+  }, [claimPayload]);
 
   const claimResourceVersion = useMemo(() => {
     const b = k8sGetClaimBody(claimPayload);
@@ -158,12 +160,14 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
 
   const [localOverride, setLocalOverride] =
     useState<Partial<ClaimApSettings> | null>(null);
+  const [committedClaimResourceVersion, setCommittedClaimResourceVersion] =
+    useState(claimResourceVersion);
 
   // Reset optimistic fields when the fetched claim revision changes (refetch / external edit).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — run when `claimResourceVersion` updates
-  useEffect(() => {
+  if (claimResourceVersion !== committedClaimResourceVersion) {
+    setCommittedClaimResourceVersion(claimResourceVersion);
     setLocalOverride(null);
-  }, [claimResourceVersion]);
+  }
 
   const mapped = useMemo(
     () =>

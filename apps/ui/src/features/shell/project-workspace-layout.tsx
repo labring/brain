@@ -28,6 +28,7 @@ import {
   type TransitionEvent,
   useCallback,
   useEffect,
+  useInsertionEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -128,6 +129,20 @@ type AssistantClientToolSubmission =
       toolCallId: string;
       output: OpenProjectSurfaceToolOutput;
     };
+
+// The transport is memoized so it stays stable across URL changes; its send-time
+// closures must still see the latest thread-stable wire fields and billing
+// handler. They read them from this external store (keyed per session by a
+// stable token) rather than closing over a React ref, since ref reads inside the
+// `new DefaultChatTransport(...)` closures would run afoul of render-time rules.
+const transportLatestStore = new WeakMap<
+  object,
+  {
+    namespace: string;
+    onBillingHeaders: (headers: Headers) => void;
+    projectId: string;
+  }
+>();
 
 const VIEWPORT_RESIZE_SETTLE_MS = 180;
 // --project-surface-motion-enter-duration (340ms) plus scheduling slack;
@@ -352,20 +367,18 @@ function ProjectAssistantChatSession({
     namespace,
     projectId,
   });
-  // Keep a live ref so the transport memo stays stable across URL changes. The
-  // volatile canvas selection is pinned per-message (see submitComposerText), so
-  // only thread-stable wire fields belong here.
-  const wireRef = useRef({
-    namespace: assistantNamespaceRaw,
-    projectId,
+  // Publish the live wire fields + billing handler to the external store so the
+  // transport memo stays stable across URL changes while its send-time closures
+  // still read the latest values. The volatile canvas selection is pinned
+  // per-message (see submitComposerText), so only thread-stable fields go here.
+  const [transportToken] = useState<object>(() => ({}));
+  useInsertionEffect(() => {
+    transportLatestStore.set(transportToken, {
+      namespace: assistantNamespaceRaw,
+      onBillingHeaders,
+      projectId,
+    });
   });
-  wireRef.current = {
-    namespace: assistantNamespaceRaw,
-    projectId,
-  };
-
-  const billingHandlerRef = useRef(onBillingHeaders);
-  billingHandlerRef.current = onBillingHeaders;
 
   const transport = useMemo(
     () =>
@@ -375,7 +388,9 @@ function ProjectAssistantChatSession({
         // the real fetch; the cast satisfies the transport's `typeof fetch`.
         fetch: (async (input, init) => {
           const response = await fetch(input, init);
-          billingHandlerRef.current(response.headers);
+          transportLatestStore
+            .get(transportToken)
+            ?.onBillingHeaders(response.headers);
           return response;
         }) as typeof fetch,
         prepareSendMessagesRequest: ({
@@ -390,7 +405,11 @@ function ProjectAssistantChatSession({
           if (last == null) {
             throw new Error("Assistant chat: no message to send");
           }
-          const wire = wireRef.current;
+          const latest = transportLatestStore.get(transportToken);
+          const wire = {
+            namespace: latest?.namespace ?? "",
+            projectId: latest?.projectId ?? "",
+          };
           const assistantContext = buildAssistantContextPayload(
             currentProject.displayName,
             wire.projectId
@@ -411,7 +430,7 @@ function ProjectAssistantChatSession({
           };
         },
       }),
-    [currentProject.displayName, kubeconfig]
+    [currentProject.displayName, kubeconfig, transportToken]
   );
 
   const {
@@ -508,7 +527,9 @@ function ProjectAssistantChatSession({
     },
   });
 
-  addToolOutputRef.current = addToolOutput;
+  useInsertionEffect(() => {
+    addToolOutputRef.current = addToolOutput;
+  });
 
   useEffect(() => {
     const currentProjectId = projectId.trim();
@@ -645,11 +666,18 @@ function ProjectAssistantChatPane() {
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
   const prevBillingRef = useRef<"free" | "user" | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const sessionResetKey = `${kubeconfig} ${namespaceRaw} ${namespaceReady}`;
+  const [prevSessionResetKey, setPrevSessionResetKey] =
+    useState(sessionResetKey);
+  if (prevSessionResetKey !== sessionResetKey) {
+    setPrevSessionResetKey(sessionResetKey);
     setSession(null);
     setSessionError(false);
     setFreeTier(null);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     prevBillingRef.current = null;
 
     if (!namespaceReady) {
@@ -952,7 +980,9 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
   const viewportResizingRef = useRef(false);
   const viewportResizeTimerRef = useRef<number | null>(null);
   const paneWidthRef = useRef(paneWidth);
-  paneWidthRef.current = paneWidth;
+  useInsertionEffect(() => {
+    paneWidthRef.current = paneWidth;
+  });
   const dragRef = useRef<{
     lastWidth: number;
     pointerId: number;
@@ -1040,18 +1070,34 @@ function ProjectWorkspaceLayoutContent({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     if (!assistantPaneOpen) {
-      setPaneEnterSettled(false);
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setPaneEnterSettled(false);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setPaneEnterSettled(true);
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setPaneEnterSettled(true);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
     const timeout = window.setTimeout(() => {
       setPaneEnterSettled(true);
     }, ASSISTANT_PANE_ENTER_SETTLE_MS);
-    return () => window.clearTimeout(timeout);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, [assistantPaneOpen]);
 
   const handlePaneTransitionEnd = useCallback(

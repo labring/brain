@@ -17,6 +17,7 @@ export function FindBarBar({
   find: FindBarModel;
 }) {
   const { state, actions, meta } = find;
+  const { inputRef } = meta;
 
   const isMac =
     typeof navigator !== "undefined" &&
@@ -48,11 +49,11 @@ export function FindBarBar({
             if (e.key === "Escape") {
               e.preventDefault();
               actions.clear();
-              meta.inputRef.current?.blur();
+              inputRef.current?.blur();
             }
           }}
           placeholder={"Find in results..."}
-          ref={meta.inputRef}
+          ref={inputRef}
           type="text"
           value={state.searchTerm}
         />

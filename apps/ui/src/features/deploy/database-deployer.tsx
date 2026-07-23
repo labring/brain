@@ -9,7 +9,7 @@ import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-ico
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Rocket, Upload } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { DeploymentSettings } from "./deployment-settings";
 
 export type DatabaseInstancePreset = "xs" | "s" | "m" | "l";
@@ -177,13 +177,14 @@ export function DatabaseDeployer({
       : "1";
   });
 
-  useEffect(() => {
-    setDatabaseId((current) =>
-      databaseOptions.some((option) => option.id === current)
-        ? current
-        : defaultDatabaseId(databaseOptions)
-    );
-  }, [databaseOptions]);
+  const [prevDatabaseOptions, setPrevDatabaseOptions] =
+    useState(databaseOptions);
+  if (databaseOptions !== prevDatabaseOptions) {
+    setPrevDatabaseOptions(databaseOptions);
+    if (!databaseOptions.some((option) => option.id === databaseId)) {
+      setDatabaseId(defaultDatabaseId(databaseOptions));
+    }
+  }
 
   const choice = selectedChoice(databaseOptions, databaseId);
   const effectiveDatabaseId = choice?.id ?? "";

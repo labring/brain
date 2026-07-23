@@ -33,6 +33,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useInsertionEffect,
   useMemo,
   useRef,
   useState,
@@ -1105,8 +1106,10 @@ function EnvRawSourceEditor({
     () => (diagnostic == null ? [] : [diagnostic]),
     [diagnostic]
   );
-  diagnosticsRef.current = diagnostics;
-  menuItemsRef.current = menuItems;
+  useInsertionEffect(() => {
+    diagnosticsRef.current = diagnostics;
+    menuItemsRef.current = menuItems;
+  });
 
   const handleMount = useCallback<OnMount>((editorInstance, monaco) => {
     editorInstanceRef.current = editorInstance;

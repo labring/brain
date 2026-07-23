@@ -7,7 +7,7 @@ import {
   useCallback,
   useContext,
   useLayoutEffect,
-  useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import {
@@ -47,13 +47,11 @@ export function ProjectCanvasInteractionProvider({
     "connectionOrigin" | "selectedEdge" | "selectedNode"
   >;
 }) {
-  const storeRef = useRef<ProjectCanvasInteractionStore | null>(null);
-  if (storeRef.current === null) {
-    storeRef.current = createProjectCanvasInteractionStore(
+  const [store] = useState(() =>
+    createProjectCanvasInteractionStore(
       interactionSnapshotFromCanvasState(state)
-    );
-  }
-  const store = storeRef.current;
+    )
+  );
 
   useLayoutEffect(() => {
     store.setSnapshot(interactionSnapshotFromCanvasState(state));

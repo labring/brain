@@ -76,7 +76,15 @@ export function useCollectionQuery({
   }, [currentPage, objectRef, pageSize, runtime]);
 
   useEffect(() => {
-    fetchData();
+    let active = true;
+    queueMicrotask(() => {
+      if (active) {
+        fetchData();
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, [fetchData, refreshVersion]);
 
   return { documents, error, loading, refresh, total };

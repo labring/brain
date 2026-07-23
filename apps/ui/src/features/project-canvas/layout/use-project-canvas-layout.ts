@@ -2,7 +2,13 @@
 
 import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
 import type { Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useInsertionEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 
@@ -16,7 +22,10 @@ import {
   canvasLayoutNodesSignature,
 } from "@/features/project-canvas/layout/layout-node-equality";
 import { canvasLayoutNodeFromNode } from "@/features/project-canvas/layout/merge";
-import { createCanvasLayoutNodeSaveScheduler } from "@/features/project-canvas/layout/scheduler";
+import {
+  type CanvasLayoutNodeSaveScheduler,
+  createCanvasLayoutNodeSaveScheduler,
+} from "@/features/project-canvas/layout/scheduler";
 import type { CanvasLayoutDocument, PlacementCommand } from "./types";
 
 const NODE_LAYOUT_SAVE_DEBOUNCE_MS = 600;
@@ -215,19 +224,26 @@ export function useProjectCanvasLayout(options: {
     [saveNodes]
   );
 
-  const scheduler = useMemo(
-    () =>
-      createCanvasLayoutNodeSaveScheduler({
-        clearTimeout: (handle) =>
-          clearTimeout(handle as ReturnType<typeof setTimeout>),
-        delayMs: NODE_LAYOUT_SAVE_DEBOUNCE_MS,
-        save: saveNodes,
-        setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-      }),
-    [saveNodes]
-  );
+  const saveNodesRef = useRef(saveNodes);
+  useInsertionEffect(() => {
+    saveNodesRef.current = saveNodes;
+  }, [saveNodes]);
 
-  useEffect(() => () => scheduler.cancel(), [scheduler]);
+  const schedulerRef = useRef<CanvasLayoutNodeSaveScheduler | null>(null);
+  useEffect(() => {
+    const scheduler = createCanvasLayoutNodeSaveScheduler({
+      clearTimeout: (handle) =>
+        clearTimeout(handle as ReturnType<typeof setTimeout>),
+      delayMs: NODE_LAYOUT_SAVE_DEBOUNCE_MS,
+      save: (nodes) => saveNodesRef.current(nodes),
+      setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+    });
+    schedulerRef.current = scheduler;
+    return () => {
+      scheduler.cancel();
+      schedulerRef.current = null;
+    };
+  }, []);
 
   const scheduleNodeLayoutSave = useCallback(
     (node: Node, options?: Parameters<typeof canvasLayoutNodeFromNode>[1]) => {
@@ -236,10 +252,10 @@ export function useProjectCanvasLayout(options: {
       }
       const layoutNode = canvasLayoutNodeFromNode(node, options);
       if (layoutNode !== undefined) {
-        scheduler.schedule(layoutNode);
+        schedulerRef.current?.schedule(layoutNode);
       }
     },
-    [enabled, scheduler]
+    [enabled]
   );
 
   return {

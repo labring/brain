@@ -100,9 +100,11 @@ export function ProjectCreationPane({
   const directDatabaseEntry = entryMode === "databaseDirect";
   const directTemplateEntry = entryMode === "templateDirect";
   const initialStep = sourceKindFromEntryMode(entryMode);
-  useEffect(() => {
+  const [prevInitialStep, setPrevInitialStep] = useState(initialStep);
+  if (initialStep !== prevInitialStep) {
+    setPrevInitialStep(initialStep);
     setActiveSource(initialStep);
-  }, [initialStep]);
+  }
   useEffect(() => {
     onActiveSourceChange?.(activeSource);
   }, [activeSource, onActiveSourceChange]);

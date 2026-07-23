@@ -1,7 +1,13 @@
 "use client";
 
 import { parseAsString, useQueryStates } from "nuqs";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useInsertionEffect,
+  useMemo,
+  useRef,
+} from "react";
 import type {
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
@@ -131,9 +137,11 @@ export function useProjectWorkbenchRouteState(options: {
     [isSideEntrySupported, parsedState]
   );
   const stateRef = useRef(state);
-  stateRef.current = state;
   const queryRef = useRef(query);
-  queryRef.current = query;
+  useInsertionEffect(() => {
+    stateRef.current = state;
+    queryRef.current = query;
+  });
 
   const commit = useCallback(
     (next: ProjectWorkbenchRouteState, history: ProjectRouteHistoryMode) => {

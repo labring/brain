@@ -1377,13 +1377,17 @@ export function NetworkSettingsSection({
     ? visibleDomains.publicAddressRows
     : visibleDomains.publicAddressRows.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
 
-  useEffect(() => {
+  const [prevPublicAddressRowCount, setPrevPublicAddressRowCount] = useState(
+    visibleDomains.publicAddressRows.length
+  );
+  if (prevPublicAddressRowCount !== visibleDomains.publicAddressRows.length) {
+    setPrevPublicAddressRowCount(visibleDomains.publicAddressRows.length);
     if (
       visibleDomains.publicAddressRows.length <= PUBLIC_ADDRESS_VISIBLE_COUNT
     ) {
       setShowAllPublicAddresses(false);
     }
-  }, [visibleDomains.publicAddressRows.length]);
+  }
 
   const handleCancelAddPublicAddress = () => {
     setAddPublicAddressOpen(false);
@@ -1619,13 +1623,17 @@ export function useApPublicAddressesSettingsSections({
   );
   const canSave = commitMode && networkDirty && !savePending;
 
-  useEffect(() => {
+  const [prevPublicAddressRowCount, setPrevPublicAddressRowCount] = useState(
+    visibleDomains.publicAddressRows.length
+  );
+  if (prevPublicAddressRowCount !== visibleDomains.publicAddressRows.length) {
+    setPrevPublicAddressRowCount(visibleDomains.publicAddressRows.length);
     if (
       visibleDomains.publicAddressRows.length <= PUBLIC_ADDRESS_VISIBLE_COUNT
     ) {
       setShowAllPublicAddresses(false);
     }
-  }, [visibleDomains.publicAddressRows.length]);
+  }
 
   const resetNetworkDraft = useCallback(() => {
     applyNetworkDraftToLocalState(networkBackingState.base);

@@ -407,6 +407,9 @@ function BackupCreationForm({
   const [isBackupNameEdited, setIsBackupNameEdited] = useState(false);
   const [description, setDescription] = useState("");
   const [errors, setErrors] = useState<DbServiceBackupFormErrors>({});
+  const [lastDefaultNameFactory, setLastDefaultNameFactory] = useState(
+    () => createDefaultBackupName
+  );
   const descriptionLength = [...description].length;
   const isDescriptionOverLimit =
     descriptionLength > BACKUP_DESCRIPTION_MAX_LENGTH;
@@ -414,11 +417,12 @@ function BackupCreationForm({
     ? "Description must be 120 characters or fewer."
     : errors.description;
 
-  useEffect(() => {
+  if (createDefaultBackupName !== lastDefaultNameFactory) {
+    setLastDefaultNameFactory(() => createDefaultBackupName);
     if (!isBackupNameEdited) {
       setBackupName(createDefaultBackupName());
     }
-  }, [createDefaultBackupName, isBackupNameEdited]);
+  }
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -580,18 +584,28 @@ function RestoreBackupModal({
   sourceName: string;
 }) {
   const [restoredName, setRestoredName] = useState("");
+  const [prevInputs, setPrevInputs] = useState({
+    backup,
+    existingNames,
+    sourceName,
+  });
   const validationError =
     backup === null
       ? null
       : validateRestoredDbServiceName(restoredName, existingNames);
 
-  useEffect(() => {
+  if (
+    prevInputs.backup !== backup ||
+    prevInputs.existingNames !== existingNames ||
+    prevInputs.sourceName !== sourceName
+  ) {
+    setPrevInputs({ backup, existingNames, sourceName });
     if (backup !== null) {
       setRestoredName(
         suggestedRestoredDbServiceName(sourceName, existingNames)
       );
     }
-  }, [backup, existingNames, sourceName]);
+  }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -691,12 +705,14 @@ function DeleteBackupModal({
   sourceNamespace: string;
 }) {
   const [verificationValue, setVerificationValue] = useState("");
+  const [prevBackup, setPrevBackup] = useState(backup);
 
-  useEffect(() => {
+  if (backup !== prevBackup) {
+    setPrevBackup(backup);
     if (backup !== null) {
       setVerificationValue("");
     }
-  }, [backup]);
+  }
 
   if (backup === null) {
     return null;
@@ -821,24 +837,28 @@ function BackupPolicyForm({
     ...backupPolicyFormFromBackend(initialPolicy),
     enabled: policyEnabled,
   }));
+  const [prevInitialPolicy, setPrevInitialPolicy] = useState(initialPolicy);
+  const [prevPolicyEnabled, setPrevPolicyEnabled] = useState(policyEnabled);
   const retention = validateDbServiceBackupPolicyRetentionDays(
     form.retentionDays
   );
 
-  useEffect(() => {
+  if (initialPolicy !== prevInitialPolicy) {
+    setPrevInitialPolicy(initialPolicy);
     setForm((current) => ({
       ...backupPolicyFormFromBackend(initialPolicy),
       enabled: current.enabled,
     }));
-  }, [initialPolicy]);
+  }
 
-  useEffect(() => {
+  if (policyEnabled !== prevPolicyEnabled) {
+    setPrevPolicyEnabled(policyEnabled);
     setForm((current) =>
       current.enabled === policyEnabled
         ? current
         : { ...current, enabled: policyEnabled }
     );
-  }, [policyEnabled]);
+  }
 
   const resetPolicy = useCallback(() => {
     const nextForm = backupPolicyFormFromBackend(initialPolicy);
@@ -1235,14 +1255,16 @@ function BackupMethodPanel({
     initialPolicyEnabled ? "policy" : "manual"
   );
   const [policyEnabled, setPolicyEnabled] = useState(initialPolicyEnabled);
+  const [prevPolicy, setPrevPolicy] = useState(currentPolicy);
 
-  useEffect(() => {
+  if (currentPolicy !== prevPolicy) {
+    setPrevPolicy(currentPolicy);
     const nextPolicyEnabled = currentPolicy?.enabled === true;
     setPolicyEnabled(nextPolicyEnabled);
     if (nextPolicyEnabled) {
       setMode("policy");
     }
-  }, [currentPolicy]);
+  }
 
   return (
     <section

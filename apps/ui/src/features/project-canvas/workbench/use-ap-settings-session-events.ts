@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useInsertionEffect, useRef } from "react";
 import type { PendingApDbCanvasReference } from "@/features/project-canvas/flow/pending-connections";
 import {
   createPendingApDbReferenceMutationStartHandler,
@@ -68,7 +68,10 @@ export function useApSettingsSessionEvents({
   const handlePendingDbReferencesChangeRef = useRef(
     handlePendingDbReferencesChange
   );
-  handlePendingDbReferencesChangeRef.current = handlePendingDbReferencesChange;
+  useInsertionEffect(() => {
+    handlePendingDbReferencesChangeRef.current =
+      handlePendingDbReferencesChange;
+  });
 
   const pendingDbReferencesChangeHandlerForAp = useCallback(
     ({ apName, apNamespace }: { apName: string; apNamespace: string }) => {

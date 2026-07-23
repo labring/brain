@@ -5,7 +5,7 @@ import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import { Field, FieldError, FieldLabel } from "@workspace/ui/components/field";
 import { SquarePen } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 export const PROJECT_EDIT_DESCRIPTION_MAX_LENGTH = 256;
 
@@ -42,13 +42,23 @@ export function ProjectEditDialog({
     ? "Project description must be 256 characters or fewer."
     : null;
 
-  useEffect(() => {
+  const [prevResetKey, setPrevResetKey] = useState({
+    currentName,
+    description,
+    open,
+  });
+  if (
+    prevResetKey.open !== open ||
+    prevResetKey.currentName !== currentName ||
+    prevResetKey.description !== description
+  ) {
+    setPrevResetKey({ currentName, description, open });
     if (open) {
       setDisplayNameDraft(currentName);
       setDescriptionDraft(description);
       setEditError(null);
     }
-  }, [currentName, description, open]);
+  }
 
   const submit = useCallback(async () => {
     const displayName = displayNameDraft.trim();

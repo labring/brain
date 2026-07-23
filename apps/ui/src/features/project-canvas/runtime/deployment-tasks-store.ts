@@ -60,7 +60,6 @@ export function useDeploymentTasksStore(options: {
   );
   const projectionsRef = useRef<DeploymentTaskProjection[]>([]);
   const publishedRef = useRef<DeploymentTaskProjection[]>([]);
-  const canvasProjectionsRef = useRef<DeploymentTaskProjection[]>([]);
   const [visibilityNow, setVisibilityNow] = useState(() => new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | undefined>(undefined);
@@ -96,13 +95,17 @@ export function useDeploymentTasksStore(options: {
   // resource graph (ADR 0043). Fold every event into projectionsRef immediately
   // but publish at most once per DEPLOYMENT_PROJECTION_COALESCE_MS.
   const schedulerRef = useRef<ThrottleScheduler | null>(null);
-  if (schedulerRef.current === null) {
-    schedulerRef.current = createThrottleScheduler(
+  useEffect(() => {
+    const scheduler = createThrottleScheduler(
       DEPLOYMENT_PROJECTION_COALESCE_MS,
       publish
     );
-  }
-  useEffect(() => () => schedulerRef.current?.cancel(), []);
+    schedulerRef.current = scheduler;
+    return () => {
+      scheduler.cancel();
+      schedulerRef.current = null;
+    };
+  }, [publish]);
 
   // Bootstrap/refresh/reset are not part of the stream storm: publish now.
   const commitNow = useCallback(
@@ -184,12 +187,15 @@ export function useDeploymentTasksStore(options: {
   useEffect(() => {
     let cancelled = false;
     commitNow([]);
-    setError(undefined);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setError(undefined);
+        setIsLoading(hasScope);
+      }
+    });
     if (!hasScope) {
-      setIsLoading(false);
       return;
     }
-    setIsLoading(true);
     fetchProjectDeploymentTaskProjections({ kubeconfig, namespace, projectId })
       .then((fetched) => {
         if (!cancelled) {
@@ -265,18 +271,21 @@ export function useDeploymentTasksStore(options: {
     return () => window.clearTimeout(timer);
   }, [projections]);
 
+  const [stableCanvasProjections, setStableCanvasProjections] = useState<
+    DeploymentTaskProjection[]
+  >([]);
   const canvasProjections = useMemo(
     () =>
       selectCanvasDeploymentTaskProjections({
-        current: canvasProjectionsRef.current,
+        current: stableCanvasProjections,
         now: visibilityNow,
         projections,
       }),
-    [visibilityNow, projections]
+    [stableCanvasProjections, visibilityNow, projections]
   );
-  useEffect(() => {
-    canvasProjectionsRef.current = canvasProjections;
-  }, [canvasProjections]);
+  if (canvasProjections !== stableCanvasProjections) {
+    setStableCanvasProjections(canvasProjections);
+  }
 
   return { canvasProjections, error, isLoading, projections, refresh };
 }
