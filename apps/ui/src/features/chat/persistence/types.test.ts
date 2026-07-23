@@ -6,6 +6,7 @@ import {
   buildAssistantApprovalResponseFromPending,
   buildAssistantContinuationFromPending,
   buildRecoveredAssistantMessageForIncompleteClientTools,
+  buildRecoveredAssistantMessageForInterruptedTools,
   findPendingApprovalMessageForResponse,
   findPendingAssistantMessageForContinuation,
   hasClientToolResultContinuation,
@@ -908,6 +909,54 @@ test("legacy recovery targets only known non-provider browser tools", () => {
     buildRecoveredAssistantMessageForIncompleteClientTools(recovered),
     undefined
   );
+});
+
+test("interrupted recovery closes non-provider server and unknown tools", () => {
+  const message: UIMessage = {
+    id: "msg-interrupted-tools",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-getDeployTaskStatus",
+        toolCallId: "call-server",
+        state: "input-available",
+        input: { taskId: "task-1" },
+      },
+      {
+        type: "tool-legacyUnknown",
+        toolCallId: "call-unknown",
+        state: "input-available",
+        input: {},
+      },
+      {
+        type: "tool-getDeployTaskStatus",
+        toolCallId: "call-provider",
+        providerExecuted: true,
+        state: "input-available",
+        input: { taskId: "task-provider" },
+      },
+    ],
+  };
+
+  const recovered = buildRecoveredAssistantMessageForInterruptedTools(message);
+
+  assert.ok(recovered != null);
+  assert.deepEqual(
+    recovered.parts.slice(0, 2).map((part) =>
+      isToolUIPart(part)
+        ? {
+            errorText: "errorText" in part ? part.errorText : undefined,
+            state: part.state,
+          }
+        : undefined
+    ),
+    Array.from({ length: 2 }, () => ({
+      errorText:
+        "Tool execution was interrupted before a result was available.",
+      state: "output-error",
+    }))
+  );
+  assert.deepEqual(recovered.parts[2], message.parts[2]);
 });
 
 test("legacy recovery is a no-op for users and unknown incomplete tools", () => {

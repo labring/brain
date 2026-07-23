@@ -878,7 +878,7 @@ export function buildRecoveredAssistantMessageForIncompleteClientTools(
   return recovered ? { ...message, parts } : undefined;
 }
 
-const INTERRUPTED_APPROVAL_RECOVERY_ERROR =
+const INTERRUPTED_TOOL_RECOVERY_ERROR =
   "Tool execution was interrupted before a result was available.";
 
 /**
@@ -897,13 +897,14 @@ export function buildRecoveredAssistantMessageForInterruptedTools(
     if (
       isToolUIPart(part) &&
       part.providerExecuted !== true &&
-      part.state === "input-available" &&
-      isClientToolPartType(part.type)
+      part.state === "input-available"
     ) {
       recovered = true;
       return {
         ...part,
-        errorText: INCOMPLETE_CLIENT_TOOL_RECOVERY_ERROR,
+        errorText: isClientToolPartType(part.type)
+          ? INCOMPLETE_CLIENT_TOOL_RECOVERY_ERROR
+          : INTERRUPTED_TOOL_RECOVERY_ERROR,
         state: "output-error",
       } as UIMessagePart;
     }
@@ -920,7 +921,7 @@ export function buildRecoveredAssistantMessageForInterruptedTools(
     return part.approval.approved
       ? ({
           ...part,
-          errorText: INTERRUPTED_APPROVAL_RECOVERY_ERROR,
+          errorText: INTERRUPTED_TOOL_RECOVERY_ERROR,
           state: "output-error",
         } as UIMessagePart)
       : ({ ...part, state: "output-denied" } as UIMessagePart);

@@ -6,9 +6,13 @@ mock.module("server-only", () => ({}));
 const invocationSignals: (AbortSignal | undefined)[] = [];
 
 const sandbox = {
-  executeCommand: async () => ({ exitCode: 0, stderr: "", stdout: "ok" }),
+  executeCommand: async (_command: string) => ({
+    exitCode: 0,
+    stderr: "",
+    stdout: "ok",
+  }),
   getDevboxName: async () => "chat-runtime",
-  readFile: async () => "contents",
+  readFile: async (_path: string) => "contents",
   runWithAbortSignal: async <T>(
     signal: AbortSignal | undefined,
     operation: () => Promise<T>
@@ -17,7 +21,8 @@ const sandbox = {
     return await operation();
   },
   stop: () => Promise.resolve(),
-  writeFiles: () => Promise.resolve(),
+  writeFiles: (_files: { content: string; path: string }[]) =>
+    Promise.resolve(),
 };
 
 mock.module("../devbox/chat-runtime", () => ({
@@ -70,18 +75,27 @@ test("chat bash tool wrappers forward the AI SDK abort signal to the sandbox", a
     toolCallId: "call-1",
   };
 
-  await Reflect.get(toolkit.tools.bash, "execute")(
-    { command: "true", intention: "test cancellation" },
-    executionOptions
-  );
-  await Reflect.get(toolkit.tools.readFile, "execute")(
-    { intention: "test cancellation", path: "a" },
-    executionOptions
-  );
-  await Reflect.get(toolkit.tools.writeFile, "execute")(
-    { content: "value", intention: "test cancellation", path: "a" },
-    executionOptions
-  );
+  const executeTool = async (toolDefinition: object, input: unknown) => {
+    const execute = Reflect.get(toolDefinition, "execute");
+    if (typeof execute !== "function") {
+      throw new Error("expected tool execute function");
+    }
+    await Reflect.apply(execute, toolDefinition, [input, executionOptions]);
+  };
+
+  await executeTool(toolkit.tools.bash, {
+    command: "true",
+    intention: "test cancellation",
+  });
+  await executeTool(toolkit.tools.readFile, {
+    intention: "test cancellation",
+    path: "a",
+  });
+  await executeTool(toolkit.tools.writeFile, {
+    content: "value",
+    intention: "test cancellation",
+    path: "a",
+  });
 
   assert.deepEqual(invocationSignals, [
     controller.signal,

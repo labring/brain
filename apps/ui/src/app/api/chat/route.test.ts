@@ -1,4 +1,3 @@
-// @ts-expect-error Bun exposes this module at runtime; the app tsconfig omits Bun test types.
 import { beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { isDeepStrictEqual } from "node:util";
 import { simulateReadableStream, tool, type UIMessage } from "ai";
@@ -451,9 +450,11 @@ function completedNavigationWithoutServerToolMetadata(): UIMessage {
       }
       if (part.type === "tool-navigateApp") {
         return {
-          ...part,
+          input: part.input,
           output: { path: "/project", success: true },
           state: "output-available" as const,
+          toolCallId: part.toolCallId,
+          type: part.type,
         };
       }
       return part;
@@ -478,6 +479,23 @@ function pendingApprovalMessage(): UIMessage {
     ],
     role: "assistant",
   };
+}
+
+function pendingServerToolMessage(
+  state: "input-available" | "input-streaming" = "input-available"
+): UIMessage {
+  return {
+    id: "assistant-server-tool",
+    parts: [
+      {
+        input: { taskId: "task-1" },
+        state,
+        toolCallId: "call-server-tool",
+        type: "tool-getDeployTaskStatus",
+      },
+    ],
+    role: "assistant",
+  } as UIMessage;
 }
 
 function approvedMessage(): UIMessage {
@@ -868,7 +886,7 @@ test("keeps an approval retryable when toolset preflight fails", async () => {
   expect(modelCalls).toBe(1);
 });
 
-test("validates projected history before committing an approval", async () => {
+test("recovers interrupted history while committing an approval", async () => {
   const incomplete = {
     ...pendingNavigationMessage(),
     id: "assistant-incomplete-history",
@@ -877,11 +895,24 @@ test("validates projected history before committing an approval", async () => {
 
   const response = await POST(chatRequest(approvedMessage()));
 
-  expect(response.status).toBe(503);
-  expect(replaceCalls).toBe(0);
-  expect(leaseAcquireCalls).toBe(0);
-  expect(modelCalls).toBe(0);
-  expect(history).toEqual([incomplete, pendingApprovalMessage()]);
+  expect(response.status).toBe(200);
+  await drain(response);
+  expect(replaceCalls).toBe(2);
+  expect(leaseAcquireCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      state: "output-error",
+      toolCallId: "call-navigation",
+    })
+  );
+  expect(history[1]?.parts).toContainEqual(
+    expect.objectContaining({
+      approval: { approved: true, id: "approval-write" },
+      state: "approval-responded",
+      toolCallId: "call-write",
+    })
+  );
 });
 
 test("rejects forged client-tool input before CAS or model execution", async () => {
@@ -1048,6 +1079,62 @@ test("recovers an old incomplete client tool before processing a new user turn",
   const prompt = JSON.stringify(modelPrompts[0]);
   expect(prompt).toContain("call-navigation");
   expect(prompt).toContain("continue the investigation");
+});
+
+test("recovers an old incomplete server tool before processing a new user turn", async () => {
+  history = [
+    userMessage("user-original", "check the deployment"),
+    pendingServerToolMessage(),
+  ];
+
+  const response = await POST(
+    chatRequest(userMessage("user-follow-up", "continue the investigation"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(history[1]?.parts).toContainEqual(
+    expect.objectContaining({
+      errorText:
+        "Tool execution was interrupted before a result was available.",
+      state: "output-error",
+      toolCallId: "call-server-tool",
+    })
+  );
+});
+
+test("rejects a new user turn with actionable guidance while approval is pending", async () => {
+  history = [pendingApprovalMessage()];
+
+  const response = await POST(
+    chatRequest(userMessage("user-before-approval", "continue anyway"))
+  );
+
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({
+    error:
+      "A tool approval is pending. Approve or deny it before sending a new message.",
+  });
+  expect(replaceCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+});
+
+test("rejects unrecoverable incomplete tool history with actionable guidance", async () => {
+  history = [pendingServerToolMessage("input-streaming")];
+
+  const response = await POST(
+    chatRequest(userMessage("user-after-partial-input", "continue safely"))
+  );
+
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({
+    error:
+      "This conversation contains an incomplete tool call that cannot be recovered. Start a new chat to continue.",
+  });
+  expect(replaceCalls).toBe(0);
+  expect(modelCalls).toBe(0);
 });
 
 test("recovers an approval left responded by a crashed continuation", async () => {

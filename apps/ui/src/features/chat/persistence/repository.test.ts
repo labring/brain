@@ -1,4 +1,3 @@
-// @ts-expect-error Bun exposes this module at runtime; the app tsconfig omits Bun test types.
 import {
   afterAll,
   beforeEach,
@@ -12,8 +11,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 import { PGlite } from "@electric-sql/pglite";
+import type { UIMessage } from "ai";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -206,7 +207,7 @@ const expectedParts = [
     toolCallId: "call-test",
     type: "tool-refreshFrontendSwrCaches",
   },
-] as const;
+] satisfies UIMessage["parts"];
 const replacementParts = [
   {
     input: { namespace: "ns-test" },
@@ -215,7 +216,7 @@ const replacementParts = [
     toolCallId: "call-test",
     type: "tool-refreshFrontendSwrCaches",
   },
-] as const;
+] satisfies UIMessage["parts"];
 
 const pglite = new PGlite();
 const testDb = drizzle(pglite, {
@@ -366,7 +367,7 @@ describe("replaceAssistantMessagePartsIfUnchanged", () => {
         toolCallId: "call-test",
         type: "tool-refreshFrontendSwrCaches",
       },
-    ] as const;
+    ] satisfies UIMessage["parts"];
 
     const results = await Promise.all([
       replaceAssistantMessagePartsIfUnchanged({
@@ -385,9 +386,11 @@ describe("replaceAssistantMessagePartsIfUnchanged", () => {
 
     expect(results.filter(Boolean)).toHaveLength(1);
     const state = await storedState();
-    expect([replacementParts, otherReplacement]).toContainEqual(
-      state.message?.parts
-    );
+    expect(
+      [replacementParts, otherReplacement].some((parts) =>
+        isDeepStrictEqual(parts, state.message?.parts)
+      )
+    ).toBe(true);
     expect(state.thread?.updatedAt.getTime()).toBeGreaterThan(
       INITIAL_UPDATED_AT.getTime()
     );

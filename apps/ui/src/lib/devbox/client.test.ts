@@ -51,7 +51,7 @@ test("an abort during Devbox network retry delay prevents another fetch", async 
     fetchCalls += 1;
     queueMicrotask(() => controller.abort());
     return Promise.reject(new TypeError("fetch failed"));
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 
   await assert.rejects(
     execDevbox(

@@ -156,6 +156,36 @@ function assertCompleteToolHistory(history: UIMessage[]): void {
   }
 }
 
+function incompleteToolHistoryResponse(
+  history: UIMessage[]
+): Response | undefined {
+  for (const message of history) {
+    for (const part of message.parts) {
+      if (
+        !isToolUIPart(part) ||
+        part.providerExecuted === true ||
+        part.state === "approval-responded" ||
+        part.state === "output-available" ||
+        part.state === "output-denied" ||
+        part.state === "output-error"
+      ) {
+        continue;
+      }
+      if (part.state === "approval-requested") {
+        return jsonError(
+          "A tool approval is pending. Approve or deny it before sending a new message.",
+          409
+        );
+      }
+      return jsonError(
+        "This conversation contains an incomplete tool call that cannot be recovered. Start a new chat to continue.",
+        409
+      );
+    }
+  }
+  return undefined;
+}
+
 interface PendingAssistantReplacement {
   expected: UIMessage;
   replacement: UIMessage;
@@ -167,7 +197,39 @@ type PreparedIncomingChatMessage =
       recoveries: PendingAssistantReplacement[];
       type: "user";
     }
-  | (PendingAssistantReplacement & { type: "assistant" });
+  | (PendingAssistantReplacement & {
+      recoveries: PendingAssistantReplacement[];
+      type: "assistant";
+    });
+
+function interruptedToolRecoveries(
+  history: UIMessage[],
+  excludedMessageId?: string
+): PendingAssistantReplacement[] {
+  return history.flatMap((storedMessage) => {
+    if (storedMessage.id === excludedMessageId) {
+      return [];
+    }
+    const replacement =
+      buildRecoveredAssistantMessageForInterruptedTools(storedMessage);
+    return replacement == null
+      ? []
+      : [{ expected: storedMessage, replacement }];
+  });
+}
+
+function projectAssistantReplacements(
+  history: UIMessage[],
+  replacements: PendingAssistantReplacement[]
+): UIMessage[] {
+  const byMessageId = new Map(
+    replacements.map((replacement) => [
+      replacement.expected.id,
+      replacement.replacement,
+    ])
+  );
+  return history.map((message) => byMessageId.get(message.id) ?? message);
+}
 
 function prepareIncomingChatMessage(
   history: UIMessage[],
@@ -183,13 +245,13 @@ function prepareIncomingChatMessage(
   }
 
   if (message.role === "user") {
-    const recoveries = history.flatMap((storedMessage) => {
-      const replacement =
-        buildRecoveredAssistantMessageForInterruptedTools(storedMessage);
-      return replacement == null
-        ? []
-        : [{ expected: storedMessage, replacement }];
-    });
+    const recoveries = interruptedToolRecoveries(history);
+    const conflict = incompleteToolHistoryResponse(
+      projectAssistantReplacements(history, recoveries)
+    );
+    if (conflict != null) {
+      return { response: conflict };
+    }
     return { prepared: { message, recoveries, type: "user" } };
   }
 
@@ -231,8 +293,22 @@ function prepareIncomingChatMessage(
       ),
     };
   }
+  const recoveries = interruptedToolRecoveries(history, pending.id);
+  const projected = projectAssistantReplacements(history, [
+    ...recoveries,
+    { expected: pending, replacement },
+  ]);
+  const conflict = incompleteToolHistoryResponse(projected);
+  if (conflict != null) {
+    return { response: conflict };
+  }
   return {
-    prepared: { expected: pending, replacement, type: "assistant" },
+    prepared: {
+      expected: pending,
+      recoveries,
+      replacement,
+      type: "assistant",
+    },
   };
 }
 
@@ -243,11 +319,13 @@ async function commitIncomingChatMessage(
 ): Promise<
   { lease: ChatStreamLease; response?: never } | { response: Response }
 > {
-  const recoveries =
-    prepared.type === "user" ? prepared.recoveries : [prepared];
+  const replacements =
+    prepared.type === "user"
+      ? prepared.recoveries
+      : [...prepared.recoveries, prepared];
   const renewedLease = await commitChatMessagesIfLeaseOwned({
     lease,
-    replacements: recoveries.map(({ expected, replacement }) => ({
+    replacements: replacements.map(({ expected, replacement }) => ({
       expectedParts: expected.parts,
       messageId: expected.id,
       replacementParts: replacement.parts,
@@ -265,13 +343,11 @@ async function commitIncomingChatMessage(
     };
   }
 
-  if (prepared.type === "user") {
-    for (const { expected } of prepared.recoveries) {
-      console.warn("[api/chat] recovered interrupted tool result:", {
-        chatId,
-        messageId: expected.id,
-      });
-    }
+  for (const { expected } of prepared.recoveries) {
+    console.warn("[api/chat] recovered interrupted tool result:", {
+      chatId,
+      messageId: expected.id,
+    });
   }
   return { lease: renewedLease };
 }
@@ -280,18 +356,11 @@ function projectIncomingChatMessage(
   history: UIMessage[],
   prepared: PreparedIncomingChatMessage
 ): UIMessage[] {
-  const replacements = new Map<string, UIMessage>();
-  if (prepared.type === "assistant") {
-    replacements.set(prepared.expected.id, prepared.replacement);
-  } else {
-    for (const recovery of prepared.recoveries) {
-      replacements.set(recovery.expected.id, recovery.replacement);
-    }
-  }
-
-  const projected = history.map(
-    (message) => replacements.get(message.id) ?? message
-  );
+  const replacements =
+    prepared.type === "assistant"
+      ? [...prepared.recoveries, prepared]
+      : prepared.recoveries;
+  const projected = projectAssistantReplacements(history, replacements);
   if (prepared.type === "assistant") {
     return projected;
   }
