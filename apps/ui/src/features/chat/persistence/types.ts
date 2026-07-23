@@ -705,6 +705,26 @@ function completedClientToolPartsMatch(
   );
 }
 
+function completedServerToolPartsMatch(
+  pending: UIMessagePart,
+  candidate: UIMessagePart
+): boolean {
+  if (
+    !(isToolUIPart(pending) && isToolUIPart(candidate)) ||
+    isClientToolPartType(pending.type) ||
+    (pending.state !== "output-available" &&
+      pending.state !== "output-error" &&
+      pending.state !== "output-denied")
+  ) {
+    return false;
+  }
+
+  return unknownRecordsEqual(
+    { ...pending, toolMetadata: undefined },
+    { ...candidate, toolMetadata: undefined }
+  );
+}
+
 function rebuildContinuationPart(
   pending: UIMessagePart,
   candidate: UIMessagePart
@@ -724,6 +744,10 @@ function rebuildContinuationPart(
   }
 
   if (completedClientToolPartsMatch(pending, candidate)) {
+    return { part: pending, progressed: false };
+  }
+
+  if (completedServerToolPartsMatch(pending, candidate)) {
     return { part: pending, progressed: false };
   }
 

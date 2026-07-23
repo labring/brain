@@ -428,15 +428,81 @@ test("client continuation cannot alter stored text or server tool results", () =
       },
     ],
   } as UIMessage;
+  const changedServerInput = {
+    ...pending,
+    parts: [
+      storedText,
+      completedClient,
+      {
+        ...serverPart,
+        input: { taskId: "task-other" },
+      },
+    ],
+  } as UIMessage;
 
   assert.equal(
     buildAssistantContinuationFromPending(pending, changedText),
     undefined
   );
   assert.equal(
+    buildAssistantContinuationFromPending(pending, changedServerInput),
+    undefined
+  );
+  assert.equal(
     buildAssistantContinuationFromPending(pending, changedServerOutput),
     undefined
   );
+});
+
+test("client continuation tolerates missing server-injected tool metadata", () => {
+  const pending: UIMessage = {
+    id: "msg-server-metadata",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-getDeployTaskStatus",
+        toolCallId: "call-server-tool",
+        state: "output-available",
+        input: { taskId: "task-1" },
+        output: { status: "running" },
+        toolMetadata: { durationMs: 125 },
+      },
+      {
+        type: "tool-refreshFrontendSwrCaches",
+        toolCallId: "call-client-tool",
+        state: "input-available",
+        input: { intention: "refresh after deployment" },
+      },
+    ],
+  };
+  const storedServerPart = requiredPart(pending, 0);
+  assert.ok(isToolUIPart(storedServerPart));
+  const { toolMetadata: _toolMetadata, ...serverPartWithoutMetadata } =
+    storedServerPart;
+  const pendingClientPart = requiredPart(pending, 1);
+  const candidate = {
+    ...pending,
+    parts: [
+      serverPartWithoutMetadata,
+      {
+        ...pendingClientPart,
+        output: { ok: true, status: "scheduled" },
+        state: "output-available",
+      },
+    ],
+  } as UIMessage;
+
+  assert.deepEqual(buildAssistantContinuationFromPending(pending, candidate), {
+    ...pending,
+    parts: [
+      requiredPart(pending, 0),
+      {
+        ...pendingClientPart,
+        output: { ok: true, status: "scheduled" },
+        state: "output-available",
+      },
+    ],
+  });
 });
 
 test("untrusted message and tool metadata are discarded during rebuild", () => {

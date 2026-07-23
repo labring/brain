@@ -84,6 +84,12 @@ const clientTool = tool({
   ]),
 });
 
+const serverTool = tool({
+  description: "Test deployment status tool",
+  inputSchema: z.object({ taskId: z.string() }),
+  outputSchema: z.object({ status: z.string() }),
+});
+
 function streamChunksForMode(mode: StreamMode): TestStreamChunk[] {
   const textChunks = [
     { id: "text-1", type: "text-start" as const },
@@ -344,7 +350,7 @@ mock.module("@/features/chat/runtime/tools", () => ({
     }
     return Promise.resolve({
       systemPrompt: "Test system prompt",
-      tools: { navigateApp: clientTool },
+      tools: { getDeployTaskStatus: serverTool, navigateApp: clientTool },
     });
   },
 }));
@@ -406,6 +412,52 @@ function completedNavigationMessage(
       },
     ],
     role: "assistant",
+  };
+}
+
+function pendingNavigationAfterMeasuredServerTool(): UIMessage {
+  return {
+    id: "assistant-navigation-after-server-tool",
+    parts: [
+      { type: "step-start" },
+      {
+        input: { taskId: "task-1" },
+        output: { status: "running" },
+        state: "output-available",
+        toolCallId: "call-server-tool",
+        toolMetadata: { durationMs: 125 },
+        type: "tool-getDeployTaskStatus",
+      },
+      { type: "step-start" },
+      {
+        input: { intention: "open the project", path: "/project" },
+        state: "input-available",
+        toolCallId: "call-navigation",
+        type: "tool-navigateApp",
+      },
+    ],
+    role: "assistant",
+  };
+}
+
+function completedNavigationWithoutServerToolMetadata(): UIMessage {
+  const pending = pendingNavigationAfterMeasuredServerTool();
+  return {
+    ...pending,
+    parts: pending.parts.map((part) => {
+      if (part.type === "tool-getDeployTaskStatus") {
+        const { toolMetadata: _toolMetadata, ...partWithoutMetadata } = part;
+        return partWithoutMetadata;
+      }
+      if (part.type === "tool-navigateApp") {
+        return {
+          ...part,
+          output: { path: "/project", success: true },
+          state: "output-available" as const,
+        };
+      }
+      return part;
+    }),
   };
 }
 
@@ -618,6 +670,28 @@ test("accepts and streams a canonical client-tool continuation", async () => {
     namespace: NAMESPACE,
     workspaceActor: WORKSPACE_ACTOR,
   });
+});
+
+test("accepts a client-tool continuation without server-injected metadata", async () => {
+  history = [pendingNavigationAfterMeasuredServerTool()];
+
+  const response = await POST(
+    chatRequest(completedNavigationWithoutServerToolMetadata())
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      toolCallId: "call-server-tool",
+      toolMetadata: { durationMs: 125 },
+    })
+  );
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({ text: "Recovered response", type: "text" })
+  );
 });
 
 test("passes a hard timeout signal to the model stream", async () => {
