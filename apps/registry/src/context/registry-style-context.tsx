@@ -7,7 +7,6 @@ import {
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -18,6 +17,12 @@ function uniqueSortedStyles(sections: RegistrySidebarSection[]): string[] {
     set.add(s.style);
   }
   return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function styleFromPathname(pathname: string, styles: string[]): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  const pathStyle = parts[0] === "registry" ? parts[1] : undefined;
+  return pathStyle && styles.includes(pathStyle) ? pathStyle : null;
 }
 
 export interface RegistryStyleContextValue {
@@ -41,36 +46,31 @@ export function RegistryStyleProvider({
   const styles = useMemo(() => uniqueSortedStyles(sections), [sections]);
   const firstStyle = styles[0] ?? "";
 
-  const [selectedStyle, setSelectedStyleState] = useState(firstStyle);
+  const [selectedStyleState, setSelectedStyleState] = useState(
+    () => styleFromPathname(pathname, styles) ?? firstStyle
+  );
+  const [prevPathname, setPrevPathname] = useState(pathname);
 
   const setSelectedStyle = useCallback((style: string) => {
     setSelectedStyleState(style);
   }, []);
 
-  useEffect(() => {
-    const parts = pathname.split("/").filter(Boolean);
-    if (parts[0] === "registry" && parts[1]) {
-      const pathStyle = parts[1];
-      if (styles.includes(pathStyle)) {
-        setSelectedStyleState(pathStyle);
-      }
+  // Entering /registry/{style} adopts that style; later in-page choices win
+  // until the next navigation. Adjusted during render so the sidebar never
+  // paints a frame of the previous style.
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
+    const pathStyle = styleFromPathname(pathname, styles);
+    if (pathStyle) {
+      setSelectedStyleState(pathStyle);
     }
-  }, [pathname, styles]);
+  }
 
-  useEffect(() => {
-    if (styles.length === 0) {
-      return;
-    }
-    if (!styles.includes(selectedStyle)) {
-      setSelectedStyleState(styles[0]);
-    }
-  }, [styles, selectedStyle]);
-
-  useEffect(() => {
-    if (firstStyle && !selectedStyle) {
-      setSelectedStyleState(firstStyle);
-    }
-  }, [firstStyle, selectedStyle]);
+  // Selections that no longer exist (or an empty style list resolving late)
+  // fall back to the first style at read time.
+  const selectedStyle = styles.includes(selectedStyleState)
+    ? selectedStyleState
+    : firstStyle;
 
   const value = useMemo(
     () => ({

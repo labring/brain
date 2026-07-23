@@ -103,14 +103,24 @@ export function GlassEquivalenceFixture() {
   const [ready, setReady] = useState(false);
 
   // The sheet reads the escape hatch when it mounts, so the dataset must be
-  // in place before the canvas renders — gate mounting on this effect.
+  // in place before the canvas renders — gate mounting on this effect. The
+  // ready flip rides a microtask so the canvas still mounts strictly after
+  // the dataset write without setting state in the effect itself.
   useEffect(() => {
     if (mode === "live") {
       document.documentElement.dataset.canvasGlass = "live";
     } else {
       delete document.documentElement.dataset.canvasGlass;
     }
-    setReady(true);
+    let active = true;
+    queueMicrotask(() => {
+      if (active) {
+        setReady(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, [mode]);
 
   const meta = useMemo(
