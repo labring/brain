@@ -21,7 +21,9 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,13 +42,17 @@ func postgresIntegrationPlugin(t *testing.T) *PostgresPlugin {
 }
 
 func postgresIntegrationConfig() *engine.PluginConfig {
-	return engine.NewPluginConfig(&engine.Credentials{
+	credentials := &engine.Credentials{
 		Type:     string(engine.DatabaseType_Postgres),
 		Hostname: "localhost",
 		Username: "user",
 		Password: "jio53$*(@nfe)",
 		Database: "test_db",
-	})
+	}
+	if port := os.Getenv("WHODB_POSTGRES_INTEGRATION_PORT"); port != "" {
+		credentials.Advanced = []engine.Record{{Key: "Port", Value: port}}
+	}
+	return engine.NewPluginConfig(credentials)
 }
 
 func waitForPostgresOrders(t *testing.T, plugin *PostgresPlugin, config *engine.PluginConfig) {
@@ -89,6 +95,49 @@ func findPostgresColumn(t *testing.T, columns []engine.Column, name string) engi
 
 	t.Fatalf("column %q not found in %#v", name, columns)
 	return engine.Column{}
+}
+
+func quotePostgresTestIdentifier(identifier string) string {
+	return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+}
+
+func TestPostgresStorageUnitExistsPreservesQuotedTableNames(t *testing.T) {
+	plugin := postgresIntegrationPlugin(t)
+	config := postgresIntegrationConfig()
+	waitForPostgresOrders(t, plugin, config)
+
+	suffix := time.Now().UnixNano()
+	tableNames := []string{
+		fmt.Sprintf("Account%d", suffix),
+		fmt.Sprintf("account history %d", suffix),
+		fmt.Sprintf("account%[1]d\"archive", suffix),
+	}
+
+	for _, tableName := range tableNames {
+		t.Run(tableName, func(t *testing.T) {
+			quotedTableName := quotePostgresTestIdentifier(tableName)
+			if _, err := plugin.RawExecute(config, fmt.Sprintf(
+				"CREATE TABLE test_schema.%s (id INTEGER)",
+				quotedTableName,
+			)); err != nil {
+				t.Fatalf("failed to create quoted postgres table %q: %v", tableName, err)
+			}
+			t.Cleanup(func() {
+				_, _ = plugin.RawExecute(config, fmt.Sprintf(
+					"DROP TABLE IF EXISTS test_schema.%s",
+					quotedTableName,
+				))
+			})
+
+			exists, err := plugin.StorageUnitExists(config, "test_schema", tableName)
+			if err != nil {
+				t.Fatalf("StorageUnitExists failed for quoted table %q: %v", tableName, err)
+			}
+			if !exists {
+				t.Fatalf("expected quoted postgres table %q to exist", tableName)
+			}
+		})
+	}
 }
 
 func TestPostgresSeededRuntimePaths(t *testing.T) {
