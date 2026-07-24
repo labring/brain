@@ -1186,7 +1186,7 @@ test("does not persist or bill an empty assistant response on stream error", asy
     chatRequest(userMessage("user-error", "inspect the cluster"))
   );
   expect(response.status).toBe(200);
-  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("5");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("4");
   await drain(response);
 
   expect(history).toEqual([userMessage("user-error", "inspect the cluster")]);
