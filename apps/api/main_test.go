@@ -11,6 +11,25 @@ import (
 	"testing"
 )
 
+func TestAPIServerPortUsesConfiguredPortAndKeepsDefault(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured string
+		want       string
+	}{
+		{name: "default", configured: "", want: "9000"},
+		{name: "worktree", configured: "22201", want: "22201"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := apiServerPort(tt.configured); got != tt.want {
+				t.Fatalf("apiServerPort(%q) = %q, want %q", tt.configured, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRequestLoggerLogsMethodTargetStatusAndDuration(t *testing.T) {
 	var output bytes.Buffer
 	previousOutput := log.Writer()

@@ -5,6 +5,7 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev --filter=!@sealai/whodb",
+    "dev:worktree": "bun scripts/dev-worktree.ts",
     "dev:scan": "REACT_SCAN=true turbo dev --filter=!@sealai/whodb",
     "dev:all": "turbo dev",
     "lint": "turbo lint",

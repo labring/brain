@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/MarceloPetrucio/go-scalar-api-reference"
@@ -26,6 +27,8 @@ import (
 
 func main() {
 	loadLocalEnv()
+	port := apiServerPort(os.Getenv("API_PORT"))
+	serverURL := "http://localhost:" + port
 	router := chi.NewMux()
 	router.Use(requestLogger)
 	router.Use(appendSlashForGroupRoots)
@@ -39,7 +42,7 @@ func main() {
 
 	config := huma.DefaultConfig("Sealos API", "1.0.0")
 	config.OpenAPI.Servers = []*huma.Server{
-		{URL: "http://localhost:9000", Description: "Test server"},
+		{URL: serverURL, Description: "Test server"},
 	}
 	config.CreateHooks = nil // Disable $schema in responses and Link header
 	config.OnAddOperation = append(config.OnAddOperation, addLogsQueryExamples, addAPCreateExample, addDBCreateExample)
@@ -69,11 +72,18 @@ func main() {
 	db.Register(api)
 	telemetry.Register(api)
 
-	fmt.Println("Server listening on :9000")
-	fmt.Println("API docs: http://localhost:9000/docs")
-	if err := http.ListenAndServe(":9000", router); err != nil {
+	fmt.Printf("Server listening on :%s\n", port)
+	fmt.Printf("API docs: %s/docs\n", serverURL)
+	if err := http.ListenAndServe(":"+port, router); err != nil {
 		fmt.Println("Server error:", err)
 	}
+}
+
+func apiServerPort(configured string) string {
+	if port := strings.TrimSpace(configured); port != "" {
+		return port
+	}
+	return "9000"
 }
 
 type statusRecorder struct {
