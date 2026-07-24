@@ -57,6 +57,7 @@ All notable changes to Brain are documented in this file.
   icons, and GitHub repository list controls.
 - Improved off-cluster local Kubernetes development while keeping production
   requests pinned to in-cluster API coordinates and trust roots.
+- Fixed PostgreSQL table detection for quoted identifiers, including mixed-case names, spaces, and embedded quotes.
 
 ### Security
 
