@@ -2,10 +2,20 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  encodeRawKubeconfig,
   headerSafeEncodedKubeconfig,
   kubeconfigBearerHeader,
   kubeconfigCredentialKey,
 } from "./credential-key";
+
+test("raw kubeconfig encoding preserves URL-sensitive and Unicode content", () => {
+  const kubeconfig = "token: abc+%2B%\nname: 用户";
+
+  assert.equal(
+    encodeRawKubeconfig(kubeconfig),
+    "token%3A%20abc%2B%252B%25%0Aname%3A%20%E7%94%A8%E6%88%B7"
+  );
+});
 
 test("kubeconfig credential key is stable for encoded and decoded input", () => {
   const decoded = "apiVersion: v1\nclusters: []";

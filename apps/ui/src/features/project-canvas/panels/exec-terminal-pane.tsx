@@ -15,6 +15,7 @@ import type {
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { kubeconfigAtom } from "@/lib/auth-store";
+import { buildExecTerminalInitMessage } from "./exec-terminal-protocol";
 import { workloadTerminalWebSocketUrl } from "./workload-terminal-url";
 
 type TerminalStatus = "connecting" | "closed" | "error" | "ready";
@@ -266,14 +267,12 @@ export const ExecTerminalPane = memo(function ExecTerminalPane({
 
       socket.addEventListener("open", () => {
         socket?.send(
-          JSON.stringify({
-            kind,
-            kubeconfig,
-            name,
-            namespace,
-            type: "init",
-            ...(projectId ? { projectId } : {}),
-          })
+          JSON.stringify(
+            buildExecTerminalInitMessage({
+              descriptor: { kind, name, namespace, projectId },
+              rawKubeconfig: kubeconfig,
+            })
+          )
         );
       });
 
