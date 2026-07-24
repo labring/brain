@@ -2,7 +2,7 @@
 
 All notable changes to Brain are documented in this file.
 
-## [2.0.1] - Unreleased
+## [2.0.1] - 2026-07-24
 
 ### Added
 
