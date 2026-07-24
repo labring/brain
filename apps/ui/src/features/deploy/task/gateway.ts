@@ -7,8 +7,7 @@ import {
   throwIfDeployTaskAborted,
   updateDeployTaskState,
 } from "./runner-writes";
-import type { DeployTaskRow } from "./schema";
-import { appendDeployTaskMessage } from "./service";
+import type { DeployTaskFailureDetails, DeployTaskRow } from "./schema";
 
 const CODEX_GATEWAY_STARTUP_TIMEOUT_MS = 60_000;
 const CODEX_GATEWAY_STARTUP_RETRY_MS = 1000;
@@ -16,6 +15,13 @@ const CODEX_GATEWAY_REQUEST_TIMEOUT_MS = 60_000;
 const CODEX_GATEWAY_TURN_TIMEOUT_MS = 15 * 60 * 1000;
 const CODEX_GATEWAY_TURN_POLL_MS = 2500;
 export const DEPLOY_GATEWAY_MODEL = "gpt-5.5";
+const GATEWAY_SESSION_IDENTIFIER_REGEX =
+  /^(?:session[-_][A-Za-z0-9][A-Za-z0-9._:-]{0,95}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const GATEWAY_TIMESTAMP_MAX_LENGTH = 24;
+const GATEWAY_UTC_TIMESTAMP_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+const SECRET_LOOKING_VALUE_REGEX =
+  /(?:authorization|bearer\s+|credential|password|secret|token|api[_-]?key|^(?:gh[pousr]|github_pat|glpat|sk|xox[baprs])[-_])/i;
 const TRAILING_SLASHES_REGEX = /\/+$/;
 const LEADING_SLASHES_REGEX = /^\/+/;
 
@@ -72,6 +78,36 @@ export class CodexGatewayApiError extends Error {
   }
 }
 
+export class CodexGatewayTimeoutError extends Error {
+  constructor(message = "Codex gateway response timed out.") {
+    super(message);
+    this.name = "CodexGatewayTimeoutError";
+  }
+}
+
+export function codexGatewayFailureDetails(
+  error: unknown
+): DeployTaskFailureDetails {
+  if (error instanceof CodexGatewayTimeoutError) {
+    return { reason: "gateway-timeout" };
+  }
+  if (error instanceof CodexGatewayApiError) {
+    return {
+      httpStatus: error.status,
+      reason:
+        error.status >= 500 ? "gateway-upstream-error" : "gateway-unavailable",
+    };
+  }
+  if (
+    (error instanceof DOMException && error.name === "TimeoutError") ||
+    (error instanceof Error &&
+      error.message.includes("Codex gateway response timed out"))
+  ) {
+    return { reason: "gateway-timeout" };
+  }
+  return { reason: "gateway-unavailable" };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -84,55 +120,82 @@ function objectStringValue(
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-const SENSITIVE_KEY_REGEX =
-  /(authorization|bearer|credential|dockerconfig|password|secret|token|api[_-]?key)/i;
-const BEARER_TOKEN_REGEX = /Bearer\s+[A-Za-z0-9._~+/=-]+/g;
+function hasControlCharacters(value: string): boolean {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code <= 31 || code === 127) {
+      return true;
+    }
+  }
+  return false;
+}
 
-function redactGatewaySnapshot(value: unknown, depth = 0): unknown {
-  if (depth > 8) {
-    return "[MaxDepth]";
-  }
-  if (typeof value === "string") {
-    return value.replace(BEARER_TOKEN_REGEX, "Bearer [REDACTED]");
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => redactGatewaySnapshot(item, depth + 1));
-  }
-  if (value != null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-        key,
-        SENSITIVE_KEY_REGEX.test(key)
-          ? "[REDACTED]"
-          : redactGatewaySnapshot(item, depth + 1),
-      ])
-    );
+export function safeGatewaySessionIdentifier(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > 128 ||
+    hasControlCharacters(value) ||
+    SECRET_LOOKING_VALUE_REGEX.test(value) ||
+    !GATEWAY_SESSION_IDENTIFIER_REGEX.test(value)
+  ) {
+    return null;
   }
   return value;
 }
 
-function gatewayStateSnapshot(input: {
-  sessionId: string;
+function safeGatewayTimestamp(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    value.length > GATEWAY_TIMESTAMP_MAX_LENGTH ||
+    hasControlCharacters(value) ||
+    SECRET_LOOKING_VALUE_REGEX.test(value) ||
+    !GATEWAY_UTC_TIMESTAMP_REGEX.test(value)
+  ) {
+    return null;
+  }
+
+  const normalizedValue = value.includes(".")
+    ? value
+    : value.replace("Z", ".000Z");
+  const timestamp = new Date(value);
+  return !Number.isNaN(timestamp.getTime()) &&
+    timestamp.toISOString() === normalizedValue
+    ? value
+    : null;
+}
+
+export function gatewayStateSnapshot(input: {
   state: Partial<CodexGatewayState>;
 }): Record<string, unknown> {
   return {
-    activeTurn: Boolean(input.state.activeTurn),
-    currentTurnId: input.state.currentTurnId ?? null,
-    cwd: typeof input.state.cwd === "string" ? input.state.cwd : null,
-    lastTurnStatus: input.state.lastTurnStatus ?? null,
-    ready: Boolean(input.state.ready),
-    recentEvents: Array.isArray(input.state.recentEvents)
-      ? redactGatewaySnapshot(input.state.recentEvents)
-      : [],
-    selectedModel: input.state.selectedModel ?? null,
-    sessionId: input.sessionId,
-    startedAt: input.state.startedAt ?? null,
-    threadId: input.state.threadId ?? null,
-    transcript: Array.isArray(input.state.transcript)
-      ? redactGatewaySnapshot(input.state.transcript)
-      : [],
+    activeTurn: input.state.activeTurn === true,
+    ready: input.state.ready === true,
+    startedAt: safeGatewayTimestamp(input.state.startedAt),
     updatedAt: new Date().toISOString(),
   };
+}
+
+export function safeCodexGatewayUrl(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0 || value.length > 2048) {
+    return null;
+  }
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.hostname === ""
+    ) {
+      return null;
+    }
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 export function getCodexGatewayContextFromDevboxInfo(
@@ -164,7 +227,7 @@ export function getCodexGatewayContextFromDevboxInfo(
 export function codexGatewayContextFromStoredTask(input: {
   gatewayUrl: string | null;
 }): GatewayContext | null {
-  const gatewayUrl = input.gatewayUrl?.trim();
+  const gatewayUrl = safeCodexGatewayUrl(input.gatewayUrl);
   return gatewayUrl ? { authToken: null, url: gatewayUrl } : null;
 }
 
@@ -172,10 +235,14 @@ export function getCodexGatewayEventStreamUrl(
   context: GatewayContext,
   sessionId: string
 ): string {
+  const safeSessionId = safeGatewaySessionIdentifier(sessionId);
+  if (safeSessionId == null) {
+    throw new Error("Invalid Codex gateway session identifier.");
+  }
   const url = new URL(
     buildUrl(
       context.url,
-      `/api/sessions/${encodeURIComponent(sessionId)}/events`
+      `/api/sessions/${encodeURIComponent(safeSessionId)}/events`
     )
   );
   if (context.authToken != null) {
@@ -304,36 +371,46 @@ async function getGatewaySessionState(
   );
 }
 
-function assistantTextFromState(state: CodexGatewayState): string | null {
-  const text = state.transcript
-    .filter((entry) => entry.role === "assistant")
-    .map((entry) => entry.text.trim())
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-  return text || null;
+export function gatewayEventProjection(eventName: string): {
+  kind: string;
+  message: string;
+  projectsState: boolean;
+} {
+  switch (eventName) {
+    case "message":
+      return {
+        kind: "deploy_task.gateway_message",
+        message: "Codex gateway message event received.",
+        projectsState: false,
+      };
+    case "session":
+      return {
+        kind: "deploy_task.gateway_session_event",
+        message: "Codex gateway session event received.",
+        projectsState: false,
+      };
+    case "state":
+      return {
+        kind: "deploy_task.gateway_state",
+        message: "Codex gateway state updated.",
+        projectsState: true,
+      };
+    default:
+      return {
+        kind: "deploy_task.gateway_event",
+        message: "Codex gateway event received.",
+        projectsState: false,
+      };
+  }
 }
 
 async function projectGatewayState(input: {
-  sessionId: string;
   state: CodexGatewayState;
   taskId: string;
 }): Promise<void> {
   await updateDeployTaskState(input.taskId, {
-    gatewayThreadId: input.state.threadId ?? null,
-    gatewayTurnId: input.state.currentTurnId ?? null,
-    gatewayStateSnapshot: gatewayStateSnapshot(input),
+    gatewayStateSnapshot: gatewayStateSnapshot({ state: input.state }),
   });
-
-  const assistantText = assistantTextFromState(input.state);
-  if (assistantText != null) {
-    await appendDeployTaskMessage({
-      id: `gateway-${input.sessionId}-latest`,
-      parts: [{ text: assistantText, type: "text" }],
-      role: "assistant",
-      taskId: input.taskId,
-    });
-  }
 }
 
 async function waitForGatewayTurnCompletion(input: {
@@ -342,7 +419,6 @@ async function waitForGatewayTurnCompletion(input: {
   taskId: string;
 }): Promise<CodexGatewayState> {
   const deadline = Date.now() + CODEX_GATEWAY_TURN_TIMEOUT_MS;
-  let latestState: CodexGatewayState | null = null;
 
   while (Date.now() < deadline) {
     // A cancel request aborts the wait between polls; the gateway turn keeps
@@ -352,9 +428,7 @@ async function waitForGatewayTurnCompletion(input: {
       input.context,
       input.sessionId
     );
-    latestState = sessionState.state;
     await projectGatewayState({
-      sessionId: input.sessionId,
       state: sessionState.state,
       taskId: input.taskId,
     });
@@ -372,89 +446,43 @@ async function waitForGatewayTurnCompletion(input: {
     phase: "plan",
   });
 
-  if (latestState != null) {
-    return latestState;
-  }
-  throw new Error("Codex gateway response timed out.");
+  throw new CodexGatewayTimeoutError();
 }
 
 async function persistGatewayStateEvent(input: {
   payload: Record<string, unknown> | null;
-  sessionId: string;
+  projection: ReturnType<typeof gatewayEventProjection>;
   taskId: string;
 }): Promise<void> {
   const state = (input.payload ?? {}) as Partial<CodexGatewayState> &
     Record<string, unknown>;
   await updateDeployTaskState(input.taskId, {
-    gatewayThreadId: state.threadId ?? null,
-    gatewayTurnId: state.currentTurnId ?? null,
-    gatewayStateSnapshot: gatewayStateSnapshot({
-      sessionId: input.sessionId,
-      state,
-    }),
+    gatewayStateSnapshot: gatewayStateSnapshot({ state }),
   });
   await recordDeployTaskEvent(input.taskId, {
-    kind: "deploy_task.gateway_state",
-    message: "Codex gateway state updated.",
-    payload: input.payload ?? {},
+    kind: input.projection.kind,
+    message: input.projection.message,
+    payload: {},
     phase: "plan",
   });
-
-  if (!Array.isArray(state.transcript)) {
-    return;
-  }
-
-  const assistantText = assistantTextFromState({
-    activeTurn: Boolean(state.activeTurn),
-    currentTurnId: state.currentTurnId ?? null,
-    cwd: typeof state.cwd === "string" ? state.cwd : "",
-    lastTurnStatus: state.lastTurnStatus ?? null,
-    ready: Boolean(state.ready),
-    recentEvents: Array.isArray(state.recentEvents) ? state.recentEvents : [],
-    selectedModel: state.selectedModel ?? null,
-    startedAt: state.startedAt ?? null,
-    threadId: state.threadId ?? null,
-    transcript: state.transcript,
-  });
-  if (assistantText != null) {
-    await appendDeployTaskMessage({
-      id: `gateway-${input.sessionId}-latest`,
-      parts: [{ text: assistantText, type: "text" }],
-      role: "assistant",
-      taskId: input.taskId,
-    });
-  }
 }
 
 export async function persistDeployGatewayEvent(input: {
   eventName: string;
   payload: Record<string, unknown> | null;
-  sessionId: string;
   taskId: string;
 }): Promise<void> {
-  const common = {
-    payload: input.payload ?? {},
-    phase: "plan" as const,
-  };
-
-  if (input.eventName === "session") {
-    await recordDeployTaskEvent(input.taskId, {
-      ...common,
-      kind: "deploy_task.gateway_session_event",
-      message: "Codex gateway session event received.",
-    });
-    return;
-  }
-
-  if (input.eventName === "state") {
-    await persistGatewayStateEvent(input);
+  const projection = gatewayEventProjection(input.eventName);
+  if (projection.projectsState) {
+    await persistGatewayStateEvent({ ...input, projection });
     return;
   }
 
   await recordDeployTaskEvent(input.taskId, {
-    ...common,
-    kind: `deploy_task.gateway_${input.eventName.replace(/[^a-z0-9]+/gi, "_")}`,
-    message: "Codex gateway event received.",
+    kind: projection.kind,
+    message: projection.message,
+    payload: {},
+    phase: "plan",
   });
 }
 
@@ -463,8 +491,12 @@ export async function runDeployTaskGateway(input: {
   repairOutput?: boolean;
   task: DeployTaskRow;
 }): Promise<void> {
+  const gatewayUrl = safeCodexGatewayUrl(input.context.url);
+  if (gatewayUrl == null) {
+    throw new CodexGatewayApiError("Invalid Codex gateway URL.", 502);
+  }
   await updateDeployTaskState(input.task.id, {
-    gatewayUrl: input.context.url,
+    gatewayUrl,
     phase: "plan",
   });
   await recordDeployTaskEvent(input.task.id, {
@@ -476,65 +508,49 @@ export async function runDeployTaskGateway(input: {
   await waitForCodexGatewayReady(input.context);
 
   const session = await createGatewaySession(input.context);
+  const sessionId = safeGatewaySessionIdentifier(session.sessionId);
+  if (sessionId == null) {
+    throw new CodexGatewayApiError(
+      "Codex gateway returned an invalid session identifier.",
+      502
+    );
+  }
   await updateDeployTaskState(input.task.id, {
-    gatewaySessionId: session.sessionId,
-    gatewayThreadId: session.state.threadId ?? null,
-    gatewayTurnId: session.state.currentTurnId ?? null,
+    gatewaySessionId: sessionId,
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_session_created",
     message: "Codex gateway session is ready.",
-    payload: {
-      sessionId: session.sessionId,
-      threadId: session.state.threadId ?? null,
-    },
+    payload: {},
     phase: "plan",
   });
 
   const turn = await sendGatewayTurn(
     input.context,
-    session.sessionId,
+    sessionId,
     input.repairOutput
       ? buildGatewayRepairPrompt(input.task)
       : buildGatewayPrompt(input.task)
   );
   await updateDeployTaskState(input.task.id, {
-    gatewayThreadId: turn.state.threadId ?? null,
-    gatewayTurnId: turn.state.currentTurnId ?? null,
+    gatewayStateSnapshot: gatewayStateSnapshot({ state: turn.state }),
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_turn_sent",
     message: "Codex gateway turn started.",
-    payload: {
-      activeTurn: turn.state.activeTurn,
-      lastTurnStatus: turn.state.lastTurnStatus ?? null,
-      threadId: turn.state.threadId ?? null,
-      turnId: turn.state.currentTurnId ?? null,
-    },
+    payload: {},
     phase: "plan",
   });
 
-  const assistantText = assistantTextFromState(turn.state);
-  if (assistantText != null) {
-    await appendDeployTaskMessage({
-      parts: [{ text: assistantText, type: "text" }],
-      role: "assistant",
-      taskId: input.task.id,
-    });
-  }
-
-  const finalState = await waitForGatewayTurnCompletion({
+  await waitForGatewayTurnCompletion({
     context: input.context,
-    sessionId: session.sessionId,
+    sessionId,
     taskId: input.task.id,
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_turn_completed",
     message: "Codex gateway turn completed.",
-    payload: {
-      lastTurnStatus: finalState.lastTurnStatus ?? null,
-      turnId: finalState.currentTurnId ?? null,
-    },
+    payload: {},
     phase: "generate-artifacts",
   });
 }

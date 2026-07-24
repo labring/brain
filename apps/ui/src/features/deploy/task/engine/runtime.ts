@@ -1,3 +1,4 @@
+import { deploymentFailureMessage } from "../failure-summary";
 import type { DeployTaskEngineContext } from "./context";
 import {
   DeployTaskRunCancelledError,
@@ -78,6 +79,7 @@ async function drainForShutdown(
     runtime.reaperTimer = null;
   }
   const runs = [...runtime.activeRuns.values()];
+  const interruptedMessage = deploymentFailureMessage("interrupted");
   await Promise.all(
     runs.map(async (run) => {
       run.controller.abort(new DeployTaskShutdownError());
@@ -85,15 +87,18 @@ async function drainForShutdown(
         await transitionDeployTask(ctx, {
           event: {
             kind: "deployment_task.engine_resolved",
-            message:
-              "The server shut down while this task was running; resolved to failed (interrupted).",
-            payload: { reason: "shutdown", verdict: "failed" },
+            message: interruptedMessage,
+            payload: { reason: "interrupted", verdict: "failed" },
           },
           expectedLeaseEpoch: run.leaseEpoch,
           from: DEPLOY_TASK_LEASED_STATUSES,
           set: {
-            error: "Deployment was interrupted by a server shutdown.",
-            failureDetails: { detail: "shutdown", reason: "interrupted" },
+            error: interruptedMessage,
+            failureDetails: {
+              detail: "shutdown",
+              failureMessage: interruptedMessage,
+              reason: "interrupted",
+            },
           },
           taskId: run.taskId,
           to: "failed",
@@ -270,9 +275,15 @@ export function launchDeployTaskRun(
     try {
       await input.run(handle);
       if (handle.outcome() == null) {
+        const failureMessage = deploymentFailureMessage("runner-error");
         await handle.fail({
-          error: "Deployment runner exited without recording an outcome.",
-          failureDetails: { reason: "runner-error" },
+          error: failureMessage,
+          event: {
+            kind: "deployment_task.failed",
+            message: failureMessage,
+            payload: { reason: "runner-error" },
+          },
+          failureDetails: { failureMessage, reason: "runner-error" },
         });
       }
     } catch (error) {
@@ -317,9 +328,15 @@ async function resolveRunError(
       // Shutdown drain or the winning execution owns the row now.
       return;
     }
+    const failureMessage = deploymentFailureMessage("runner-error");
     await handle.fail({
-      error: error instanceof Error ? error.message : String(error),
-      failureDetails: { reason: "runner-error" },
+      error: failureMessage,
+      event: {
+        kind: "deployment_task.failed",
+        message: failureMessage,
+        payload: { reason: "runner-error" },
+      },
+      failureDetails: { failureMessage, reason: "runner-error" },
     });
   } catch (fallbackError) {
     if (!(fallbackError instanceof DeployTaskRunSupersededError)) {

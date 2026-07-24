@@ -7,6 +7,10 @@ import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { getDeploymentTaskDb } from "./db";
 import { getDeployTaskEngineContext } from "./engine/server";
 import { publishDeployTaskChange } from "./engine/transitions";
+import {
+  publicDeployTaskError,
+  publicDeployTaskFailureDetails,
+} from "./failure-details";
 import { getDeployTaskRowInNamespace } from "./lookup";
 import {
   type DeploymentTaskProjection,
@@ -15,9 +19,14 @@ import {
 } from "./projection";
 import {
   publicDeployTaskArtifactSummary,
-  publicDeployTaskEventPayload,
+  publicDeployTaskBlockingInputs,
+  publicDeployTaskEventFields,
+  publicDeployTaskGatewayLocator,
+  publicDeployTaskRuntimeLocator,
+  publicDeployTaskTimelineSnapshot,
 } from "./public-artifact-summary";
 import {
+  type DeploymentTaskRunner,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
   type DeployTaskRow,
@@ -47,21 +56,48 @@ function nowIso(value: Date | null): string | null {
 }
 
 export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
+  const failureDetails = publicDeployTaskFailureDetails({
+    details: row.failureDetails,
+    runner: row.runner,
+    status: row.status,
+  });
+  const gatewayLocator = publicDeployTaskGatewayLocator(
+    {
+      gatewaySessionId: row.gatewaySessionId,
+      gatewayTurnId: row.gatewayTurnId,
+      gatewayUrl: row.gatewayUrl,
+    },
+    { runner: row.runner }
+  );
+  const runtimeLocator = publicDeployTaskRuntimeLocator(
+    { runtimeName: row.runtimeName, runtimeState: row.runtimeState },
+    { runner: row.runner }
+  );
   return {
-    artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary),
-    blockingInputs: row.blockingInputs,
+    artifactSummary: publicDeployTaskArtifactSummary(row.artifactSummary, {
+      runner: row.runner,
+    }),
+    blockingInputs: publicDeployTaskBlockingInputs(row.blockingInputs, {
+      runner: row.runner,
+    }),
     cancelRequestedAt: nowIso(row.cancelRequestedAt),
-    canvasProjection: row.canvasProjection,
+    canvasProjection: row.runner.kind === "ai" ? {} : row.canvasProjection,
     completedAt: nowIso(row.completedAt),
     creatingActor: row.creatingActor,
     createdFrom: row.createdFrom,
     createdAt: row.createdAt.toISOString(),
-    error: row.error,
-    failureDetails: row.failureDetails,
-    gatewaySessionId: row.gatewaySessionId,
-    gatewayStateSnapshot: row.gatewayStateSnapshot,
-    gatewayTurnId: row.gatewayTurnId,
-    gatewayUrl: row.gatewayUrl,
+    error: publicDeployTaskError({
+      details: failureDetails,
+      error: row.error,
+      runner: row.runner,
+      status: row.status,
+    }),
+    failureDetails,
+    gatewaySessionId: gatewayLocator.gatewaySessionId,
+    gatewayStateSnapshot:
+      row.runner.kind === "ai" ? null : row.gatewayStateSnapshot,
+    gatewayTurnId: gatewayLocator.gatewayTurnId,
+    gatewayUrl: gatewayLocator.gatewayUrl,
     id: row.id,
     namespace: row.namespace,
     phase: row.phase,
@@ -71,26 +107,40 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     resultUrl: row.resultUrl,
     retriedFromTaskId: row.retriedFromTaskId,
     runner: row.runner,
-    runtimeName: row.runtimeName,
+    runtimeName: runtimeLocator.runtimeName,
     runtimeProvider: row.runtimeProvider,
-    runtimeState: row.runtimeState,
+    runtimeState: runtimeLocator.runtimeState,
     source: row.source,
     startedAt: nowIso(row.startedAt),
     status: row.status,
     target: row.target,
-    timelineSnapshot: row.timelineSnapshot,
+    timelineSnapshot: publicDeployTaskTimelineSnapshot(row.timelineSnapshot, {
+      failureReason: failureDetails?.reason,
+      runner: row.runner,
+      taskId: row.id,
+      updatedAt: row.updatedAt.toISOString(),
+    }),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
 export function toDeployTaskEventDTO(
-  row: DeployTaskEventRow
+  row: DeployTaskEventRow,
+  runner: DeploymentTaskRunner
 ): DeployTaskEventDTO {
+  const publicEvent = publicDeployTaskEventFields(
+    {
+      kind: row.kind,
+      message: row.message,
+      payload: row.payload,
+    },
+    { runner }
+  );
   return {
     createdAt: row.createdAt.toISOString(),
-    kind: row.kind,
-    message: row.message,
-    payload: publicDeployTaskEventPayload(row.payload),
+    kind: publicEvent.kind,
+    message: publicEvent.message,
+    payload: publicEvent.payload,
     phase: row.phase,
     seq: row.seq,
     taskId: row.taskId,
@@ -164,14 +214,18 @@ export async function getDeployTaskSnapshot(
   ]);
 
   return {
-    events: events.reverse().map(toDeployTaskEventDTO),
-    messages: messages.map(toDeployTaskMessageDTO),
+    events: events
+      .reverse()
+      .map((event) => toDeployTaskEventDTO(event, task.runner)),
+    messages:
+      task.runner.kind === "ai" ? [] : messages.map(toDeployTaskMessageDTO),
     task: toDeployTaskDTO(task),
   };
 }
 
 async function recentDeployTaskEvents(
-  taskId: string
+  taskId: string,
+  runner: DeploymentTaskRunner
 ): Promise<DeployTaskEventDTO[]> {
   const events = await getDeploymentTaskDb()
     .select()
@@ -179,7 +233,7 @@ async function recentDeployTaskEvents(
     .where(eq(deployTaskEvents.taskId, taskId))
     .orderBy(desc(deployTaskEvents.seq))
     .limit(MAX_DEPLOY_EVENTS);
-  return events.reverse().map(toDeployTaskEventDTO);
+  return events.reverse().map((event) => toDeployTaskEventDTO(event, runner));
 }
 
 /**
@@ -205,10 +259,17 @@ export async function getDeployTaskTimelineSnapshot(
     return null;
   }
 
+  const timeline = deploymentTaskTimelineFromTaskRecord(task);
   return {
-    events: await recentDeployTaskEvents(taskId),
+    events: await recentDeployTaskEvents(taskId, task.runner),
     task: toDeployTaskDTO(task),
-    timeline: deploymentTaskTimelineFromTaskRecord(task),
+    timeline:
+      publicDeployTaskTimelineSnapshot(timeline, {
+        failureReason: task.failureDetails?.reason,
+        runner: task.runner,
+        taskId: task.id,
+        updatedAt: task.updatedAt.toISOString(),
+      }) ?? timeline,
   };
 }
 

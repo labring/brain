@@ -1,38 +1,101 @@
-import type { DeploymentTaskRunner } from "./schema";
+import type { DeploymentTaskRunner, DeployTaskFailureReason } from "./schema";
 
-const GENERIC_FAILURE_MESSAGE = "Deployment task failed.";
+const UNKNOWN_FAILURE_MESSAGE =
+  "Deployment failed for an unknown reason. Copy the Task ID and contact support.";
 const MAX_REASON_LENGTH = 200;
+
+const FAILURE_MESSAGES = {
+  "github-authentication":
+    "GitHub authorization is unavailable. Reconnect GitHub, then redeploy.",
+  "repository-clone-failed":
+    "The repository could not be cloned. Check repository access and the selected branch, then redeploy.",
+  "ai-proxy-unavailable":
+    "Deployment analysis credentials could not be prepared. Redeploy; if the problem continues, contact support.",
+  "deploy-runtime-unavailable":
+    "The deployment workspace did not become ready. Redeploy; if the problem continues, contact support.",
+  "build-runtime-unavailable":
+    "The deployment workspace does not expose the required build service. Redeploy; if the problem continues, contact support.",
+  "deploy-skill-install-failed":
+    "Deploy skill installation failed. Redeploy; if the problem continues, contact support.",
+  "buildkit-start-failed":
+    "BuildKit could not start. Redeploy; if the problem continues, contact support.",
+  "image-build-failed":
+    "The application image could not be built. Check the repository build configuration, then redeploy.",
+  "gateway-not-exposed":
+    "The workspace did not expose the deployment analysis service. Redeploy; if the problem continues, contact support.",
+  "gateway-unavailable":
+    "The deployment analysis service is unavailable. Redeploy in a few minutes.",
+  "gateway-upstream-error":
+    "The deployment analysis service returned an error. Redeploy in a few minutes.",
+  "gateway-timeout": "Repository analysis timed out. Redeploy to try again.",
+  "deployment-output-missing":
+    "Repository analysis finished without a deployable result. Redeploy; if the problem continues, contact support.",
+  "apply-failed":
+    "Generated resources could not be applied. Review the error details, then redeploy.",
+  "quota-exceeded":
+    "The namespace does not have enough quota for this deployment. Free resources or increase quota, then redeploy.",
+  "readiness-timeout":
+    "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them.",
+  interrupted:
+    "Deployment was interrupted by the platform. Redeploy to continue.",
+  timeout:
+    "Deployment exceeded the maximum run time. Redeploy; if the problem continues, contact support.",
+  "never-started":
+    "Deployment could not start. Redeploy; if the problem continues, contact support.",
+  "runner-error":
+    "Deployment stopped because of an internal error. Copy the Task ID and contact support.",
+  cancelled: "Deployment was cancelled.",
+  unknown: UNKNOWN_FAILURE_MESSAGE,
+} as const satisfies Record<DeployTaskFailureReason, string>;
+
+const FAILURE_REASONS = new Set<DeployTaskFailureReason>(
+  Object.keys(FAILURE_MESSAGES) as DeployTaskFailureReason[]
+);
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Curated headlines for AI Runner failures whose raw stderr is too noisy to
- * show. Kept separate so the shared failure-reason path can reuse them while
- * `deployTaskFailureSummary` stays a stable `(error) => string`.
- */
-function aiFailureHeadline(message: string): string | null {
+/** Maps recognizable legacy AI errors to stable failure reason codes. */
+export function aiFailureReason(
+  message: string
+): DeployTaskFailureReason | null {
   if (
     message.includes("No valid skills found") ||
     message.includes("Skills require a SKILL.md")
   ) {
-    return "Deploy skill installation failed.";
+    return "deploy-skill-install-failed";
   }
   if (message.includes("Timed out waiting for deploy Devbox runtime")) {
-    return "Timed out waiting for deploy runtime.";
+    return "deploy-runtime-unavailable";
   }
   if (message.includes("BuildKit build could not start")) {
-    return "BuildKit build could not start.";
+    return "buildkit-start-failed";
   }
   if (message.includes("Codex gateway completed without deployment output")) {
-    return "Codex gateway completed without deployment output.";
+    return "deployment-output-missing";
   }
   return null;
 }
 
 export function deployTaskFailureSummary(error: unknown): string {
-  return aiFailureHeadline(errorMessage(error)) ?? GENERIC_FAILURE_MESSAGE;
+  const reason = aiFailureReason(errorMessage(error)) ?? "unknown";
+  return deploymentFailureMessage(reason);
+}
+
+export function isDeployTaskFailureReason(
+  value: unknown
+): value is DeployTaskFailureReason {
+  return (
+    typeof value === "string" &&
+    FAILURE_REASONS.has(value as DeployTaskFailureReason)
+  );
+}
+
+export function deploymentFailureMessage(
+  reason: DeployTaskFailureReason
+): string {
+  return FAILURE_MESSAGES[reason];
 }
 
 /**
@@ -40,26 +103,15 @@ export function deployTaskFailureSummary(error: unknown): string {
  * (ADR 0042). "Scrub ⇔ raw display": only runners whose terminal error is
  * scrubbed of known sensitive values — the deterministic runners, whose
  * sensitive values are an enumerable set — surface the raw error and the
- * raw-first-line fallback. The AI Runner is excluded until its terminal
- * error string goes through gateway-style redaction (tracked separately).
+ * raw-first-line fallback. The AI Runner is excluded because arbitrary
+ * Gateway, repository, and generated text has no complete redaction contract;
+ * it exposes only allowlisted structured failure details.
  */
 export function deployRunnerSurfacesRawFailure(runner: {
   kind: DeploymentTaskRunner["kind"];
 }): boolean {
   return runner.kind === "template" || runner.kind === "direct";
 }
-
-/**
- * Reason codes a runner attaches to a failure that deserve a stable headline
- * over their raw message. These are fixed system verdicts, not raw echoes, so
- * they apply to every runner. Engine-resolved verdicts (interrupted, timeout,
- * cancelled) are written by the reaper with their own descriptive messages and
- * are not routed through here yet.
- */
-const REASON_HEADLINES: Record<string, string> = {
-  "readiness-timeout":
-    "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them.",
-};
 
 /**
  * Substring-matched failure classes, applied ONLY to runners that surface the
@@ -91,7 +143,9 @@ function reasonCodeHeadline(
   if (code == null || code === "") {
     return null;
   }
-  return REASON_HEADLINES[code] ?? null;
+  return isDeployTaskFailureReason(code)
+    ? deploymentFailureMessage(code)
+    : null;
 }
 
 function classFailureHeadline(message: string): string | null {
@@ -113,10 +167,9 @@ function firstLine(text: string): string {
 
 /**
  * The user-facing Deployment Failure Reason shown on the failed timeline step
- * (ADR 0042), by precedence: a recognized failure-class headline, else the
- * first line of the (already scrubbed) ground-truth error for runners that
- * surface raw errors, else the generic string only when neither a reason nor
- * any error text exists.
+ * (ADR 0042), by precedence: a validated reason code or recognizable legacy AI
+ * error; then, only for runners that surface scrubbed raw errors, a recognized
+ * failure class or the raw first line; otherwise the generic support message.
  */
 export function deploymentFailureReason(input: {
   rawMessage?: string | null;
@@ -126,8 +179,10 @@ export function deploymentFailureReason(input: {
   const message = input.rawMessage ?? "";
   // A reason-code or curated AI headline is a fixed label, not a raw echo, so
   // it applies to every runner.
+  const aiReason = aiFailureReason(message);
   const fixedHeadline =
-    reasonCodeHeadline(input.reasonCode) ?? aiFailureHeadline(message);
+    reasonCodeHeadline(input.reasonCode) ??
+    (aiReason == null ? null : deploymentFailureMessage(aiReason));
   if (fixedHeadline != null) {
     return fixedHeadline;
   }
@@ -145,5 +200,5 @@ export function deploymentFailureReason(input: {
       return firstLine(raw);
     }
   }
-  return GENERIC_FAILURE_MESSAGE;
+  return UNKNOWN_FAILURE_MESSAGE;
 }

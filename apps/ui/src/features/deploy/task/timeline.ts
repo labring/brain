@@ -54,6 +54,18 @@ export interface DeploymentTimelineEvent {
   source?: DeploymentTimelineEventSource;
 }
 
+export const DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY =
+  "deployment-task-terminal-failure";
+
+export function isDeploymentTaskTerminalFailureEventKey(
+  value: unknown
+): boolean {
+  return (
+    value === DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY ||
+    value === "deployment_task.failed"
+  );
+}
+
 export interface DeploymentResultResourceCard {
   events: DeploymentTimelineEvent[];
   id: string;
@@ -74,6 +86,8 @@ export interface DeploymentTimelineStep {
 }
 
 export interface DeploymentTaskTimelineSnapshot {
+  /** Independent server stamp proving AI timeline fields were rebuilt safely. */
+  publicProjectionVersion?: number;
   revision: number;
   status: DeployTaskStatus;
   steps: DeploymentTimelineStep[];
@@ -179,9 +193,19 @@ export function deploymentTimelineFailureStepId(input: {
     case "apply":
     case "verify":
       return "create-resources";
+    case "configure":
+      switch (input.runner.kind) {
+        case "template":
+          return "prepare-template";
+        case "ai":
+          return "generate-deployment";
+        case "direct":
+          return null;
+        default:
+          return input.runner satisfies never;
+      }
     case "queued":
     case "resolve-target":
-    case "configure":
     case "completed":
       return null;
     default:

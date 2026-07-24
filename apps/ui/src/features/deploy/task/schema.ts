@@ -44,6 +44,10 @@ export type DeployTaskPhase =
 export type DeploymentTaskCreatedFrom = "api" | "automation" | "chat" | "ui";
 
 export const CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION = 1;
+export const CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION = 1;
+/** @deprecated AI-generated blocker metadata never grants projection trust. */
+export const CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION = 1;
+export const CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION = 1;
 
 /**
  * Immutable credential selection written with a GitHub Deployment Task.
@@ -74,6 +78,8 @@ export interface DeployTaskArtifactSummary {
   entrypointYaml?: string;
   notes?: string;
   outputJson?: unknown;
+  /** Server stamp proving rich AI artifact fields were scrubbed. */
+  publicProjectionVersion?: number;
   resources?: {
     apiVersion: string;
     kind: string;
@@ -134,6 +140,8 @@ export interface DeployTaskBlockingInput {
   key?: string;
   label: string;
   options?: string[];
+  /** @deprecated Retained only for rows written before fail-closed projection. */
+  publicProjectionVersion?: number;
   required: boolean;
   sensitive?: boolean;
   type: "confirmation" | "env" | "secret" | "text";
@@ -144,7 +152,38 @@ export interface DeployTaskEventPayload {
   [key: string]: unknown;
 }
 
-export type DeployTaskFailureDetails = Record<string, unknown>;
+export type DeployTaskFailureReason =
+  | "github-authentication"
+  | "repository-clone-failed"
+  | "ai-proxy-unavailable"
+  | "deploy-runtime-unavailable"
+  | "build-runtime-unavailable"
+  | "deploy-skill-install-failed"
+  | "buildkit-start-failed"
+  | "image-build-failed"
+  | "gateway-not-exposed"
+  | "gateway-unavailable"
+  | "gateway-upstream-error"
+  | "gateway-timeout"
+  | "deployment-output-missing"
+  | "apply-failed"
+  | "quota-exceeded"
+  | "readiness-timeout"
+  | "interrupted"
+  | "timeout"
+  | "never-started"
+  | "runner-error"
+  | "cancelled"
+  | "unknown";
+
+export type DeployTaskFailureStage = "apply" | "readiness";
+
+export interface DeployTaskFailureDetails extends Record<string, unknown> {
+  failureMessage?: string;
+  httpStatus?: number;
+  reason?: DeployTaskFailureReason;
+  stage?: DeployTaskFailureStage;
+}
 export type DeployTaskGatewayStateSnapshot = Record<string, unknown>;
 
 export interface DeploymentTaskGithubSource {

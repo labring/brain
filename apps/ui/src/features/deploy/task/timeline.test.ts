@@ -103,7 +103,23 @@ test("deployment task failure step falls back to the runner step for the current
   );
   assert.equal(
     deploymentTimelineFailureStepId({
+      phase: "plan",
+      runner: aiRunner,
+      timeline: aiTimeline,
+    }),
+    "analyze-source"
+  );
+  assert.equal(
+    deploymentTimelineFailureStepId({
       phase: "generate-artifacts",
+      runner: aiRunner,
+      timeline: aiTimeline,
+    }),
+    "generate-deployment"
+  );
+  assert.equal(
+    deploymentTimelineFailureStepId({
+      phase: "configure",
       runner: aiRunner,
       timeline: aiTimeline,
     }),
@@ -127,6 +143,19 @@ test("deployment task failure step falls back to the runner step for the current
         runner: templateRunner,
         status: "running",
         taskId: "template-task",
+        updatedAt: NOW,
+      }),
+    }),
+    "prepare-template"
+  );
+  assert.equal(
+    deploymentTimelineFailureStepId({
+      phase: "configure",
+      runner: templateRunner,
+      timeline: createDeploymentTaskTimelineForRunner({
+        runner: templateRunner,
+        status: "running",
+        taskId: "template-task-configure",
         updatedAt: NOW,
       }),
     }),

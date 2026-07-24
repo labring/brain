@@ -3,7 +3,15 @@ import { after, afterEach, before, test } from "node:test";
 
 import { eq } from "drizzle-orm";
 
-import { deployTaskEvents, deployTasks } from "../schema";
+import { deploymentFailureMessage } from "../failure-summary";
+import {
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+  deployTaskEvents,
+  deployTasks,
+} from "../schema";
+import { appendStepEvent } from "../timeline";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
@@ -32,6 +40,7 @@ import {
 let harness: DeployTaskTestHarness;
 
 const ILLEGAL_TRANSITION_RE = /Illegal deploy task transition/;
+const EMPTY_BLOCKING_INPUTS_RE = /cannot enter blocked without blocking inputs/;
 
 interface RecordingDevbox extends DeployTaskEngineDevbox {
   deleted: string[];
@@ -162,6 +171,29 @@ test("transitions reject illegal moves and stale statuses", async () => {
   assert.equal((await taskById(row.id)).status, "completed");
 });
 
+test("the status writer rejects blocked transitions without inputs", async () => {
+  const ctx = testCtx();
+  const row = await insertTaskRow(harness.db, {
+    leaseEpoch: 1,
+    leaseOwner: "test-proc",
+    status: "running",
+  });
+
+  await assert.rejects(
+    transitionDeployTask(ctx, {
+      expectedLeaseEpoch: 1,
+      from: ["running"],
+      set: { blockingInputs: [], phase: "configure" },
+      taskId: row.id,
+      to: "blocked",
+    }),
+    EMPTY_BLOCKING_INPUTS_RE
+  );
+
+  assert.equal((await taskById(row.id)).status, "running");
+  assert.equal((await eventsFor(row.id)).length, 0);
+});
+
 test("stale lease epoch fences writes to no-ops", async () => {
   const ctx = testCtx();
   const row = await insertTaskRow(harness.db, {
@@ -257,6 +289,7 @@ test("reaper resolves expired leases: interrupted, or cancelled when intent pend
     (interruptedRow.failureDetails as { reason?: string } | null)?.reason,
     "interrupted"
   );
+  assert.equal(interruptedRow.error, deploymentFailureMessage("interrupted"));
   assert.ok(interruptedRow.completedAt != null);
 
   const cancelledRow = await taskById(cancelledPending.id);
@@ -267,6 +300,10 @@ test("reaper resolves expired leases: interrupted, or cancelled when intent pend
   const verdictEvents = await eventsFor(interrupted.id);
   assert.equal(verdictEvents.length, 1);
   assert.equal(verdictEvents[0]?.kind, "deployment_task.engine_resolved");
+  assert.equal(
+    verdictEvents[0]?.message,
+    deploymentFailureMessage("interrupted")
+  );
 });
 
 test("reaper enforces cancel-ack deadline, max active run, and start deadline", async () => {
@@ -306,12 +343,14 @@ test("reaper enforces cancel-ack deadline, max active run, and start deadline", 
     (overrunRow.failureDetails as { reason?: string } | null)?.reason,
     "timeout"
   );
+  assert.equal(overrunRow.error, deploymentFailureMessage("timeout"));
   const neverRow = await taskById(neverStarted.id);
   assert.equal(neverRow.status, "failed");
   assert.equal(
     (neverRow.failureDetails as { reason?: string } | null)?.reason,
     "never-started"
   );
+  assert.equal(neverRow.error, deploymentFailureMessage("never-started"));
 
   // The forced cancel starves the still-live runner's writes.
   const starved = await transitionDeployTask(ctx, {
@@ -321,6 +360,84 @@ test("reaper enforces cancel-ack deadline, max active run, and start deadline", 
     to: "completed",
   } as never).catch(() => null);
   assert.equal(starved, null);
+});
+
+test("reaper fails legacy blocked tasks without inputs and preserves valid waits", async () => {
+  const ctx = testCtx();
+  const unknown = await insertTaskRow(harness.db, {
+    blockingInputs: [],
+    phase: "plan",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    runtimeName: "deploy-invalid-blocked",
+    runtimeProvider: "devbox",
+    runtimeState: "running",
+    status: "blocked",
+  });
+  const outputMissing = await insertTaskRow(harness.db, { status: "blocked" });
+  const buildRuntime = await insertTaskRow(harness.db, { status: "blocked" });
+  const gateway = await insertTaskRow(harness.db, { status: "blocked" });
+  const valid = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      { id: "port", key: "PORT", label: "Port", required: true, type: "text" },
+    ],
+    phase: "configure",
+    status: "blocked",
+  });
+
+  for (const [taskId, kind] of [
+    [outputMissing.id, "deployment_task.output_missing"],
+    [buildRuntime.id, "deployment_task.build_runtime_unavailable"],
+    [gateway.id, "deployment_task.gateway_unavailable"],
+  ] as const) {
+    await appendDeployTaskEvent(ctx, {
+      event: { kind, message: "legacy failure", payload: {} },
+      from: ["blocked"],
+      taskId,
+    });
+  }
+
+  const summary = await runDeployTaskReaperSweep(ctx);
+
+  assert.equal(summary.invalidBlocked, 4);
+  assert.equal(summary.devboxPaused, 1);
+  const unknownRow = await taskById(unknown.id);
+  assert.equal(unknownRow.status, "failed");
+  assert.equal(unknownRow.runtimeState, "paused");
+  assert.equal(unknownRow.error, deploymentFailureMessage("unknown"));
+  assert.deepEqual(unknownRow.failureDetails, {
+    detail: "empty-blocking-inputs",
+    failureMessage: deploymentFailureMessage("unknown"),
+    reason: "unknown",
+  });
+  assert.equal((await taskById(valid.id)).status, "blocked");
+
+  const [unknownEvent] = await eventsFor(unknown.id);
+  assert.equal(unknownEvent?.kind, "deployment_task.engine_resolved");
+  assert.deepEqual(unknownEvent?.payload, {
+    detail: "empty-blocking-inputs",
+    reason: "unknown",
+    verdict: "failed",
+  });
+
+  for (const [taskId, reason] of [
+    [outputMissing.id, "deployment-output-missing"],
+    [buildRuntime.id, "build-runtime-unavailable"],
+    [gateway.id, "gateway-not-exposed"],
+  ] as const) {
+    const row = await taskById(taskId);
+    assert.equal(row.status, "failed");
+    assert.equal(row.error, deploymentFailureMessage(reason));
+    assert.equal(
+      (row.failureDetails as { reason?: string } | null)?.reason,
+      reason
+    );
+    const verdict = (await eventsFor(taskId)).at(-1);
+    assert.equal(verdict?.kind, "deployment_task.engine_resolved");
+    assert.equal(verdict?.payload.reason, reason);
+  }
+
+  const repeat = await runDeployTaskReaperSweep(ctx);
+  assert.equal(repeat.invalidBlocked, 0);
 });
 
 test("create action inserts, claims inline, launches, and completes through the handle", async () => {
@@ -358,6 +475,107 @@ test("create action inserts, claims inline, launches, and completes through the 
     "runner.progress",
     "deployment_task.completed",
   ]);
+});
+
+test("AI timeline persistence keeps event identity and dedupe semantics", async () => {
+  const ctx = testCtx();
+  let beforeStamp: number | undefined;
+  let afterStamp: number | undefined;
+  let persistedEvents: Array<{ dedupeKey?: string; id: string }> = [];
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      source: { kind: "prompt", text: "deploy demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async (handle) => {
+      const unstampedTimeline = (await taskById(handle.taskId))
+        .timelineSnapshot;
+      assert.ok(unstampedTimeline);
+      beforeStamp = unstampedTimeline.publicProjectionVersion;
+      const event = {
+        createdAt: "2026-06-17T10:00:05.000Z",
+        dedupeKey: "deployment_task.output_partial:same-signature",
+        id: "timeline-event-id",
+        message: "untrusted output detail",
+        source: "runner" as const,
+      };
+      for (let index = 0; index < 2; index += 1) {
+        await handle.updateTimeline({
+          update: (timeline) =>
+            appendStepEvent(timeline, {
+              event,
+              stepId: "generate-deployment",
+              updatedAt: event.createdAt,
+            }),
+        });
+      }
+      const stampedTimeline = (await taskById(handle.taskId)).timelineSnapshot;
+      afterStamp = stampedTimeline?.publicProjectionVersion;
+      persistedEvents =
+        stampedTimeline?.steps.find((step) => step.id === "generate-deployment")
+          ?.events ?? [];
+      await handle.beginApplying();
+      await handle.complete();
+    },
+  });
+
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+  await result.launched?.done;
+  assert.equal(beforeStamp, undefined);
+  assert.equal(afterStamp, CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION);
+  assert.deepEqual(persistedEvents, [
+    {
+      createdAt: "2026-06-17T10:00:05.000Z",
+      dedupeKey: "deployment_task.output_partial:same-signature",
+      id: "timeline-event-id",
+      message: "Deployment output files are partially available.",
+      source: "runner",
+    },
+  ]);
+});
+
+test("requesting inputs rejects an empty wait without releasing the lease", async () => {
+  const ctx = testCtx();
+  let rejected = false;
+  let remainedRunning = false;
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async (handle) => {
+      try {
+        await handle.requestInputs({ blockingInputs: [], phase: "configure" });
+      } catch (error) {
+        rejected =
+          error instanceof Error &&
+          error.message ===
+            "Deployment task cannot enter blocked without blocking inputs.";
+      }
+      const running = await taskById(handle.taskId);
+      remainedRunning =
+        running.status === "running" && running.leaseOwner === "test-proc";
+      await handle.beginApplying();
+      await handle.complete();
+    },
+  });
+
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+  await result.launched?.done;
+
+  assert.equal(rejected, true);
+  assert.equal(remainedRunning, true);
+  assert.equal((await taskById(result.task.id)).status, "completed");
 });
 
 test("create strips sensitive template args from every persisted form (ADR 0037)", async () => {
@@ -700,16 +918,48 @@ test("input submission claims blocked→running in place and hands values in mem
   });
 
   let received: Record<string, unknown> | null = null;
+  let receivedBlockingInputs: readonly { key?: string }[] = [];
+  let rejectedRunCalled = false;
+  for (const values of [{}, { OTHER: "value" }, { DB_PASSWORD: null }]) {
+    const rejected = await submitDeployTaskInputAction(ctx, {
+      namespace: "ns-test",
+      run: () => {
+        rejectedRunCalled = true;
+        return Promise.resolve();
+      },
+      taskId: blocked.id,
+      values,
+    });
+    assert.equal(rejected.kind, "invalid-input");
+  }
+  assert.equal(rejectedRunCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
+
+  const shortSecret = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => Promise.resolve(),
+    taskId: blocked.id,
+    values: { DB_PASSWORD: "q7" },
+  });
+  assert.equal(shortSecret.kind, "invalid-input");
+  if (shortSecret.kind === "invalid-input") {
+    assert.ok(shortSecret.message.includes("at least 4 characters"));
+  }
+
   const result = await submitDeployTaskInputAction(ctx, {
     actionActor: "bob-cr",
     namespace: "ns-test",
-    run: async (handle) => {
-      received = { DB_PASSWORD: "s3cret-value" };
+    run: async (handle, _task, currentBlockingInputs, submittedValues) => {
+      received = submittedValues;
+      receivedBlockingInputs = currentBlockingInputs;
       await handle.beginApplying();
       await handle.complete();
     },
     taskId: blocked.id,
-    values: { DB_PASSWORD: "s3cret-value" },
+    values: {
+      "db-password": "s3cret-value",
+      IGNORED_EXTRA: "must-not-reach-runner",
+    },
   });
 
   assert.equal(result.kind, "resumed");
@@ -717,7 +967,11 @@ test("input submission claims blocked→running in place and hands values in mem
     return;
   }
   await result.launched.done;
-  assert.ok(received != null);
+  assert.deepEqual(received, { DB_PASSWORD: "s3cret-value" });
+  assert.deepEqual(
+    receivedBlockingInputs.map((input) => input.key),
+    ["DB_PASSWORD"]
+  );
 
   const stored = await taskById(blocked.id);
   assert.equal(stored.status, "completed");
@@ -739,6 +993,7 @@ test("input submission claims blocked→running in place and hands values in mem
   );
   const eventsJson = JSON.stringify(events);
   assert.ok(!eventsJson.includes("s3cret-value"));
+  assert.ok(!eventsJson.includes("IGNORED_EXTRA"));
 
   const conflict = await submitDeployTaskInputAction(ctx, {
     namespace: "ns-test",
@@ -749,6 +1004,309 @@ test("input submission claims blocked→running in place and hands values in mem
     values: {},
   });
   assert.equal(conflict.kind, "conflict");
+});
+
+test("partial required input submission stays blocked without launching", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "PORT",
+        key: "PORT",
+        label: "Port",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        type: "env",
+      },
+      {
+        id: "API_KEY",
+        key: "API_KEY",
+        label: "API key",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let runCalled = false;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
+    },
+    taskId: blocked.id,
+    values: { "configuration-1": "8080" },
+  });
+
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(
+    result.kind === "invalid-input" && result.message,
+    "Submit every required deployment input."
+  );
+  assert.equal(runCalled, false);
+  const stored = await taskById(blocked.id);
+  assert.equal(stored.status, "blocked");
+  assert.deepEqual(stored.blockingInputs, blocked.blockingInputs);
+  assert.equal(
+    (await eventsFor(blocked.id)).some(
+      (event) => event.kind === "deploy_task.input_submitted"
+    ),
+    false
+  );
+});
+
+test("one AI public identifier cannot satisfy two required blockers", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "PORT",
+        key: "PORT",
+        label: "Port",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        type: "env",
+      },
+      {
+        id: "configuration-1",
+        key: "configuration-1",
+        label: "API key",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let runCalled = false;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
+    },
+    taskId: blocked.id,
+    values: { "configuration-1": "one-value-only" },
+  });
+
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(runCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
+});
+
+test("legacy AI public aliases bind each value to exactly one canonical key", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "configuration-2",
+        key: "configuration-2",
+        label: "Port",
+        required: true,
+        type: "env",
+      },
+      {
+        id: "PASSWORD",
+        key: "PASSWORD",
+        label: "Password",
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let received: Record<string, unknown> | null = null;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: async (handle, _task, _currentBlockingInputs, submittedValues) => {
+      received = submittedValues;
+      await handle.beginApplying();
+      await handle.complete();
+    },
+    taskId: blocked.id,
+    values: {
+      "configuration-1": "8080",
+      "configuration-2": "secret-value",
+    },
+  });
+
+  assert.equal(result.kind, "resumed");
+  if (result.kind !== "resumed") {
+    return;
+  }
+  await result.launched.done;
+  assert.deepEqual(received, {
+    "configuration-2": "8080",
+    PASSWORD: "secret-value",
+  });
+});
+
+test("legacy AI blockers with duplicate canonical keys cannot resume", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "shared",
+        key: "shared",
+        label: "Port",
+        required: true,
+        type: "env",
+      },
+      {
+        id: "shared-secret",
+        key: "shared",
+        label: "Password",
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let runCalled = false;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
+    },
+    taskId: blocked.id,
+    values: {
+      "configuration-1": "8080",
+      "configuration-2": "secret-value",
+    },
+  });
+
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(runCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
+});
+
+test("legacy AI input aliases map back only inside the resumed runner", async () => {
+  const ctx = testCtx();
+  const legacySecretKey = "abc";
+  const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {},
+    blockingInputs: [
+      {
+        id: legacySecretKey,
+        key: legacySecretKey,
+        label: legacySecretKey,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  const short = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => Promise.resolve(),
+    taskId: blocked.id,
+    values: { "configuration-1": "q7" },
+  });
+  assert.equal(short.kind, "invalid-input");
+  assert.equal(
+    short.kind === "invalid-input" && short.message.includes(legacySecretKey),
+    false
+  );
+
+  let received: Record<string, unknown> | null = null;
+  let receivedBlockingInputs: readonly { key?: string }[] = [];
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: async (handle, _task, currentBlockingInputs, submittedValues) => {
+      received = submittedValues;
+      receivedBlockingInputs = currentBlockingInputs;
+      await handle.beginApplying();
+      await handle.complete();
+    },
+    taskId: blocked.id,
+    values: { "configuration-1": "submitted-secret" },
+  });
+
+  assert.equal(result.kind, "resumed");
+  if (result.kind !== "resumed") {
+    return;
+  }
+  await result.launched.done;
+  assert.deepEqual(received, { [legacySecretKey]: "submitted-secret" });
+  assert.deepEqual(
+    receivedBlockingInputs.map((input) => input.key),
+    [legacySecretKey]
+  );
+  const inputEvent = (await eventsFor(blocked.id)).find(
+    (event) => event.kind === "deploy_task.input_submitted"
+  );
+  assert.deepEqual(inputEvent?.payload.inputKeys, ["configuration-1"]);
+  assert.equal(JSON.stringify(inputEvent).includes(legacySecretKey), false);
+});
+
+test("current AI input aliases restore identifiers outside the public grammar", async () => {
+  const ctx = testCtx();
+  const canonicalKey = "_API_KEY";
+  const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
+    blockingInputs: [
+      {
+        id: canonicalKey,
+        key: canonicalKey,
+        label: "API key",
+        publicProjectionVersion:
+          CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let received: Record<string, unknown> | null = null;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: async (handle, _task, currentBlockingInputs, submittedValues) => {
+      received = submittedValues;
+      assert.equal(currentBlockingInputs[0]?.key, canonicalKey);
+      await handle.beginApplying();
+      await handle.complete();
+    },
+    taskId: blocked.id,
+    values: { "configuration-1": "submitted-secret" },
+  });
+
+  assert.equal(result.kind, "resumed");
+  if (result.kind !== "resumed") {
+    return;
+  }
+  await result.launched.done;
+  assert.deepEqual(received, { [canonicalKey]: "submitted-secret" });
+  const inputEvent = (await eventsFor(blocked.id)).find(
+    (event) => event.kind === "deploy_task.input_submitted"
+  );
+  assert.deepEqual(inputEvent?.payload.inputKeys, ["configuration-1"]);
+  assert.equal(JSON.stringify(inputEvent).includes(canonicalKey), false);
 });
 
 test("input action treats a task from another namespace as not found", async () => {

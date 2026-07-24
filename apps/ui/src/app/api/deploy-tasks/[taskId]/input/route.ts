@@ -72,10 +72,11 @@ export async function POST(request: Request, context: RouteContext) {
     {
       actionActor: namespaceResolved.workspaceActor,
       namespace: namespaceResolved.namespace,
-      run: (handle, task) =>
+      run: (handle, task, currentBlockingInputs, values) =>
         runDeployTask(handle, {
+          currentBlockingInputs,
           encodedKubeconfig: parsed.data.encodedKubeconfig,
-          submittedInputValues: submittedValues,
+          submittedInputValues: values,
           taskId: task.id,
         }),
       taskId,
@@ -93,6 +94,14 @@ export async function POST(request: Request, context: RouteContext) {
           task: toDeployTaskDTO(result.task),
         },
         { status: 409 }
+      );
+    case "invalid-input":
+      return NextResponse.json(
+        {
+          error: result.message,
+          task: toDeployTaskDTO(result.task),
+        },
+        { status: 400 }
       );
     case "resumed": {
       const snapshot = await getDeployTaskSnapshot(

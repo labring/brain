@@ -42,21 +42,35 @@ export function scrubSensitiveJsonValue<T>(
     const jsonForm = JSON.stringify(item).slice(1, -1);
     return jsonForm === item ? [] : [jsonForm];
   });
-  return JSON.parse(
-    scrubSensitiveText(JSON.stringify(value), [...values, ...escapedForms])
-  ) as T;
+  const scrubValues = [...values, ...escapedForms];
+
+  function scrubNested(item: unknown): unknown {
+    if (typeof item === "string") {
+      return scrubSensitiveText(item, scrubValues);
+    }
+    if (Array.isArray(item)) {
+      return item.map(scrubNested);
+    }
+    if (item != null && typeof item === "object") {
+      return Object.fromEntries(
+        Object.entries(item).map(([key, nested]) => [
+          scrubSensitiveText(key, scrubValues),
+          scrubNested(nested),
+        ])
+      );
+    }
+    return item;
+  }
+
+  return scrubNested(value) as T;
 }
 
-export function artifactSummaryWithScrubbedYamls(
+export function artifactSummaryWithScrubbedValues(
   summary: DeployTaskArtifactSummary,
   values: readonly string[]
 ): DeployTaskArtifactSummary {
-  const yamls = summary.resourceYamls;
-  if (yamls == null || yamls.length === 0 || values.length === 0) {
+  if (values.length === 0) {
     return summary;
   }
-  return {
-    ...summary,
-    resourceYamls: yamls.map((yaml) => scrubSensitiveText(yaml, values)),
-  };
+  return scrubSensitiveJsonValue(summary, values);
 }

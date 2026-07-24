@@ -57,6 +57,31 @@ export function isDeployTaskTerminalStatus(status: DeployTaskStatus): boolean {
   return (DEPLOY_TASK_TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
+export function assertDeployTaskBlockingInputs(
+  blockingInputs: readonly DeployTaskBlockingInput[]
+): void {
+  if (blockingInputs.length === 0) {
+    throw new Error(
+      "Deployment task cannot enter blocked without blocking inputs."
+    );
+  }
+  const keys = new Set<string>();
+  for (const input of blockingInputs) {
+    const key = (input.key ?? input.id).trim();
+    if (
+      input.id.trim() === "" ||
+      key === "" ||
+      input.label.trim() === "" ||
+      typeof input.required !== "boolean" ||
+      !["confirmation", "env", "secret", "text"].includes(input.type) ||
+      keys.has(key)
+    ) {
+      throw new Error("Deployment task received invalid blocking inputs.");
+    }
+    keys.add(key);
+  }
+}
+
 export interface DeployTaskTransitionEvent {
   kind: string;
   message?: string;
@@ -204,6 +229,9 @@ export async function transitionDeployTask(
   ctx: DeployTaskEngineContext,
   input: DeployTaskTransitionInput
 ): Promise<DeployTaskRowLite | null> {
+  if (input.to === "blocked") {
+    assertDeployTaskBlockingInputs(input.set?.blockingInputs ?? []);
+  }
   for (const from of input.from) {
     if (!DEPLOY_TASK_TRANSITIONS[from].includes(input.to)) {
       throw new Error(

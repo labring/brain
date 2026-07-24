@@ -33,21 +33,7 @@ export function deployOutputProgressSummary(
     return null;
   }
 
-  const image = objectValue(buildResult?.image);
-  const kubernetes = objectValue(buildResult?.kubernetes);
-
   return {
-    build:
-      buildResult == null
-        ? null
-        : {
-            digest: stringValue(image?.digest),
-            image: stringValue(image?.image_ref) ?? stringValue(image?.image),
-            job: stringValue(kubernetes?.job),
-            namespace: stringValue(kubernetes?.namespace),
-            pod: stringValue(kubernetes?.pod),
-            status: stringValue(buildResult.status),
-          },
     complete:
       buildResult != null && deliveryManifest != null && templateYaml != null,
     files: {

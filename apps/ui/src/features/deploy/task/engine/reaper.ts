@@ -1,5 +1,13 @@
 import { type SQL, sql } from "drizzle-orm";
 
+import {
+  deploymentFailureMessage,
+  isDeployTaskFailureReason,
+} from "../failure-summary";
+import type {
+  DeployTaskFailureDetails,
+  DeployTaskFailureReason,
+} from "../schema";
 import type { DeployTaskEngineContext } from "./context";
 import {
   type DeployTaskRowLite,
@@ -24,6 +32,7 @@ export interface DeployTaskReaperSummary {
   devboxPauseFailed: number;
   interrupted: number;
   interruptedWithCancel: number;
+  invalidBlocked: number;
   neverStarted: number;
   purged: number;
   purgeFailed: number;
@@ -33,7 +42,7 @@ export interface DeployTaskReaperSummary {
 interface SweepVerdict {
   error: string;
   event: { kind: string; message: string; payload: Record<string, unknown> };
-  failureDetails: Record<string, unknown> | null;
+  failureDetails: DeployTaskFailureDetails | null;
   to: "cancelled" | "failed";
   where: SQL;
 }
@@ -75,6 +84,91 @@ async function sweepVerdict(
     await publishDeployTaskChange(ctx, row);
   }
   return rows;
+}
+
+const LEGACY_EMPTY_BLOCKED_REASON_BY_EVENT_KIND: Record<
+  string,
+  DeployTaskFailureReason
+> = {
+  "deployment_task.build_runtime_unavailable": "build-runtime-unavailable",
+  "deployment_task.gateway_unavailable": "gateway-not-exposed",
+  "deployment_task.output_missing": "deployment-output-missing",
+};
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function invalidBlockedFailureReason(
+  record: Record<string, unknown>
+): DeployTaskFailureReason {
+  const persistedReason = recordValue(record.event_payload)?.reason;
+  if (isDeployTaskFailureReason(persistedReason)) {
+    return persistedReason;
+  }
+  const eventKind = String(record.event_kind ?? "");
+  return LEGACY_EMPTY_BLOCKED_REASON_BY_EVENT_KIND[eventKind] ?? "unknown";
+}
+
+async function sweepInvalidBlockedTasks(
+  ctx: DeployTaskEngineContext
+): Promise<number> {
+  const candidates = rowsOf(
+    await ctx.db.execute(sql`
+      SELECT task."id", cause."kind" AS "event_kind", cause."payload" AS "event_payload"
+      FROM ${TASKS} task
+      LEFT JOIN LATERAL (
+        SELECT event."kind", event."payload"
+        FROM ${EVENTS} event
+        WHERE event."task_id" = task."id"
+          AND (
+            event."payload" ->> 'reason' IS NOT NULL
+            OR event."kind" IN (
+              'deployment_task.build_runtime_unavailable',
+              'deployment_task.gateway_unavailable',
+              'deployment_task.output_missing'
+            )
+          )
+        ORDER BY event."seq" DESC
+        LIMIT 1
+      ) cause ON true
+      WHERE task."status" = 'blocked'
+        AND jsonb_array_length(COALESCE(task."blocking_inputs", '[]'::jsonb)) = 0
+    `)
+  );
+
+  let repaired = 0;
+  for (const candidate of candidates) {
+    const taskId = String(candidate.id ?? "");
+    if (taskId === "") {
+      continue;
+    }
+    const reason = invalidBlockedFailureReason(candidate);
+    const message = deploymentFailureMessage(reason);
+    const rows = await sweepVerdict(ctx, {
+      error: message,
+      event: {
+        kind: "deployment_task.engine_resolved",
+        message,
+        payload: {
+          detail: "empty-blocking-inputs",
+          reason,
+          verdict: "failed",
+        },
+      },
+      failureDetails: {
+        detail: "empty-blocking-inputs",
+        failureMessage: message,
+        reason,
+      },
+      to: "failed",
+      where: sql`"id" = ${taskId} AND "status" = 'blocked' AND jsonb_array_length(COALESCE("blocking_inputs", '[]'::jsonb)) = 0`,
+    });
+    repaired += rows.length;
+  }
+  return repaired;
 }
 
 interface DevboxTaskRecord {
@@ -226,6 +320,9 @@ export async function runDeployTaskReaperSweep(
   ctx: DeployTaskEngineContext
 ): Promise<DeployTaskReaperSummary> {
   const leased = sql`"status" IN (${statusListSql(DEPLOY_TASK_LEASED_STATUSES)})`;
+  const interruptedMessage = deploymentFailureMessage("interrupted");
+  const timeoutMessage = deploymentFailureMessage("timeout");
+  const neverStartedMessage = deploymentFailureMessage("never-started");
 
   // Order matters only for attribution: resolve explicit cancel intent
   // before generic expiry so a dead runner with a pending cancel resolves to
@@ -257,44 +354,52 @@ export async function runDeployTaskReaperSweep(
   });
 
   const interrupted = await sweepVerdict(ctx, {
-    error:
-      "Deployment was interrupted: the process executing it stopped unexpectedly.",
+    error: interruptedMessage,
     event: {
       kind: "deployment_task.engine_resolved",
-      message:
-        "The process executing this task died; the task was resolved to failed (interrupted).",
+      message: interruptedMessage,
       payload: { reason: "interrupted", verdict: "failed" },
     },
-    failureDetails: { reason: "interrupted" },
+    failureDetails: {
+      failureMessage: interruptedMessage,
+      reason: "interrupted",
+    },
     to: "failed",
     where: sql`${leased} AND "cancel_requested_at" IS NULL AND "lease_expires_at" IS NOT NULL AND "lease_expires_at" < now()`,
   });
 
   const timedOut = await sweepVerdict(ctx, {
-    error: "Deployment exceeded the maximum active-run duration.",
+    error: timeoutMessage,
     event: {
       kind: "deployment_task.engine_resolved",
-      message:
-        "The run exceeded the maximum active duration; the task was resolved to failed (timeout).",
-      payload: { reason: "max-active-run", verdict: "failed" },
+      message: timeoutMessage,
+      payload: { reason: "timeout", verdict: "failed" },
     },
-    failureDetails: { reason: "timeout" },
+    failureDetails: { failureMessage: timeoutMessage, reason: "timeout" },
     to: "failed",
     where: sql`${leased} AND "cancel_requested_at" IS NULL AND "lease_claimed_at" IS NOT NULL AND "lease_claimed_at" < now() - ${intervalFromMs(ctx.cadence.maxActiveRunMs)}`,
   });
 
   const neverStarted = await sweepVerdict(ctx, {
-    error: "Deployment never started: the creating process died before launch.",
+    error: neverStartedMessage,
     event: {
       kind: "deployment_task.engine_resolved",
-      message:
-        "The task stayed queued past the start deadline; resolved to failed (never started).",
+      message: neverStartedMessage,
       payload: { reason: "never-started", verdict: "failed" },
     },
-    failureDetails: { reason: "never-started" },
+    failureDetails: {
+      failureMessage: neverStartedMessage,
+      reason: "never-started",
+    },
     to: "failed",
     where: sql`"status" = 'queued' AND "created_at" < now() - ${intervalFromMs(ctx.cadence.queuedStartDeadlineMs)}`,
   });
+
+  // `blocked` is exclusively a user-input wait state. Older runners could
+  // park without any inputs, leaving no resume path and no terminal cleanup.
+  // Preserve a safe historical reason when possible; otherwise fail closed
+  // to unknown instead of inventing a more specific root cause.
+  const invalidBlocked = await sweepInvalidBlockedTasks(ctx);
 
   const devboxSweep = await sweepTerminalDevboxPauses(ctx);
   const purgeSweep = await sweepRetentionPurge(ctx);
@@ -303,6 +408,7 @@ export async function runDeployTaskReaperSweep(
     cancelAckForced: cancelAckForced.length,
     devboxPauseFailed: devboxSweep.failed,
     devboxPaused: devboxSweep.paused,
+    invalidBlocked,
     interrupted: interrupted.length,
     interruptedWithCancel: interruptedWithCancel.length,
     neverStarted: neverStarted.length,

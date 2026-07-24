@@ -1,21 +1,24 @@
 import { and, eq, inArray } from "drizzle-orm";
 
-import type {
-  DeploymentTaskCanvasProjection,
-  DeploymentTaskSource,
-  DeployTaskArtifactSummary,
-  DeployTaskBlockingInput,
-  DeployTaskFailureDetails,
-  DeployTaskPhase,
-  DeployTaskRow,
+import {
+  type DeploymentTaskCanvasProjection,
+  type DeploymentTaskSource,
+  type DeployTaskArtifactSummary,
+  type DeployTaskBlockingInput,
+  type DeployTaskFailureDetails,
+  type DeployTaskPhase,
+  type DeployTaskRow,
+  deployTasks,
 } from "../schema";
-import { deployTasks } from "../schema";
 import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import type {
   DeploymentTaskTimelineSnapshot,
   DeploymentTaskTimelineUpdate,
 } from "../timeline";
-import { deploymentTaskTimelineFromTaskRecord } from "../timeline-storage";
+import {
+  deploymentTaskTimelineFromTaskRecord,
+  persistableDeploymentTaskTimeline,
+} from "../timeline-storage";
 import type { DeployTaskEngineContext } from "./context";
 import {
   DeployTaskRunCancelledError,
@@ -23,6 +26,7 @@ import {
 } from "./errors";
 import {
   appendDeployTaskEvent,
+  assertDeployTaskBlockingInputs,
   DEPLOY_TASK_LEASED_STATUSES,
   type DeployTaskTransitionEvent,
   isDeployTaskTerminalStatus,
@@ -58,7 +62,6 @@ export interface DeployTaskHandleStateFields {
    * are fetched, sensitive keys that reached the row are stripped here.
    */
   source?: DeploymentTaskSource;
-  timelineSnapshot?: DeploymentTaskTimelineSnapshot | null;
 }
 
 export interface DeployTaskHandle {
@@ -139,6 +142,38 @@ export function createDeployTaskHandle(
     if (row == null) {
       throw new DeployTaskRunSupersededError();
     }
+  }
+
+  async function writeState(
+    fields: DeployTaskHandleStateFields & {
+      timelineSnapshot?: DeploymentTaskTimelineSnapshot | null;
+    }
+  ): Promise<void> {
+    assertLive();
+    const rows = await ctx.db
+      .update(deployTasks)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(
+        and(
+          eq(deployTasks.id, input.taskId),
+          eq(deployTasks.leaseEpoch, input.leaseEpoch),
+          inArray(deployTasks.status, [...DEPLOY_TASK_ACTIVE_STATUSES])
+        )
+      )
+      .returning({
+        id: deployTasks.id,
+        namespace: deployTasks.namespace,
+        projectId: deployTasks.projectId,
+      });
+    const row = rows[0];
+    if (row == null) {
+      throw new DeployTaskRunSupersededError();
+    }
+    await publishDeployTaskChange(ctx, {
+      namespace: row.namespace,
+      projectId: row.projectId,
+      taskId: row.id,
+    });
   }
 
   return {
@@ -269,6 +304,7 @@ export function createDeployTaskHandle(
 
     async requestInputs(request) {
       assertLive();
+      assertDeployTaskBlockingInputs(request.blockingInputs);
       const row = await transitionDeployTask(ctx, {
         event: request.event ?? {
           kind: "deployment_task.inputs_requested",
@@ -297,35 +333,11 @@ export function createDeployTaskHandle(
     },
 
     async setArtifacts(summary) {
-      await this.setState({ artifactSummary: summary });
+      await writeState({ artifactSummary: summary });
     },
 
     async setState(fields) {
-      assertLive();
-      const rows = await ctx.db
-        .update(deployTasks)
-        .set({ ...fields, updatedAt: new Date() })
-        .where(
-          and(
-            eq(deployTasks.id, input.taskId),
-            eq(deployTasks.leaseEpoch, input.leaseEpoch),
-            inArray(deployTasks.status, [...DEPLOY_TASK_ACTIVE_STATUSES])
-          )
-        )
-        .returning({
-          id: deployTasks.id,
-          namespace: deployTasks.namespace,
-          projectId: deployTasks.projectId,
-        });
-      const row = rows[0];
-      if (row == null) {
-        throw new DeployTaskRunSupersededError();
-      }
-      await publishDeployTaskChange(ctx, {
-        namespace: row.namespace,
-        projectId: row.projectId,
-        taskId: row.id,
-      });
+      await writeState(fields);
     },
 
     async updateTimeline(timelineInput) {
@@ -338,10 +350,16 @@ export function createDeployTaskHandle(
       if (existing == null || existing.leaseEpoch !== input.leaseEpoch) {
         throw new DeployTaskRunSupersededError();
       }
-      const nextTimeline: DeploymentTaskTimelineSnapshot = timelineInput.update(
-        deploymentTaskTimelineFromTaskRecord(existing)
-      );
-      await this.setState({
+      const currentTimeline = persistableDeploymentTaskTimeline({
+        task: existing,
+        timeline: deploymentTaskTimelineFromTaskRecord(existing),
+      });
+      const updatedTimeline = timelineInput.update(currentTimeline);
+      const nextTimeline = persistableDeploymentTaskTimeline({
+        task: existing,
+        timeline: updatedTimeline,
+      });
+      await writeState({
         ...(timelineInput.event?.phase == null
           ? {}
           : { phase: timelineInput.event.phase }),

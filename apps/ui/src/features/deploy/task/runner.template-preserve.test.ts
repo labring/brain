@@ -1,8 +1,16 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createRequire } from "node:module";
+import YAML from "yaml";
 
 import type { DeployTaskHandle } from "./engine/handle";
-import type { DeployTaskRow } from "./schema";
+import {
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+  CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+  type DeploymentTaskDeploymentPlan,
+  type DeployTaskBlockingInput,
+  type DeployTaskRow,
+} from "./schema";
+import type { DeploymentTaskTimelineSnapshot } from "./timeline";
 
 // Regression harness for AIM-33: drive the real template control flow in
 // runDeployTask with the external seams mocked, and assert cleanup behavior
@@ -19,10 +27,26 @@ const requireModule = createRequire(import.meta.url);
 
 const fetchCalls: { method?: string; url: string }[] = [];
 const originalFetch = globalThis.fetch;
+const originalApiUrl = process.env.API_URL;
 
 function installFetchRecorder() {
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     fetchCalls.push({ method: init?.method, url: String(input) });
+    if (String(input).includes("/api/k8s/v1alpha1/get")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            apiVersion: "app.sealos.io/v1",
+            kind: "Instance",
+            metadata: { name: "demo", uid: "instance-uid" },
+          }),
+          {
+            headers: { "Content-Type": "application/json" },
+            status: 200,
+          }
+        )
+      );
+    }
     return Promise.resolve(
       new Response("{}", {
         headers: { "Content-Type": "application/json" },
@@ -34,8 +58,11 @@ function installFetchRecorder() {
 const failCalls: Record<string, unknown>[] = [];
 const completeCalls: unknown[] = [];
 const eventKinds: string[] = [];
+const recordedEvents: Record<string, unknown>[] = [];
 const requestInputsCalls: unknown[] = [];
 const stateWrites: Record<string, unknown>[] = [];
+const timelineEvents: Record<string, unknown>[] = [];
+let projectedTimeline: DeploymentTaskTimelineSnapshot | null = null;
 
 let currentRow: DeployTaskRow;
 let deployTemplateInstanceImpl: () => Promise<{
@@ -57,6 +84,9 @@ mock.module("server-only", () => ({}));
 const realTemplateProvider = requireModule(
   "@/features/deploy/template-provider-core"
 );
+const { deploymentTaskTimelineFromTaskRecord } = requireModule(
+  "./timeline-storage"
+) as typeof import("./timeline-storage");
 const realProjects = requireModule("@/lib/project-persistence/projects");
 const realService = requireModule("./service");
 const realRunnerWrites = requireModule("./runner-writes");
@@ -74,6 +104,11 @@ afterAll(() => {
   mock.module("./runner-writes", () => ({ ...realRunnerWrites }));
   mock.module("./result-readiness", () => ({ ...realResultReadiness }));
   delete process.env.DIRECT_AP_READINESS_TIMEOUT_MS;
+  if (originalApiUrl === undefined) {
+    delete process.env.API_URL;
+  } else {
+    process.env.API_URL = originalApiUrl;
+  }
 });
 
 mock.module("@/features/deploy/template-provider-core", () => ({
@@ -112,9 +147,10 @@ mock.module("./runner-writes", () => ({
   deployTaskRunSignal: () => abortedController.signal,
   recordDeployTaskEvent: (
     _taskId: string,
-    event: { kind: string }
+    event: { kind: string; [key: string]: unknown }
   ): Promise<void> => {
     eventKinds.push(event.kind);
+    recordedEvents.push(event);
     return Promise.resolve();
   },
   throwIfDeployTaskAborted: () => Promise.resolve(),
@@ -136,28 +172,35 @@ mock.module("./runner-writes", () => ({
     } as DeployTaskRow;
     return Promise.resolve();
   },
-  updateDeployTaskTimeline: () => Promise.resolve(),
+  updateDeployTaskTimeline: (
+    _taskId: string,
+    input: {
+      event?: Record<string, unknown>;
+      update?: (
+        timeline: DeploymentTaskTimelineSnapshot
+      ) => DeploymentTaskTimelineSnapshot;
+    }
+  ) => {
+    if (input.event != null) {
+      timelineEvents.push(input.event);
+    }
+    if (input.update != null && projectedTimeline != null) {
+      projectedTimeline = input.update(projectedTimeline);
+    }
+    return Promise.resolve();
+  },
 }));
 
 mock.module("./result-readiness", () => ({
   ...realResultReadiness,
   isResultReadinessTerminalError: () => false,
   observeDeploymentResultCardReadiness: () =>
-    Promise.reject(new Error("workload is still starting")),
-  resultReadinessLabel: (card: { title?: string }) => card?.title ?? "resource",
-  waitingForResultObservationStatus: () => "waiting for workload observation",
+    Promise.reject(new Error("provider-secret-readiness-token")),
 }));
 
-const { runDeployTask } = requireModule("./runner") as {
-  runDeployTask: (
-    handle: DeployTaskHandle,
-    input: {
-      encodedKubeconfig?: string;
-      submittedInputValues?: Record<string, unknown>;
-      taskId: string;
-    }
-  ) => Promise<void>;
-};
+const { persistableAiDeployOutput, runDeployTask } = requireModule(
+  "./runner"
+) as typeof import("./runner");
 
 function templateTaskRow(input: {
   recordedInstanceName?: string;
@@ -190,6 +233,265 @@ function templateTaskRow(input: {
     },
     status: "running",
     target: { kind: "existingProject", projectId: "proj-1" },
+  } as unknown as DeployTaskRow;
+}
+
+function preparedAiTaskRow(input: {
+  buildResult: Record<string, unknown>;
+}): DeployTaskRow {
+  const outputJson = {
+    buildResult: input.buildResult,
+    deliveryManifest: { args: {} },
+    templateYaml: "apiVersion: app.sealos.io/v1\nkind: Template\n",
+  };
+  return {
+    artifactSummary: {
+      deploymentPlan: {
+        args: {},
+        inputs: [],
+        kind: "sealos-template",
+        templateName: "demo-web",
+      },
+      outputJson,
+    },
+    blockingInputs: [],
+    githubConnectionId: null,
+    id: "task-1",
+    namespace: "ns-demo",
+    phase: "configure",
+    projectId: "proj-1",
+    projectName: "proj-1",
+    runner: { kind: "ai" },
+    source: { kind: "prompt", text: "deploy this app" },
+    status: "running",
+    target: { kind: "existingProject", projectId: "proj-1" },
+    timelineSnapshot: null,
+    updatedAt: new Date("2026-07-22T00:00:00.000Z"),
+  } as unknown as DeployTaskRow;
+}
+
+function aiTaskWithCompletePlanAndInvalidOutput(): DeployTaskRow {
+  return {
+    artifactSummary: {
+      deploymentPlan: {
+        args: {},
+        inputs: [
+          {
+            key: "PORT",
+            label: "Port",
+            required: false,
+            sensitive: false,
+            type: "string",
+          },
+        ],
+        kind: "sealos-template",
+        templateName: "demo",
+      },
+      outputJson: {
+        deliveryManifest: { args: {} },
+        templateYaml: "apiVersion: app.sealos.io/v1\nkind: Template\n",
+      },
+    },
+    blockingInputs: [],
+    githubConnectionId: null,
+    id: "task-1",
+    namespace: "ns-demo",
+    phase: "configure",
+    projectId: "proj-1",
+    projectName: "proj-1",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    source: { kind: "prompt", text: "deploy demo" },
+    status: "running",
+    target: { kind: "existingProject", projectId: "proj-1" },
+    timelineSnapshot: null,
+    updatedAt: new Date("2026-07-22T00:00:00.000Z"),
+  } as unknown as DeployTaskRow;
+}
+
+const AI_TEMPLATE_WITH_CONFIG_INPUTS = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo
+spec:
+  title: Demo
+  templateType: inline
+  inputs:
+    PORT:
+      label: Port
+      required: true
+      type: number
+    API_KEY:
+      label: API key
+      required: true
+      type: secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-config
+data:
+  port: "\${{ inputs.PORT }}"
+  api-key: "\${{ inputs.API_KEY }}"
+`;
+
+const AI_TEMPLATE_WITH_CONFIG_INPUTS_AND_WORKLOAD = `${AI_TEMPLATE_WITH_CONFIG_INPUTS}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-api
+  template:
+    metadata:
+      labels:
+        app: demo-api
+    spec:
+      containers:
+        - env:
+            - name: API_KEY
+              value: "\${{ inputs.API_KEY }}"
+          image: nginx:1.27
+          name: demo-api
+`;
+
+const AI_TEMPLATE_WITH_INVALID_SENSITIVE_DEFAULT = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo
+spec:
+  title: Demo
+  templateType: inline
+  inputs:
+    API_KEY:
+      default: ai-authored-invalid-default
+      label: API key
+      required: true
+      type: number
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-config
+data:
+  api-key: "\${{ inputs.API_KEY }}"
+`;
+
+const AI_TEMPLATE_WITH_SECRET_RESOURCE_NAME = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: demo
+spec:
+  title: Demo
+  templateType: inline
+  inputs:
+    API_KEY:
+      label: API key
+      required: true
+      type: secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-\${{ inputs.API_KEY }}
+data:
+  ready: "true"
+`;
+
+const AI_CURRENT_BLOCKING_INPUTS = {
+  API_KEY: {
+    id: "API_KEY",
+    key: "API_KEY",
+    label: "API key",
+    publicProjectionVersion:
+      CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+    required: true,
+    sensitive: true,
+    type: "secret",
+    valueType: "secret",
+  },
+  PORT: {
+    id: "PORT",
+    key: "PORT",
+    label: "Port",
+    publicProjectionVersion:
+      CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
+    required: true,
+    sensitive: false,
+    type: "env",
+    valueType: "number",
+  },
+} satisfies Record<string, DeployTaskBlockingInput>;
+
+function currentAiBlockingInputs(
+  ...keys: Array<keyof typeof AI_CURRENT_BLOCKING_INPUTS>
+): DeployTaskBlockingInput[] {
+  return keys.map((key) => ({ ...AI_CURRENT_BLOCKING_INPUTS[key] }));
+}
+
+function preparedAiInputTaskRow(input?: {
+  missingInputKeys?: string[];
+  planArgs?: Record<string, string>;
+  planInputs?: DeploymentTaskDeploymentPlan["inputs"];
+  templateYaml?: string;
+  trustedPublicProjection?: boolean;
+}): DeployTaskRow {
+  const planArgs = input?.planArgs ?? {};
+  return {
+    artifactSummary: {
+      deploymentPlan: {
+        args: planArgs,
+        inputs: input?.planInputs ?? [
+          {
+            key: "PORT",
+            label: "Port",
+            required: true,
+            sensitive: false,
+            type: "number",
+          },
+          {
+            key: "API_KEY",
+            label: "API key",
+            required: true,
+            sensitive: true,
+            type: "secret",
+          },
+        ],
+        kind: "sealos-template",
+        missingInputKeys: input?.missingInputKeys ?? ["PORT", "API_KEY"],
+        templateName: "demo",
+      },
+      outputJson: {
+        buildResult: { status: "skipped" },
+        deliveryManifest: { args: planArgs },
+        templateYaml: input?.templateYaml ?? AI_TEMPLATE_WITH_CONFIG_INPUTS,
+      },
+      ...(input?.trustedPublicProjection === false
+        ? {}
+        : {
+            publicProjectionVersion:
+              CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+          }),
+    },
+    blockingInputs: [],
+    githubConnectionId: null,
+    id: "task-1",
+    namespace: "ns-demo",
+    phase: "configure",
+    projectId: "proj-1",
+    projectName: "proj-1",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    source: { kind: "prompt", text: "deploy demo" },
+    status: "running",
+    target: { kind: "existingProject", projectId: "proj-1" },
+    timelineSnapshot: null,
+    updatedAt: new Date("2026-07-22T00:00:00.000Z"),
   } as unknown as DeployTaskRow;
 }
 
@@ -234,8 +536,11 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     failCalls.length = 0;
     completeCalls.length = 0;
     eventKinds.length = 0;
+    recordedEvents.length = 0;
     requestInputsCalls.length = 0;
     stateWrites.length = 0;
+    timelineEvents.length = 0;
+    projectedTimeline = null;
     process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
     currentRow = templateTaskRow({});
     deployTemplateInstanceImpl = () =>
@@ -320,5 +625,457 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     expect(eventKinds).toContain("deployment_task.template_cleanup_started");
     expect(failCalls).toHaveLength(1);
     expect(attachedFailureDetails().stage).toBe("apply");
+  });
+
+  it("fails malformed AI artifacts instead of re-blocking a complete input plan", async () => {
+    currentRow = aiTaskWithCompletePlanAndInvalidOutput();
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { PORT: "8080" },
+      taskId: currentRow.id,
+    });
+
+    expect(requestInputsCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().reason).toBe("unknown");
+    expect(JSON.stringify(failCalls[0])).not.toContain(
+      "did not include buildResult"
+    );
+    const timelineFailure = timelineEvents.find(
+      (event) => event.kind === "deployment_task.failed"
+    );
+    expect(timelineFailure?.phase).toBe("configure");
+    expect(timelineFailure?.payload).toEqual({});
+  });
+});
+
+describe("AI prepared output failure handling", () => {
+  beforeEach(() => {
+    installFetchRecorder();
+    fetchCalls.length = 0;
+    failCalls.length = 0;
+    completeCalls.length = 0;
+    eventKinds.length = 0;
+    recordedEvents.length = 0;
+    requestInputsCalls.length = 0;
+    stateWrites.length = 0;
+    timelineEvents.length = 0;
+    projectedTimeline = null;
+    process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
+  });
+
+  it("scrubs hidden secret args and default echoes from persisted AI output", () => {
+    const templateYaml = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: private-output
+spec:
+  templateType: inline
+  defaults:
+    app_host:
+      value: demo
+    internal_token:
+      type: secret
+      value: private-global-default
+  inputs:
+    enabled:
+      default: "false"
+      type: boolean
+    credential:
+      default: private-input-default
+      if: inputs.enabled == "true"
+      options:
+        - private-input-default
+      type: secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: private-output
+data:
+  host: \${{ defaults.app_host }}
+`;
+    const deliveryManifest = {
+      args: {
+        credential: "provider-secret-token",
+        enabled: "false",
+      },
+    };
+    const persisted = persistableAiDeployOutput({
+      deliveryManifest,
+      output: {
+        buildResult: {
+          detail:
+            "provider-secret-token private-input-default private-global-default",
+          status: "skipped",
+        },
+        deliveryManifest,
+        templateYaml,
+      },
+      planInputs: [{ key: "enabled", sensitive: false, type: "boolean" }],
+    });
+    const serialized = JSON.stringify({
+      deliveryManifest: persisted.deliveryManifest,
+      outputJson: persisted.outputJson,
+    });
+    const persistedTemplate = YAML.parseAllDocuments(
+      (persisted.outputJson.templateYaml as string) ?? ""
+    )[0]?.toJS() as {
+      spec?: {
+        defaults?: Record<string, unknown>;
+        inputs?: Record<string, { default?: string; options?: string[] }>;
+      };
+    };
+
+    expect(persisted.deliveryManifest.args).toEqual({ enabled: "false" });
+    expect(serialized).not.toContain("provider-secret-token");
+    expect(serialized).not.toContain("private-input-default");
+    expect(serialized).not.toContain("private-global-default");
+    expect(persistedTemplate.spec?.defaults?.app_host).toEqual({
+      value: "demo",
+    });
+    expect(persistedTemplate.spec?.defaults?.internal_token).toBeUndefined();
+    expect(persistedTemplate.spec?.inputs?.credential?.default).toBeUndefined();
+    expect(persistedTemplate.spec?.inputs?.credential?.options).toBeUndefined();
+  });
+
+  it("rejects generated sensitive values that are too short to scrub safely", () => {
+    const deliveryManifest = { args: { API_KEY: "q7" } };
+
+    expect(() =>
+      persistableAiDeployOutput({
+        deliveryManifest,
+        output: {
+          buildResult: { status: "skipped" },
+          deliveryManifest,
+          templateYaml: AI_TEMPLATE_WITH_CONFIG_INPUTS,
+        },
+        planInputs: [
+          {
+            key: "API_KEY",
+            sensitive: true,
+            type: "secret",
+          },
+        ],
+      })
+    ).toThrow("sensitive value shorter than four characters");
+  });
+
+  it("scrubs sensitive echoes from persisted plan text and ordinary options", async () => {
+    const secret = "sensitive-plan-token";
+    currentRow = preparedAiInputTaskRow({
+      missingInputKeys: [],
+      planInputs: [
+        {
+          description: `Uses ${secret}`,
+          key: "PORT",
+          label: `Port for ${secret}`,
+          options: ["8080", secret],
+          required: true,
+          sensitive: false,
+          type: "number",
+        },
+        {
+          description: `Credential ${secret}`,
+          key: "API_KEY",
+          label: `API key ${secret}`,
+          required: true,
+          sensitive: true,
+          type: "secret",
+        },
+      ],
+    });
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { API_KEY: secret, PORT: "8080" },
+      taskId: "task-1",
+    });
+
+    const persistedState = JSON.stringify({
+      completeCalls,
+      failCalls,
+      recordedEvents,
+      stateWrites,
+      timelineEvents,
+    });
+    expect(
+      stateWrites.some((patch) => {
+        const summary = patch.artifactSummary as
+          | { deploymentPlan?: unknown }
+          | undefined;
+        return summary?.deploymentPlan != null;
+      })
+    ).toBe(true);
+    expect(persistedState).not.toContain(secret);
+    expect(persistedState).toContain("[redacted]");
+  });
+
+  it("does not promote legacy prepared output to a trusted public projection", async () => {
+    currentRow = preparedAiInputTaskRow({
+      trustedPublicProjection: false,
+    });
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: {
+        API_KEY: "submitted-secret",
+        PORT: "8080",
+      },
+      taskId: "task-1",
+    });
+
+    const stampedWrite = stateWrites.some((patch) => {
+      const summary = patch.artifactSummary as
+        | { publicProjectionVersion?: number }
+        | undefined;
+      return summary?.publicProjectionVersion != null;
+    });
+    expect(stampedWrite).toBe(false);
+  });
+
+  it("keeps AI readiness provider errors out of persisted timeline state", async () => {
+    process.env.API_URL = "https://api.test";
+    currentRow = preparedAiInputTaskRow({
+      templateYaml: AI_TEMPLATE_WITH_CONFIG_INPUTS_AND_WORKLOAD,
+    });
+    projectedTimeline = deploymentTaskTimelineFromTaskRecord(currentRow);
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: {
+        API_KEY: "submitted-secret",
+        PORT: "8080",
+      },
+      taskId: "task-1",
+    });
+
+    expect(completeCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().reason).toBe("readiness-timeout");
+    const persistedState = JSON.stringify({
+      failCalls,
+      projectedTimeline,
+      recordedEvents,
+      stateWrites,
+      timelineEvents,
+    });
+    expect(persistedState).not.toContain("provider-secret-readiness-token");
+    expect(persistedState).toContain("observation.");
+  });
+
+  it("re-blocks the complete input form when a submitted value is invalid", async () => {
+    currentRow = preparedAiInputTaskRow();
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: {
+        API_KEY: "secret-that-must-not-persist",
+        PORT: "invalid-port-that-must-not-persist",
+      },
+      taskId: "task-1",
+    });
+
+    expect(failCalls).toHaveLength(0);
+    expect(requestInputsCalls).toHaveLength(1);
+    const request = requestInputsCalls[0] as {
+      blockingInputs: Array<{ key?: string }>;
+      phase: string;
+    };
+    expect(request.phase).toBe("configure");
+    expect(request.blockingInputs.map((item) => item.key)).toEqual([
+      "PORT",
+      "API_KEY",
+    ]);
+    const rejectedEvent = recordedEvents.find(
+      (event) => event.kind === "deployment_task.input_rejected"
+    );
+    expect(rejectedEvent?.payload).toEqual({
+      code: "number",
+      inputKey: "configuration-1",
+    });
+    expect(JSON.stringify({ rejectedEvent, request })).not.toContain(
+      "invalid-port-that-must-not-persist"
+    );
+    expect(JSON.stringify({ rejectedEvent, request })).not.toContain(
+      "secret-that-must-not-persist"
+    );
+    expect(JSON.stringify(rejectedEvent)).not.toContain("must be a number");
+  });
+
+  it("re-blocks a submitted short secret without persisting its value", async () => {
+    const shortSecret = "q7";
+    currentRow = preparedAiInputTaskRow();
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { API_KEY: shortSecret, PORT: "8080" },
+      taskId: "task-1",
+    });
+
+    expect(failCalls).toHaveLength(0);
+    expect(requestInputsCalls).toHaveLength(1);
+    const rejectedEvent = recordedEvents.find(
+      (event) => event.kind === "deployment_task.input_rejected"
+    );
+    expect(rejectedEvent?.payload).toEqual({
+      code: "minimum-length",
+      inputKey: "configuration-2",
+    });
+    expect(
+      JSON.stringify({
+        recordedEvents,
+        requestInputsCalls,
+        stateWrites,
+        timelineEvents,
+      })
+    ).not.toContain(shortSecret);
+  });
+
+  it("rejects sensitive resource names before apply or persistence", async () => {
+    const secret = "private-resource-token";
+    currentRow = preparedAiInputTaskRow({
+      missingInputKeys: ["API_KEY"],
+      planInputs: [
+        {
+          key: "API_KEY",
+          label: "API key",
+          required: true,
+          sensitive: true,
+          type: "secret",
+        },
+      ],
+      templateYaml: AI_TEMPLATE_WITH_SECRET_RESOURCE_NAME,
+    });
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { API_KEY: secret },
+      taskId: "task-1",
+    });
+
+    expect(requestInputsCalls).toHaveLength(0);
+    expect(completeCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(fetchCalls.some((call) => call.method === "POST")).toBe(false);
+    expect(
+      JSON.stringify({
+        failCalls,
+        recordedEvents,
+        stateWrites,
+        timelineEvents,
+      })
+    ).not.toContain(secret);
+  });
+
+  it("fails an AI-authored invalid value outside the current submission", async () => {
+    currentRow = preparedAiInputTaskRow({
+      missingInputKeys: ["API_KEY"],
+      planArgs: { PORT: "ai-authored-invalid-port" },
+    });
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: {
+        API_KEY: "secret-that-must-not-persist",
+      },
+      taskId: "task-1",
+    });
+
+    expect(requestInputsCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(recordedEvents).not.toContainEqual(
+      expect.objectContaining({ kind: "deployment_task.input_rejected" })
+    );
+    expect(JSON.stringify(failCalls[0])).not.toContain(
+      "ai-authored-invalid-port"
+    );
+    expect(JSON.stringify(failCalls[0])).not.toContain(
+      "secret-that-must-not-persist"
+    );
+  });
+
+  it("fails a submitted invalid value that is not a current blocking input", async () => {
+    currentRow = preparedAiInputTaskRow({
+      missingInputKeys: ["API_KEY"],
+      planArgs: { PORT: "8080" },
+    });
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { PORT: "invalid-extra-port" },
+      taskId: "task-1",
+    });
+
+    expect(requestInputsCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(recordedEvents).not.toContainEqual(
+      expect.objectContaining({ kind: "deployment_task.input_rejected" })
+    );
+    expect(JSON.stringify(failCalls[0])).not.toContain("invalid-extra-port");
+  });
+
+  it("fails an AI-authored invalid default reached by an empty submission", async () => {
+    currentRow = preparedAiInputTaskRow({
+      missingInputKeys: [],
+      planInputs: [
+        {
+          key: "API_KEY",
+          label: "API key",
+          required: true,
+          sensitive: true,
+          type: "number",
+        },
+      ],
+      templateYaml: AI_TEMPLATE_WITH_INVALID_SENSITIVE_DEFAULT,
+    });
+
+    await runDeployTask(runnerHandle(), {
+      currentBlockingInputs: currentAiBlockingInputs("API_KEY"),
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { API_KEY: "" },
+      taskId: "task-1",
+    });
+
+    expect(requestInputsCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(recordedEvents).not.toContainEqual(
+      expect.objectContaining({ kind: "deployment_task.input_rejected" })
+    );
+    expect(JSON.stringify(failCalls[0])).not.toContain(
+      "ai-authored-invalid-default"
+    );
+  });
+
+  it("classifies a failed build result without persisting its raw error", async () => {
+    currentRow = preparedAiTaskRow({
+      buildResult: {
+        error: { message: "private build output" },
+        status: "failed",
+      },
+    });
+
+    await runDeployTask(runnerHandle(), {
+      encodedKubeconfig: "kubeconfig-for-tests",
+      submittedInputValues: { TRIGGER: "apply" },
+      taskId: "task-1",
+    });
+
+    expect(requestInputsCalls).toHaveLength(0);
+    expect(completeCalls).toHaveLength(0);
+    expect(failCalls).toHaveLength(1);
+    expect(attachedFailureDetails().reason).toBe("image-build-failed");
+    expect(JSON.stringify(failCalls[0])).not.toContain("private build output");
   });
 });

@@ -6,6 +6,7 @@ import type {
   DeployTaskHandleStateFields,
 } from "./engine/handle";
 import { getActiveDeployTaskHandle } from "./engine/runtime";
+import { assertDeployTaskBlockingInputs } from "./engine/transitions";
 import type {
   DeployTaskBlockingInput,
   DeployTaskFailureDetails,
@@ -116,6 +117,7 @@ export async function deployTaskRequestInputs(
   }
 ): Promise<void> {
   const handle = requireDeployTaskHandle(taskId);
+  assertDeployTaskBlockingInputs(input.blockingInputs);
   if (input.state != null) {
     await handle.setState(input.state);
   }

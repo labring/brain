@@ -3,8 +3,14 @@ import { describe, expect, it } from "bun:test";
 import {
   attachDeployFailureDetails,
   attachedDeployFailureDetails,
+  attachedDeployFailureReason,
+  deployFailureError,
+  deploymentFailureTechnicalDetail,
+  publicDeployTaskError,
+  publicDeployTaskFailureDetails,
   templateCleanupAllowed,
 } from "./failure-details";
+import type { DeployTaskFailureReason } from "./schema";
 
 describe("deploy failure details channel", () => {
   it("merges attached details onto the error and reads them back", () => {
@@ -20,6 +26,116 @@ describe("deploy failure details channel", () => {
   it("returns no details for non-Error failures", () => {
     expect(attachedDeployFailureDetails("thrown string")).toEqual({});
     expect(attachedDeployFailureDetails(null)).toEqual({});
+  });
+
+  it("reads the attached stable reason", () => {
+    const error = attachDeployFailureDetails(new Error("private stderr"), {
+      reason: "gateway-upstream-error",
+    });
+    expect(attachedDeployFailureReason(error)).toBe("gateway-upstream-error");
+  });
+
+  it.each([
+    [
+      "build-runtime-unavailable",
+      "The deployment workspace does not expose the required build service. Redeploy; if the problem continues, contact support.",
+    ],
+    [
+      "gateway-not-exposed",
+      "The workspace did not expose the deployment analysis service. Redeploy; if the problem continues, contact support.",
+    ],
+    [
+      "deployment-output-missing",
+      "Repository analysis finished without a deployable result. Redeploy; if the problem continues, contact support.",
+    ],
+  ] as const)("creates a terminal-safe %s failure", (reason: DeployTaskFailureReason, message: string) => {
+    const error = deployFailureError(reason);
+
+    expect(error.message).toBe(message);
+    expect(attachedDeployFailureReason(error)).toBe(reason);
+  });
+});
+
+describe("public AI failure projection", () => {
+  const runner = { kind: "ai", runtimeProvider: "devbox" } as const;
+
+  it("drops raw and arbitrary persisted fields", () => {
+    const details = publicDeployTaskFailureDetails({
+      details: {
+        errorMessage: "Bearer private-token",
+        failureMessage: "untrusted persisted copy",
+        httpStatus: 503,
+        reason: "gateway-upstream-error",
+        source: "raw-source",
+      },
+      runner,
+      status: "failed",
+    });
+    expect(details).toEqual({
+      failureMessage:
+        "The deployment analysis service returned an error. Redeploy in a few minutes.",
+      httpStatus: 503,
+      reason: "gateway-upstream-error",
+    });
+    expect(JSON.stringify(details)).not.toContain("private-token");
+    expect(
+      publicDeployTaskError({
+        details,
+        error: "Bearer private-token",
+        runner,
+        status: "failed",
+      })
+    ).toBe(
+      "The deployment analysis service returned an error. Redeploy in a few minutes."
+    );
+  });
+
+  it("formats only allowlisted technical detail", () => {
+    const detail = deploymentFailureTechnicalDetail({
+      details: {
+        errorMessage: "Bearer private-token",
+        httpStatus: 503,
+        reason: "gateway-upstream-error",
+      },
+      error: "Bearer private-token",
+      id: "task-31",
+      phase: "plan",
+      runner,
+      status: "failed",
+    });
+    expect(detail).toBe(
+      "Reason: gateway-upstream-error\nPhase: plan\nHTTP status: 503\nTask ID: task-31"
+    );
+    expect(detail).not.toContain("private-token");
+  });
+
+  it("projects legacy failed rows without a reason as unknown", () => {
+    expect(
+      publicDeployTaskFailureDetails({
+        details: null,
+        runner,
+        status: "failed",
+      })
+    ).toEqual({
+      failureMessage:
+        "Deployment failed for an unknown reason. Copy the Task ID and contact support.",
+      reason: "unknown",
+    });
+  });
+});
+
+describe("deterministic runner failure detail", () => {
+  it("preserves the scrubbed provider error for direct runners", () => {
+    expect(
+      deploymentFailureTechnicalDetail({
+        details: null,
+        error: "provider rejected [REDACTED]",
+        id: "task-direct",
+        phase: "apply",
+        runner: { kind: "direct" },
+        status: "failed",
+      })
+    ).toBe("provider rejected [REDACTED]");
   });
 });
 

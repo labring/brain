@@ -103,6 +103,38 @@ export interface TemplateEvaluationContext {
   [key: string]: unknown;
 }
 
+export type TemplateInputValidationErrorCode =
+  | "required"
+  | "single-line"
+  | "option"
+  | "number"
+  | "boolean"
+  | "minimum-length";
+
+export type TemplateInputValidationValueSource =
+  | "provided"
+  | "default"
+  | "missing";
+
+export class TemplateInputValidationError extends Error {
+  readonly code: TemplateInputValidationErrorCode;
+  readonly inputKey: string;
+  readonly valueSource: TemplateInputValidationValueSource;
+
+  constructor(input: {
+    code: TemplateInputValidationErrorCode;
+    inputKey: string;
+    message: string;
+    valueSource: TemplateInputValidationValueSource;
+  }) {
+    super(input.message);
+    this.name = "TemplateInputValidationError";
+    this.code = input.code;
+    this.inputKey = input.inputKey;
+    this.valueSource = input.valueSource;
+  }
+}
+
 type EvaluationContext = TemplateEvaluationContext;
 
 interface TemplateApWorkloadInfo {
@@ -475,6 +507,30 @@ function flattenDefaults(
   return out;
 }
 
+function resolveTemplateInputValue(
+  input: TemplateSourceInput,
+  provided: string | undefined
+): { value: string; valueSource: TemplateInputValidationValueSource } {
+  if (provided !== undefined && provided !== "") {
+    return { value: provided, valueSource: "provided" };
+  }
+  if (input.default !== undefined && input.default !== "") {
+    return { value: input.default, valueSource: "default" };
+  }
+  if (!input.required) {
+    return {
+      value: input.default ?? "",
+      valueSource: provided === undefined ? "missing" : "provided",
+    };
+  }
+  throw new TemplateInputValidationError({
+    code: "required",
+    inputKey: input.key,
+    message: `Missing required parameters: ${input.key}.`,
+    valueSource: provided === undefined ? "missing" : "provided",
+  });
+}
+
 function resolvedInputs(
   inputs: TemplateSourceInput[] | undefined,
   args: Record<string, string> | undefined,
@@ -498,18 +554,8 @@ function resolvedInputs(
       continue;
     }
     const provided = args?.[input.key];
-    let value: string | undefined;
-    if (provided !== undefined && provided !== "") {
-      value = provided;
-    } else if (input.default !== undefined && input.default !== "") {
-      value = input.default;
-    } else if (!input.required) {
-      value = input.default ?? "";
-    }
-    if (value === undefined) {
-      throw new Error(`Missing required parameters: ${input.key}.`);
-    }
-    validateTemplateInputValue(input, value);
+    const { value, valueSource } = resolveTemplateInputValue(input, provided);
+    validateTemplateInputValue(input, value, valueSource);
     out[input.key] = value;
     candidates[input.key] = value;
   }
@@ -518,23 +564,42 @@ function resolvedInputs(
 
 function validateTemplateInputValue(
   input: TemplateSourceInput,
-  value: string
+  value: string,
+  valueSource: TemplateInputValidationValueSource
 ): void {
   if (hasUnsafeTemplateScalarCharacter(value) || value.includes("${{")) {
-    throw new Error(`Template parameter "${input.key}" must be a single line.`);
+    throw new TemplateInputValidationError({
+      code: "single-line",
+      inputKey: input.key,
+      message: `Template parameter "${input.key}" must be a single line.`,
+      valueSource,
+    });
   }
   const options = Array.isArray(input.options) ? input.options : [];
   if (options.length > 0 && !options.includes(value)) {
-    throw new Error(
-      `Template parameter "${input.key}" is not an allowed value.`
-    );
+    throw new TemplateInputValidationError({
+      code: "option",
+      inputKey: input.key,
+      message: `Template parameter "${input.key}" is not an allowed value.`,
+      valueSource,
+    });
   }
   const type = input.type?.trim().toLowerCase();
   if (type === "number" && !NUMERIC_RE.test(value.trim())) {
-    throw new Error(`Template parameter "${input.key}" must be a number.`);
+    throw new TemplateInputValidationError({
+      code: "number",
+      inputKey: input.key,
+      message: `Template parameter "${input.key}" must be a number.`,
+      valueSource,
+    });
   }
   if (type === "boolean" && !BOOLEAN_VALUE_RE.test(value.trim())) {
-    throw new Error(`Template parameter "${input.key}" must be true or false.`);
+    throw new TemplateInputValidationError({
+      code: "boolean",
+      inputKey: input.key,
+      message: `Template parameter "${input.key}" must be true or false.`,
+      valueSource,
+    });
   }
 }
 

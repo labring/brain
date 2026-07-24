@@ -37,6 +37,15 @@ const {
   ensureAiDeploymentDevbox,
   resolveGithubCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
+const {
+  CodexGatewayApiError,
+  CodexGatewayTimeoutError,
+  codexGatewayFailureDetails,
+  gatewayEventProjection,
+  gatewayStateSnapshot,
+  safeCodexGatewayUrl,
+  safeGatewaySessionIdentifier,
+} = requireModule("./gateway") as typeof import("./gateway");
 
 function kubeconfig(clusterHostname = "test.sealos.io"): string {
   return [
@@ -384,5 +393,148 @@ describe("GitHub deployment AI Proxy credentials", () => {
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
     });
     expect(createdStorageLimit).toBe("10Gi");
+  });
+});
+
+describe("Codex gateway failure classification", () => {
+  it("keeps only an upstream HTTP status for 5xx failures", () => {
+    expect(
+      codexGatewayFailureDetails(
+        new CodexGatewayApiError("private upstream body", 503, {
+          token: "private-token",
+        })
+      )
+    ).toEqual({
+      httpStatus: 503,
+      reason: "gateway-upstream-error",
+    });
+  });
+
+  it("classifies turn timeouts independently from upstream errors", () => {
+    expect(codexGatewayFailureDetails(new CodexGatewayTimeoutError())).toEqual({
+      reason: "gateway-timeout",
+    });
+  });
+
+  it("classifies fetch failures as unavailable", () => {
+    expect(codexGatewayFailureDetails(new TypeError("fetch failed"))).toEqual({
+      reason: "gateway-unavailable",
+    });
+  });
+
+  it("persists only allowlisted gateway state metadata", () => {
+    const snapshot = gatewayStateSnapshot({
+      state: {
+        activeTurn: false,
+        currentTurnId: "turn_31",
+        ready: true,
+        recentEvents: [{ error: "Bearer private-token" }],
+        startedAt: "2026-07-23T09:10:11.123Z",
+        threadId: "019c8b28-d42a-7b60-8587-8a16b80f8b36",
+        transcript: [
+          {
+            createdAt: 1,
+            id: "entry-1",
+            role: "assistant",
+            source: "gateway",
+            status: "failed",
+            text: "private gateway stderr",
+          },
+        ],
+      },
+    });
+
+    expect(snapshot).toMatchObject({
+      activeTurn: false,
+      ready: true,
+      startedAt: "2026-07-23T09:10:11.123Z",
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("turn_31");
+    expect(JSON.stringify(snapshot)).not.toContain("019c8b28");
+    expect(JSON.stringify(snapshot)).not.toContain("private-token");
+    expect(JSON.stringify(snapshot)).not.toContain("private gateway stderr");
+  });
+
+  it("rejects injected values under allowlisted gateway state keys", () => {
+    const privateValue = "Bearer private-token";
+    const snapshot = gatewayStateSnapshot({
+      state: {
+        activeTurn: "true" as unknown as boolean,
+        currentTurnId: { token: privateValue } as unknown as string,
+        ready: { value: true } as unknown as boolean,
+        startedAt: `2026-07-23T09:10:11.123Z\n${privateValue}`,
+        threadId: privateValue,
+      },
+    });
+
+    expect(snapshot).toMatchObject({
+      activeTurn: false,
+      ready: false,
+      startedAt: null,
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("private-token");
+
+    const invalidFormats = gatewayStateSnapshot({
+      state: {
+        currentTurnId: `turn-${"x".repeat(129)}`,
+        startedAt: "2026-02-31T09:10:11.123Z",
+        threadId: "thread id with spaces",
+      },
+    });
+    expect(invalidFormats).toMatchObject({
+      startedAt: null,
+    });
+  });
+
+  it("persists only sanitized gateway locators", () => {
+    expect(safeGatewaySessionIdentifier("session-31")).toBe("session-31");
+    expect(
+      safeGatewaySessionIdentifier("019c8b28-d42a-7b60-8587-8a16b80f8b36")
+    ).toBe("019c8b28-d42a-7b60-8587-8a16b80f8b36");
+    expect(safeGatewaySessionIdentifier("AKIAIOSFODNN7EXAMPLE")).toBeNull();
+    expect(
+      safeGatewaySessionIdentifier("eyJhbGciOiJIUzI1NiJ9.payload.sig")
+    ).toBeNull();
+    expect(
+      safeCodexGatewayUrl(
+        "https://user:pass@gateway.test/base?token=private#raw"
+      )
+    ).toBe("https://gateway.test/base");
+    expect(safeCodexGatewayUrl("javascript:alert(1)")).toBeNull();
+  });
+
+  it("maps untrusted gateway event names to a fixed projection", () => {
+    expect([
+      gatewayEventProjection("message"),
+      gatewayEventProjection("session"),
+      gatewayEventProjection("state"),
+    ]).toEqual([
+      {
+        kind: "deploy_task.gateway_message",
+        message: "Codex gateway message event received.",
+        projectsState: false,
+      },
+      {
+        kind: "deploy_task.gateway_session_event",
+        message: "Codex gateway session event received.",
+        projectsState: false,
+      },
+      {
+        kind: "deploy_task.gateway_state",
+        message: "Codex gateway state updated.",
+        projectsState: true,
+      },
+    ]);
+
+    const maliciousEventName =
+      "state\nBearer private-token\ndeploy_task.gateway_injected";
+    const projection = gatewayEventProjection(maliciousEventName);
+    expect(projection).toEqual({
+      kind: "deploy_task.gateway_event",
+      message: "Codex gateway event received.",
+      projectsState: false,
+    });
+    expect(JSON.stringify(projection)).not.toContain(maliciousEventName);
+    expect(gatewayEventProjection("__proto__")).toEqual(projection);
   });
 });

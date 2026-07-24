@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
+import { publicDeployTaskBlockingInputs } from "../public-artifact-summary";
 import {
   type DeploymentTaskSource,
   type DeployTaskBlockingInput,
@@ -10,7 +11,11 @@ import {
   deployTaskMessages,
   deployTasks,
 } from "../schema";
-import { withoutSensitiveArgs } from "../sensitive-inputs";
+import {
+  isSensitiveDeploymentInput,
+  MIN_SENSITIVE_INPUT_LENGTH,
+  withoutSensitiveArgs,
+} from "../sensitive-inputs";
 import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import { createDeploymentTaskTimelineForRunner } from "../timeline";
 import type { CreateDeployTaskInput } from "../types";
@@ -128,6 +133,13 @@ function isUniqueViolation(error: unknown, indexName: string): boolean {
 export type DeployTaskRunLauncher = (
   handle: DeployTaskHandle,
   task: DeployTaskRow
+) => Promise<void>;
+
+export type SubmitDeployTaskInputRunLauncher = (
+  handle: DeployTaskHandle,
+  task: DeployTaskRow,
+  currentBlockingInputs: readonly DeployTaskBlockingInput[],
+  submittedValues: Record<string, string | number | boolean>
 ) => Promise<void>;
 
 export type CreateDeployTaskActionResult =
@@ -578,6 +590,7 @@ export async function cancelDeployTaskAction(
 
 export type SubmitDeployTaskInputActionResult =
   | { kind: "conflict"; task: DeployTaskRow }
+  | { kind: "invalid-input"; message: string; task: DeployTaskRow }
   | { kind: "not-found" }
   | { kind: "resumed"; launched: LaunchedDeployTaskRun; task: DeployTaskRow };
 
@@ -585,21 +598,105 @@ export interface SubmitDeployTaskInputActionInput {
   actionActor?: string;
   namespace: string;
   /** Launches the resumed runner with the submitted values held in memory. */
-  run: DeployTaskRunLauncher;
+  run: SubmitDeployTaskInputRunLauncher;
   taskId: string;
   values: Record<string, unknown>;
 }
 
-function submittedKeyNames(
+function isSubmittedScalar(value: unknown): value is string | number | boolean {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function submittedInputValues(
   blockingInputs: DeployTaskBlockingInput[],
-  values: Record<string, unknown>
-): string[] {
-  const known = new Set(
-    blockingInputs.flatMap((item) => [item.id, item.key ?? item.id])
+  values: Record<string, unknown>,
+  publicBlockingInputs: DeployTaskBlockingInput[],
+  strictPublicIdentifiers: boolean
+): Record<string, string | number | boolean> {
+  return Object.fromEntries(
+    blockingInputs.flatMap((item, index) => {
+      const canonicalKey = item.key ?? item.id;
+      const publicInput = publicBlockingInputs[index];
+      const publicKey = publicInput?.key ?? publicInput?.id;
+      const candidates = strictPublicIdentifiers
+        ? [publicKey]
+        : [canonicalKey, item.id];
+      for (const candidate of new Set(candidates)) {
+        if (candidate == null) {
+          continue;
+        }
+        const value = values[candidate];
+        if (isSubmittedScalar(value)) {
+          return [[canonicalKey, value]];
+        }
+      }
+      return [];
+    })
   );
-  return Object.keys(values).filter(
-    (key) => known.has(key) || known.size === 0
+}
+
+function shortSensitiveSubmittedKey(
+  blockingInputs: DeployTaskBlockingInput[],
+  values: Record<string, string | number | boolean>
+): string | null {
+  for (const item of blockingInputs) {
+    const key = item.key ?? item.id;
+    const value = values[key];
+    if (
+      value !== undefined &&
+      isSensitiveDeploymentInput({
+        key,
+        sensitive: item.sensitive,
+        type: item.type,
+      }) &&
+      String(value).length > 0 &&
+      String(value).length < MIN_SENSITIVE_INPUT_LENGTH
+    ) {
+      return key;
+    }
+  }
+  return null;
+}
+
+function submittedEventInputKeys(input: {
+  blockingInputs: DeployTaskBlockingInput[];
+  publicBlockingInputs: DeployTaskBlockingInput[];
+  submittedValues: Record<string, string | number | boolean>;
+}): string[] {
+  return input.blockingInputs.flatMap((item, index) =>
+    Object.hasOwn(input.submittedValues, item.key ?? item.id)
+      ? [
+          input.publicBlockingInputs[index]?.key ??
+            input.publicBlockingInputs[index]?.id ??
+            item.key ??
+            item.id,
+        ]
+      : []
   );
+}
+
+function hasEveryRequiredBlockingInput(
+  blockingInputs: DeployTaskBlockingInput[],
+  submittedValues: Record<string, string | number | boolean>
+): boolean {
+  return blockingInputs.every((item) => {
+    if (!item.required) {
+      return true;
+    }
+    const value = submittedValues[item.key ?? item.id];
+    return value !== undefined && String(value).trim() !== "";
+  });
+}
+
+function hasUniqueCanonicalBlockingInputKeys(
+  blockingInputs: DeployTaskBlockingInput[]
+): boolean {
+  const keys = blockingInputs.map((item) => item.key ?? item.id);
+  return new Set(keys).size === keys.length;
 }
 
 /**
@@ -619,6 +716,65 @@ export async function submitDeployTaskInputAction(
   if (row.status !== "blocked" || row.blockingInputs.length === 0) {
     return { kind: "conflict", task: row };
   }
+  const currentBlockingInputs = [...row.blockingInputs];
+  if (!hasUniqueCanonicalBlockingInputKeys(currentBlockingInputs)) {
+    return {
+      kind: "invalid-input",
+      message: "Deployment inputs are unavailable. Redeploy to try again.",
+      task: row,
+    };
+  }
+  const publicBlockingInputs = publicDeployTaskBlockingInputs(
+    currentBlockingInputs,
+    { runner: row.runner }
+  );
+  if (publicBlockingInputs.length !== currentBlockingInputs.length) {
+    return {
+      kind: "invalid-input",
+      message: "Deployment inputs are unavailable. Redeploy to try again.",
+      task: row,
+    };
+  }
+  const submittedValues = submittedInputValues(
+    currentBlockingInputs,
+    input.values,
+    publicBlockingInputs,
+    row.runner.kind === "ai"
+  );
+  const submittedInputKeys = Object.keys(submittedValues);
+  if (submittedInputKeys.length === 0) {
+    return {
+      kind: "invalid-input",
+      message: "Submit at least one requested deployment input.",
+      task: row,
+    };
+  }
+  if (!hasEveryRequiredBlockingInput(currentBlockingInputs, submittedValues)) {
+    return {
+      kind: "invalid-input",
+      message: "Submit every required deployment input.",
+      task: row,
+    };
+  }
+  const shortSensitiveKey = shortSensitiveSubmittedKey(
+    currentBlockingInputs,
+    submittedValues
+  );
+  if (shortSensitiveKey != null) {
+    return {
+      kind: "invalid-input",
+      message:
+        row.runner.kind === "ai"
+          ? `Sensitive deployment inputs must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`
+          : `Deployment input "${shortSensitiveKey}" must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`,
+      task: row,
+    };
+  }
+  const eventInputKeys = submittedEventInputKeys({
+    blockingInputs: currentBlockingInputs,
+    publicBlockingInputs,
+    submittedValues,
+  });
 
   await appendDeployTaskEvent(ctx, {
     event: {
@@ -628,7 +784,7 @@ export async function submitDeployTaskInputAction(
         ...(input.actionActor == null
           ? {}
           : { actionActor: input.actionActor }),
-        inputKeys: submittedKeyNames(row.blockingInputs, input.values),
+        inputKeys: eventInputKeys,
         redacted: true,
       },
       phase: "configure",
@@ -665,7 +821,8 @@ export async function submitDeployTaskInputAction(
   }
   const launched = launchDeployTaskRun(ctx, {
     claim,
-    run: (handle) => input.run(handle, current),
+    run: (handle) =>
+      input.run(handle, current, currentBlockingInputs, submittedValues),
   });
   return { kind: "resumed", launched, task: current };
 }

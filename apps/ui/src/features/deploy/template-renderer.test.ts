@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import YAML from "yaml";
-import type { TemplateSourcePayload } from "./template-provider-core";
+import type {
+  TemplateSourceInput,
+  TemplateSourcePayload,
+} from "./template-provider-core";
 import {
   addTemplateInstanceOwnerReferences,
   generateTemplateInstanceOwnerReference,
   renderTemplateDeployment,
   renderTemplateDeploymentFromYaml,
+  TemplateInputValidationError,
+  type TemplateInputValidationErrorCode,
+  type TemplateInputValidationValueSource,
 } from "./template-renderer";
 
 const source = {
@@ -94,6 +100,30 @@ const SINGLE_LINE_PARAMETER_RE =
 const NUMBER_PARAMETER_RE = /Template parameter "storage" must be a number/;
 const TEMPLATE_SECRET_NAME_RE = /secretName: wildcard-cert/;
 const TEMPLATE_EXPR_MARKER_RE = /\$/;
+
+function captureTemplateInputValidationError(input: {
+  args?: Record<string, string>;
+  declaration: TemplateSourceInput;
+}): TemplateInputValidationError {
+  try {
+    renderTemplateDeployment({
+      args: input.args,
+      instanceName: "template-memos",
+      namespace: "ns-admin",
+      projectId: "project-uid",
+      projectName: "project-uid",
+      source: {
+        ...source,
+        source: { ...source.source, inputs: [input.declaration] },
+      },
+      templateName: "memos",
+    });
+  } catch (error) {
+    assert.ok(error instanceof TemplateInputValidationError);
+    return error;
+  }
+  throw new Error("Expected template input validation to fail.");
+}
 
 interface RenderedIngress {
   metadata?: {
@@ -689,6 +719,68 @@ test("renderTemplateDeployment validates input type and option declarations", ()
       }),
     NUMBER_PARAMETER_RE
   );
+});
+
+test("template input failures expose only the rejected key and stable code", () => {
+  const cases: Array<{
+    args?: Record<string, string>;
+    code: TemplateInputValidationErrorCode;
+    declaration: TemplateSourceInput;
+    valueSource: TemplateInputValidationValueSource;
+  }> = [
+    {
+      code: "required",
+      declaration: { key: "storage", required: true, type: "string" },
+      valueSource: "missing",
+    },
+    {
+      args: { storage: "8\ninjected" },
+      code: "single-line",
+      declaration: { key: "storage", required: true, type: "string" },
+      valueSource: "provided",
+    },
+    {
+      args: { storage: "large" },
+      code: "option",
+      declaration: {
+        key: "storage",
+        options: ["small", "medium"],
+        required: true,
+        type: "string",
+      },
+      valueSource: "provided",
+    },
+    {
+      args: { storage: "many" },
+      code: "number",
+      declaration: { key: "storage", required: true, type: "number" },
+      valueSource: "provided",
+    },
+    {
+      args: { storage: "sometimes" },
+      code: "boolean",
+      declaration: { key: "storage", required: true, type: "boolean" },
+      valueSource: "provided",
+    },
+    {
+      args: { storage: "" },
+      code: "number",
+      declaration: {
+        default: "invalid-default",
+        key: "storage",
+        required: true,
+        type: "number",
+      },
+      valueSource: "default",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const error = captureTemplateInputValidationError(testCase);
+    assert.equal(error.inputKey, "storage");
+    assert.equal(error.code, testCase.code);
+    assert.equal(error.valueSource, testCase.valueSource);
+  }
 });
 
 test("renderTemplateDeploymentFromYaml renders inline Sealos Template documents", () => {
