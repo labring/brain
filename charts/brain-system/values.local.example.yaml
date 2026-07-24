@@ -20,10 +20,9 @@ api:
   env:
     VMSELECT_URL: "http://vmselect-vm-stack-victoria-metrics-k8s-stack.vm.svc:8481/select/0/prometheus"
     VLSELECT_URL: "http://usr-vlc-victoria-logs-cluster-vlselect.vlc.svc:9471/select/logsql/query"
+    # Process-level credentials; changing them requires an API rollout.
     VLSELECT_USERNAME: ""
     VLSELECT_PASSWORD: ""
-    VMAUTH_SECRET_NAMESPACE: ""
-    VMAUTH_SECRET_NAME: ""
     # Leave empty to use the chart-created brain-pg KubeBlocks credential.
     DATABASE_URL: ""
     # Leave empty to use global.cloudDomain from sealos-config.

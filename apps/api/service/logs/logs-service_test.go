@@ -13,9 +13,15 @@ import (
 )
 
 func TestExecuteLogsQueryReturnsEmptySliceWhenVictoriaLogsHasNoEntries(t *testing.T) {
+	t.Setenv("VLSELECT_USERNAME", "")
+	t.Setenv("VLSELECT_PASSWORD", "")
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("query"); got == "" {
 			t.Fatal("query parameter was not forwarded")
+		}
+		if _, _, ok := r.BasicAuth(); ok {
+			t.Error("VictoriaLogs request unexpectedly used basic auth")
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -43,6 +49,37 @@ func TestExecuteLogsQueryReturnsEmptySliceWhenVictoriaLogsHasNoEntries(t *testin
 	}
 	if string(payload) != `{"postgresql":[]}` {
 		t.Fatalf("empty log group encoded as %s, want empty array", payload)
+	}
+}
+
+func TestExecuteLogsQueryUsesStaticEnvironmentCredentials(t *testing.T) {
+	const (
+		password = "test-password"
+		username = "test-user"
+	)
+	t.Setenv("VLSELECT_USERNAME", username)
+	t.Setenv("VLSELECT_PASSWORD", password)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUsername, gotPassword, ok := r.BasicAuth()
+		if !ok {
+			t.Error("VictoriaLogs request did not use basic auth")
+		}
+		if gotUsername != username || gotPassword != password {
+			t.Errorf("VictoriaLogs basic auth = %q/%q, want configured credentials", gotUsername, gotPassword)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if _, err := executeLogsQuery(
+		context.Background(),
+		server.URL,
+		"{namespace='ns',container='postgresql'}",
+		"1710000000",
+		"1710003600",
+	); err != nil {
+		t.Fatalf("executeLogsQuery returned error: %v", err)
 	}
 }
 
@@ -80,8 +117,6 @@ func TestQueryAppLogsResolvesVictoriaLogsEndpoint(t *testing.T) {
 
 	t.Setenv("VLSELECT_USERNAME", "")
 	t.Setenv("VLSELECT_PASSWORD", "")
-	t.Setenv("VMAUTH_SECRET_NAMESPACE", "")
-	t.Setenv("VMAUTH_SECRET_NAME", "")
 
 	tests := []struct {
 		name       string
