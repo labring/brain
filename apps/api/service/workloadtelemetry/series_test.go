@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	metricssvc "sealos/api/service/metrics"
 )
 
 type fakeRangeQuerier struct {
@@ -70,7 +72,7 @@ func TestSeriesReturnsSingleTargetRowsWithProductMetricKeys(t *testing.T) {
 func TestSeriesKeepsMetricFailuresLocal(t *testing.T) {
 	start := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
 	service := NewService(ServiceOptions{
-		APAuthorizer: fakeAPAuthorizer{"project-a/web": true},
+		APResolver: fakeAPResolver{"project-a/web": metricssvc.APWorkloadDeployment},
 		RangeQuerier: fakeRangeQuerier{samples: map[string][]SeriesSample{
 			"ap:web:cpu": {{Timestamp: start.Unix(), Value: 42}},
 		}},
@@ -147,5 +149,46 @@ func TestSeriesRejectsInvalidSamplingWindows(t *testing.T) {
 				t.Fatalf("Series error = %v, want ErrInvalidSamplingWindow", err)
 			}
 		})
+	}
+}
+
+// recordingRangeQuerier captures the query sent for each metric key.
+type recordingRangeQuerier struct {
+	queries map[MetricKey]string
+}
+
+func (r *recordingRangeQuerier) QueryRange(_ context.Context, req RangeQuery) ([]SeriesSample, error) {
+	r.queries[req.Key] = req.Query
+	return []SeriesSample{{Timestamp: req.Start.Unix(), Value: 1}}, nil
+}
+
+// Regression for labring/sealos-private#8: the series path must build the same
+// isolated pod matchers as the snapshot path — full workload name kept, no
+// same-prefix sibling (billing-api vs billing-worker) captured.
+func TestSeriesAPQueriesIsolateSamePrefixWorkloads(t *testing.T) {
+	start := time.Date(2026, 5, 18, 10, 0, 0, 0, time.UTC)
+	querier := &recordingRangeQuerier{queries: make(map[MetricKey]string)}
+	service := NewService(ServiceOptions{
+		APResolver:   fakeAPResolver{"project-a/billing-api": metricssvc.APWorkloadDeployment},
+		RangeQuerier: querier,
+	})
+
+	_, err := service.Series(context.Background(), "Bearer encoded", SeriesRequest{
+		End:    start.Add(time.Hour),
+		Start:  start,
+		Step:   time.Minute,
+		Target: Target{Kind: WorkloadKindAP, Namespace: "project-a", Name: "billing-api"},
+	})
+	if err != nil {
+		t.Fatalf("Series returned error: %v", err)
+	}
+	if len(querier.queries) != 2 {
+		t.Fatalf("recorded queries = %#v, want cpu and memory", querier.queries)
+	}
+	for _, query := range querier.queries {
+		assertPodMatcherIsolation(t, query,
+			[]string{"billing-api-7d9f8b6c4-k2vq8", "billing-api-7d9f8b6c4-m4xz2"},
+			[]string{"billing-worker-5c4b8d9f6-x2ab1", "billing-api"},
+		)
 	}
 }
