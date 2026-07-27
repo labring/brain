@@ -423,6 +423,61 @@ test("terminal deployment task projections survive updatedAt ties", () => {
   assert.equal(replaceDeploymentTaskProjections(current, [stale]), current);
 });
 
+test("later-tier deployment task projections survive updatedAt ties", () => {
+  const applying = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "applying" }),
+    NOW
+  );
+  const running = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "running" }),
+    NOW
+  );
+  const queued = toDeploymentTaskProjection(deploymentTaskSource(), NOW);
+  assert.ok(applying);
+  assert.ok(running);
+  assert.ok(queued);
+
+  const heldApplying = [applying];
+  assert.equal(
+    upsertDeploymentTaskProjection(heldApplying, running),
+    heldApplying
+  );
+  assert.equal(
+    replaceDeploymentTaskProjections(heldApplying, [running]),
+    heldApplying
+  );
+
+  const heldRunning = [running];
+  assert.equal(
+    upsertDeploymentTaskProjection(heldRunning, queued),
+    heldRunning
+  );
+  assert.equal(
+    replaceDeploymentTaskProjections(heldRunning, [queued]),
+    heldRunning
+  );
+});
+
+test("blocked and running deployment task projections trade updatedAt ties", () => {
+  const running = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "running" }),
+    NOW
+  );
+  const blocked = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "blocked" }),
+    NOW
+  );
+  assert.ok(running);
+  assert.ok(blocked);
+
+  assert.deepEqual(upsertDeploymentTaskProjection([running], blocked), [
+    blocked,
+  ]);
+  assert.deepEqual(upsertDeploymentTaskProjection([blocked], running), [
+    running,
+  ]);
+});
+
 test("replacing deployment task projections keeps newer local entries", () => {
   const newer = toDeploymentTaskProjection(
     deploymentTaskSource({

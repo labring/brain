@@ -34,12 +34,24 @@ const ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUS_SET = new Set<DeployTaskStatus>(
 const PROJECTABLE_DEPLOYMENT_TASK_STATUS_SET = new Set<DeployTaskStatus>(
   PROJECTABLE_DEPLOYMENT_TASK_STATUSES
 );
-const TERMINAL_DEPLOYMENT_TASK_PROJECTION_STATUS_SET =
-  new Set<DeploymentTaskProjectionStatus>(
-    PROJECTABLE_DEPLOYMENT_TASK_STATUSES.filter(
-      (status) => !ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUS_SET.has(status)
-    )
-  );
+/**
+ * Progression tiers for breaking updatedAt ties. The transition table
+ * (ADR 0037) is monotonic across tiers — queued is never re-entered,
+ * applying only exits to a terminal status, terminal statuses never exit —
+ * while blocked and running legally oscillate, so they share a tier.
+ */
+const DEPLOYMENT_TASK_PROJECTION_STATUS_RANK: Record<
+  DeploymentTaskProjectionStatus,
+  number
+> = {
+  applying: 2,
+  blocked: 1,
+  cancelled: 3,
+  completed: 3,
+  failed: 3,
+  queued: 0,
+  running: 1,
+};
 
 export interface DeploymentTaskDisplaySummary {
   resultSummary: string;
@@ -320,8 +332,9 @@ function deploymentTaskProjectionEqual(
 /**
  * Monotonic-merge guard: NOTIFY-driven re-reads and snapshot reads can
  * resolve out of order, so an incoming projection only wins when it is not
- * older than the held one; on an updatedAt tie a terminal status never
- * yields to a non-terminal one.
+ * older than the held one. updatedAt survives serialization only at
+ * millisecond precision, so distinct row states can tie; on a tie a status
+ * never yields to one from an earlier progression tier.
  */
 function deploymentTaskProjectionSupersedes(
   current: DeploymentTaskProjection,
@@ -332,9 +345,9 @@ function deploymentTaskProjectionSupersedes(
   if (incomingMs !== currentMs) {
     return incomingMs > currentMs;
   }
-  return !(
-    TERMINAL_DEPLOYMENT_TASK_PROJECTION_STATUS_SET.has(current.status) &&
-    !TERMINAL_DEPLOYMENT_TASK_PROJECTION_STATUS_SET.has(incoming.status)
+  return (
+    DEPLOYMENT_TASK_PROJECTION_STATUS_RANK[incoming.status] >=
+    DEPLOYMENT_TASK_PROJECTION_STATUS_RANK[current.status]
   );
 }
 
