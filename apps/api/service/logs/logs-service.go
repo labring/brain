@@ -17,9 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/yaml"
-
-	"sealos/api/middleware"
 )
 
 var (
@@ -27,7 +24,6 @@ var (
 	ErrInvalidKind     = errors.New("invalid logs kind: must be ap or db")
 	ErrNoVLHost        = errors.New("unable to get the victoria-logs host")
 	ErrNoPodsFound     = errors.New("no pods found")
-	ErrNoAuthSecret    = errors.New("vmauth secret not found or missing credentials")
 )
 
 const (
@@ -69,96 +65,9 @@ func escapeLogsQLRegex(s string) string {
 	return replacer.Replace(s)
 }
 
-// vmauthCredentials holds cached credentials from vmauth secret.
-type vmauthCredentials struct {
-	username string
-	password string
-}
-
-var (
-	cachedCreds     *vmauthCredentials
-	cachedCredsOnce sync.Once
-	cachedCredsErr  error
-)
-
-// vmauthConfig represents the auth.yml structure in vmauth secret.
-type vmauthConfig struct {
-	Users []struct {
-		Username  string   `yaml:"username"`
-		Password  string   `yaml:"password"`
-		URLPrefix []string `yaml:"url_prefix"`
-	} `yaml:"users"`
-}
-
-// getVmauthCredentials fetches read credentials from vmauth secret.
-// Uses VMAUTH_SECRET_NAMESPACE and VMAUTH_SECRET_NAME env vars.
-// Caches result after first successful fetch.
-func getVmauthCredentials(ctx context.Context) (string, string, error) {
-	cachedCredsOnce.Do(func() {
-		// First check env vars as fallback
-		if username, password := os.Getenv("VLSELECT_USERNAME"), os.Getenv("VLSELECT_PASSWORD"); username != "" {
-			cachedCreds = &vmauthCredentials{username: username, password: password}
-			return
-		}
-
-		// Try to fetch from K8s secret
-		secretNS := os.Getenv("VMAUTH_SECRET_NAMESPACE")
-		secretName := os.Getenv("VMAUTH_SECRET_NAME")
-		if secretNS == "" || secretName == "" {
-			// No secret configured, no auth
-			cachedCreds = &vmauthCredentials{}
-			return
-		}
-
-		config, err := rest.InClusterConfig()
-		if err != nil {
-			cachedCredsErr = fmt.Errorf("failed to get in-cluster config: %w", err)
-			return
-		}
-		middleware.SuppressK8sRESTWarnings(config)
-
-		clientset, err := kubernetes.NewForConfig(config)
-		if err != nil {
-			cachedCredsErr = fmt.Errorf("failed to create k8s client: %w", err)
-			return
-		}
-
-		secret, err := clientset.CoreV1().Secrets(secretNS).Get(ctx, secretName, metav1.GetOptions{})
-		if err != nil {
-			cachedCredsErr = fmt.Errorf("failed to get vmauth secret: %w", err)
-			return
-		}
-
-		authYAML, ok := secret.Data["auth.yml"]
-		if !ok {
-			cachedCredsErr = ErrNoAuthSecret
-			return
-		}
-
-		var authConfig vmauthConfig
-		if err := yaml.Unmarshal(authYAML, &authConfig); err != nil {
-			cachedCredsErr = fmt.Errorf("failed to parse auth.yml: %w", err)
-			return
-		}
-
-		// Find the "read" user
-		for _, user := range authConfig.Users {
-			if user.Username == "read" {
-				cachedCreds = &vmauthCredentials{username: user.Username, password: user.Password}
-				return
-			}
-		}
-
-		cachedCredsErr = ErrNoAuthSecret
-	})
-
-	if cachedCredsErr != nil {
-		return "", "", cachedCredsErr
-	}
-	if cachedCreds == nil {
-		return "", "", nil
-	}
-	return cachedCreds.username, cachedCreds.password, nil
+// vmauthCredentialsFromEnv returns the process-level VictoriaLogs credentials.
+func vmauthCredentialsFromEnv() (string, string) {
+	return os.Getenv("VLSELECT_USERNAME"), os.Getenv("VLSELECT_PASSWORD")
 }
 
 // escapeLogsQLString escapes single quotes in LogsQL string literals.
@@ -474,11 +383,8 @@ func executeLogsQuery(ctx context.Context, baseURL, query, start, end string) ([
 		return nil, err
 	}
 
-	// Add basic auth from vmauth secret or env vars
-	username, password, err := getVmauthCredentials(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get vmauth credentials: %w", err)
-	}
+	// Add basic auth from the process-level environment configuration.
+	username, password := vmauthCredentialsFromEnv()
 	if username != "" {
 		req.SetBasicAuth(username, password)
 	}
