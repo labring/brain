@@ -18,6 +18,8 @@ interface ListenerState {
   client: Client | null;
   connecting: Promise<void> | null;
   reconnectAttempt: number;
+  reconnectDelaysMs: readonly number[];
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
   stopped: boolean;
   subscribers: Set<DeployTaskNotifyListener>;
 }
@@ -31,6 +33,8 @@ function getState(): ListenerState {
     client: null,
     connecting: null,
     reconnectAttempt: 0,
+    reconnectDelaysMs: RECONNECT_DELAYS_MS,
+    reconnectTimer: null,
     stopped: false,
     subscribers: new Set(),
   };
@@ -62,20 +66,25 @@ function dispatchReset(state: ListenerState): void {
 }
 
 function scheduleReconnect(state: ListenerState): void {
-  if (state.stopped) {
+  // One pending timer at a time: the loop is fed from both the `end` handler
+  // and failed initial subscribes, which would otherwise stack timers.
+  if (state.stopped || state.reconnectTimer != null || state.client != null) {
     return;
   }
   const delay =
-    RECONNECT_DELAYS_MS[
-      Math.min(state.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)
+    state.reconnectDelaysMs[
+      Math.min(state.reconnectAttempt, state.reconnectDelaysMs.length - 1)
     ];
   state.reconnectAttempt += 1;
-  setTimeout(() => {
+  const timer = setTimeout(() => {
+    state.reconnectTimer = null;
     ensureListening(state, { afterReconnect: true }).catch((error) => {
       console.error("[deploy-task-notify] reconnect failed:", error);
       scheduleReconnect(state);
     });
-  }, delay).unref?.();
+  }, delay);
+  timer.unref?.();
+  state.reconnectTimer = timer;
 }
 
 /**
@@ -114,8 +123,19 @@ async function ensureListening(
         scheduleReconnect(state);
       }
     });
-    await client.connect();
-    await client.query(`LISTEN "${DEPLOY_TASK_NOTIFY_CHANNEL}"`);
+    try {
+      await client.connect();
+      await client.query(`LISTEN "${DEPLOY_TASK_NOTIFY_CHANNEL}"`);
+    } catch (error) {
+      // A partly-opened client (connected but LISTEN failed) never becomes
+      // state.client, so no reconnect path would ever close it.
+      client.end().catch(() => undefined);
+      throw error;
+    }
+    if (state.stopped) {
+      client.end().catch(() => undefined);
+      return;
+    }
     state.client = client;
     state.reconnectAttempt = 0;
     if (options.afterReconnect) {
@@ -142,10 +162,44 @@ export function getDeployTaskNotifyTransport(): DeployTaskNotifyTransport {
     publish,
     async subscribe(listener) {
       state.subscribers.add(listener);
-      await ensureListening(state);
+      try {
+        await ensureListening(state);
+      } catch (error) {
+        // Initial LISTEN failure: drop the dead subscription so the caller
+        // fails its stream, and keep retrying in the background so the next
+        // subscribe finds a live connection.
+        state.subscribers.delete(listener);
+        scheduleReconnect(state);
+        throw error;
+      }
       return () => {
         state.subscribers.delete(listener);
       };
     },
   };
+}
+
+/**
+ * Test hook: cancels the reconnect loop, closes any live client, and discards
+ * the singleton state; optionally seeds faster reconnect delays for the state
+ * created next.
+ */
+export async function resetDeployTaskNotifyTransportForTests(options?: {
+  reconnectDelaysMs?: readonly number[];
+}): Promise<void> {
+  const state = globalNotify.__sealaiDeployTaskNotify;
+  globalNotify.__sealaiDeployTaskNotify = undefined;
+  if (state != null) {
+    state.stopped = true;
+    if (state.reconnectTimer != null) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+    const client = state.client;
+    state.client = null;
+    await client?.end().catch(() => undefined);
+  }
+  if (options?.reconnectDelaysMs != null) {
+    getState().reconnectDelaysMs = options.reconnectDelaysMs;
+  }
 }

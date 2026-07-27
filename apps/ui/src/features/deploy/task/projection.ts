@@ -34,6 +34,12 @@ const ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUS_SET = new Set<DeployTaskStatus>(
 const PROJECTABLE_DEPLOYMENT_TASK_STATUS_SET = new Set<DeployTaskStatus>(
   PROJECTABLE_DEPLOYMENT_TASK_STATUSES
 );
+const TERMINAL_DEPLOYMENT_TASK_PROJECTION_STATUS_SET =
+  new Set<DeploymentTaskProjectionStatus>(
+    PROJECTABLE_DEPLOYMENT_TASK_STATUSES.filter(
+      (status) => !ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUS_SET.has(status)
+    )
+  );
 
 export interface DeploymentTaskDisplaySummary {
   resultSummary: string;
@@ -311,6 +317,27 @@ function deploymentTaskProjectionEqual(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/**
+ * Monotonic-merge guard: NOTIFY-driven re-reads and snapshot reads can
+ * resolve out of order, so an incoming projection only wins when it is not
+ * older than the held one; on an updatedAt tie a terminal status never
+ * yields to a non-terminal one.
+ */
+function deploymentTaskProjectionSupersedes(
+  current: DeploymentTaskProjection,
+  incoming: DeploymentTaskProjection
+): boolean {
+  const currentMs = dateMs(current.updatedAt) ?? 0;
+  const incomingMs = dateMs(incoming.updatedAt) ?? 0;
+  if (incomingMs !== currentMs) {
+    return incomingMs > currentMs;
+  }
+  return !(
+    TERMINAL_DEPLOYMENT_TASK_PROJECTION_STATUS_SET.has(current.status) &&
+    !TERMINAL_DEPLOYMENT_TASK_PROJECTION_STATUS_SET.has(incoming.status)
+  );
+}
+
 function deploymentTaskCanvasTopologyPayload(
   projection: DeploymentTaskProjection
 ) {
@@ -437,18 +464,26 @@ export function replaceDeploymentTaskProjections(
   current: DeploymentTaskProjection[],
   nextProjections: readonly DeploymentTaskProjection[]
 ): DeploymentTaskProjection[] {
+  const currentById = new Map(
+    current.map((projection) => [projection.id, projection])
+  );
+  const merged = nextProjections.map((incoming) => {
+    const existing = currentById.get(incoming.id);
+    if (existing === undefined) {
+      return incoming;
+    }
+    return !deploymentTaskProjectionSupersedes(existing, incoming) ||
+      deploymentTaskProjectionEqual(existing, incoming)
+      ? existing
+      : incoming;
+  });
   if (
-    current.length === nextProjections.length &&
-    current.every((projection, index) => {
-      const next = nextProjections[index];
-      return (
-        next !== undefined && deploymentTaskProjectionEqual(projection, next)
-      );
-    })
+    current.length === merged.length &&
+    merged.every((projection, index) => projection === current[index])
   ) {
     return current;
   }
-  return [...nextProjections];
+  return merged;
 }
 
 export function toDeploymentTaskProjection(
@@ -512,7 +547,8 @@ export function upsertDeploymentTaskProjection(
   const current = projections[index];
   if (
     current !== undefined &&
-    deploymentTaskProjectionEqual(current, projection)
+    (!deploymentTaskProjectionSupersedes(current, projection) ||
+      deploymentTaskProjectionEqual(current, projection))
   ) {
     return projections;
   }

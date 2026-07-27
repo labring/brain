@@ -14,7 +14,11 @@ type DeploymentTaskTimelineListener = (
  * re-reads unconditionally because notifications during the gap are lost.
  */
 export interface DeploymentTaskTimelineSubscription {
-  /** Resolves once LISTEN is established; reads before this can miss events. */
+  /**
+   * Resolves once LISTEN is established; reads before this can miss events.
+   * Rejects when LISTEN cannot be established — callers must fail their
+   * stream instead of serving a snapshot that will never receive updates.
+   */
   ready: Promise<void>;
   unsubscribe: () => void;
 }
@@ -78,9 +82,6 @@ export function subscribeDeploymentTaskTimelineEvents(input: {
         return;
       }
       unsubscribe = unsub;
-    })
-    .catch((error) => {
-      console.error("[deploy-task-timeline-events] subscribe failed:", error);
     });
 
   return {
