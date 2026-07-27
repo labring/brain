@@ -91,22 +91,24 @@ type DBResolver interface {
 	ResolveDBEngine(ctx context.Context, auth string, namespace string, name string) (DBEngine, error)
 }
 
-// APAuthorizer authorizes access to an AP workload's telemetry by reading the
+// APResolver authorizes access to an AP workload's telemetry by reading the
 // workload with the caller's credentials, so Kubernetes RBAC — not merely a
-// parseable kubeconfig — decides whether the caller may see the metrics.
-type APAuthorizer interface {
-	AuthorizeAPWorkload(ctx context.Context, auth string, namespace string, name string) error
+// parseable kubeconfig — decides whether the caller may see the metrics. It
+// reports the controller kind backing the AP, which query building needs to
+// match the workload's pods without capturing same-prefix siblings.
+type APResolver interface {
+	ResolveAPWorkloadKind(ctx context.Context, auth string, namespace string, name string) (metricssvc.APWorkloadKind, error)
 }
 
 type ServiceOptions struct {
-	APAuthorizer APAuthorizer
+	APResolver   APResolver
 	DBResolver   DBResolver
 	Querier      InstantQuerier
 	RangeQuerier RangeQuerier
 }
 
 type Service struct {
-	apAuthorizer APAuthorizer
+	apResolver   APResolver
 	dbResolver   DBResolver
 	querier      InstantQuerier
 	rangeQuerier RangeQuerier
@@ -122,7 +124,7 @@ func NewDefaultService() (*Service, error) {
 		return nil, err
 	}
 	return NewService(ServiceOptions{
-		APAuthorizer: ClusterAPResolver{},
+		APResolver:   ClusterAPResolver{},
 		DBResolver:   ClusterDBResolver{},
 		Querier:      querier,
 		RangeQuerier: rangeQuerier,
@@ -131,7 +133,7 @@ func NewDefaultService() (*Service, error) {
 
 func NewService(options ServiceOptions) *Service {
 	return &Service{
-		apAuthorizer: options.APAuthorizer,
+		apResolver:   options.APResolver,
 		dbResolver:   options.DBResolver,
 		querier:      options.Querier,
 		rangeQuerier: options.RangeQuerier,
@@ -209,13 +211,14 @@ func (s *Service) metricProfiles(ctx context.Context, auth string, target Target
 	}
 	switch target.Kind {
 	case WorkloadKindAP:
-		if s.apAuthorizer == nil {
+		if s.apResolver == nil {
 			return nil, ErrInvalidTarget
 		}
-		if err := s.apAuthorizer.AuthorizeAPWorkload(ctx, auth, target.Namespace, target.Name); err != nil {
+		kind, err := s.apResolver.ResolveAPWorkloadKind(ctx, auth, target.Namespace, target.Name)
+		if err != nil {
 			return nil, err
 		}
-		queries, err := metricssvc.BuildAPQueries(target.Namespace, target.Name)
+		queries, err := metricssvc.BuildAPQueries(target.Namespace, target.Name, kind)
 		if err != nil {
 			return nil, err
 		}
