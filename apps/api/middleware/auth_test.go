@@ -67,6 +67,42 @@ func restConfigFromAuthWithCAFile(auth, caFile string) (*rest.Config, error) {
 	return restConfigFromClientcmdConfigWithCAFile(cfg, caFile)
 }
 
+func TestRestConfigFromAuthAcceptsBrowserEncodedKubeconfig(t *testing.T) {
+	clearInClusterEnv(t)
+	const encodedKubeconfig = "apiVersion%3A%20v1%0A" +
+		"kind%3A%20Config%0A" +
+		"current-context%3A%20ctx%0A" +
+		"clusters%3A%0A" +
+		"-%20name%3A%20c%0A" +
+		"%20%20cluster%3A%0A" +
+		"%20%20%20%20server%3A%20https%3A%2F%2Fcluster.example%3A6443%0A" +
+		"contexts%3A%0A" +
+		"-%20name%3A%20ctx%0A" +
+		"%20%20context%3A%0A" +
+		"%20%20%20%20cluster%3A%20c%0A" +
+		"%20%20%20%20user%3A%20u%0A" +
+		"%20%20%20%20namespace%3A%20ns-user%0A" +
+		"users%3A%0A" +
+		"-%20name%3A%20u%0A" +
+		"%20%20user%3A%0A" +
+		"%20%20%20%20token%3A%20abc%2B%252B%25-%E7%94%A8%E6%88%B7%0A"
+
+	restConfig, _, err := RestConfigFromAuth("Bearer " + encodedKubeconfig)
+	if err != nil {
+		t.Fatalf("RestConfigFromAuth: %v", err)
+	}
+	if restConfig.BearerToken != "abc+%2B%-用户" {
+		t.Fatalf("bearer token changed: got %q", restConfig.BearerToken)
+	}
+}
+
+func TestConfigFromAuthRejectsMalformedEncoding(t *testing.T) {
+	_, err := ConfigFromAuth("Bearer %")
+	if err == nil || err.Error() != "invalid kubeconfig encoding" {
+		t.Fatalf("expected invalid kubeconfig encoding, got %v", err)
+	}
+}
+
 func TestRestConfigFromAuthPinsServerToInClusterAndKeepsIdentity(t *testing.T) {
 	clearInClusterEnv(t)
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
