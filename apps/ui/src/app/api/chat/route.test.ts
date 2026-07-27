@@ -64,6 +64,7 @@ let leaseRenewWait: Promise<TestLease | null> | null = null;
 let modelCalls = 0;
 let modelAbortSignals: (AbortSignal | undefined)[] = [];
 let modelPrompts: unknown[] = [];
+let modelProviderOptions: unknown[] = [];
 let persistedLease: TestLease | null = null;
 let replaceCalls = 0;
 let streamMode: StreamMode = "success";
@@ -155,6 +156,7 @@ function testModel() {
       modelCalls += 1;
       modelAbortSignals.push(options.abortSignal);
       modelPrompts.push(options.prompt);
+      modelProviderOptions.push(options.providerOptions);
 
       if (streamMode === "abort" || streamMode === "partial-abort") {
         const signal = options.abortSignal;
@@ -565,6 +567,7 @@ beforeEach(() => {
   modelCalls = 0;
   modelAbortSignals = [];
   modelPrompts = [];
+  modelProviderOptions = [];
   persistedLease = null;
   replaceCalls = 0;
   serviceOwners = [];
@@ -666,6 +669,9 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   expect(modelCalls).toBe(1);
   expect(consumeCalls).toBe(1);
   expect(titleCalls).toBe(1);
+  expect(modelProviderOptions[0]).toEqual({
+    openai: { reasoningEffort: "high" },
+  });
   expect(JSON.stringify(modelPrompts[0])).toContain("call-navigation");
   expect(history).toHaveLength(1);
   expect(history[0]?.parts).toContainEqual(

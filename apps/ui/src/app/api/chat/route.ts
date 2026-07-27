@@ -626,6 +626,11 @@ async function runChatPipeline(input: {
     const result = streamText({
       abortSignal: streamAbortSignal,
       model,
+      providerOptions: {
+        openai: {
+          reasoningEffort: "high",
+        },
+      },
       system: systemPrompt,
       messages: modelMessages,
       tools,
