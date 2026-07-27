@@ -17,6 +17,15 @@ test("raw kubeconfig encoding preserves URL-sensitive and Unicode content", () =
   );
 });
 
+test("raw kubeconfig encoding preserves surrounding whitespace", () => {
+  const kubeconfig = "  apiVersion: v1\n  kind: Config\n";
+
+  assert.equal(
+    encodeRawKubeconfig(kubeconfig),
+    "%20%20apiVersion%3A%20v1%0A%20%20kind%3A%20Config%0A"
+  );
+});
+
 test("kubeconfig credential key is stable for encoded and decoded input", () => {
   const decoded = "apiVersion: v1\nclusters: []";
   const encoded = encodeURIComponent(decoded);

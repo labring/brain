@@ -2,8 +2,7 @@ const EMPTY_KUBECONFIG_CREDENTIAL_KEY = "kubeconfig:empty";
 
 /** Percent-encodes kubeconfig text that is known to be raw YAML. */
 export function encodeRawKubeconfig(kubeconfig: string): string {
-  const trimmed = kubeconfig.trim();
-  return trimmed === "" ? "" : encodeURIComponent(trimmed);
+  return kubeconfig.trim() === "" ? "" : encodeURIComponent(kubeconfig);
 }
 
 function normalizeKubeconfig(kubeconfig: string): string {
