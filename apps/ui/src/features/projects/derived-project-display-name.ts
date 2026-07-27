@@ -8,11 +8,15 @@ import type { DeploymentTaskSource } from "@/features/deploy/task/schema";
  * and a future "name it before creating" field can prefill from the same code.
  */
 
-/** Keeps a pathological image ref from turning into an unreadable list row. */
-const MAX_DERIVED_DISPLAY_NAME_LENGTH = 128;
+/**
+ * Keeps a pathological image ref from turning into an unreadable list row.
+ * Matches the bound an explicitly supplied name gets, so a derived name is
+ * never the shorter of the two channels.
+ */
+const MAX_DERIVED_DISPLAY_NAME_LENGTH = 256;
 const USABLE_DISPLAY_NAME_RE = /[A-Za-z0-9]/;
 
-const RANDOM_PROJECT_ADJECTIVES = [
+const FALLBACK_DISPLAY_NAME_ADJECTIVES = [
   "bright",
   "calm",
   "clever",
@@ -33,7 +37,7 @@ const RANDOM_PROJECT_ADJECTIVES = [
   "vivid",
 ] as const;
 
-const RANDOM_PROJECT_NOUNS = [
+const FALLBACK_DISPLAY_NAME_NOUNS = [
   "atlas",
   "bridge",
   "canvas",
@@ -108,19 +112,19 @@ export function derivedProjectDisplayNameBase(
   return usableDisplayName(sourceDisplayName(source));
 }
 
-function randomProjectWord<const T extends readonly [string, ...string[]]>(
+function pickWord<const T extends readonly [string, ...string[]]>(
   words: T
 ): T[number] {
   return words[Math.floor(Math.random() * words.length)] ?? words[0];
 }
 
 /** Readable last resort, so no Project ever lands with a blank or garbled name. */
-export function randomProjectDisplayName(): string {
-  return `${randomProjectWord(RANDOM_PROJECT_ADJECTIVES)}-${randomProjectWord(RANDOM_PROJECT_NOUNS)}`;
+export function fallbackProjectDisplayName(): string {
+  return `${pickWord(FALLBACK_DISPLAY_NAME_ADJECTIVES)}-${pickWord(FALLBACK_DISPLAY_NAME_NOUNS)}`;
 }
 
 export function deriveProjectDisplayName(source: DeploymentTaskSource): string {
-  return derivedProjectDisplayNameBase(source) ?? randomProjectDisplayName();
+  return derivedProjectDisplayNameBase(source) ?? fallbackProjectDisplayName();
 }
 
 /** `nginx`, `nginx-2`, `nginx-3`, … — attempt 1 keeps the bare derived name. */

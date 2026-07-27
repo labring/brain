@@ -21,7 +21,7 @@ import { projects } from "@/lib/project-persistence/schema";
  */
 
 const NAMESPACE = "namespace-b";
-const RANDOM_DISPLAY_NAME_RE = /^[a-z]+-[a-z]+$/;
+const FALLBACK_DISPLAY_NAME_RE = /^[a-z]+-[a-z]+$/;
 
 let testDb: DeployTaskTestHarness["db"] | undefined;
 let testEngineContext: DeployTaskEngineContext | undefined;
@@ -287,7 +287,7 @@ test("a source with no usable name still yields a readable Project name", async 
 
     assert.equal(created.status, 201);
     const [displayName] = await displayNames(harness);
-    assert.match(displayName ?? "", RANDOM_DISPLAY_NAME_RE);
+    assert.match(displayName ?? "", FALLBACK_DISPLAY_NAME_RE);
   } finally {
     await clearHarness();
     await harness.close();

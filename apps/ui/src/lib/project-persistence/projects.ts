@@ -5,16 +5,16 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 
 import {
+  fallbackProjectDisplayName,
   projectDisplayNameWithSuffix,
-  randomProjectDisplayName,
 } from "@/features/projects/derived-project-display-name";
 
 import { getProjectDb } from "./db";
 import { type ProjectRow, projects } from "./schema";
 
-/** Bounded so a crowded namespace ends on a random name instead of spinning. */
+/** Bounded so a crowded namespace ends on a fallback name instead of spinning. */
 const DISPLAY_NAME_SUFFIX_ATTEMPTS = 20;
-const RANDOM_DISPLAY_NAME_ATTEMPTS = 5;
+const FALLBACK_DISPLAY_NAME_ATTEMPTS = 5;
 
 export interface BrainProject {
   createdAt: string;
@@ -208,10 +208,14 @@ export async function createProjectWithDerivedDisplayName(input: {
   }
   // A namespace crowded enough to exhaust the derived name's suffixes still
   // gets a readable name, suffixed the same way rather than retried blindly.
-  for (let attempt = 0; attempt < RANDOM_DISPLAY_NAME_ATTEMPTS; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt < FALLBACK_DISPLAY_NAME_ATTEMPTS;
+    attempt += 1
+  ) {
     const project = await createProjectUnderFreeSuffix({
       description: input.description,
-      displayNameBase: randomProjectDisplayName(),
+      displayNameBase: fallbackProjectDisplayName(),
       namespace: input.namespace,
     });
     if (project !== null) {

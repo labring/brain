@@ -5,11 +5,11 @@ import type { DeploymentTaskSource } from "@/features/deploy/task/schema";
 import {
   derivedProjectDisplayNameBase,
   deriveProjectDisplayName,
+  fallbackProjectDisplayName,
   projectDisplayNameWithSuffix,
-  randomProjectDisplayName,
 } from "./derived-project-display-name";
 
-const RANDOM_DISPLAY_NAME_RE = /^[a-z]+-[a-z]+$/;
+const FALLBACK_DISPLAY_NAME_RE = /^[a-z]+-[a-z]+$/;
 
 function dockerSource(image: unknown): DeploymentTaskSource {
   return { kind: "docker", settings: { image } };
@@ -59,14 +59,14 @@ test("Docker display names are absent when nothing usable survives stripping", (
 
 test("Docker display names are bounded so a pathological image ref cannot fill the list", () => {
   const derived = derivedProjectDisplayNameBase(dockerSource("a".repeat(400)));
-  assert.equal(derived, "a".repeat(128));
+  assert.equal(derived, "a".repeat(256));
 });
 
 test("Docker display names are absent when nothing readable survives the bound", () => {
   // The only readable character sits past the cap, so truncating would leave
   // a row of punctuation behind.
   assert.equal(
-    derivedProjectDisplayNameBase(dockerSource(`${"-".repeat(200)}a`)),
+    derivedProjectDisplayNameBase(dockerSource(`${"-".repeat(300)}a`)),
     null
   );
 });
@@ -120,6 +120,14 @@ test("Template display names use the template name verbatim", () => {
   );
 });
 
+test("Template display names survive the longest name the request schema accepts", () => {
+  const templateName = "t".repeat(256);
+  assert.equal(
+    derivedProjectDisplayNameBase({ kind: "template", templateName }),
+    templateName
+  );
+});
+
 test("Prompt sources yield no derived display name", () => {
   assert.equal(
     derivedProjectDisplayNameBase({ kind: "prompt", text: "deploy a blog" }),
@@ -127,16 +135,16 @@ test("Prompt sources yield no derived display name", () => {
   );
 });
 
-test("Derivation falls back to a readable random name", () => {
+test("Derivation falls back to a readable name", () => {
   assert.match(
     deriveProjectDisplayName({ kind: "prompt", text: "deploy a blog" }),
-    RANDOM_DISPLAY_NAME_RE
+    FALLBACK_DISPLAY_NAME_RE
   );
   assert.match(
     deriveProjectDisplayName(dockerSource("   ")),
-    RANDOM_DISPLAY_NAME_RE
+    FALLBACK_DISPLAY_NAME_RE
   );
-  assert.match(randomProjectDisplayName(), RANDOM_DISPLAY_NAME_RE);
+  assert.match(fallbackProjectDisplayName(), FALLBACK_DISPLAY_NAME_RE);
 });
 
 test("Derivation returns the derived name when the source yields one", () => {
