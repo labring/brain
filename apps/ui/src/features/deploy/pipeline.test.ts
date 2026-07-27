@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import {
   type DeploymentTargetPipelineAdapters,
   type DeploymentTaskCreateInput,
@@ -33,17 +32,6 @@ function testAdapters(overrides?: {
   };
 }
 
-const existingProjects = [
-  {
-    createdAt: "",
-    id: "other-uid",
-    name: "Existing",
-    resourceName: "existing",
-  },
-] satisfies ProjectExplorerProject[];
-
-const DUPLICATE_PROJECT_NAME_ERROR =
-  /A project named "existing" already exists/;
 const MISSING_PROJECT_ID_ERROR = /Could not resolve the current project/;
 const MISSING_CREATED_PROJECT_ID_ERROR =
   /Could not resolve the created project/;
@@ -57,7 +45,6 @@ test("Deployment Target pipeline creates a Docker Deployment Task for a new Proj
       },
     }),
     credentialsReady: true,
-    existingProjects,
     namespace: "ns-admin",
     request: {
       kind: "docker",
@@ -66,10 +53,7 @@ test("Deployment Target pipeline creates a Docker Deployment Task for a new Proj
         env: [],
         image: "ghcr.io/acme/api:1.2",
       },
-      target: newProjectDeploymentTarget(
-        "API Project",
-        "Handles order traffic."
-      ),
+      target: newProjectDeploymentTarget("Handles order traffic."),
     },
   });
 
@@ -84,9 +68,9 @@ test("Deployment Target pipeline creates a Docker Deployment Task for a new Proj
         image: "ghcr.io/acme/api:1.2",
       },
     },
+    // No `displayName`: the server derives the Project name (ADR 0058).
     target: {
       description: "Handles order traffic.",
-      displayName: "API Project",
       kind: "newProject",
     },
   });
@@ -107,7 +91,6 @@ test("Deployment Target pipeline creates a database Deployment Task for an exist
       },
     }),
     credentialsReady: true,
-    existingProjects,
     namespace: "ns-admin",
     request: {
       kind: "database",
@@ -156,7 +139,6 @@ test("Deployment Target pipeline creates a GitHub AI Deployment Task", async () 
       },
     }),
     credentialsReady: true,
-    existingProjects,
     namespace: "ns-admin",
     request: {
       kind: "github",
@@ -166,7 +148,7 @@ test("Deployment Target pipeline creates a GitHub AI Deployment Task", async () 
         name: "web",
         url: "https://github.com/acme/web",
       },
-      target: newProjectDeploymentTarget("web"),
+      target: newProjectDeploymentTarget(),
     },
   });
 
@@ -186,10 +168,7 @@ test("Deployment Target pipeline creates a GitHub AI Deployment Task", async () 
         url: "https://github.com/acme/web",
       },
     },
-    target: {
-      displayName: "web",
-      kind: "newProject",
-    },
+    target: { kind: "newProject" },
   });
   assert.equal(outcome.kind, "github");
   assert.equal(outcome.sourceLabel, "acme/web");
@@ -204,7 +183,6 @@ test("Deployment Target pipeline creates a template Deployment Task", async () =
       },
     }),
     credentialsReady: true,
-    existingProjects,
     namespace: "ns-admin",
     request: {
       args: { storage: "10" },
@@ -240,7 +218,6 @@ test("Deployment Target pipeline rejects template deploys without a Project id",
     runDeploymentTargetPipeline({
       adapters: testAdapters(),
       credentialsReady: true,
-      existingProjects,
       namespace: "ns-admin",
       request: {
         kind: "template",
@@ -267,7 +244,6 @@ test("Deployment Target pipeline rejects new Project deploys without a resolved 
         },
       }),
       credentialsReady: true,
-      existingProjects,
       namespace: "ns-admin",
       request: {
         kind: "docker",
@@ -276,31 +252,9 @@ test("Deployment Target pipeline rejects new Project deploys without a resolved 
           env: [],
           image: "ghcr.io/acme/api:1.2",
         },
-        target: newProjectDeploymentTarget("web"),
+        target: newProjectDeploymentTarget(),
       },
     }),
     MISSING_CREATED_PROJECT_ID_ERROR
-  );
-});
-
-test("Deployment Target pipeline rejects duplicate new Project display names", async () => {
-  await assert.rejects(
-    runDeploymentTargetPipeline({
-      adapters: testAdapters(),
-      credentialsReady: true,
-      existingProjects,
-      namespace: "ns-admin",
-      request: {
-        kind: "github",
-        repository: {
-          fullName: "acme/web",
-          id: "42",
-          name: "web",
-          url: "https://github.com/acme/web",
-        },
-        target: newProjectDeploymentTarget("existing"),
-      },
-    }),
-    DUPLICATE_PROJECT_NAME_ERROR
   );
 });

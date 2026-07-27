@@ -36,33 +36,26 @@ export const PROJECT_CREATOR_SOURCE_LABEL: Record<
 export const DEFAULT_PROJECT_CREATOR_SOURCES: readonly ProjectCreatorSourceKind[] =
   ["github", "docker-image", "database"];
 
+/**
+ * Confirm handlers carry no Project Display Name: the platform derives it from
+ * the Deployment Source when the Project is created (ADR 0058).
+ */
 export interface ProjectCreatorActions {
-  deriveDatabaseProjectDisplayName?: (
-    choice: ProjectCreatorDatabaseChoice
-  ) => string;
-  deriveDockerProjectDisplayName?: (imageRef: string) => string;
-  deriveTemplateProjectDisplayName?: (
-    choice: ProjectCreatorTemplateChoice
-  ) => string;
   onDatabaseConfirm?: (
     settings: DatabaseDeploymentSettings,
-    projectDisplayName: string,
     projectDescription: string
   ) => void | Promise<void>;
   onDockerConfirm?: (
     settings: DockerDeploymentSettings,
-    projectDisplayName: string,
     projectDescription: string
   ) => void | Promise<void>;
   onGithubConfirm?: (
     repo: GithubDeployerRepo,
-    projectDisplayName: string,
     projectDescription: string
   ) => void | Promise<void>;
   onTemplateConfirm?: (
     settings: TemplateDeploymentSettings,
     choice: ProjectCreatorTemplateChoice,
-    projectDisplayName: string,
     projectDescription: string
   ) => void | Promise<void>;
 }
@@ -74,10 +67,6 @@ export interface ProjectCreatorStates {
   projectDescription: string;
   /** Field-level validation message for the Project Description entry. */
   projectDescriptionError: string | null;
-  /** User-facing Project Display Name entered before choosing a creation source. */
-  projectDisplayName: string;
-  /** Field-level validation message for the Project Display Name entry. */
-  projectDisplayNameError: string | null;
   /** `null` shows the three-option column. */
   step: ProjectCreatorSourceKind | null;
 }
@@ -92,9 +81,7 @@ export interface ProjectCreatorValue {
     pick: (kind: ProjectCreatorSourceKind) => void;
     reset: () => void;
     setProjectDescription: (value: string) => void;
-    setProjectDisplayName: (value: string) => void;
     validateProjectDescription: (value?: string) => string | null;
-    validateProjectDisplayName: (value?: string) => string | null;
   } & ProjectCreatorActions;
   meta: {
     databaseOptions: ProjectCreatorDatabaseChoice[];

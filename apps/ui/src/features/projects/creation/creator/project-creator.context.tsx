@@ -41,46 +41,6 @@ const DEFAULT_DATABASE_OPTIONS: ProjectCreatorDatabaseChoice[] = [
   { engine: "redis", id: "redis", label: "Redis" },
 ];
 const PROJECT_DESCRIPTION_MAX_LENGTH = 256;
-const RANDOM_PROJECT_ADJECTIVES = [
-  "bright",
-  "calm",
-  "clever",
-  "cosmic",
-  "dynamic",
-  "fresh",
-  "gentle",
-  "happy",
-  "lively",
-  "lucky",
-  "modern",
-  "nimble",
-  "quiet",
-  "rapid",
-  "smart",
-  "steady",
-  "swift",
-  "vivid",
-] as const;
-const RANDOM_PROJECT_NOUNS = [
-  "atlas",
-  "bridge",
-  "canvas",
-  "cloud",
-  "comet",
-  "garden",
-  "harbor",
-  "kernel",
-  "matrix",
-  "meadow",
-  "orbit",
-  "portal",
-  "signal",
-  "stream",
-  "studio",
-  "summit",
-  "valley",
-  "voyage",
-] as const;
 
 export interface ProjectCreatorRootProps {
   actions?: ProjectCreatorActions;
@@ -95,8 +55,6 @@ export interface ProjectCreatorRootProps {
   dockerDirect?: boolean;
   /** Sources shown on the first Project Creator step. */
   enabledSources?: readonly ProjectCreatorSourceKind[];
-  /** Existing Project Display Names in the current namespace. */
-  existingProjectDisplayNames?: readonly string[];
   /** Wired into the GitHub step’s `GithubDeployer` (authorize + repos + deploy). */
   githubDeployer?: ProjectCreatorGithubDeployerSlot;
   /** Optional initial source step for direct assistant/tool entry paths. */
@@ -117,44 +75,6 @@ export interface ProjectCreatorRootProps {
   templateOptionsLoading?: boolean;
 }
 
-function normalizeProjectCreatorDisplayName(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-function randomProjectWord<const T extends readonly [string, ...string[]]>(
-  words: T
-): T[number] {
-  return words[Math.floor(Math.random() * words.length)] ?? words[0];
-}
-
-function createRandomProjectDisplayName(
-  existingProjectDisplayNames: readonly string[]
-): string {
-  const existing = new Set(
-    existingProjectDisplayNames
-      .map(normalizeProjectCreatorDisplayName)
-      .filter(Boolean)
-  );
-
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const name = `${randomProjectWord(RANDOM_PROJECT_ADJECTIVES)}-${randomProjectWord(RANDOM_PROJECT_NOUNS)}`;
-    if (!existing.has(normalizeProjectCreatorDisplayName(name))) {
-      return name;
-    }
-  }
-
-  for (const adjective of RANDOM_PROJECT_ADJECTIVES) {
-    for (const noun of RANDOM_PROJECT_NOUNS) {
-      const name = `${adjective}-${noun}`;
-      if (!existing.has(normalizeProjectCreatorDisplayName(name))) {
-        return name;
-      }
-    }
-  }
-
-  return `${randomProjectWord(RANDOM_PROJECT_ADJECTIVES)}-${randomProjectWord(RANDOM_PROJECT_NOUNS)}`;
-}
-
 export function ProjectCreatorRoot({
   actions: actionsProp,
   confirmApplying = false,
@@ -163,7 +83,6 @@ export function ProjectCreatorRoot({
   databaseDirect = false,
   dockerDirect = false,
   enabledSources = DEFAULT_PROJECT_CREATOR_SOURCES,
-  existingProjectDisplayNames = [],
   githubDeployer: githubDeployerProp,
   initialStep = null,
   initialTemplateArgs,
@@ -177,12 +96,6 @@ export function ProjectCreatorRoot({
   const [step, setStep] = useState<ProjectCreatorSourceKind | null>(
     initialStep
   );
-  const [projectDisplayName, setProjectDisplayNameState] = useState(() =>
-    createRandomProjectDisplayName(existingProjectDisplayNames)
-  );
-  const [projectDisplayNameError, setProjectDisplayNameError] = useState<
-    string | null
-  >(null);
   const [projectDescription, setProjectDescriptionState] = useState("");
   const [projectDescriptionError, setProjectDescriptionError] = useState<
     string | null
@@ -192,37 +105,6 @@ export function ProjectCreatorRoot({
   useEffect(() => {
     onStepChange?.(step);
   }, [onStepChange, step]);
-
-  const existingDisplayNameSet = useMemo(
-    () =>
-      new Set(
-        existingProjectDisplayNames
-          .map(normalizeProjectCreatorDisplayName)
-          .filter(Boolean)
-      ),
-    [existingProjectDisplayNames]
-  );
-
-  const generateProjectDisplayName = useCallback(
-    () => createRandomProjectDisplayName(existingProjectDisplayNames),
-    [existingProjectDisplayNames]
-  );
-
-  const validateProjectDisplayName = useCallback(
-    (value: string): string | null => {
-      const trimmed = value.trim();
-      if (trimmed === "") {
-        return "Project name is required.";
-      }
-      if (
-        existingDisplayNameSet.has(normalizeProjectCreatorDisplayName(value))
-      ) {
-        return `A project named "${trimmed}" already exists.`;
-      }
-      return null;
-    },
-    [existingDisplayNameSet]
-  );
 
   const validateProjectDescription = useCallback(
     (value: string): string | null => {
@@ -234,31 +116,12 @@ export function ProjectCreatorRoot({
     []
   );
 
-  const setProjectDisplayName = useCallback(
-    (value: string) => {
-      setProjectDisplayNameState(value);
-      setProjectDisplayNameError((current) =>
-        current == null ? null : validateProjectDisplayName(value)
-      );
-    },
-    [validateProjectDisplayName]
-  );
-
   const setProjectDescription = useCallback(
     (value: string) => {
       setProjectDescriptionState(value);
       setProjectDescriptionError(validateProjectDescription(value));
     },
     [validateProjectDescription]
-  );
-
-  const validateAndSetProjectDisplayNameError = useCallback(
-    (value?: string): string | null => {
-      const error = validateProjectDisplayName(value ?? projectDisplayName);
-      setProjectDisplayNameError(error);
-      return error;
-    },
-    [projectDisplayName, validateProjectDisplayName]
   );
 
   const validateAndSetProjectDescriptionError = useCallback(
@@ -272,49 +135,13 @@ export function ProjectCreatorRoot({
 
   const pick = useCallback(
     (kind: ProjectCreatorSourceKind) => {
-      let displayNameError =
-        validateAndSetProjectDisplayNameError(projectDisplayName);
-      if (displayNameError != null) {
-        const nextProjectDisplayName = generateProjectDisplayName();
-        setProjectDisplayNameState(nextProjectDisplayName);
-        displayNameError = validateAndSetProjectDisplayNameError(
-          nextProjectDisplayName
-        );
-      }
-      const descriptionError =
-        validateAndSetProjectDescriptionError(projectDescription);
-      if (displayNameError != null || descriptionError != null) {
+      if (validateAndSetProjectDescriptionError(projectDescription) != null) {
         return;
       }
       setStep(kind);
     },
-    [
-      generateProjectDisplayName,
-      projectDescription,
-      projectDisplayName,
-      validateAndSetProjectDescriptionError,
-      validateAndSetProjectDisplayNameError,
-    ]
+    [projectDescription, validateAndSetProjectDescriptionError]
   );
-
-  const [displayNameErrorInputs, setDisplayNameErrorInputs] = useState({
-    validate: validateProjectDisplayName,
-    value: projectDisplayName,
-  });
-  if (
-    displayNameErrorInputs.value !== projectDisplayName ||
-    displayNameErrorInputs.validate !== validateProjectDisplayName
-  ) {
-    setDisplayNameErrorInputs({
-      validate: validateProjectDisplayName,
-      value: projectDisplayName,
-    });
-    if (projectDisplayNameError != null) {
-      setProjectDisplayNameError(
-        validateProjectDisplayName(projectDisplayName)
-      );
-    }
-  }
 
   const [descriptionErrorInputs, setDescriptionErrorInputs] = useState({
     validate: validateProjectDescription,
@@ -347,8 +174,6 @@ export function ProjectCreatorRoot({
     () => ({
       states: {
         confirmApplying,
-        projectDisplayName,
-        projectDisplayNameError,
         projectDescription,
         projectDescriptionError,
         step,
@@ -357,15 +182,7 @@ export function ProjectCreatorRoot({
         pick,
         reset,
         setProjectDescription,
-        setProjectDisplayName,
         validateProjectDescription: validateAndSetProjectDescriptionError,
-        validateProjectDisplayName: validateAndSetProjectDisplayNameError,
-        deriveDatabaseProjectDisplayName:
-          actionsProp?.deriveDatabaseProjectDisplayName,
-        deriveDockerProjectDisplayName:
-          actionsProp?.deriveDockerProjectDisplayName,
-        deriveTemplateProjectDisplayName:
-          actionsProp?.deriveTemplateProjectDisplayName,
         onGithubConfirm: actionsProp?.onGithubConfirm,
         onDockerConfirm: actionsProp?.onDockerConfirm,
         onDatabaseConfirm: actionsProp?.onDatabaseConfirm,
@@ -398,18 +215,14 @@ export function ProjectCreatorRoot({
       githubDeployerProp,
       initialTemplateArgs,
       initialTemplateName,
-      projectDisplayName,
-      projectDisplayNameError,
       projectDescription,
       projectDescriptionError,
       setProjectDescription,
-      setProjectDisplayName,
       templateDirect,
       templateOptions,
       templateOptionsError,
       templateOptionsLoading,
       validateAndSetProjectDescriptionError,
-      validateAndSetProjectDisplayNameError,
     ]
   );
 

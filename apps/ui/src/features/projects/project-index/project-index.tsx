@@ -100,7 +100,6 @@ export function ProjectIndex() {
     onCreationPaneSourceChange,
     openCreationPane: prepareCreationPane,
   } = useProjectCreator({
-    existingProjects: states.projects,
     kubeconfig,
     namespace: ns,
     onProjectCreated,

@@ -23,6 +23,7 @@ import {
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
 import { TemplateInputValidationError } from "@/features/deploy/template-renderer";
+import { deriveProjectDisplayName } from "@/features/projects/derived-project-display-name";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -46,7 +47,12 @@ import {
 import type { DevboxInfo } from "@/lib/devbox/types";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
-import { createProject, getProject } from "@/lib/project-persistence/projects";
+import {
+  createProject,
+  createProjectWithDerivedDisplayName,
+  getProject,
+  ProjectPersistenceError,
+} from "@/lib/project-persistence/projects";
 
 import {
   blockingInputsFromDeploymentPlan,
@@ -145,6 +151,11 @@ import {
   upsertResultResourceCard,
 } from "./timeline";
 import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
+import type {
+  DeploymentTaskSource,
+  DeploymentTaskTarget,
+  DeployTaskTargetResolution,
+} from "./types";
 
 const DEPLOY_DEVBOX_NAME_PREFIX = "sealai-deploy";
 const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
@@ -972,7 +983,7 @@ function isDevboxSdkPendingError(error: unknown): error is DevboxApiError {
 
 type ResolvableDeploymentTaskTarget = Pick<
   DeployTaskRow,
-  "id" | "namespace" | "projectId" | "projectName" | "target"
+  "id" | "namespace" | "projectId" | "projectName" | "source" | "target"
 >;
 
 function deployFailureDetails(input: {
@@ -1051,11 +1062,21 @@ export async function resolveDeploymentTaskTarget(
   }
 
   if (task.target.kind === "newProject") {
-    const project = await createProject({
-      description: task.target.description,
-      displayName: task.target.displayName,
-      namespace: task.namespace,
-    });
+    const displayName = task.target.displayName?.trim();
+    // Two channels, no third mode (ADR 0058): an absent name is derived from
+    // the Deployment Source and suffixed on collision; a supplied one is used
+    // verbatim and a collision surfaces as a conflict.
+    const project = displayName
+      ? await createProject({
+          description: task.target.description,
+          displayName,
+          namespace: task.namespace,
+        })
+      : await createProjectWithDerivedDisplayName({
+          derivedDisplayName: deriveProjectDisplayName(task.source),
+          description: task.target.description,
+          namespace: task.namespace,
+        });
     return {
       createdProject: true,
       projectId: project.id,
@@ -1073,6 +1094,49 @@ export async function resolveDeploymentTaskTarget(
     projectId: project.id,
     projectName,
   };
+}
+
+/**
+ * Creation-time wrapper shared by every entry point that opens a Deployment
+ * Task, so a caller-chosen Project Display Name that is already taken becomes a
+ * reportable conflict rather than an unhandled failure (ADR 0058).
+ */
+export async function resolveDeployTaskTargetForCreate(input: {
+  namespace: string;
+  source: DeploymentTaskSource;
+  target: DeploymentTaskTarget;
+}): Promise<DeployTaskTargetResolution> {
+  const explicitDisplayName =
+    input.target.kind === "newProject"
+      ? input.target.displayName?.trim()
+      : undefined;
+  try {
+    const resolved = await resolveDeploymentTaskTarget({
+      id: "",
+      namespace: input.namespace,
+      projectId: null,
+      projectName: null,
+      source: input.source,
+      target: input.target,
+    });
+    return {
+      kind: "resolved",
+      projectId: resolved.projectId,
+      projectName: resolved.projectName,
+    };
+  } catch (error) {
+    if (
+      explicitDisplayName &&
+      error instanceof ProjectPersistenceError &&
+      error.code === "conflict"
+    ) {
+      return {
+        displayName: explicitDisplayName,
+        kind: "project-name-conflict",
+      };
+    }
+    throw error;
+  }
 }
 
 function databaseChoice(databaseId: string): DatabaseDeploymentChoice {

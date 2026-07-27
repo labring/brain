@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -35,9 +36,12 @@ export const projects = ns.table(
       columns: [table.namespace, table.id],
       name: "projects_pk",
     }),
-    uniqueIndex("projects_namespace_display_name_idx").on(
+    // Uniqueness authority for Project Display Names (ADR 0058). Humans read
+    // `nginx` and `Nginx` as the same row, so the database — not a pre-read
+    // that concurrent creates can race — enforces case-insensitive uniqueness.
+    uniqueIndex("projects_namespace_lower_display_name_idx").on(
       table.namespace,
-      table.displayName
+      sql`lower(${table.displayName})`
     ),
     index("projects_updated_at_idx").on(table.updatedAt),
   ]

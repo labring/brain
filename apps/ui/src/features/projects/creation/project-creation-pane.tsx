@@ -77,7 +77,6 @@ export function ProjectCreationPane({
     | "confirmApplying"
     | "databaseOptions"
     | "enabledSources"
-    | "existingProjectDisplayNames"
     | "githubDeployer"
     | "initialTemplateArgs"
     | "initialTemplateName"

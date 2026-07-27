@@ -4,7 +4,6 @@ import {
   ProjectSourceDockerIcon,
   ProjectSourceGithubIcon,
 } from "@workspace/ui/assets/project-source-icons";
-import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import { Field, FieldError, FieldLabel } from "@workspace/ui/components/field";
 import { cn } from "@workspace/ui/lib/utils";
@@ -46,27 +45,6 @@ const ICON: Record<
   database: Database,
   template: PanelsTopLeft,
 };
-
-export function ProjectCreatorProjectNameField() {
-  const { actions, states } = useProjectCreator(
-    "ProjectCreator.ProjectNameField"
-  );
-
-  return (
-    <AppInputField
-      autoComplete="off"
-      error={states.projectDisplayNameError}
-      id="project-creator-display-name"
-      inputClassName="border-input bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:border-blue-500 focus-visible:ring-[1px] focus-visible:ring-blue-500/50 dark:bg-transparent"
-      label="Project Name"
-      onChange={(event) =>
-        actions.setProjectDisplayName(event.currentTarget.value)
-      }
-      placeholder="Name"
-      value={states.projectDisplayName}
-    />
-  );
-}
 
 export function ProjectCreatorProjectDescriptionField() {
   const { actions, states } = useProjectCreator(

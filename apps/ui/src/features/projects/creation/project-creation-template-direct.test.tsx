@@ -42,10 +42,7 @@ const FLOWISE_RE = /Flowise/;
 test("template URL intent prefills parameters and deploys automatically", async () => {
   const dom = installTestDom();
   const previousAct = setActEnvironment(true);
-  const confirmations: Array<{
-    projectDisplayName: string;
-    settings: TemplateDeploymentSettings;
-  }> = [];
+  const confirmations: TemplateDeploymentSettings[] = [];
   let rendered: ReturnType<typeof render> | undefined;
   try {
     await actAndDrain(() => {
@@ -53,9 +50,8 @@ test("template URL intent prefills parameters and deploys automatically", async 
         <ProjectCreationPane
           creatorRootProps={{
             actions: {
-              deriveTemplateProjectDisplayName: () => "Flowise-2",
-              onTemplateConfirm: (settings, _choice, projectDisplayName) => {
-                confirmations.push({ projectDisplayName, settings });
+              onTemplateConfirm: (settings) => {
+                confirmations.push(settings);
               },
             },
             databaseOptions: [],
@@ -85,13 +81,12 @@ test("template URL intent prefills parameters and deploys automatically", async 
       "8080"
     );
     assert.equal(confirmations.length, 1);
-    assert.equal(confirmations[0]?.projectDisplayName, "Flowise-2");
-    assert.equal(confirmations[0]?.settings.templateName, "flowise");
-    assert.deepEqual(confirmations[0]?.settings.args, {
+    assert.equal(confirmations[0]?.templateName, "flowise");
+    assert.deepEqual(confirmations[0]?.args, {
       api_token: "",
       port: "8080",
     });
-    assert.deepEqual(confirmations[0]?.settings.sensitiveKeys, ["api_token"]);
+    assert.deepEqual(confirmations[0]?.sensitiveKeys, ["api_token"]);
   } finally {
     await actAndDrain(() => rendered?.unmount());
     restoreActEnvironment(previousAct);
