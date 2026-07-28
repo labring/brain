@@ -267,7 +267,8 @@ function publicAiBlockingInputType(
 
 function publicAiBlockingInput(
   value: unknown,
-  publicKey: string
+  publicKey: string,
+  options: { trustedMetadata: boolean }
 ): DeployTaskBlockingInput | null {
   const input = recordValue(value);
   const sourceId = typeof input?.id === "string" ? input.id : null;
@@ -287,10 +288,14 @@ function publicAiBlockingInput(
     ["boolean", "number"].includes(input.valueType.trim().toLowerCase())
       ? input.valueType.trim().toLowerCase()
       : null;
+  const sourceLabel = typeof input.label === "string" ? input.label.trim() : "";
   return {
     id: publicKey,
     key: publicKey,
-    label: "Configuration value",
+    label:
+      options.trustedMetadata && sourceLabel !== ""
+        ? sourceLabel
+        : "Configuration value",
     required: typeof input.required === "boolean" ? input.required : true,
     type: sensitive ? "secret" : sourceType,
     ...(sensitive ? { sensitive: true } : {}),
@@ -306,7 +311,10 @@ function publicAiBlockingInputKeys(
 
 export function publicDeployTaskBlockingInputs(
   blockingInputs: DeployTaskBlockingInput[],
-  options: { runner: DeploymentTaskRunner }
+  options: {
+    runner: DeploymentTaskRunner;
+    trustedMetadata?: boolean;
+  }
 ): DeployTaskBlockingInput[] {
   if (options.runner.kind !== "ai") {
     return blockingInputs;
@@ -317,7 +325,9 @@ export function publicDeployTaskBlockingInputs(
     if (publicKey == null) {
       return [];
     }
-    const publicInput = publicAiBlockingInput(input, publicKey);
+    const publicInput = publicAiBlockingInput(input, publicKey, {
+      trustedMetadata: options.trustedMetadata === true,
+    });
     return publicInput == null ? [] : [publicInput];
   });
 }

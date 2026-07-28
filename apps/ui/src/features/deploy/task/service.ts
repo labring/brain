@@ -26,6 +26,7 @@ import {
   publicDeployTaskTimelineSnapshot,
 } from "./public-artifact-summary";
 import {
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskRunner,
   type DeployTaskEventRow,
   type DeployTaskMessageRow,
@@ -79,6 +80,9 @@ export function toDeployTaskDTO(row: DeployTaskRow): DeployTaskDTO {
     }),
     blockingInputs: publicDeployTaskBlockingInputs(row.blockingInputs, {
       runner: row.runner,
+      trustedMetadata:
+        row.artifactSummary.publicProjectionVersion ===
+        CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
     }),
     cancelRequestedAt: nowIso(row.cancelRequestedAt),
     canvasProjection: row.runner.kind === "ai" ? {} : row.canvasProjection,

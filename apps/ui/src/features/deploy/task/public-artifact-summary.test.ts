@@ -204,6 +204,42 @@ test("stamped public AI blocking inputs keep generated metadata fail-closed", ()
   assert.equal(JSON.stringify(blockingInputs).includes(legacySecret), false);
 });
 
+test("trusted public AI blocking inputs preserve labels without exposing values or canonical keys", () => {
+  const secretValue = "private-smtp-password";
+  const blockingInputs = publicDeployTaskBlockingInputs(
+    [
+      {
+        defaultValue: secretValue,
+        description: "Password used to authenticate with the SMTP server.",
+        id: "smtp_password",
+        key: "smtp_password",
+        label: "SMTP password",
+        options: [secretValue],
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    {
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      trustedMetadata: true,
+    }
+  );
+
+  assert.deepEqual(blockingInputs, [
+    {
+      id: "configuration-1",
+      key: "configuration-1",
+      label: "SMTP password",
+      required: true,
+      sensitive: true,
+      type: "secret",
+    },
+  ]);
+  assert.equal(JSON.stringify(blockingInputs).includes(secretValue), false);
+  assert.equal(JSON.stringify(blockingInputs).includes("smtp_password"), false);
+});
+
 test("legacy public AI inputs use opaque aliases", () => {
   const legacySecret = "abc";
   const summary = publicDeployTaskArtifactSummary(
