@@ -567,8 +567,9 @@ async function runChatPipeline(input: {
 
     // Complete every fallible runtime preflight before committing an approval
     // or browser-tool continuation. A failed preflight must remain retryable.
-    // The toolset's deploy-task actor stays the per-region crName until
-    // deployment credential bindings are re-keyed in their own slice.
+    // The toolset's deploy-task actor stays the per-region crName: chat
+    // deploy tools perform only namespace-shared actions, which record the
+    // kubeconfig-verified identity (AIM-154 keeps them token-free).
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
       kubeconfig,
