@@ -25,6 +25,12 @@ export interface GithubAuthorizationSessionInput {
   state: string;
 }
 
+/**
+ * The state row binds `(userUid, namespace, generation, expiry)` before the
+ * browser redirect; the callback carries no kubeconfig and trusts only this
+ * binding (ADR-0059). Under generation 2 the `workspace_actor` column carries
+ * the uid. Legacy pending rows expire naturally — never re-keyed.
+ */
 export async function createGithubAuthorizationSession(
   input: GithubAuthorizationSessionInput
 ): Promise<void> {
@@ -39,7 +45,7 @@ export async function createGithubAuthorizationSession(
       ownerIdentityVersion: input.owner.ownerIdentityVersion,
       returnPath: input.returnPath,
       state: input.state,
-      workspaceActor: input.owner.workspaceActor.trim(),
+      workspaceActor: input.owner.userUid.trim(),
     });
   });
 }

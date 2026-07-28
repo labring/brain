@@ -22,6 +22,7 @@ import {
 import {
   CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
   type GithubConnectionOwnerIdentity,
+  LEGACY_GITHUB_OWNER_IDENTITY_VERSION,
 } from "./owner-identity";
 import {
   decryptGithubUserToken,
@@ -153,10 +154,10 @@ export async function upsertGithubOauthConnectionInTransaction(
   input: GithubOauthConnectionInput
 ): Promise<GithubConnectionDTO> {
   const namespace = normalizeAssistantNamespace(input.owner.namespace);
-  const workspaceActor = input.owner.workspaceActor.trim();
+  const userUid = input.owner.userUid.trim();
   const githubLogin = input.githubLogin.trim();
   if (
-    workspaceActor === "" ||
+    userUid === "" ||
     input.owner.ownerIdentityVersion !== CURRENT_GITHUB_OWNER_IDENTITY_VERSION
   ) {
     throw new Error("Current GitHub connection owner identity is required.");
@@ -177,7 +178,7 @@ export async function upsertGithubOauthConnectionInTransaction(
       scope: input.token.scope,
       tokenType: input.token.tokenType,
       updatedAt: now,
-      workspaceActor,
+      workspaceActor: userUid,
     })
     .onConflictDoUpdate({
       set: {
@@ -200,7 +201,7 @@ export async function upsertGithubOauthConnectionInTransaction(
   return toOauthConnectionDTO(row);
 }
 
-export async function getGithubConnectionStatusForWorkspaceActor(
+export async function getGithubConnectionStatusForOwner(
   input: GithubConnectionOwnerIdentity
 ): Promise<GithubConnectionDTO | null> {
   const [row] = await getAssistantDb()
@@ -211,7 +212,7 @@ export async function getGithubConnectionStatusForWorkspaceActor(
   return row == null ? null : toOauthConnectionDTO(row);
 }
 
-export async function revokeGithubConnectionForWorkspaceActor(
+export async function revokeGithubConnectionForOwner(
   input: GithubConnectionOwnerIdentity
 ): Promise<void> {
   await getAssistantDb()
@@ -219,7 +220,81 @@ export async function revokeGithubConnectionForWorkspaceActor(
     .where(githubOauthOwnerWhere(input));
 }
 
-export function getGithubOAuthTokenForWorkspaceActor(
+const CURRENT_OWNER_UNIQUE_INDEX =
+  "github_oauth_connections_current_owner_unique_idx";
+
+function isCurrentOwnerUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current != null; depth += 1) {
+    if (typeof current !== "object") {
+      return false;
+    }
+    const record = current as {
+      cause?: unknown;
+      code?: unknown;
+      message?: unknown;
+    };
+    if (
+      record.code === "23505" ||
+      (typeof record.message === "string" &&
+        record.message.includes(CURRENT_OWNER_UNIQUE_INDEX))
+    ) {
+      return true;
+    }
+    current = record.cause;
+  }
+  return false;
+}
+
+/**
+ * Lazy re-key (ADR-0059): re-keys the verified actor's legacy generation-1
+ * crName row to the proven uid and upgrades it to the current generation in
+ * one idempotent UPDATE. A unique-index conflict means the user already
+ * reauthorized under the uid — the new authorization wins and the legacy row
+ * stays inert (invisible to uid-keyed reads).
+ */
+export async function adoptLegacyGithubConnectionForOwner(input: {
+  legacyWorkspaceActor: string;
+  owner: GithubConnectionOwnerIdentity;
+}): Promise<void> {
+  const legacyWorkspaceActor = input.legacyWorkspaceActor.trim();
+  const userUid = input.owner.userUid.trim();
+  if (
+    legacyWorkspaceActor === "" ||
+    userUid === "" ||
+    input.owner.ownerIdentityVersion !== CURRENT_GITHUB_OWNER_IDENTITY_VERSION
+  ) {
+    throw new Error("Current GitHub connection owner identity is required.");
+  }
+  try {
+    await getAssistantDb()
+      .update(githubOauthConnections)
+      .set({
+        ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+        updatedAt: new Date(),
+        workspaceActor: userUid,
+      })
+      .where(
+        and(
+          eq(
+            githubOauthConnections.namespace,
+            normalizeAssistantNamespace(input.owner.namespace)
+          ),
+          eq(githubOauthConnections.workspaceActor, legacyWorkspaceActor),
+          eq(
+            githubOauthConnections.ownerIdentityVersion,
+            LEGACY_GITHUB_OWNER_IDENTITY_VERSION
+          )
+        )
+      );
+  } catch (error) {
+    if (!isCurrentOwnerUniqueViolation(error)) {
+      throw error;
+    }
+  }
+}
+
+export function getGithubOAuthTokenForOwner(
   input: GithubConnectionOwnerIdentity
 ): Promise<string | null> {
   return materializeGithubOAuthToken(githubOauthOwnerWhere(input));
@@ -234,7 +309,7 @@ export function getGithubOAuthTokenForDeploymentBinding(input: {
   const owner = {
     namespace: input.namespace,
     ownerIdentityVersion: input.ownerIdentityVersion,
-    workspaceActor: input.credentialOwner,
+    userUid: input.credentialOwner,
   } satisfies GithubConnectionOwnerIdentity;
   return materializeGithubOAuthToken(
     and(
@@ -250,7 +325,7 @@ function githubOauthOwnerWhere(owner: GithubConnectionOwnerIdentity) {
       githubOauthConnections.namespace,
       normalizeAssistantNamespace(owner.namespace)
     ),
-    eq(githubOauthConnections.workspaceActor, owner.workspaceActor.trim()),
+    eq(githubOauthConnections.workspaceActor, owner.userUid.trim()),
     eq(githubOauthConnections.ownerIdentityVersion, owner.ownerIdentityVersion)
   );
 }
@@ -333,10 +408,10 @@ async function listGithubReposWithToken(
   return out;
 }
 
-export async function listGithubReposForWorkspaceActor(
+export async function listGithubReposForOwner(
   owner: GithubConnectionOwnerIdentity
 ): Promise<GithubRepoDTO[]> {
-  const token = await getGithubOAuthTokenForWorkspaceActor(owner);
+  const token = await getGithubOAuthTokenForOwner(owner);
   if (token == null) {
     throw new Error("GitHub OAuth connection is not authorized.");
   }

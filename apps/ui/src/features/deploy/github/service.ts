@@ -184,7 +184,8 @@ export const completeOAuthAuthorization: GithubOAuthCallbackComplete = async (
         owner: {
           namespace: authorization.namespace,
           ownerIdentityVersion: authorization.ownerIdentityVersion,
-          workspaceActor: authorization.workspaceActor,
+          // Generation-2 session rows bind the uid in `workspace_actor`.
+          userUid: authorization.workspaceActor,
         },
         token,
       });

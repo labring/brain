@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getGithubConnectionStatusForWorkspaceActor } from "@/features/deploy/github/connection-service";
+import { getGithubConnectionStatusForOwner } from "@/features/deploy/github/connection-service";
 import { CURRENT_GITHUB_OWNER_IDENTITY_VERSION } from "@/features/deploy/github/owner-identity";
 import {
   deployTaskRequestParams,
@@ -74,10 +74,14 @@ async function resolveCredentialBinding(input: {
       ),
     };
   }
-  const connection = await getGithubConnectionStatusForWorkspaceActor({
+  // Deployment task creation still authenticates only the crName; a crName
+  // can never equal a generation-2 uid owner key (the formats are disjoint,
+  // ADR-0059), so GitHub-source creation fails closed here until Deployment
+  // Credential Bindings are re-keyed from the verified uid.
+  const connection = await getGithubConnectionStatusForOwner({
     namespace: input.namespace,
     ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-    workspaceActor: input.creatingActor,
+    userUid: input.creatingActor,
   });
   if (connection == null) {
     return {

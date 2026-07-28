@@ -41,7 +41,7 @@ describe("deployment task runner credential binding", () => {
         connectionRef: "connection-alice",
         credentialOwner: "alice-cr",
         namespace: "shared-workspace",
-        ownerIdentityVersion: 1,
+        ownerIdentityVersion: 2,
       },
     ]);
   });
