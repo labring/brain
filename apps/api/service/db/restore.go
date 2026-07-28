@@ -21,6 +21,11 @@ import (
 
 var dnsStyleDBNamePattern = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
 
+// restoredConnectionSecretManagedByValue is the app.kubernetes.io/managed-by
+// value written onto restored connection secrets, and the value
+// requireOwnedConnectionSecret demands before overwriting one.
+const restoredConnectionSecretManagedByValue = "kubeblocks"
+
 type RestoreDBOptions struct {
 	BackupName      string
 	BackupNamespace string
@@ -181,12 +186,29 @@ func ensureRestoredConnectionSecret(ctx context.Context, client dynamic.Interfac
 	if err != nil {
 		return fmt.Errorf("failed to get existing restored DB Service connection secret: %w", err)
 	}
-	if instance := strings.TrimSpace(existing.GetLabels()["app.kubernetes.io/instance"]); instance != "" && instance != restoredName {
-		return fmt.Errorf("restored DB Service connection secret %s already belongs to DB Service %s", targetSecret.GetName(), instance)
+	if err := requireOwnedConnectionSecret(existing, restoredName); err != nil {
+		return err
 	}
 	targetSecret.SetResourceVersion(existing.GetResourceVersion())
 	if _, err := secrets.Update(ctx, targetSecret, metav1.UpdateOptions{}); err != nil {
 		return fmt.Errorf("failed to update restored DB Service connection secret: %w", err)
+	}
+	return nil
+}
+
+// requireOwnedConnectionSecret gates the overwrite of an existing connection
+// secret on positive proof of ownership: the secret must carry exactly the
+// labels this restore writes. Missing, empty, or foreign labels mean the name
+// belongs to someone else, so the secret is left untouched.
+func requireOwnedConnectionSecret(existing *unstructured.Unstructured, restoredName string) error {
+	labels := existing.GetLabels()
+	instance := strings.TrimSpace(labels[orchestration.DBProviderInstanceLabel])
+	managedBy := strings.TrimSpace(labels[orchestration.DBProviderManagedByLabel])
+	if instance != restoredName || managedBy != restoredConnectionSecretManagedByValue {
+		return fmt.Errorf("restored DB Service connection secret %s is not owned by DB Service %s: %w",
+			existing.GetName(),
+			restoredName,
+			apierrors.NewAlreadyExists(schema.GroupResource{Resource: coreSecretGVR.Resource}, existing.GetName()))
 	}
 	return nil
 }
@@ -219,8 +241,8 @@ func buildRestoredConnectionSecret(sourceSecret *unstructured.Unstructured, rest
 	for key, value := range sourceSecret.GetLabels() {
 		labels[key] = value
 	}
-	labels["app.kubernetes.io/instance"] = restoredName
-	labels["app.kubernetes.io/managed-by"] = "kubeblocks"
+	labels[orchestration.DBProviderInstanceLabel] = restoredName
+	labels[orchestration.DBProviderManagedByLabel] = restoredConnectionSecretManagedByValue
 	labels["app.kubernetes.io/name"] = profile.ComponentName
 	labels["apps.kubeblocks.io/cluster-type"] = profile.ClusterDefinition
 

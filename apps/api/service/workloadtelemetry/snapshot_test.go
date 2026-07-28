@@ -3,8 +3,11 @@ package workloadtelemetry
 import (
 	"context"
 	"errors"
+	"regexp"
 	"testing"
 	"time"
+
+	metricssvc "sealos/api/service/metrics"
 )
 
 type fakeInstantQuerier struct {
@@ -29,21 +32,68 @@ func (f fakeDBResolver) ResolveDBEngine(_ context.Context, _ string, namespace s
 	return engine, nil
 }
 
-// fakeAPAuthorizer authorizes only the "namespace/name" workloads it is seeded with,
+// fakeAPResolver resolves only the "namespace/name" workloads it is seeded with,
 // standing in for the RBAC-enforcing GET that ClusterAPResolver performs in production.
-type fakeAPAuthorizer map[string]bool
+type fakeAPResolver map[string]metricssvc.APWorkloadKind
 
-func (f fakeAPAuthorizer) AuthorizeAPWorkload(_ context.Context, _ string, namespace string, name string) error {
-	if f[namespace+"/"+name] {
-		return nil
+func (f fakeAPResolver) ResolveAPWorkloadKind(_ context.Context, _ string, namespace string, name string) (metricssvc.APWorkloadKind, error) {
+	kind, ok := f[namespace+"/"+name]
+	if !ok {
+		return "", ErrInvalidTarget
 	}
-	return ErrInvalidTarget
+	return kind, nil
+}
+
+// podMatcherPatterns extracts every pod=~"..." pattern from a PromQL query.
+func podMatcherPatterns(t *testing.T, query string) []string {
+	t.Helper()
+	matches := regexp.MustCompile(`pod=~"([^"]+)"`).FindAllStringSubmatch(query, -1)
+	if len(matches) == 0 {
+		t.Fatalf("query has no pod matcher: %s", query)
+	}
+	patterns := make([]string, 0, len(matches))
+	for _, m := range matches {
+		patterns = append(patterns, m[1])
+	}
+	return patterns
+}
+
+// assertPodMatcherIsolation checks every pod matcher in query against pod names
+// the way Prometheus does (fully anchored): all of hit must match, none of miss may.
+func assertPodMatcherIsolation(t *testing.T, query string, hit []string, miss []string) {
+	t.Helper()
+	for _, pattern := range podMatcherPatterns(t, query) {
+		re, err := regexp.Compile("^(?:" + pattern + ")$")
+		if err != nil {
+			t.Fatalf("pod pattern %q does not compile: %v", pattern, err)
+		}
+		for _, pod := range hit {
+			if !re.MatchString(pod) {
+				t.Errorf("pod pattern %q must match %q", pattern, pod)
+			}
+		}
+		for _, pod := range miss {
+			if re.MatchString(pod) {
+				t.Errorf("pod pattern %q must not match %q", pattern, pod)
+			}
+		}
+	}
+}
+
+// recordingInstantQuerier captures the query sent for each metric key.
+type recordingInstantQuerier struct {
+	queries map[MetricKey]string
+}
+
+func (r *recordingInstantQuerier) QueryInstant(_ context.Context, req InstantQuery) (InstantSample, error) {
+	r.queries[req.Key] = req.Query
+	return InstantSample{Value: 1}, nil
 }
 
 func TestSnapshotReturnsOneItemPerTargetWithProductMetricKeys(t *testing.T) {
 	sampledAt := time.Date(2026, 5, 18, 10, 30, 0, 0, time.UTC)
 	service := NewService(ServiceOptions{
-		APAuthorizer: fakeAPAuthorizer{"project-a/web": true},
+		APResolver:   fakeAPResolver{"project-a/web": metricssvc.APWorkloadDeployment},
 		DBResolver:   fakeDBResolver{"project-a/pg": DBPostgres},
 		Querier: fakeInstantQuerier{samples: map[string]InstantSample{
 			"ap:web:cpu":    {SampledAt: sampledAt, Value: 42.25},
@@ -88,7 +138,7 @@ func TestSnapshotReturnsOneItemPerTargetWithProductMetricKeys(t *testing.T) {
 func TestSnapshotKeepsMetricAndTargetFailuresLocal(t *testing.T) {
 	sampledAt := time.Date(2026, 5, 18, 11, 0, 0, 0, time.UTC)
 	service := NewService(ServiceOptions{
-		APAuthorizer: fakeAPAuthorizer{"project-a/web": true},
+		APResolver:   fakeAPResolver{"project-a/web": metricssvc.APWorkloadDeployment},
 		DBResolver:   fakeDBResolver{"project-a/pg": DBPostgres},
 		Querier: fakeInstantQuerier{samples: map[string]InstantSample{
 			"ap:web:cpu": {SampledAt: sampledAt, Value: 51},
@@ -125,7 +175,7 @@ func TestSnapshotKeepsMetricAndTargetFailuresLocal(t *testing.T) {
 
 func TestSnapshotDeniesUnauthorizedAPWorkload(t *testing.T) {
 	service := NewService(ServiceOptions{
-		APAuthorizer: fakeAPAuthorizer{},
+		APResolver: fakeAPResolver{},
 		Querier: fakeInstantQuerier{samples: map[string]InstantSample{
 			"ap:web:cpu":    {Value: 99},
 			"ap:web:memory": {Value: 99},
@@ -156,5 +206,69 @@ func TestSnapshotRejectsEmptyTargets(t *testing.T) {
 	_, err := service.Snapshot(context.Background(), "Bearer encoded", nil)
 	if !errors.Is(err, ErrEmptyTargets) {
 		t.Fatalf("Snapshot error = %v, want ErrEmptyTargets", err)
+	}
+}
+
+// Regression for labring/sealos-private#8: AP queries must keep the full
+// workload name so same-prefix siblings (billing-api vs billing-worker) are
+// never aggregated together, across every replica and controller kind.
+func TestSnapshotAPQueriesIsolateSamePrefixWorkloads(t *testing.T) {
+	cases := []struct {
+		name string
+		kind metricssvc.APWorkloadKind
+		hit  []string
+		miss []string
+	}{
+		{
+			name: "deployment replicas and rollouts",
+			kind: metricssvc.APWorkloadDeployment,
+			hit: []string{
+				"billing-api-7d9f8b6c4-k2vq8",
+				"billing-api-7d9f8b6c4-m4xz2",
+				"billing-api-5b6d9c7f4-p6njw",
+			},
+			miss: []string{
+				"billing-api",
+				"billing-worker-5c4b8d9f6-x2ab1",
+				"billing-api-web-6f7d8b9c4-q2wz8",
+				"billing-api-0",
+			},
+		},
+		{
+			name: "statefulset ordinals",
+			kind: metricssvc.APWorkloadStatefulSet,
+			hit:  []string{"billing-api-0", "billing-api-1", "billing-api-12"},
+			miss: []string{
+				"billing-api",
+				"billing-worker-0",
+				"billing-api-web-0",
+				"billing-api-7d9f8b6c4-k2vq8",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			querier := &recordingInstantQuerier{queries: make(map[MetricKey]string)}
+			service := NewService(ServiceOptions{
+				APResolver: fakeAPResolver{"project-a/billing-api": tc.kind},
+				Querier:    querier,
+			})
+
+			got, err := service.Snapshot(context.Background(), "Bearer encoded", []Target{
+				{Kind: WorkloadKindAP, Namespace: "project-a", Name: "billing-api"},
+			})
+			if err != nil {
+				t.Fatalf("Snapshot returned error: %v", err)
+			}
+			if item := got.Items[0]; item.Error != nil {
+				t.Fatalf("item error = %#v, want nil", item.Error)
+			}
+			if len(querier.queries) != 2 {
+				t.Fatalf("recorded queries = %#v, want cpu and memory", querier.queries)
+			}
+			for _, query := range querier.queries {
+				assertPodMatcherIsolation(t, query, tc.hit, tc.miss)
+			}
+		})
 	}
 }

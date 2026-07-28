@@ -34,6 +34,24 @@ const ACTIVE_DEPLOYMENT_TASK_PROJECTION_STATUS_SET = new Set<DeployTaskStatus>(
 const PROJECTABLE_DEPLOYMENT_TASK_STATUS_SET = new Set<DeployTaskStatus>(
   PROJECTABLE_DEPLOYMENT_TASK_STATUSES
 );
+/**
+ * Progression tiers for breaking updatedAt ties. The transition table
+ * (ADR 0037) is monotonic across tiers — queued is never re-entered,
+ * applying only exits to a terminal status, terminal statuses never exit —
+ * while blocked and running legally oscillate, so they share a tier.
+ */
+const DEPLOYMENT_TASK_PROJECTION_STATUS_RANK: Record<
+  DeploymentTaskProjectionStatus,
+  number
+> = {
+  applying: 2,
+  blocked: 1,
+  cancelled: 3,
+  completed: 3,
+  failed: 3,
+  queued: 0,
+  running: 1,
+};
 
 export interface DeploymentTaskDisplaySummary {
   resultSummary: string;
@@ -311,6 +329,28 @@ function deploymentTaskProjectionEqual(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/**
+ * Monotonic-merge guard: NOTIFY-driven re-reads and snapshot reads can
+ * resolve out of order, so an incoming projection only wins when it is not
+ * older than the held one. updatedAt survives serialization only at
+ * millisecond precision, so distinct row states can tie; on a tie a status
+ * never yields to one from an earlier progression tier.
+ */
+function deploymentTaskProjectionSupersedes(
+  current: DeploymentTaskProjection,
+  incoming: DeploymentTaskProjection
+): boolean {
+  const currentMs = dateMs(current.updatedAt) ?? 0;
+  const incomingMs = dateMs(incoming.updatedAt) ?? 0;
+  if (incomingMs !== currentMs) {
+    return incomingMs > currentMs;
+  }
+  return (
+    DEPLOYMENT_TASK_PROJECTION_STATUS_RANK[incoming.status] >=
+    DEPLOYMENT_TASK_PROJECTION_STATUS_RANK[current.status]
+  );
+}
+
 function deploymentTaskCanvasTopologyPayload(
   projection: DeploymentTaskProjection
 ) {
@@ -437,18 +477,26 @@ export function replaceDeploymentTaskProjections(
   current: DeploymentTaskProjection[],
   nextProjections: readonly DeploymentTaskProjection[]
 ): DeploymentTaskProjection[] {
+  const currentById = new Map(
+    current.map((projection) => [projection.id, projection])
+  );
+  const merged = nextProjections.map((incoming) => {
+    const existing = currentById.get(incoming.id);
+    if (existing === undefined) {
+      return incoming;
+    }
+    return !deploymentTaskProjectionSupersedes(existing, incoming) ||
+      deploymentTaskProjectionEqual(existing, incoming)
+      ? existing
+      : incoming;
+  });
   if (
-    current.length === nextProjections.length &&
-    current.every((projection, index) => {
-      const next = nextProjections[index];
-      return (
-        next !== undefined && deploymentTaskProjectionEqual(projection, next)
-      );
-    })
+    current.length === merged.length &&
+    merged.every((projection, index) => projection === current[index])
   ) {
     return current;
   }
-  return [...nextProjections];
+  return merged;
 }
 
 export function toDeploymentTaskProjection(
@@ -512,7 +560,8 @@ export function upsertDeploymentTaskProjection(
   const current = projections[index];
   if (
     current !== undefined &&
-    deploymentTaskProjectionEqual(current, projection)
+    (!deploymentTaskProjectionSupersedes(current, projection) ||
+      deploymentTaskProjectionEqual(current, projection))
   ) {
     return projections;
   }
