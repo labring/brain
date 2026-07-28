@@ -12,10 +12,6 @@ export interface SensitiveDeploymentInputShape {
 
 export const MIN_SENSITIVE_INPUT_LENGTH = 4;
 
-export function legacyAiInputAlias(index: number): string {
-  return `configuration-${index + 1}`;
-}
-
 export function isSensitiveDeploymentInput(
   input: SensitiveDeploymentInputShape
 ): boolean {

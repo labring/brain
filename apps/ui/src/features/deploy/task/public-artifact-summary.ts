@@ -14,7 +14,6 @@ import {
 } from "./schema";
 import {
   isSensitiveDeploymentInput,
-  legacyAiInputAlias,
   withoutSensitiveArgs,
 } from "./sensitive-inputs";
 import {
@@ -176,7 +175,7 @@ function publicDeploymentPlan(
   };
 }
 
-function publicAiDeploymentPlanInput(value: unknown, index: number) {
+function publicAiDeploymentPlanInput(value: unknown) {
   const input = recordValue(value);
   const sourceKey = typeof input?.key === "string" ? input.key : null;
   if (input == null || sourceKey == null) {
@@ -188,9 +187,9 @@ function publicAiDeploymentPlanInput(value: unknown, index: number) {
     sensitive: input.sensitive === true,
     type: typeof input.type === "string" ? input.type : undefined,
   });
-  const key = legacyAiInputAlias(index);
   const sourceType =
     typeof input.type === "string" ? input.type.trim().toLowerCase() : "";
+  const sourceLabel = typeof input.label === "string" ? input.label.trim() : "";
   let publicType = "string";
   if (sensitive) {
     publicType = "secret";
@@ -199,8 +198,8 @@ function publicAiDeploymentPlanInput(value: unknown, index: number) {
   }
   return {
     input: {
-      key,
-      label: "Configuration value",
+      key: sourceKey,
+      label: sourceLabel || sourceKey,
       ...(typeof input.required === "boolean"
         ? { required: input.required }
         : {}),
@@ -212,9 +211,11 @@ function publicAiDeploymentPlanInput(value: unknown, index: number) {
 }
 
 function publicAiDeploymentPlan(
-  plan: DeployTaskArtifactSummary["deploymentPlan"]
+  plan: DeployTaskArtifactSummary["deploymentPlan"],
+  options: { trustedMetadata: boolean }
 ): DeployTaskArtifactSummary["deploymentPlan"] {
   if (
+    !options.trustedMetadata ||
     plan == null ||
     plan.kind !== "sealos-template" ||
     !Array.isArray(plan.inputs) ||
@@ -223,8 +224,8 @@ function publicAiDeploymentPlan(
     return undefined;
   }
 
-  const projectedInputs = plan.inputs.flatMap((input, index) => {
-    const publicInput = publicAiDeploymentPlanInput(input, index);
+  const projectedInputs = plan.inputs.flatMap((input) => {
+    const publicInput = publicAiDeploymentPlanInput(input);
     return publicInput == null ? [] : [publicInput];
   });
   const inputs = projectedInputs.map((input) => input.input);
@@ -265,11 +266,7 @@ function publicAiBlockingInputType(
     : "text";
 }
 
-function publicAiBlockingInput(
-  value: unknown,
-  publicKey: string,
-  options: { trustedMetadata: boolean }
-): DeployTaskBlockingInput | null {
+function publicAiBlockingInput(value: unknown): DeployTaskBlockingInput | null {
   const input = recordValue(value);
   const sourceId = typeof input?.id === "string" ? input.id : null;
   const sourceKey = typeof input?.key === "string" ? input.key : null;
@@ -290,23 +287,14 @@ function publicAiBlockingInput(
       : null;
   const sourceLabel = typeof input.label === "string" ? input.label.trim() : "";
   return {
-    id: publicKey,
-    key: publicKey,
-    label:
-      options.trustedMetadata && sourceLabel !== ""
-        ? sourceLabel
-        : "Configuration value",
+    id: canonicalKey,
+    key: canonicalKey,
+    label: sourceLabel || canonicalKey,
     required: typeof input.required === "boolean" ? input.required : true,
     type: sensitive ? "secret" : sourceType,
     ...(sensitive ? { sensitive: true } : {}),
     ...(sensitive || valueType == null ? {} : { valueType }),
   };
-}
-
-function publicAiBlockingInputKeys(
-  blockingInputs: DeployTaskBlockingInput[]
-): string[] {
-  return blockingInputs.map((_, index) => legacyAiInputAlias(index));
 }
 
 export function publicDeployTaskBlockingInputs(
@@ -319,15 +307,11 @@ export function publicDeployTaskBlockingInputs(
   if (options.runner.kind !== "ai") {
     return blockingInputs;
   }
-  const publicKeys = publicAiBlockingInputKeys(blockingInputs);
-  return blockingInputs.flatMap((input, index) => {
-    const publicKey = publicKeys[index];
-    if (publicKey == null) {
-      return [];
-    }
-    const publicInput = publicAiBlockingInput(input, publicKey, {
-      trustedMetadata: options.trustedMetadata === true,
-    });
+  if (options.trustedMetadata !== true) {
+    return [];
+  }
+  return blockingInputs.flatMap((input) => {
+    const publicInput = publicAiBlockingInput(input);
     return publicInput == null ? [] : [publicInput];
   });
 }
@@ -367,7 +351,9 @@ function publicAiDeployTaskArtifactSummary(
   const trusted =
     summary.publicProjectionVersion ===
     CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION;
-  const deploymentPlan = publicAiDeploymentPlan(summary.deploymentPlan);
+  const deploymentPlan = publicAiDeploymentPlan(summary.deploymentPlan, {
+    trustedMetadata: trusted,
+  });
   const resources = publicAiResources(summary.resources, trusted);
   return {
     ...(trusted &&

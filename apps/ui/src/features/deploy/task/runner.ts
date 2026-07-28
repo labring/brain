@@ -131,7 +131,6 @@ import {
 import {
   allSensitiveArgValues,
   isSensitiveDeploymentInput,
-  legacyAiInputAlias,
   MIN_SENSITIVE_INPUT_LENGTH,
   type SensitiveDeploymentInputShape,
   shortSensitiveArgKeys,
@@ -2281,7 +2280,7 @@ async function reblockRejectedSubmittedAiInput(input: {
   if (rejectedInput == null) {
     return false;
   }
-  const eventInputKey = legacyAiInputAlias(rejectedInputIndex);
+  const eventInputKey = rejectedInput.key ?? rejectedInput.id;
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.input_rejected",
     message: "A deployment configuration value was rejected.",

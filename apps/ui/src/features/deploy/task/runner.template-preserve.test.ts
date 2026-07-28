@@ -899,7 +899,7 @@ data:
     );
     expect(rejectedEvent?.payload).toEqual({
       code: "number",
-      inputKey: "configuration-1",
+      inputKey: "PORT",
     });
     expect(JSON.stringify({ rejectedEvent, request })).not.toContain(
       "invalid-port-that-must-not-persist"
@@ -928,7 +928,7 @@ data:
     );
     expect(rejectedEvent?.payload).toEqual({
       code: "minimum-length",
-      inputKey: "configuration-2",
+      inputKey: "API_KEY",
     });
     expect(
       JSON.stringify({

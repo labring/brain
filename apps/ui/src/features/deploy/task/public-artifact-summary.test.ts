@@ -136,21 +136,21 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
     deploymentPlan: {
       inputs: [
         {
-          key: "configuration-1",
-          label: "Configuration value",
+          key: "api_key",
+          label: "api_key",
           required: true,
           sensitive: true,
           type: "secret",
         },
         {
-          key: "configuration-2",
-          label: "Configuration value",
+          key: "port",
+          label: "port",
           required: false,
           type: "number",
         },
       ],
       kind: "sealos-template",
-      missingInputKeys: ["configuration-1", "configuration-2"],
+      missingInputKeys: ["api_key", "port"],
       templateName: "deployment",
     },
     resources: [
@@ -166,7 +166,7 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
   assert.equal("publicProjectionVersion" in summary, false);
 });
 
-test("stamped public AI blocking inputs keep generated metadata fail-closed", () => {
+test("input-level stamps cannot make untrusted AI blocking metadata public", () => {
   const legacySecret = "legacy-blocking-input-secret";
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
@@ -191,20 +191,11 @@ test("stamped public AI blocking inputs keep generated metadata fail-closed", ()
     }
   );
 
-  assert.deepEqual(blockingInputs, [
-    {
-      id: "configuration-1",
-      key: "configuration-1",
-      label: "Configuration value",
-      required: true,
-      sensitive: true,
-      type: "secret",
-    },
-  ]);
+  assert.deepEqual(blockingInputs, []);
   assert.equal(JSON.stringify(blockingInputs).includes(legacySecret), false);
 });
 
-test("trusted public AI blocking inputs preserve labels without exposing values or canonical keys", () => {
+test("trusted public AI blocking inputs preserve canonical keys and labels without exposing values", () => {
   const secretValue = "private-smtp-password";
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
@@ -228,8 +219,8 @@ test("trusted public AI blocking inputs preserve labels without exposing values 
 
   assert.deepEqual(blockingInputs, [
     {
-      id: "configuration-1",
-      key: "configuration-1",
+      id: "smtp_password",
+      key: "smtp_password",
       label: "SMTP password",
       required: true,
       sensitive: true,
@@ -237,10 +228,10 @@ test("trusted public AI blocking inputs preserve labels without exposing values 
     },
   ]);
   assert.equal(JSON.stringify(blockingInputs).includes(secretValue), false);
-  assert.equal(JSON.stringify(blockingInputs).includes("smtp_password"), false);
+  assert.equal(JSON.stringify(blockingInputs).includes("smtp_password"), true);
 });
 
-test("legacy public AI inputs use opaque aliases", () => {
+test("legacy public AI inputs fail closed instead of inventing aliases", () => {
   const legacySecret = "abc";
   const summary = publicDeployTaskArtifactSummary(
     {
@@ -283,39 +274,15 @@ test("legacy public AI inputs use opaque aliases", () => {
     { runner: { kind: "ai", runtimeProvider: "devbox" } }
   );
 
-  assert.deepEqual(summary, {
-    deploymentPlan: {
-      inputs: [
-        {
-          key: "configuration-1",
-          label: "Configuration value",
-          required: true,
-          sensitive: true,
-          type: "secret",
-        },
-      ],
-      kind: "sealos-template",
-      missingInputKeys: ["configuration-1"],
-      templateName: "deployment",
-    },
-  });
-  assert.deepEqual(blockingInputs, [
-    {
-      id: "configuration-1",
-      key: "configuration-1",
-      label: "Configuration value",
-      required: true,
-      sensitive: true,
-      type: "secret",
-    },
-  ]);
+  assert.deepEqual(summary, {});
+  assert.deepEqual(blockingInputs, []);
   assert.equal(
     JSON.stringify({ blockingInputs, summary }).includes(legacySecret),
     false
   );
 });
 
-test("stamped public AI blockers always use opaque identifiers", () => {
+test("blocking-input stamps alone remain fail closed", () => {
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
       {
@@ -332,20 +299,11 @@ test("stamped public AI blockers always use opaque identifiers", () => {
     { runner: { kind: "ai", runtimeProvider: "devbox" } }
   );
 
-  assert.deepEqual(blockingInputs, [
-    {
-      id: "configuration-1",
-      key: "configuration-1",
-      label: "Configuration value",
-      required: true,
-      sensitive: true,
-      type: "secret",
-    },
-  ]);
+  assert.deepEqual(blockingInputs, []);
   assert.equal(JSON.stringify(blockingInputs).includes("_API_KEY"), false);
 });
 
-test("AI blocker aliases do not depend on generated canonical keys", () => {
+test("trusted AI blockers expose their canonical keys without aliases", () => {
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
       {
@@ -368,33 +326,37 @@ test("AI blocker aliases do not depend on generated canonical keys", () => {
         type: "secret",
       },
     ],
-    { runner: { kind: "ai", runtimeProvider: "devbox" } }
+    {
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      trustedMetadata: true,
+    }
   );
 
   assert.deepEqual(
     blockingInputs.map((input) => input.key),
-    ["configuration-1", "configuration-2"]
+    ["configuration-2", "_API_KEY"]
   );
 });
 
-test("stamped AI plan and blocker metadata cannot publish unknown secrets", () => {
-  const unknownSecret = "repo-secret-marker";
+test("trusted AI plan and blocker metadata retain keys while dropping secret values", () => {
+  const secretValue = "repo-secret-marker";
   const summary = publicDeployTaskArtifactSummary(
     {
       deploymentPlan: {
         inputs: [
           {
-            description: unknownSecret,
-            key: unknownSecret,
-            label: unknownSecret,
-            options: [unknownSecret],
+            description: secretValue,
+            key: "smtp_password",
+            label: "SMTP password",
+            options: [secretValue],
             required: true,
-            type: unknownSecret,
+            sensitive: true,
+            type: "secret",
           },
         ],
         kind: "sealos-template",
-        missingInputKeys: [unknownSecret],
-        templateName: unknownSecret,
+        missingInputKeys: ["smtp_password"],
+        templateName: "demo",
       },
       publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
     },
@@ -403,49 +365,53 @@ test("stamped AI plan and blocker metadata cannot publish unknown secrets", () =
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
       {
-        description: unknownSecret,
-        id: unknownSecret,
-        key: unknownSecret,
-        label: unknownSecret,
-        options: [unknownSecret],
+        defaultValue: secretValue,
+        description: secretValue,
+        id: "smtp_password",
+        key: "smtp_password",
+        label: "SMTP password",
+        options: [secretValue],
         publicProjectionVersion:
           CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
         required: true,
-        type: "text",
-        valueType: unknownSecret,
+        sensitive: true,
+        type: "secret",
       },
     ],
-    { runner: { kind: "ai", runtimeProvider: "devbox" } }
+    {
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      trustedMetadata: true,
+    }
   );
 
   assert.deepEqual(summary, {
     deploymentPlan: {
       inputs: [
         {
-          key: "configuration-1",
-          label: "Configuration value",
+          key: "smtp_password",
+          label: "SMTP password",
           required: true,
           sensitive: true,
           type: "secret",
         },
       ],
       kind: "sealos-template",
-      missingInputKeys: ["configuration-1"],
+      missingInputKeys: ["smtp_password"],
       templateName: "deployment",
     },
   });
   assert.deepEqual(blockingInputs, [
     {
-      id: "configuration-1",
-      key: "configuration-1",
-      label: "Configuration value",
+      id: "smtp_password",
+      key: "smtp_password",
+      label: "SMTP password",
       required: true,
       sensitive: true,
       type: "secret",
     },
   ]);
   assert.equal(
-    JSON.stringify({ blockingInputs, summary }).includes(unknownSecret),
+    JSON.stringify({ blockingInputs, summary }).includes(secretValue),
     false
   );
 });
