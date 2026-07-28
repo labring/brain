@@ -40,6 +40,8 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - `GITHUB_USER_TOKEN_ENCRYPTION_KEY`: keep stable; changing it prevents decrypting previously stored GitHub user tokens
 - assistant model values
 - Devbox runtime values
+- optional `DEPLOY_SKILL_SOURCE`; leave empty to use
+  `https://github.com/labring/sealos-skills/tree/brain-deploy`
 - `imagePullSecret.create`
 
 Configure the GitHub App registration to match the UI origin:
@@ -54,6 +56,14 @@ Request user authorization (OAuth) during installation: disabled
 and the GitHub popup can close after users add or remove repositories.
 
 The install script reads `cloudDomain` and `cloudPort` from `sealos-system/sealos-config` and passes them to Helm. When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty.
+
+GitHub and prompt AI deployments install `sealos-deploy` from the production
+`brain-deploy` source by default. To exercise another source in an environment,
+set `ui.env.DEPLOY_SKILL_SOURCE`; for example, staging can use
+`https://github.com/labring/sealos-skills/tree/brain-deploy-preview`. The skill
+name and `/sealos-deploy` invocation do not change. The value is read by the UI
+server process, so changing it requires a UI rollout and affects new deployment
+runtimes; a Devbox where the skill is already installed is not overwritten.
 
 Install or upgrade:
 
