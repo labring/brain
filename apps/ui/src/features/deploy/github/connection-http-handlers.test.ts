@@ -194,10 +194,13 @@ function createWorkspaceActorHttpHarness(input: {
     },
   });
   const deleteHandler = createGithubConnectionDeleteHandler({
-    adoptLegacyConnection,
-    deleteConnection: (owner) => {
-      deletes.push(owner);
-      connections.delete(ownerKey(owner));
+    /** Mirrors the persistence seam: forget the uid row and any legacy row. */
+    deleteConnection: (actor) => {
+      deletes.push(actor);
+      connections.delete(ownerKey(actor.owner));
+      connections.delete(
+        `${actor.owner.namespace}:${actor.legacyWorkspaceActor}:1`
+      );
       return Promise.resolve();
     },
     appTokenConfig: APP_TOKEN_CONFIG,
@@ -571,9 +574,12 @@ test("disconnect ignores legacy userId and removes only the verified actor's con
   assert.equal(harness.connections.has("shared:bob-cr-uid:2"), false);
   assert.deepEqual(harness.deletes, [
     {
-      namespace: "shared",
-      ownerIdentityVersion: 2,
-      userUid: "bob-cr-uid",
+      legacyWorkspaceActor: "bob-cr",
+      owner: {
+        namespace: "shared",
+        ownerIdentityVersion: 2,
+        userUid: "bob-cr-uid",
+      },
     },
   ]);
 });
@@ -1109,7 +1115,7 @@ test("another member's verified entry never adopts a foreign legacy connection",
   ]);
 });
 
-test("disconnect forgets a legacy connection by adopting it before the uid-keyed delete", async () => {
+test("disconnect forgets the actor's connection across both generations", async () => {
   const harness = createWorkspaceActorHttpHarness({
     connections: new Map([
       ["shared:alice-cr:1", { accountLogin: "alice-github" }],
@@ -1126,9 +1132,36 @@ test("disconnect forgets a legacy connection by adopting it before the uid-keyed
   assert.equal(harness.connections.size, 0);
   assert.deepEqual(harness.deletes, [
     {
-      namespace: "shared",
-      ownerIdentityVersion: 2,
-      userUid: "alice-cr-uid",
+      legacyWorkspaceActor: "alice-cr",
+      owner: {
+        namespace: "shared",
+        ownerIdentityVersion: 2,
+        userUid: "alice-cr-uid",
+      },
     },
   ]);
+});
+
+test("a forgotten authorization never resurrects from the inert legacy row after disconnect", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr:1", { accountLogin: "legacy-github" }],
+      ["shared:alice-cr-uid:2", { accountLogin: "reauthorized-github" }],
+    ]),
+  });
+  const aliceToken = jwt("system:serviceaccount:user-system:alice-cr");
+
+  const disconnect = await harness.deleteConnection({
+    namespace: "shared",
+    token: aliceToken,
+  });
+  const statusAfter = await harness.getStatus({
+    namespace: "shared",
+    token: aliceToken,
+  });
+
+  assert.equal(disconnect.status, 200);
+  assert.equal(statusAfter.status, 200);
+  assert.deepEqual(await statusAfter.json(), { connection: null });
+  assert.equal(harness.connections.size, 0);
 });

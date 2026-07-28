@@ -32,7 +32,7 @@ await migrate(testDb, { migrationsFolder: MIGRATIONS_FOLDER });
 const {
   adoptLegacyGithubConnectionForOwner,
   getGithubConnectionStatusForOwner,
-  revokeGithubConnectionForOwner,
+  revokeGithubConnectionsForActor,
   upsertGithubOauthConnectionInTransaction,
 } = await import("./connection-service");
 
@@ -293,7 +293,10 @@ test("another member never sees, adopts, or revokes a foreign connection", async
     null
   );
 
-  await revokeGithubConnectionForOwner(owner("bob-uid", "foreign"));
+  await revokeGithubConnectionsForActor({
+    legacyWorkspaceActor: "bob-cr",
+    owner: owner("bob-uid", "foreign"),
+  });
   assert.deepEqual(await selectRows("foreign"), [
     {
       githubLogin: "alice-github",
@@ -306,6 +309,37 @@ test("another member never sees, adopts, or revokes a foreign connection", async
       workspaceActor: "carol-uid",
     },
   ]);
+});
+
+test("disconnect forgets both generations so the inert legacy row cannot resurrect", async () => {
+  await insertLegacyConnection({
+    githubLogin: "legacy-github",
+    id: "forget-legacy",
+    namespace: "forget",
+    workspaceActor: "alice-cr",
+  });
+  await upsertConnection({
+    githubLogin: "reauthorized-github",
+    namespace: "forget",
+    userUid: "alice-uid",
+  });
+
+  await revokeGithubConnectionsForActor({
+    legacyWorkspaceActor: "alice-cr",
+    owner: owner("alice-uid", "forget"),
+  });
+
+  assert.deepEqual(await selectRows("forget"), []);
+
+  // A later verified entry has nothing to adopt and sees no connection.
+  await adoptLegacyGithubConnectionForOwner({
+    legacyWorkspaceActor: "alice-cr",
+    owner: owner("alice-uid", "forget"),
+  });
+  assert.equal(
+    await getGithubConnectionStatusForOwner(owner("alice-uid", "forget")),
+    null
+  );
 });
 
 test("adoption requires the current generation owner identity", async () => {
