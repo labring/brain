@@ -27,7 +27,10 @@ export const assistantChats = ns.table(
     id: text("id").primaryKey(),
     /** Logical namespace bucket (UI: `namespaceAtom`); empty namespaces map to the default bucket at write time. */
     namespace: text("namespace").notNull(),
-    /** Verified `user-system` ServiceAccount name. Set at creation and immutable. */
+    /**
+     * The owner's global `userUid` (ADR-0059). Set at creation and immutable;
+     * legacy beta rows carry the per-region crName until lazily adopted.
+     */
     workspaceActor: text("workspace_actor").notNull(),
     /** Shown in thread picker; placeholders use `chat-YYYY-MM-DD` until renamed by AI after the first turn. */
     title: text("title").notNull().default("Chat"),

@@ -74,6 +74,7 @@ function handlerDependencies(
   overrides: Partial<AssistantConversationHandlerDependencies> = {}
 ): AssistantConversationHandlerDependencies {
   return {
+    adoptLegacyConversations: () => Promise.resolve(),
     appTokenConfig: APP_TOKEN_CONFIG,
     bootstrap: () => Promise.reject(new Error("not used")),
     list: () => Promise.resolve([]),
@@ -90,10 +91,10 @@ test("conversation handlers expose message reads without an unfenced write handl
   assert.equal("messagesPost" in handlers, false);
 });
 
-test("conversation listing ignores a spoofed user id and returns only the verified actor's threads", async () => {
+test("conversation listing keys the owner by the token-proven userUid, ignoring a spoofed user id", async () => {
   const threads = new Map<string, AssistantThreadDTO[]>([
     [
-      "shared:alice-cr",
+      "shared:alice-cr-uid",
       [
         {
           id: "alice-chat",
@@ -104,7 +105,7 @@ test("conversation listing ignores a spoofed user id and returns only the verifi
       ],
     ],
     [
-      "shared:bob-cr",
+      "shared:bob-cr-uid",
       [
         {
           id: "bob-chat",
@@ -133,8 +134,83 @@ test("conversation listing ignores a spoofed user id and returns only the verifi
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    threads: threads.get("shared:alice-cr"),
+    threads: threads.get("shared:alice-cr-uid"),
   });
+});
+
+test("every verified entry request adopts the actor's legacy conversations before reading them", async () => {
+  const calls: string[] = [];
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      adoptLegacyConversations: (actor) => {
+        calls.push(
+          `adopt:${actor.legacyWorkspaceActor}->` +
+            `${actor.owner.namespace}:${actor.owner.workspaceActor}`
+        );
+        return Promise.resolve();
+      },
+      bootstrap: (owner) => {
+        calls.push(`bootstrap:${owner.namespace}:${owner.workspaceActor}`);
+        return Promise.resolve({
+          chatId: "bootstrap-chat",
+          freeTier: { billing: "free" as const, limit: 10, remaining: 7 },
+          messages: [],
+          threads: [],
+        });
+      },
+      list: (owner) => {
+        calls.push(`list:${owner.namespace}:${owner.workspaceActor}`);
+        return Promise.resolve([]);
+      },
+      read: (owner) => {
+        calls.push(`read:${owner.namespace}:${owner.workspaceActor}`);
+        return Promise.resolve([]);
+      },
+    })
+  );
+
+  const entries: [string, (request: Request) => Promise<Response>][] = [
+    ["/api/chat/threads?namespace=shared", handlers.threads],
+    ["/api/chat/session?namespace=shared", handlers.session],
+    [
+      "/api/chat/messages?namespace=shared&chatId=any-chat",
+      handlers.messagesGet,
+    ],
+  ];
+  for (const [path, handler] of entries) {
+    const response = await handler(await authorizedRequest(path, "alice-cr"));
+    assert.equal(response.status, 200);
+  }
+
+  assert.deepEqual(calls, [
+    "adopt:alice-cr->shared:alice-cr-uid",
+    "list:shared:alice-cr-uid",
+    "adopt:alice-cr->shared:alice-cr-uid",
+    "bootstrap:shared:alice-cr-uid",
+    "adopt:alice-cr->shared:alice-cr-uid",
+    "read:shared:alice-cr-uid",
+  ]);
+});
+
+test("an adoption failure surfaces as unavailable persistence without a partial read", async () => {
+  let listed = false;
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      adoptLegacyConversations: () =>
+        Promise.reject(new Error("database unavailable")),
+      list: () => {
+        listed = true;
+        return Promise.resolve([]);
+      },
+    })
+  );
+
+  const response = await handlers.threads(
+    await authorizedRequest("/api/chat/threads?namespace=shared", "alice-cr")
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal(listed, false);
 });
 
 test("conversation bootstrap is scoped to the verified actor", async () => {
@@ -167,13 +243,13 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    chatId: "alice-cr-chat",
+    chatId: "alice-cr-uid-chat",
     freeTier: { billing: "free", limit: 10, remaining: 7 },
     messages: [
       {
-        id: "alice-cr-message",
+        id: "alice-cr-uid-message",
         role: "assistant",
-        parts: [{ type: "text", text: "alice-cr content" }],
+        parts: [{ type: "text", text: "alice-cr-uid content" }],
       },
     ],
     threads: [],
@@ -183,7 +259,7 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
 test("reading another member's conversation is indistinguishable from a missing conversation", async () => {
   const privateMessages = new Map([
     [
-      "shared:bob-cr:bob-chat",
+      "shared:bob-cr-uid:bob-chat",
       [
         {
           id: "bob-secret-message",

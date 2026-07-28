@@ -26,10 +26,26 @@ export function normalizeAssistantNamespace(namespace: string): string {
   return trimmed.length > 0 ? trimmed : DEFAULT_ASSISTANT_NAMESPACE_KEY;
 }
 
-/** Server-verified owner of a personal Assistant Conversation. */
+/**
+ * Server-verified owner of a personal Assistant Conversation. `workspaceActor`
+ * carries the owning platform account's global `userUid` (ADR-0059), stored in
+ * the `workspace_actor` column; the per-region crName never enters uid-keyed
+ * conversation rows.
+ */
 export interface AssistantConversationOwner {
   namespace: string;
   workspaceActor: string;
+}
+
+/**
+ * A verified actor entering a conversation route: the uid-keyed owner plus
+ * the per-region crName. Conversation persistence consults the crName only to
+ * find the actor's legacy rows; surfaces still keyed by crName (the chat
+ * toolset's deploy-task actor) also read it from here.
+ */
+export interface VerifiedAssistantConversationActor {
+  legacyWorkspaceActor: string;
+  owner: AssistantConversationOwner;
 }
 
 /** Wire shape for a thread row sent to the client. */

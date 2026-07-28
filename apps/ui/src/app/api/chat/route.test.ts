@@ -50,6 +50,7 @@ interface TestOwner {
 }
 
 let activeLease: TestLease | null = null;
+let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
 let appendCalls: UIMessage[] = [];
 let connectionAvailable = true;
 let consumeCalls = 0;
@@ -224,6 +225,13 @@ mock.module("@/features/chat/persistence/free-tier", () => ({
   isSystemOpenAiConfigured: () => true,
 }));
 mock.module("@/features/chat/persistence/service", () => ({
+  adoptLegacyAssistantConversationsForActor: (actor: {
+    legacyWorkspaceActor: string;
+    owner: TestOwner;
+  }) => {
+    adoptionCalls.push(structuredClone(actor));
+    return Promise.resolve();
+  },
   acquireChatStreamLease: (chatId: string, owner: TestOwner) => {
     serviceOwners.push(owner);
     leaseAcquireCalls += 1;
@@ -592,6 +600,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 
 beforeEach(() => {
   activeLease = null;
+  adoptionCalls = [];
   appendCalls = [];
   connectionAvailable = true;
   consumeCalls = 0;
@@ -722,17 +731,26 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   expect(history[0]?.parts).toContainEqual(
     expect.objectContaining({ text: "Recovered response", type: "text" })
   );
+  // Conversation ownership keys on the token-proven userUid (ADR-0059)…
   expect(serviceOwners).not.toHaveLength(0);
   expect(serviceOwners).toEqual(
     serviceOwners.map(() => ({
       namespace: NAMESPACE,
-      workspaceActor: WORKSPACE_ACTOR,
+      workspaceActor: `${WORKSPACE_ACTOR}-uid`,
     }))
   );
+  // …while the toolset's deploy-task actor stays the per-region crName until
+  // deployment credential bindings are re-keyed in their own slice.
   expect(toolsetOwner).toEqual({
     namespace: NAMESPACE,
     workspaceActor: WORKSPACE_ACTOR,
   });
+  expect(adoptionCalls).toEqual([
+    {
+      legacyWorkspaceActor: WORKSPACE_ACTOR,
+      owner: { namespace: NAMESPACE, workspaceActor: `${WORKSPACE_ACTOR}-uid` },
+    },
+  ]);
 });
 
 test("accepts a client-tool continuation without server-injected metadata", async () => {
