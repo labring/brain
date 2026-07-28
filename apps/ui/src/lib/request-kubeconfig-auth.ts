@@ -3,6 +3,12 @@ import { isIP } from "node:net";
 import { decodeJwt } from "jose";
 import { Agent } from "undici";
 import { parse } from "yaml";
+import {
+  type AppTokenVerificationConfig,
+  appTokenVerificationConfigFromEnv,
+  type VerifiedAppTokenBinding,
+  verifyAppTokenBinding,
+} from "@/lib/app-token";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
@@ -61,12 +67,17 @@ export type VerifyKubeconfigNamespace = (input: {
 
 export type WorkspaceActorAuthorization =
   | {
+      /** The app-token-proven `crName → userUid` binding for this actor. */
+      actorBinding: VerifiedAppTokenBinding;
       namespace: string;
       ok: true;
       workspaceActor: string;
     }
   | {
       code:
+        | "app_token_invalid"
+        | "app_token_mismatch"
+        | "app_token_required"
         | "authentication_required"
         | "namespace_authorization_failed"
         | "namespace_forbidden"
@@ -622,10 +633,17 @@ export async function authorizeKubeconfigNamespace(input: {
 }
 
 /**
- * Authorizes a namespace and then resolves the individual represented by the
- * exact bearer token supplied to that authorization attempt.
+ * Authorizes a namespace, resolves the individual represented by the exact
+ * bearer token supplied to that authorization attempt, and enforces the
+ * desktop-minted App Token binding for that individual (ADR-0059). Personal
+ * resources fail closed without a token; non-personal routes must not call
+ * this function.
  */
 export async function authorizeWorkspaceActor(input: {
+  /** Bare `X-Sealos-App-Token` header value. */
+  appToken: string | undefined;
+  /** Test seam; defaults to `JWT_INTERNAL` + `REGION_UID` from the env. */
+  appTokenConfig?: AppTokenVerificationConfig | null;
   encodedKubeconfig: string | undefined;
   expectedNamespace?: string;
   normalizeNamespace?: (namespace: string) => string;
@@ -697,11 +715,77 @@ export async function authorizeWorkspaceActor(input: {
       status: 403,
     };
   }
+
+  const enforcement = await enforceAppTokenBinding({
+    appToken: input.appToken,
+    config:
+      input.appTokenConfig === undefined
+        ? appTokenVerificationConfigFromEnv()
+        : input.appTokenConfig,
+    namespace: authorization.namespace,
+    workspaceActor,
+  });
+  if (!enforcement.ok) {
+    return enforcement;
+  }
   return {
+    actorBinding: enforcement.binding,
     namespace: authorization.namespace,
     ok: true,
     workspaceActor,
   };
+}
+
+/** ADR-0059 degradation matrix; the token itself never reaches any log. */
+async function enforceAppTokenBinding(input: {
+  appToken: string | undefined;
+  config: AppTokenVerificationConfig | null;
+  namespace: string;
+  workspaceActor: string;
+}): Promise<
+  | { binding: VerifiedAppTokenBinding; ok: true }
+  | Extract<WorkspaceActorAuthorization, { ok: false }>
+> {
+  const verification = await verifyAppTokenBinding({
+    config: input.config,
+    expectedCrName: input.workspaceActor,
+    token: input.appToken ?? "",
+  });
+  if (!verification.ok) {
+    if (verification.reason === "missing") {
+      return {
+        code: "app_token_required",
+        message: "Authentication is required.",
+        ok: false,
+        status: 401,
+      };
+    }
+    console.warn(`[security] app token rejected: ${verification.reason}`, {
+      crName: input.workspaceActor,
+      namespace: input.namespace,
+    });
+    if (verification.reason === "unverifiable") {
+      return {
+        code: "app_token_invalid",
+        message: "Authentication is required.",
+        ok: false,
+        status: 401,
+      };
+    }
+    return {
+      code: "app_token_mismatch",
+      message: "App token does not match the authenticated actor or region.",
+      ok: false,
+      status: 403,
+    };
+  }
+  if (verification.expired) {
+    console.info("[telemetry] expired app token accepted", {
+      crName: verification.binding.crName,
+      userUid: verification.binding.userUid,
+    });
+  }
+  return { binding: verification.binding, ok: true };
 }
 
 export async function authorizeEncodedKubeconfigNamespace(input: {

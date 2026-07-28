@@ -368,14 +368,31 @@ mock.module("@/lib/request-kubeconfig-auth", () => ({
     input: Parameters<
       typeof actualRequestKubeconfigAuth.authorizeWorkspaceActor
     >[0]
-  ) =>
-    input.encodedKubeconfig === "encoded-kubeconfig"
-      ? Promise.resolve({
-          namespace: NAMESPACE,
-          ok: true as const,
-          workspaceActor: WORKSPACE_ACTOR,
-        })
-      : actualRequestKubeconfigAuth.authorizeWorkspaceActor(input),
+  ) => {
+    if (input.encodedKubeconfig !== "encoded-kubeconfig") {
+      return actualRequestKubeconfigAuth.authorizeWorkspaceActor(input);
+    }
+    // Mirrors the real choke point's fail-closed header contract so route
+    // tests prove the header value reaches the authorization input.
+    if (input.appToken !== "valid-app-token") {
+      return Promise.resolve({
+        code: "app_token_required" as const,
+        message: "Authentication is required.",
+        ok: false as const,
+        status: 401,
+      });
+    }
+    return Promise.resolve({
+      actorBinding: {
+        crName: WORKSPACE_ACTOR,
+        mintedAt: null,
+        userUid: `${WORKSPACE_ACTOR}-uid`,
+      },
+      namespace: NAMESPACE,
+      ok: true as const,
+      workspaceActor: WORKSPACE_ACTOR,
+    });
+  },
 }));
 
 const { POST } = await import("./route");
@@ -523,7 +540,13 @@ function userMessage(id: string, text: string): UIMessage {
   return { id, parts: [{ text, type: "text" }], role: "user" };
 }
 
-function chatRequest(message: UIMessage, signal?: AbortSignal): Request {
+function chatRequest(
+  message: UIMessage,
+  signal?: AbortSignal,
+  options?: { appToken?: string | null }
+): Request {
+  const appToken =
+    options?.appToken === undefined ? "valid-app-token" : options.appToken;
   return new Request("https://brain.test/api/chat", {
     body: JSON.stringify({
       chatId: CHAT_ID,
@@ -531,11 +554,27 @@ function chatRequest(message: UIMessage, signal?: AbortSignal): Request {
       message,
       namespace: NAMESPACE,
     }),
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(appToken == null ? {} : { "X-Sealos-App-Token": appToken }),
+    },
     method: "POST",
     ...(signal == null ? {} : { signal }),
   });
 }
+
+test("chat POST fails closed with 401 when the app token header is missing", async () => {
+  const response = await POST(
+    chatRequest(userMessage("user-no-app-token", "hello"), undefined, {
+      appToken: null,
+    })
+  );
+
+  expect(response.status).toBe(401);
+  expect(await response.json()).toEqual({
+    error: "Authentication is required.",
+  });
+});
 
 async function drain(response: Response): Promise<void> {
   await response.arrayBuffer();

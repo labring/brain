@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 
+import { SignJWT } from "jose";
+
 import {
   authorizeEncodedKubeconfigNamespace,
   authorizeKubeconfigNamespace,
   authorizeRequestNamespace,
+  authorizeWorkspaceActor,
   resolveKubernetesApiServer,
   workspaceActorFromAuthorizedKubeconfig,
 } from "./request-kubeconfig-auth";
@@ -449,4 +452,163 @@ test("restricts off-cluster kubeconfig transport to safe development endpoints",
       ok: false,
     }
   );
+});
+
+// --- Workspace Actor authorization with the desktop-minted App Token ---
+
+const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
+const APP_TOKEN_REGION_UID = "0f2a6f47-6dcb-4a76-b177-6c0aa22eaf6e";
+const APP_TOKEN_USER_UID = "6bd90648-b8b9-4a70-9be0-95c8391a0dcb";
+const APP_TOKEN_CONFIG = {
+  regionUid: APP_TOKEN_REGION_UID,
+  secret: APP_TOKEN_SECRET,
+};
+
+function serviceAccountJwt(subject: string): string {
+  return [
+    Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString(
+      "base64url"
+    ),
+    Buffer.from(JSON.stringify({ sub: subject })).toString("base64url"),
+    "signature",
+  ].join(".");
+}
+
+function actorKubeconfig(namespace: string, crName: string): string {
+  return kubeconfig(
+    namespace,
+    undefined,
+    serviceAccountJwt(`system:serviceaccount:user-system:${crName}`)
+  );
+}
+
+function mintAppToken(
+  overrides: {
+    claims?: Record<string, unknown>;
+    expiresAt?: number;
+    secret?: string;
+  } = {}
+): Promise<string> {
+  const jwt = new SignJWT({
+    regionUid: APP_TOKEN_REGION_UID,
+    userCrName: "alice-cr",
+    userUid: APP_TOKEN_USER_UID,
+    ...overrides.claims,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(1_753_600_000);
+  if (overrides.expiresAt !== undefined) {
+    jwt.setExpirationTime(overrides.expiresAt);
+  }
+  return jwt.sign(
+    new TextEncoder().encode(overrides.secret ?? APP_TOKEN_SECRET)
+  );
+}
+
+function authorizeActor(input: {
+  appToken: string | undefined;
+  crName?: string;
+}) {
+  return authorizeWorkspaceActor({
+    appToken: input.appToken,
+    appTokenConfig: APP_TOKEN_CONFIG,
+    encodedKubeconfig: actorKubeconfig("shared", input.crName ?? "alice-cr"),
+    verify: async () => ({ ok: true }),
+  });
+}
+
+test("authorizes the actor when all four app-token checks pass", async () => {
+  assert.deepEqual(await authorizeActor({ appToken: await mintAppToken() }), {
+    actorBinding: {
+      crName: "alice-cr",
+      mintedAt: 1_753_600_000,
+      userUid: APP_TOKEN_USER_UID,
+    },
+    namespace: "shared",
+    ok: true,
+    workspaceActor: "alice-cr",
+  });
+});
+
+test("accepts an expired but otherwise valid app token", async () => {
+  const authorization = await authorizeActor({
+    appToken: await mintAppToken({ expiresAt: 1_753_600_001 }),
+  });
+  assert.equal(authorization.ok, true);
+});
+
+test("a missing app token is refused with 401 and fails closed", async () => {
+  const authorization = await authorizeActor({ appToken: undefined });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "app_token_required");
+    assert.equal(authorization.status, 401);
+  }
+});
+
+test("an app token with a forged signature is refused with 401", async () => {
+  const authorization = await authorizeActor({
+    appToken: await mintAppToken({ secret: "attacker-secret" }),
+  });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "app_token_invalid");
+    assert.equal(authorization.status, 401);
+  }
+});
+
+test("an app token bound to another crName is refused with 403", async () => {
+  const authorization = await authorizeActor({
+    appToken: await mintAppToken({ claims: { userCrName: "mallory-cr" } }),
+  });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "app_token_mismatch");
+    assert.equal(authorization.status, 403);
+  }
+});
+
+test("an app token minted for another region is refused with 403", async () => {
+  const authorization = await authorizeActor({
+    appToken: await mintAppToken({
+      claims: { regionUid: "b9a1c9c1-a1de-4c26-9c58-0f9b9c3c2f5d" },
+    }),
+  });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "app_token_mismatch");
+    assert.equal(authorization.status, 403);
+  }
+});
+
+test("an ineligible kubeconfig subject stays a distinct 403 despite a valid app token", async () => {
+  const authorization = await authorizeWorkspaceActor({
+    appToken: await mintAppToken(),
+    appTokenConfig: APP_TOKEN_CONFIG,
+    encodedKubeconfig: kubeconfig(
+      "shared",
+      undefined,
+      serviceAccountJwt("system:serviceaccount:other-system:alice-cr")
+    ),
+    verify: async () => ({ ok: true }),
+  });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "workspace_actor_required");
+    assert.equal(authorization.status, 403);
+  }
+});
+
+test("absent verification config fails closed with 401 on the same code path", async () => {
+  const authorization = await authorizeWorkspaceActor({
+    appToken: await mintAppToken(),
+    appTokenConfig: null,
+    encodedKubeconfig: actorKubeconfig("shared", "alice-cr"),
+    verify: async () => ({ ok: true }),
+  });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "app_token_invalid");
+    assert.equal(authorization.status, 401);
+  }
 });
