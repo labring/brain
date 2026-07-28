@@ -34,6 +34,7 @@ mock.module("server-only", () => ({}));
 
 const {
   buildCodexGatewayEnv,
+  buildDeploySkillInstallCommand,
   ensureAiDeploymentDevbox,
   resolveGithubCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
@@ -137,6 +138,21 @@ function setPlatformCredentials() {
   process.env.SYSTEM_OPENAI_API_KEY = "system-platform-key";
   process.env.SYSTEM_OPENAI_API_BASE_URL = "https://system-platform.example/v1";
 }
+
+describe("deploy skill installation", () => {
+  it("uses the configured source while keeping the sealos-deploy marker", () => {
+    const command = buildDeploySkillInstallCommand(
+      "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
+    );
+
+    expect(command).toContain(
+      "npx --yes skills add 'https://github.com/labring/sealos-skills/tree/brain-deploy-preview' -y"
+    );
+    expect(command).toContain(".agents/skills/sealos-deploy/SKILL.md");
+    expect(command).toContain(".codex/skills/sealos-deploy/SKILL.md");
+    expect(command).not.toContain("--skill");
+  });
+});
 
 describe("GitHub deployment AI Proxy credentials", () => {
   beforeEach(() => {

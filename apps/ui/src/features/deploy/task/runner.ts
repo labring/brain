@@ -111,6 +111,7 @@ import {
 import {
   DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
   getDeployDevboxStorageLimitFromEnv,
+  getDeploySkillSourceFromEnv,
 } from "./runtime-config";
 import {
   CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
@@ -1511,7 +1512,7 @@ function prepareEmptyWorkspaceCommand(): string {
   ].join("\n");
 }
 
-function installSkillsCommand(): string {
+export function buildDeploySkillInstallCommand(skillSource: string): string {
   return [
     "set -euo pipefail",
     `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
@@ -1520,7 +1521,7 @@ function installSkillsCommand(): string {
     'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
     "if command -v npx >/dev/null 2>&1; then",
     '  cd "$workspace_dir"',
-    "  timeout 120 npx --yes skills add https://github.com/labring/sealos-skills/tree/brain-deploy -y",
+    `  timeout 120 npx --yes skills add ${shellQuote(skillSource)} -y`,
     "else",
     "  printf 'ERROR: npx is required to install sealos-deploy skill\\n' >&2",
     "  exit 1",
@@ -3226,7 +3227,9 @@ async function runAiDeploymentTask(input: {
   });
   try {
     await execOrThrow({
-      command: installSkillsCommand(),
+      command: buildDeploySkillInstallCommand(
+        getDeploySkillSourceFromEnv(process.env)
+      ),
       namespace: input.task.namespace,
       runtimeName: runtime.name,
       timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
