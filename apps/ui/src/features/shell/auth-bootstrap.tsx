@@ -150,7 +150,7 @@ export function DevboxBootstrap() {
           encodeURIComponent(kubeconfigDecoded),
           namespaceTrimmed
         );
-        if (!result.ok) {
+        if (!result.ok && result.reason === "credentials") {
           console.warn("[DevboxBootstrap] skipped: invalid credentials");
         }
       } catch (e: unknown) {

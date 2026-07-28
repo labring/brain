@@ -62,9 +62,6 @@ import { buildChatToolset } from "@/features/chat/runtime/tools";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 
-export const maxDuration = 120;
-
-const CHAT_STREAM_TIMEOUT_MS = 110_000;
 const CHAT_TITLE_TIMEOUT_MS = 5000;
 
 const INTERRUPTED_TOOL_ERROR =
@@ -617,9 +614,12 @@ async function runChatPipeline(input: {
       initialLease: ownedLease,
       renew: renewOwnedChatStreamLease,
     });
+    // No wall-clock ceiling: the turn ends when the client disconnects or the
+    // stream lease is lost. A fixed deadline only manufactured interrupted
+    // tools, since a cold Devbox plus one command already exceeds any value
+    // small enough to be useful.
     const streamAbortSignal = AbortSignal.any([
       requestAbortSignal,
-      AbortSignal.timeout(CHAT_STREAM_TIMEOUT_MS),
       leaseAbortController.signal,
     ]);
 

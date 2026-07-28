@@ -718,7 +718,7 @@ test("accepts a client-tool continuation without server-injected metadata", asyn
   );
 });
 
-test("passes a hard timeout signal to the model stream", async () => {
+test("never binds the model stream to a wall-clock deadline", async () => {
   const timeoutController = new AbortController();
   const timeoutSpy = spyOn(AbortSignal, "timeout").mockReturnValue(
     timeoutController.signal
@@ -731,14 +731,13 @@ test("passes a hard timeout signal to the model stream", async () => {
     expect(response.status).toBe(200);
     await drain(response);
 
-    expect(timeoutSpy).toHaveBeenCalledWith(110_000);
-    expect(timeoutSpy).toHaveBeenCalledWith(5000);
+    // The auto-title deadline is the only timer left; the turn itself ends on
+    // client disconnect or lease loss, never on elapsed time.
+    expect(timeoutSpy.mock.calls.flat()).toEqual([5000]);
     const modelSignal = modelAbortSignals[0];
     expect(modelSignal).toBeDefined();
-    expect(modelSignal).not.toBe(timeoutController.signal);
-    expect(modelSignal?.aborted).toBe(false);
     timeoutController.abort();
-    expect(modelSignal?.aborted).toBe(true);
+    expect(modelSignal?.aborted).toBe(false);
   } finally {
     timeoutSpy.mockRestore();
   }
@@ -767,7 +766,6 @@ test("request abort stops the model and releases the lease", async () => {
     requestController.abort();
     await waitUntil(() => activeLease == null);
 
-    expect(timeoutSpy).toHaveBeenCalledWith(110_000);
     expect(timeoutController.signal.aborted).toBe(false);
     expect(modelAbortSignals[0]?.aborted).toBe(true);
     expect(leaseReleaseCalls).toBe(1);
