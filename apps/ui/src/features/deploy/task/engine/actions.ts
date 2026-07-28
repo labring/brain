@@ -269,10 +269,11 @@ function invalidCredentialBinding(
   if (creatingActor === "" || binding == null) {
     return "GitHub deployment requires a verified creator and credential binding.";
   }
-  if (
-    !isCurrentDeploymentCredentialBinding(binding) ||
-    binding.credentialOwner.trim() !== creatingActor
-  ) {
+  // The binding's owner is the initiator's global userUid, proven by the app
+  // token at the route's authorization point (ADR-0059). The per-region
+  // creatingActor and the uid are disjoint identifier spaces, so
+  // owner-equals-creator is no longer checkable here.
+  if (!isCurrentDeploymentCredentialBinding(binding)) {
     return "GitHub deployment credential binding is invalid.";
   }
   return null;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
@@ -32,6 +33,7 @@ import {
   type ProjectCreationPaneEntryMode,
   projectCreationPaneStateReducer,
 } from "@/features/projects/creation/project-creation-pane-state";
+import { appTokenAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [
@@ -225,9 +227,11 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     []
   );
 
+  const appToken = useAtomValue(appTokenAtom);
   const deploymentAdapters = useMemo(
-    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
-    [kubeconfig, namespace]
+    () =>
+      createDeploymentTargetClientAdapters({ appToken, kubeconfig, namespace }),
+    [appToken, kubeconfig, namespace]
   );
 
   const runDeployment = useCallback(

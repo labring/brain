@@ -739,8 +739,9 @@ test("accepts and streams a canonical client-tool continuation", async () => {
       workspaceActor: `${WORKSPACE_ACTOR}-uid`,
     }))
   );
-  // …while the toolset's deploy-task actor stays the per-region crName until
-  // deployment credential bindings are re-keyed in their own slice.
+  // …while the toolset's deploy-task actor stays the per-region crName:
+  // chat deploy tools perform only namespace-shared actions, which record
+  // the kubeconfig-verified identity (AIM-154 keeps them token-free).
   expect(toolsetOwner).toEqual({
     namespace: NAMESPACE,
     workspaceActor: WORKSPACE_ACTOR,
