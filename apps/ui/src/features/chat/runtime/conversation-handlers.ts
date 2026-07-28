@@ -3,6 +3,7 @@ import {
   type AppTokenVerificationConfig,
   appTokenFromRequest,
 } from "@/lib/app-token";
+import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
 import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
@@ -31,6 +32,8 @@ export interface AssistantConversationHandlerDependencies {
     owner: AssistantConversationOwner
   ) => Promise<AssistantSessionPayload>;
   list: (owner: AssistantConversationOwner) => Promise<AssistantThreadDTO[]>;
+  /** Test seam; defaults to the region-local Identity Fingerprint store. */
+  observeFingerprint?: ObserveIdentityFingerprint;
   read: (
     owner: AssistantConversationOwner,
     chatId: string
@@ -58,6 +61,7 @@ export function createAssistantConversationHandlers(
       encodedKubeconfig: encodedKubeconfigFromRequest(request),
       expectedNamespace: clientNamespace?.trim() || undefined,
       normalizeNamespace: normalizeAssistantNamespace,
+      observeFingerprint: dependencies.observeFingerprint,
       verify: dependencies.verify,
     });
     if (!authorization.ok) {

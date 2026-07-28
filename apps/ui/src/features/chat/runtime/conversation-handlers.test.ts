@@ -23,6 +23,7 @@ function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
     userUid: `${crName}-uid`,
   })
     .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(1_753_600_000)
     .sign(new TextEncoder().encode(secret));
 }
 
@@ -78,6 +79,7 @@ function handlerDependencies(
     appTokenConfig: APP_TOKEN_CONFIG,
     bootstrap: () => Promise.reject(new Error("not used")),
     list: () => Promise.resolve([]),
+    observeFingerprint: () => Promise.resolve({ outcome: "match" }),
     read: () => Promise.resolve(null),
     verify: () => Promise.resolve({ ok: true }),
     ...overrides,
@@ -374,4 +376,29 @@ test("an app token bound to another actor is refused with 403", async () => {
   );
 
   assert.equal(response.status, 403);
+});
+
+test("a binding superseded by an account merge is refused with 401 before any read", async () => {
+  let listed = false;
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      list: () => {
+        listed = true;
+        return Promise.resolve([]);
+      },
+      observeFingerprint: () =>
+        Promise.resolve({
+          observedMintedAt: 1_753_700_000,
+          observedUserUid: "surviving-uid",
+          outcome: "superseded",
+        }),
+    })
+  );
+
+  const response = await handlers.threads(
+    await authorizedRequest("/api/chat/threads?namespace=shared", "alice-cr")
+  );
+
+  assert.equal(response.status, 401);
+  assert.equal(listed, false);
 });

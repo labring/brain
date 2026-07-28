@@ -30,6 +30,7 @@ import {
   githubAppInstallSessions,
   githubConnections,
   githubOauthConnections,
+  identityFingerprints,
 } from "./schema";
 
 const assistantSchema = {
@@ -39,6 +40,7 @@ const assistantSchema = {
   githubAppInstallSessions,
   githubConnections,
   githubOauthConnections,
+  identityFingerprints,
 };
 const mainPglite = new PGlite();
 const db = drizzle(mainPglite, { schema: assistantSchema });

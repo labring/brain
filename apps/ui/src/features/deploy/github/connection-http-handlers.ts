@@ -3,6 +3,7 @@ import {
   type AppTokenVerificationConfig,
   appTokenFromRequest,
 } from "@/lib/app-token";
+import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
 import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
@@ -98,6 +99,7 @@ async function authorizeGithubConnectionOwner(input: {
   appToken: string;
   appTokenConfig?: AppTokenVerificationConfig | null;
   encodedKubeconfig: string;
+  observeFingerprint?: ObserveIdentityFingerprint;
   requestedNamespace: string | undefined;
   verify?: VerifyKubeconfigNamespace;
 }): Promise<VerifiedGithubConnectionActor | Response> {
@@ -107,6 +109,7 @@ async function authorizeGithubConnectionOwner(input: {
     encodedKubeconfig: input.encodedKubeconfig,
     expectedNamespace: input.requestedNamespace || undefined,
     normalizeNamespace: normalizeAssistantNamespace,
+    observeFingerprint: input.observeFingerprint,
     verify: input.verify,
   });
   if (!authorization.ok) {
@@ -136,6 +139,8 @@ async function authorizeGithubConnectionOwner(input: {
 interface GithubConnectionAuthorizationOptions {
   /** Test seam; defaults to `JWT_INTERNAL` + `REGION_UID` from the env. */
   appTokenConfig?: AppTokenVerificationConfig | null;
+  /** Test seam; defaults to the region-local Identity Fingerprint store. */
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }
 
@@ -147,6 +152,7 @@ function authorizeGithubConnectionRequest(
     appToken: appTokenFromRequest(request),
     appTokenConfig: options.appTokenConfig,
     encodedKubeconfig: encodedKubeconfigFromRequest(request),
+    observeFingerprint: options.observeFingerprint,
     requestedNamespace:
       new URL(request.url).searchParams.get("namespace")?.trim() || undefined,
     verify: options.verify,
@@ -176,6 +182,7 @@ async function authorizeGithubSessionRequest(
     appTokenConfig: options.appTokenConfig,
     encodedKubeconfig:
       typeof body?.encodedKubeconfig === "string" ? body.encodedKubeconfig : "",
+    observeFingerprint: options.observeFingerprint,
     requestedNamespace: namespace || undefined,
     verify: options.verify,
   });
@@ -192,6 +199,7 @@ export function createGithubConnectionStatusHandler(input: {
   adoptLegacyConnection: GithubLegacyConnectionAdoption;
   appTokenConfig?: AppTokenVerificationConfig | null;
   getConnection: GithubConnectionStatusLookup;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
@@ -211,6 +219,7 @@ export function createGithubRepositoryListHandler(input: {
   adoptLegacyConnection: GithubLegacyConnectionAdoption;
   appTokenConfig?: AppTokenVerificationConfig | null;
   listRepositories: GithubRepositoryList;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
@@ -239,6 +248,7 @@ export function createGithubRepositoryListHandler(input: {
 export function createGithubConnectionDeleteHandler(input: {
   appTokenConfig?: AppTokenVerificationConfig | null;
   deleteConnection: GithubConnectionDelete;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
@@ -258,6 +268,7 @@ export function createGithubOAuthSessionHandler(input: {
   appTokenConfig?: AppTokenVerificationConfig | null;
   createSession: GithubOAuthSessionCreate;
   getBaseUrl: (request: Request) => string;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
@@ -277,6 +288,7 @@ export function createGithubOAuthSessionHandler(input: {
 export function createGithubAppInstallSessionHandler(input: {
   appTokenConfig?: AppTokenVerificationConfig | null;
   createSession: GithubAppInstallSessionCreate;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {

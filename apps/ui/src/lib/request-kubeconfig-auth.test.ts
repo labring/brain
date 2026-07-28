@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import { SignJWT } from "jose";
 
+import type { ObserveIdentityFingerprint } from "./identity-fingerprint-core";
 import {
   authorizeEncodedKubeconfigNamespace,
   authorizeKubeconfigNamespace,
@@ -508,11 +509,14 @@ function mintAppToken(
 function authorizeActor(input: {
   appToken: string | undefined;
   crName?: string;
+  observeFingerprint?: ObserveIdentityFingerprint;
 }) {
   return authorizeWorkspaceActor({
     appToken: input.appToken,
     appTokenConfig: APP_TOKEN_CONFIG,
     encodedKubeconfig: actorKubeconfig("shared", input.crName ?? "alice-cr"),
+    observeFingerprint:
+      input.observeFingerprint ?? (() => Promise.resolve({ outcome: "match" })),
     verify: async () => ({ ok: true }),
   });
 }
@@ -611,4 +615,100 @@ test("absent verification config fails closed with 401 on the same code path", a
     assert.equal(authorization.code, "app_token_invalid");
     assert.equal(authorization.status, 401);
   }
+});
+
+// --- Identity Fingerprints at the authorization layer (ADR-0059) ---
+
+test("every verified request observes the token-proven binding at the fingerprint", async () => {
+  const observed: Parameters<ObserveIdentityFingerprint>[0][] = [];
+  const authorization = await authorizeActor({
+    appToken: await mintAppToken(),
+    observeFingerprint: (binding) => {
+      observed.push(binding);
+      return Promise.resolve({ outcome: "first_observation" });
+    },
+  });
+  assert.equal(authorization.ok, true);
+  assert.deepEqual(observed, [
+    {
+      crName: "alice-cr",
+      mintedAt: 1_753_600_000,
+      userUid: APP_TOKEN_USER_UID,
+    },
+  ]);
+});
+
+test("a merge observation proceeds so the healed resources are visible on that request", async () => {
+  const authorization = await authorizeActor({
+    appToken: await mintAppToken(),
+    observeFingerprint: () => Promise.resolve({ outcome: "merge" }),
+  });
+  assert.equal(authorization.ok, true);
+});
+
+test("a superseded binding is refused with 401 as the degradation matrix's final row", async () => {
+  const authorization = await authorizeActor({
+    appToken: await mintAppToken(),
+    observeFingerprint: () =>
+      Promise.resolve({
+        observedMintedAt: 1_753_700_000,
+        observedUserUid: "surviving-uid",
+        outcome: "superseded",
+      }),
+  });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "app_token_superseded");
+    assert.equal(authorization.status, 401);
+  }
+});
+
+test("a fingerprint store failure fails closed on personal routes", async () => {
+  const authorization = await authorizeActor({
+    appToken: await mintAppToken(),
+    observeFingerprint: () =>
+      Promise.reject(new Error("fingerprint store down")),
+  });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "fingerprint_unavailable");
+    assert.equal(authorization.status, 503);
+  }
+});
+
+test("a token without a minting time cannot be fingerprinted and is refused with 401", async () => {
+  let consulted = 0;
+  const authorization = await authorizeActor({
+    appToken: await new SignJWT({
+      regionUid: APP_TOKEN_REGION_UID,
+      userCrName: "alice-cr",
+      userUid: APP_TOKEN_USER_UID,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(new TextEncoder().encode(APP_TOKEN_SECRET)),
+    observeFingerprint: () => {
+      consulted += 1;
+      return Promise.resolve({ outcome: "match" });
+    },
+  });
+  assert.equal(authorization.ok, false);
+  if (!authorization.ok) {
+    assert.equal(authorization.code, "app_token_invalid");
+    assert.equal(authorization.status, 401);
+  }
+  assert.equal(consulted, 0);
+});
+
+test("the fingerprint is never consulted for a token that fails verification", async () => {
+  let consulted = 0;
+  const observeFingerprint: ObserveIdentityFingerprint = () => {
+    consulted += 1;
+    return Promise.resolve({ outcome: "match" });
+  };
+  await authorizeActor({
+    appToken: await mintAppToken({ secret: "attacker-secret" }),
+    observeFingerprint,
+  });
+  await authorizeActor({ appToken: undefined, observeFingerprint });
+  assert.equal(consulted, 0);
 });
