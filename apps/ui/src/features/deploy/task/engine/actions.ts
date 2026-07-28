@@ -645,12 +645,16 @@ function isSubmittedScalar(value: unknown): value is string | number | boolean {
 
 function submittedInputValues(
   blockingInputs: DeployTaskBlockingInput[],
-  values: Record<string, unknown>
+  values: Record<string, unknown>,
+  options: { allowInternalIdFallback: boolean }
 ): Record<string, string | number | boolean> {
   return Object.fromEntries(
     blockingInputs.flatMap((item) => {
       const canonicalKey = item.key ?? item.id;
-      for (const candidate of new Set([canonicalKey, item.id])) {
+      const candidates = options.allowInternalIdFallback
+        ? new Set([canonicalKey, item.id])
+        : [canonicalKey];
+      for (const candidate of candidates) {
         const value = values[candidate];
         if (isSubmittedScalar(value)) {
           return [[canonicalKey, value]];
@@ -758,7 +762,8 @@ export async function submitDeployTaskInputAction(
   }
   const submittedValues = submittedInputValues(
     currentBlockingInputs,
-    input.values
+    input.values,
+    { allowInternalIdFallback: row.runner.kind !== "ai" }
   );
   const submittedInputKeys = Object.keys(submittedValues);
   if (submittedInputKeys.length === 0) {

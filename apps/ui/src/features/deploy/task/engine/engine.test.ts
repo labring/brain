@@ -1120,14 +1120,14 @@ test("trusted AI canonical keys bind each value without aliases", async () => {
     },
     blockingInputs: [
       {
-        id: "PORT",
+        id: "internal-port-field",
         key: "PORT",
         label: "Port",
         required: true,
         type: "env",
       },
       {
-        id: "PASSWORD",
+        id: "internal-password-field",
         key: "PASSWORD",
         label: "Password",
         required: true,
@@ -1163,6 +1163,41 @@ test("trusted AI canonical keys bind each value without aliases", async () => {
     PASSWORD: "secret-value",
     PORT: "8080",
   });
+});
+
+test("trusted AI submissions reject unpublished internal blocker ids", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
+    blockingInputs: [
+      {
+        id: "internal-port-field",
+        key: "PORT",
+        label: "Port",
+        required: true,
+        type: "env",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let runCalled = false;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
+    },
+    taskId: blocked.id,
+    values: { "internal-port-field": "8080" },
+  });
+
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(runCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
 });
 
 test("legacy AI blockers with duplicate canonical keys cannot resume", async () => {
