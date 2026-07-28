@@ -2,6 +2,49 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.2] - 2026-07-28
+
+### Added
+
+- New Projects now receive meaningful Display Names derived from their
+  deployment source. Name collisions are resolved with numeric suffixes, and
+  case-insensitive uniqueness is enforced by the database.
+- Added an isolated worktree launcher for running multiple local development
+  environments with separate ports and generated configuration.
+
+### Changed
+
+- VictoriaLogs credentials are now loaded from static API process environment
+  variables instead of Kubernetes Secrets during each request.
+- Increased Assistant reasoning effort for more reliable Project operations.
+
+### Fixed
+
+- Removed the 110-second Assistant stream deadline so long-running operations,
+  including cold Devbox starts, can complete without being interrupted.
+- Restored background Devbox warmup when opening a Project and skipped warmup
+  cleanly when Devbox integration is not configured.
+- Prevented stale or out-of-order deployment projection events from regressing
+  task state, resurrecting purged tasks, or leaving event streams frozen after
+  a failed PostgreSQL subscription.
+- Fixed terminal startup when kubeconfig values contain whitespace or
+  characters that require encoding before WebSocket initialization.
+- Fixed AP telemetry pod matching so similarly prefixed workloads no longer
+  contribute metrics to one another.
+- Refused database restores that would overwrite an existing connection Secret
+  not owned by the restore target.
+- Fixed PostgreSQL table detection for quoted identifiers, including mixed-case
+  names, spaces, and embedded quotes.
+
+### Upgrade Notes
+
+- `VMAUTH_SECRET_NAMESPACE` and `VMAUTH_SECRET_NAME` are no longer used. Set
+  `VLSELECT_USERNAME` and `VLSELECT_PASSWORD` on the API process when
+  VictoriaLogs requires authentication, then restart or roll out the API.
+- The Project migration enforces case-insensitive Display Name uniqueness. If
+  existing names differ only by case, the earliest Project keeps its name and
+  later Projects receive the lowest available numeric suffix.
+
 ## [2.0.1] - 2026-07-24
 
 ### Added
@@ -57,7 +100,6 @@ All notable changes to Brain are documented in this file.
   icons, and GitHub repository list controls.
 - Improved off-cluster local Kubernetes development while keeping production
   requests pinned to in-cluster API coordinates and trust roots.
-- Fixed PostgreSQL table detection for quoted identifiers, including mixed-case names, spaces, and embedded quotes.
 
 ### Security
 
@@ -96,5 +138,6 @@ databases, and day-to-day operations into one Project workspace.
 - Added Project Assistant for understanding the current Project context and
   starting supported operations.
 
+[2.0.2]: https://github.com/labring/brain/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/labring/brain/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/labring/brain/releases/tag/v2.0.0
