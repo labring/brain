@@ -1,6 +1,7 @@
 "use client";
 
 import { SidePane } from "@workspace/ui/components/side-pane";
+import { useAtomValue } from "jotai";
 import { Blocks } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -18,6 +19,7 @@ import type { TemplateDeploymentSettings } from "@/features/deploy/template-depl
 import { TemplateDeployer } from "@/features/deploy/template-deployer";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
+import { appTokenAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 export function TemplateDeploymentPane({
@@ -42,9 +44,11 @@ export function TemplateDeploymentPane({
     projectId,
   });
   const templateCatalog = useTemplateCatalog();
+  const appToken = useAtomValue(appTokenAtom);
   const deploymentAdapters = useMemo(
-    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
-    [kubeconfig, namespace]
+    () =>
+      createDeploymentTargetClientAdapters({ appToken, kubeconfig, namespace }),
+    [appToken, kubeconfig, namespace]
   );
   const projectName = currentProject.resourceName?.trim() ?? "";
   const overwriteGate = useRedeployOverwriteGate(

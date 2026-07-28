@@ -1,5 +1,6 @@
 "use client";
 
+import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import type {
   DeploymentTaskProjection,
@@ -352,8 +353,13 @@ export async function cancelDeploymentTask(input: {
  * Redeploy is task creation from a failed/cancelled predecessor (ADR 0038).
  * A 409 carries the already-active recovery attempt (or the non-terminal
  * predecessor); callers reconcile from that snapshot.
+ *
+ * Redeploy is a personal-resource authorization point (ADR-0059): the app
+ * token proves the initiator, whose own uid-keyed GitHub Connection becomes
+ * the new task's Deployment Credential Binding.
  */
 export async function redeployDeploymentTask(input: {
+  appToken: string;
   kubeconfig: string;
   namespace: string;
   predecessorTaskId: string;
@@ -369,6 +375,7 @@ export async function redeployDeploymentTask(input: {
       headers: {
         Authorization: kubeconfigBearerHeader(input.kubeconfig),
         "Content-Type": "application/json",
+        ...appTokenRequestHeaders(input.appToken),
       },
       method: "POST",
     }),

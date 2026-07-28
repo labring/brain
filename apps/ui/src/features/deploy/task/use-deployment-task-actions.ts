@@ -1,7 +1,9 @@
 "use client";
 
+import { useAtomValue } from "jotai";
 import { useCallback, useRef, useState } from "react";
 
+import { appTokenAtom } from "@/lib/auth-store";
 import {
   cancelDeploymentTask,
   type DeployTaskActionResult,
@@ -27,6 +29,9 @@ export function useDeploymentTaskActions(input: {
   namespace: string;
 }): DeploymentTaskActions {
   const { kubeconfig, namespace } = input;
+  // Redeploy alone attaches the app token (ADR-0059): it re-binds the
+  // initiator's credential, while cancel stays a namespace-shared action.
+  const appToken = useAtomValue(appTokenAtom);
   const [cancelPendingTaskIds, setCancelPendingTaskIds] = useState<
     ReadonlySet<string>
   >(new Set());
@@ -82,6 +87,7 @@ export function useDeploymentTaskActions(input: {
       track(setRedeployPendingTaskIds, predecessorTaskId, true);
       try {
         return await redeployDeploymentTask({
+          appToken,
           kubeconfig,
           namespace,
           predecessorTaskId,
@@ -91,7 +97,7 @@ export function useDeploymentTaskActions(input: {
         track(setRedeployPendingTaskIds, predecessorTaskId, false);
       }
     },
-    [kubeconfig, namespace, track]
+    [appToken, kubeconfig, namespace, track]
   );
 
   return { cancel, cancelPendingTaskIds, redeploy, redeployPendingTaskIds };
