@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { KubeconfigNamespaceVerification } from "@/lib/request-kubeconfig-auth";
+import { SignJWT } from "jose";
+
+import {
+  type KubeconfigNamespaceVerification,
+  workspaceActorFromAuthorizedKubeconfig,
+} from "@/lib/request-kubeconfig-auth";
 import {
   createGithubAppInstallSessionHandler,
   createGithubConnectionDeleteHandler,
@@ -20,6 +25,34 @@ import {
 import type { GithubConnectionOwnerIdentity } from "./owner-identity";
 
 const PERSISTENCE_FAILURE_RE = /Failed to persist GitHub OAuth connection/;
+
+const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
+const APP_TOKEN_CONFIG = {
+  regionUid: "0f2a6f47-6dcb-4a76-b177-6c0aa22eaf6e",
+  secret: APP_TOKEN_SECRET,
+};
+
+function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
+  return new SignJWT({
+    regionUid: APP_TOKEN_CONFIG.regionUid,
+    userCrName: crName,
+    userUid: `${crName}-uid`,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .sign(new TextEncoder().encode(secret));
+}
+
+/** Mints the app token desktop would deliver for the kubeconfig's actor. */
+async function appTokenHeaderFor(
+  encodedKubeconfig: string
+): Promise<Record<string, string>> {
+  const crName = workspaceActorFromAuthorizedKubeconfig(
+    decodeURIComponent(encodedKubeconfig)
+  );
+  return crName == null
+    ? {}
+    : { "X-Sealos-App-Token": await mintAppToken(crName) };
+}
 
 function jwt(subject: string, tokenId = "token"): string {
   const header = Buffer.from(
@@ -128,6 +161,7 @@ function createWorkspaceActorHttpHarness(input: {
         ) ?? null
       );
     },
+    appTokenConfig: APP_TOKEN_CONFIG,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -142,6 +176,7 @@ function createWorkspaceActorHttpHarness(input: {
         )?.repositories ?? []
       );
     },
+    appTokenConfig: APP_TOKEN_CONFIG,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -155,6 +190,7 @@ function createWorkspaceActorHttpHarness(input: {
       );
       return Promise.resolve();
     },
+    appTokenConfig: APP_TOKEN_CONFIG,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -176,6 +212,7 @@ function createWorkspaceActorHttpHarness(input: {
       });
     },
     getBaseUrl: () => "https://brain.test",
+    appTokenConfig: APP_TOKEN_CONFIG,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -189,6 +226,7 @@ function createWorkspaceActorHttpHarness(input: {
         state: "app-state",
       });
     },
+    appTokenConfig: APP_TOKEN_CONFIG,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -255,9 +293,11 @@ function createWorkspaceActorHttpHarness(input: {
     validateState: (state) => Promise.resolve(validOAuthState(state) != null),
   });
 
-  const buildRequest = (
+  const buildRequest = async (
     pathname: string,
     input: {
+      /** undefined → mint a matching token; null → omit the header; string → send as-is. */
+      appToken?: string | null;
       encodedKubeconfig?: string;
       legacyUserId?: string;
       method?: string;
@@ -272,21 +312,22 @@ function createWorkspaceActorHttpHarness(input: {
     if (input.legacyUserId != null) {
       url.searchParams.set("userId", input.legacyUserId);
     }
-    return new Request(url, {
-      headers:
-        input.encodedKubeconfig == null && input.token == null
-          ? undefined
-          : {
-              Authorization: `Bearer ${
-                input.encodedKubeconfig ??
-                kubeconfig({
-                  namespace: input.namespace ?? "shared",
-                  token: input.token ?? "",
-                })
-              }`,
-            },
-      method: input.method,
-    });
+    let headers: Record<string, string> | undefined;
+    if (input.encodedKubeconfig != null || input.token != null) {
+      const encodedKubeconfig =
+        input.encodedKubeconfig ??
+        kubeconfig({
+          namespace: input.namespace ?? "shared",
+          token: input.token ?? "",
+        });
+      headers = { Authorization: `Bearer ${encodedKubeconfig}` };
+      if (input.appToken === undefined) {
+        Object.assign(headers, await appTokenHeaderFor(encodedKubeconfig));
+      } else if (input.appToken !== null) {
+        headers["X-Sealos-App-Token"] = input.appToken;
+      }
+    }
+    return new Request(url, { headers, method: input.method });
   };
 
   return {
@@ -315,72 +356,86 @@ function createWorkspaceActorHttpHarness(input: {
       return callbackHandler(new Request(url));
     },
     callbackWrites,
-    deleteConnection: (input: {
+    deleteConnection: async (input: {
       legacyUserId?: string;
       namespace: string;
       token: string;
     }) =>
       deleteHandler(
-        buildRequest("/api/github/connection", { ...input, method: "DELETE" })
+        await buildRequest("/api/github/connection", {
+          ...input,
+          method: "DELETE",
+        })
       ),
     deletes,
-    getStatus: (request: {
+    getStatus: async (request: {
+      appToken?: string | null;
       encodedKubeconfig?: string;
       legacyUserId?: string;
       namespace?: string;
       token?: string;
     }) => {
-      return handler(buildRequest("/api/github/connection", request));
+      return handler(await buildRequest("/api/github/connection", request));
     },
     oauthSessions,
     oauthStates,
-    startOAuth: (input: {
+    startOAuth: async (input: {
       legacyUserId?: string;
       namespace: string;
       returnPath?: string;
       token: string;
-    }) =>
-      oauthSessionHandler(
+    }) => {
+      const encodedKubeconfig = kubeconfig({
+        namespace: input.namespace,
+        token: input.token,
+      });
+      return oauthSessionHandler(
         new Request("https://brain.test/api/github/oauth-session", {
           body: JSON.stringify({
-            encodedKubeconfig: kubeconfig({
-              namespace: input.namespace,
-              token: input.token,
-            }),
+            encodedKubeconfig,
             namespace: input.namespace,
             returnPath: input.returnPath,
             userId: input.legacyUserId,
           }),
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(await appTokenHeaderFor(encodedKubeconfig)),
+          },
           method: "POST",
         })
-      ),
-    startAppInstall: (input: {
+      );
+    },
+    startAppInstall: async (input: {
       legacyUserId?: string;
       namespace: string;
       returnPath?: string;
       token: string;
-    }) =>
-      appInstallSessionHandler(
+    }) => {
+      const encodedKubeconfig = kubeconfig({
+        namespace: input.namespace,
+        token: input.token,
+      });
+      return appInstallSessionHandler(
         new Request("https://brain.test/api/github/install-session", {
           body: JSON.stringify({
-            encodedKubeconfig: kubeconfig({
-              namespace: input.namespace,
-              token: input.token,
-            }),
+            encodedKubeconfig,
             namespace: input.namespace,
             returnPath: input.returnPath,
             userId: input.legacyUserId,
           }),
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(await appTokenHeaderFor(encodedKubeconfig)),
+          },
           method: "POST",
         })
-      ),
-    listRepositories: (input: {
+      );
+    },
+    listRepositories: async (input: {
       legacyUserId?: string;
       namespace: string;
       token: string;
-    }) => repositoriesHandler(buildRequest("/api/github/repos", input)),
+    }) => repositoriesHandler(await buildRequest("/api/github/repos", input)),
     lookups,
     repositoryLookups,
   };
@@ -887,4 +942,63 @@ test("token rotation preserves the Workspace Actor and connection status", async
     harness.lookups.map((lookup) => lookup.workspaceActor),
     ["alice-cr", "alice-cr"]
   );
+});
+
+test("personal connection routes return 401 without the app token header", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr:1", { accountLogin: "alice-github" }],
+    ]),
+  });
+
+  const response = await harness.getStatus({
+    appToken: null,
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), {
+    code: "app_token_required",
+    error: "Authentication is required.",
+  });
+  assert.deepEqual(harness.lookups, []);
+});
+
+test("an app token bound to another actor is refused with 403", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr:1", { accountLogin: "alice-github" }],
+    ]),
+  });
+
+  const response = await harness.getStatus({
+    appToken: await mintAppToken("bob-cr"),
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    code: "app_token_mismatch",
+    error: "App token does not match the authenticated actor or region.",
+  });
+  assert.deepEqual(harness.lookups, []);
+});
+
+test("an app token signed with the wrong secret is refused with 401", async () => {
+  const harness = createWorkspaceActorHttpHarness({ connections: new Map() });
+
+  const response = await harness.getStatus({
+    appToken: await mintAppToken("alice-cr", "attacker-secret"),
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), {
+    code: "app_token_invalid",
+    error: "Authentication is required.",
+  });
+  assert.deepEqual(harness.lookups, []);
 });

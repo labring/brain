@@ -1,5 +1,9 @@
 import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
 import {
+  type AppTokenVerificationConfig,
+  appTokenFromRequest,
+} from "@/lib/app-token";
+import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
   type VerifyKubeconfigNamespace,
@@ -81,11 +85,15 @@ function jsonError(input: {
 }
 
 async function authorizeGithubConnectionOwner(input: {
+  appToken: string;
+  appTokenConfig?: AppTokenVerificationConfig | null;
   encodedKubeconfig: string;
   requestedNamespace: string | undefined;
   verify?: VerifyKubeconfigNamespace;
 }): Promise<GithubConnectionOwnerIdentity | Response> {
   const authorization = await authorizeWorkspaceActor({
+    appToken: input.appToken,
+    appTokenConfig: input.appTokenConfig,
     encodedKubeconfig: input.encodedKubeconfig,
     expectedNamespace: input.requestedNamespace || undefined,
     normalizeNamespace: normalizeAssistantNamespace,
@@ -112,21 +120,29 @@ async function authorizeGithubConnectionOwner(input: {
   };
 }
 
+interface GithubConnectionAuthorizationOptions {
+  /** Test seam; defaults to `JWT_INTERNAL` + `REGION_UID` from the env. */
+  appTokenConfig?: AppTokenVerificationConfig | null;
+  verify?: VerifyKubeconfigNamespace;
+}
+
 function authorizeGithubConnectionRequest(
   request: Request,
-  verify?: VerifyKubeconfigNamespace
+  options: GithubConnectionAuthorizationOptions
 ): Promise<GithubConnectionOwnerIdentity | Response> {
   return authorizeGithubConnectionOwner({
+    appToken: appTokenFromRequest(request),
+    appTokenConfig: options.appTokenConfig,
     encodedKubeconfig: encodedKubeconfigFromRequest(request),
     requestedNamespace:
       new URL(request.url).searchParams.get("namespace")?.trim() || undefined,
-    verify,
+    verify: options.verify,
   });
 }
 
 async function authorizeGithubSessionRequest(
   request: Request,
-  verify?: VerifyKubeconfigNamespace
+  options: GithubConnectionAuthorizationOptions
 ): Promise<
   | {
       owner: GithubConnectionOwnerIdentity;
@@ -134,6 +150,7 @@ async function authorizeGithubSessionRequest(
     }
   | Response
 > {
+  const appToken = appTokenFromRequest(request);
   const body = (await request.json().catch(() => null)) as {
     encodedKubeconfig?: unknown;
     namespace?: unknown;
@@ -142,10 +159,12 @@ async function authorizeGithubSessionRequest(
   const namespace =
     typeof body?.namespace === "string" ? body.namespace.trim() : "";
   const owner = await authorizeGithubConnectionOwner({
+    appToken,
+    appTokenConfig: options.appTokenConfig,
     encodedKubeconfig:
       typeof body?.encodedKubeconfig === "string" ? body.encodedKubeconfig : "",
     requestedNamespace: namespace || undefined,
-    verify,
+    verify: options.verify,
   });
   return owner instanceof Response
     ? owner
@@ -157,11 +176,12 @@ async function authorizeGithubSessionRequest(
 }
 
 export function createGithubConnectionStatusHandler(input: {
+  appTokenConfig?: AppTokenVerificationConfig | null;
   getConnection: GithubConnectionStatusLookup;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input.verify);
+    const owner = await authorizeGithubConnectionRequest(request, input);
     if (owner instanceof Response) {
       return owner;
     }
@@ -173,11 +193,12 @@ export function createGithubConnectionStatusHandler(input: {
 }
 
 export function createGithubRepositoryListHandler(input: {
+  appTokenConfig?: AppTokenVerificationConfig | null;
   listRepositories: GithubRepositoryList;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input.verify);
+    const owner = await authorizeGithubConnectionRequest(request, input);
     if (owner instanceof Response) {
       return owner;
     }
@@ -197,11 +218,12 @@ export function createGithubRepositoryListHandler(input: {
 }
 
 export function createGithubConnectionDeleteHandler(input: {
+  appTokenConfig?: AppTokenVerificationConfig | null;
   deleteConnection: GithubConnectionDelete;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input.verify);
+    const owner = await authorizeGithubConnectionRequest(request, input);
     if (owner instanceof Response) {
       return owner;
     }
@@ -211,15 +233,13 @@ export function createGithubConnectionDeleteHandler(input: {
 }
 
 export function createGithubOAuthSessionHandler(input: {
+  appTokenConfig?: AppTokenVerificationConfig | null;
   createSession: GithubOAuthSessionCreate;
   getBaseUrl: (request: Request) => string;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const authorization = await authorizeGithubSessionRequest(
-      request,
-      input.verify
-    );
+    const authorization = await authorizeGithubSessionRequest(request, input);
     if (authorization instanceof Response) {
       return authorization;
     }
@@ -233,14 +253,12 @@ export function createGithubOAuthSessionHandler(input: {
 }
 
 export function createGithubAppInstallSessionHandler(input: {
+  appTokenConfig?: AppTokenVerificationConfig | null;
   createSession: GithubAppInstallSessionCreate;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const authorization = await authorizeGithubSessionRequest(
-      request,
-      input.verify
-    );
+    const authorization = await authorizeGithubSessionRequest(request, input);
     if (authorization instanceof Response) {
       return authorization;
     }

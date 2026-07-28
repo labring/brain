@@ -59,6 +59,7 @@ import {
 } from "@/features/chat/runtime/model";
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
+import { appTokenFromRequest } from "@/lib/app-token";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 
@@ -707,6 +708,7 @@ export async function POST(req: Request) {
   }
 
   const authorization = await authorizeWorkspaceActor({
+    appToken: appTokenFromRequest(req),
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     expectedNamespace: parsed.data.namespace.trim() || undefined,
     normalizeNamespace: normalizeAssistantNamespace,

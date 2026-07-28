@@ -1,11 +1,30 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { SignJWT } from "jose";
+
 import type { AssistantThreadDTO } from "../persistence/types";
 import {
   type AssistantConversationHandlerDependencies,
   createAssistantConversationHandlers,
 } from "./conversation-handlers";
+
+const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
+const APP_TOKEN_REGION_UID = "0f2a6f47-6dcb-4a76-b177-6c0aa22eaf6e";
+const APP_TOKEN_CONFIG = {
+  regionUid: APP_TOKEN_REGION_UID,
+  secret: APP_TOKEN_SECRET,
+};
+
+function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
+  return new SignJWT({
+    regionUid: APP_TOKEN_REGION_UID,
+    userCrName: crName,
+    userUid: `${crName}-uid`,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .sign(new TextEncoder().encode(secret));
+}
 
 function jwt(subject: string): string {
   const header = Buffer.from(
@@ -38,10 +57,15 @@ users:
 `);
 }
 
-function authorizedRequest(path: string, workspaceActor: string): Request {
+async function authorizedRequest(
+  path: string,
+  workspaceActor: string,
+  appToken?: string
+): Promise<Request> {
   return new Request(`https://brain.test${path}`, {
     headers: {
       Authorization: `Bearer ${encodedKubeconfig("shared", workspaceActor)}`,
+      "X-Sealos-App-Token": appToken ?? (await mintAppToken(workspaceActor)),
     },
   });
 }
@@ -50,6 +74,7 @@ function handlerDependencies(
   overrides: Partial<AssistantConversationHandlerDependencies> = {}
 ): AssistantConversationHandlerDependencies {
   return {
+    appTokenConfig: APP_TOKEN_CONFIG,
     bootstrap: () => Promise.reject(new Error("not used")),
     list: () => Promise.resolve([]),
     read: () => Promise.resolve(null),
@@ -100,7 +125,7 @@ test("conversation listing ignores a spoofed user id and returns only the verifi
   );
 
   const response = await handlers.threads(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/threads?namespace=shared&userId=bob-cr",
       "alice-cr"
     )
@@ -134,7 +159,7 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
   );
 
   const response = await handlers.session(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/session?namespace=shared&userId=bob-cr",
       "alice-cr"
     )
@@ -180,13 +205,13 @@ test("reading another member's conversation is indistinguishable from a missing 
   );
 
   const foreign = await handlers.messagesGet(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/messages?namespace=shared&chatId=bob-chat",
       "alice-cr"
     )
   );
   const missing = await handlers.messagesGet(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/messages?namespace=shared&chatId=missing-chat",
       "alice-cr"
     )
@@ -214,7 +239,7 @@ test("a cross-namespace conversation request is forbidden before storage access"
   );
 
   const response = await handlers.threads(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/threads?namespace=another-workspace",
       "alice-cr"
     )
@@ -222,4 +247,55 @@ test("a cross-namespace conversation request is forbidden before storage access"
 
   assert.equal(response.status, 403);
   assert.equal(listed, false);
+});
+
+test("personal conversation routes return 401 without the app token header", async () => {
+  let listed = false;
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      list: () => {
+        listed = true;
+        return Promise.resolve([]);
+      },
+    })
+  );
+
+  const response = await handlers.threads(
+    new Request("https://brain.test/api/chat/threads?namespace=shared", {
+      headers: {
+        Authorization: `Bearer ${encodedKubeconfig("shared", "alice-cr")}`,
+      },
+    })
+  );
+
+  assert.equal(response.status, 401);
+  assert.equal(listed, false);
+});
+
+test("an app token signed with the wrong secret is refused with 401", async () => {
+  const handlers = createAssistantConversationHandlers(handlerDependencies());
+
+  const response = await handlers.session(
+    await authorizedRequest(
+      "/api/chat/session?namespace=shared",
+      "alice-cr",
+      await mintAppToken("alice-cr", "attacker-secret")
+    )
+  );
+
+  assert.equal(response.status, 401);
+});
+
+test("an app token bound to another actor is refused with 403", async () => {
+  const handlers = createAssistantConversationHandlers(handlerDependencies());
+
+  const response = await handlers.session(
+    await authorizedRequest(
+      "/api/chat/session?namespace=shared",
+      "alice-cr",
+      await mintAppToken("bob-cr")
+    )
+  );
+
+  assert.equal(response.status, 403);
 });

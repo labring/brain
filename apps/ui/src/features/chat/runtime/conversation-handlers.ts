@@ -1,5 +1,9 @@
 import type { UIMessage } from "ai";
 import {
+  type AppTokenVerificationConfig,
+  appTokenFromRequest,
+} from "@/lib/app-token";
+import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
   type VerifyKubeconfigNamespace,
@@ -13,6 +17,8 @@ import {
 import { jsonError } from "./errors";
 
 export interface AssistantConversationHandlerDependencies {
+  /** Test seam; defaults to `JWT_INTERNAL` + `REGION_UID` from the env. */
+  appTokenConfig?: AppTokenVerificationConfig | null;
   bootstrap: (
     owner: AssistantConversationOwner
   ) => Promise<AssistantSessionPayload>;
@@ -39,6 +45,8 @@ export function createAssistantConversationHandlers(
     | { ok: false; response: Response }
   > => {
     const authorization = await authorizeWorkspaceActor({
+      appToken: appTokenFromRequest(request),
+      appTokenConfig: dependencies.appTokenConfig,
       encodedKubeconfig: encodedKubeconfigFromRequest(request),
       expectedNamespace: clientNamespace?.trim() || undefined,
       normalizeNamespace: normalizeAssistantNamespace,

@@ -3,26 +3,34 @@
 import { useAtomValue } from "jotai";
 import useSWR from "swr";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
-import { kubeconfigAtom } from "@/lib/auth-store";
+import { appTokenRequestHeaders } from "@/lib/app-token-header";
+import { appTokenAtom, kubeconfigAtom } from "@/lib/auth-store";
 
 interface GithubReposResponse {
   repos: GithubDeployerRepo[];
 }
 
 export function githubReposSWRKey(input: {
+  appToken: string;
   kubeconfig: string;
   namespace: string;
 }) {
   const namespace = input.namespace.trim();
   const kubeconfig = input.kubeconfig.trim();
   return namespace !== "" && kubeconfig !== ""
-    ? (["github-user-repos", namespace, input.kubeconfig] as const)
+    ? ([
+        "github-user-repos",
+        namespace,
+        input.kubeconfig,
+        input.appToken,
+      ] as const)
     : null;
 }
 
 async function fetchRepos(
   namespace: string,
-  kubeconfig: string
+  kubeconfig: string,
+  appToken: string
 ): Promise<GithubDeployerRepo[]> {
   const url = new URL("/api/github/repos", window.location.origin);
   url.searchParams.set("namespace", namespace);
@@ -31,7 +39,10 @@ async function fetchRepos(
     headers:
       kubeconfig.trim() === ""
         ? undefined
-        : { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` },
+        : {
+            Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
+            ...appTokenRequestHeaders(appToken),
+          },
   });
   if (!response.ok) {
     throw new Error(await response.text());
@@ -44,15 +55,16 @@ export function useGithubRepos(input: {
   isAuthorized: boolean;
   namespace: string | undefined;
 }) {
+  const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = input.namespace?.trim() ?? "";
   const swrKey = input.isAuthorized
-    ? githubReposSWRKey({ kubeconfig, namespace })
+    ? githubReposSWRKey({ appToken, kubeconfig, namespace })
     : null;
 
   const { data, error, isLoading, mutate } = useSWR(
     swrKey,
-    () => fetchRepos(namespace, kubeconfig),
+    () => fetchRepos(namespace, kubeconfig, appToken),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
