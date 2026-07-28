@@ -6,7 +6,12 @@ import {
   getDevboxAuthTokenFromEnv,
   getDevboxBaseUrlFromEnv,
   getDevboxDefaultImageFromEnv,
+  isDevboxConfiguredFromEnv,
 } from "./config-core";
+
+export function isDevboxConfigured(): boolean {
+  return isDevboxConfiguredFromEnv(process.env);
+}
 
 export function getDevboxBaseUrl(): string {
   return getDevboxBaseUrlFromEnv(process.env);
