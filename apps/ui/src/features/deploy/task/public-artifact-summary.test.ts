@@ -436,6 +436,13 @@ test("trusted public AI timeline strips output summaries from every dedupe key",
             message: legacySecret,
             unknown: legacySecret,
           },
+          {
+            createdAt: "2026-07-23T00:00:02.000Z",
+            dedupeKey: "deployment_task.output_partial:second-signature",
+            id: "step-output-latest",
+            message: legacySecret,
+            unknown: legacySecret,
+          },
         ],
         id: "generate-deployment",
         label: "Generate deployment",
@@ -475,6 +482,11 @@ test("trusted public AI timeline strips output summaries from every dedupe key",
     projected?.steps[0]?.events[0]?.dedupeKey,
     "deployment_task.output_partial"
   );
+  assert.equal(projected?.steps[0]?.events.length, 1);
+  assert.equal(
+    projected?.steps[0]?.events[0]?.createdAt,
+    "2026-07-23T00:00:02.000Z"
+  );
   assert.equal(
     projected?.steps[0]?.resultCards?.[0]?.events[0]?.dedupeKey,
     "deployment_task.output_ready"
@@ -491,6 +503,71 @@ test("trusted public AI timeline strips output summaries from every dedupe key",
   );
   assert.equal(JSON.stringify(projected).includes(legacySecret), false);
   assert.equal(timeline.steps[0]?.events[0]?.dedupeKey, outputPartialDedupeKey);
+});
+
+test("public AI timeline shows allowlisted progress and omits unknown events", () => {
+  const privateText = "private-timeline-text";
+  const timeline = {
+    publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+    revision: 4,
+    status: "running",
+    steps: [
+      {
+        events: [
+          {
+            createdAt: "2026-07-23T00:00:00.000Z",
+            dedupeKey: "deployment_task.prepare_started",
+            id: "prepare-started",
+            message: privateText,
+          },
+          {
+            createdAt: "2026-07-23T00:00:01.000Z",
+            dedupeKey: "unknown-private-event",
+            id: "unknown-event",
+            message: privateText,
+          },
+          {
+            createdAt: "2026-07-23T00:00:02.000Z",
+            dedupeKey: "deployment_task.workspace_ready",
+            id: "workspace-ready",
+            message: privateText,
+          },
+        ],
+        id: "prepare-workspace",
+        label: privateText,
+        order: 99,
+        status: "completed",
+      },
+    ],
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:02.000Z",
+  } as unknown as DeploymentTaskTimelineSnapshot;
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+  });
+
+  assert.deepEqual(
+    projected?.steps[0]?.events.map(({ dedupeKey, message }) => ({
+      dedupeKey,
+      message,
+    })),
+    [
+      {
+        dedupeKey: "deployment_task.prepare_started",
+        message: "Preparing deployment.",
+      },
+      {
+        dedupeKey: "deployment_task.workspace_ready",
+        message: "Deployment workspace is ready.",
+      },
+    ]
+  );
+  assert.equal(JSON.stringify(projected).includes(privateText), false);
+  assert.equal(
+    JSON.stringify(projected).includes("Deployment progress updated."),
+    false
+  );
 });
 
 test("legacy public AI timeline hides result references", () => {
@@ -584,10 +661,7 @@ test("public AI timeline rebuilds legacy failure events without raw text", () =>
     projected?.steps[0]?.events[0]?.message,
     "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them."
   );
-  assert.equal(
-    projected?.steps[0]?.events[1]?.message,
-    "Deployment progress updated."
-  );
+  assert.equal(projected?.steps[0]?.events.length, 1);
   assert.equal(JSON.stringify(projected).includes(legacySecret), false);
 });
 

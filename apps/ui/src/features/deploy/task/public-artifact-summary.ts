@@ -402,6 +402,24 @@ const AI_OUTPUT_TIMELINE_EVENT_KINDS = [
   "deployment_task.output_ready",
 ] as const;
 
+type AiPublicEventKind = keyof typeof AI_PUBLIC_EVENT_MESSAGES;
+
+function aiPublicTimelineEventKind(
+  dedupeKey: unknown
+): AiPublicEventKind | null {
+  if (typeof dedupeKey !== "string") {
+    return null;
+  }
+  if (Object.hasOwn(AI_PUBLIC_EVENT_MESSAGES, dedupeKey)) {
+    return dedupeKey as AiPublicEventKind;
+  }
+  return (
+    AI_OUTPUT_TIMELINE_EVENT_KINDS.find((kind) =>
+      dedupeKey.startsWith(`${kind}:`)
+    ) ?? null
+  );
+}
+
 function safeIsoTimestamp(value: unknown, fallback: string): string {
   if (typeof value !== "string" || value.length > 30) {
     return fallback;
@@ -418,15 +436,18 @@ function publicAiTimelineEvent(input: {
   fallbackCreatedAt: string;
   id: string;
   preserveInternalIdentity: boolean;
-}): DeploymentTimelineEvent {
+  retainUnknownPlaceholder: boolean;
+}): DeploymentTimelineEvent | null {
   const { event } = input;
-  const eventKind = AI_OUTPUT_TIMELINE_EVENT_KINDS.find(
-    (kind) =>
-      event.dedupeKey === kind || event.dedupeKey?.startsWith(`${kind}:`)
-  );
+  const eventKind = aiPublicTimelineEventKind(event.dedupeKey);
   const isTerminalFailure = isDeploymentTaskTerminalFailureEventKey(
     event.dedupeKey
   );
+  if (
+    !(isTerminalFailure || eventKind != null || input.retainUnknownPlaceholder)
+  ) {
+    return null;
+  }
   let message = "Deployment progress updated.";
   let publicDedupeKey: string | undefined;
   let reason: string | undefined;
@@ -462,6 +483,42 @@ function publicAiTimelineEvent(input: {
       ? { source: event.source }
       : {}),
   };
+}
+
+function projectAiTimelineEvents(input: {
+  events: readonly DeploymentTimelineEvent[];
+  failureReason: DeployTaskFailureReason;
+  fallbackCreatedAt: string;
+  idPrefix: string;
+  preserveInternalIdentity: boolean;
+  retainUnknownPlaceholder: boolean;
+}): DeploymentTimelineEvent[] {
+  const projected = input.events.flatMap((event, eventIndex) => {
+    const publicEvent = publicAiTimelineEvent({
+      event,
+      failureReason: input.failureReason,
+      fallbackCreatedAt: input.fallbackCreatedAt,
+      id: `${input.idPrefix}-event-${eventIndex}`,
+      preserveInternalIdentity: input.preserveInternalIdentity,
+      retainUnknownPlaceholder: input.retainUnknownPlaceholder,
+    });
+    return publicEvent == null ? [] : [publicEvent];
+  });
+  if (input.preserveInternalIdentity) {
+    return projected;
+  }
+
+  const lastIndexByDedupeKey = new Map<string, number>();
+  for (const [index, event] of projected.entries()) {
+    const dedupeKey = event.dedupeKey?.trim();
+    if (dedupeKey) {
+      lastIndexByDedupeKey.set(dedupeKey, index);
+    }
+  }
+  return projected.filter((event, index) => {
+    const dedupeKey = event.dedupeKey?.trim();
+    return !dedupeKey || lastIndexByDedupeKey.get(dedupeKey) === index;
+  });
 }
 
 function safeKubernetesName(value: unknown): string | null {
@@ -570,6 +627,7 @@ function publicAiResultCard(input: {
   fallbackCreatedAt: string;
   index: number;
   preserveInternalIdentity: boolean;
+  retainUnknownPlaceholder: boolean;
 }): DeploymentResultResourceCard | null {
   const ref = publicAiResultRef(input.card.resultRef);
   if (ref == null) {
@@ -579,16 +637,14 @@ function publicAiResultCard(input: {
     ? input.card.status
     : "unknown";
   return {
-    events: (Array.isArray(input.card.events) ? input.card.events : []).map(
-      (event, eventIndex) =>
-        publicAiTimelineEvent({
-          event,
-          failureReason: input.failureReason,
-          fallbackCreatedAt: input.fallbackCreatedAt,
-          id: `card-${input.index}-event-${eventIndex}`,
-          preserveInternalIdentity: input.preserveInternalIdentity,
-        })
-    ),
+    events: projectAiTimelineEvents({
+      events: Array.isArray(input.card.events) ? input.card.events : [],
+      failureReason: input.failureReason,
+      fallbackCreatedAt: input.fallbackCreatedAt,
+      idPrefix: `card-${input.index}`,
+      preserveInternalIdentity: input.preserveInternalIdentity,
+      retainUnknownPlaceholder: input.retainUnknownPlaceholder,
+    }),
     id: resultCardId(ref),
     latestStatusText: resultCardStatusText(status),
     required: input.card.required === true,
@@ -625,6 +681,7 @@ function projectAiDeployTaskTimelineSnapshot(
     options.mode === "persistence" &&
     snapshot.publicProjectionVersion ===
       CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION;
+  const retainUnknownPlaceholder = options.mode === "persistence";
   return {
     ...(options.mode === "persistence"
       ? {
@@ -658,6 +715,7 @@ function projectAiDeployTaskTimelineSnapshot(
                     fallbackCreatedAt,
                     index: cardIndex,
                     preserveInternalIdentity,
+                    retainUnknownPlaceholder,
                   });
                   return projected == null ? [] : [projected];
                 }
@@ -665,16 +723,14 @@ function projectAiDeployTaskTimelineSnapshot(
             : [];
         return [
           {
-            events: (Array.isArray(step.events) ? step.events : []).map(
-              (event, eventIndex) =>
-                publicAiTimelineEvent({
-                  event,
-                  failureReason,
-                  fallbackCreatedAt,
-                  id: `${step.id}-event-${eventIndex}`,
-                  preserveInternalIdentity,
-                })
-            ),
+            events: projectAiTimelineEvents({
+              events: Array.isArray(step.events) ? step.events : [],
+              failureReason,
+              fallbackCreatedAt,
+              idPrefix: step.id,
+              preserveInternalIdentity,
+              retainUnknownPlaceholder,
+            }),
             id: step.id,
             label: metadata.label,
             order: metadata.order,
