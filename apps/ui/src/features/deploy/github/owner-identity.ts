@@ -24,3 +24,9 @@ export interface GithubConnectionOwnerIdentity {
    */
   userUid: string;
 }
+
+/** A verified actor entering a connection route: the uid-keyed owner plus the per-region crName, which is used only to find that actor's legacy rows. */
+export interface VerifiedGithubConnectionActor {
+  legacyWorkspaceActor: string;
+  owner: GithubConnectionOwnerIdentity;
+}

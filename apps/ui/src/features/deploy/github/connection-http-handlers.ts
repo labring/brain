@@ -11,14 +11,16 @@ import {
 import {
   CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
   type GithubConnectionOwnerIdentity,
+  type VerifiedGithubConnectionActor,
 } from "./owner-identity";
 
 export type GithubConnectionStatusLookup = (
   owner: GithubConnectionOwnerIdentity
 ) => Promise<object | null>;
 
+/** Forgets the actor's connection across both generations (ADR-0057). */
 export type GithubConnectionDelete = (
-  owner: GithubConnectionOwnerIdentity
+  actor: VerifiedGithubConnectionActor
 ) => Promise<void>;
 
 export type GithubRepositoryList = (
@@ -29,10 +31,9 @@ export type GithubRepositoryList = (
  * Lazy re-key (ADR-0059): every verified connection entry request first
  * adopts the actor's legacy generation-1 crName row into the uid owner.
  */
-export type GithubLegacyConnectionAdoption = (input: {
-  legacyWorkspaceActor: string;
-  owner: GithubConnectionOwnerIdentity;
-}) => Promise<void>;
+export type GithubLegacyConnectionAdoption = (
+  actor: VerifiedGithubConnectionActor
+) => Promise<void>;
 
 export type GithubOAuthSessionCreate = (input: {
   baseUrl: string;
@@ -91,12 +92,6 @@ function jsonError(input: {
     { code: input.code, error: input.message },
     { status: input.status }
   );
-}
-
-interface VerifiedGithubConnectionActor {
-  /** The verified actor's per-region crName, used only for lazy adoption. */
-  legacyWorkspaceActor: string;
-  owner: GithubConnectionOwnerIdentity;
 }
 
 async function authorizeGithubConnectionOwner(input: {
@@ -242,7 +237,6 @@ export function createGithubRepositoryListHandler(input: {
 }
 
 export function createGithubConnectionDeleteHandler(input: {
-  adoptLegacyConnection: GithubLegacyConnectionAdoption;
   appTokenConfig?: AppTokenVerificationConfig | null;
   deleteConnection: GithubConnectionDelete;
   verify?: VerifyKubeconfigNamespace;
@@ -252,10 +246,10 @@ export function createGithubConnectionDeleteHandler(input: {
     if (actor instanceof Response) {
       return actor;
     }
-    // Adopt before deleting so a disconnect also forgets a legacy-keyed
-    // connection (ADR-0057's forget-on-disconnect covers both generations).
-    await input.adoptLegacyConnection(actor);
-    await input.deleteConnection(actor.owner);
+    // Disconnect forgets both the uid-keyed row and any inert legacy row
+    // (ADR-0057) — deleting only the current owner would let a later entry
+    // request adopt the legacy row and revive a forgotten authorization.
+    await input.deleteConnection(actor);
     return Response.json({ connection: null });
   };
 }

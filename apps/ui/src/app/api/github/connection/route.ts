@@ -5,7 +5,7 @@ import {
 import {
   adoptLegacyGithubConnectionForOwner,
   getGithubConnectionStatusForOwner,
-  revokeGithubConnectionForOwner,
+  revokeGithubConnectionsForActor,
 } from "@/features/deploy/github/connection-service";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,5 @@ export const GET = createGithubConnectionStatusHandler({
 });
 
 export const DELETE = createGithubConnectionDeleteHandler({
-  adoptLegacyConnection: adoptLegacyGithubConnectionForOwner,
-  deleteConnection: revokeGithubConnectionForOwner,
+  deleteConnection: revokeGithubConnectionsForActor,
 });

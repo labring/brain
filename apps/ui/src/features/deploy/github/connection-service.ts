@@ -1,7 +1,7 @@
 import "server-only";
 
 import { generateId } from "ai";
-import { and, eq, type SQL, sql } from "drizzle-orm";
+import { and, eq, or, type SQL, sql } from "drizzle-orm";
 
 import {
   type AssistantPgTransaction,
@@ -23,6 +23,7 @@ import {
   CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
   type GithubConnectionOwnerIdentity,
   LEGACY_GITHUB_OWNER_IDENTITY_VERSION,
+  type VerifiedGithubConnectionActor,
 } from "./owner-identity";
 import {
   decryptGithubUserToken,
@@ -212,17 +213,46 @@ export async function getGithubConnectionStatusForOwner(
   return row == null ? null : toOauthConnectionDTO(row);
 }
 
-export async function revokeGithubConnectionForOwner(
-  input: GithubConnectionOwnerIdentity
+/**
+ * Disconnect forgets the actor's connection across both generations
+ * (ADR-0057): the uid-keyed row and any inert legacy crName row. Deleting
+ * only the current owner would let a later entry request adopt the legacy
+ * row and revive an authorization the user asked to forget.
+ */
+export async function revokeGithubConnectionsForActor(
+  actor: VerifiedGithubConnectionActor
 ): Promise<void> {
+  const { legacyWorkspaceActor, userUid } = requireVerifiedActor(actor);
   await getAssistantDb()
     .delete(githubOauthConnections)
-    .where(githubOauthOwnerWhere(input));
+    .where(
+      and(
+        eq(
+          githubOauthConnections.namespace,
+          normalizeAssistantNamespace(actor.owner.namespace)
+        ),
+        or(
+          and(
+            eq(githubOauthConnections.workspaceActor, userUid),
+            eq(
+              githubOauthConnections.ownerIdentityVersion,
+              actor.owner.ownerIdentityVersion
+            )
+          ),
+          legacyConnectionOf(legacyWorkspaceActor)
+        )
+      )
+    );
 }
 
 const CURRENT_OWNER_UNIQUE_INDEX =
   "github_oauth_connections_current_owner_unique_idx";
 
+/**
+ * Matches only conflicts on the current-owner unique index — via the
+ * driver's `constraint` field or the Postgres error message — so unrelated
+ * constraint violations still surface.
+ */
 function isCurrentOwnerUniqueViolation(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; depth < 6 && current != null; depth += 1) {
@@ -231,11 +261,11 @@ function isCurrentOwnerUniqueViolation(error: unknown): boolean {
     }
     const record = current as {
       cause?: unknown;
-      code?: unknown;
+      constraint?: unknown;
       message?: unknown;
     };
     if (
-      record.code === "23505" ||
+      record.constraint === CURRENT_OWNER_UNIQUE_INDEX ||
       (typeof record.message === "string" &&
         record.message.includes(CURRENT_OWNER_UNIQUE_INDEX))
     ) {
@@ -246,6 +276,32 @@ function isCurrentOwnerUniqueViolation(error: unknown): boolean {
   return false;
 }
 
+function legacyConnectionOf(legacyWorkspaceActor: string) {
+  return and(
+    eq(githubOauthConnections.workspaceActor, legacyWorkspaceActor),
+    eq(
+      githubOauthConnections.ownerIdentityVersion,
+      LEGACY_GITHUB_OWNER_IDENTITY_VERSION
+    )
+  );
+}
+
+function requireVerifiedActor(actor: VerifiedGithubConnectionActor): {
+  legacyWorkspaceActor: string;
+  userUid: string;
+} {
+  const legacyWorkspaceActor = actor.legacyWorkspaceActor.trim();
+  const userUid = actor.owner.userUid.trim();
+  if (
+    legacyWorkspaceActor === "" ||
+    userUid === "" ||
+    actor.owner.ownerIdentityVersion !== CURRENT_GITHUB_OWNER_IDENTITY_VERSION
+  ) {
+    throw new Error("Current GitHub connection owner identity is required.");
+  }
+  return { legacyWorkspaceActor, userUid };
+}
+
 /**
  * Lazy re-key (ADR-0059): re-keys the verified actor's legacy generation-1
  * crName row to the proven uid and upgrades it to the current generation in
@@ -253,19 +309,10 @@ function isCurrentOwnerUniqueViolation(error: unknown): boolean {
  * reauthorized under the uid — the new authorization wins and the legacy row
  * stays inert (invisible to uid-keyed reads).
  */
-export async function adoptLegacyGithubConnectionForOwner(input: {
-  legacyWorkspaceActor: string;
-  owner: GithubConnectionOwnerIdentity;
-}): Promise<void> {
-  const legacyWorkspaceActor = input.legacyWorkspaceActor.trim();
-  const userUid = input.owner.userUid.trim();
-  if (
-    legacyWorkspaceActor === "" ||
-    userUid === "" ||
-    input.owner.ownerIdentityVersion !== CURRENT_GITHUB_OWNER_IDENTITY_VERSION
-  ) {
-    throw new Error("Current GitHub connection owner identity is required.");
-  }
+export async function adoptLegacyGithubConnectionForOwner(
+  actor: VerifiedGithubConnectionActor
+): Promise<void> {
+  const { legacyWorkspaceActor, userUid } = requireVerifiedActor(actor);
   try {
     await getAssistantDb()
       .update(githubOauthConnections)
@@ -278,13 +325,9 @@ export async function adoptLegacyGithubConnectionForOwner(input: {
         and(
           eq(
             githubOauthConnections.namespace,
-            normalizeAssistantNamespace(input.owner.namespace)
+            normalizeAssistantNamespace(actor.owner.namespace)
           ),
-          eq(githubOauthConnections.workspaceActor, legacyWorkspaceActor),
-          eq(
-            githubOauthConnections.ownerIdentityVersion,
-            LEGACY_GITHUB_OWNER_IDENTITY_VERSION
-          )
+          legacyConnectionOf(legacyWorkspaceActor)
         )
       );
   } catch (error) {
