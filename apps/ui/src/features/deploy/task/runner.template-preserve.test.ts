@@ -70,8 +70,7 @@ let deployTemplateInstanceImpl: () => Promise<{
   resources: { name: string; resourceType: string }[];
 }>;
 
-const abortedController = new AbortController();
-abortedController.abort();
+const activeController = new AbortController();
 
 // "server-only" stays shimmed for the whole process: its real module throws
 // outside a react-server condition and exports no runtime API, so the shim
@@ -144,7 +143,7 @@ mock.module("./runner-writes", () => ({
     requestInputsCalls.push(input);
     return Promise.resolve();
   },
-  deployTaskRunSignal: () => abortedController.signal,
+  deployTaskRunSignal: () => activeController.signal,
   recordDeployTaskEvent: (
     _taskId: string,
     event: { kind: string; [key: string]: unknown }
@@ -867,7 +866,9 @@ data:
       timelineEvents,
     });
     expect(persistedState).not.toContain("provider-secret-readiness-token");
-    expect(persistedState).toContain("observation.");
+    expect(persistedState).toContain(
+      "Deployment resources didn't become ready in time."
+    );
   });
 
   it("re-blocks the complete input form when a submitted value is invalid", async () => {

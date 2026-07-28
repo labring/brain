@@ -98,6 +98,12 @@ export interface DeployTaskTransitionSet {
 }
 
 export interface DeployTaskTransitionInput {
+  /**
+   * Optional atomic precedence guard for deadline resolution. A persisted
+   * cancel intent wins over timeout; a timeout transition that locked the row
+   * first prevents a later cancel request through the terminal status guard.
+   */
+  cancelRequest?: "absent" | "present";
   event?: DeployTaskTransitionEvent;
   /** Fence: reject unless the row still carries this lease epoch. */
   expectedLeaseEpoch?: number;
@@ -247,6 +253,11 @@ export async function transitionDeployTask(
   ];
   if (input.expectedLeaseEpoch != null) {
     wheres.push(sql`"lease_epoch" = ${input.expectedLeaseEpoch}`);
+  }
+  if (input.cancelRequest === "absent") {
+    wheres.push(sql`"cancel_requested_at" IS NULL`);
+  } else if (input.cancelRequest === "present") {
+    wheres.push(sql`"cancel_requested_at" IS NOT NULL`);
   }
 
   const update = sql`UPDATE ${TASKS}

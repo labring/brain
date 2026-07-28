@@ -45,6 +45,7 @@ test("applyRenderedTemplateDeployment applies Instance, reads UID, then applies 
     authorization?: string;
     body?: string;
     method?: string;
+    signal?: AbortSignal | null;
     url: string;
   }> = [];
   globalThis.fetch = ((url, init) => {
@@ -52,6 +53,7 @@ test("applyRenderedTemplateDeployment applies Instance, reads UID, then applies 
       authorization: (init?.headers as Record<string, string>)?.Authorization,
       body: typeof init?.body === "string" ? init.body : undefined,
       method: init?.method,
+      signal: init?.signal,
       url: String(url),
     });
     if (String(url).includes("/api/k8s/v1alpha1/get")) {
@@ -106,6 +108,7 @@ test("applyRenderedTemplateDeployment applies Instance, reads UID, then applies 
       },
     ],
   };
+  const controller = new AbortController();
 
   const result = await applyRenderedTemplateDeployment({
     encodedKubeconfig:
@@ -113,6 +116,7 @@ test("applyRenderedTemplateDeployment applies Instance, reads UID, then applies 
     namespace: "ns-admin",
     projectId: "project-uid",
     rendered,
+    signal: controller.signal,
     templateName: "memos",
   });
 
@@ -124,6 +128,7 @@ test("applyRenderedTemplateDeployment applies Instance, reads UID, then applies 
   );
   assert.equal(calls[1]?.authorization, calls[0]?.authorization);
   assert.equal(calls[2]?.authorization, calls[0]?.authorization);
+  assert.ok(calls.every((call) => call.signal === controller.signal));
   assert.match(calls[0]?.url ?? "", APPLY_PATH_RE);
   assert.match(calls[1]?.url ?? "", INSTANCE_KIND_QUERY_RE);
   assert.match(calls[1]?.url ?? "", INSTANCE_NAME_QUERY_RE);

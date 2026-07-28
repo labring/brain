@@ -1,3 +1,5 @@
+import { DEPLOY_TIMEOUT_POLICY } from "../timeout-policy";
+
 /**
  * Engine cadences (ADR 0037). Tuning, not contract — tests shrink them; the
  * transition table and fencing rules are the contract.
@@ -28,7 +30,7 @@ export const DEPLOY_TASK_ENGINE_CADENCE: DeployTaskEngineCadence = {
   devboxPauseBatchSize: 10,
   leaseDurationMs: 60_000,
   leaseRenewIntervalMs: 20_000,
-  maxActiveRunMs: 30 * 60_000,
+  maxActiveRunMs: DEPLOY_TIMEOUT_POLICY.overallMs,
   purgeBatchSize: 20,
   queuedStartDeadlineMs: 120_000,
   reaperIntervalMs: 30_000,

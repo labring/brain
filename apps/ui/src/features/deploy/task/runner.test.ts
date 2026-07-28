@@ -31,6 +31,7 @@ describe("deploy task build runtime contract", () => {
   it("derives kaniko S3 contract from DevBox network identity", () => {
     expect(
       buildRuntimeContract({
+        deadlineAtMs: Date.parse("2026-07-27T00:30:00.000Z"),
         devbox: {
           creationTimestamp: null,
           deletionTimestamp: null,
@@ -38,10 +39,13 @@ describe("deploy task build runtime contract", () => {
           network: { uniqueID: "devbox-s3.ns-demo.svc.cluster.local" },
           state: { phase: "Running", spec: "", status: "" },
         },
+        nowMs: Date.parse("2026-07-27T00:00:00.000Z"),
       })
     ).toEqual({
       accessKeyId: "admin",
       bucket: "kaniko-context",
+      buildDeadlineAt: "2026-07-27T00:30:00.000Z",
+      buildDeadlineSeconds: 1800,
       devboxName: "sealai-deploy-demo",
       region: "sealos-internal",
       s3Endpoint: "http://devbox-s3.ns-demo.svc.cluster.local:1319",
@@ -56,12 +60,14 @@ describe("deploy task build runtime contract", () => {
   it("does not create a kaniko S3 contract without DevBox network identity", () => {
     expect(
       buildRuntimeContract({
+        deadlineAtMs: Date.parse("2026-07-27T00:30:00.000Z"),
         devbox: {
           creationTimestamp: null,
           deletionTimestamp: null,
           name: "sealai-deploy-demo",
           state: { phase: "Running", spec: "", status: "" },
         },
+        nowMs: Date.parse("2026-07-27T00:00:00.000Z"),
       })
     ).toBeNull();
   });
@@ -69,6 +75,7 @@ describe("deploy task build runtime contract", () => {
   it("derives kaniko S3 contract from Kubernetes DevBox status when the DevBox API omits network identity", () => {
     expect(
       buildRuntimeContract({
+        deadlineAtMs: Date.parse("2026-07-27T00:10:00.000Z"),
         devbox: {
           creationTimestamp: null,
           deletionTimestamp: null,
@@ -76,8 +83,11 @@ describe("deploy task build runtime contract", () => {
           state: { phase: "Running", spec: "", status: "" },
         },
         networkId: "heart-law-kctz",
+        nowMs: Date.parse("2026-07-27T00:00:00.000Z"),
       })
     ).toMatchObject({
+      buildDeadlineAt: "2026-07-27T00:10:00.000Z",
+      buildDeadlineSeconds: 600,
       devboxName: "sealai-deploy-demo",
       s3Endpoint: "http://heart-law-kctz:1319",
     });
@@ -103,8 +113,8 @@ describe("deploy task runtime config", () => {
     ).toBe("20Gi");
   });
 
-  it("waits up to one hour for deploy DevBox runtime readiness", () => {
-    expect(DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS).toBe(60 * 60_000);
+  it("waits up to five minutes for deploy DevBox runtime readiness", () => {
+    expect(DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS).toBe(5 * 60_000);
   });
 });
 

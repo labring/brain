@@ -36,6 +36,7 @@ import {
   execDevbox,
   getDevbox,
   listDevboxes,
+  pauseDevbox,
   refreshDevboxPause,
   resumeDevbox,
 } from "@/lib/devbox/client";
@@ -145,6 +146,13 @@ import {
   upsertResultResourceCard,
 } from "./timeline";
 import { deploymentTaskTimelineFromTaskRecord } from "./timeline-storage";
+import {
+  DEPLOY_TIMEOUT_POLICY,
+  deploymentPhaseDeadlineAt,
+  deployTaskDeadlineAt,
+  remainingDeploymentTimeoutMs,
+  remainingDeploymentTimeoutSeconds,
+} from "./timeout-policy";
 
 const DEPLOY_DEVBOX_NAME_PREFIX = "sealai-deploy";
 const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
@@ -159,11 +167,16 @@ const DEPLOY_DELIVERY_MANIFEST_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/delivery-
 const DEPLOY_BUILD_RESULT_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-result.json`;
 const DEPLOY_BUILD_RUNTIME_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-runtime.json`;
 const DEPLOY_TEMPLATE_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/template/index.yaml`;
-const SKILL_INSTALL_TIMEOUT_SECONDS = 300;
-const READ_OUTPUT_TIMEOUT_SECONDS = 30;
-const DEPLOY_OUTPUT_PROGRESS_POLL_MS = 15_000;
+const SKILL_INSTALL_COMMAND_TIMEOUT_SECONDS =
+  DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000;
+const DEPLOY_SKILLS_CLI_VERSION = "1.5.20";
+const DEPLOY_SKILLS_REVISION = "cbb428ca852db1c5076ff15e9524fc5c1eb4cee3";
+const DEPLOY_SKILLS_SOURCE = `https://github.com/labring/sealos-skills.git#${DEPLOY_SKILLS_REVISION}`;
+const READ_OUTPUT_TIMEOUT_SECONDS = DEPLOY_TIMEOUT_POLICY.outputReadMs / 1000;
+const DEPLOY_OUTPUT_PROGRESS_POLL_MS = DEPLOY_TIMEOUT_POLICY.outputPollMs;
 const DIRECT_AP_READINESS_POLL_MS = 5000;
-const DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS = 10 * 60_000;
+const DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS =
+  DEPLOY_TIMEOUT_POLICY.readinessMs;
 const APPLY_QUOTA_EXCEEDED_RE = /\bexceeded quota(?::|\b)/i;
 const TEMPLATE_CLEANUP_KINDS = [
   "instances",
@@ -211,6 +224,20 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
     };
     signal.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+function combinedAbortSignal(
+  ...signals: Array<AbortSignal | undefined>
+): AbortSignal | undefined {
+  const activeSignals = signals.filter(
+    (signal): signal is AbortSignal => signal != null
+  );
+  if (activeSignals.length === 0) {
+    return undefined;
+  }
+  return activeSignals.length === 1
+    ? activeSignals[0]
+    : AbortSignal.any(activeSignals);
 }
 
 const DEPLOY_SENSITIVE_VALUES_KEY = "__sealaiDeploySensitiveValues";
@@ -311,6 +338,69 @@ function directApReadinessTimeoutMs(): number {
     : DIRECT_AP_READINESS_DEFAULT_TIMEOUT_MS;
 }
 
+function throwIfDeploymentDeadlineElapsed(
+  deadlineAtMs: number,
+  reason: DeployTaskFailureReason = "timeout",
+  stage?: DeployTaskFailureDetails["stage"]
+): void {
+  if (remainingDeploymentTimeoutMs({ deadlineAtMs }) <= 0) {
+    throw withDeployFailureDetails(deployFailureError(reason), {
+      ...(stage == null ? {} : { stage }),
+    });
+  }
+}
+
+function deploymentOperationSignal(input: {
+  deadlineAtMs: number;
+  reason?: DeployTaskFailureReason;
+  stage?: DeployTaskFailureDetails["stage"];
+  taskId: string;
+}): AbortSignal {
+  throwIfDeploymentDeadlineElapsed(
+    input.deadlineAtMs,
+    input.reason ?? "timeout",
+    input.stage
+  );
+  return AbortSignal.any([
+    deployTaskRunSignal(input.taskId),
+    AbortSignal.timeout(
+      Math.max(
+        1,
+        remainingDeploymentTimeoutMs({ deadlineAtMs: input.deadlineAtMs })
+      )
+    ),
+  ]);
+}
+
+function throwIfDeploymentOperationAborted(input: {
+  deadlineAtMs: number;
+  reason?: DeployTaskFailureReason;
+  signal: AbortSignal;
+  stage?: DeployTaskFailureDetails["stage"];
+  taskId: string;
+}): void {
+  throwIfDeployTaskAborted(input.taskId);
+  if (input.signal.aborted) {
+    throwIfDeploymentDeadlineElapsed(
+      input.deadlineAtMs,
+      input.reason ?? "timeout",
+      input.stage
+    );
+  }
+}
+
+function deploymentExecTimeoutSeconds(input: {
+  capMs?: number;
+  deadlineAtMs: number;
+  reason?: DeployTaskFailureReason;
+}): number {
+  const timeoutSeconds = remainingDeploymentTimeoutSeconds(input);
+  if (timeoutSeconds <= 0) {
+    throw deployFailureError(input.reason ?? "timeout");
+  }
+  return timeoutSeconds;
+}
+
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -400,6 +490,7 @@ function brainProductPath(kind: string): string {
 
 async function applyBrainManifestWithKubeconfig(input: {
   kubeconfig: string;
+  signal: AbortSignal;
   taskId: string;
   yaml: string;
 }): Promise<string> {
@@ -429,6 +520,7 @@ async function applyBrainManifestWithKubeconfig(input: {
       header,
       method: "PUT",
       path: brainProductPath(kind),
+      signal: input.signal,
     });
   }
   return `Applied ${docs.length} Brain direct resource${docs.length === 1 ? "" : "s"}.`;
@@ -459,6 +551,7 @@ async function getDevboxNetworkIdFromKubernetes(input: {
   encodedKubeconfig: string;
   name: string;
   namespace: string;
+  signal?: AbortSignal;
 }): Promise<string | null> {
   const result = await fetcher<unknown>({
     base: ApiUrl(),
@@ -472,6 +565,7 @@ async function getDevboxNetworkIdFromKubernetes(input: {
       name: input.name,
       namespace: input.namespace,
     },
+    signal: input.signal,
   });
   return nestedStringValue(result, ["status", "network", "uniqueID"]);
 }
@@ -480,6 +574,7 @@ async function applyDeploymentArtifact(input: {
   artifact: DeploymentArtifact;
   githubToken?: string;
   kubeconfig: string;
+  signal: AbortSignal;
   task: DeployTaskRow;
 }): Promise<{
   artifactSummary: DeployTaskArtifactSummary;
@@ -496,6 +591,7 @@ async function applyDeploymentArtifact(input: {
       encodedKubeconfig: input.kubeconfig,
       extraLabels: input.artifact.extraLabels,
       instanceName: input.artifact.instanceName,
+      signal: input.signal,
       templateName: input.artifact.templateName,
     });
     await normalizeTemplateProviderDbResources({
@@ -504,6 +600,7 @@ async function applyDeploymentArtifact(input: {
       namespace: input.task.namespace,
       projectId: input.task.projectId ?? deployed.instanceName,
       resources: deployed.resources,
+      signal: input.signal,
       templateName: input.artifact.templateName,
     });
     const created: DeploymentTemplateInstanceArtifact = {
@@ -555,6 +652,7 @@ async function applyDeploymentArtifact(input: {
               githubToken: input.githubToken,
             },
       rendered: input.artifact.rendered,
+      signal: input.signal,
       templateName: input.artifact.templateName,
     });
     return {
@@ -573,6 +671,7 @@ async function applyDeploymentArtifact(input: {
   });
   const notes = await applyBrainManifestWithKubeconfig({
     kubeconfig: input.kubeconfig,
+    signal: input.signal,
     taskId: input.task.id,
     yaml: prepared.yaml,
   });
@@ -736,6 +835,7 @@ async function observeResultCardReadiness(input: {
   kubeconfig: string;
   previousLatestStatus: string | undefined;
   previousStatus: DeploymentResultResourceCard["status"] | undefined;
+  signal: AbortSignal;
   surfaceObservationError: boolean;
   taskId: string;
 }): Promise<{
@@ -747,6 +847,7 @@ async function observeResultCardReadiness(input: {
     const observed = await observeDeploymentResultCardReadiness({
       card: input.card,
       kubeconfig: input.kubeconfig,
+      signal: input.signal,
       surfaceObservationError: input.surfaceObservationError,
     });
     // Only write when the observed state changed. An identical re-observation
@@ -794,14 +895,52 @@ async function observeResultCardReadiness(input: {
   }
 }
 
+async function observeResultCardBeforeDeadline(input: {
+  card: DeploymentResultResourceCard;
+  deadlineAtMs: number;
+  kubeconfig: string;
+  previousLatestStatus: string | undefined;
+  previousStatus: DeploymentResultResourceCard["status"] | undefined;
+  surfaceObservationError: boolean;
+  taskId: string;
+}): Promise<Awaited<ReturnType<typeof observeResultCardReadiness>> | null> {
+  try {
+    const signal = deploymentOperationSignal({
+      deadlineAtMs: input.deadlineAtMs,
+      reason: "readiness-timeout",
+      stage: "readiness",
+      taskId: input.taskId,
+    });
+    return await observeResultCardReadiness({
+      ...input,
+      signal,
+    });
+  } catch (error) {
+    throwIfDeployTaskAborted(input.taskId);
+    if (
+      remainingDeploymentTimeoutMs({
+        deadlineAtMs: input.deadlineAtMs,
+      }) <= 0
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function waitForRequiredResultCards(input: {
   cards: DeploymentResultResourceCard[];
+  deadlineAtMs?: number;
   kubeconfig: string;
   surfaceObservationError: boolean;
   taskId: string;
 }): Promise<void> {
   const startedAt = Date.now();
   const timeoutMs = directApReadinessTimeoutMs();
+  const deadlineAtMs = Math.min(
+    startedAt + timeoutMs,
+    input.deadlineAtMs ?? Number.POSITIVE_INFINITY
+  );
   let latestStatus = "waiting for required result resource observation";
   const latestStatusByCard = new Map<string, string>();
   const statusByCard = new Map<
@@ -809,20 +948,24 @@ async function waitForRequiredResultCards(input: {
     DeploymentResultResourceCard["status"]
   >();
 
-  while (Date.now() - startedAt <= timeoutMs) {
+  readinessLoop: while (Date.now() < deadlineAtMs) {
     // Cancel means "stop waiting" during verify (ADR 0038).
     await deployTaskCheckpoint(input.taskId);
     let requiredCardsRunning = true;
 
     for (const card of input.cards) {
-      const observed = await observeResultCardReadiness({
+      const observed = await observeResultCardBeforeDeadline({
         card,
+        deadlineAtMs,
         kubeconfig: input.kubeconfig,
         previousLatestStatus: latestStatusByCard.get(card.id),
         previousStatus: statusByCard.get(card.id),
         surfaceObservationError: input.surfaceObservationError,
         taskId: input.taskId,
       });
+      if (observed == null) {
+        break readinessLoop;
+      }
       latestStatus = observed.latestStatus;
       latestStatusByCard.set(card.id, observed.latestStatus);
       statusByCard.set(card.id, observed.status);
@@ -842,7 +985,10 @@ async function waitForRequiredResultCards(input: {
     }
 
     await abortableSleep(
-      DIRECT_AP_READINESS_POLL_MS,
+      Math.min(
+        DIRECT_AP_READINESS_POLL_MS,
+        Math.max(0, deadlineAtMs - Date.now())
+      ),
       deployTaskRunSignal(input.taskId)
     );
   }
@@ -919,10 +1065,12 @@ export function buildCodexGatewayEnv(
 export async function resolveGithubCodexGatewayCredentials(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
+  signal?: AbortSignal;
 }): Promise<CodexGatewayOpenAiCredentials> {
   const resolved = await resolveUserAiProxyCredentials({
     encodedKubeconfig: input.encodedKubeconfig,
     kubeconfigText: input.kubeconfig,
+    signal: input.signal,
   });
   if (!resolved.ok) {
     if (resolved.reason === "missing-kubeconfig") {
@@ -1244,14 +1392,16 @@ function isDevboxRuntimePendingError(error: unknown): error is DevboxApiError {
 
 async function getDevboxWithSecretRetry(
   authNamespace: string,
-  name: string
+  name: string,
+  signal?: AbortSignal
 ): Promise<DevboxInfo> {
   let attempt = 0;
 
   while (true) {
     try {
-      return (await getDevbox(authNamespace, name)).data;
+      return (await getDevbox(authNamespace, name, signal)).data;
     } catch (error) {
+      signal?.throwIfAborted();
       if (
         !isDevboxSecretPendingError(error) ||
         attempt >= DEVBOX_SECRET_READY_MAX_RETRIES
@@ -1259,26 +1409,43 @@ async function getDevboxWithSecretRetry(
         throw error;
       }
       attempt += 1;
-      await sleep(DEVBOX_SECRET_READY_RETRY_DELAY_MS);
+      if (signal == null) {
+        await sleep(DEVBOX_SECRET_READY_RETRY_DELAY_MS);
+      } else {
+        await abortableSleep(DEVBOX_SECRET_READY_RETRY_DELAY_MS, signal);
+        signal.throwIfAborted();
+      }
     }
   }
 }
 
 async function waitForRunningDevbox(input: {
+  deadlineAtMs?: number;
   name: string;
   namespace: string;
+  signal?: AbortSignal;
   taskId?: string;
 }): Promise<DevboxInfo> {
   const startedAt = Date.now();
+  const deadlineAtMs = Math.min(
+    startedAt + DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
+    input.deadlineAtMs ?? Number.POSITIVE_INFINITY
+  );
   let lastEventAt = startedAt;
 
-  while (Date.now() - startedAt < DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS) {
+  while (Date.now() < deadlineAtMs) {
+    input.signal?.throwIfAborted();
     try {
-      const info = await getDevboxWithSecretRetry(input.namespace, input.name);
+      const info = await getDevboxWithSecretRetry(
+        input.namespace,
+        input.name,
+        input.signal
+      );
       if (info.state.phase === "Running") {
         return info;
       }
     } catch (error) {
+      input.signal?.throwIfAborted();
       if (!isDevboxRuntimePendingError(error)) {
         throw error;
       }
@@ -1303,7 +1470,10 @@ async function waitForRunningDevbox(input: {
         phase: "prepare",
       });
     }
-    if (input.taskId == null) {
+    if (input.signal != null) {
+      await abortableSleep(DEVBOX_RUNTIME_READY_POLL_MS, input.signal);
+      input.signal.throwIfAborted();
+    } else if (input.taskId == null) {
       await sleep(DEVBOX_RUNTIME_READY_POLL_MS);
     } else {
       throwIfDeployTaskAborted(input.taskId);
@@ -1314,34 +1484,42 @@ async function waitForRunningDevbox(input: {
     }
   }
 
-  throw new Error(
-    `Timed out waiting for deploy Devbox runtime after ${Math.round(
-      DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS / 1000
-    )}s.`
+  throw withDeployFailureDetails(
+    new Error(
+      `Timed out waiting for deploy Devbox runtime after ${Math.round(
+        (deadlineAtMs - startedAt) / 1000
+      )}s.`
+    ),
+    { reason: "timeout" }
   );
 }
 
 async function ensureRunningDevbox(
   authNamespace: string,
   name: string,
-  taskId?: string
+  taskId?: string,
+  deadlineAtMs?: number,
+  signal?: AbortSignal
 ): Promise<DevboxInfo> {
-  const info = await getDevboxWithSecretRetry(authNamespace, name);
+  const info = await getDevboxWithSecretRetry(authNamespace, name, signal);
   if (info.state.phase === "Running") {
     return info;
   }
 
   try {
-    await resumeDevbox(authNamespace, name);
+    await resumeDevbox(authNamespace, name, signal);
   } catch (error) {
+    signal?.throwIfAborted();
     if (!(error instanceof DevboxApiError && error.status === 409)) {
       throw error;
     }
   }
 
   return await waitForRunningDevbox({
+    deadlineAtMs,
     name,
     namespace: authNamespace,
+    signal,
     taskId,
   });
 }
@@ -1447,25 +1625,37 @@ function prepareEmptyWorkspaceCommand(): string {
   ].join("\n");
 }
 
-function installSkillsCommand(): string {
+export function installSkillsCommand(): string {
   return [
     "set -euo pipefail",
     `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    `expected_revision=${shellQuote(DEPLOY_SKILLS_REVISION)}`,
+    `skill_source=${shellQuote(DEPLOY_SKILLS_SOURCE)}`,
+    'revision_marker="$workspace_dir/.sealos/deploy-skills-revision"',
     'agent_skill_marker="$workspace_dir/.agents/skills/sealos-deploy/SKILL.md"',
+    'agent_build_skill_marker="$workspace_dir/.agents/skills/k8s-kaniko-job/SKILL.md"',
     'codex_skill_marker="$workspace_dir/.codex/skills/sealos-deploy/SKILL.md"',
-    'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
-    "if command -v npx >/dev/null 2>&1; then",
-    '  cd "$workspace_dir"',
-    "  timeout 120 npx --yes skills add https://github.com/labring/sealos-skills/tree/brain-deploy -y",
-    "else",
+    'codex_build_skill_marker="$workspace_dir/.codex/skills/k8s-kaniko-job/SKILL.md"',
+    "if ! command -v npx >/dev/null 2>&1; then",
     "  printf 'ERROR: npx is required to install sealos-deploy skill\\n' >&2",
     "  exit 1",
     "fi",
-    "fi",
+    "for skill_name in sealos-deploy dockerfile-skill k8s-kaniko-job cloud-native-readiness docker-to-sealos; do",
+    '  rm -rf "$workspace_dir/.agents/skills/$skill_name"',
+    '  rm -rf "$workspace_dir/.codex/skills/$skill_name"',
+    "done",
+    'cd "$workspace_dir"',
+    `timeout ${SKILL_INSTALL_COMMAND_TIMEOUT_SECONDS} npx --yes skills@${DEPLOY_SKILLS_CLI_VERSION} add "$skill_source" -y`,
     'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
     "  printf 'ERROR: sealos-deploy skill not found after install\\n' >&2",
     "  exit 1",
     "fi",
+    'if [ ! -f "$agent_build_skill_marker" ] && [ ! -f "$codex_build_skill_marker" ]; then',
+    "  printf 'ERROR: k8s-kaniko-job skill not found after install\\n' >&2",
+    "  exit 1",
+    "fi",
+    'mkdir -p "$(dirname "$revision_marker")"',
+    'printf "%s\\n" "$expected_revision" > "$revision_marker"',
   ].join("\n");
 }
 
@@ -1507,11 +1697,15 @@ function readDeployOutputCommand(input?: { allowPartial?: boolean }): string {
 }
 
 async function ensureDeployDevbox(input: {
+  deadlineAtMs?: number;
   existingRuntimeName?: string | null;
   githubToken?: string;
   namespace: string;
   repoUrl: string;
-  resolveGatewayCredentials?: () => Promise<CodexGatewayOpenAiCredentials>;
+  resolveGatewayCredentials?: (
+    signal?: AbortSignal
+  ) => Promise<CodexGatewayOpenAiCredentials>;
+  signal?: AbortSignal;
   taskId: string;
 }): Promise<{ info: DevboxInfo; name: string }> {
   const existingRuntimeName = input.existingRuntimeName?.trim();
@@ -1519,11 +1713,18 @@ async function ensureDeployDevbox(input: {
     const info = await ensureRunningDevbox(
       input.namespace,
       existingRuntimeName,
-      input.taskId
+      input.taskId,
+      input.deadlineAtMs,
+      input.signal
     );
-    await refreshDevboxPause(input.namespace, existingRuntimeName, {
-      pauseAt: getPauseAt(),
-    });
+    await refreshDevboxPause(
+      input.namespace,
+      existingRuntimeName,
+      {
+        pauseAt: getPauseAt(),
+      },
+      input.signal
+    );
     return { info, name: existingRuntimeName };
   }
 
@@ -1534,51 +1735,67 @@ async function ensureDeployDevbox(input: {
   });
   const name = runtimeName(hash);
   const upstreamID = runtimeUpstreamId(hash);
-  const existing = (await listDevboxes(input.namespace, upstreamID)).data
-    .items[0];
+  const existing = (
+    await listDevboxes(input.namespace, upstreamID, input.signal)
+  ).data.items[0];
 
   if (existing != null) {
     const info = await ensureRunningDevbox(
       input.namespace,
       existing.name,
-      input.taskId
+      input.taskId,
+      input.deadlineAtMs,
+      input.signal
     );
-    await refreshDevboxPause(input.namespace, existing.name, {
-      pauseAt: getPauseAt(),
-    });
+    await refreshDevboxPause(
+      input.namespace,
+      existing.name,
+      {
+        pauseAt: getPauseAt(),
+      },
+      input.signal
+    );
     return { info, name: existing.name };
   }
 
-  const gatewayCredentials = await input.resolveGatewayCredentials?.();
+  const gatewayCredentials = await input.resolveGatewayCredentials?.(
+    input.signal
+  );
   try {
-    await createDevbox(input.namespace, {
-      archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
-      env: {
-        ...buildCodexGatewayEnv(gatewayCredentials),
-        ...(input.githubToken?.trim()
-          ? { GITHUB_TOKEN: input.githubToken.trim() }
-          : {}),
-        SEALAI_DEPLOY_TASK_ID: input.taskId,
-        SEALAI_DEPLOY_WORKSPACE: DEPLOY_WORKSPACE_DIR,
+    await createDevbox(
+      input.namespace,
+      {
+        archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
+        env: {
+          ...buildCodexGatewayEnv(gatewayCredentials),
+          ...(input.githubToken?.trim()
+            ? { GITHUB_TOKEN: input.githubToken.trim() }
+            : {}),
+          SEALAI_DEPLOY_TASK_ID: input.taskId,
+          SEALAI_DEPLOY_WORKSPACE: DEPLOY_WORKSPACE_DIR,
+        },
+        image: getDevboxDefaultImage(),
+        kubeAccess: {
+          enabled: true,
+          roleTemplate: "edit",
+        },
+        labels: [
+          { key: "app.kubernetes.io/managed-by", value: "sealai" },
+          { key: "app.kubernetes.io/component", value: "deploy-runtime" },
+        ],
+        name,
+        pauseAt: getPauseAt(),
+        storageLimit: getDeployDevboxStorageLimitFromEnv(process.env),
+        upstreamID,
       },
-      image: getDevboxDefaultImage(),
-      kubeAccess: {
-        enabled: true,
-        roleTemplate: "edit",
-      },
-      labels: [
-        { key: "app.kubernetes.io/managed-by", value: "sealai" },
-        { key: "app.kubernetes.io/component", value: "deploy-runtime" },
-      ],
-      name,
-      pauseAt: getPauseAt(),
-      storageLimit: getDeployDevboxStorageLimitFromEnv(process.env),
-      upstreamID,
-    });
+      input.signal
+    );
 
     const info = await waitForRunningDevbox({
+      deadlineAtMs: input.deadlineAtMs,
       name,
       namespace: input.namespace,
+      signal: input.signal,
       taskId: input.taskId,
     });
     return { info, name };
@@ -1590,27 +1807,89 @@ async function ensureDeployDevbox(input: {
   }
 }
 
-async function execOrThrow(input: {
+interface ExecOrThrowInput {
   command: string;
+  deadlineAtMs?: number;
   namespace: string;
   runtimeName: string;
+  taskId: string;
   timeoutSeconds?: number;
-}): Promise<void> {
+}
+
+function execOrThrowSignal(input: ExecOrThrowInput): AbortSignal {
+  if (input.deadlineAtMs == null) {
+    return deployTaskRunSignal(input.taskId);
+  }
+  return deploymentOperationSignal({
+    deadlineAtMs: input.deadlineAtMs,
+    taskId: input.taskId,
+  });
+}
+
+function throwIfExecOrThrowAborted(
+  input: ExecOrThrowInput,
+  signal: AbortSignal
+): void {
+  if (input.deadlineAtMs == null) {
+    throwIfDeployTaskAborted(input.taskId);
+    return;
+  }
+  throwIfDeploymentOperationAborted({
+    deadlineAtMs: input.deadlineAtMs,
+    signal,
+    taskId: input.taskId,
+  });
+}
+
+function execOrThrowTimeoutSeconds(
+  input: ExecOrThrowInput
+): number | undefined {
+  if (input.deadlineAtMs == null) {
+    return input.timeoutSeconds;
+  }
+  return deploymentExecTimeoutSeconds({
+    capMs:
+      input.timeoutSeconds == null ? undefined : input.timeoutSeconds * 1000,
+    deadlineAtMs: input.deadlineAtMs,
+  });
+}
+
+function execOrThrowRetryDelayMs(input: ExecOrThrowInput): number {
+  if (input.deadlineAtMs == null) {
+    return DEVBOX_SDK_READY_RETRY_DELAY_MS;
+  }
+  return Math.min(
+    DEVBOX_SDK_READY_RETRY_DELAY_MS,
+    Math.max(0, input.deadlineAtMs - Date.now())
+  );
+}
+
+async function execOrThrow(input: ExecOrThrowInput): Promise<void> {
   let attempt = 0;
+  const signal = execOrThrowSignal(input);
 
   while (true) {
+    if (input.deadlineAtMs != null) {
+      throwIfDeploymentDeadlineElapsed(input.deadlineAtMs);
+    }
     try {
       const result = (
-        await execDevbox(input.namespace, input.runtimeName, {
-          command: ["bash", "-lc", input.command],
-          timeoutSeconds: input.timeoutSeconds,
-        })
+        await execDevbox(
+          input.namespace,
+          input.runtimeName,
+          {
+            command: ["bash", "-lc", input.command],
+            timeoutSeconds: execOrThrowTimeoutSeconds(input),
+          },
+          signal
+        )
       ).data;
       if (result.exitCode !== 0) {
         throw new Error(result.stderr.trim() || result.stdout.trim());
       }
       return;
     } catch (error) {
+      throwIfExecOrThrowAborted(input, signal);
       if (
         !isDevboxSdkPendingError(error) ||
         attempt >= DEVBOX_SDK_READY_MAX_RETRIES
@@ -1618,26 +1897,68 @@ async function execOrThrow(input: {
         throw error;
       }
       attempt += 1;
-      await sleep(DEVBOX_SDK_READY_RETRY_DELAY_MS);
+      await abortableSleep(execOrThrowRetryDelayMs(input), signal);
+      throwIfExecOrThrowAborted(input, signal);
     }
   }
 }
 
 async function readDeployOutput(input: {
   allowPartial?: boolean;
+  deadlineAtMs?: number;
   namespace: string;
   runtimeName: string;
+  signal?: AbortSignal;
 }): Promise<Record<string, unknown> | null> {
-  const result = (
-    await execDevbox(input.namespace, input.runtimeName, {
-      command: [
-        "bash",
-        "-lc",
-        readDeployOutputCommand({ allowPartial: input.allowPartial }),
-      ],
-      timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
-    })
-  ).data;
+  const remainingDeadlineMs =
+    input.deadlineAtMs == null
+      ? null
+      : remainingDeploymentTimeoutMs({
+          deadlineAtMs: input.deadlineAtMs,
+        });
+  if (remainingDeadlineMs != null && remainingDeadlineMs <= 0) {
+    throwIfDeploymentDeadlineElapsed(input.deadlineAtMs as number);
+  }
+  const deadlineSignal =
+    remainingDeadlineMs == null
+      ? undefined
+      : AbortSignal.timeout(Math.max(1, remainingDeadlineMs));
+  const signal = combinedAbortSignal(input.signal, deadlineSignal);
+
+  let result: Awaited<ReturnType<typeof execDevbox>>["data"];
+  try {
+    result = (
+      await execDevbox(
+        input.namespace,
+        input.runtimeName,
+        {
+          command: [
+            "bash",
+            "-lc",
+            readDeployOutputCommand({ allowPartial: input.allowPartial }),
+          ],
+          timeoutSeconds:
+            input.deadlineAtMs == null
+              ? READ_OUTPUT_TIMEOUT_SECONDS
+              : deploymentExecTimeoutSeconds({
+                  capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
+                  deadlineAtMs: input.deadlineAtMs,
+                }),
+        },
+        signal
+      )
+    ).data;
+  } catch (error) {
+    input.signal?.throwIfAborted();
+    if (input.deadlineAtMs != null && deadlineSignal?.aborted) {
+      throwIfDeploymentDeadlineElapsed(input.deadlineAtMs);
+    }
+    throw error;
+  }
+  input.signal?.throwIfAborted();
+  if (input.deadlineAtMs != null && deadlineSignal?.aborted) {
+    throwIfDeploymentDeadlineElapsed(input.deadlineAtMs);
+  }
 
   if (result.exitCode !== 0 || result.stdout.trim() === "") {
     return null;
@@ -1720,78 +2041,128 @@ function completeAiDeploymentOutput(
 }
 
 async function monitorDeployOutputProgress(input: {
+  deadlineAtMs: number;
   namespace: string;
   runtimeName: string;
   seenSignatures: Set<string>;
-  stop: Promise<void>;
+  signal: AbortSignal;
   taskId: string;
 }): Promise<void> {
-  while (true) {
+  while (
+    !input.signal.aborted &&
+    remainingDeploymentTimeoutMs({ deadlineAtMs: input.deadlineAtMs }) > 0
+  ) {
     try {
       const output = await readDeployOutput({
         allowPartial: true,
+        deadlineAtMs: input.deadlineAtMs,
         namespace: input.namespace,
         runtimeName: input.runtimeName,
+        signal: input.signal,
       });
-      const summary = deployOutputProgressSummary(output);
-      if (summary != null) {
-        const signature = JSON.stringify(summary);
-        if (!input.seenSignatures.has(signature)) {
-          input.seenSignatures.add(signature);
-          await recordDeployOutputProgress({
-            summary,
-            taskId: input.taskId,
-          });
-        }
-        if (summary.complete === true) {
-          return;
-        }
+      if (await recordMonitoredDeployOutputProgress(input, output)) {
+        return;
       }
     } catch {
+      if (input.signal.aborted) {
+        return;
+      }
       // Progress polling is best-effort; the gateway turn remains authoritative.
     }
 
-    const nextTick = sleep(DEPLOY_OUTPUT_PROGRESS_POLL_MS);
-    const shouldStop = await Promise.race([
-      input.stop.then(() => true),
-      nextTick.then(() => false),
-    ]);
-    if (shouldStop) {
+    await abortableSleep(
+      Math.min(
+        DEPLOY_OUTPUT_PROGRESS_POLL_MS,
+        Math.max(0, input.deadlineAtMs - Date.now())
+      ),
+      input.signal
+    );
+    if (input.signal.aborted) {
       return;
     }
   }
 }
 
+async function recordMonitoredDeployOutputProgress(
+  input: Pick<
+    Parameters<typeof monitorDeployOutputProgress>[0],
+    "seenSignatures" | "signal" | "taskId"
+  >,
+  output: Record<string, unknown> | null
+): Promise<boolean> {
+  if (input.signal.aborted) {
+    return true;
+  }
+  const summary = deployOutputProgressSummary(output);
+  if (summary == null) {
+    return false;
+  }
+  const signature = JSON.stringify(summary);
+  if (!input.seenSignatures.has(signature)) {
+    input.seenSignatures.add(signature);
+    await recordDeployOutputProgress({
+      summary,
+      taskId: input.taskId,
+    });
+  }
+  return input.signal.aborted || summary.complete === true;
+}
+
 async function runDeployTaskGatewayWithOutputProgress(input: {
   context: GatewayContext;
+  deadlineAtMs: number;
   namespace: string;
   repairOutput?: boolean;
   runtimeName: string;
   seenSignatures: Set<string>;
   task: DeployTaskRow;
 }): Promise<void> {
-  let stopMonitor!: () => void;
-  const stop = new Promise<void>((resolve) => {
-    stopMonitor = resolve;
-  });
+  const monitorController = new AbortController();
+  const monitorSignal = AbortSignal.any([
+    monitorController.signal,
+    deployTaskRunSignal(input.task.id),
+    AbortSignal.timeout(
+      Math.max(
+        1,
+        remainingDeploymentTimeoutMs({ deadlineAtMs: input.deadlineAtMs })
+      )
+    ),
+  ]);
   const monitor = monitorDeployOutputProgress({
+    deadlineAtMs: input.deadlineAtMs,
     namespace: input.namespace,
     runtimeName: input.runtimeName,
     seenSignatures: input.seenSignatures,
-    stop,
+    signal: monitorSignal,
     taskId: input.task.id,
   });
 
   try {
     await runDeployTaskGateway({
       context: input.context,
+      deadlineAtMs: input.deadlineAtMs,
       repairOutput: input.repairOutput,
       task: input.task,
     });
   } catch (error) {
+    monitorController.abort();
+    try {
+      await pauseDevbox(
+        input.namespace,
+        input.runtimeName,
+        AbortSignal.timeout(DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs)
+      );
+    } catch (pauseError) {
+      const httpStatus =
+        pauseError instanceof DevboxApiError ? pauseError.status : undefined;
+      console.warn(
+        `[deploy-task] Failed to pause Devbox after Gateway error for ${input.task.id}.`,
+        httpStatus == null ? {} : { httpStatus }
+      );
+    }
     throw withDeployFailureDetails(error, codexGatewayFailureDetails(error));
   } finally {
-    stopMonitor();
+    monitorController.abort();
     await monitor;
   }
 }
@@ -1873,6 +2244,16 @@ async function completeTaskWithArtifact(input: {
   task: DeployTaskRow;
 }) {
   const sensitiveValues = input.sensitiveValues ?? [];
+  const taskDeadlineAtMs = deployTaskDeadlineAt({
+    leaseClaimedAt: input.task.leaseClaimedAt,
+  });
+  const applyDeadlineAtMs = deploymentPhaseDeadlineAt({
+    budgetMs: DEPLOY_TIMEOUT_POLICY.applyMs,
+    reserveMs:
+      DEPLOY_TIMEOUT_POLICY.readinessMs + DEPLOY_TIMEOUT_POLICY.finalizeMs,
+    taskDeadlineAtMs,
+  });
+  throwIfDeploymentDeadlineElapsed(applyDeadlineAtMs);
   assertArtifactOperationalIdentifiers(input.artifact, sensitiveValues);
   await deployTaskCheckpoint(input.task.id);
   await deployTaskBeginApplying(input.task.id);
@@ -1891,14 +2272,26 @@ async function completeTaskWithArtifact(input: {
   });
 
   let applied: Awaited<ReturnType<typeof applyDeploymentArtifact>>;
+  const applySignal = deploymentOperationSignal({
+    deadlineAtMs: applyDeadlineAtMs,
+    stage: "apply",
+    taskId: input.task.id,
+  });
   try {
     applied = await applyDeploymentArtifact({
       artifact: input.artifact,
       githubToken: input.githubToken,
       kubeconfig: input.kubeconfig,
+      signal: applySignal,
       task: input.task,
     });
   } catch (error) {
+    throwIfDeploymentOperationAborted({
+      deadlineAtMs: applyDeadlineAtMs,
+      signal: applySignal,
+      stage: "apply",
+      taskId: input.task.id,
+    });
     throw withDeployFailureDetails(error, {
       artifactKind: input.artifact.kind,
       reason: applyFailureReason(error),
@@ -1917,6 +2310,7 @@ async function completeTaskWithArtifact(input: {
           : undefined,
     });
   }
+  throwIfDeploymentDeadlineElapsed(applyDeadlineAtMs);
 
   // The scrubbed copy is what every persisted form gets — the row summary
   // and the completion event payload alike (ADR 0037 row-level contract).
@@ -1940,6 +2334,7 @@ async function completeTaskWithArtifact(input: {
   await updateDeployTaskState(input.task.id, {
     artifactSummary: persistedTaskSummary,
   });
+  throwIfDeploymentDeadlineElapsed(applyDeadlineAtMs);
 
   const resultCards = resultResourceCardsFromArtifactSummary(persistedSummary);
   for (const card of resultCards) {
@@ -1949,20 +2344,28 @@ async function completeTaskWithArtifact(input: {
       eventReason: "ResultResourceKnown",
       taskId: input.task.id,
     });
+    throwIfDeploymentDeadlineElapsed(applyDeadlineAtMs);
   }
 
   // Reaching completed requires Deployment Result Readiness (ADR 0028): a
   // readiness timeout throws and resolves to failed with the resources
   // preserved — never a completed-on-timeout.
   if (resultCards.some((card) => card.required)) {
+    const readinessDeadlineAtMs = deploymentPhaseDeadlineAt({
+      budgetMs: DEPLOY_TIMEOUT_POLICY.readinessMs,
+      reserveMs: DEPLOY_TIMEOUT_POLICY.finalizeMs,
+      taskDeadlineAtMs,
+    });
     await waitForRequiredResultCards({
       cards: resultCards,
+      deadlineAtMs: readinessDeadlineAtMs,
       kubeconfig: input.kubeconfig,
       surfaceObservationError: input.task.runner.kind !== "ai",
       taskId: input.task.id,
     });
   }
 
+  throwIfDeploymentDeadlineElapsed(taskDeadlineAtMs);
   await markTimelineStepWithEvent({
     eventKind:
       input.completionEventKind ?? "deployment_task.result_readiness_reached",
@@ -2958,24 +3361,28 @@ async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
 }
 
 export async function ensureAiDeploymentDevbox(input: {
+  deadlineAtMs?: number;
   encodedKubeconfig: string;
   githubToken?: string;
   kubeconfig: string;
+  signal?: AbortSignal;
   task: DeployTaskRow;
 }): Promise<Awaited<ReturnType<typeof ensureDeployDevbox>>> {
   try {
     return await ensureDeployDevbox({
+      deadlineAtMs: input.deadlineAtMs,
       existingRuntimeName: input.task.runtimeName,
       githubToken: input.githubToken,
       namespace: input.task.namespace,
       repoUrl: aiSourceKey(input.task),
       resolveGatewayCredentials:
         input.task.source.kind === "github"
-          ? async () => {
+          ? async (signal) => {
               try {
                 return await resolveGithubCodexGatewayCredentials({
                   encodedKubeconfig: input.encodedKubeconfig,
                   kubeconfig: input.kubeconfig,
+                  signal,
                 });
               } catch (error) {
                 throw withDeployFailureDetails(error, {
@@ -2984,6 +3391,7 @@ export async function ensureAiDeploymentDevbox(input: {
               }
             }
           : undefined,
+      signal: input.signal,
       taskId: input.task.id,
     });
   } catch (error) {
@@ -2996,6 +3404,7 @@ export async function ensureAiDeploymentDevbox(input: {
 
 async function cloneAiDeploymentRepository(input: {
   branch: string | null;
+  deadlineAtMs: number;
   githubToken?: string;
   namespace: string;
   repoUrl: string;
@@ -3014,9 +3423,14 @@ async function cloneAiDeploymentRepository(input: {
         githubToken: input.githubToken,
         repoUrl: input.repoUrl,
       }),
+      deadlineAtMs: input.deadlineAtMs,
       namespace: input.namespace,
       runtimeName: input.runtimeName,
-      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
+      taskId: input.taskId,
+      timeoutSeconds: deploymentExecTimeoutSeconds({
+        capMs: DEPLOY_TIMEOUT_POLICY.repositoryCloneMs,
+        deadlineAtMs: input.deadlineAtMs,
+      }),
     });
   } catch (error) {
     throw withDeployFailureDetails(error, {
@@ -3044,6 +3458,19 @@ async function runAiDeploymentTask(input: {
     );
   }
 
+  const taskDeadlineAtMs = deployTaskDeadlineAt({
+    leaseClaimedAt: input.task.leaseClaimedAt,
+  });
+  const prepareDeadlineAtMs = deploymentPhaseDeadlineAt({
+    budgetMs: DEPLOY_TIMEOUT_POLICY.prepareMs,
+    reserveMs:
+      DEPLOY_TIMEOUT_POLICY.generateMs +
+      DEPLOY_TIMEOUT_POLICY.applyMs +
+      DEPLOY_TIMEOUT_POLICY.readinessMs +
+      DEPLOY_TIMEOUT_POLICY.finalizeMs,
+    taskDeadlineAtMs,
+  });
+
   await updateDeployTaskState(input.task.id, {
     phase: "prepare",
   });
@@ -3057,12 +3484,36 @@ async function runAiDeploymentTask(input: {
   });
 
   const githubToken = await githubTokenForTask(input.task);
-  const runtime = await ensureAiDeploymentDevbox({
-    encodedKubeconfig: input.encodedKubeconfig,
-    githubToken: githubToken ?? undefined,
-    kubeconfig: input.kubeconfig,
-    task: input.task,
+  const prepareSignal = deploymentOperationSignal({
+    deadlineAtMs: prepareDeadlineAtMs,
+    taskId: input.task.id,
   });
+  const devboxDeadlineAtMs = deploymentPhaseDeadlineAt({
+    budgetMs: DEPLOY_TIMEOUT_POLICY.devboxReadyMs,
+    taskDeadlineAtMs: prepareDeadlineAtMs,
+  });
+  const devboxSignal = deploymentOperationSignal({
+    deadlineAtMs: devboxDeadlineAtMs,
+    taskId: input.task.id,
+  });
+  let runtime: Awaited<ReturnType<typeof ensureAiDeploymentDevbox>>;
+  try {
+    runtime = await ensureAiDeploymentDevbox({
+      deadlineAtMs: devboxDeadlineAtMs,
+      encodedKubeconfig: input.encodedKubeconfig,
+      githubToken: githubToken ?? undefined,
+      kubeconfig: input.kubeconfig,
+      signal: devboxSignal,
+      task: input.task,
+    });
+  } catch (error) {
+    throwIfDeploymentOperationAborted({
+      deadlineAtMs: devboxDeadlineAtMs,
+      signal: devboxSignal,
+      taskId: input.task.id,
+    });
+    throw error;
+  }
 
   await updateDeployTaskState(input.task.id, {
     runtimeName: runtime.name,
@@ -3079,6 +3530,7 @@ async function runAiDeploymentTask(input: {
   if (input.task.source.kind === "github") {
     await cloneAiDeploymentRepository({
       branch: input.task.source.branch ?? null,
+      deadlineAtMs: prepareDeadlineAtMs,
       githubToken: githubToken ?? undefined,
       namespace: input.task.namespace,
       repoUrl: input.task.source.repo.url,
@@ -3091,9 +3543,14 @@ async function runAiDeploymentTask(input: {
       () =>
         execOrThrow({
           command: prepareEmptyWorkspaceCommand(),
+          deadlineAtMs: prepareDeadlineAtMs,
           namespace: input.task.namespace,
           runtimeName: runtime.name,
-          timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+          taskId: input.task.id,
+          timeoutSeconds: deploymentExecTimeoutSeconds({
+            capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
+            deadlineAtMs: prepareDeadlineAtMs,
+          }),
         })
     );
   }
@@ -3103,15 +3560,25 @@ async function runAiDeploymentTask(input: {
     () =>
       execOrThrow({
         command: prepareWorkspaceOutputCommand(),
+        deadlineAtMs: prepareDeadlineAtMs,
         namespace: input.task.namespace,
         runtimeName: runtime.name,
-        timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
+        taskId: input.task.id,
+        timeoutSeconds: deploymentExecTimeoutSeconds({
+          capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
+          deadlineAtMs: prepareDeadlineAtMs,
+        }),
       })
   );
 
   const runtimeInfoForBuild = await runWithDeployFailureDetails(
     { reason: "deploy-runtime-unavailable" },
-    () => getDevboxWithSecretRetry(input.task.namespace, runtime.name)
+    () =>
+      getDevboxWithSecretRetry(
+        input.task.namespace,
+        runtime.name,
+        prepareSignal
+      )
   );
   const apiNetworkId = runtimeInfoForBuild.network?.uniqueID?.trim() || null;
   const kubernetesNetworkId =
@@ -3123,36 +3590,11 @@ async function runAiDeploymentTask(input: {
           encodedKubeconfig: input.encodedKubeconfig,
           name: runtime.name,
           namespace: input.task.namespace,
+          signal: prepareSignal,
         })
     ));
-  const buildRuntime = buildRuntimeContract({
-    devbox: runtimeInfoForBuild,
-    networkId: kubernetesNetworkId,
-  });
-  if (buildRuntime == null && input.task.source.kind === "github") {
+  if (kubernetesNetworkId == null && input.task.source.kind === "github") {
     throw deployFailureError("build-runtime-unavailable");
-  }
-  if (buildRuntime != null) {
-    await runWithDeployFailureDetails(
-      { reason: "build-runtime-unavailable" },
-      () =>
-        execOrThrow({
-          command: writeBuildRuntimeContractCommand(buildRuntime),
-          namespace: input.task.namespace,
-          runtimeName: runtime.name,
-          timeoutSeconds: READ_OUTPUT_TIMEOUT_SECONDS,
-        })
-    );
-    await recordDeployTaskEvent(input.task.id, {
-      kind: "deployment_task.build_runtime_ready",
-      message: "Build runtime contract is ready.",
-      payload: {
-        devboxName: runtime.name,
-        networkSource: apiNetworkId == null ? "kubernetes" : "devbox-api",
-        s3Endpoint: buildRuntime.s3Endpoint,
-      },
-      phase: "prepare",
-    });
   }
 
   await recordDeployTaskEvent(input.task.id, {
@@ -3163,9 +3605,14 @@ async function runAiDeploymentTask(input: {
   try {
     await execOrThrow({
       command: installSkillsCommand(),
+      deadlineAtMs: prepareDeadlineAtMs,
       namespace: input.task.namespace,
       runtimeName: runtime.name,
-      timeoutSeconds: SKILL_INSTALL_TIMEOUT_SECONDS,
+      taskId: input.task.id,
+      timeoutSeconds: deploymentExecTimeoutSeconds({
+        capMs: DEPLOY_TIMEOUT_POLICY.skillInstallMs,
+        deadlineAtMs: prepareDeadlineAtMs,
+      }),
     });
   } catch (error) {
     throw withDeployFailureDetails(error, {
@@ -3187,10 +3634,60 @@ async function runAiDeploymentTask(input: {
     taskId: input.task.id,
   });
 
+  throwIfDeploymentDeadlineElapsed(prepareDeadlineAtMs);
+  const generationDeadlineAtMs = deploymentPhaseDeadlineAt({
+    budgetMs: DEPLOY_TIMEOUT_POLICY.generateMs,
+    reserveMs:
+      DEPLOY_TIMEOUT_POLICY.applyMs +
+      DEPLOY_TIMEOUT_POLICY.readinessMs +
+      DEPLOY_TIMEOUT_POLICY.finalizeMs,
+    taskDeadlineAtMs,
+  });
+  const generationSignal = deploymentOperationSignal({
+    deadlineAtMs: generationDeadlineAtMs,
+    taskId: input.task.id,
+  });
+  const writeBuildRuntimeForTurn = async (
+    turnDeadlineAtMs: number
+  ): Promise<Record<string, unknown> | null> => {
+    const contract = buildRuntimeContract({
+      deadlineAtMs: turnDeadlineAtMs,
+      devbox: runtimeInfoForBuild,
+      networkId: kubernetesNetworkId,
+    });
+    if (contract == null) {
+      if (input.task.source.kind === "github") {
+        throw deployFailureError("build-runtime-unavailable");
+      }
+      return null;
+    }
+    await runWithDeployFailureDetails(
+      { reason: "build-runtime-unavailable" },
+      () =>
+        execOrThrow({
+          command: writeBuildRuntimeContractCommand(contract),
+          deadlineAtMs: turnDeadlineAtMs,
+          namespace: input.task.namespace,
+          runtimeName: runtime.name,
+          taskId: input.task.id,
+          timeoutSeconds: deploymentExecTimeoutSeconds({
+            capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
+            deadlineAtMs: turnDeadlineAtMs,
+          }),
+        })
+    );
+    return contract;
+  };
+
   await updateDeployTaskState(input.task.id, { phase: "plan" });
   const latestRuntimeInfo = await runWithDeployFailureDetails(
     { reason: "deploy-runtime-unavailable" },
-    () => getDevboxWithSecretRetry(input.task.namespace, runtime.name)
+    () =>
+      getDevboxWithSecretRetry(
+        input.task.namespace,
+        runtime.name,
+        generationSignal
+      )
   );
   const gatewayContext =
     getCodexGatewayContextFromDevboxInfo(latestRuntimeInfo);
@@ -3208,8 +3705,30 @@ async function runAiDeploymentTask(input: {
     stepId: "analyze-source",
     taskId: input.task.id,
   });
+  const initialTurnDeadlineAtMs = deploymentPhaseDeadlineAt({
+    budgetMs: DEPLOY_TIMEOUT_POLICY.gatewayInitialTurnMs,
+    taskDeadlineAtMs: generationDeadlineAtMs,
+  });
+  const initialBuildRuntime = await writeBuildRuntimeForTurn(
+    initialTurnDeadlineAtMs
+  );
+  if (initialBuildRuntime != null) {
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deployment_task.build_runtime_ready",
+      message: "Build runtime contract is ready.",
+      payload: {
+        buildDeadlineAt: initialBuildRuntime.buildDeadlineAt,
+        buildDeadlineSeconds: initialBuildRuntime.buildDeadlineSeconds,
+        devboxName: runtime.name,
+        networkSource: apiNetworkId == null ? "kubernetes" : "devbox-api",
+        s3Endpoint: initialBuildRuntime.s3Endpoint,
+      },
+      phase: "plan",
+    });
+  }
   await runDeployTaskGatewayWithOutputProgress({
     context: gatewayContext,
+    deadlineAtMs: initialTurnDeadlineAtMs,
     namespace: input.task.namespace,
     runtimeName: runtime.name,
     seenSignatures: outputProgressSignatures,
@@ -3233,8 +3752,10 @@ async function runAiDeploymentTask(input: {
     { reason: "deploy-runtime-unavailable" },
     () =>
       readDeployOutput({
+        deadlineAtMs: generationDeadlineAtMs,
         namespace: input.task.namespace,
         runtimeName: runtime.name,
+        signal: generationSignal,
       })
   );
   await recordDeployOutputProgressIfPresent({
@@ -3259,8 +3780,14 @@ async function runAiDeploymentTask(input: {
       stepId: "generate-deployment",
       taskId: input.task.id,
     });
+    const repairTurnDeadlineAtMs = deploymentPhaseDeadlineAt({
+      budgetMs: DEPLOY_TIMEOUT_POLICY.gatewayRepairTurnMs,
+      taskDeadlineAtMs: generationDeadlineAtMs,
+    });
+    await writeBuildRuntimeForTurn(repairTurnDeadlineAtMs);
     await runDeployTaskGatewayWithOutputProgress({
       context: gatewayContext,
+      deadlineAtMs: repairTurnDeadlineAtMs,
       namespace: input.task.namespace,
       repairOutput: true,
       runtimeName: runtime.name,
@@ -3271,8 +3798,10 @@ async function runAiDeploymentTask(input: {
       { reason: "deploy-runtime-unavailable" },
       () =>
         readDeployOutput({
+          deadlineAtMs: generationDeadlineAtMs,
           namespace: input.task.namespace,
           runtimeName: runtime.name,
+          signal: generationSignal,
         })
     );
     await recordDeployOutputProgressIfPresent({
@@ -3308,6 +3837,7 @@ export async function runDeployTask(
   handle: DeployTaskHandle,
   input: StartDeployTaskRunnerInput
 ): Promise<void> {
+  const runStartedAt = new Date();
   const task = await getDeployTaskById(input.taskId);
   if (task == null) {
     throw new Error("Deploy task not found.");
@@ -3325,7 +3855,12 @@ export async function runDeployTask(
         projectName: target.projectName,
       });
     }
-    const resolvedTask = (await getDeployTaskById(task.id)) ?? task;
+    const resolvedTask = {
+      ...((await getDeployTaskById(task.id)) ?? task),
+      // Local duration deadlines must not compare the application clock with
+      // PostgreSQL's lease timestamp. The DB reaper remains authoritative.
+      leaseClaimedAt: runStartedAt,
+    };
     const submittedInputValues = submittedInputStringValues(
       input.submittedInputValues
     );

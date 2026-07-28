@@ -116,7 +116,8 @@ function ProjectsShortcutIcon({
 
 const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
-const SEALOS_DESKTOP_URL = "https://usw-1.sealos.io/?openapp=";
+const DESKTOP_DOMAIN_TRAILING_SLASHES_RE = /\/+$/;
+const DESKTOP_DOMAIN_SCHEME_RE = /^https?:\/\//i;
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
@@ -199,6 +200,46 @@ function AppSidebarLinkButton({
 }
 
 function AppSidebarDesktopReturn() {
+  const [desktopUrl, setDesktopUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDesktopUrl = async () => {
+      if (!sealosApp) {
+        return;
+      }
+
+      try {
+        const hostConfig = await sealosApp.getHostConfig();
+        const domain = hostConfig.cloud.domain
+          .trim()
+          .replace(DESKTOP_DOMAIN_TRAILING_SLASHES_RE, "");
+        if (cancelled || domain === "") {
+          return;
+        }
+
+        const origin = DESKTOP_DOMAIN_SCHEME_RE.test(domain)
+          ? domain
+          : `https://${domain}`;
+        setDesktopUrl(`${origin}/?openapp=`);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          console.warn(
+            "[AppSidebarDesktopReturn] load Desktop host config failed:",
+            error
+          );
+        }
+      }
+    };
+
+    loadDesktopUrl().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <Tooltip>
       <TooltipTrigger
@@ -206,13 +247,16 @@ function AppSidebarDesktopReturn() {
           <AppIconButton
             aria-label="Back to Sealos Desktop"
             className={APP_SIDEBAR_LINK_CLASS}
-            nativeButton={false}
+            disabled={desktopUrl === null}
+            nativeButton={desktopUrl === null}
             render={
-              <Link
-                href={SEALOS_DESKTOP_URL}
-                rel="noopener noreferrer"
-                target="_blank"
-              />
+              desktopUrl ? (
+                <Link
+                  href={desktopUrl}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                />
+              ) : undefined
             }
             size="lg"
             variant="quiet"

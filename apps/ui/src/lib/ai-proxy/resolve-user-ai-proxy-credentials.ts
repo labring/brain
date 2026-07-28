@@ -32,6 +32,7 @@ function trimmedEnv(value: string | undefined): string | undefined {
 export async function resolveUserAiProxyCredentials(options: {
   encodedKubeconfig: string | undefined;
   kubeconfigText: string;
+  signal?: AbortSignal;
 }): Promise<ResolveUserAiProxyCredentialsOutcome> {
   const authorizationEncodedKubeconfig = options.encodedKubeconfig?.trim();
   if (!authorizationEncodedKubeconfig) {
@@ -51,6 +52,7 @@ export async function resolveUserAiProxyCredentials(options: {
     authorizationEncodedKubeconfig,
     clusterHostname,
     name: configuredName.slice(0, 100),
+    signal: options.signal,
   });
   if (!tokenResult.ok) {
     const status =

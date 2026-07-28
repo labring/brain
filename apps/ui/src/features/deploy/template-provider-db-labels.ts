@@ -114,6 +114,7 @@ async function getKubeBlocksCluster(input: {
   encodedKubeconfig: string;
   name: string;
   namespace: string;
+  signal?: AbortSignal;
 }): Promise<unknown> {
   return await fetcher({
     base: ApiUrl(),
@@ -125,6 +126,7 @@ async function getKubeBlocksCluster(input: {
       name: input.name,
       namespace: input.namespace,
     },
+    signal: input.signal,
   });
 }
 
@@ -133,6 +135,7 @@ async function patchKubeBlocksClusterLabels(input: {
   labels: Record<string, string>;
   name: string;
   namespace: string;
+  signal?: AbortSignal;
 }): Promise<void> {
   if (Object.keys(input.labels).length === 0) {
     return;
@@ -149,6 +152,7 @@ async function patchKubeBlocksClusterLabels(input: {
       namespace: input.namespace,
       type: "merge",
     },
+    signal: input.signal,
   });
 }
 
@@ -219,6 +223,7 @@ export async function normalizeTemplateProviderDbResources(input: {
   namespace: string;
   projectId: string;
   resources: TemplateProviderResourceSummary[];
+  signal?: AbortSignal;
   templateName: string;
 }): Promise<void> {
   for (const resource of input.resources) {
@@ -230,6 +235,7 @@ export async function normalizeTemplateProviderDbResources(input: {
       encodedKubeconfig: input.encodedKubeconfig,
       name,
       namespace: input.namespace,
+      signal: input.signal,
     });
     const labels = templateProviderDbLabels({
       cluster,
@@ -242,6 +248,7 @@ export async function normalizeTemplateProviderDbResources(input: {
       labels,
       name,
       namespace: input.namespace,
+      signal: input.signal,
     });
   }
 }

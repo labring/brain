@@ -109,11 +109,16 @@ function responseError(body: unknown, fallback: string): string {
   return fallback;
 }
 
-async function applyYaml(input: { encodedKubeconfig: string; yaml: string }) {
+async function applyYaml(input: {
+  encodedKubeconfig: string;
+  signal?: AbortSignal;
+  yaml: string;
+}) {
   const response = await fetch(apiUrl(API_ROUTES.k8s.apply), {
     body: JSON.stringify({ yaml: input.yaml }),
     headers: authHeaders(input.encodedKubeconfig),
     method: "POST",
+    signal: input.signal,
   });
   if (!response.ok) {
     throw new Error(
@@ -126,6 +131,7 @@ async function getInstance(input: {
   encodedKubeconfig: string;
   instanceName: string;
   namespace: string;
+  signal?: AbortSignal;
 }): Promise<TemplateK8sObject> {
   const response = await fetch(
     apiUrl(API_ROUTES.k8s.get, {
@@ -136,6 +142,7 @@ async function getInstance(input: {
     {
       headers: authHeaders(input.encodedKubeconfig),
       method: "GET",
+      signal: input.signal,
     }
   );
   const body = await readBody(response);
@@ -524,6 +531,7 @@ export async function applyRenderedTemplateDeployment(input: {
     githubToken?: string;
   };
   rendered: RenderedTemplateDeployment;
+  signal?: AbortSignal;
   templateName: string;
 }): Promise<AppliedTemplateDeployment> {
   const normalized = normalizeRenderedTemplateDeployment({
@@ -547,6 +555,7 @@ export async function applyRenderedTemplateDeployment(input: {
   );
   await applyYaml({
     encodedKubeconfig: input.encodedKubeconfig,
+    signal: input.signal,
     yaml:
       instanceResource == null
         ? normalized.instanceYaml
@@ -556,6 +565,7 @@ export async function applyRenderedTemplateDeployment(input: {
     encodedKubeconfig: input.encodedKubeconfig,
     instanceName: normalized.instanceName,
     namespace: input.namespace,
+    signal: input.signal,
   });
   const instanceUid = instance.metadata?.uid ?? "";
   if (!instanceUid) {
@@ -578,6 +588,7 @@ export async function applyRenderedTemplateDeployment(input: {
   if (dependents.length > 0) {
     await applyYaml({
       encodedKubeconfig: input.encodedKubeconfig,
+      signal: input.signal,
       yaml: dependents
         .map((resource) => YAML.stringify(resource))
         .join("---\n"),

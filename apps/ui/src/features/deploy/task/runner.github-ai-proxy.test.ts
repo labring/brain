@@ -35,6 +35,7 @@ mock.module("server-only", () => ({}));
 const {
   buildCodexGatewayEnv,
   ensureAiDeploymentDevbox,
+  installSkillsCommand,
   resolveGithubCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
 const {
@@ -102,6 +103,21 @@ function devbox(name: string, phase = "Running") {
     state: { phase, spec: phase, status: phase },
   };
 }
+
+describe("deployment skill revision", () => {
+  it("pins and refreshes the complete deploy skill set", () => {
+    const command = installSkillsCommand();
+
+    expect(command).toContain("cbb428ca852db1c5076ff15e9524fc5c1eb4cee3");
+    expect(command).toContain("deploy-skills-revision");
+    expect(command).toContain("k8s-kaniko-job/SKILL.md");
+    expect(command).toContain('npx --yes skills@1.5.20 add "$skill_source" -y');
+    expect(command).not.toContain("installed_revision");
+    expect(command).toContain(
+      "for skill_name in sealos-deploy dockerfile-skill k8s-kaniko-job cloud-native-readiness docker-to-sealos"
+    );
+  });
+});
 
 function githubTask(runtimeName: string | null): DeployTaskRow {
   return {
@@ -308,6 +324,78 @@ describe("GitHub deployment AI Proxy credentials", () => {
     expect(requests.some((request) => request.url.endsWith("/resume"))).toBe(
       true
     );
+  });
+
+  it("propagates an abort signal into an in-flight Devbox request", async () => {
+    const controller = new AbortController();
+    let requestStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      requestStarted = resolve;
+    });
+    installFetchHandler(
+      (request) =>
+        new Promise<Response>((_resolve, reject) => {
+          requestStarted();
+          const onAbort = () => {
+            reject(request.signal.reason);
+          };
+          request.signal.addEventListener("abort", onAbort, { once: true });
+        })
+    );
+
+    const pending = ensureAiDeploymentDevbox({
+      deadlineAtMs: Date.now() + 60_000,
+      encodedKubeconfig: "invalid-when-unused",
+      kubeconfig: "invalid-when-unused",
+      signal: controller.signal,
+      task: githubTask("existing-devbox"),
+    });
+    await started;
+    controller.abort(new Error("devbox deadline reached"));
+
+    await expect(pending).rejects.toThrow("devbox deadline reached");
+  });
+
+  it("aborts an in-flight AI Proxy token request before creating a Devbox", async () => {
+    const controller = new AbortController();
+    let tokenRequestStarted!: () => void;
+    const tokenRequestStart = new Promise<void>((resolve) => {
+      tokenRequestStarted = resolve;
+    });
+    let createDevboxCalled = false;
+    installFetchHandler((request) => {
+      const url = new URL(request.url);
+      if (url.pathname === "/api/v1/devbox" && request.method === "GET") {
+        return devboxEnvelope({ items: [] });
+      }
+      if (url.hostname === "aiproxy-web.test.sealos.io") {
+        tokenRequestStarted();
+        return new Promise<Response>((_resolve, reject) => {
+          request.signal.addEventListener(
+            "abort",
+            () => reject(request.signal.reason),
+            { once: true }
+          );
+        });
+      }
+      if (url.pathname === "/api/v1/devbox" && request.method === "POST") {
+        createDevboxCalled = true;
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const pending = ensureAiDeploymentDevbox({
+      deadlineAtMs: Date.now() + 60_000,
+      encodedKubeconfig: encodeURIComponent(kubeconfig()),
+      kubeconfig: kubeconfig(),
+      signal: controller.signal,
+      task: githubTask(null),
+    });
+    await tokenRequestStart;
+    controller.abort(new Error("prepare deadline reached"));
+
+    await expect(pending).rejects.toThrow("prepare deadline reached");
+    expect(createDevboxCalled).toBe(false);
   });
 
   it("reuses a Devbox found by upstream ID without requesting AI Proxy credentials", async () => {

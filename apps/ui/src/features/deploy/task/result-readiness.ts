@@ -27,6 +27,7 @@ async function fetchApProductView(input: {
   kubeconfig: string;
   name: string;
   namespace: string;
+  signal?: AbortSignal;
 }): Promise<unknown> {
   return await fetcher({
     base: ApiUrl(),
@@ -39,6 +40,7 @@ async function fetchApProductView(input: {
       name: input.name,
       namespace: input.namespace,
     },
+    signal: input.signal,
   });
 }
 
@@ -46,6 +48,7 @@ async function fetchDbProductView(input: {
   kubeconfig: string;
   name: string;
   namespace: string;
+  signal?: AbortSignal;
 }): Promise<unknown> {
   return await fetcher({
     base: ApiUrl(),
@@ -58,6 +61,7 @@ async function fetchDbProductView(input: {
       name: input.name,
       namespace: input.namespace,
     },
+    signal: input.signal,
   });
 }
 
@@ -80,6 +84,7 @@ async function fetchTemplateWorkloadProductView(input: {
   kubeconfig: string;
   name: string;
   namespace: string;
+  signal?: AbortSignal;
   workloadKind: string;
 }): Promise<unknown> {
   return await fetcher({
@@ -94,6 +99,7 @@ async function fetchTemplateWorkloadProductView(input: {
       name: input.name,
       namespace: input.namespace,
     },
+    signal: input.signal,
   });
 }
 
@@ -237,6 +243,7 @@ export function waitingForResultObservationStatus(
 async function resultCardReadiness(input: {
   card: DeploymentResultResourceCard;
   kubeconfig: string;
+  signal?: AbortSignal;
 }): Promise<DeploymentResultReadiness> {
   const { resultRef } = input.card;
   switch (resultRef.kind) {
@@ -245,6 +252,7 @@ async function resultCardReadiness(input: {
         kubeconfig: input.kubeconfig,
         name: resultRef.name,
         namespace: resultRef.namespace,
+        signal: input.signal,
       });
       return apWorkloadReadinessFromProductView(ap);
     }
@@ -253,6 +261,7 @@ async function resultCardReadiness(input: {
         kubeconfig: input.kubeconfig,
         name: resultRef.name,
         namespace: resultRef.namespace,
+        signal: input.signal,
       });
       return dbServiceReadinessFromProductView(db);
     }
@@ -261,6 +270,7 @@ async function resultCardReadiness(input: {
         kubeconfig: input.kubeconfig,
         name: resultRef.apName,
         namespace: resultRef.namespace,
+        signal: input.signal,
       });
       return publicAccessReadinessFromProductView(
         publicAddressViewFromAp({
@@ -274,6 +284,7 @@ async function resultCardReadiness(input: {
         kubeconfig: input.kubeconfig,
         name: resultRef.name,
         namespace: resultRef.namespace,
+        signal: input.signal,
         workloadKind: resultRef.workloadKind,
       });
       return templateWorkloadReadinessFromProductView(workload);
@@ -286,6 +297,7 @@ async function resultCardReadiness(input: {
 export async function observeDeploymentResultCardReadiness(input: {
   card: DeploymentResultResourceCard;
   kubeconfig: string;
+  signal?: AbortSignal;
   surfaceObservationError?: boolean;
 }): Promise<{
   card: DeploymentResultResourceCard;
@@ -316,6 +328,9 @@ export async function observeDeploymentResultCardReadiness(input: {
       status: readiness.status,
     };
   } catch (error) {
+    if (input.signal?.aborted) {
+      throw input.signal.reason instanceof Error ? input.signal.reason : error;
+    }
     const latestStatus = waitingForResultObservationStatus(input.card, error, {
       surfaceObservationError: input.surfaceObservationError,
     });
