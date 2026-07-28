@@ -39,8 +39,7 @@ mock.module("@/features/deploy/task/api-auth", () => ({
   }),
 }));
 mock.module("@/features/deploy/github/connection-service", () => ({
-  getGithubConnectionStatusForWorkspaceActor: async () =>
-    activeGithubConnection,
+  getGithubConnectionStatusForOwner: async () => activeGithubConnection,
 }));
 mock.module(
   fileURLToPath(

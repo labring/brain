@@ -25,6 +25,15 @@ export type GithubRepositoryList = (
   owner: GithubConnectionOwnerIdentity
 ) => Promise<object[]>;
 
+/**
+ * Lazy re-key (ADR-0059): every verified connection entry request first
+ * adopts the actor's legacy generation-1 crName row into the uid owner.
+ */
+export type GithubLegacyConnectionAdoption = (input: {
+  legacyWorkspaceActor: string;
+  owner: GithubConnectionOwnerIdentity;
+}) => Promise<void>;
+
 export type GithubOAuthSessionCreate = (input: {
   baseUrl: string;
   owner: GithubConnectionOwnerIdentity;
@@ -84,13 +93,19 @@ function jsonError(input: {
   );
 }
 
+interface VerifiedGithubConnectionActor {
+  /** The verified actor's per-region crName, used only for lazy adoption. */
+  legacyWorkspaceActor: string;
+  owner: GithubConnectionOwnerIdentity;
+}
+
 async function authorizeGithubConnectionOwner(input: {
   appToken: string;
   appTokenConfig?: AppTokenVerificationConfig | null;
   encodedKubeconfig: string;
   requestedNamespace: string | undefined;
   verify?: VerifyKubeconfigNamespace;
-}): Promise<GithubConnectionOwnerIdentity | Response> {
+}): Promise<VerifiedGithubConnectionActor | Response> {
   const authorization = await authorizeWorkspaceActor({
     appToken: input.appToken,
     appTokenConfig: input.appTokenConfig,
@@ -114,9 +129,12 @@ async function authorizeGithubConnectionOwner(input: {
     });
   }
   return {
-    namespace: authorization.namespace,
-    ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-    workspaceActor: authorization.workspaceActor,
+    legacyWorkspaceActor: authorization.workspaceActor,
+    owner: {
+      namespace: authorization.namespace,
+      ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+      userUid: authorization.actorBinding.userUid,
+    },
   };
 }
 
@@ -129,7 +147,7 @@ interface GithubConnectionAuthorizationOptions {
 function authorizeGithubConnectionRequest(
   request: Request,
   options: GithubConnectionAuthorizationOptions
-): Promise<GithubConnectionOwnerIdentity | Response> {
+): Promise<VerifiedGithubConnectionActor | Response> {
   return authorizeGithubConnectionOwner({
     appToken: appTokenFromRequest(request),
     appTokenConfig: options.appTokenConfig,
@@ -158,7 +176,7 @@ async function authorizeGithubSessionRequest(
   } | null;
   const namespace =
     typeof body?.namespace === "string" ? body.namespace.trim() : "";
-  const owner = await authorizeGithubConnectionOwner({
+  const actor = await authorizeGithubConnectionOwner({
     appToken,
     appTokenConfig: options.appTokenConfig,
     encodedKubeconfig:
@@ -166,26 +184,28 @@ async function authorizeGithubSessionRequest(
     requestedNamespace: namespace || undefined,
     verify: options.verify,
   });
-  return owner instanceof Response
-    ? owner
+  return actor instanceof Response
+    ? actor
     : {
-        owner,
+        owner: actor.owner,
         returnPath:
           typeof body?.returnPath === "string" ? body.returnPath : null,
       };
 }
 
 export function createGithubConnectionStatusHandler(input: {
+  adoptLegacyConnection: GithubLegacyConnectionAdoption;
   appTokenConfig?: AppTokenVerificationConfig | null;
   getConnection: GithubConnectionStatusLookup;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input);
-    if (owner instanceof Response) {
-      return owner;
+    const actor = await authorizeGithubConnectionRequest(request, input);
+    if (actor instanceof Response) {
+      return actor;
     }
-    const connection = await input.getConnection(owner);
+    await input.adoptLegacyConnection(actor);
+    const connection = await input.getConnection(actor.owner);
     return Response.json({
       connection: publicConnectionStatus(connection),
     });
@@ -193,17 +213,21 @@ export function createGithubConnectionStatusHandler(input: {
 }
 
 export function createGithubRepositoryListHandler(input: {
+  adoptLegacyConnection: GithubLegacyConnectionAdoption;
   appTokenConfig?: AppTokenVerificationConfig | null;
   listRepositories: GithubRepositoryList;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input);
-    if (owner instanceof Response) {
-      return owner;
+    const actor = await authorizeGithubConnectionRequest(request, input);
+    if (actor instanceof Response) {
+      return actor;
     }
+    await input.adoptLegacyConnection(actor);
     try {
-      return Response.json({ repos: await input.listRepositories(owner) });
+      return Response.json({
+        repos: await input.listRepositories(actor.owner),
+      });
     } catch (error) {
       return jsonError({
         code: "github_connection_required",
@@ -218,16 +242,20 @@ export function createGithubRepositoryListHandler(input: {
 }
 
 export function createGithubConnectionDeleteHandler(input: {
+  adoptLegacyConnection: GithubLegacyConnectionAdoption;
   appTokenConfig?: AppTokenVerificationConfig | null;
   deleteConnection: GithubConnectionDelete;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input);
-    if (owner instanceof Response) {
-      return owner;
+    const actor = await authorizeGithubConnectionRequest(request, input);
+    if (actor instanceof Response) {
+      return actor;
     }
-    await input.deleteConnection(owner);
+    // Adopt before deleting so a disconnect also forgets a legacy-keyed
+    // connection (ADR-0057's forget-on-disconnect covers both generations).
+    await input.adoptLegacyConnection(actor);
+    await input.deleteConnection(actor.owner);
     return Response.json({ connection: null });
   };
 }
