@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -128,6 +129,31 @@ export const githubConnections = ns.table(
   ]
 );
 
+/**
+ * Region-local Identity Fingerprints (ADR-0059), owned by the authorization
+ * layer (`@/lib/identity-fingerprint`): the most recently observed
+ * `crName → userUid` binding and that token's minting time. An observation
+ * history, not an authoritative mapping — authority stays with desktop's
+ * token minting. A newer-minted contradiction re-keys the tombstone uid's
+ * personal resources to the surviving uid; an older-minted one marks a
+ * superseded token, refused at the authorization layer. Rows never appear in
+ * API responses; identifiers only in logs/telemetry.
+ */
+export const identityFingerprints = ns.table("identity_fingerprints", {
+  /** The per-region user CR name authenticated from the kubeconfig. */
+  crName: text("cr_name").primaryKey(),
+  /** The most recently observed global account uid bound to this crName. */
+  userUid: text("user_uid").notNull(),
+  /** That observation's app-token minting time (JWT `iat`, epoch seconds). */
+  mintedAt: bigint("minted_at", { mode: "number" }).notNull(),
+  observedAt: timestamp("observed_at", { mode: "date", withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const githubAppInstallSessions = ns.table(
   "github_app_install_sessions",
   {
@@ -190,6 +216,7 @@ export const githubOauthConnections = ns.table(
 export type AssistantChatRow = typeof assistantChats.$inferSelect;
 export type AssistantChatMessageRow = typeof assistantChatMessages.$inferSelect;
 export type AssistantEntitlementRow = typeof assistantEntitlements.$inferSelect;
+export type IdentityFingerprintRow = typeof identityFingerprints.$inferSelect;
 export type GithubAppInstallSessionRow =
   typeof githubAppInstallSessions.$inferSelect;
 export type GithubConnectionRow = typeof githubConnections.$inferSelect;

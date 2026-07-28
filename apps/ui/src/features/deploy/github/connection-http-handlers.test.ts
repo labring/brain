@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { SignJWT } from "jose";
 
+import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
 import {
   type KubeconfigNamespaceVerification,
   workspaceActorFromAuthorizedKubeconfig,
@@ -40,6 +41,7 @@ function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
     userUid: `${crName}-uid`,
   })
     .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(1_753_600_000)
     .sign(new TextEncoder().encode(secret));
 }
 
@@ -141,8 +143,11 @@ type CallbackWrite = Parameters<GithubOAuthCallbackComplete>[0] & {
 function createWorkspaceActorHttpHarness(input: {
   callbackFailures?: number;
   connections: ReadonlyMap<string, StoredConnection>;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verification?: KubeconfigNamespaceVerification;
 }) {
+  const observeFingerprint: ObserveIdentityFingerprint =
+    input.observeFingerprint ?? (() => Promise.resolve({ outcome: "match" }));
   const connections = new Map(input.connections);
   const adoptions: Parameters<GithubLegacyConnectionAdoption>[0][] = [];
   const appInstallSessions: Parameters<GithubAppInstallSessionCreate>[0][] = [];
@@ -174,6 +179,7 @@ function createWorkspaceActorHttpHarness(input: {
       return Promise.resolve(connections.get(ownerKey(owner)) ?? null);
     },
     appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -188,6 +194,7 @@ function createWorkspaceActorHttpHarness(input: {
       );
     },
     appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -204,6 +211,7 @@ function createWorkspaceActorHttpHarness(input: {
       return Promise.resolve();
     },
     appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -226,6 +234,7 @@ function createWorkspaceActorHttpHarness(input: {
     },
     getBaseUrl: () => "https://brain.test",
     appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -240,6 +249,7 @@ function createWorkspaceActorHttpHarness(input: {
       });
     },
     appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
