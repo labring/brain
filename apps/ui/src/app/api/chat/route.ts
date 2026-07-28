@@ -24,6 +24,7 @@ import {
 } from "@/features/chat/persistence/free-tier-core";
 import {
   acquireChatStreamLease,
+  adoptLegacyAssistantConversationsForActor,
   type ChatStreamLease,
   commitChatMessagesIfLeaseOwned,
   ensureAssistantThreadForOwner,
@@ -44,6 +45,7 @@ import {
   isAssistantContinuationMessage,
   isPersistedUIMessage,
   normalizeAssistantNamespace,
+  type VerifiedAssistantConversationActor,
 } from "@/features/chat/persistence/types";
 import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
 import {
@@ -525,18 +527,23 @@ async function cleanUpFailedChatPipeline(input: {
 }
 
 async function runChatPipeline(input: {
+  actor: VerifiedAssistantConversationActor;
   kubeconfig: string;
-  owner: AssistantConversationOwner;
   request: ChatStreamRequest;
   requestAbortSignal: AbortSignal;
 }): Promise<Response> {
   const { assistantContext, chatId, encodedKubeconfig, message } =
     input.request;
-  const { kubeconfig, owner, requestAbortSignal } = input;
+  const { actor, kubeconfig, requestAbortSignal } = input;
+  const owner = actor.owner;
   let ownedLease: ChatStreamLease | null = null;
   let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
   try {
+    // Adopt before the thread ensure: continuing a legacy crName-keyed
+    // conversation must find the re-keyed row instead of refusing its id.
+    await adoptLegacyAssistantConversationsForActor(actor);
+
     const threadReady = await ensureAssistantThreadForOwner(chatId, owner);
     if (!threadReady) {
       return jsonError("Assistant conversation not found.", 404);
@@ -560,11 +567,13 @@ async function runChatPipeline(input: {
 
     // Complete every fallible runtime preflight before committing an approval
     // or browser-tool continuation. A failed preflight must remain retryable.
+    // The toolset's deploy-task actor stays the per-region crName until
+    // deployment credential bindings are re-keyed in their own slice.
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
       kubeconfig,
       kubernetesNamespace: owner.namespace,
-      workspaceActor: owner.workspaceActor,
+      workspaceActor: actor.legacyWorkspaceActor,
     });
 
     const openAi = await resolveChatOpenAiConnection({
@@ -716,17 +725,20 @@ export async function POST(req: Request) {
   if (!authorization.ok) {
     return jsonError(authorization.message, authorization.status);
   }
-  const owner: AssistantConversationOwner = {
-    namespace: authorization.namespace,
-    workspaceActor: authorization.workspaceActor,
+  const actor: VerifiedAssistantConversationActor = {
+    legacyWorkspaceActor: authorization.workspaceActor,
+    owner: {
+      namespace: authorization.namespace,
+      workspaceActor: authorization.actorBinding.userUid,
+    },
   };
   const kubeconfig = decodeKubeconfig(parsed.data.encodedKubeconfig);
   if (kubeconfig == null) {
     return jsonError("Authentication is required.", 401);
   }
   return runChatPipeline({
+    actor,
     kubeconfig,
-    owner,
     request: parsed.data,
     requestAbortSignal: req.signal,
   });

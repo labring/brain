@@ -8,7 +8,10 @@ import {
   assistantChatMessages,
   assistantChats,
 } from "./schema";
-import type { AssistantConversationOwner } from "./types";
+import type {
+  AssistantConversationOwner,
+  VerifiedAssistantConversationActor,
+} from "./types";
 
 export type ThreadRow = AssistantChatRow;
 
@@ -34,6 +37,9 @@ export interface AssistantMessagePartsReplacement {
 class ChatStreamCommitConflict extends Error {}
 
 export interface AssistantConversationRepository {
+  adoptLegacyThreadsForActor: (
+    actor: VerifiedAssistantConversationActor
+  ) => Promise<void>;
   commitChatMessagesIfLeaseOwned: (input: {
     lease: ChatStreamLease;
     replacements: AssistantMessagePartsReplacement[];
@@ -301,6 +307,35 @@ export function createAssistantConversationRepository(
         )
       )
       .orderBy(desc(assistantChats.updatedAt));
+
+  /**
+   * Lazy re-key (ADR-0059): re-keys the verified actor's legacy crName-keyed
+   * threads to the proven uid in one idempotent UPDATE. The nanoid crName and
+   * UUID userUid formats are disjoint, so the update matches only legacy rows
+   * and repeat requests are no-ops. `updatedAt` is left untouched so adoption
+   * never reorders the thread picker.
+   */
+  const adoptLegacyThreadsForActor = async (
+    actor: VerifiedAssistantConversationActor
+  ): Promise<void> => {
+    const legacyWorkspaceActor = actor.legacyWorkspaceActor.trim();
+    const workspaceActor = actor.owner.workspaceActor.trim();
+    if (legacyWorkspaceActor === "" || workspaceActor === "") {
+      throw new Error("A verified conversation actor identity is required.");
+    }
+    if (legacyWorkspaceActor === workspaceActor) {
+      return;
+    }
+    await getDb()
+      .update(assistantChats)
+      .set({ workspaceActor })
+      .where(
+        and(
+          eq(assistantChats.namespace, actor.owner.namespace),
+          eq(assistantChats.workspaceActor, legacyWorkspaceActor)
+        )
+      );
+  };
 
   const ensureThreadForOwner = async (input: {
     id: string;
@@ -645,6 +680,7 @@ export function createAssistantConversationRepository(
   };
 
   return {
+    adoptLegacyThreadsForActor,
     commitChatMessagesIfLeaseOwned,
     ensureThreadForOwner,
     persistAssistantMessageIfLeaseOwned,

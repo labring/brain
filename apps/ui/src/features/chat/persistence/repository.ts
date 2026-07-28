@@ -20,6 +20,8 @@ export function isChatStreamLeaseMessageId(messageId: string): boolean {
 export const assistantConversationRepository =
   createAssistantConversationRepository(getAssistantDb);
 
+export const adoptLegacyThreadsForActor =
+  assistantConversationRepository.adoptLegacyThreadsForActor;
 export const commitChatMessagesIfLeaseOwned =
   assistantConversationRepository.commitChatMessagesIfLeaseOwned;
 export const persistAssistantMessageIfLeaseOwned =

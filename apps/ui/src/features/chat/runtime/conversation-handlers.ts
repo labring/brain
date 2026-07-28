@@ -13,10 +13,18 @@ import {
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   normalizeAssistantNamespace,
+  type VerifiedAssistantConversationActor,
 } from "../persistence/types";
 import { jsonError } from "./errors";
 
 export interface AssistantConversationHandlerDependencies {
+  /**
+   * Lazy re-key (ADR-0059): every verified conversation entry request first
+   * adopts the actor's legacy crName-keyed rows into the uid owner.
+   */
+  adoptLegacyConversations: (
+    actor: VerifiedAssistantConversationActor
+  ) => Promise<void>;
   /** Test seam; defaults to `JWT_INTERNAL` + `REGION_UID` from the env. */
   appTokenConfig?: AppTokenVerificationConfig | null;
   bootstrap: (
@@ -41,7 +49,7 @@ export function createAssistantConversationHandlers(
     request: Request,
     clientNamespace = new URL(request.url).searchParams.get("namespace")
   ): Promise<
-    | { ok: true; owner: AssistantConversationOwner }
+    | { ok: true; actor: VerifiedAssistantConversationActor }
     | { ok: false; response: Response }
   > => {
     const authorization = await authorizeWorkspaceActor({
@@ -60,9 +68,12 @@ export function createAssistantConversationHandlers(
     }
     return {
       ok: true,
-      owner: {
-        namespace: authorization.namespace,
-        workspaceActor: authorization.workspaceActor,
+      actor: {
+        legacyWorkspaceActor: authorization.workspaceActor,
+        owner: {
+          namespace: authorization.namespace,
+          workspaceActor: authorization.actorBinding.userUid,
+        },
       },
     };
   };
@@ -78,7 +89,11 @@ export function createAssistantConversationHandlers(
         return authorization.response;
       }
       try {
-        const messages = await dependencies.read(authorization.owner, chatId);
+        await dependencies.adoptLegacyConversations(authorization.actor);
+        const messages = await dependencies.read(
+          authorization.actor.owner,
+          chatId
+        );
         return messages == null
           ? conversationNotFound()
           : Response.json({ messages });
@@ -93,7 +108,10 @@ export function createAssistantConversationHandlers(
         return authorization.response;
       }
       try {
-        return Response.json(await dependencies.bootstrap(authorization.owner));
+        await dependencies.adoptLegacyConversations(authorization.actor);
+        return Response.json(
+          await dependencies.bootstrap(authorization.actor.owner)
+        );
       } catch {
         console.error("[api/chat/session] persistence unavailable");
         return jsonError(
@@ -109,7 +127,8 @@ export function createAssistantConversationHandlers(
       }
 
       try {
-        const threads = await dependencies.list(authorization.owner);
+        await dependencies.adoptLegacyConversations(authorization.actor);
+        const threads = await dependencies.list(authorization.actor.owner);
         return Response.json({ threads });
       } catch {
         console.error("[api/chat/threads] persistence unavailable");
