@@ -6,7 +6,13 @@ The ubiquitous language for the Brain product domain, grouped by area.
 
 ### Project Display Name
 
-The human-facing Project name shown in navigation, project chrome, project creation forms, and human confirmation prompts. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name as a selector; stable identity uses Project ID.
+The human-facing Project name shown in navigation, project chrome, and human confirmation prompts. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. It is not chosen during Project creation: the platform assigns a Derived Project Display Name, and users rename the Project afterwards. Avoid using Project name as a selector; stable identity uses Project ID.
+
+### Derived Project Display Name
+
+The default Project Display Name the platform assigns when a Project is created without an explicitly specified name, derived from the Deployment Task's Deployment Source; when the source yields no usable name, a readable random name is used instead. The platform resolves name collisions for derived names itself; an explicitly specified name is never silently altered — a collision is an error instead.
+
+_Avoid_: random project name, auto name, generated title.
 
 ### Project Aggregate Status
 

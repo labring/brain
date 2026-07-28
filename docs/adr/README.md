@@ -49,6 +49,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0055 — Mask DB Connection Rows Behind One Shared Reveal Interaction](0055-mask-db-connection-rows-behind-shared-reveal.md) *(revises the display layer of ADR-0053; the API contract stands)*
 - [0056 — Bind Personal Resources to Verified Workspace Actors](0056-bind-personal-resources-to-verified-workspace-actors.md) *(revises ADR-0036 and ADR-0047; supplements ADR-0038)*
 - [0057 — Forget GitHub Connections Locally on Disconnect](0057-forget-github-connections-locally-on-disconnect.md)
+- [0058 — Derive Project Display Names from Deployment Sources at Creation](0058-derive-project-display-names-from-deployment-sources.md)
 
 ## Conventions
 

@@ -9,7 +9,7 @@ import {
 import { createDeployTaskAction } from "@/features/deploy/task/engine/actions";
 import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
 import {
-  resolveDeploymentTaskTarget,
+  resolveDeployTaskTargetForCreate,
   runDeployTask,
 } from "@/features/deploy/task/runner";
 import {
@@ -205,19 +205,7 @@ export async function POST(request: Request) {
       namespace: taskNamespace,
     },
     predecessorTaskId,
-    resolveTarget: async (resolveInput) => {
-      const resolved = await resolveDeploymentTaskTarget({
-        id: "",
-        namespace: resolveInput.namespace,
-        projectId: null,
-        projectName: null,
-        target: resolveInput.target,
-      });
-      return {
-        projectId: resolved.projectId,
-        projectName: resolved.projectName,
-      };
-    },
+    resolveTarget: resolveDeployTaskTargetForCreate,
     run: (handle, task) =>
       runDeployTask(handle, {
         encodedKubeconfig,
@@ -242,6 +230,14 @@ export async function POST(request: Request) {
       return jsonError(result.message, 400);
     case "predecessor-not-found":
       return jsonError("Deploy task predecessor not found", 404);
+    case "project-name-conflict":
+      // Only a caller-chosen name reaches here; derived names resolve their own
+      // collisions with a suffix (ADR 0058).
+      return jsonError(
+        `A project named "${result.displayName}" already exists.`,
+        409,
+        "project_name_conflict"
+      );
     case "predecessor-conflict":
       return NextResponse.json(
         {

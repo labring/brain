@@ -104,7 +104,7 @@ export const deploymentTaskSourceSchema = z.discriminatedUnion("kind", [
 export const deploymentTaskTargetSchema = z.discriminatedUnion("kind", [
   z.object({
     description: z.string().trim().max(256).optional(),
-    displayName: z.string().trim().min(1).max(256),
+    displayName: z.string().trim().min(1).max(256).optional(),
     kind: z.literal("newProject"),
   }),
   z.object({
@@ -136,6 +136,15 @@ export const createDeployTaskInputSchema = z.object({
   source: deploymentTaskSourceSchema,
   target: deploymentTaskTargetSchema,
 });
+
+/**
+ * Outcome of resolving a Deployment Task's Project at creation time. A caller
+ * that supplied its own Project Display Name learns its name was taken instead
+ * of having the Project silently renamed (ADR 0058).
+ */
+export type DeployTaskTargetResolution =
+  | { kind: "resolved"; projectId: string; projectName: string }
+  | { displayName: string; kind: "project-name-conflict" };
 
 export type CreateDeployTaskInput = z.infer<
   typeof createDeployTaskInputSchema

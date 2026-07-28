@@ -4,8 +4,6 @@ import { test } from "node:test";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 
 import {
-  isProjectDisplayNameTaken,
-  normalizeProjectDisplayName,
   projectDescription,
   projectDisplayName,
   projectItemsFromK8sGetResponse,
@@ -91,41 +89,4 @@ test("projectItemsFromK8sGetResponse accepts nested data envelope", () => {
   } as K8sGetResponse);
 
   assert.equal(items?.[0]?.metadata?.uid, "project-uid");
-});
-
-test("normalizeProjectDisplayName trims and compares case-insensitively", () => {
-  assert.equal(
-    normalizeProjectDisplayName("  Production API "),
-    "production api"
-  );
-});
-
-test("isProjectDisplayNameTaken detects namespace display-name conflicts", () => {
-  assert.equal(
-    isProjectDisplayNameTaken(
-      [
-        {
-          createdAt: "",
-          id: "project-1",
-          name: "Production API",
-        },
-      ],
-      " production api "
-    ),
-    true
-  );
-  assert.equal(
-    isProjectDisplayNameTaken(
-      [
-        {
-          createdAt: "",
-          id: "project-1",
-          name: "Production API",
-        },
-      ],
-      "production api",
-      "project-1"
-    ),
-    false
-  );
 });

@@ -19,7 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { StorageSizeInput } from "@/lib/storage-size-input";
 import { DeploymentSettings } from "./deployment-settings";
 import {
@@ -128,7 +128,6 @@ export function DockerDeployer({
   deployLabel = "Deploy",
   initialSettings,
   onDeploy,
-  onSettingsChange,
 }: {
   busy?: boolean;
   childrenBeforeDeploy?: ReactNode;
@@ -137,7 +136,6 @@ export function DockerDeployer({
   /** Prefill (US10): any subset; missing fields fall back to defaults. */
   initialSettings?: Partial<DockerDeploymentSettings>;
   onDeploy?: (settings: DockerDeploymentSettings) => void | Promise<void>;
-  onSettingsChange?: (settings: DockerDeploymentSettings) => void;
 }) {
   const [image, setImage] = useState(
     initialSettings?.image ?? DEFAULT_DOCKER_IMAGE
@@ -214,10 +212,6 @@ export function DockerDeployer({
     (error) => error.field === "appListeningPort"
   );
   const canDeploy = !busy && validation.valid && onDeploy != null;
-
-  useEffect(() => {
-    onSettingsChange?.(settings);
-  }, [onSettingsChange, settings]);
 
   return (
     <div

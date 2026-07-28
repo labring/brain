@@ -18,7 +18,10 @@ import {
 } from "../sensitive-inputs";
 import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import { createDeploymentTaskTimelineForRunner } from "../timeline";
-import type { CreateDeployTaskInput } from "../types";
+import type {
+  CreateDeployTaskInput,
+  DeployTaskTargetResolution,
+} from "../types";
 import type { DeployTaskEngineContext } from "./context";
 import type { DeployTaskHandle } from "./handle";
 import {
@@ -95,7 +98,10 @@ function taskTitle(input: CreateDeployTaskInput): string {
     );
     return project ? `Deploy ${source} into ${project}` : `Deploy ${source}`;
   }
-  return `Deploy ${source} into new Project ${input.target.displayName}`;
+  const displayName = compactOptional(input.target.displayName);
+  return displayName == null
+    ? `Deploy ${source} into a new Project`
+    : `Deploy ${source} into new Project ${displayName}`;
 }
 
 async function readTaskRow(
@@ -151,7 +157,8 @@ export type CreateDeployTaskActionResult =
     }
   | { kind: "invalid"; message: string }
   | { kind: "predecessor-conflict"; predecessor: DeployTaskRow }
-  | { kind: "predecessor-not-found" };
+  | { kind: "predecessor-not-found" }
+  | { displayName: string; kind: "project-name-conflict" };
 
 export type CreateDeployTaskActionCreateInput = Omit<
   CreateDeployTaskInput,
@@ -169,8 +176,9 @@ export interface CreateDeployTaskActionInput {
    */
   resolveTarget?: (input: {
     namespace: string;
+    source: NonNullable<CreateDeployTaskInput["source"]>;
     target: NonNullable<CreateDeployTaskInput["target"]>;
-  }) => Promise<{ projectId: string; projectName: string }>;
+  }) => Promise<DeployTaskTargetResolution>;
   /** Launches the runner under the inline-claimed lease. */
   run: DeployTaskRunLauncher;
 }
@@ -306,10 +314,11 @@ function cloneInheritedIdentities(
 async function resolveCreateProject(
   input: CreateDeployTaskActionInput,
   create: CreateDeployTaskInput
-): Promise<{ projectId: string; projectName: string } | null> {
+): Promise<DeployTaskTargetResolution | null> {
   const target = create.target;
   if (target.kind === "existingProject" && target.projectName?.trim()) {
     return {
+      kind: "resolved",
       projectId: target.projectId,
       projectName: target.projectName.trim(),
     };
@@ -317,6 +326,7 @@ async function resolveCreateProject(
   if (input.resolveTarget != null) {
     return await input.resolveTarget({
       namespace: create.namespace.trim(),
+      source: create.source,
       target,
     });
   }
@@ -335,30 +345,21 @@ function createdTaskEventPayload(
   };
 }
 
-export async function createDeployTaskAction(
+async function insertCreatedDeployTask(
   ctx: DeployTaskEngineContext,
-  input: CreateDeployTaskActionInput
-): Promise<CreateDeployTaskActionResult> {
-  const resolved = await resolveCreateInputs(ctx, input);
-  if ("kind" in resolved) {
-    return resolved;
+  input: {
+    create: CreateDeployTaskInput;
+    predecessor: DeployTaskRow | null;
+    resolvedProject: { projectId: string; projectName: string } | null;
   }
-  const { create, predecessor } = resolved;
-  const resolvedProject = await resolveCreateProject(input, create);
-
+): Promise<
+  DeployTaskRow | { kind: "clone-conflict"; activeClone: DeployTaskRow | null }
+> {
+  const { create, predecessor, resolvedProject } = input;
   const id = generateId();
   const now = new Date();
   const persistedSource = persistableDeploymentSource(create.source);
-  const timelineSnapshot = createDeploymentTaskTimelineForRunner({
-    runner: create.runner,
-    source: persistedSource,
-    status: "queued",
-    taskId: id,
-    updatedAt: now.toISOString(),
-  });
-
   const inheritedIdentities = cloneInheritedIdentities(create, predecessor);
-  let task: DeployTaskRow;
   try {
     const [inserted] = await ctx.db
       .insert(deployTasks)
@@ -384,14 +385,20 @@ export async function createDeployTaskAction(
         source: persistedSource,
         status: "queued",
         target: create.target,
-        timelineSnapshot,
+        timelineSnapshot: createDeploymentTaskTimelineForRunner({
+          runner: create.runner,
+          source: persistedSource,
+          status: "queued",
+          taskId: id,
+          updatedAt: now.toISOString(),
+        }),
         updatedAt: now,
       })
       .returning();
     if (inserted == null) {
       throw new Error("Failed to create deploy task.");
     }
-    task = inserted;
+    return inserted;
   } catch (error) {
     if (
       predecessor != null &&
@@ -411,6 +418,30 @@ export async function createDeployTaskAction(
       return { kind: "clone-conflict", activeClone: activeClone ?? null };
     }
     throw error;
+  }
+}
+
+export async function createDeployTaskAction(
+  ctx: DeployTaskEngineContext,
+  input: CreateDeployTaskActionInput
+): Promise<CreateDeployTaskActionResult> {
+  const resolved = await resolveCreateInputs(ctx, input);
+  if ("kind" in resolved) {
+    return resolved;
+  }
+  const { create, predecessor } = resolved;
+  const resolution = await resolveCreateProject(input, create);
+  if (resolution?.kind === "project-name-conflict") {
+    return resolution;
+  }
+
+  const task = await insertCreatedDeployTask(ctx, {
+    create,
+    predecessor,
+    resolvedProject: resolution,
+  });
+  if ("kind" in task) {
+    return task;
   }
 
   await ctx.db.insert(deployTaskMessages).values({

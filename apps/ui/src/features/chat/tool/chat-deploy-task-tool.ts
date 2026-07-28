@@ -15,7 +15,7 @@ import {
 } from "@/features/deploy/task/engine/actions";
 import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
 import {
-  resolveDeploymentTaskTarget,
+  resolveDeployTaskTargetForCreate,
   runDeployTask,
 } from "@/features/deploy/task/runner";
 import {
@@ -107,6 +107,8 @@ export function createDeployTaskTools(
       "The task resolves or creates its target Project, runs the server-selected Deployment Runner, applies artifacts, and reports progress separately.",
       "Do not provide a runner; Docker and database sources use the Direct Runner, template sources use the Template Runner, and GitHub or prompt sources use the AI Runner.",
       "If the user is already inside a Project, omit target to deploy into the current Project; otherwise provide a newProject target.",
+      "On a newProject target, displayName is optional: prefer a short name that reflects what the user asked to deploy, and omit it to let the platform derive one from the Deployment Source.",
+      "A displayName you provide is used verbatim; if it is already taken the call fails, so retry once with a different name.",
     ].join(" "),
     inputSchema: createDeployTaskToolInputSchema,
     execute: async (input) => {
@@ -137,19 +139,7 @@ export function createDeployTaskTools(
           source: input.source,
           target,
         },
-        resolveTarget: async (resolveInput) => {
-          const resolved = await resolveDeploymentTaskTarget({
-            id: "",
-            namespace: resolveInput.namespace,
-            projectId: null,
-            projectName: null,
-            target: resolveInput.target,
-          });
-          return {
-            projectId: resolved.projectId,
-            projectName: resolved.projectName,
-          };
-        },
+        resolveTarget: resolveDeployTaskTargetForCreate,
         run: (handle, task) =>
           runTask(handle, {
             encodedKubeconfig,
@@ -161,6 +151,12 @@ export function createDeployTaskTools(
             taskId: task.id,
           }),
       });
+      if (result.kind === "project-name-conflict") {
+        return {
+          ok: false,
+          error: `A project named "${result.displayName}" already exists. Retry with a different displayName, or omit it to let the platform name the Project.`,
+        };
+      }
       if (result.kind !== "created") {
         return {
           ok: false,

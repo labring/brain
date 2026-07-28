@@ -4,8 +4,17 @@ import { randomUUID } from "node:crypto";
 
 import { and, desc, eq } from "drizzle-orm";
 
+import {
+  fallbackProjectDisplayName,
+  projectDisplayNameWithSuffix,
+} from "@/features/projects/derived-project-display-name";
+
 import { getProjectDb } from "./db";
 import { type ProjectRow, projects } from "./schema";
+
+/** Bounded so a crowded namespace ends on a fallback name instead of spinning. */
+const DISPLAY_NAME_SUFFIX_ATTEMPTS = 20;
+const FALLBACK_DISPLAY_NAME_ATTEMPTS = 5;
 
 export interface BrainProject {
   createdAt: string;
@@ -145,6 +154,78 @@ export async function createProject(
       `A project named "${displayName}" already exists.`
     );
   }
+}
+
+async function createProjectIfNameFree(
+  input: CreateProjectInput
+): Promise<BrainProject | null> {
+  try {
+    return await createProject(input);
+  } catch (error) {
+    if (error instanceof ProjectPersistenceError && error.code === "conflict") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function createProjectUnderFreeSuffix(input: {
+  description?: string;
+  displayNameBase: string;
+  namespace: string;
+}): Promise<BrainProject | null> {
+  for (let attempt = 1; attempt <= DISPLAY_NAME_SUFFIX_ATTEMPTS; attempt += 1) {
+    const project = await createProjectIfNameFree({
+      description: input.description,
+      displayName: projectDisplayNameWithSuffix(input.displayNameBase, attempt),
+      namespace: input.namespace,
+    });
+    if (project !== null) {
+      return project;
+    }
+  }
+  return null;
+}
+
+/**
+ * Creates a Project under a platform-derived name (ADR 0058). The unique index
+ * is the arbiter, not a pre-read: each rejected insert bumps the suffix, so two
+ * concurrent creates from the same Deployment Source both succeed with distinct
+ * names instead of one failing on a stale uniqueness check.
+ */
+export async function createProjectWithDerivedDisplayName(input: {
+  derivedDisplayName: string;
+  description?: string;
+  namespace: string;
+}): Promise<BrainProject> {
+  const derived = await createProjectUnderFreeSuffix({
+    description: input.description,
+    displayNameBase: input.derivedDisplayName,
+    namespace: input.namespace,
+  });
+  if (derived !== null) {
+    return derived;
+  }
+  // A namespace crowded enough to exhaust the derived name's suffixes still
+  // gets a readable name, suffixed the same way rather than retried blindly.
+  for (
+    let attempt = 0;
+    attempt < FALLBACK_DISPLAY_NAME_ATTEMPTS;
+    attempt += 1
+  ) {
+    const project = await createProjectUnderFreeSuffix({
+      description: input.description,
+      displayNameBase: fallbackProjectDisplayName(),
+      namespace: input.namespace,
+    });
+    if (project !== null) {
+      return project;
+    }
+  }
+  throw new ProjectPersistenceError(
+    "conflict",
+    "Could not find an available project name."
+  );
 }
 
 export async function updateProject(

@@ -234,7 +234,12 @@ export type DeploymentTaskSource =
 export type DeploymentTaskTarget =
   | {
       description?: string;
-      displayName: string;
+      /**
+       * Omit to let the server derive the name from the Deployment Source and
+       * resolve collisions with a suffix; supply one to have it used verbatim,
+       * with a collision reported as a conflict rather than renamed (ADR 0058).
+       */
+      displayName?: string;
       kind: "newProject";
     }
   | {
