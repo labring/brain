@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted; the authorization boundary is revised by ADR-0056.
+Accepted; the authorization boundary is revised by ADR-0056, and the owner
+subject key is revised to the global userUid by ADR-0059.
 
 Assistant chat was scoped only by namespace, so members of a shared workspace
 could select and read one another's conversations. Each Assistant Conversation
