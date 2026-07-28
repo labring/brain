@@ -17,7 +17,8 @@ type DeploymentTaskProjectionListener = (
  * (ADR 0037): payloads carry ids only, so each event re-reads the row —
  * serialized per task so deliveries stay monotonic; a purge notification is
  * itself the removal; a transport reset re-reads the whole project because
- * notifications during the gap are lost.
+ * notifications during the gap are lost, holding per-task deliveries back
+ * until its snapshot lands so the snapshot never erases a newer delivery.
  */
 export interface DeploymentTaskEventsSubscription {
   /**
@@ -49,6 +50,33 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
   const inflightReads = new Map<string, { queued: boolean }>();
   const purgedTaskIds = new Set<string>();
 
+  // Reset snapshots replace the listener's whole set, so a snapshot must
+  // never land after a per-task delivery it does not contain — the replace
+  // would drop that task. While a reset re-read is in flight, per-task
+  // deliveries are buffered and replayed after the snapshot; overlapping
+  // resets keep only the newest read (older resolutions are discarded).
+  let resetGeneration = 0;
+  let bufferedDuringReset: DeploymentTaskProjectionStreamEvent[] | null = null;
+
+  const deliver = (event: DeploymentTaskProjectionStreamEvent) => {
+    if (bufferedDuringReset != null) {
+      bufferedDuringReset.push(event);
+      return;
+    }
+    input.listener(event);
+  };
+
+  const flushBufferedDuringReset = () => {
+    const buffered = bufferedDuringReset ?? [];
+    bufferedDuringReset = null;
+    for (const event of buffered) {
+      if (cancelled) {
+        return;
+      }
+      input.listener(event);
+    }
+  };
+
   const emitTask = (taskId: string) => {
     const inflight = inflightReads.get(taskId);
     if (inflight != null) {
@@ -73,7 +101,7 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
         }
         const projection = toDeploymentTaskProjection(row);
         if (projection == null) {
-          input.listener({
+          deliver({
             namespace: row.namespace,
             projectId: input.projectId,
             taskId: row.id,
@@ -81,7 +109,7 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
           });
           return;
         }
-        input.listener({ projection, type: "upsert" });
+        deliver({ projection, type: "upsert" });
       })
       .catch((error) => {
         console.error("[deploy-task-projection-events] re-read failed:", error);
@@ -100,18 +128,32 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
         return;
       }
       if (event.kind === "reset") {
+        const generation = ++resetGeneration;
+        bufferedDuringReset ??= [];
         input
           .listProjections()
           .then((projections) => {
-            if (!cancelled) {
-              input.listener({ projections, type: "snapshot" });
+            if (cancelled || generation !== resetGeneration) {
+              return;
             }
+            // The read can predate a purge that was already delivered:
+            // tombstoned ids never re-enter through a snapshot.
+            const snapshot = projections.filter(
+              (projection) => !purgedTaskIds.has(projection.id)
+            );
+            input.listener({ projections: snapshot, type: "snapshot" });
+            flushBufferedDuringReset();
           })
           .catch((error) => {
             console.error(
               "[deploy-task-projection-events] reset re-read failed:",
               error
             );
+            // No snapshot is coming for this reset: reopen the delta flow
+            // so buffered deliveries are not stuck behind it.
+            if (!cancelled && generation === resetGeneration) {
+              flushBufferedDuringReset();
+            }
           });
         return;
       }
@@ -125,7 +167,7 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
           inflight.queued = false;
         }
         if (event.projectId === input.projectId) {
-          input.listener({
+          deliver({
             namespace: event.namespace,
             projectId: input.projectId,
             taskId: event.taskId,
