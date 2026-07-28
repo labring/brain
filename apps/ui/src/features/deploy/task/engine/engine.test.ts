@@ -362,7 +362,7 @@ test("reaper enforces cancel-ack deadline, max active run, and start deadline", 
   assert.equal(starved, null);
 });
 
-test("reaper fails legacy blocked tasks without inputs and preserves valid waits", async () => {
+test("reaper fails invalid blocked tasks and preserves trusted input waits", async () => {
   const ctx = testCtx();
   const unknown = await insertTaskRow(harness.db, {
     blockingInputs: [],
@@ -376,11 +376,36 @@ test("reaper fails legacy blocked tasks without inputs and preserves valid waits
   const outputMissing = await insertTaskRow(harness.db, { status: "blocked" });
   const buildRuntime = await insertTaskRow(harness.db, { status: "blocked" });
   const gateway = await insertTaskRow(harness.db, { status: "blocked" });
-  const valid = await insertTaskRow(harness.db, {
+  const legacyAi = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "internal-port",
+        key: "PORT",
+        label: "Port",
+        required: true,
+        type: "text",
+      },
+    ],
+    phase: "configure",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  const validTemplate = await insertTaskRow(harness.db, {
     blockingInputs: [
       { id: "port", key: "PORT", label: "Port", required: true, type: "text" },
     ],
     phase: "configure",
+    status: "blocked",
+  });
+  const validAi = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
+    blockingInputs: [
+      { id: "PORT", key: "PORT", label: "Port", required: true, type: "text" },
+    ],
+    phase: "configure",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
     status: "blocked",
   });
 
@@ -398,7 +423,7 @@ test("reaper fails legacy blocked tasks without inputs and preserves valid waits
 
   const summary = await runDeployTaskReaperSweep(ctx);
 
-  assert.equal(summary.invalidBlocked, 4);
+  assert.equal(summary.invalidBlocked, 5);
   assert.equal(summary.devboxPaused, 1);
   const unknownRow = await taskById(unknown.id);
   assert.equal(unknownRow.status, "failed");
@@ -409,7 +434,15 @@ test("reaper fails legacy blocked tasks without inputs and preserves valid waits
     failureMessage: deploymentFailureMessage("unknown"),
     reason: "unknown",
   });
-  assert.equal((await taskById(valid.id)).status, "blocked");
+  assert.equal((await taskById(validTemplate.id)).status, "blocked");
+  assert.equal((await taskById(validAi.id)).status, "blocked");
+  const legacyAiRow = await taskById(legacyAi.id);
+  assert.equal(legacyAiRow.status, "failed");
+  assert.deepEqual(legacyAiRow.failureDetails, {
+    detail: "untrusted-ai-blocking-inputs",
+    failureMessage: deploymentFailureMessage("unknown"),
+    reason: "unknown",
+  });
 
   const [unknownEvent] = await eventsFor(unknown.id);
   assert.equal(unknownEvent?.kind, "deployment_task.engine_resolved");

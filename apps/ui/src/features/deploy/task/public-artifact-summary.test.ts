@@ -98,7 +98,10 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
           },
           {
             default: "3000",
+            description: "HTTP listen port",
             key: "port",
+            label: "Port",
+            options: ["3000", "8080"],
             required: false,
             type: "number",
           },
@@ -143,8 +146,11 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
           type: "secret",
         },
         {
+          default: "3000",
+          description: "HTTP listen port",
           key: "port",
-          label: "port",
+          label: "Port",
+          options: ["3000", "8080"],
           required: false,
           type: "number",
         },
@@ -222,6 +228,7 @@ test("trusted public AI blocking inputs preserve canonical keys and labels witho
       id: "smtp_password",
       key: "smtp_password",
       label: "SMTP password",
+      description: "Password used to authenticate with the SMTP server.",
       required: true,
       sensitive: true,
       type: "secret",
@@ -345,7 +352,7 @@ test("trusted AI plan and blocker metadata retain keys while dropping secret val
       deploymentPlan: {
         inputs: [
           {
-            description: secretValue,
+            description: "Password used to authenticate with SMTP.",
             key: "smtp_password",
             label: "SMTP password",
             options: [secretValue],
@@ -366,7 +373,7 @@ test("trusted AI plan and blocker metadata retain keys while dropping secret val
     [
       {
         defaultValue: secretValue,
-        description: secretValue,
+        description: "Password used to authenticate with SMTP.",
         id: "smtp_password",
         key: "smtp_password",
         label: "SMTP password",
@@ -390,6 +397,7 @@ test("trusted AI plan and blocker metadata retain keys while dropping secret val
         {
           key: "smtp_password",
           label: "SMTP password",
+          description: "Password used to authenticate with SMTP.",
           required: true,
           sensitive: true,
           type: "secret",
@@ -405,6 +413,7 @@ test("trusted AI plan and blocker metadata retain keys while dropping secret val
       id: "smtp_password",
       key: "smtp_password",
       label: "SMTP password",
+      description: "Password used to authenticate with SMTP.",
       required: true,
       sensitive: true,
       type: "secret",

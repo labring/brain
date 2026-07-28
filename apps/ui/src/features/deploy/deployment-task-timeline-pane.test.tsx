@@ -24,6 +24,8 @@ const ANALYZE_REQUEST_RE = /Analyze request/;
 const SKIPPED_RE = /skipped/;
 const DEPLOYMENT_CONFIGURATION_RE = /Deployment configuration/;
 const AI_GATEWAY_KEY_RE = /AI Gateway API key/;
+const DEPLOYMENT_REGION_RE = /Deployment region/;
+const CHOICE_CONTROL_RE = /role="combobox"/;
 const CONTINUE_DEPLOYMENT_RE = /Continue Deployment/;
 const FIRECRAWL_API_KEY_RE = /FIRECRAWL_API_KEY/;
 const FIRECRAWL_API_KEY_DESCRIPTION_RE = /FIRECRAWL API KEY\./;
@@ -285,9 +287,18 @@ test("deployment task timeline pane renders template input form when blocked", (
                   sensitive: true,
                   type: "secret",
                 },
+                {
+                  default: "us-west-1",
+                  description: "Region for the deployment",
+                  key: "deployment_region",
+                  label: "Deployment region",
+                  options: ["us-west-1", "us-east-1"],
+                  required: true,
+                  type: "choice",
+                },
               ],
               kind: "sealos-template",
-              missingInputKeys: ["ai_gateway_api_key"],
+              missingInputKeys: ["ai_gateway_api_key", "deployment_region"],
               templateName: "ai-gateway",
             },
           },
@@ -297,6 +308,17 @@ test("deployment task timeline pane renders template input form when blocked", (
               label: "AI Gateway API key",
               required: true,
               type: "secret",
+            },
+            {
+              defaultValue: "us-west-1",
+              description: "Region for the deployment",
+              id: "deployment_region",
+              key: "deployment_region",
+              label: "Deployment region",
+              options: ["us-west-1", "us-east-1"],
+              required: true,
+              type: "text",
+              valueType: "choice",
             },
           ],
           canvasProjection: {},
@@ -348,6 +370,8 @@ test("deployment task timeline pane renders template input form when blocked", (
 
   assert.match(html, DEPLOYMENT_CONFIGURATION_RE);
   assert.match(html, AI_GATEWAY_KEY_RE);
+  assert.match(html, DEPLOYMENT_REGION_RE);
+  assert.match(html, CHOICE_CONTROL_RE);
   assert.match(html, CONTINUE_DEPLOYMENT_RE);
   assert.match(html, TIMELINE_DESIGN_CARD_STYLE_RE);
   assert.match(html, TIMELINE_BORDER_BEAM_RE);

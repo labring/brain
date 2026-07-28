@@ -190,6 +190,11 @@ function publicAiDeploymentPlanInput(value: unknown) {
   const sourceType =
     typeof input.type === "string" ? input.type.trim().toLowerCase() : "";
   const sourceLabel = typeof input.label === "string" ? input.label.trim() : "";
+  const sourceOptions = Array.isArray(input.options)
+    ? input.options.filter(
+        (option): option is string => typeof option === "string"
+      )
+    : null;
   let publicType = "string";
   if (sensitive) {
     publicType = "secret";
@@ -198,8 +203,17 @@ function publicAiDeploymentPlanInput(value: unknown) {
   }
   return {
     input: {
+      ...(typeof input.description === "string"
+        ? { description: input.description }
+        : {}),
+      ...(!sensitive && typeof input.default === "string"
+        ? { default: input.default }
+        : {}),
       key: sourceKey,
       label: sourceLabel || sourceKey,
+      ...(!sensitive && sourceOptions != null
+        ? { options: sourceOptions }
+        : {}),
       ...(typeof input.required === "boolean"
         ? { required: input.required }
         : {}),
@@ -286,10 +300,22 @@ function publicAiBlockingInput(value: unknown): DeployTaskBlockingInput | null {
       ? input.valueType.trim().toLowerCase()
       : null;
   const sourceLabel = typeof input.label === "string" ? input.label.trim() : "";
+  const sourceOptions = Array.isArray(input.options)
+    ? input.options.filter(
+        (option): option is string => typeof option === "string"
+      )
+    : null;
   return {
+    ...(!sensitive && typeof input.defaultValue === "string"
+      ? { defaultValue: input.defaultValue }
+      : {}),
+    ...(typeof input.description === "string"
+      ? { description: input.description }
+      : {}),
     id: canonicalKey,
     key: canonicalKey,
     label: sourceLabel || canonicalKey,
+    ...(!sensitive && sourceOptions != null ? { options: sourceOptions } : {}),
     required: typeof input.required === "boolean" ? input.required : true,
     type: sensitive ? "secret" : sourceType,
     ...(sensitive ? { sensitive: true } : {}),
