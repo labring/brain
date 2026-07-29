@@ -48,15 +48,19 @@ request. A stolen token is useless without the victim's currently valid
 kubeconfig, so `exp` adds no marginal security; enforcing it would instead
 permanently 401 personal resources after seven days, because desktop mints the
 token only at login, region switch, and workspace switch and never refreshes
-it. Expired-token acceptance is logged to telemetry. Two load-bearing premises
-are recorded: `crName` is never recycled (a platform change here forces
-re-review of this ADR), and stale post-merge bindings are caught by Identity
-Fingerprints below.
+it. Expired-token acceptance is logged to telemetry. Three load-bearing premises
+are recorded: `crName` is never recycled, desktop always mints `iat` into the
+token (jsonwebtoken embeds it whenever `expiresIn` is set) — a platform
+change to either forces re-review of this ADR — and stale post-merge bindings
+are caught by Identity Fingerprints below.
 
 The degradation matrix: all checks pass, expired or not → uid path; signature
 failure → 401 with security log; crName or region mismatch → 403 with security
-log; token missing → 401, fail closed; binding superseded per Identity
-Fingerprint → 401 with telemetry; non-personal routes never consult the token.
+log; token missing → 401, fail closed; `iat` missing → 401 with security log
+(minting-time monotonicity orders merge decisions below, so an unorderable
+binding is unverifiable — only a non-desktop minter produces one); binding
+superseded per Identity Fingerprint → 401 with telemetry; non-personal routes
+never consult the token.
 
 ### Reverse ADR-0056's symmetric-secret rejection
 
@@ -99,7 +103,20 @@ observed uid and that token's minting time. A contradiction carrying a newer
 minting time is a merge signal: the same transaction re-keys all personal
 resources from the tombstone uid to the surviving uid and updates the
 fingerprint. The re-key is idempotent and complete, because the tombstone uid
-can never be minted again. A contradiction carrying an older minting time is a
+can never be minted again.
+
+Where the surviving uid already holds a current-generation GitHub Connection
+in a namespace, the tombstone's connection row there is deleted, not kept
+inert: the partial unique index allows one current connection per (namespace,
+owner), so the row cannot follow the survivor; and unlike the generation
+upgrade's inert legacy rows — which wait for adoption by a verified owner — a
+tombstone-keyed row can never have a reader again, leaving only permanently
+dead OAuth ciphertext. Removing it is credential hygiene, not data loss: the
+conflict exists only when the survivor has already reauthorized, so the
+user's active connection is untouched. The trade-off is recorded: this delete
+is the merge transaction's only irreversible step, and a falsely detected
+merge — possible only where the trust root itself has failed — would destroy
+the row beyond manual repair. A contradiction carrying an older minting time is a
 superseded token — replayed from before the merge — and is refused with 401;
 the desktop re-login loop re-mints a current token. Day-one shipping is load
 bearing: fingerprints exist only from the table's creation onward, so merges
@@ -152,6 +169,21 @@ assume personal resources are readable by crName.
 
 Deployments gain two required settings — `REGION_UID` and `JWT_INTERNAL` —
 and production fails fast without them.
+
+One ADR-0056 enforcement point is weakened by the key switch: the task engine
+no longer asserts owner-equals-creator on GitHub Deployment Task creation,
+because the Deployment Credential Binding's owner is now a uid while the
+recorded creating actor remains a per-region crName — disjoint identifier
+spaces with no equality to check. The constraint stands by construction
+instead: a binding is never accepted from the request body and is resolved
+server-side from the verified initiator's own connection at the single
+authorization point. The engine retains its shape checks — non-GitHub tasks
+must not carry a binding; GitHub tasks require a creating actor and a
+current-generation binding. Recording the initiator's uid on task rows to
+restore the assert was considered and rejected: existing rows are history and
+stay unrewritten, and the field's only purpose would be guarding against
+hypothetical future engine callers; if per-uid task attribution becomes a
+product need, that is the moment to add it.
 
 This decision revises ADR-0056's actor subject key, identity trust source, and
 migration mode; ADR-0047's conversation owner key; and ADR-0036's connection
