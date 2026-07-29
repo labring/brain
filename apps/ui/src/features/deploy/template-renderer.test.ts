@@ -13,6 +13,7 @@ import {
   TemplateInputValidationError,
   type TemplateInputValidationErrorCode,
   type TemplateInputValidationValueSource,
+  templateSourceFromInlineYaml,
 } from "./template-renderer";
 
 const source = {
@@ -841,6 +842,53 @@ spec:
   assert.equal(instance.metadata.name, "template-inline");
   assert.equal(service?.metadata?.name, "template-inline");
   assert.match(ingressYaml ?? "", TEMPLATE_SECRET_NAME_RE);
+});
+
+test("renderTemplateDeployment keeps declaration-only input fields off Instance", () => {
+  const templateYaml = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: mastodon
+spec:
+  title: Mastodon
+  inputs:
+    registrations_mode:
+      default: approved
+      description: Who can create accounts
+      options:
+        - approved
+        - open
+      required: true
+      type: string
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mastodon
+spec:
+  ports:
+    - port: 80
+`;
+  const { source: template, templateName } =
+    templateSourceFromInlineYaml(templateYaml);
+  const rendered = renderTemplateDeployment({
+    instanceName: "mastodon",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: template,
+    templateName,
+  });
+  const instance = YAML.parse(rendered.instanceYaml);
+
+  assert.deepEqual(template.source.inputs?.[0]?.options, ["approved", "open"]);
+  assert.deepEqual(instance.spec.inputs.registrations_mode, {
+    default: "approved",
+    description: "Who can create accounts",
+    required: true,
+    type: "string",
+  });
 });
 
 test("renderTemplateDeploymentFromYaml renders base64 expressions with JSON braces", () => {
