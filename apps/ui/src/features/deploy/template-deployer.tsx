@@ -6,6 +6,7 @@ import {
   AppSelect,
   type AppSelectOption,
 } from "@workspace/ui/components/app-select";
+import { Checkbox } from "@workspace/ui/components/checkbox";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Blocks, Rocket, Upload } from "lucide-react";
@@ -18,6 +19,7 @@ export interface TemplateDeploymentInput {
   default?: string;
   description: string;
   key: string;
+  options?: string[];
   required: boolean;
   type: string;
 }
@@ -56,10 +58,63 @@ function selectedChoice(
   return options.find((option) => option.name === selectedName) ?? null;
 }
 
-function defaultArgs(choice: TemplateDeploymentChoice | null) {
-  return Object.fromEntries(
-    (choice?.args ?? []).map((arg) => [arg.key, arg.default ?? ""])
+function normalizedInputType(input: TemplateDeploymentInput) {
+  return input.type.trim().toLowerCase();
+}
+
+function normalizedInputValue(
+  input: TemplateDeploymentInput,
+  value: string | undefined,
+  fallback?: string
+) {
+  const resolvedValue = value ?? "";
+  if (isSensitiveDeploymentInput(input)) {
+    return resolvedValue;
+  }
+  const options = input.options ?? [];
+  if (options.length > 0) {
+    if (options.includes(resolvedValue)) {
+      return resolvedValue;
+    }
+    const fallbackValue = fallback ?? "";
+    return options.includes(fallbackValue) ? fallbackValue : (options[0] ?? "");
+  }
+  if (normalizedInputType(input) === "boolean") {
+    const normalizedValue = resolvedValue.trim().toLowerCase();
+    if (normalizedValue === "true" || normalizedValue === "false") {
+      return normalizedValue;
+    }
+    return fallback === "true" ? "true" : "false";
+  }
+  return resolvedValue;
+}
+
+function argsForChoice(
+  choice: TemplateDeploymentChoice | null,
+  overrides?: Record<string, string>
+) {
+  const declared = Object.fromEntries(
+    (choice?.args ?? []).map((arg) => [
+      arg.key,
+      normalizedInputValue(arg, arg.default),
+    ])
   );
+  if (overrides == null) {
+    return declared;
+  }
+  const merged = { ...declared, ...overrides };
+  for (const arg of choice?.args ?? []) {
+    merged[arg.key] = normalizedInputValue(
+      arg,
+      merged[arg.key],
+      declared[arg.key]
+    );
+  }
+  return merged;
+}
+
+function defaultArgs(choice: TemplateDeploymentChoice | null) {
+  return argsForChoice(choice);
 }
 
 function templateLabel(choice: TemplateDeploymentChoice | null) {
@@ -142,6 +197,106 @@ export function templateSensitiveKeys(
   return (choice?.args ?? [])
     .filter((arg) => isSensitiveDeploymentInput(arg))
     .map((arg) => arg.key);
+}
+
+function TemplateParameterDescription({
+  description,
+}: {
+  description: string;
+}) {
+  return description ? (
+    <span className="text-muted-foreground text-xs leading-4">
+      {description}
+    </span>
+  ) : null;
+}
+
+function TemplateParameterControl({
+  arg,
+  disabled,
+  id,
+  onValueChange,
+  value,
+}: {
+  arg: TemplateDeploymentInput;
+  disabled: boolean;
+  id: string;
+  onValueChange: (value: string) => void;
+  value: string;
+}) {
+  if (isSensitiveDeploymentInput(arg)) {
+    return (
+      <AppInput
+        aria-label={arg.key}
+        data-template-arg={arg.key}
+        data-testid="template.deployer.parameter-input"
+        disabled={disabled}
+        id={id}
+        onValueChange={onValueChange}
+        placeholder={arg.description || arg.type}
+        required={arg.required}
+        type="password"
+        value={value}
+      />
+    );
+  }
+  if ((arg.options?.length ?? 0) > 0) {
+    return (
+      <>
+        <AppSelect
+          aria-label={arg.key}
+          data-testid="template.deployer.parameter-input"
+          disabled={disabled}
+          id={id}
+          key={`${arg.key}:${value}`}
+          onValueChange={onValueChange}
+          options={(arg.options ?? []).map((option) => ({
+            label: option,
+            value: option,
+          }))}
+          placeholder="Select value"
+          value={value}
+        />
+        <TemplateParameterDescription description={arg.description} />
+      </>
+    );
+  }
+  if (normalizedInputType(arg) === "boolean") {
+    return (
+      <>
+        <div className="flex h-9 items-center gap-2">
+          <Checkbox
+            aria-label={arg.key}
+            checked={value === "true"}
+            data-template-arg={arg.key}
+            data-testid="template.deployer.parameter-input"
+            disabled={disabled}
+            id={id}
+            onCheckedChange={(checked) =>
+              onValueChange(checked === true ? "true" : "false")
+            }
+          />
+          <span className="text-muted-foreground text-xs">
+            {value === "true" ? "true" : "false"}
+          </span>
+        </div>
+        <TemplateParameterDescription description={arg.description} />
+      </>
+    );
+  }
+  return (
+    <AppInput
+      aria-label={arg.key}
+      data-template-arg={arg.key}
+      data-testid="template.deployer.parameter-input"
+      disabled={disabled}
+      id={id}
+      onValueChange={onValueChange}
+      placeholder={arg.description || arg.type}
+      required={arg.required}
+      value={value}
+    />
+  );
 }
 
 export function TemplateDeployer({
@@ -227,7 +382,7 @@ export function TemplateDeployer({
     if (nextChoice != null) {
       setArgs(
         seed?.templateName === nextChoice.name
-          ? { ...defaultArgs(nextChoice), ...seed.args }
+          ? argsForChoice(nextChoice, seed.args)
           : defaultArgs(nextChoice)
       );
       if (seed?.templateName === nextChoice.name) {
@@ -241,7 +396,7 @@ export function TemplateDeployer({
     const seed = initialArgsRef.current;
     if (seed != null && choice != null && choice.name === seed.templateName) {
       initialArgsRef.current = null;
-      setArgs({ ...defaultArgs(choice), ...seed.args });
+      setArgs(argsForChoice(choice, seed.args));
       setInitialSettingsReady(true);
       return;
     }
@@ -366,18 +521,16 @@ export function TemplateDeployer({
               {choice?.args.map((arg) => {
                 const inputId = `${inputIdPrefix}-${arg.key}`;
                 return (
-                  <label
+                  <div
                     className="flex min-w-0 flex-col gap-1.5"
-                    htmlFor={inputId}
+                    data-template-arg={arg.key}
                     key={arg.key}
                   >
                     <span className="font-medium text-muted-foreground text-xs leading-4">
                       {arg.key}
                     </span>
-                    <AppInput
-                      aria-label={arg.key}
-                      data-template-arg={arg.key}
-                      data-testid="template.deployer.parameter-input"
+                    <TemplateParameterControl
+                      arg={arg}
                       disabled={busy || loading}
                       id={inputId}
                       onValueChange={(nextValue) => {
@@ -386,13 +539,9 @@ export function TemplateDeployer({
                           [arg.key]: nextValue,
                         }));
                       }}
-                      placeholder={arg.description || arg.type}
-                      type={
-                        isSensitiveDeploymentInput(arg) ? "password" : undefined
-                      }
                       value={args[arg.key] ?? ""}
                     />
-                  </label>
+                  </div>
                 );
               })}
             </div>
