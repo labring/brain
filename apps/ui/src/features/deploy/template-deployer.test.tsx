@@ -33,7 +33,40 @@ const TEMPLATE_OPTIONS = [
   },
 ] satisfies readonly TemplateDeploymentChoice[];
 
+const N8N = {
+  args: [
+    {
+      default: "false",
+      description: "Use PostgreSQL",
+      key: "use_postgresql",
+      required: false,
+      type: "boolean",
+    },
+    {
+      default: "UTC",
+      description: "Workflow timezone",
+      key: "timezone",
+      options: ["UTC", "Asia/Shanghai"],
+      required: false,
+      type: "choice",
+    },
+    {
+      default: "",
+      description: "Private API token",
+      key: "api_token",
+      options: ["private-default", "private-alternative"],
+      required: true,
+      type: "password",
+    },
+  ],
+  description: "Workflow automation.",
+  name: "n8n",
+  title: "n8n",
+} satisfies TemplateDeploymentChoice;
+
 const COMBOBOX_ROLE_RE = /role="combobox"/;
+const COMBOBOX_ROLES_RE = /role="combobox"/g;
+const CHECKBOX_ROLE_RE = /role="checkbox"/;
 const TEMPLATE_ARIA_RE = /aria-label="Template"/;
 const DIFY_RE = /dify/;
 const TEMPLATE_ICON_RE = /^https:\/\/example\.com\/dify\.png$/;
@@ -51,6 +84,9 @@ const SUBMIT_TEST_ID_RE = /data-testid="template\.deployer\.submit"/;
 const EMPTY_TEST_ID_RE = /data-testid="template\.deployer\.empty"/;
 const APP_SELECT_SOURCE_RE = /<AppSelect/;
 const SEARCHABLE_SOURCE_RE = /searchable/;
+const FALSE_RE = /false/;
+const PASSWORD_INPUT_RE = /type="password"/;
+const UTC_RE = /UTC/;
 const SOURCE = readFileSync(
   fileURLToPath(new URL("./template-deployer.tsx", import.meta.url))
 ).toString();
@@ -78,6 +114,20 @@ test("TemplateDeployer renders searchable template trigger with selected icon", 
     html.indexOf('role="combobox"') < html.indexOf(DIFY_DESCRIPTION),
     "template description should render after the template selector"
   );
+});
+
+test("TemplateDeployer renders option, boolean, and sensitive controls", () => {
+  const html = renderToStaticMarkup(
+    <TemplateDeployer onDeploy={() => undefined} templateOptions={[N8N]} />
+  );
+
+  assert.equal([...html.matchAll(COMBOBOX_ROLES_RE)].length, 2);
+  assert.match(html, CHECKBOX_ROLE_RE);
+  assert.match(html, FALSE_RE);
+  assert.match(html, UTC_RE);
+  assert.match(html, PASSWORD_INPUT_RE);
+  assert.ok(html.includes("Use PostgreSQL"));
+  assert.ok(html.includes("Workflow timezone"));
 });
 
 test("TemplateDeployer renders empty state without combobox", () => {

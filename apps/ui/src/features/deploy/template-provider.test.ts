@@ -103,6 +103,88 @@ test("listTemplateCatalog maps Sealos provider templates to Brain choices", asyn
   ]);
 });
 
+test("listTemplateCatalog preserves safe parameter control metadata", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      jsonResponse({
+        code: 200,
+        data: {
+          templates: [
+            {
+              metadata: { name: "n8n" },
+              spec: {
+                inputs: {
+                  api_token: {
+                    default: "",
+                    description: "Private API token",
+                    options: ["private-default", "private-alternative"],
+                    required: true,
+                    type: "password",
+                  },
+                  timezone: {
+                    default: "UTC",
+                    description: "Workflow timezone",
+                    options: ["UTC", "Asia/Shanghai", 42],
+                    required: false,
+                    type: "choice",
+                  },
+                  use_postgresql: {
+                    default: false,
+                    description: "Use PostgreSQL",
+                    required: false,
+                    type: "boolean",
+                  },
+                  use_secret: {
+                    default: true,
+                    description: "Use secret integration",
+                    required: false,
+                    type: "boolean",
+                  },
+                },
+                title: "n8n",
+              },
+            },
+          ],
+        },
+      })
+    )) as unknown as typeof fetch;
+
+  const catalog = await listTemplateCatalog();
+
+  assert.deepEqual(catalog[0]?.args, [
+    {
+      default: "",
+      description: "Private API token",
+      key: "api_token",
+      required: true,
+      type: "password",
+    },
+    {
+      default: "UTC",
+      description: "Workflow timezone",
+      key: "timezone",
+      options: ["UTC", "Asia/Shanghai"],
+      required: false,
+      type: "choice",
+    },
+    {
+      default: "false",
+      description: "Use PostgreSQL",
+      key: "use_postgresql",
+      required: false,
+      type: "boolean",
+    },
+    {
+      default: "true",
+      description: "Use secret integration",
+      key: "use_secret",
+      required: false,
+      type: "boolean",
+    },
+  ]);
+});
+
 test("listTemplateCatalog maps localized legacy template fields", async () => {
   process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
   globalThis.fetch = (() =>

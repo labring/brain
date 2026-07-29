@@ -1,9 +1,11 @@
 import { headerSafeEncodedKubeconfig } from "@/lib/kubeconfig-header";
+import { isSensitiveDeploymentInput } from "./task/sensitive-inputs";
 
 export interface TemplateCatalogInput {
   default?: string;
   description: string;
   key: string;
+  options?: string[];
   required: boolean;
   type: string;
 }
@@ -56,6 +58,7 @@ export interface TemplateSourcePayload {
 interface ProviderTemplateInput {
   default?: unknown;
   description?: unknown;
+  options?: unknown;
   required?: unknown;
   type?: unknown;
 }
@@ -159,7 +162,11 @@ function providerErrorCandidates(value: unknown, depth = 0): string[] {
 }
 
 function inputDefaultValue(value: unknown): string | undefined {
-  if (typeof value !== "string" && typeof value !== "number") {
+  if (
+    typeof value !== "string" &&
+    typeof value !== "number" &&
+    typeof value !== "boolean"
+  ) {
     return undefined;
   }
   return String(value);
@@ -170,15 +177,20 @@ function templateInputs(value: unknown): TemplateCatalogInput[] {
     value != null && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, ProviderTemplateInput>)
       : {};
-  return Object.entries(inputs).map(([key, input]) => ({
-    ...(inputDefaultValue(input.default) === undefined
-      ? {}
-      : { default: inputDefaultValue(input.default) }),
-    description: stringValue(input.description),
-    key,
-    required: input.required === true,
-    type: stringValue(input.type) || "string",
-  }));
+  return Object.entries(inputs).map(([key, input]) => {
+    const defaultValue = inputDefaultValue(input.default);
+    const options = stringArrayValue(input.options);
+    const type = stringValue(input.type) || "string";
+    const sensitive = isSensitiveDeploymentInput({ key, type });
+    return {
+      ...(defaultValue === undefined ? {} : { default: defaultValue }),
+      description: stringValue(input.description),
+      key,
+      ...(!sensitive && options.length > 0 ? { options } : {}),
+      required: input.required === true,
+      type,
+    };
+  });
 }
 
 function templateI18nSpec(

@@ -45,10 +45,72 @@ const DIFY = {
   title: "Dify",
 } satisfies TemplateDeploymentChoice;
 
+const N8N = {
+  args: [
+    {
+      default: "false",
+      description: "Use PostgreSQL",
+      key: "use_postgresql",
+      required: false,
+      type: "boolean",
+    },
+    {
+      default: "UTC",
+      description: "Workflow timezone",
+      key: "timezone",
+      options: ["UTC", "Asia/Shanghai"],
+      required: false,
+      type: "choice",
+    },
+    {
+      default: "",
+      description: "Private API token",
+      key: "api_token",
+      options: ["private-default", "private-alternative"],
+      required: false,
+      type: "password",
+    },
+  ],
+  description: "Workflow automation template",
+  name: "n8n",
+  title: "n8n",
+} satisfies TemplateDeploymentChoice;
+
+const MAUTIC = {
+  args: [
+    {
+      description: "PHP timezone used by Mautic",
+      key: "TIMEZONE",
+      options: ["UTC", "Asia/Shanghai"],
+      required: false,
+      type: "choice",
+    },
+  ],
+  description: "Marketing automation template",
+  name: "mautic",
+  title: "Mautic",
+} satisfies TemplateDeploymentChoice;
+
+const SENSITIVE_BOOLEAN = {
+  args: [
+    {
+      default: "TRUE",
+      description: "Use secret integration",
+      key: "use_secret",
+      required: false,
+      type: "boolean",
+    },
+  ],
+  description: "Sensitive-looking Boolean template",
+  name: "sensitive-boolean",
+  title: "Sensitive Boolean",
+} satisfies TemplateDeploymentChoice;
+
 const CATALOG_ERROR_RE = /Could not load template catalog/;
 const FLOWISE_RE = /Flowise/;
 const LOADING_TEMPLATES_RE = /Loading templates/;
 const UNAVAILABLE_TEMPLATE_RE = /Template "missing-template" is unavailable/;
+const UTC_RE = /UTC/;
 
 async function withTestDom(run: (act: typeof actAndDrain) => Promise<void>) {
   const dom = installTestDom();
@@ -116,6 +178,341 @@ test("async catalog loading preserves and selects the requested template", async
       assert.equal(deployments.length, 1);
       assert.equal(deployments[0]?.templateName, "flowise");
       assert.deepEqual(deployments[0]?.args, { port: "3000" });
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("equivalent catalog refreshes preserve edited template args", async () => {
+  await withTestDom(async (act) => {
+    const settingsChanges: TemplateDeploymentSettings[] = [];
+    const onSettingsChange = (settings: TemplateDeploymentSettings) => {
+      settingsChanges.push(settings);
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            onSettingsChange={onSettingsChange}
+            templateOptions={[FLOWISE]}
+          />
+        );
+      });
+
+      const port = rendered?.getByLabelText("port") as
+        | HTMLInputElement
+        | undefined;
+      await act(() => {
+        if (port != null) {
+          fireEvent.focus(port);
+          fireEvent.input(port, { target: { value: "8080" } });
+          // Flush React's input-event fallback in the Happy DOM harness.
+          fireEvent.keyUp(port, { key: "0" });
+        }
+      });
+      assert.equal(port?.value, "8080");
+      assert.equal(settingsChanges.at(-1)?.args.port, "8080");
+
+      await act(() => {
+        rendered?.rerender(
+          <TemplateDeployer
+            onSettingsChange={onSettingsChange}
+            templateOptions={[FLOWISE]}
+          />
+        );
+      });
+
+      const refreshedPort = rendered?.getByLabelText("port") as
+        | HTMLInputElement
+        | undefined;
+      assert.equal(refreshedPort?.value, "8080");
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("template controls submit canonical option and boolean values", async () => {
+  await withTestDom(async (act) => {
+    const deployments: TemplateDeploymentSettings[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            onDeploy={(settings) => {
+              deployments.push(settings);
+            }}
+            templateOptions={[N8N]}
+          />
+        );
+      });
+
+      const checkbox = rendered?.getByRole("checkbox", {
+        name: "use_postgresql",
+      });
+      const checkboxLabel = rendered?.getByText("use_postgresql");
+      const timezone = rendered?.getByRole("combobox", { name: "timezone" });
+      const token = rendered?.getByLabelText("api_token") as
+        | HTMLInputElement
+        | undefined;
+      const checkboxInput =
+        checkboxLabel instanceof HTMLLabelElement
+          ? checkboxLabel.ownerDocument.getElementById(checkboxLabel.htmlFor)
+          : null;
+      assert.equal(checkboxLabel?.tagName, "LABEL");
+      assert.equal(checkboxInput?.getAttribute("type"), "checkbox");
+      assert.equal(checkbox?.getAttribute("aria-checked"), "false");
+      assert.match(timezone?.textContent ?? "", UTC_RE);
+      assert.equal(token?.type, "password");
+
+      await act(() => {
+        if (checkboxLabel != null) {
+          fireEvent.click(checkboxLabel);
+        }
+      });
+      assert.equal(checkbox?.getAttribute("aria-checked"), "true");
+
+      const submit = rendered?.getByTestId("template.deployer.submit");
+      await act(() => {
+        if (submit != null) {
+          fireEvent.click(submit);
+        }
+      });
+
+      assert.deepEqual(deployments, [
+        {
+          args: {
+            api_token: "",
+            timezone: "UTC",
+            use_postgresql: "true",
+          },
+          sensitiveKeys: ["api_token"],
+          templateName: "n8n",
+        },
+      ]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("explicit boolean types control sensitive-looking parameter names", async () => {
+  await withTestDom(async (act) => {
+    const deployments: TemplateDeploymentSettings[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            onDeploy={(settings) => {
+              deployments.push(settings);
+            }}
+            templateOptions={[SENSITIVE_BOOLEAN]}
+          />
+        );
+      });
+
+      const checkbox = rendered?.getByRole("checkbox", {
+        name: "use_secret",
+      });
+      assert.equal(checkbox?.getAttribute("aria-checked"), "true");
+
+      const submit = rendered?.getByTestId("template.deployer.submit");
+      await act(() => {
+        if (submit != null) {
+          fireEvent.click(submit);
+        }
+      });
+
+      assert.deepEqual(deployments, [
+        {
+          args: { use_secret: "true" },
+          sensitiveKeys: ["use_secret"],
+          templateName: "sensitive-boolean",
+        },
+      ]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("option controls without defaults select the first declared value", async () => {
+  await withTestDom(async (act) => {
+    const deployments: TemplateDeploymentSettings[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            onDeploy={(settings) => {
+              deployments.push(settings);
+            }}
+            templateOptions={[MAUTIC]}
+          />
+        );
+      });
+
+      const timezone = rendered?.getByRole("combobox", { name: "TIMEZONE" });
+      assert.ok(timezone?.textContent?.includes("UTC"));
+
+      const submit = rendered?.getByTestId("template.deployer.submit");
+      await act(() => {
+        if (submit != null) {
+          fireEvent.click(submit);
+        }
+      });
+
+      assert.deepEqual(deployments[0]?.args, { TIMEZONE: "UTC" });
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("template changes reset option and boolean defaults", async () => {
+  await withTestDom(async (act) => {
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            initialSettings={{
+              args: {
+                timezone: "Asia/Shanghai",
+                use_postgresql: "true",
+              },
+              templateName: "n8n",
+            }}
+            templateOptions={[N8N, MAUTIC]}
+          />
+        );
+      });
+
+      const checkbox = rendered?.getByRole("checkbox", {
+        name: "use_postgresql",
+      });
+      const timezone = rendered?.getByRole("combobox", { name: "timezone" });
+      assert.equal(checkbox?.getAttribute("aria-checked"), "true");
+      assert.equal(timezone?.textContent, "Asia/Shanghai");
+
+      await act(() => {
+        rendered?.rerender(
+          <TemplateDeployer
+            initialSettings={{ args: {}, templateName: "mautic" }}
+            templateOptions={[N8N, MAUTIC]}
+          />
+        );
+      });
+
+      const mauticTimezone = rendered?.getByRole("combobox", {
+        name: "TIMEZONE",
+      });
+      assert.ok(mauticTimezone?.textContent?.includes("UTC"));
+
+      await act(() => {
+        rendered?.rerender(
+          <TemplateDeployer
+            initialSettings={{ args: {}, templateName: "n8n" }}
+            templateOptions={[N8N, MAUTIC]}
+          />
+        );
+      });
+
+      const resetCheckbox = rendered?.getByRole("checkbox", {
+        name: "use_postgresql",
+      });
+      assert.equal(resetCheckbox?.getAttribute("aria-checked"), "false");
+      const n8nTimezone = rendered?.getByRole("combobox", {
+        name: "timezone",
+      });
+      assert.ok(n8nTimezone?.textContent?.includes("UTC"));
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("new initial settings preserve seeded values when switching templates", async () => {
+  await withTestDom(async (act) => {
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            initialSettings={{ args: {}, templateName: "n8n" }}
+            templateOptions={[N8N, MAUTIC]}
+          />
+        );
+      });
+
+      await act(() => {
+        rendered?.rerender(
+          <TemplateDeployer
+            initialSettings={{
+              args: { TIMEZONE: "Asia/Shanghai" },
+              templateName: "mautic",
+            }}
+            templateOptions={[N8N, MAUTIC]}
+          />
+        );
+      });
+
+      const timezone = rendered?.getByRole("combobox", { name: "TIMEZONE" });
+      assert.equal(timezone?.textContent, "Asia/Shanghai");
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("initial settings normalize controlled values and preserve unknown args", async () => {
+  await withTestDom(async (act) => {
+    const deployments: TemplateDeploymentSettings[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            initialSettings={{
+              args: {
+                legacy_arg: "preserved",
+                timezone: "Mars/Olympus",
+                use_postgresql: "TRUE",
+              },
+              templateName: "n8n",
+            }}
+            onDeploy={(settings) => {
+              deployments.push(settings);
+            }}
+            templateOptions={[N8N]}
+          />
+        );
+      });
+
+      const checkbox = rendered?.getByRole("checkbox", {
+        name: "use_postgresql",
+      });
+      const timezone = rendered?.getByRole("combobox", { name: "timezone" });
+      assert.equal(checkbox?.getAttribute("aria-checked"), "true");
+      assert.match(timezone?.textContent ?? "", UTC_RE);
+
+      const submit = rendered?.getByTestId("template.deployer.submit");
+      await act(() => {
+        if (submit != null) {
+          fireEvent.click(submit);
+        }
+      });
+
+      assert.deepEqual(deployments[0]?.args, {
+        api_token: "",
+        legacy_arg: "preserved",
+        timezone: "UTC",
+        use_postgresql: "true",
+      });
     } finally {
       await act(() => rendered?.unmount());
     }
