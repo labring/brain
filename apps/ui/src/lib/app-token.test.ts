@@ -98,6 +98,10 @@ test("an unexpired expiry and workspace claims are carried without effect", asyn
   );
 });
 
+// Passing the four hard checks is not admission: a null mintedAt cannot be
+// fingerprinted, so the authorization layer refuses it with 401 (ADR-0059
+// degradation matrix). Desktop always mints `iat`; only a non-desktop minter
+// produces this shape.
 test("a token without a minting time still proves the binding", async () => {
   const jwt = await new SignJWT({
     regionUid: REGION_UID,
