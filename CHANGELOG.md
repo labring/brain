@@ -19,6 +19,10 @@ All notable changes to Brain are documented in this file.
   descriptions, choices, and non-sensitive defaults. Submitted values and
   sensitive defaults remain hidden and are never persisted.
 
+### Removed
+
+- Removed the outdated Chinese product operations guide.
+
 ### Fixed
 
 - Fixed AI deployment configuration rendering generic unlabeled fields or
