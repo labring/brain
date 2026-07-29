@@ -5,6 +5,7 @@ import { getDevboxExecRequestTimeoutMs } from "./client-core";
 import {
   getDevboxAuthTokenFromEnv,
   getDevboxBaseUrlFromEnv,
+  isDevboxConfiguredFromEnv,
 } from "./config-core";
 
 const MISSING_SIGNING_KEY_ERROR =
@@ -33,6 +34,44 @@ test("getDevboxAuthTokenFromEnv reports clear error when no auth source is confi
   await assert.rejects(
     () => getDevboxAuthTokenFromEnv({}, "ns-user"),
     MISSING_SIGNING_KEY_ERROR
+  );
+});
+
+test("isDevboxConfiguredFromEnv requires a base URL and one auth source", () => {
+  assert.equal(
+    isDevboxConfiguredFromEnv({
+      DEVBOX_API_BASE_URL: "https://devbox-server.example.sealos.io",
+      DEVBOX_TOKEN: "static-token",
+    }),
+    true
+  );
+  assert.equal(
+    isDevboxConfiguredFromEnv({
+      DEVBOX_API_BASE_URL: "https://devbox-server.example.sealos.io",
+      DEVBOX_JWT_SIGNING_KEY: "signing-key",
+    }),
+    true
+  );
+});
+
+test("isDevboxConfiguredFromEnv rejects blank or half-configured env", () => {
+  assert.equal(isDevboxConfiguredFromEnv({}), false);
+  assert.equal(
+    isDevboxConfiguredFromEnv({
+      DEVBOX_API_BASE_URL: "https://devbox-server.example.sealos.io",
+    }),
+    false
+  );
+  assert.equal(
+    isDevboxConfiguredFromEnv({ DEVBOX_TOKEN: "static-token" }),
+    false
+  );
+  assert.equal(
+    isDevboxConfiguredFromEnv({
+      DEVBOX_API_BASE_URL: "   ",
+      DEVBOX_TOKEN: "   ",
+    }),
+    false
   );
 });
 

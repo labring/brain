@@ -46,10 +46,11 @@ interface TestLease {
 
 interface TestOwner {
   namespace: string;
-  workspaceActor: string;
+  userUid: string;
 }
 
 let activeLease: TestLease | null = null;
+let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
 let appendCalls: UIMessage[] = [];
 let connectionAvailable = true;
 let consumeCalls = 0;
@@ -72,7 +73,7 @@ let serviceOwners: TestOwner[] = [];
 let titleCalls = 0;
 let titleWait: Promise<void> | null = null;
 let toolsetAvailable = true;
-let toolsetOwner: TestOwner | null = null;
+let toolsetOwner: { namespace: string; workspaceActor: string } | null = null;
 let transformSetup: (() => void) | null = null;
 
 const clientTool = tool({
@@ -224,6 +225,13 @@ mock.module("@/features/chat/persistence/free-tier", () => ({
   isSystemOpenAiConfigured: () => true,
 }));
 mock.module("@/features/chat/persistence/service", () => ({
+  adoptLegacyAssistantConversationsForActor: (actor: {
+    legacyWorkspaceActor: string;
+    owner: TestOwner;
+  }) => {
+    adoptionCalls.push(structuredClone(actor));
+    return Promise.resolve();
+  },
   acquireChatStreamLease: (chatId: string, owner: TestOwner) => {
     serviceOwners.push(owner);
     leaseAcquireCalls += 1;
@@ -284,8 +292,11 @@ mock.module("@/features/chat/persistence/service", () => ({
     history = nextHistory;
     return Promise.resolve(input.lease);
   },
-  ensureAssistantThreadForOwner: (_chatId: string, owner: TestOwner) => {
-    serviceOwners.push(owner);
+  ensureAssistantThreadForOwner: (
+    _chatId: string,
+    actor: { legacyWorkspaceActor: string; owner: TestOwner }
+  ) => {
+    serviceOwners.push(actor.owner);
     return Promise.resolve(true);
   },
   isReservedChatMessageId: (messageId: string) =>
@@ -368,14 +379,31 @@ mock.module("@/lib/request-kubeconfig-auth", () => ({
     input: Parameters<
       typeof actualRequestKubeconfigAuth.authorizeWorkspaceActor
     >[0]
-  ) =>
-    input.encodedKubeconfig === "encoded-kubeconfig"
-      ? Promise.resolve({
-          namespace: NAMESPACE,
-          ok: true as const,
-          workspaceActor: WORKSPACE_ACTOR,
-        })
-      : actualRequestKubeconfigAuth.authorizeWorkspaceActor(input),
+  ) => {
+    if (input.encodedKubeconfig !== "encoded-kubeconfig") {
+      return actualRequestKubeconfigAuth.authorizeWorkspaceActor(input);
+    }
+    // Mirrors the real choke point's fail-closed header contract so route
+    // tests prove the header value reaches the authorization input.
+    if (input.appToken !== "valid-app-token") {
+      return Promise.resolve({
+        code: "app_token_required" as const,
+        message: "Authentication is required.",
+        ok: false as const,
+        status: 401,
+      });
+    }
+    return Promise.resolve({
+      actorBinding: {
+        crName: WORKSPACE_ACTOR,
+        mintedAt: null,
+        userUid: `${WORKSPACE_ACTOR}-uid`,
+      },
+      namespace: NAMESPACE,
+      ok: true as const,
+      workspaceActor: WORKSPACE_ACTOR,
+    });
+  },
 }));
 
 const { POST } = await import("./route");
@@ -523,7 +551,13 @@ function userMessage(id: string, text: string): UIMessage {
   return { id, parts: [{ text, type: "text" }], role: "user" };
 }
 
-function chatRequest(message: UIMessage, signal?: AbortSignal): Request {
+function chatRequest(
+  message: UIMessage,
+  signal?: AbortSignal,
+  options?: { appToken?: string | null }
+): Request {
+  const appToken =
+    options?.appToken === undefined ? "valid-app-token" : options.appToken;
   return new Request("https://brain.test/api/chat", {
     body: JSON.stringify({
       chatId: CHAT_ID,
@@ -531,11 +565,27 @@ function chatRequest(message: UIMessage, signal?: AbortSignal): Request {
       message,
       namespace: NAMESPACE,
     }),
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(appToken == null ? {} : { "X-Sealos-App-Token": appToken }),
+    },
     method: "POST",
     ...(signal == null ? {} : { signal }),
   });
 }
+
+test("chat POST fails closed with 401 when the app token header is missing", async () => {
+  const response = await POST(
+    chatRequest(userMessage("user-no-app-token", "hello"), undefined, {
+      appToken: null,
+    })
+  );
+
+  expect(response.status).toBe(401);
+  expect(await response.json()).toEqual({
+    error: "Authentication is required.",
+  });
+});
 
 async function drain(response: Response): Promise<void> {
   await response.arrayBuffer();
@@ -553,6 +603,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 
 beforeEach(() => {
   activeLease = null;
+  adoptionCalls = [];
   appendCalls = [];
   connectionAvailable = true;
   consumeCalls = 0;
@@ -683,17 +734,27 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   expect(history[0]?.parts).toContainEqual(
     expect.objectContaining({ text: "Recovered response", type: "text" })
   );
+  // Conversation ownership keys on the token-proven userUid (ADR-0059)…
   expect(serviceOwners).not.toHaveLength(0);
   expect(serviceOwners).toEqual(
     serviceOwners.map(() => ({
       namespace: NAMESPACE,
-      workspaceActor: WORKSPACE_ACTOR,
+      userUid: `${WORKSPACE_ACTOR}-uid`,
     }))
   );
+  // …while the toolset's deploy-task actor stays the per-region crName:
+  // chat deploy tools perform only namespace-shared actions, which record
+  // the kubeconfig-verified identity (AIM-154 keeps them token-free).
   expect(toolsetOwner).toEqual({
     namespace: NAMESPACE,
     workspaceActor: WORKSPACE_ACTOR,
   });
+  expect(adoptionCalls).toEqual([
+    {
+      legacyWorkspaceActor: WORKSPACE_ACTOR,
+      owner: { namespace: NAMESPACE, userUid: `${WORKSPACE_ACTOR}-uid` },
+    },
+  ]);
 });
 
 test("accepts a client-tool continuation without server-injected metadata", async () => {
@@ -718,7 +779,7 @@ test("accepts a client-tool continuation without server-injected metadata", asyn
   );
 });
 
-test("passes a hard timeout signal to the model stream", async () => {
+test("never binds the model stream to a wall-clock deadline", async () => {
   const timeoutController = new AbortController();
   const timeoutSpy = spyOn(AbortSignal, "timeout").mockReturnValue(
     timeoutController.signal
@@ -731,14 +792,13 @@ test("passes a hard timeout signal to the model stream", async () => {
     expect(response.status).toBe(200);
     await drain(response);
 
-    expect(timeoutSpy).toHaveBeenCalledWith(110_000);
-    expect(timeoutSpy).toHaveBeenCalledWith(5000);
+    // The auto-title deadline is the only timer left; the turn itself ends on
+    // client disconnect or lease loss, never on elapsed time.
+    expect(timeoutSpy.mock.calls.flat()).toEqual([5000]);
     const modelSignal = modelAbortSignals[0];
     expect(modelSignal).toBeDefined();
-    expect(modelSignal).not.toBe(timeoutController.signal);
-    expect(modelSignal?.aborted).toBe(false);
     timeoutController.abort();
-    expect(modelSignal?.aborted).toBe(true);
+    expect(modelSignal?.aborted).toBe(false);
   } finally {
     timeoutSpy.mockRestore();
   }
@@ -767,7 +827,6 @@ test("request abort stops the model and releases the lease", async () => {
     requestController.abort();
     await waitUntil(() => activeLease == null);
 
-    expect(timeoutSpy).toHaveBeenCalledWith(110_000);
     expect(timeoutController.signal.aborted).toBe(false);
     expect(modelAbortSignals[0]?.aborted).toBe(true);
     expect(leaseReleaseCalls).toBe(1);

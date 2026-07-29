@@ -3,18 +3,15 @@ import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deploy
 import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
 import { validateDockerDeploymentSettings } from "@/features/deploy/docker-deployment-settings";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
-import { isProjectDisplayNameTaken } from "@/features/deploy/projects-to-explorer-projects";
 import type {
   DeploymentTaskRunner,
   DeploymentTaskSource,
   DeploymentTaskTarget,
 } from "@/features/deploy/task/types";
-import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 
 export type DeploymentTarget =
   | {
       description?: string;
-      displayName: string;
       kind: "newProject";
     }
   | {
@@ -73,7 +70,6 @@ export interface DeploymentTargetPipelineAdapters {
 export interface DeploymentTargetPipelineOptions {
   adapters: DeploymentTargetPipelineAdapters;
   credentialsReady: boolean;
-  existingProjects?: readonly ProjectExplorerProject[];
   namespace: string;
   /** Redeploy clone (ADR 0038): lineage + identity reuse on the server. */
   predecessorTaskId?: string;
@@ -82,7 +78,6 @@ export interface DeploymentTargetPipelineOptions {
 
 export interface DeploymentTargetPipelineOutcome {
   createdProject: boolean;
-  displayName?: string;
   kind: DeploymentTargetPipelineRequest["kind"];
   projectId: string;
   projectName: string;
@@ -91,13 +86,15 @@ export interface DeploymentTargetPipelineOutcome {
   taskMessage: string;
 }
 
+/**
+ * Carries no Project Display Name: the server derives it from the Deployment
+ * Source and owns collision handling (ADR 0058).
+ */
 export function newProjectDeploymentTarget(
-  displayName: string,
   description?: string
 ): DeploymentTarget {
   const normalizedDescription = description?.trim();
   return {
-    displayName,
     ...(normalizedDescription ? { description: normalizedDescription } : {}),
     kind: "newProject",
   };
@@ -112,20 +109,6 @@ export function existingProjectDeploymentTarget(input: {
     projectName: input.projectName?.trim() ?? "",
     projectId: input.projectId?.trim() ?? "",
   };
-}
-
-export function projectDisplayNameValidationError(
-  existingProjects: readonly ProjectExplorerProject[],
-  displayName: string
-): string | null {
-  const trimmed = displayName.trim();
-  if (!trimmed) {
-    return "Project name is required.";
-  }
-  if (isProjectDisplayNameTaken(existingProjects, trimmed)) {
-    return `A project named "${trimmed}" already exists.`;
-  }
-  return null;
 }
 
 function assertPipelineEnvironment(options: DeploymentTargetPipelineOptions) {
@@ -148,10 +131,7 @@ function githubRepoFields(repository: GithubDeployerRepo): {
   };
 }
 
-function normalizeTarget(
-  target: DeploymentTarget,
-  existingProjects: readonly ProjectExplorerProject[]
-): DeploymentTaskTarget {
+function normalizeTarget(target: DeploymentTarget): DeploymentTaskTarget {
   if (target.kind === "existingProject") {
     const projectId = target.projectId.trim();
     if (!projectId) {
@@ -166,19 +146,10 @@ function normalizeTarget(
     };
   }
 
-  const displayName = target.displayName.trim();
-  const displayNameError = projectDisplayNameValidationError(
-    existingProjects,
-    displayName
-  );
-  if (displayNameError != null) {
-    throw new Error(displayNameError);
-  }
   return {
     ...(target.description?.trim()
       ? { description: target.description.trim() }
       : {}),
-    displayName,
     kind: "newProject",
   };
 }
@@ -295,10 +266,7 @@ export async function runDeploymentTargetPipeline(
 ): Promise<DeploymentTargetPipelineOutcome> {
   assertPipelineEnvironment(options);
 
-  const target = normalizeTarget(
-    options.request.target,
-    options.existingProjects ?? []
-  );
+  const target = normalizeTarget(options.request.target);
   const taskInput = deploymentTaskForRequest(options.request);
   const predecessorTaskId = options.predecessorTaskId?.trim();
   const task = await options.adapters.createDeploymentTask({
@@ -320,9 +288,6 @@ export async function runDeploymentTargetPipeline(
 
   return {
     createdProject: target.kind === "newProject",
-    ...(target.kind === "newProject"
-      ? { displayName: target.displayName }
-      : {}),
     kind: options.request.kind,
     projectId,
     projectName,

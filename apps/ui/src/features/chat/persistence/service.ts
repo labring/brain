@@ -5,6 +5,7 @@ import { generateId, type UIMessage } from "ai";
 import { getFreeTierSnapshot, isSystemOpenAiConfigured } from "./free-tier";
 import {
   type AssistantMessagePartsReplacement,
+  adoptLegacyThreadsForActor,
   assistantConversationRepository,
   commitChatMessagesIfLeaseOwned as commitRepositoryChatMessagesIfLeaseOwned,
   isChatStreamLeaseMessageId,
@@ -20,6 +21,7 @@ import { deriveThreadTitle, placeholderThreadTitle } from "./title";
 import {
   type AssistantConversationOwner,
   normalizeAssistantNamespace,
+  type VerifiedAssistantConversationActor,
 } from "./types";
 
 const service = createAssistantConversationService({
@@ -38,7 +40,7 @@ function normalizedOwner(
 ): AssistantConversationOwner {
   return {
     namespace: normalizeAssistantNamespace(owner.namespace),
-    workspaceActor: owner.workspaceActor,
+    userUid: owner.userUid,
   };
 }
 
@@ -50,6 +52,20 @@ export const maybeAutoTitleThread = service.maybeAutoTitle;
 
 export function isReservedChatMessageId(messageId: string): boolean {
   return isChatStreamLeaseMessageId(messageId);
+}
+
+/**
+ * Lazy re-key (ADR-0059): a conversation entry request that passed the token
+ * checks adopts the actor's legacy `(namespace, crName)` rows to the proven
+ * uid. Idempotent — repeat requests are no-ops.
+ */
+export function adoptLegacyAssistantConversationsForActor(
+  actor: VerifiedAssistantConversationActor
+): Promise<void> {
+  return adoptLegacyThreadsForActor({
+    legacyWorkspaceActor: actor.legacyWorkspaceActor,
+    owner: normalizedOwner(actor.owner),
+  });
 }
 
 export function acquireChatStreamLease(

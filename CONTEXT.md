@@ -6,7 +6,13 @@ The ubiquitous language for the Brain product domain, grouped by area.
 
 ### Project Display Name
 
-The human-facing Project name shown in navigation, project chrome, project creation forms, and human confirmation prompts. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. Avoid using Project name as a selector; stable identity uses Project ID.
+The human-facing Project name shown in navigation, project chrome, and human confirmation prompts. It is stored on the Brain Project product record and is unique within a namespace after trimming surrounding whitespace and comparing case-insensitively. It is not chosen during Project creation: the platform assigns a Derived Project Display Name, and users rename the Project afterwards. Avoid using Project name as a selector; stable identity uses Project ID.
+
+### Derived Project Display Name
+
+The default Project Display Name the platform assigns when a Project is created without an explicitly specified name, derived from the Deployment Task's Deployment Source; when the source yields no usable name, a readable random name is used instead. The platform resolves name collisions for derived names itself; an explicitly specified name is never silently altered — a collision is an error instead.
+
+_Avoid_: random project name, auto name, generated title.
 
 ### Project Aggregate Status
 
@@ -286,17 +292,29 @@ _Avoid_: Pending failure, automatic overwrite, silent reload.
 
 ### Workspace Actor
 
-The verified human identity acting within a workspace namespace, derived from
-the authenticated subject of the request kubeconfig's bearer token. An eligible
-Workspace Actor has the subject
-`system:serviceaccount:user-system:<crName>` and uses `crName` as its stable
-subject key. Workspace Actor verification and namespace authorization are
-separate checks: one establishes who is acting, while the other establishes
-where that actor may act. A Desktop session user id, a Desktop session JWT, and
-an arbitrary namespace-authorized workload ServiceAccount are not Workspace
-Actors.
+The verified human identity acting within a workspace namespace, established
+by two cross-checked credentials: the request kubeconfig's bearer token
+authenticates live workspace access as the subject
+`system:serviceaccount:user-system:<crName>`, and the desktop-minted app
+token proves that crName's binding to the global `userUid`, which is the
+actor's subject key for personal-resource ownership. Workspace Actor
+verification and namespace authorization are separate checks: one establishes
+who is acting, while the other establishes where that actor may act. A
+Desktop session user id, an unverified app-token claim, and an arbitrary
+namespace-authorized workload ServiceAccount are not Workspace Actors.
 
-_Avoid_: Desktop user id, namespace member id, ServiceAccount UID, selected actor.
+_Avoid_: Desktop user id, namespace member id, ServiceAccount UID, crName owner key, selected actor.
+
+### Identity Fingerprint
+
+The authorization layer's region-local record of the most recently observed
+`crName → userUid` binding and that binding's minting time. A fingerprint is
+an observation history, not an authoritative mapping — authority stays with
+desktop's token minting. A newer-minted contradiction signals an account
+merge and re-keys the swallowed uid's personal resources to the surviving
+uid; an older-minted binding marks a superseded token, which is refused.
+
+_Avoid_: uid mapping table, user directory, identity cache.
 
 ## Deployment
 

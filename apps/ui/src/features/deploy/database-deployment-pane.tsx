@@ -4,7 +4,6 @@ import { SidePane } from "@workspace/ui/components/side-pane";
 import { Database } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import {
   DatabaseDeployer,
   type DatabaseDeploymentSettings,
@@ -20,6 +19,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 function databaseInitialSettings(
@@ -67,10 +67,10 @@ export function DatabaseDeploymentPane({
     projectId,
   });
   const databaseOptions = DIRECT_DB_DEPLOYMENT_OPTIONS;
-  const deploymentAdapters = useMemo(
-    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
-    [kubeconfig, namespace]
-  );
+  const deploymentAdapters = useDeploymentTargetAdapters({
+    kubeconfig,
+    namespace,
+  });
   const projectName = currentProject.resourceName?.trim() ?? "";
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false

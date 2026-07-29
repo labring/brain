@@ -19,6 +19,7 @@ const recordedEvents: Array<{ kind: string }> = [];
 let updateDeployTaskStateImpl: () => Promise<void> = () => Promise.resolve();
 
 mock.module("server-only", () => ({}));
+const realRunnerWrites = requireModule("./runner-writes");
 mock.module("./gateway-prompt", () => ({
   buildGatewayPrompt: () => "deploy",
   buildGatewayRepairPrompt: () => "repair",
@@ -135,6 +136,7 @@ describe("deployment Codex gateway interruption", () => {
   afterAll(() => {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
+    mock.module("./runner-writes", () => ({ ...realRunnerWrites }));
   });
 
   it("does not interrupt a turn that completed normally", async () => {

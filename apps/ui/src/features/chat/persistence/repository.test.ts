@@ -19,6 +19,8 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
+
 import {
   createAssistantConversationRepository,
   type ThreadRow,
@@ -30,6 +32,7 @@ import {
   githubAppInstallSessions,
   githubConnections,
   githubOauthConnections,
+  identityFingerprints,
 } from "./schema";
 
 const assistantSchema = {
@@ -39,6 +42,7 @@ const assistantSchema = {
   githubAppInstallSessions,
   githubConnections,
   githubOauthConnections,
+  identityFingerprints,
 };
 const mainPglite = new PGlite();
 const db = drizzle(mainPglite, { schema: assistantSchema });
@@ -52,13 +56,20 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   );
   await migrate(db, { migrationsFolder });
   const repository = createAssistantConversationRepository(() => db);
-  const alice = { namespace: "shared", workspaceActor: "alice-cr" };
-  const bob = { namespace: "shared", workspaceActor: "bob-cr" };
+  const alice = { namespace: "shared", userUid: "alice-uid" };
+  const bob = { namespace: "shared", userUid: "bob-uid" };
+  const aliceActor = { legacyWorkspaceActor: "alicecr1", owner: alice };
+  const bobActor = { legacyWorkspaceActor: "bobcrnm1", owner: bob };
+  // Thread creation re-checks the fingerprint in-transaction (ADR-0059).
+  await db.insert(identityFingerprints).values([
+    { crName: "alicecr1", mintedAt: 1000, userUid: alice.userUid },
+    { crName: "bobcrnm1", mintedAt: 1000, userUid: bob.userUid },
+  ]);
 
   assert.equal(
     await repository.ensureThreadForOwner({
+      actor: bobActor,
       id: "bob-chat",
-      owner: bob,
       title: "Bob title",
     }),
     true
@@ -71,16 +82,16 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   });
   assert.equal(
     await repository.ensureThreadForOwner({
+      actor: aliceActor,
       id: "alice-chat",
-      owner: alice,
       title: "Alice title",
     }),
     true
   );
   assert.equal(
     await repository.ensureThreadForOwner({
+      actor: aliceActor,
       id: "bob-chat",
-      owner: alice,
       title: "Re-keyed title",
     }),
     false
@@ -193,11 +204,11 @@ const TEST_CHAT_ID = "chat-cas";
 const TEST_MESSAGE_ID = "message-cas";
 const TEST_OWNER = {
   namespace: "ns-test",
-  workspaceActor: "user-test",
+  userUid: "user-test",
 } as const;
 const OTHER_OWNER = {
   namespace: "ns-test",
-  workspaceActor: "other-user",
+  userUid: "other-user",
 } as const;
 const INITIAL_UPDATED_AT = new Date("2026-01-01T00:00:00.000Z");
 const expectedParts = [
@@ -268,7 +279,7 @@ async function seedThread() {
     namespace: "ns-test",
     title: "CAS test",
     updatedAt: INITIAL_UPDATED_AT,
-    workspaceActor: TEST_OWNER.workspaceActor,
+    workspaceActor: TEST_OWNER.userUid,
   });
 }
 
@@ -450,7 +461,7 @@ describe("chat stream lease", () => {
     expect(winners).toHaveLength(1);
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", workspaceActor: "user-test" },
+        { namespace: "ns-test", userUid: "user-test" },
         TEST_CHAT_ID
       )
     ).toEqual([]);
@@ -512,7 +523,7 @@ describe("chat stream lease", () => {
     ).toBe(true);
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", workspaceActor: "user-test" },
+        { namespace: "ns-test", userUid: "user-test" },
         TEST_CHAT_ID
       )
     ).toEqual([
@@ -654,7 +665,7 @@ describe("chat stream lease", () => {
     expect(committed).toBeNull();
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", workspaceActor: "user-test" },
+        { namespace: "ns-test", userUid: "user-test" },
         TEST_CHAT_ID
       )
     ).toEqual([
@@ -908,5 +919,227 @@ describe("chat stream lease", () => {
     ).toBeGreaterThan(170_000);
     expect(await releaseChatStreamLease(lease)).toBe(false);
     expect(await releaseChatStreamLease(renewed)).toBe(true);
+  });
+});
+
+const ACTOR_IDENTITY_REQUIRED_RE = /conversation actor identity is required/;
+
+describe("adoptLegacyThreadsForActor", () => {
+  // The nanoid crName and UUID userUid formats are disjoint (ADR-0059), so
+  // the re-key matches only legacy rows and needs no version column.
+  const LEGACY_CR_NAME = "hendrwa1";
+  const USER_UID = "31b8a2f4-0f9f-4a3e-9c56-0d9f6f9e2b41";
+  const SURVIVOR_UID = "5c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f";
+  const UID_OWNER = { namespace: "ns-test", userUid: USER_UID };
+  const VERIFIED_ACTOR = {
+    legacyWorkspaceActor: LEGACY_CR_NAME,
+    owner: UID_OWNER,
+  };
+
+  // Adoption re-checks the fingerprint in its own transaction (ADR-0059).
+  beforeEach(async () => {
+    await testDb.delete(identityFingerprints);
+    await testDb.insert(identityFingerprints).values({
+      crName: LEGACY_CR_NAME,
+      mintedAt: 1000,
+      userUid: USER_UID,
+    });
+  });
+
+  function seedThreadRow(input: {
+    id: string;
+    namespace?: string;
+    updatedAt: Date;
+    workspaceActor: string;
+  }) {
+    return testDb.insert(assistantChats).values({
+      id: input.id,
+      namespace: input.namespace ?? "ns-test",
+      title: `Title of ${input.id}`,
+      updatedAt: input.updatedAt,
+      workspaceActor: input.workspaceActor,
+    });
+  }
+
+  async function allThreadRows() {
+    const rows = await testDb.select().from(assistantChats);
+    return rows.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  it("keeps unadopted legacy rows invisible to uid reads, then adopts them on a verified entry", async () => {
+    await seedThreadRow({
+      id: "legacy-chat",
+      updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+      workspaceActor: LEGACY_CR_NAME,
+    });
+    await testDb.insert(assistantChatMessages).values({
+      chatId: "legacy-chat",
+      id: "legacy-message",
+      parts: [{ text: "beta-era content", type: "text" }],
+      role: "assistant",
+    });
+
+    expect(
+      await assistantConversationRepository.selectThreadsByOwner(UID_OWNER)
+    ).toEqual([]);
+    expect(
+      await assistantConversationRepository.selectThreadByOwner(
+        "legacy-chat",
+        UID_OWNER
+      )
+    ).toBeNull();
+    expect(
+      await assistantConversationRepository.selectMessagesByOwner(
+        UID_OWNER,
+        "legacy-chat"
+      )
+    ).toBeNull();
+
+    await assistantConversationRepository.adoptLegacyThreadsForActor(
+      VERIFIED_ACTOR
+    );
+
+    const threads =
+      await assistantConversationRepository.selectThreadsByOwner(UID_OWNER);
+    expect(threads.map((thread) => thread.id)).toEqual(["legacy-chat"]);
+    expect(
+      await assistantConversationRepository.selectMessagesByOwner(
+        UID_OWNER,
+        "legacy-chat"
+      )
+    ).toEqual([
+      {
+        id: "legacy-message",
+        parts: [{ text: "beta-era content", type: "text" }],
+        role: "assistant",
+      },
+    ]);
+  });
+
+  it("is idempotent and preserves updatedAt so adoption never reorders the thread picker", async () => {
+    await seedThreadRow({
+      id: "older-chat",
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      workspaceActor: LEGACY_CR_NAME,
+    });
+    await seedThreadRow({
+      id: "newer-chat",
+      updatedAt: new Date("2026-03-01T00:00:00.000Z"),
+      workspaceActor: LEGACY_CR_NAME,
+    });
+
+    await assistantConversationRepository.adoptLegacyThreadsForActor(
+      VERIFIED_ACTOR
+    );
+    const adoptedRows = await allThreadRows();
+    await assistantConversationRepository.adoptLegacyThreadsForActor(
+      VERIFIED_ACTOR
+    );
+
+    expect(await allThreadRows()).toEqual(adoptedRows);
+    expect(
+      adoptedRows.map((row) => [row.workspaceActor, row.updatedAt])
+    ).toEqual([
+      [USER_UID, new Date("2026-03-01T00:00:00.000Z")],
+      [USER_UID, new Date("2026-01-01T00:00:00.000Z")],
+    ]);
+  });
+
+  it("re-keys only the actor's legacy rows in the actor's namespace", async () => {
+    const foreignRows = [
+      {
+        id: "bob-legacy-chat",
+        updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+        workspaceActor: "bobcrnm1",
+      },
+      {
+        id: "carol-uid-chat",
+        updatedAt: new Date("2026-02-02T00:00:00.000Z"),
+        workspaceActor: "9d4a7e21-55c3-4b8f-8d2e-7a1f0c6b3e58",
+      },
+      {
+        id: "cross-namespace-chat",
+        namespace: "ns-other",
+        updatedAt: new Date("2026-02-03T00:00:00.000Z"),
+        workspaceActor: LEGACY_CR_NAME,
+      },
+    ];
+    for (const row of foreignRows) {
+      await seedThreadRow(row);
+    }
+
+    await assistantConversationRepository.adoptLegacyThreadsForActor(
+      VERIFIED_ACTOR
+    );
+
+    expect(
+      (await allThreadRows()).map((row) => [row.id, row.workspaceActor])
+    ).toEqual([
+      ["bob-legacy-chat", "bobcrnm1"],
+      ["carol-uid-chat", "9d4a7e21-55c3-4b8f-8d2e-7a1f0c6b3e58"],
+      ["cross-namespace-chat", LEGACY_CR_NAME],
+    ]);
+    expect(
+      await assistantConversationRepository.selectThreadsByOwner(UID_OWNER)
+    ).toEqual([]);
+  });
+
+  it("requires a verified actor identity", async () => {
+    await expect(
+      assistantConversationRepository.adoptLegacyThreadsForActor({
+        legacyWorkspaceActor: "",
+        owner: UID_OWNER,
+      })
+    ).rejects.toThrow(ACTOR_IDENTITY_REQUIRED_RE);
+    await expect(
+      assistantConversationRepository.adoptLegacyThreadsForActor({
+        legacyWorkspaceActor: LEGACY_CR_NAME,
+        owner: { namespace: "ns-test", userUid: " " },
+      })
+    ).rejects.toThrow(ACTOR_IDENTITY_REQUIRED_RE);
+  });
+
+  it("refuses adoption once a merge re-pointed the crName, keeping legacy rows adoptable by the survivor", async () => {
+    await seedThreadRow({
+      id: "post-merge-legacy-chat",
+      updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+      workspaceActor: LEGACY_CR_NAME,
+    });
+    await testDb
+      .update(identityFingerprints)
+      .set({ userUid: SURVIVOR_UID })
+      .where(eq(identityFingerprints.crName, LEGACY_CR_NAME));
+
+    await expect(
+      assistantConversationRepository.adoptLegacyThreadsForActor(VERIFIED_ACTOR)
+    ).rejects.toThrow(IdentityBindingSupersededError);
+
+    // The legacy row stays crName-keyed, so the survivor still adopts it.
+    expect((await allThreadRows()).map((row) => row.workspaceActor)).toEqual([
+      LEGACY_CR_NAME,
+    ]);
+    await assistantConversationRepository.adoptLegacyThreadsForActor({
+      legacyWorkspaceActor: LEGACY_CR_NAME,
+      owner: { namespace: "ns-test", userUid: SURVIVOR_UID },
+    });
+    expect((await allThreadRows()).map((row) => row.workspaceActor)).toEqual([
+      SURVIVOR_UID,
+    ]);
+  });
+
+  it("refuses a new thread row once a merge re-pointed the crName", async () => {
+    await testDb
+      .update(identityFingerprints)
+      .set({ userUid: SURVIVOR_UID })
+      .where(eq(identityFingerprints.crName, LEGACY_CR_NAME));
+
+    await expect(
+      assistantConversationRepository.ensureThreadForOwner({
+        actor: VERIFIED_ACTOR,
+        id: "tombstone-thread",
+        title: "Never created",
+      })
+    ).rejects.toThrow(IdentityBindingSupersededError);
+    expect(await allThreadRows()).toEqual([]);
   });
 });

@@ -99,31 +99,43 @@ const (
 	APMetricMemory APMetricType = "memory"
 )
 
+// APWorkloadKind identifies the controller backing an AP workload. Pod naming
+// differs per controller, so query building must know which one it targets.
+type APWorkloadKind string
+
+const (
+	APWorkloadDeployment  APWorkloadKind = "deployment"
+	APWorkloadStatefulSet APWorkloadKind = "statefulset"
+)
+
 // APMetricKinds returns all supported AP metric types.
 func APMetricKinds() []APMetricType {
 	return []APMetricType{APMetricCPU, APMetricMemory}
 }
 
 // APMetricQuery builds a PromQL query for AP metrics.
-func APMetricQuery(metricType APMetricType, namespace string, name string) (string, error) {
+func APMetricQuery(metricType APMetricType, namespace string, name string, kind APWorkloadKind) (string, error) {
 	if namespace == "" || name == "" {
 		return "", ErrUncompleteParam
 	}
 	if err := validateLabelValues(namespace, name); err != nil {
 		return "", err
 	}
-	podName := apGetPodName(name)
+	podPattern, err := apPodPattern(name, kind)
+	if err != nil {
+		return "", err
+	}
 	var template string
 	switch metricType {
 	case APMetricCPU:
-		template = "round(sum(node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{namespace=~\"$namespace\",pod=~\"$pod.*\"}) by (pod) / sum(cluster:namespace:pod_cpu:active:kube_pod_container_resource_limits{namespace=~\"$namespace\",pod=~\"$pod.*\"}) by (pod) * 100,0.01)"
+		template = "round(sum(node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{namespace=~\"$namespace\",pod=~\"$pod\"}) by (pod) / sum(cluster:namespace:pod_cpu:active:kube_pod_container_resource_limits{namespace=~\"$namespace\",pod=~\"$pod\"}) by (pod) * 100,0.01)"
 	case APMetricMemory:
-		template = "round(sum(container_memory_working_set_bytes{job=\"kubelet\", metrics_path=\"/metrics/cadvisor\",namespace=~\"$namespace\",pod=~\"$pod.*\"}) by(pod) / sum(cluster:namespace:pod_memory:active:kube_pod_container_resource_limits{namespace=~\"$namespace\",pod=~\"$pod.*\"}) by (pod)* 100, 0.01)"
+		template = "round(sum(container_memory_working_set_bytes{job=\"kubelet\", metrics_path=\"/metrics/cadvisor\",namespace=~\"$namespace\",pod=~\"$pod\"}) by(pod) / sum(cluster:namespace:pod_memory:active:kube_pod_container_resource_limits{namespace=~\"$namespace\",pod=~\"$pod\"}) by (pod)* 100, 0.01)"
 	default:
 		return "", fmt.Errorf("unsupported AP metric type: %s", metricType)
 	}
 	result := strings.ReplaceAll(template, "$namespace", namespace)
-	result = strings.ReplaceAll(result, "$pod", podName)
+	result = strings.ReplaceAll(result, "$pod", podPattern)
 	return result, nil
 }
 
@@ -171,10 +183,10 @@ func BuildDBQueries(dbType DBType, namespace string, name string) (map[string]st
 }
 
 // BuildAPQueries renders all AP metric queries for a namespace/resource name.
-func BuildAPQueries(namespace string, name string) (map[string]string, error) {
+func BuildAPQueries(namespace string, name string, kind APWorkloadKind) (map[string]string, error) {
 	out := make(map[string]string, len(APMetricKinds()))
 	for _, mk := range APMetricKinds() {
-		query, err := APMetricQuery(mk, namespace, name)
+		query, err := APMetricQuery(mk, namespace, name, kind)
 		if err != nil {
 			return nil, err
 		}
@@ -183,11 +195,19 @@ func BuildAPQueries(namespace string, name string) (map[string]string, error) {
 	return out, nil
 }
 
-// apGetPodName derives the pod prefix by stripping the last "-" suffix.
-func apGetPodName(name string) string {
-	idx := strings.LastIndex(name, "-")
-	if idx <= 0 {
-		return name
+// apPodPattern builds the pod-name regex for a workload, keeping the full
+// workload name and wildcarding only the controller-generated suffix:
+// Deployment pods are "<name>-<replicaset-hash>-<random>", StatefulSet pods
+// are "<name>-<ordinal>". Prometheus anchors the regex and the suffix
+// segments cannot contain "-", so a sibling workload sharing the name as a
+// prefix (billing-api vs billing-worker) never matches.
+func apPodPattern(name string, kind APWorkloadKind) (string, error) {
+	switch kind {
+	case APWorkloadDeployment:
+		return name + "-[a-z0-9]+-[a-z0-9]+", nil
+	case APWorkloadStatefulSet:
+		return name + "-[0-9]+", nil
+	default:
+		return "", fmt.Errorf("unsupported AP workload kind: %q", kind)
 	}
-	return name[:idx]
 }

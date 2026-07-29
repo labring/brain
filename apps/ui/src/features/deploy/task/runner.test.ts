@@ -5,8 +5,10 @@ import { deployTaskFailureSummary } from "./failure-summary";
 import { deployOutputProgressSummary } from "./output-progress";
 import {
   DEFAULT_DEPLOY_DEVBOX_STORAGE_LIMIT,
+  DEFAULT_DEPLOY_SKILL_SOURCE,
   DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
   getDeployDevboxStorageLimitFromEnv,
+  getDeploySkillSourceFromEnv,
 } from "./runtime-config";
 
 describe("deploy task runner failure summaries", () => {
@@ -115,6 +117,29 @@ describe("deploy task runtime config", () => {
 
   it("waits up to five minutes for deploy DevBox runtime readiness", () => {
     expect(DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS).toBe(5 * 60_000);
+  });
+
+  it("defaults the deploy skill source to the brain-deploy branch", () => {
+    expect(DEFAULT_DEPLOY_SKILL_SOURCE).toBe(
+      "https://github.com/labring/sealos-skills/tree/brain-deploy"
+    );
+    expect(getDeploySkillSourceFromEnv({})).toBe(DEFAULT_DEPLOY_SKILL_SOURCE);
+    expect(
+      getDeploySkillSourceFromEnv({
+        DEPLOY_SKILL_SOURCE: "   ",
+      })
+    ).toBe(DEFAULT_DEPLOY_SKILL_SOURCE);
+  });
+
+  it("uses a configured deploy skill source", () => {
+    expect(
+      getDeploySkillSourceFromEnv({
+        DEPLOY_SKILL_SOURCE:
+          " https://github.com/labring/sealos-skills/tree/brain-deploy-preview ",
+      })
+    ).toBe(
+      "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
+    );
   });
 });
 

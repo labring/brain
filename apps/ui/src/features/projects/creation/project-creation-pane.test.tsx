@@ -186,12 +186,7 @@ test("project creation pane Database direct entry opens deployment settings with
 test("project creation pane Docker direct entry opens Docker deployment settings without generic project naming first", () => {
   const html = renderToStaticMarkup(
     <ProjectCreationPane
-      creatorRootProps={{
-        actions: {
-          deriveDockerProjectDisplayName: () => "api",
-        },
-        databaseOptions: [],
-      }}
+      creatorRootProps={{ databaseOptions: [] }}
       entryMode="dockerDirect"
       onClose={noop}
       resetKey={1}

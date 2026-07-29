@@ -1,22 +1,43 @@
 import type { UIMessage } from "ai";
 import {
+  type AppTokenVerificationConfig,
+  appTokenFromRequest,
+} from "@/lib/app-token";
+import {
+  IdentityBindingSupersededError,
+  type ObserveIdentityFingerprint,
+} from "@/lib/identity-fingerprint-core";
+import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
   type VerifyKubeconfigNamespace,
 } from "@/lib/request-kubeconfig-auth";
+import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 import {
   type AssistantConversationOwner,
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   normalizeAssistantNamespace,
+  type VerifiedAssistantConversationActor,
 } from "../persistence/types";
 import { jsonError } from "./errors";
 
 export interface AssistantConversationHandlerDependencies {
+  /**
+   * Lazy re-key (ADR-0059): every verified conversation entry request first
+   * adopts the actor's legacy crName-keyed rows into the uid owner.
+   */
+  adoptLegacyConversations: (
+    actor: VerifiedAssistantConversationActor
+  ) => Promise<void>;
+  /** Test seam; defaults to `JWT_INTERNAL` from the env. */
+  appTokenConfig?: AppTokenVerificationConfig | null;
   bootstrap: (
     owner: AssistantConversationOwner
   ) => Promise<AssistantSessionPayload>;
   list: (owner: AssistantConversationOwner) => Promise<AssistantThreadDTO[]>;
+  /** Test seam; defaults to the region-local Identity Fingerprint store. */
+  observeFingerprint?: ObserveIdentityFingerprint;
   read: (
     owner: AssistantConversationOwner,
     chatId: string
@@ -28,6 +49,13 @@ function conversationNotFound(): Response {
   return jsonError("Assistant conversation not found.", 404);
 }
 
+/** The adoption write found the binding superseded by a merge (ADR-0059). */
+function supersededBindingResponse(error: unknown): Response | null {
+  return error instanceof IdentityBindingSupersededError
+    ? jsonError("Authentication is required.", 401)
+    : null;
+}
+
 export function createAssistantConversationHandlers(
   dependencies: AssistantConversationHandlerDependencies
 ) {
@@ -35,13 +63,16 @@ export function createAssistantConversationHandlers(
     request: Request,
     clientNamespace = new URL(request.url).searchParams.get("namespace")
   ): Promise<
-    | { ok: true; owner: AssistantConversationOwner }
+    | { ok: true; actor: VerifiedAssistantConversationActor }
     | { ok: false; response: Response }
   > => {
     const authorization = await authorizeWorkspaceActor({
+      appToken: appTokenFromRequest(request),
+      appTokenConfig: dependencies.appTokenConfig,
       encodedKubeconfig: encodedKubeconfigFromRequest(request),
       expectedNamespace: clientNamespace?.trim() || undefined,
       normalizeNamespace: normalizeAssistantNamespace,
+      observeFingerprint: dependencies.observeFingerprint,
       verify: dependencies.verify,
     });
     if (!authorization.ok) {
@@ -50,13 +81,7 @@ export function createAssistantConversationHandlers(
         response: jsonError(authorization.message, authorization.status),
       };
     }
-    return {
-      ok: true,
-      owner: {
-        namespace: authorization.namespace,
-        workspaceActor: authorization.workspaceActor,
-      },
-    };
+    return { actor: verifiedPersonalResourceActor(authorization), ok: true };
   };
 
   return {
@@ -70,11 +95,19 @@ export function createAssistantConversationHandlers(
         return authorization.response;
       }
       try {
-        const messages = await dependencies.read(authorization.owner, chatId);
+        await dependencies.adoptLegacyConversations(authorization.actor);
+        const messages = await dependencies.read(
+          authorization.actor.owner,
+          chatId
+        );
         return messages == null
           ? conversationNotFound()
           : Response.json({ messages });
-      } catch {
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
         console.error("[api/chat/messages] persistence unavailable");
         return jsonError("Assistant chat persistence is unavailable.", 503);
       }
@@ -85,8 +118,15 @@ export function createAssistantConversationHandlers(
         return authorization.response;
       }
       try {
-        return Response.json(await dependencies.bootstrap(authorization.owner));
-      } catch {
+        await dependencies.adoptLegacyConversations(authorization.actor);
+        return Response.json(
+          await dependencies.bootstrap(authorization.actor.owner)
+        );
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
         console.error("[api/chat/session] persistence unavailable");
         return jsonError(
           "Could not load assistant session (database / DATABASE_URL).",
@@ -101,9 +141,14 @@ export function createAssistantConversationHandlers(
       }
 
       try {
-        const threads = await dependencies.list(authorization.owner);
+        await dependencies.adoptLegacyConversations(authorization.actor);
+        const threads = await dependencies.list(authorization.actor.owner);
         return Response.json({ threads });
-      } catch {
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
         console.error("[api/chat/threads] persistence unavailable");
         return jsonError(
           "Assistant chat persistence is unavailable (check DATABASE_URL).",

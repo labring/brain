@@ -11,7 +11,9 @@ import {
   parseInstallReturnPathParam,
 } from "@/features/deploy/github/types";
 import { githubReposSWRKey } from "@/features/deploy/github/use-github-repos";
-import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { appTokenRequestHeaders } from "@/lib/app-token-header";
+import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 const GITHUB_APP_INSTALL_POPUP_NAME = "brain-github-app-install";
 const GITHUB_APP_INSTALL_POPUP_FEATURES = [
@@ -47,18 +49,28 @@ export interface UseGithubAuthResult {
   mutate: () => Promise<unknown>;
 }
 
+interface GithubConnectionCredentials {
+  appToken: string;
+  kubeconfig: string;
+  namespace: string;
+}
+
+function connectionRequestHeaders(
+  credentials: GithubConnectionCredentials
+): Record<string, string> | undefined {
+  return credentials.kubeconfig.trim() === ""
+    ? undefined
+    : personalResourceAuthHeaders(credentials);
+}
+
 async function fetchConnection(
-  namespace: string,
-  kubeconfig: string
+  credentials: GithubConnectionCredentials
 ): Promise<GithubConnectionResponse> {
   const url = new URL("/api/github/connection", window.location.origin);
-  url.searchParams.set("namespace", namespace);
+  url.searchParams.set("namespace", credentials.namespace);
   const response = await fetch(url.toString(), {
     cache: "no-store",
-    headers:
-      kubeconfig.trim() === ""
-        ? undefined
-        : { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` },
+    headers: connectionRequestHeaders(credentials),
   });
   if (!response.ok) {
     throw new Error(await response.text());
@@ -67,17 +79,13 @@ async function fetchConnection(
 }
 
 async function deleteConnection(
-  namespace: string,
-  kubeconfig: string
+  credentials: GithubConnectionCredentials
 ): Promise<void> {
   const url = new URL("/api/github/connection", window.location.origin);
-  url.searchParams.set("namespace", namespace);
+  url.searchParams.set("namespace", credentials.namespace);
   const response = await fetch(url.toString(), {
     cache: "no-store",
-    headers:
-      kubeconfig.trim() === ""
-        ? undefined
-        : { Authorization: `Bearer ${encodeURIComponent(kubeconfig)}` },
+    headers: connectionRequestHeaders(credentials),
     method: "DELETE",
   });
   if (!response.ok) {
@@ -86,17 +94,19 @@ async function deleteConnection(
 }
 
 async function createOAuthSession(
-  namespace: string,
-  kubeconfig: string,
+  credentials: GithubConnectionCredentials,
   returnPath: string
 ): Promise<{ authorizeUrl: string; state: string }> {
   const response = await fetch("/api/github/oauth-session", {
     cache: "no-store",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...appTokenRequestHeaders(credentials.appToken),
+    },
     method: "POST",
     body: JSON.stringify({
-      encodedKubeconfig: encodeURIComponent(kubeconfig),
-      namespace,
+      encodedKubeconfig: encodeURIComponent(credentials.kubeconfig),
+      namespace: credentials.namespace,
       returnPath,
     }),
   });
@@ -186,17 +196,18 @@ export function useGithubAuth(options?: {
   enabled?: boolean;
 }): UseGithubAuthResult {
   const enabled = options?.enabled ?? true;
+  const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom).trim();
   const canCheck = enabled && namespace !== "" && kubeconfig.trim() !== "";
   const { mutate: mutateCache } = useSWRConfig();
   const swrKey = canCheck
-    ? (["github-connection", namespace, kubeconfig] as const)
+    ? (["github-connection", namespace, kubeconfig, appToken] as const)
     : null;
 
   const { data, error, isLoading, mutate } = useSWR(
     swrKey,
-    () => fetchConnection(namespace, kubeconfig),
+    () => fetchConnection({ appToken, kubeconfig, namespace }),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
@@ -220,11 +231,11 @@ export function useGithubAuth(options?: {
       return;
     }
     mutate().catch(() => undefined);
-    const reposKey = githubReposSWRKey({ kubeconfig, namespace });
+    const reposKey = githubReposSWRKey({ appToken, kubeconfig, namespace });
     if (reposKey != null) {
       mutateCache(reposKey).catch(() => undefined);
     }
-  }, [canCheck, kubeconfig, mutate, mutateCache, namespace]);
+  }, [appToken, canCheck, kubeconfig, mutate, mutateCache, namespace]);
 
   const handleInstallComplete = useCallback(
     (data: unknown, options?: { applyReturnPath?: boolean }) => {
@@ -326,8 +337,7 @@ export function useGithubAuth(options?: {
         throw new Error("GitHub authorization requires workspace credentials.");
       }
       const { authorizeUrl, state } = await createOAuthSession(
-        normalizedNamespace,
-        kubeconfig,
+        { appToken, kubeconfig, namespace: normalizedNamespace },
         next
       );
       pendingInstallStateRef.current = state;
@@ -353,15 +363,15 @@ export function useGithubAuth(options?: {
         startError
       );
     });
-  }, [kubeconfig, namespace, refreshConnection]);
+  }, [appToken, kubeconfig, namespace, refreshConnection]);
 
   const disconnectGithubAuth = useCallback(async () => {
     if (!canCheck) {
       return;
     }
-    await deleteConnection(namespace, kubeconfig);
+    await deleteConnection({ appToken, kubeconfig, namespace });
     await mutate({ connection: null }, { revalidate: false });
-  }, [canCheck, kubeconfig, mutate, namespace]);
+  }, [appToken, canCheck, kubeconfig, mutate, namespace]);
 
   return {
     canCheck,

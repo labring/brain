@@ -79,8 +79,22 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 - `ui.env.FREE_CHAT_TURNS`
 - `ui.env.AI_PROXY_TOKEN_NAME`
 - `ui.env.DEVBOX_TOKEN` 或 `ui.env.DEVBOX_JWT_SIGNING_KEY`
+- 可选的 `ui.env.DEPLOY_SKILL_SOURCE`；留空时默认使用
+  `https://github.com/labring/sealos-skills/tree/brain-deploy`
 
 不要修改已有生产环境的 `GITHUB_USER_TOKEN_ENCRYPTION_KEY`。
+
+GitHub 和 prompt AI 部署固定调用 `sealos-deploy`。如需在 staging 验证
+preview 分支，只设置：
+
+```yaml
+ui:
+  env:
+    DEPLOY_SKILL_SOURCE: "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
+```
+
+修改后需要 rollout UI。配置只影响新的部署 runtime；已经安装
+`sealos-deploy` 的 Devbox 不会被覆盖。
 
 ### 3. 渲染检查
 

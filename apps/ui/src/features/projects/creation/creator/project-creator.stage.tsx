@@ -1,11 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { DatabaseDeployer } from "@/features/deploy/database-deployer";
-import {
-  DockerDeployer,
-  type DockerDeploymentSettings,
-} from "@/features/deploy/docker-deployer";
+import { DockerDeployer } from "@/features/deploy/docker-deployer";
 import { GithubDeployer } from "@/features/deploy/github-deployer/github-deployer";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
 import {
@@ -41,22 +38,16 @@ function GithubPanel() {
     ...(canDeploy
       ? {
           onDeploy: (repo: GithubDeployerRepo) => {
-            const projectDisplayName = creatorStates.projectDisplayName.trim();
             const projectDescription = creatorStates.projectDescription.trim();
-            const displayNameError =
-              creatorActions.validateProjectDisplayName(projectDisplayName);
-            const descriptionError = creatorActions.validateProjectDescription(
-              creatorStates.projectDescription
-            );
-            if (displayNameError != null || descriptionError != null) {
+            if (
+              creatorActions.validateProjectDescription(
+                creatorStates.projectDescription
+              ) != null
+            ) {
               return;
             }
             if (creatorActions.onGithubConfirm) {
-              return creatorActions.onGithubConfirm(
-                repo,
-                projectDisplayName,
-                projectDescription
-              );
+              return creatorActions.onGithubConfirm(repo, projectDescription);
             }
             return githubActions.onDeploy?.(repo);
           },
@@ -70,21 +61,18 @@ function GithubPanel() {
               NonNullable<typeof githubActions.onDeployTemplate>
             >[0]
           ) => {
-            const projectDisplayName = creatorStates.projectDisplayName.trim();
             const projectDescription = creatorStates.projectDescription.trim();
-            const displayNameError =
-              creatorActions.validateProjectDisplayName(projectDisplayName);
-            const descriptionError = creatorActions.validateProjectDescription(
-              creatorStates.projectDescription
-            );
-            if (displayNameError != null || descriptionError != null) {
+            if (
+              creatorActions.validateProjectDescription(
+                creatorStates.projectDescription
+              ) != null
+            ) {
               return;
             }
             if (creatorActions.onTemplateConfirm) {
               return creatorActions.onTemplateConfirm(
                 input.settings,
                 input.template,
-                projectDisplayName,
                 projectDescription
               );
             }
@@ -107,32 +95,8 @@ function GithubPanel() {
 }
 
 function DockerPanel() {
-  const { actions, meta, states } = useProjectCreator();
-  const [dockerImage, setDockerImage] = useState("");
-  const { deriveDockerProjectDisplayName, setProjectDisplayName } = actions;
-
+  const { actions, states } = useProjectCreator();
   const busy = states.confirmApplying;
-  const updateDockerImage = useCallback(
-    (settings: DockerDeploymentSettings) => {
-      setDockerImage(settings.image);
-    },
-    []
-  );
-
-  useEffect(() => {
-    const imageRef = dockerImage.trim();
-    if (!meta.dockerDirect || imageRef === "") {
-      return;
-    }
-    setProjectDisplayName(
-      deriveDockerProjectDisplayName?.(imageRef) ?? "Docker Project"
-    );
-  }, [
-    deriveDockerProjectDisplayName,
-    dockerImage,
-    meta.dockerDirect,
-    setProjectDisplayName,
-  ]);
 
   return (
     <div
@@ -142,22 +106,15 @@ function DockerPanel() {
       <DockerDeployer
         busy={busy}
         onDeploy={(settings) => {
-          const projectDisplayName = states.projectDisplayName.trim();
           const projectDescription = states.projectDescription.trim();
-          const error = actions.validateProjectDisplayName(projectDisplayName);
-          const descriptionError = actions.validateProjectDescription(
-            states.projectDescription
-          );
-          if (error != null || descriptionError != null) {
+          if (
+            actions.validateProjectDescription(states.projectDescription) !=
+            null
+          ) {
             return;
           }
-          actions.onDockerConfirm?.(
-            settings,
-            projectDisplayName,
-            projectDescription
-          );
+          actions.onDockerConfirm?.(settings, projectDescription);
         }}
-        onSettingsChange={updateDockerImage}
       />
     </div>
   );
@@ -179,31 +136,18 @@ function DatabasePanel({
       <DatabaseDeployer
         busy={busy}
         databaseOptions={databaseOptions}
-        onDeploy={(settings, choice) => {
-          const derivedProjectDisplayName = actions
-            .deriveDatabaseProjectDisplayName?.(choice)
-            .trim();
-          const projectDisplayName = meta.databaseDirect
-            ? derivedProjectDisplayName ||
-              choice.label.trim() ||
-              choice.engine.trim() ||
-              "Database Project"
-            : states.projectDisplayName.trim();
+        onDeploy={(settings) => {
           const projectDescription = meta.databaseDirect
             ? ""
             : states.projectDescription.trim();
-          const error = actions.validateProjectDisplayName(projectDisplayName);
-          const descriptionError = actions.validateProjectDescription(
-            meta.databaseDirect ? "" : states.projectDescription
-          );
-          if (error != null || descriptionError != null) {
+          if (
+            actions.validateProjectDescription(
+              meta.databaseDirect ? "" : states.projectDescription
+            ) != null
+          ) {
             return;
           }
-          actions.onDatabaseConfirm?.(
-            settings,
-            projectDisplayName,
-            projectDescription
-          );
+          actions.onDatabaseConfirm?.(settings, projectDescription);
         }}
       />
     </div>
@@ -238,26 +182,17 @@ function TemplatePanel() {
         initialSettings={initialSettings}
         loading={meta.templateOptionsLoading}
         onDeploy={(settings: TemplateDeploymentSettings, choice) => {
-          const projectDisplayName = meta.templateDirect
-            ? (actions.deriveTemplateProjectDisplayName?.(choice) ??
-              (choice.title.trim() || choice.name.trim() || "Template Project"))
-            : states.projectDisplayName.trim();
           const projectDescription = meta.templateDirect
             ? ""
             : states.projectDescription.trim();
-          const error = actions.validateProjectDisplayName(projectDisplayName);
-          const descriptionError = actions.validateProjectDescription(
-            meta.templateDirect ? "" : states.projectDescription
-          );
-          if (error != null || descriptionError != null) {
+          if (
+            actions.validateProjectDescription(
+              meta.templateDirect ? "" : states.projectDescription
+            ) != null
+          ) {
             return;
           }
-          actions.onTemplateConfirm?.(
-            settings,
-            choice,
-            projectDisplayName,
-            projectDescription
-          );
+          actions.onTemplateConfirm?.(settings, choice, projectDescription);
         }}
         templateOptions={meta.templateOptions}
       />

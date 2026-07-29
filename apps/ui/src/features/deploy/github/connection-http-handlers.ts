@@ -1,34 +1,52 @@
 import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
 import {
+  type AppTokenVerificationConfig,
+  appTokenFromRequest,
+} from "@/lib/app-token";
+import {
+  IdentityBindingSupersededError,
+  type ObserveIdentityFingerprint,
+} from "@/lib/identity-fingerprint-core";
+import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
   type VerifyKubeconfigNamespace,
 } from "@/lib/request-kubeconfig-auth";
 import {
-  CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
   type GithubConnectionOwnerIdentity,
+  type VerifiedGithubConnectionActor,
+  verifiedGithubConnectionActor,
 } from "./owner-identity";
 
 export type GithubConnectionStatusLookup = (
   owner: GithubConnectionOwnerIdentity
 ) => Promise<object | null>;
 
+/** Forgets the actor's connection across both generations (ADR-0057). */
 export type GithubConnectionDelete = (
-  owner: GithubConnectionOwnerIdentity
+  actor: VerifiedGithubConnectionActor
 ) => Promise<void>;
 
 export type GithubRepositoryList = (
   owner: GithubConnectionOwnerIdentity
 ) => Promise<object[]>;
 
+/**
+ * Lazy re-key (ADR-0059): every verified connection entry request first
+ * adopts the actor's legacy generation-1 crName row into the uid owner.
+ */
+export type GithubLegacyConnectionAdoption = (
+  actor: VerifiedGithubConnectionActor
+) => Promise<void>;
+
 export type GithubOAuthSessionCreate = (input: {
+  actor: VerifiedGithubConnectionActor;
   baseUrl: string;
-  owner: GithubConnectionOwnerIdentity;
   returnPath: string | null;
 }) => Promise<{ authorizeUrl: string; state: string }>;
 
 export type GithubAppInstallSessionCreate = (input: {
-  owner: GithubConnectionOwnerIdentity;
+  actor: VerifiedGithubConnectionActor;
   returnPath: string | null;
 }) => Promise<{ installUrl: string; state: string }>;
 
@@ -81,14 +99,20 @@ function jsonError(input: {
 }
 
 async function authorizeGithubConnectionOwner(input: {
+  appToken: string;
+  appTokenConfig?: AppTokenVerificationConfig | null;
   encodedKubeconfig: string;
+  observeFingerprint?: ObserveIdentityFingerprint;
   requestedNamespace: string | undefined;
   verify?: VerifyKubeconfigNamespace;
-}): Promise<GithubConnectionOwnerIdentity | Response> {
+}): Promise<VerifiedGithubConnectionActor | Response> {
   const authorization = await authorizeWorkspaceActor({
+    appToken: input.appToken,
+    appTokenConfig: input.appTokenConfig,
     encodedKubeconfig: input.encodedKubeconfig,
     expectedNamespace: input.requestedNamespace || undefined,
     normalizeNamespace: normalizeAssistantNamespace,
+    observeFingerprint: input.observeFingerprint,
     verify: input.verify,
   });
   if (!authorization.ok) {
@@ -105,35 +129,54 @@ async function authorizeGithubConnectionOwner(input: {
       status: 400,
     });
   }
-  return {
-    namespace: authorization.namespace,
-    ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-    workspaceActor: authorization.workspaceActor,
-  };
+  return verifiedGithubConnectionActor(authorization);
+}
+
+interface GithubConnectionAuthorizationOptions {
+  /** Test seam; defaults to `JWT_INTERNAL` from the env. */
+  appTokenConfig?: AppTokenVerificationConfig | null;
+  /** Test seam; defaults to the region-local Identity Fingerprint store. */
+  observeFingerprint?: ObserveIdentityFingerprint;
+  verify?: VerifyKubeconfigNamespace;
 }
 
 function authorizeGithubConnectionRequest(
   request: Request,
-  verify?: VerifyKubeconfigNamespace
-): Promise<GithubConnectionOwnerIdentity | Response> {
+  options: GithubConnectionAuthorizationOptions
+): Promise<VerifiedGithubConnectionActor | Response> {
   return authorizeGithubConnectionOwner({
+    appToken: appTokenFromRequest(request),
+    appTokenConfig: options.appTokenConfig,
     encodedKubeconfig: encodedKubeconfigFromRequest(request),
+    observeFingerprint: options.observeFingerprint,
     requestedNamespace:
       new URL(request.url).searchParams.get("namespace")?.trim() || undefined,
-    verify,
+    verify: options.verify,
   });
+}
+
+/** The write found the binding superseded by a concurrent merge (ADR-0059). */
+function supersededBindingResponse(error: unknown): Response | null {
+  return error instanceof IdentityBindingSupersededError
+    ? jsonError({
+        code: "app_token_superseded",
+        message: "Authentication is required.",
+        status: 401,
+      })
+    : null;
 }
 
 async function authorizeGithubSessionRequest(
   request: Request,
-  verify?: VerifyKubeconfigNamespace
+  options: GithubConnectionAuthorizationOptions
 ): Promise<
   | {
-      owner: GithubConnectionOwnerIdentity;
+      actor: VerifiedGithubConnectionActor;
       returnPath: string | null;
     }
   | Response
 > {
+  const appToken = appTokenFromRequest(request);
   const body = (await request.json().catch(() => null)) as {
     encodedKubeconfig?: unknown;
     namespace?: unknown;
@@ -141,31 +184,46 @@ async function authorizeGithubSessionRequest(
   } | null;
   const namespace =
     typeof body?.namespace === "string" ? body.namespace.trim() : "";
-  const owner = await authorizeGithubConnectionOwner({
+  const actor = await authorizeGithubConnectionOwner({
+    appToken,
+    appTokenConfig: options.appTokenConfig,
     encodedKubeconfig:
       typeof body?.encodedKubeconfig === "string" ? body.encodedKubeconfig : "",
+    observeFingerprint: options.observeFingerprint,
     requestedNamespace: namespace || undefined,
-    verify,
+    verify: options.verify,
   });
-  return owner instanceof Response
-    ? owner
+  return actor instanceof Response
+    ? actor
     : {
-        owner,
+        actor,
         returnPath:
           typeof body?.returnPath === "string" ? body.returnPath : null,
       };
 }
 
 export function createGithubConnectionStatusHandler(input: {
+  adoptLegacyConnection: GithubLegacyConnectionAdoption;
+  appTokenConfig?: AppTokenVerificationConfig | null;
   getConnection: GithubConnectionStatusLookup;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input.verify);
-    if (owner instanceof Response) {
-      return owner;
+    const actor = await authorizeGithubConnectionRequest(request, input);
+    if (actor instanceof Response) {
+      return actor;
     }
-    const connection = await input.getConnection(owner);
+    try {
+      await input.adoptLegacyConnection(actor);
+    } catch (error) {
+      const superseded = supersededBindingResponse(error);
+      if (superseded == null) {
+        throw error;
+      }
+      return superseded;
+    }
+    const connection = await input.getConnection(actor.owner);
     return Response.json({
       connection: publicConnectionStatus(connection),
     });
@@ -173,16 +231,30 @@ export function createGithubConnectionStatusHandler(input: {
 }
 
 export function createGithubRepositoryListHandler(input: {
+  adoptLegacyConnection: GithubLegacyConnectionAdoption;
+  appTokenConfig?: AppTokenVerificationConfig | null;
   listRepositories: GithubRepositoryList;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input.verify);
-    if (owner instanceof Response) {
-      return owner;
+    const actor = await authorizeGithubConnectionRequest(request, input);
+    if (actor instanceof Response) {
+      return actor;
     }
     try {
-      return Response.json({ repos: await input.listRepositories(owner) });
+      await input.adoptLegacyConnection(actor);
+    } catch (error) {
+      const superseded = supersededBindingResponse(error);
+      if (superseded == null) {
+        throw error;
+      }
+      return superseded;
+    }
+    try {
+      return Response.json({
+        repos: await input.listRepositories(actor.owner),
+      });
     } catch (error) {
       return jsonError({
         code: "github_connection_required",
@@ -197,57 +269,76 @@ export function createGithubRepositoryListHandler(input: {
 }
 
 export function createGithubConnectionDeleteHandler(input: {
+  appTokenConfig?: AppTokenVerificationConfig | null;
   deleteConnection: GithubConnectionDelete;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const owner = await authorizeGithubConnectionRequest(request, input.verify);
-    if (owner instanceof Response) {
-      return owner;
+    const actor = await authorizeGithubConnectionRequest(request, input);
+    if (actor instanceof Response) {
+      return actor;
     }
-    await input.deleteConnection(owner);
+    // Disconnect forgets both the uid-keyed row and any inert legacy row
+    // (ADR-0057) — deleting only the current owner would let a later entry
+    // request adopt the legacy row and revive a forgotten authorization.
+    await input.deleteConnection(actor);
     return Response.json({ connection: null });
   };
 }
 
 export function createGithubOAuthSessionHandler(input: {
+  appTokenConfig?: AppTokenVerificationConfig | null;
   createSession: GithubOAuthSessionCreate;
   getBaseUrl: (request: Request) => string;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const authorization = await authorizeGithubSessionRequest(
-      request,
-      input.verify
-    );
+    const authorization = await authorizeGithubSessionRequest(request, input);
     if (authorization instanceof Response) {
       return authorization;
     }
-    return Response.json(
-      await input.createSession({
-        baseUrl: input.getBaseUrl(request),
-        ...authorization,
-      })
-    );
+    try {
+      return Response.json(
+        await input.createSession({
+          baseUrl: input.getBaseUrl(request),
+          ...authorization,
+        })
+      );
+    } catch (error) {
+      const superseded = supersededBindingResponse(error);
+      if (superseded == null) {
+        throw error;
+      }
+      return superseded;
+    }
   };
 }
 
 export function createGithubAppInstallSessionHandler(input: {
+  appTokenConfig?: AppTokenVerificationConfig | null;
   createSession: GithubAppInstallSessionCreate;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
   return async (request) => {
-    const authorization = await authorizeGithubSessionRequest(
-      request,
-      input.verify
-    );
+    const authorization = await authorizeGithubSessionRequest(request, input);
     if (authorization instanceof Response) {
       return authorization;
     }
-    return Response.json({
-      ...(await input.createSession(authorization)),
-      namespace: authorization.owner.namespace,
-    });
+    try {
+      return Response.json({
+        ...(await input.createSession(authorization)),
+        namespace: authorization.actor.owner.namespace,
+      });
+    } catch (error) {
+      const superseded = supersededBindingResponse(error);
+      if (superseded == null) {
+        throw error;
+      }
+      return superseded;
+    }
   };
 }
 

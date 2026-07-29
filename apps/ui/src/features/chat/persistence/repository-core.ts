@@ -2,13 +2,18 @@ import type { UIMessage } from "ai";
 import { generateId } from "ai";
 import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
 
+import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
+
 import type { AssistantPgDatabase, AssistantPgTransaction } from "./db";
 import {
   type AssistantChatRow,
   assistantChatMessages,
   assistantChats,
 } from "./schema";
-import type { AssistantConversationOwner } from "./types";
+import type {
+  AssistantConversationOwner,
+  VerifiedAssistantConversationActor,
+} from "./types";
 
 export type ThreadRow = AssistantChatRow;
 
@@ -34,14 +39,17 @@ export interface AssistantMessagePartsReplacement {
 class ChatStreamCommitConflict extends Error {}
 
 export interface AssistantConversationRepository {
+  adoptLegacyThreadsForActor: (
+    actor: VerifiedAssistantConversationActor
+  ) => Promise<void>;
   commitChatMessagesIfLeaseOwned: (input: {
     lease: ChatStreamLease;
     replacements: AssistantMessagePartsReplacement[];
     upsertMessage?: UIMessage;
   }) => Promise<ChatStreamLease | null>;
   ensureThreadForOwner: (input: {
+    actor: VerifiedAssistantConversationActor;
     id: string;
-    owner: AssistantConversationOwner;
     title: string;
   }) => Promise<boolean>;
   persistAssistantMessageIfLeaseOwned: (input: {
@@ -174,7 +182,7 @@ function ownedThreadWhere(chatId: string, owner: AssistantConversationOwner) {
   return and(
     eq(assistantChats.id, chatId),
     eq(assistantChats.namespace, owner.namespace),
-    eq(assistantChats.workspaceActor, owner.workspaceActor)
+    eq(assistantChats.workspaceActor, owner.userUid)
   );
 }
 
@@ -297,27 +305,74 @@ export function createAssistantConversationRepository(
       .where(
         and(
           eq(assistantChats.namespace, owner.namespace),
-          eq(assistantChats.workspaceActor, owner.workspaceActor)
+          eq(assistantChats.workspaceActor, owner.userUid)
         )
       )
       .orderBy(desc(assistantChats.updatedAt));
 
+  /**
+   * Lazy re-key (ADR-0059): re-keys the verified actor's legacy crName-keyed
+   * threads to the proven uid in one idempotent UPDATE. The nanoid crName and
+   * UUID userUid formats are disjoint, so the update matches only legacy rows
+   * and repeat requests are no-ops. `updatedAt` is left untouched so adoption
+   * never reorders the thread picker.
+   */
+  const adoptLegacyThreadsForActor = async (
+    actor: VerifiedAssistantConversationActor
+  ): Promise<void> => {
+    const legacyWorkspaceActor = actor.legacyWorkspaceActor.trim();
+    const userUid = actor.owner.userUid.trim();
+    if (legacyWorkspaceActor === "" || userUid === "") {
+      throw new Error("A verified conversation actor identity is required.");
+    }
+    if (legacyWorkspaceActor === userUid) {
+      return;
+    }
+    await getDb().transaction(async (tx) => {
+      // Adoption keys legacy rows to this uid, so it must not run after a
+      // merge tombstoned it — the survivor could never adopt them back.
+      await requireCurrentIdentityBinding(tx, {
+        crName: legacyWorkspaceActor,
+        userUid,
+      });
+      await tx
+        .update(assistantChats)
+        .set({ workspaceActor: userUid })
+        .where(
+          and(
+            eq(assistantChats.namespace, actor.owner.namespace),
+            eq(assistantChats.workspaceActor, legacyWorkspaceActor)
+          )
+        );
+    });
+  };
+
   const ensureThreadForOwner = async (input: {
+    actor: VerifiedAssistantConversationActor;
     id: string;
-    owner: AssistantConversationOwner;
     title: string;
   }): Promise<boolean> => {
-    await getDb()
-      .insert(assistantChats)
-      .values({
-        id: input.id,
-        namespace: input.owner.namespace,
-        workspaceActor: input.owner.workspaceActor,
-        title: input.title,
-        titleAiGenerated: false,
-      })
-      .onConflictDoNothing({ target: assistantChats.id });
-    return (await selectThreadByOwner(input.id, input.owner)) != null;
+    const owner = input.actor.owner;
+    await getDb().transaction(async (tx) => {
+      // A new thread row is keyed by this uid; re-check the fingerprint in
+      // the same transaction so a concurrent merge either sweeps this row or
+      // refuses the stale binding (ADR-0059).
+      await requireCurrentIdentityBinding(tx, {
+        crName: input.actor.legacyWorkspaceActor,
+        userUid: owner.userUid,
+      });
+      await tx
+        .insert(assistantChats)
+        .values({
+          id: input.id,
+          namespace: owner.namespace,
+          workspaceActor: owner.userUid,
+          title: input.title,
+          titleAiGenerated: false,
+        })
+        .onConflictDoNothing({ target: assistantChats.id });
+    });
+    return (await selectThreadByOwner(input.id, owner)) != null;
   };
 
   const updateThreadAiTitleOnceForOwner = async (
@@ -645,6 +700,7 @@ export function createAssistantConversationRepository(
   };
 
   return {
+    adoptLegacyThreadsForActor,
     commitChatMessagesIfLeaseOwned,
     ensureThreadForOwner,
     persistAssistantMessageIfLeaseOwned,

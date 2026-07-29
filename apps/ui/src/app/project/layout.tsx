@@ -4,6 +4,7 @@ import {
   AppShellView,
 } from "@/features/shell/app-shell";
 import AuthBootstrap, {
+  DevboxBootstrap,
   SealosSdkBootstrap,
 } from "@/features/shell/auth-bootstrap";
 import ProjectWorkspaceLayout from "@/features/shell/project-workspace-layout";
@@ -20,6 +21,7 @@ export default function ProjectLayout({
     <AppShellChrome>
       <AuthBootstrap serverEncodedKubeconfig="" serverNamespace="" />
       <SealosSdkBootstrap />
+      <DevboxBootstrap />
       <AppShellSidebar />
       <AppShellView className="min-w-0 flex-1 basis-0">
         <ProjectWorkspaceLayout>{children}</ProjectWorkspaceLayout>

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -35,9 +36,17 @@ export const projects = ns.table(
       columns: [table.namespace, table.id],
       name: "projects_pk",
     }),
-    uniqueIndex("projects_namespace_display_name_idx").on(
+    // Uniqueness authority for Project Display Names (ADR 0058). Humans read
+    // `nginx` and `Nginx` as the same row, so the database — not a pre-read
+    // that concurrent creates can race — enforces case-insensitive uniqueness.
+    // The trimming half of the contract is an invariant of the column instead:
+    // every write goes through `normalizeDisplayName`, so stored names carry no
+    // surrounding whitespace and `lower()` is already the compared form. Keep it
+    // that way — `lower(trim())` here would not match JS `trim()` anyway
+    // (Postgres `btrim` strips spaces only, not tabs or newlines).
+    uniqueIndex("projects_namespace_lower_display_name_idx").on(
       table.namespace,
-      table.displayName
+      sql`lower(${table.displayName})`
     ),
     index("projects_updated_at_idx").on(table.updatedAt),
   ]

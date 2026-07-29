@@ -1,5 +1,10 @@
 # Bind Personal Resources to Verified Workspace Actors
 
+## Status
+
+Accepted; the actor subject key, identity trust source, and migration mode are
+revised by ADR-0059.
+
 GitHub Connections and Assistant Conversations are personal resources inside a
 namespace that may be shared by several members. The former APIs accepted a
 Desktop user id from the client and treated namespace authorization as the only
@@ -21,10 +26,12 @@ A Workspace Actor is eligible only when the subject has this shape:
 system:serviceaccount:user-system:<crName>
 ```
 
-The actor's subject key is `crName`, the ServiceAccount name. A kubeconfig
-rotation deletes and recreates the ServiceAccount, changing its UID while
-preserving its name. Keying ownership by ServiceAccount UID would therefore
-silently orphan a user's personal resources after rotation.
+The actor's subject key was `crName`, the ServiceAccount name; ADR-0059 moves
+it to the global `userUid`, keeping `crName` as the verified kubeconfig
+identity and cross-check anchor. A kubeconfig rotation deletes and recreates
+the ServiceAccount, changing its UID while preserving its name, so keying
+ownership by ServiceAccount UID would silently orphan a user's personal
+resources after rotation.
 
 Namespace authorization remains a separate check. A verified Workspace Actor
 without access to the requested namespace is forbidden, and access to a
@@ -101,7 +108,9 @@ must not be described as runtime credential isolation.
 
 ## Considered Options
 
-- Verify the Desktop session JWT with a shared HMAC secret: rejected. It closes
+- Verify the Desktop session JWT with a shared HMAC secret: rejected here,
+  reversed by ADR-0059 on new evidence about the platform's shared-secret
+  reality. It closes
   the same client-selected-identity exploit, but requires Brain to hold a
   symmetric secret capable of minting any user's identity in the region. The
   kubeconfig-derived actor uses the Kubernetes API server's existing trust root

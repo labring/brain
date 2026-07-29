@@ -1,0 +1,2 @@
+DROP INDEX "sealai_assistant"."github_oauth_connections_current_owner_unique_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "github_oauth_connections_current_owner_unique_idx" ON "sealai_assistant"."github_oauth_connections" USING btree ("namespace","workspace_actor") WHERE "sealai_assistant"."github_oauth_connections"."owner_identity_version" = 2;

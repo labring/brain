@@ -12,6 +12,7 @@ import {
   githubAppInstallSessions,
   githubConnections,
   githubOauthConnections,
+  identityFingerprints,
 } from "./schema";
 
 const assistantSchema = {
@@ -21,6 +22,7 @@ const assistantSchema = {
   githubAppInstallSessions,
   githubConnections,
   githubOauthConnections,
+  identityFingerprints,
 };
 
 export type AssistantPgDatabase = PgDatabase<

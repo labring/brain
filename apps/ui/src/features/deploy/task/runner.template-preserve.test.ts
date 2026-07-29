@@ -763,6 +763,44 @@ data:
     ).toThrow("sensitive value shorter than four characters");
   });
 
+  it("rejects a resumable template that still embeds a submitted secret", () => {
+    const secret = "provider-secret-token";
+    const deliveryManifest = { args: { API_KEY: secret } };
+
+    expect(() =>
+      persistableAiDeployOutput({
+        deliveryManifest,
+        output: {
+          buildResult: { status: "skipped" },
+          deliveryManifest,
+          templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: unsafe-template
+spec:
+  defaults:
+    generated_value:
+      value: ${secret}
+  inputs:
+    API_KEY:
+      type: secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: unsafe-template
+data:
+  value: safe
+`,
+        },
+        planInputs: [{ key: "API_KEY", sensitive: true, type: "secret" }],
+      })
+    ).toThrow(
+      "Generated deployment template contains a sensitive value outside a declared sensitive input."
+    );
+  });
+
   it("scrubs sensitive echoes from persisted plan text and ordinary options", async () => {
     const secret = "sensitive-plan-token";
     currentRow = preparedAiInputTaskRow({
@@ -900,7 +938,7 @@ data:
     );
     expect(rejectedEvent?.payload).toEqual({
       code: "number",
-      inputKey: "configuration-1",
+      inputKey: "PORT",
     });
     expect(JSON.stringify({ rejectedEvent, request })).not.toContain(
       "invalid-port-that-must-not-persist"
@@ -929,7 +967,7 @@ data:
     );
     expect(rejectedEvent?.payload).toEqual({
       code: "minimum-length",
-      inputKey: "configuration-2",
+      inputKey: "API_KEY",
     });
     expect(
       JSON.stringify({

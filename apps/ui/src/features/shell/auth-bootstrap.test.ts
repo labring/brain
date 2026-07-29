@@ -63,4 +63,40 @@ contexts:
     assert.equal(updates[1]?.startsWith("kubeconfig:"), true);
     assert.equal(updates[2], "namespace:ns-demo");
   });
+
+  test("hydrates the session app token alongside the kubeconfig", () => {
+    const updates: string[] = [];
+
+    applySealosSdkHydration({
+      language: null,
+      session: {
+        kubeconfig: "apiVersion: v1",
+        token: " session-app-token ",
+        user: { id: "admin" },
+      },
+      setAppToken: (token) => updates.push(`appToken:${token}`),
+      setDesktopLanguage: () => undefined,
+      setDesktopUserId: () => undefined,
+      setKubeconfig: () => undefined,
+      setNamespace: () => undefined,
+    });
+
+    assert.deepEqual(updates, ["appToken:session-app-token"]);
+  });
+
+  test("a session without an app token never clears a hydrated token", () => {
+    const updates: string[] = [];
+
+    applySealosSdkHydration({
+      language: null,
+      session: { kubeconfig: "apiVersion: v1", user: { id: "admin" } },
+      setAppToken: (token) => updates.push(`appToken:${token}`),
+      setDesktopLanguage: () => undefined,
+      setDesktopUserId: () => undefined,
+      setKubeconfig: () => undefined,
+      setNamespace: () => undefined,
+    });
+
+    assert.deepEqual(updates, []);
+  });
 });

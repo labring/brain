@@ -3,6 +3,16 @@ import { isIP } from "node:net";
 import { decodeJwt } from "jose";
 import { Agent } from "undici";
 import { parse } from "yaml";
+import {
+  type AppTokenVerificationConfig,
+  appTokenVerificationConfigFromEnv,
+  type VerifiedAppTokenBinding,
+  verifyAppTokenBinding,
+} from "@/lib/app-token";
+import type {
+  IdentityFingerprintObservation,
+  ObserveIdentityFingerprint,
+} from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
@@ -61,13 +71,20 @@ export type VerifyKubeconfigNamespace = (input: {
 
 export type WorkspaceActorAuthorization =
   | {
+      /** The app-token-proven `crName → userUid` binding for this actor. */
+      actorBinding: VerifiedAppTokenBinding;
       namespace: string;
       ok: true;
       workspaceActor: string;
     }
   | {
       code:
+        | "app_token_invalid"
+        | "app_token_mismatch"
+        | "app_token_required"
+        | "app_token_superseded"
         | "authentication_required"
+        | "fingerprint_unavailable"
         | "namespace_authorization_failed"
         | "namespace_forbidden"
         | "workspace_actor_required";
@@ -622,13 +639,22 @@ export async function authorizeKubeconfigNamespace(input: {
 }
 
 /**
- * Authorizes a namespace and then resolves the individual represented by the
- * exact bearer token supplied to that authorization attempt.
+ * Authorizes a namespace, resolves the individual represented by the exact
+ * bearer token supplied to that authorization attempt, and enforces the
+ * desktop-minted App Token binding for that individual (ADR-0059). Personal
+ * resources fail closed without a token; non-personal routes must not call
+ * this function.
  */
 export async function authorizeWorkspaceActor(input: {
+  /** Bare `X-Sealos-App-Token` header value. */
+  appToken: string | undefined;
+  /** Test seam; defaults to `JWT_INTERNAL` from the env. */
+  appTokenConfig?: AppTokenVerificationConfig | null;
   encodedKubeconfig: string | undefined;
   expectedNamespace?: string;
   normalizeNamespace?: (namespace: string) => string;
+  /** Test seam; defaults to the region-local Identity Fingerprint store. */
+  observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): Promise<WorkspaceActorAuthorization> {
   const authorization = await resolveKubeconfigNamespaceAuthorization({
@@ -697,11 +723,167 @@ export async function authorizeWorkspaceActor(input: {
       status: 403,
     };
   }
+
+  const enforcement = await enforceAppTokenBinding({
+    appToken: input.appToken,
+    config:
+      input.appTokenConfig === undefined
+        ? appTokenVerificationConfigFromEnv()
+        : input.appTokenConfig,
+    namespace: authorization.namespace,
+    workspaceActor,
+  });
+  if (!enforcement.ok) {
+    return enforcement;
+  }
+  const fingerprint = await consultIdentityFingerprint({
+    binding: enforcement.binding,
+    namespace: authorization.namespace,
+    observe: input.observeFingerprint,
+  });
+  if (!fingerprint.ok) {
+    return fingerprint;
+  }
   return {
+    actorBinding: enforcement.binding,
     namespace: authorization.namespace,
     ok: true,
     workspaceActor,
   };
+}
+
+/** ADR-0059 degradation matrix; the token itself never reaches any log. */
+async function enforceAppTokenBinding(input: {
+  appToken: string | undefined;
+  config: AppTokenVerificationConfig | null;
+  namespace: string;
+  workspaceActor: string;
+}): Promise<
+  | { binding: VerifiedAppTokenBinding; ok: true }
+  | Extract<WorkspaceActorAuthorization, { ok: false }>
+> {
+  const verification = await verifyAppTokenBinding({
+    config: input.config,
+    expectedCrName: input.workspaceActor,
+    token: input.appToken ?? "",
+  });
+  if (!verification.ok) {
+    if (verification.reason === "missing") {
+      return {
+        code: "app_token_required",
+        message: "Authentication is required.",
+        ok: false,
+        status: 401,
+      };
+    }
+    console.warn(`[security] app token rejected: ${verification.reason}`, {
+      crName: input.workspaceActor,
+      namespace: input.namespace,
+    });
+    if (verification.reason === "unverifiable") {
+      return {
+        code: "app_token_invalid",
+        message: "Authentication is required.",
+        ok: false,
+        status: 401,
+      };
+    }
+    return {
+      code: "app_token_mismatch",
+      message: "App token does not match the authenticated actor.",
+      ok: false,
+      status: 403,
+    };
+  }
+  if (verification.expired) {
+    console.info("[telemetry] expired app token accepted", {
+      crName: verification.binding.crName,
+      userUid: verification.binding.userUid,
+    });
+  }
+  return { binding: verification.binding, ok: true };
+}
+
+let defaultFingerprintObserver: ObserveIdentityFingerprint | undefined;
+
+/** Lazily binds the real store so tests and builds never open the pool. */
+async function defaultObserveIdentityFingerprint(): Promise<ObserveIdentityFingerprint> {
+  defaultFingerprintObserver ??= (await import("@/lib/identity-fingerprint"))
+    .observeIdentityFingerprint;
+  return defaultFingerprintObserver;
+}
+
+/**
+ * Consults and maintains the region-local Identity Fingerprint for every
+ * verified personal-resource request (ADR-0059). A superseded binding — a
+ * token replayed from before an account merge — is the degradation matrix's
+ * final row: refused with 401 and telemetry. Fingerprint store errors fail
+ * closed; personal routes never proceed on an unconsulted fingerprint.
+ */
+async function consultIdentityFingerprint(input: {
+  binding: VerifiedAppTokenBinding;
+  namespace: string;
+  observe: ObserveIdentityFingerprint | undefined;
+}): Promise<
+  { ok: true } | Extract<WorkspaceActorAuthorization, { ok: false }>
+> {
+  const { binding } = input;
+  // Minting-time monotonicity orders merge decisions, so a token without a
+  // minting time cannot be fingerprinted; desktop re-login mints one that can.
+  if (binding.mintedAt == null) {
+    console.warn("[security] app token rejected: minting_time_missing", {
+      crName: binding.crName,
+      namespace: input.namespace,
+    });
+    return {
+      code: "app_token_invalid",
+      message: "Authentication is required.",
+      ok: false,
+      status: 401,
+    };
+  }
+
+  let observation: IdentityFingerprintObservation;
+  try {
+    const observe =
+      input.observe ?? (await defaultObserveIdentityFingerprint());
+    observation = await observe({
+      crName: binding.crName,
+      mintedAt: binding.mintedAt,
+      userUid: binding.userUid,
+    });
+  } catch {
+    console.error(
+      "[security] identity fingerprint unavailable; failing closed",
+      {
+        crName: binding.crName,
+        namespace: input.namespace,
+      }
+    );
+    return {
+      code: "fingerprint_unavailable",
+      message: "Personal resources are temporarily unavailable.",
+      ok: false,
+      status: 503,
+    };
+  }
+
+  if (observation.outcome === "superseded") {
+    console.warn("[telemetry] superseded app token refused", {
+      crName: binding.crName,
+      observedMintedAt: observation.observedMintedAt,
+      observedUserUid: observation.observedUserUid,
+      tokenMintedAt: binding.mintedAt,
+      tokenUserUid: binding.userUid,
+    });
+    return {
+      code: "app_token_superseded",
+      message: "Authentication is required.",
+      ok: false,
+      status: 401,
+    };
+  }
+  return { ok: true };
 }
 
 export async function authorizeEncodedKubeconfigNamespace(input: {

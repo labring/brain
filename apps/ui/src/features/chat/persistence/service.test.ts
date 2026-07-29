@@ -14,24 +14,21 @@ type ServiceRepository = Pick<
 >;
 
 test("first-message creation uses the verified owner and continuing cannot re-key it", async () => {
-  const owners = new Map<
-    string,
-    { namespace: string; workspaceActor: string }
-  >();
+  const owners = new Map<string, { namespace: string; userUid: string }>();
   const repository = {
     ensureThreadForOwner: (input) => {
       if (!owners.has(input.id)) {
-        owners.set(input.id, input.owner);
+        owners.set(input.id, input.actor.owner);
       }
       return Promise.resolve(
-        owners.get(input.id)?.namespace === input.owner.namespace &&
-          owners.get(input.id)?.workspaceActor === input.owner.workspaceActor
+        owners.get(input.id)?.namespace === input.actor.owner.namespace &&
+          owners.get(input.id)?.userUid === input.actor.owner.userUid
       );
     },
     selectThreadByOwner: (chatId, owner) =>
       Promise.resolve(
         owners.get(chatId)?.namespace === owner.namespace &&
-          owners.get(chatId)?.workspaceActor === owner.workspaceActor
+          owners.get(chatId)?.userUid === owner.userUid
           ? {
               createdAt: new Date("2026-07-21T00:00:00.000Z"),
               id: chatId,
@@ -39,7 +36,7 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
               title: "Chat",
               titleAiGenerated: false,
               updatedAt: new Date("2026-07-21T00:00:00.000Z"),
-              workspaceActor: owner.workspaceActor,
+              workspaceActor: owner.userUid,
             }
           : null
       ),
@@ -55,16 +52,18 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
     repository,
     titleThread: () => Promise.resolve("Generated title"),
   });
-  const alice = { namespace: "shared", workspaceActor: "alice-cr" };
-  const bob = { namespace: "shared", workspaceActor: "bob-cr" };
+  const alice = { namespace: "shared", userUid: "alice-cr" };
+  const bob = { namespace: "shared", userUid: "bob-cr" };
+  const aliceActor = { legacyWorkspaceActor: "alicecr1", owner: alice };
+  const bobActor = { legacyWorkspaceActor: "bobcrnm1", owner: bob };
 
   const draft = await service.bootstrap(alice);
 
   assert.equal(draft.chatId, "generated-chat");
   assert.deepEqual(draft.threads, []);
   assert.equal(owners.size, 0);
-  assert.equal(await service.ensureThread(draft.chatId, alice), true);
-  assert.equal(await service.ensureThread(draft.chatId, bob), false);
+  assert.equal(await service.ensureThread(draft.chatId, aliceActor), true);
+  assert.equal(await service.ensureThread(draft.chatId, bobActor), false);
   assert.deepEqual(owners.get(draft.chatId), alice);
 });
 
@@ -78,12 +77,12 @@ test("Free Chat Turns remain a namespace allowance instead of an actor allowance
       Promise.resolve([
         {
           createdAt: new Date("2026-07-21T00:00:00.000Z"),
-          id: `${owner.workspaceActor}-chat`,
+          id: `${owner.userUid}-chat`,
           namespace: owner.namespace,
           title: "Chat",
           titleAiGenerated: false,
           updatedAt: new Date("2026-07-21T00:00:00.000Z"),
-          workspaceActor: owner.workspaceActor,
+          workspaceActor: owner.userUid,
         },
       ]),
     updateThreadAiTitleOnceForOwner: () => Promise.resolve(false),
@@ -102,11 +101,11 @@ test("Free Chat Turns remain a namespace allowance instead of an actor allowance
 
   const alice = await service.bootstrap({
     namespace: "shared",
-    workspaceActor: "alice-cr",
+    userUid: "alice-cr",
   });
   const bob = await service.bootstrap({
     namespace: "shared",
-    workspaceActor: "bob-cr",
+    userUid: "bob-cr",
   });
 
   assert.deepEqual(freeTierKeys, ["shared", "shared"]);
@@ -135,7 +134,7 @@ test("automatic titling cannot read or rename another actor's conversation", asy
     ensureThreadForOwner: () => Promise.resolve(true),
     selectMessagesByOwner: (owner, chatId) =>
       Promise.resolve(
-        owner.workspaceActor === "bob-cr" && chatId === "bob-chat"
+        owner.userUid === "bob-cr" && chatId === "bob-chat"
           ? [
               {
                 id: "bob-message",
@@ -147,13 +146,11 @@ test("automatic titling cannot read or rename another actor's conversation", asy
       ),
     selectThreadByOwner: (chatId, owner) =>
       Promise.resolve(
-        owner.workspaceActor === "bob-cr" && chatId === "bob-chat"
-          ? bobThread
-          : null
+        owner.userUid === "bob-cr" && chatId === "bob-chat" ? bobThread : null
       ),
     selectThreadsByOwner: () => Promise.resolve([]),
     updateThreadAiTitleOnceForOwner: (owner) => {
-      titledOwners.push(owner.workspaceActor);
+      titledOwners.push(owner.userUid);
       return Promise.resolve(true);
     },
   } satisfies ServiceRepository;
@@ -174,13 +171,13 @@ test("automatic titling cannot read or rename another actor's conversation", asy
   await service.maybeAutoTitle({
     chatId: "bob-chat",
     languageModel: {} as never,
-    owner: { namespace: "shared", workspaceActor: "alice-cr" },
+    owner: { namespace: "shared", userUid: "alice-cr" },
   });
   await service.maybeAutoTitle({
     abortSignal: titleAbortController.signal,
     chatId: "bob-chat",
     languageModel: {} as never,
-    owner: { namespace: "shared", workspaceActor: "bob-cr" },
+    owner: { namespace: "shared", userUid: "bob-cr" },
   });
 
   assert.equal(generatedTitles, 1);

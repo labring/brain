@@ -613,6 +613,29 @@ function hasUnsafeTemplateScalarCharacter(value: string): boolean {
   return false;
 }
 
+const INSTANCE_INPUT_FIELDS = new Set([
+  "default",
+  "description",
+  "required",
+  "type",
+]);
+
+function instanceInputs(
+  value: unknown
+): Record<string, Record<string, unknown>> {
+  const inputs = asRecord(value) ?? {};
+  return Object.fromEntries(
+    Object.entries(inputs).map(([key, input]) => [
+      key,
+      Object.fromEntries(
+        Object.entries(asRecord(input) ?? {}).filter(([field]) =>
+          INSTANCE_INPUT_FIELDS.has(field)
+        )
+      ),
+    ])
+  );
+}
+
 /*
  * Keep user-provided template inputs as plain scalar values. They are substituted
  * into provider YAML before parsing, so multi-line values would be able to alter
@@ -637,7 +660,7 @@ function templateInstanceObject(
       draft: spec.draft === true,
       gitRepo: spec.gitRepo,
       icon: requiredString(spec.icon),
-      inputs: asRecord(spec.inputs) ?? {},
+      inputs: instanceInputs(spec.inputs),
       readme: requiredString(spec.readme),
       templateType: spec.templateType ?? spec.template_type,
       title: requiredString(spec.title),

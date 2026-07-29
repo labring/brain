@@ -375,6 +375,145 @@ test("unchanged deployment task projection snapshots keep current references", (
   assert.equal(upsertDeploymentTaskProjection(current, { ...second }), current);
 });
 
+test("upserting deployment task projections rejects out-of-order snapshots", () => {
+  const newer = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      status: "applying",
+      updatedAt: new Date("2026-06-11T10:00:02.000Z"),
+    }),
+    NOW
+  );
+  const stale = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      status: "running",
+      updatedAt: new Date("2026-06-11T10:00:01.000Z"),
+    }),
+    NOW
+  );
+  assert.ok(newer);
+  assert.ok(stale);
+  const current = [newer];
+
+  assert.equal(upsertDeploymentTaskProjection(current, stale), current);
+  assert.deepEqual(upsertDeploymentTaskProjection([stale], newer), [newer]);
+});
+
+test("terminal deployment task projections survive updatedAt ties", () => {
+  const completed = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      artifactSummary: {
+        resources: [
+          { apiVersion: "v1", kind: "AP", name: "web", namespace: "default" },
+        ],
+      },
+      completedAt: NOW,
+      status: "completed",
+    }),
+    NOW
+  );
+  const stale = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "running" }),
+    NOW
+  );
+  assert.ok(completed);
+  assert.ok(stale);
+  const current = [completed];
+
+  assert.equal(upsertDeploymentTaskProjection(current, stale), current);
+  assert.equal(replaceDeploymentTaskProjections(current, [stale]), current);
+});
+
+test("later-tier deployment task projections survive updatedAt ties", () => {
+  const applying = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "applying" }),
+    NOW
+  );
+  const running = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "running" }),
+    NOW
+  );
+  const queued = toDeploymentTaskProjection(deploymentTaskSource(), NOW);
+  assert.ok(applying);
+  assert.ok(running);
+  assert.ok(queued);
+
+  const heldApplying = [applying];
+  assert.equal(
+    upsertDeploymentTaskProjection(heldApplying, running),
+    heldApplying
+  );
+  assert.equal(
+    replaceDeploymentTaskProjections(heldApplying, [running]),
+    heldApplying
+  );
+
+  const heldRunning = [running];
+  assert.equal(
+    upsertDeploymentTaskProjection(heldRunning, queued),
+    heldRunning
+  );
+  assert.equal(
+    replaceDeploymentTaskProjections(heldRunning, [queued]),
+    heldRunning
+  );
+});
+
+test("blocked and running deployment task projections trade updatedAt ties", () => {
+  const running = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "running" }),
+    NOW
+  );
+  const blocked = toDeploymentTaskProjection(
+    deploymentTaskSource({ status: "blocked" }),
+    NOW
+  );
+  assert.ok(running);
+  assert.ok(blocked);
+
+  assert.deepEqual(upsertDeploymentTaskProjection([running], blocked), [
+    blocked,
+  ]);
+  assert.deepEqual(upsertDeploymentTaskProjection([blocked], running), [
+    running,
+  ]);
+});
+
+test("replacing deployment task projections keeps newer local entries", () => {
+  const newer = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      status: "applying",
+      updatedAt: new Date("2026-06-11T10:00:02.000Z"),
+    }),
+    NOW
+  );
+  const stale = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      status: "running",
+      updatedAt: new Date("2026-06-11T10:00:01.000Z"),
+    }),
+    NOW
+  );
+  const other = toDeploymentTaskProjection(
+    deploymentTaskSource({ id: "task-2" }),
+    NOW
+  );
+  assert.ok(newer);
+  assert.ok(stale);
+  assert.ok(other);
+  const current = [newer];
+
+  assert.equal(replaceDeploymentTaskProjections(current, [stale]), current);
+
+  const merged = replaceDeploymentTaskProjections(current, [stale, other]);
+  assert.deepEqual(merged, [newer, other]);
+  assert.equal(merged[0], newer);
+
+  assert.deepEqual(
+    replaceDeploymentTaskProjections([newer, other], [{ ...newer }]),
+    [newer]
+  );
+});
+
 test("canvas deployment task projections ignore activity-only changes", () => {
   const current = toDeploymentTaskProjection(
     deploymentTaskSource({

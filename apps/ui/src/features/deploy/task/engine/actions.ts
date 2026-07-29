@@ -5,6 +5,7 @@ import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
 import { publicDeployTaskBlockingInputs } from "../public-artifact-summary";
 import {
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskSource,
   type DeployTaskBlockingInput,
   type DeployTaskRow,
@@ -18,7 +19,10 @@ import {
 } from "../sensitive-inputs";
 import { DEPLOY_TASK_ACTIVE_STATUSES } from "../status-presentation";
 import { createDeploymentTaskTimelineForRunner } from "../timeline";
-import type { CreateDeployTaskInput } from "../types";
+import type {
+  CreateDeployTaskInput,
+  DeployTaskTargetResolution,
+} from "../types";
 import type { DeployTaskEngineContext } from "./context";
 import type { DeployTaskHandle } from "./handle";
 import {
@@ -95,7 +99,10 @@ function taskTitle(input: CreateDeployTaskInput): string {
     );
     return project ? `Deploy ${source} into ${project}` : `Deploy ${source}`;
   }
-  return `Deploy ${source} into new Project ${input.target.displayName}`;
+  const displayName = compactOptional(input.target.displayName);
+  return displayName == null
+    ? `Deploy ${source} into a new Project`
+    : `Deploy ${source} into new Project ${displayName}`;
 }
 
 async function readTaskRow(
@@ -151,7 +158,8 @@ export type CreateDeployTaskActionResult =
     }
   | { kind: "invalid"; message: string }
   | { kind: "predecessor-conflict"; predecessor: DeployTaskRow }
-  | { kind: "predecessor-not-found" };
+  | { kind: "predecessor-not-found" }
+  | { displayName: string; kind: "project-name-conflict" };
 
 export type CreateDeployTaskActionCreateInput = Omit<
   CreateDeployTaskInput,
@@ -169,8 +177,9 @@ export interface CreateDeployTaskActionInput {
    */
   resolveTarget?: (input: {
     namespace: string;
+    source: NonNullable<CreateDeployTaskInput["source"]>;
     target: NonNullable<CreateDeployTaskInput["target"]>;
-  }) => Promise<{ projectId: string; projectName: string }>;
+  }) => Promise<DeployTaskTargetResolution>;
   /** Launches the runner under the inline-claimed lease. */
   run: DeployTaskRunLauncher;
 }
@@ -261,10 +270,11 @@ function invalidCredentialBinding(
   if (creatingActor === "" || binding == null) {
     return "GitHub deployment requires a verified creator and credential binding.";
   }
-  if (
-    !isCurrentDeploymentCredentialBinding(binding) ||
-    binding.credentialOwner.trim() !== creatingActor
-  ) {
+  // The binding's owner is the initiator's global userUid, proven by the app
+  // token at the route's authorization point (ADR-0059). The per-region
+  // creatingActor and the uid are disjoint identifier spaces, so
+  // owner-equals-creator is no longer checkable here.
+  if (!isCurrentDeploymentCredentialBinding(binding)) {
     return "GitHub deployment credential binding is invalid.";
   }
   return null;
@@ -306,10 +316,11 @@ function cloneInheritedIdentities(
 async function resolveCreateProject(
   input: CreateDeployTaskActionInput,
   create: CreateDeployTaskInput
-): Promise<{ projectId: string; projectName: string } | null> {
+): Promise<DeployTaskTargetResolution | null> {
   const target = create.target;
   if (target.kind === "existingProject" && target.projectName?.trim()) {
     return {
+      kind: "resolved",
       projectId: target.projectId,
       projectName: target.projectName.trim(),
     };
@@ -317,6 +328,7 @@ async function resolveCreateProject(
   if (input.resolveTarget != null) {
     return await input.resolveTarget({
       namespace: create.namespace.trim(),
+      source: create.source,
       target,
     });
   }
@@ -335,30 +347,21 @@ function createdTaskEventPayload(
   };
 }
 
-export async function createDeployTaskAction(
+async function insertCreatedDeployTask(
   ctx: DeployTaskEngineContext,
-  input: CreateDeployTaskActionInput
-): Promise<CreateDeployTaskActionResult> {
-  const resolved = await resolveCreateInputs(ctx, input);
-  if ("kind" in resolved) {
-    return resolved;
+  input: {
+    create: CreateDeployTaskInput;
+    predecessor: DeployTaskRow | null;
+    resolvedProject: { projectId: string; projectName: string } | null;
   }
-  const { create, predecessor } = resolved;
-  const resolvedProject = await resolveCreateProject(input, create);
-
+): Promise<
+  DeployTaskRow | { kind: "clone-conflict"; activeClone: DeployTaskRow | null }
+> {
+  const { create, predecessor, resolvedProject } = input;
   const id = generateId();
   const now = new Date();
   const persistedSource = persistableDeploymentSource(create.source);
-  const timelineSnapshot = createDeploymentTaskTimelineForRunner({
-    runner: create.runner,
-    source: persistedSource,
-    status: "queued",
-    taskId: id,
-    updatedAt: now.toISOString(),
-  });
-
   const inheritedIdentities = cloneInheritedIdentities(create, predecessor);
-  let task: DeployTaskRow;
   try {
     const [inserted] = await ctx.db
       .insert(deployTasks)
@@ -384,14 +387,20 @@ export async function createDeployTaskAction(
         source: persistedSource,
         status: "queued",
         target: create.target,
-        timelineSnapshot,
+        timelineSnapshot: createDeploymentTaskTimelineForRunner({
+          runner: create.runner,
+          source: persistedSource,
+          status: "queued",
+          taskId: id,
+          updatedAt: now.toISOString(),
+        }),
         updatedAt: now,
       })
       .returning();
     if (inserted == null) {
       throw new Error("Failed to create deploy task.");
     }
-    task = inserted;
+    return inserted;
   } catch (error) {
     if (
       predecessor != null &&
@@ -411,6 +420,30 @@ export async function createDeployTaskAction(
       return { kind: "clone-conflict", activeClone: activeClone ?? null };
     }
     throw error;
+  }
+}
+
+export async function createDeployTaskAction(
+  ctx: DeployTaskEngineContext,
+  input: CreateDeployTaskActionInput
+): Promise<CreateDeployTaskActionResult> {
+  const resolved = await resolveCreateInputs(ctx, input);
+  if ("kind" in resolved) {
+    return resolved;
+  }
+  const { create, predecessor } = resolved;
+  const resolution = await resolveCreateProject(input, create);
+  if (resolution?.kind === "project-name-conflict") {
+    return resolution;
+  }
+
+  const task = await insertCreatedDeployTask(ctx, {
+    create,
+    predecessor,
+    resolvedProject: resolution,
+  });
+  if ("kind" in task) {
+    return task;
   }
 
   await ctx.db.insert(deployTaskMessages).values({
@@ -614,21 +647,15 @@ function isSubmittedScalar(value: unknown): value is string | number | boolean {
 function submittedInputValues(
   blockingInputs: DeployTaskBlockingInput[],
   values: Record<string, unknown>,
-  publicBlockingInputs: DeployTaskBlockingInput[],
-  strictPublicIdentifiers: boolean
+  options: { allowInternalIdFallback: boolean }
 ): Record<string, string | number | boolean> {
   return Object.fromEntries(
-    blockingInputs.flatMap((item, index) => {
+    blockingInputs.flatMap((item) => {
       const canonicalKey = item.key ?? item.id;
-      const publicInput = publicBlockingInputs[index];
-      const publicKey = publicInput?.key ?? publicInput?.id;
-      const candidates = strictPublicIdentifiers
-        ? [publicKey]
-        : [canonicalKey, item.id];
-      for (const candidate of new Set(candidates)) {
-        if (candidate == null) {
-          continue;
-        }
+      const candidates = options.allowInternalIdFallback
+        ? new Set([canonicalKey, item.id])
+        : [canonicalKey];
+      for (const candidate of candidates) {
         const value = values[candidate];
         if (isSubmittedScalar(value)) {
           return [[canonicalKey, value]];
@@ -664,17 +691,11 @@ function shortSensitiveSubmittedKey(
 
 function submittedEventInputKeys(input: {
   blockingInputs: DeployTaskBlockingInput[];
-  publicBlockingInputs: DeployTaskBlockingInput[];
   submittedValues: Record<string, string | number | boolean>;
 }): string[] {
-  return input.blockingInputs.flatMap((item, index) =>
+  return input.blockingInputs.flatMap((item) =>
     Object.hasOwn(input.submittedValues, item.key ?? item.id)
-      ? [
-          input.publicBlockingInputs[index]?.key ??
-            input.publicBlockingInputs[index]?.id ??
-            item.key ??
-            item.id,
-        ]
+      ? [item.key ?? item.id]
       : []
   );
 }
@@ -701,9 +722,9 @@ function hasUniqueCanonicalBlockingInputKeys(
 
 /**
  * Blocking Input submission performs the blocked → running claim itself and
- * hands values to the runner in process memory; only redacted key names are
- * ever persisted (ADR 0037). The legacy failed-at-configure resume path is
- * gone: blocked is the only waiting state.
+ * hands values to the runner in process memory; canonical key names may be
+ * persisted, but submitted values never are (ADR 0037). The legacy
+ * failed-at-configure resume path is gone: blocked is the only waiting state.
  */
 export async function submitDeployTaskInputAction(
   ctx: DeployTaskEngineContext,
@@ -726,7 +747,12 @@ export async function submitDeployTaskInputAction(
   }
   const publicBlockingInputs = publicDeployTaskBlockingInputs(
     currentBlockingInputs,
-    { runner: row.runner }
+    {
+      runner: row.runner,
+      trustedMetadata:
+        row.artifactSummary.publicProjectionVersion ===
+        CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    }
   );
   if (publicBlockingInputs.length !== currentBlockingInputs.length) {
     return {
@@ -738,8 +764,7 @@ export async function submitDeployTaskInputAction(
   const submittedValues = submittedInputValues(
     currentBlockingInputs,
     input.values,
-    publicBlockingInputs,
-    row.runner.kind === "ai"
+    { allowInternalIdFallback: row.runner.kind !== "ai" }
   );
   const submittedInputKeys = Object.keys(submittedValues);
   if (submittedInputKeys.length === 0) {
@@ -772,7 +797,6 @@ export async function submitDeployTaskInputAction(
   }
   const eventInputKeys = submittedEventInputKeys({
     blockingInputs: currentBlockingInputs,
-    publicBlockingInputs,
     submittedValues,
   });
 

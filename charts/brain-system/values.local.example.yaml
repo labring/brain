@@ -38,6 +38,10 @@ ui:
     NEXT_PUBLIC_APP_URL: ""
     # Leave empty to use the chart-created brain-pg KubeBlocks credential.
     DATABASE_URL: ""
+    # Required (ADR-0059): the region's cluster-shared app-token secret
+    # (sealos-system desktop-frontend config). Production boots fail fast
+    # when it is unset.
+    JWT_INTERNAL: "REPLACE_ME_CLUSTER_JWT_INTERNAL"
     GITHUB_APP_ID: "REPLACE_ME"
     GITHUB_APP_PRIVATE_KEY: "REPLACE_ME_PRIVATE_KEY"
     GITHUB_OAUTH_CLIENT_ID: "REPLACE_ME_OAUTH_CLIENT_ID"
@@ -59,6 +63,9 @@ ui:
     DEVBOX_JWT_TTL_SECONDS: "14400"
     # Storage ceiling for newly created deployment runtimes; existing Devboxes are unchanged.
     DEPLOY_DEVBOX_STORAGE_LIMIT: "10Gi"
+    # Optional. Leave empty for brain-deploy. Staging may use:
+    # https://github.com/labring/sealos-skills/tree/brain-deploy-preview
+    DEPLOY_SKILL_SOURCE: ""
 
 imagePullSecret:
   # App workload pods reference ghcr-cred when this chart creates it.

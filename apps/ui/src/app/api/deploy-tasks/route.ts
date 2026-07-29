@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getGithubConnectionStatusForWorkspaceActor } from "@/features/deploy/github/connection-service";
-import { CURRENT_GITHUB_OWNER_IDENTITY_VERSION } from "@/features/deploy/github/owner-identity";
+import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
+import {
+  adoptLegacyGithubConnectionForOwner,
+  getGithubConnectionStatusForOwner,
+} from "@/features/deploy/github/connection-service";
+import { verifiedGithubConnectionActor } from "@/features/deploy/github/owner-identity";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
@@ -9,7 +13,7 @@ import {
 import { createDeployTaskAction } from "@/features/deploy/task/engine/actions";
 import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
 import {
-  resolveDeploymentTaskTarget,
+  resolveDeployTaskTargetForCreate,
   runDeployTask,
 } from "@/features/deploy/task/runner";
 import {
@@ -28,6 +32,9 @@ import {
   createDeployTaskInputSchema,
   deployTaskStatusSchema,
 } from "@/features/deploy/task/types";
+import { appTokenFromRequest } from "@/lib/app-token";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
+import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -54,8 +61,15 @@ function jsonError(message: string, status: number, code?: string) {
   );
 }
 
+/**
+ * GitHub-source creation and redeploy are personal-resource authorization
+ * points (ADR-0059): the app token proves the initiator's `crName → userUid`
+ * binding before their uid-keyed active connection is bound to the task.
+ * Non-GitHub sources stay namespace-shared and never consult the token.
+ */
 async function resolveCredentialBinding(input: {
-  creatingActor?: string;
+  appToken: string;
+  encodedKubeconfig?: string;
   namespace: string;
   sourceKind?: DeploymentTaskSource["kind"];
 }): Promise<
@@ -65,20 +79,39 @@ async function resolveCredentialBinding(input: {
   if (input.sourceKind !== "github") {
     return {};
   }
-  if (input.creatingActor == null) {
+  const authorization = await authorizeWorkspaceActor({
+    appToken: input.appToken,
+    encodedKubeconfig: input.encodedKubeconfig,
+    expectedNamespace: input.namespace,
+    normalizeNamespace: normalizeAssistantNamespace,
+  });
+  if (!authorization.ok) {
     return {
       response: jsonError(
-        "A verified Workspace Actor is required for GitHub deployment.",
-        403,
-        "workspace_actor_required"
+        authorization.message,
+        authorization.status,
+        authorization.code
       ),
     };
   }
-  const connection = await getGithubConnectionStatusForWorkspaceActor({
-    namespace: input.namespace,
-    ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-    workspaceActor: input.creatingActor,
-  });
+  const actor = verifiedGithubConnectionActor(authorization);
+  // Every verified entry request first adopts the initiator's legacy
+  // generation-1 crName row into the uid owner (lazy re-key, ADR-0059).
+  try {
+    await adoptLegacyGithubConnectionForOwner(actor);
+  } catch (error) {
+    if (error instanceof IdentityBindingSupersededError) {
+      return {
+        response: jsonError(
+          "Authentication is required.",
+          401,
+          "app_token_superseded"
+        ),
+      };
+    }
+    throw error;
+  }
+  const connection = await getGithubConnectionStatusForOwner(actor.owner);
   if (connection == null) {
     return {
       response: jsonError(
@@ -91,7 +124,7 @@ async function resolveCredentialBinding(input: {
   return {
     credentialBinding: {
       connectionRef: connection.id,
-      credentialOwner: input.creatingActor,
+      credentialOwner: actor.owner.userUid,
       version: CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
     },
   };
@@ -186,7 +219,8 @@ export async function POST(request: Request) {
   const effectiveSource = parsed.data.source ?? predecessor?.source;
   const creatingActor = namespaceResolved.workspaceActor;
   const bindingResolution = await resolveCredentialBinding({
-    creatingActor,
+    appToken: appTokenFromRequest(request),
+    encodedKubeconfig: parsed.data.encodedKubeconfig,
     namespace: taskNamespace,
     sourceKind: effectiveSource?.kind,
   });
@@ -205,19 +239,7 @@ export async function POST(request: Request) {
       namespace: taskNamespace,
     },
     predecessorTaskId,
-    resolveTarget: async (resolveInput) => {
-      const resolved = await resolveDeploymentTaskTarget({
-        id: "",
-        namespace: resolveInput.namespace,
-        projectId: null,
-        projectName: null,
-        target: resolveInput.target,
-      });
-      return {
-        projectId: resolved.projectId,
-        projectName: resolved.projectName,
-      };
-    },
+    resolveTarget: resolveDeployTaskTargetForCreate,
     run: (handle, task) =>
       runDeployTask(handle, {
         encodedKubeconfig,
@@ -242,6 +264,14 @@ export async function POST(request: Request) {
       return jsonError(result.message, 400);
     case "predecessor-not-found":
       return jsonError("Deploy task predecessor not found", 404);
+    case "project-name-conflict":
+      // Only a caller-chosen name reaches here; derived names resolve their own
+      // collisions with a suffix (ADR 0058).
+      return jsonError(
+        `A project named "${result.displayName}" already exists.`,
+        409,
+        "project_name_conflict"
+      );
     case "predecessor-conflict":
       return NextResponse.json(
         {

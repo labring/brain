@@ -9,6 +9,7 @@ import (
 	"k8s.io/client-go/dynamic"
 
 	"sealos/api/middleware"
+	metricssvc "sealos/api/service/metrics"
 )
 
 var (
@@ -19,32 +20,33 @@ var (
 // ClusterAPResolver authorizes AP telemetry by reading the workload the metrics
 // describe with the *caller's* credentials. A successful GET proves both that the
 // workload exists and that Kubernetes RBAC grants the caller access to it — the same
-// gate the DB path already gets from ResolveDBEngine. Every failure (not found,
-// forbidden, kubeconfig unusable) is collapsed into ErrInvalidTarget so the endpoint
-// never distinguishes "exists but forbidden" from "does not exist", i.e. never becomes
-// a cross-namespace existence oracle.
+// gate the DB path already gets from ResolveDBEngine — and reports which controller
+// backs the AP, since pod naming (and thus query building) depends on it. Every
+// failure (not found, forbidden, kubeconfig unusable) is collapsed into
+// ErrInvalidTarget so the endpoint never distinguishes "exists but forbidden" from
+// "does not exist", i.e. never becomes a cross-namespace existence oracle.
 type ClusterAPResolver struct{}
 
-func (ClusterAPResolver) AuthorizeAPWorkload(ctx context.Context, auth string, namespace string, name string) error {
+func (ClusterAPResolver) ResolveAPWorkloadKind(ctx context.Context, auth string, namespace string, name string) (metricssvc.APWorkloadKind, error) {
 	restConfig, _, err := middleware.RestConfigFromAuth(auth)
 	if err != nil {
-		return ErrInvalidTarget
+		return "", ErrInvalidTarget
 	}
 	dyn, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
-		return ErrInvalidTarget
+		return "", ErrInvalidTarget
 	}
 
 	// An AP is backed by either a Deployment or a StatefulSet; a readable one of
 	// either kind authorizes the request. Mirror currentAPWorkload: a non-NotFound
 	// error on the first read (e.g. Forbidden) is a hard deny, not a reason to probe on.
 	if _, err := dyn.Resource(apDeploymentGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{}); err == nil {
-		return nil
+		return metricssvc.APWorkloadDeployment, nil
 	} else if !apierrors.IsNotFound(err) {
-		return ErrInvalidTarget
+		return "", ErrInvalidTarget
 	}
 	if _, err := dyn.Resource(apStatefulSetGVR).Namespace(namespace).Get(ctx, name, metav1.GetOptions{}); err == nil {
-		return nil
+		return metricssvc.APWorkloadStatefulSet, nil
 	}
-	return ErrInvalidTarget
+	return "", ErrInvalidTarget
 }

@@ -23,6 +23,7 @@ import {
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
 import { TemplateInputValidationError } from "@/features/deploy/template-renderer";
+import { deriveProjectDisplayName } from "@/features/projects/derived-project-display-name";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -47,7 +48,12 @@ import {
 import type { DevboxInfo } from "@/lib/devbox/types";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
-import { createProject, getProject } from "@/lib/project-persistence/projects";
+import {
+  createProject,
+  createProjectWithDerivedDisplayName,
+  getProject,
+  ProjectPersistenceError,
+} from "@/lib/project-persistence/projects";
 
 import {
   blockingInputsFromDeploymentPlan,
@@ -125,7 +131,6 @@ import {
 import {
   allSensitiveArgValues,
   isSensitiveDeploymentInput,
-  legacyAiInputAlias,
   MIN_SENSITIVE_INPUT_LENGTH,
   type SensitiveDeploymentInputShape,
   shortSensitiveArgKeys,
@@ -153,6 +158,11 @@ import {
   remainingDeploymentTimeoutMs,
   remainingDeploymentTimeoutSeconds,
 } from "./timeout-policy";
+import type {
+  DeploymentTaskSource,
+  DeploymentTaskTarget,
+  DeployTaskTargetResolution,
+} from "./types";
 
 const DEPLOY_DEVBOX_NAME_PREFIX = "sealai-deploy";
 const DEVBOX_RUNTIME_READY_POLL_MS = 2000;
@@ -1120,7 +1130,7 @@ function isDevboxSdkPendingError(error: unknown): error is DevboxApiError {
 
 type ResolvableDeploymentTaskTarget = Pick<
   DeployTaskRow,
-  "id" | "namespace" | "projectId" | "projectName" | "target"
+  "id" | "namespace" | "projectId" | "projectName" | "source" | "target"
 >;
 
 function deployFailureDetails(input: {
@@ -1199,11 +1209,21 @@ export async function resolveDeploymentTaskTarget(
   }
 
   if (task.target.kind === "newProject") {
-    const project = await createProject({
-      description: task.target.description,
-      displayName: task.target.displayName,
-      namespace: task.namespace,
-    });
+    const displayName = task.target.displayName?.trim();
+    // Two channels, no third mode (ADR 0058): an absent name is derived from
+    // the Deployment Source and suffixed on collision; a supplied one is used
+    // verbatim and a collision surfaces as a conflict.
+    const project = displayName
+      ? await createProject({
+          description: task.target.description,
+          displayName,
+          namespace: task.namespace,
+        })
+      : await createProjectWithDerivedDisplayName({
+          derivedDisplayName: deriveProjectDisplayName(task.source),
+          description: task.target.description,
+          namespace: task.namespace,
+        });
     return {
       createdProject: true,
       projectId: project.id,
@@ -1221,6 +1241,49 @@ export async function resolveDeploymentTaskTarget(
     projectId: project.id,
     projectName,
   };
+}
+
+/**
+ * Creation-time wrapper shared by every entry point that opens a Deployment
+ * Task, so a caller-chosen Project Display Name that is already taken becomes a
+ * reportable conflict rather than an unhandled failure (ADR 0058).
+ */
+export async function resolveDeployTaskTargetForCreate(input: {
+  namespace: string;
+  source: DeploymentTaskSource;
+  target: DeploymentTaskTarget;
+}): Promise<DeployTaskTargetResolution> {
+  const explicitDisplayName =
+    input.target.kind === "newProject"
+      ? input.target.displayName?.trim()
+      : undefined;
+  try {
+    const resolved = await resolveDeploymentTaskTarget({
+      id: "",
+      namespace: input.namespace,
+      projectId: null,
+      projectName: null,
+      source: input.source,
+      target: input.target,
+    });
+    return {
+      kind: "resolved",
+      projectId: resolved.projectId,
+      projectName: resolved.projectName,
+    };
+  } catch (error) {
+    if (
+      explicitDisplayName &&
+      error instanceof ProjectPersistenceError &&
+      error.code === "conflict"
+    ) {
+      return {
+        displayName: explicitDisplayName,
+        kind: "project-name-conflict",
+      };
+    }
+    throw error;
+  }
 }
 
 function databaseChoice(databaseId: string): DatabaseDeploymentChoice {
@@ -2473,6 +2536,17 @@ function assertPersistableSensitiveValues(values: readonly string[]): void {
   }
 }
 
+function assertResumableTemplateHasNoSensitiveValues(
+  templateYaml: string,
+  sensitiveValues: readonly string[]
+): void {
+  if (scrubSensitiveText(templateYaml, sensitiveValues) !== templateYaml) {
+    throw new Error(
+      "Generated deployment template contains a sensitive value outside a declared sensitive input."
+    );
+  }
+}
+
 function assertSensitiveInputLengths(input: {
   args: Record<string, string>;
   sensitiveInputs: readonly SensitiveDeploymentInputShape[];
@@ -2527,6 +2601,16 @@ export function persistableAiDeployOutput(input: {
     ]),
   ];
   assertPersistableSensitiveValues(sensitiveValues);
+  const resumableTemplateYaml = persistableTemplate?.templateYaml;
+  if (resumableTemplateYaml != null) {
+    // This template is the source for a later blocked-input resume. It must
+    // remain valid YAML, so reject leaked values instead of text-replacing
+    // them with a placeholder that could alter the YAML value's type.
+    assertResumableTemplateHasNoSensitiveValues(
+      resumableTemplateYaml,
+      sensitiveValues
+    );
+  }
   const deliveryManifest = scrubSensitiveJsonValue(
     {
       ...input.deliveryManifest,
@@ -2535,18 +2619,21 @@ export function persistableAiDeployOutput(input: {
     sensitiveValues
   );
   const output =
-    persistableTemplate == null
+    resumableTemplateYaml == null
       ? input.output
-      : {
-          ...input.output,
-          templateYaml: persistableTemplate.templateYaml,
-        };
+      : { ...input.output, templateYaml: resumableTemplateYaml };
+  const outputJson = scrubSensitiveJsonValue<Record<string, unknown>>(
+    { ...output, deliveryManifest },
+    sensitiveValues
+  );
+  // `outputJson` is otherwise scrubbed recursively. Restore the already
+  // validated source template so it remains executable on a later form submit.
+  if (resumableTemplateYaml != null) {
+    outputJson.templateYaml = resumableTemplateYaml;
+  }
   return {
     deliveryManifest,
-    outputJson: scrubSensitiveJsonValue(
-      { ...output, deliveryManifest },
-      sensitiveValues
-    ),
+    outputJson,
     sensitiveInputs,
     sensitiveValues,
   };
@@ -2619,7 +2706,7 @@ async function reblockRejectedSubmittedAiInput(input: {
   if (rejectedInput == null) {
     return false;
   }
-  const eventInputKey = legacyAiInputAlias(rejectedInputIndex);
+  const eventInputKey = rejectedInput.key ?? rejectedInput.id;
   await recordDeployTaskEvent(input.task.id, {
     kind: "deployment_task.input_rejected",
     message: "A deployment configuration value was rejected.",

@@ -24,6 +24,7 @@ import {
 } from "@/features/chat/persistence/free-tier-core";
 import {
   acquireChatStreamLease,
+  adoptLegacyAssistantConversationsForActor,
   type ChatStreamLease,
   commitChatMessagesIfLeaseOwned,
   ensureAssistantThreadForOwner,
@@ -44,6 +45,7 @@ import {
   isAssistantContinuationMessage,
   isPersistedUIMessage,
   normalizeAssistantNamespace,
+  type VerifiedAssistantConversationActor,
 } from "@/features/chat/persistence/types";
 import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
 import {
@@ -59,12 +61,12 @@ import {
 } from "@/features/chat/runtime/model";
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
+import { appTokenFromRequest } from "@/lib/app-token";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
+import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 
-export const maxDuration = 120;
-
-const CHAT_STREAM_TIMEOUT_MS = 110_000;
 const CHAT_TITLE_TIMEOUT_MS = 5000;
 
 const INTERRUPTED_TOOL_ERROR =
@@ -527,19 +529,24 @@ async function cleanUpFailedChatPipeline(input: {
 }
 
 async function runChatPipeline(input: {
+  actor: VerifiedAssistantConversationActor;
   kubeconfig: string;
-  owner: AssistantConversationOwner;
   request: ChatStreamRequest;
   requestAbortSignal: AbortSignal;
 }): Promise<Response> {
   const { assistantContext, chatId, encodedKubeconfig, message } =
     input.request;
-  const { kubeconfig, owner, requestAbortSignal } = input;
+  const { actor, kubeconfig, requestAbortSignal } = input;
+  const owner = actor.owner;
   let ownedLease: ChatStreamLease | null = null;
   let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
   try {
-    const threadReady = await ensureAssistantThreadForOwner(chatId, owner);
+    // Adopt before the thread ensure: continuing a legacy crName-keyed
+    // conversation must find the re-keyed row instead of refusing its id.
+    await adoptLegacyAssistantConversationsForActor(actor);
+
+    const threadReady = await ensureAssistantThreadForOwner(chatId, actor);
     if (!threadReady) {
       return jsonError("Assistant conversation not found.", 404);
     }
@@ -562,11 +569,14 @@ async function runChatPipeline(input: {
 
     // Complete every fallible runtime preflight before committing an approval
     // or browser-tool continuation. A failed preflight must remain retryable.
+    // The toolset's deploy-task actor stays the per-region crName: chat
+    // deploy tools perform only namespace-shared actions, which record the
+    // kubeconfig-verified identity (AIM-154 keeps them token-free).
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
       kubeconfig,
       kubernetesNamespace: owner.namespace,
-      workspaceActor: owner.workspaceActor,
+      workspaceActor: actor.legacyWorkspaceActor,
     });
 
     const openAi = await resolveChatOpenAiConnection({
@@ -617,9 +627,12 @@ async function runChatPipeline(input: {
       initialLease: ownedLease,
       renew: renewOwnedChatStreamLease,
     });
+    // No wall-clock ceiling: the turn ends when the client disconnects or the
+    // stream lease is lost. A fixed deadline only manufactured interrupted
+    // tools, since a cold Devbox plus one command already exceeds any value
+    // small enough to be useful.
     const streamAbortSignal = AbortSignal.any([
       requestAbortSignal,
-      AbortSignal.timeout(CHAT_STREAM_TIMEOUT_MS),
       leaseAbortController.signal,
     ]);
 
@@ -687,6 +700,11 @@ async function runChatPipeline(input: {
       lease: ownedLease,
       rollbackAssistant,
     });
+    if (error instanceof IdentityBindingSupersededError) {
+      // The binding was superseded by an account merge mid-request; the
+      // desktop re-login loop re-mints a current token (ADR-0059).
+      return jsonError("Authentication is required.", 401);
+    }
     console.error("[api/chat] pipeline:", error);
     return jsonError(
       "Could not handle chat request (DATABASE_URL, schema migrations, or upstream).",
@@ -707,6 +725,7 @@ export async function POST(req: Request) {
   }
 
   const authorization = await authorizeWorkspaceActor({
+    appToken: appTokenFromRequest(req),
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     expectedNamespace: parsed.data.namespace.trim() || undefined,
     normalizeNamespace: normalizeAssistantNamespace,
@@ -714,17 +733,15 @@ export async function POST(req: Request) {
   if (!authorization.ok) {
     return jsonError(authorization.message, authorization.status);
   }
-  const owner: AssistantConversationOwner = {
-    namespace: authorization.namespace,
-    workspaceActor: authorization.workspaceActor,
-  };
+  const actor: VerifiedAssistantConversationActor =
+    verifiedPersonalResourceActor(authorization);
   const kubeconfig = decodeKubeconfig(parsed.data.encodedKubeconfig);
   if (kubeconfig == null) {
     return jsonError("Authentication is required.", 401);
   }
   return runChatPipeline({
+    actor,
     kubeconfig,
-    owner,
     request: parsed.data,
     requestAbortSignal: req.signal,
   });

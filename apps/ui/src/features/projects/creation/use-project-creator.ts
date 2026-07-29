@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
-import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import type { DatabaseDeploymentSettings } from "@/features/deploy/database-deployer";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
 import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
@@ -19,6 +18,7 @@ import {
   runDeploymentTargetPipeline,
 } from "@/features/deploy/pipeline";
 import type { TemplateDeploymentSettings } from "@/features/deploy/template-deployer";
+import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import { requestAssistantDraftThread } from "@/features/panes/layout-store";
 import type { ProjectCreatorRootProps } from "@/features/projects/creation/creator/project-creator.context";
@@ -27,19 +27,13 @@ import type {
   ProjectCreatorDatabaseChoice,
   ProjectCreatorSourceKind,
 } from "@/features/projects/creation/creator/project-creator.types";
-import { deriveDatabaseProjectDisplayName } from "@/features/projects/creation/database-project-display-name";
-import { deriveDockerProjectDisplayName } from "@/features/projects/creation/docker-project-display-name";
-import { deriveGithubProjectDisplayName } from "@/features/projects/creation/github-project-display-name";
 import {
   initialProjectCreationPaneState,
   type ProjectCreationPaneEntryMode,
   projectCreationPaneStateReducer,
 } from "@/features/projects/creation/project-creation-pane-state";
-import { deriveTemplateProjectDisplayName } from "@/features/projects/creation/template-project-display-name";
-import type { ProjectExplorerProject } from "@/features/projects/explorer/project-explorer";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
-const EMPTY_PROJECTS: readonly ProjectExplorerProject[] = [];
 const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [
   "github",
   "docker-image",
@@ -85,7 +79,6 @@ type CreatorRootPropsForCreationPane = Pick<
   | "confirmApplying"
   | "databaseOptions"
   | "enabledSources"
-  | "existingProjectDisplayNames"
   | "githubDeployer"
   | "initialTemplateArgs"
   | "initialTemplateName"
@@ -99,8 +92,6 @@ export interface ProjectCreatedContext {
 }
 
 export interface UseProjectCreatorOptions {
-  /** Existing Project rows in the namespace, used for display-name uniqueness checks. */
-  existingProjects?: readonly ProjectExplorerProject[];
   /** Kubeconfig used by product APIs when set (same kubeconfig as explorer). */
   kubeconfig?: string;
   /** Target namespace for rendered product manifests. */
@@ -134,7 +125,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   const kubeconfig = options?.kubeconfig?.trim() ?? "";
   const namespace = options?.namespace?.trim() ?? "";
   const onProjectCreated = options?.onProjectCreated;
-  const existingProjects = options?.existingProjects ?? EMPTY_PROJECTS;
   const hasKubeconfig = kubeconfig !== "";
 
   const [creationPaneState, dispatchCreationPaneState] = useReducer(
@@ -235,10 +225,10 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     []
   );
 
-  const deploymentAdapters = useMemo(
-    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
-    [kubeconfig, namespace]
-  );
+  const deploymentAdapters = useDeploymentTargetAdapters({
+    kubeconfig,
+    namespace,
+  });
 
   const runDeployment = useCallback(
     (request: Parameters<typeof runDeploymentTargetPipeline>[0]["request"]) =>
@@ -248,17 +238,10 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           hasKubeconfig &&
           namespace !== "" &&
           (request.kind !== "github" || githubAuthorized),
-        existingProjects,
         namespace,
         request,
       }),
-    [
-      deploymentAdapters,
-      existingProjects,
-      githubAuthorized,
-      hasKubeconfig,
-      namespace,
-    ]
+    [deploymentAdapters, githubAuthorized, hasKubeconfig, namespace]
   );
   const completeProjectCreation = useCallback(
     (
@@ -285,46 +268,21 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
 
   const actions = useMemo<ProjectCreatorActions>(
     () => ({
-      deriveDatabaseProjectDisplayName: (choice) =>
-        deriveDatabaseProjectDisplayName({
-          choice,
-          existingProjectDisplayNames: existingProjects.map(
-            (project) => project.name
-          ),
-        }),
-      deriveDockerProjectDisplayName: (imageRef: string) =>
-        deriveDockerProjectDisplayName({
-          existingProjectDisplayNames: existingProjects.map(
-            (project) => project.name
-          ),
-          imageRef,
-        }),
-      deriveTemplateProjectDisplayName: (choice) =>
-        deriveTemplateProjectDisplayName({
-          choice,
-          existingProjectDisplayNames: existingProjects.map(
-            (project) => project.name
-          ),
-        }),
       onDockerConfirm: async (
         settings: DockerDeploymentSettings,
-        projectDisplayName,
         projectDescription
       ) => {
-        const displayName = projectDisplayName.trim();
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
           const outcome = await runDeployment({
             kind: "docker",
             settings,
-            target: newProjectDeploymentTarget(displayName, description),
+            target: newProjectDeploymentTarget(description),
           });
           if (outcome.kind !== "docker") {
             return;
           }
-          toast.success(
-            `Created deployment task for project "${displayName}".`
-          );
+          toast.success(outcome.taskMessage);
           setLastConfirmedKind(
             `docker:${settings.image}:${outcome.projectName}`
           );
@@ -334,23 +292,19 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       },
       onDatabaseConfirm: async (
         settings: DatabaseDeploymentSettings,
-        projectDisplayName,
         projectDescription
       ) => {
-        const displayName = projectDisplayName.trim();
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
           const outcome = await runDeployment({
             kind: "database",
             settings,
-            target: newProjectDeploymentTarget(displayName, description),
+            target: newProjectDeploymentTarget(description),
           });
           if (outcome.kind !== "database") {
             return;
           }
-          toast.success(
-            `Created deployment task for project "${displayName}".`
-          );
+          toast.success(outcome.taskMessage);
           setLastConfirmedKind(
             `database:${settings.databaseId}:${outcome.projectName}`
           );
@@ -361,25 +315,21 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       onTemplateConfirm: async (
         settings: TemplateDeploymentSettings,
         choice,
-        projectDisplayName,
         projectDescription
       ) => {
-        const displayName = projectDisplayName.trim();
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
           const outcome = await runDeployment({
             args: settings.args,
             kind: "template",
             sensitiveKeys: settings.sensitiveKeys,
-            target: newProjectDeploymentTarget(displayName, description),
+            target: newProjectDeploymentTarget(description),
             templateName: settings.templateName,
           });
           if (outcome.kind !== "template") {
             return;
           }
-          toast.success(
-            `Created deployment task for project "${displayName}".`
-          );
+          toast.success(outcome.taskMessage);
           setLastConfirmedKind(
             `template:${choice.name}:${outcome.projectName}`
           );
@@ -387,18 +337,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           await completeProjectCreation(outcome);
         });
       },
-      onGithubConfirm: async (
-        repo: GithubDeployerRepo,
-        projectDisplayName,
-        projectDescription
-      ) => {
-        const displayName = projectDisplayName.trim();
+      onGithubConfirm: async (repo: GithubDeployerRepo, projectDescription) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
           const outcome = await runDeployment({
             kind: "github",
             repository: repo,
-            target: newProjectDeploymentTarget(displayName, description),
+            target: newProjectDeploymentTarget(description),
           });
           if (outcome.kind !== "github") {
             return;
@@ -412,27 +357,16 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         });
       },
     }),
-    [
-      applyWithBusyState,
-      completeProjectCreation,
-      existingProjects,
-      runDeployment,
-    ]
+    [applyWithBusyState, completeProjectCreation, runDeployment]
   );
 
   const handleGithubDeploy = useCallback(
     async (repo: GithubDeployerRepo) => {
-      const displayName = deriveGithubProjectDisplayName({
-        existingProjectDisplayNames: existingProjects.map(
-          (project) => project.name
-        ),
-        repository: repo,
-      });
       await applyWithBusyState(async () => {
         const outcome = await runDeployment({
           kind: "github",
           repository: repo,
-          target: newProjectDeploymentTarget(displayName),
+          target: newProjectDeploymentTarget(),
         });
         if (outcome.kind !== "github") {
           return;
@@ -445,12 +379,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         await completeProjectCreation(outcome);
       });
     },
-    [
-      applyWithBusyState,
-      completeProjectCreation,
-      existingProjects,
-      runDeployment,
-    ]
+    [applyWithBusyState, completeProjectCreation, runDeployment]
   );
 
   const handleGithubDisconnect = useCallback(async () => {
@@ -485,18 +414,12 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         toast.error("Template recommendation is no longer valid.");
         return;
       }
-      const displayName = deriveGithubProjectDisplayName({
-        existingProjectDisplayNames: existingProjects.map(
-          (project) => project.name
-        ),
-        repository: input.repo,
-      });
       await applyWithBusyState(async () => {
         const outcome = await runDeployment({
           args: input.settings.args,
           kind: "template",
           sensitiveKeys: input.settings.sensitiveKeys,
-          target: newProjectDeploymentTarget(displayName),
+          target: newProjectDeploymentTarget(),
           templateName: input.settings.templateName,
         });
         if (outcome.kind !== "template") {
@@ -513,7 +436,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     [
       applyWithBusyState,
       completeProjectCreation,
-      existingProjects,
       runDeployment,
       catalogTemplates,
     ]
@@ -560,9 +482,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       actions,
       confirmApplying,
       databaseOptions,
-      existingProjectDisplayNames: existingProjects.map(
-        (project) => project.name
-      ),
       enabledSources: CREATION_PANE_SOURCES,
       githubDeployer,
       ...(creationPaneState.entryMode === "templateDirect" &&
@@ -583,7 +502,6 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       actions,
       confirmApplying,
       databaseOptions,
-      existingProjects,
       githubDeployer,
       creationPaneState.entryMode,
       creationPaneState.templateArgs,

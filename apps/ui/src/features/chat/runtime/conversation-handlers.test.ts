@@ -1,11 +1,28 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { SignJWT } from "jose";
+
 import type { AssistantThreadDTO } from "../persistence/types";
 import {
   type AssistantConversationHandlerDependencies,
   createAssistantConversationHandlers,
 } from "./conversation-handlers";
+
+const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
+const APP_TOKEN_CONFIG = {
+  secret: APP_TOKEN_SECRET,
+};
+
+function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
+  return new SignJWT({
+    userCrName: crName,
+    userUid: `${crName}-uid`,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(1_753_600_000)
+    .sign(new TextEncoder().encode(secret));
+}
 
 function jwt(subject: string): string {
   const header = Buffer.from(
@@ -38,10 +55,15 @@ users:
 `);
 }
 
-function authorizedRequest(path: string, workspaceActor: string): Request {
+async function authorizedRequest(
+  path: string,
+  workspaceActor: string,
+  appToken?: string
+): Promise<Request> {
   return new Request(`https://brain.test${path}`, {
     headers: {
       Authorization: `Bearer ${encodedKubeconfig("shared", workspaceActor)}`,
+      "X-Sealos-App-Token": appToken ?? (await mintAppToken(workspaceActor)),
     },
   });
 }
@@ -50,8 +72,11 @@ function handlerDependencies(
   overrides: Partial<AssistantConversationHandlerDependencies> = {}
 ): AssistantConversationHandlerDependencies {
   return {
+    adoptLegacyConversations: () => Promise.resolve(),
+    appTokenConfig: APP_TOKEN_CONFIG,
     bootstrap: () => Promise.reject(new Error("not used")),
     list: () => Promise.resolve([]),
+    observeFingerprint: () => Promise.resolve({ outcome: "match" }),
     read: () => Promise.resolve(null),
     verify: () => Promise.resolve({ ok: true }),
     ...overrides,
@@ -65,10 +90,10 @@ test("conversation handlers expose message reads without an unfenced write handl
   assert.equal("messagesPost" in handlers, false);
 });
 
-test("conversation listing ignores a spoofed user id and returns only the verified actor's threads", async () => {
+test("conversation listing keys the owner by the token-proven userUid, ignoring a spoofed user id", async () => {
   const threads = new Map<string, AssistantThreadDTO[]>([
     [
-      "shared:alice-cr",
+      "shared:alice-cr-uid",
       [
         {
           id: "alice-chat",
@@ -79,7 +104,7 @@ test("conversation listing ignores a spoofed user id and returns only the verifi
       ],
     ],
     [
-      "shared:bob-cr",
+      "shared:bob-cr-uid",
       [
         {
           id: "bob-chat",
@@ -94,13 +119,13 @@ test("conversation listing ignores a spoofed user id and returns only the verifi
     handlerDependencies({
       list: (owner) =>
         Promise.resolve(
-          threads.get(`${owner.namespace}:${owner.workspaceActor}`) ?? []
+          threads.get(`${owner.namespace}:${owner.userUid}`) ?? []
         ),
     })
   );
 
   const response = await handlers.threads(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/threads?namespace=shared&userId=bob-cr",
       "alice-cr"
     )
@@ -108,8 +133,83 @@ test("conversation listing ignores a spoofed user id and returns only the verifi
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    threads: threads.get("shared:alice-cr"),
+    threads: threads.get("shared:alice-cr-uid"),
   });
+});
+
+test("every verified entry request adopts the actor's legacy conversations before reading them", async () => {
+  const calls: string[] = [];
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      adoptLegacyConversations: (actor) => {
+        calls.push(
+          `adopt:${actor.legacyWorkspaceActor}->` +
+            `${actor.owner.namespace}:${actor.owner.userUid}`
+        );
+        return Promise.resolve();
+      },
+      bootstrap: (owner) => {
+        calls.push(`bootstrap:${owner.namespace}:${owner.userUid}`);
+        return Promise.resolve({
+          chatId: "bootstrap-chat",
+          freeTier: { billing: "free" as const, limit: 10, remaining: 7 },
+          messages: [],
+          threads: [],
+        });
+      },
+      list: (owner) => {
+        calls.push(`list:${owner.namespace}:${owner.userUid}`);
+        return Promise.resolve([]);
+      },
+      read: (owner) => {
+        calls.push(`read:${owner.namespace}:${owner.userUid}`);
+        return Promise.resolve([]);
+      },
+    })
+  );
+
+  const entries: [string, (request: Request) => Promise<Response>][] = [
+    ["/api/chat/threads?namespace=shared", handlers.threads],
+    ["/api/chat/session?namespace=shared", handlers.session],
+    [
+      "/api/chat/messages?namespace=shared&chatId=any-chat",
+      handlers.messagesGet,
+    ],
+  ];
+  for (const [path, handler] of entries) {
+    const response = await handler(await authorizedRequest(path, "alice-cr"));
+    assert.equal(response.status, 200);
+  }
+
+  assert.deepEqual(calls, [
+    "adopt:alice-cr->shared:alice-cr-uid",
+    "list:shared:alice-cr-uid",
+    "adopt:alice-cr->shared:alice-cr-uid",
+    "bootstrap:shared:alice-cr-uid",
+    "adopt:alice-cr->shared:alice-cr-uid",
+    "read:shared:alice-cr-uid",
+  ]);
+});
+
+test("an adoption failure surfaces as unavailable persistence without a partial read", async () => {
+  let listed = false;
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      adoptLegacyConversations: () =>
+        Promise.reject(new Error("database unavailable")),
+      list: () => {
+        listed = true;
+        return Promise.resolve([]);
+      },
+    })
+  );
+
+  const response = await handlers.threads(
+    await authorizedRequest("/api/chat/threads?namespace=shared", "alice-cr")
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal(listed, false);
 });
 
 test("conversation bootstrap is scoped to the verified actor", async () => {
@@ -117,15 +217,13 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
     handlerDependencies({
       bootstrap: (owner) =>
         Promise.resolve({
-          chatId: `${owner.workspaceActor}-chat`,
+          chatId: `${owner.userUid}-chat`,
           freeTier: { billing: "free", limit: 10, remaining: 7 },
           messages: [
             {
-              id: `${owner.workspaceActor}-message`,
+              id: `${owner.userUid}-message`,
               role: "assistant",
-              parts: [
-                { type: "text", text: `${owner.workspaceActor} content` },
-              ],
+              parts: [{ type: "text", text: `${owner.userUid} content` }],
             },
           ],
           threads: [],
@@ -134,7 +232,7 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
   );
 
   const response = await handlers.session(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/session?namespace=shared&userId=bob-cr",
       "alice-cr"
     )
@@ -142,13 +240,13 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    chatId: "alice-cr-chat",
+    chatId: "alice-cr-uid-chat",
     freeTier: { billing: "free", limit: 10, remaining: 7 },
     messages: [
       {
-        id: "alice-cr-message",
+        id: "alice-cr-uid-message",
         role: "assistant",
-        parts: [{ type: "text", text: "alice-cr content" }],
+        parts: [{ type: "text", text: "alice-cr-uid content" }],
       },
     ],
     threads: [],
@@ -158,7 +256,7 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
 test("reading another member's conversation is indistinguishable from a missing conversation", async () => {
   const privateMessages = new Map([
     [
-      "shared:bob-cr:bob-chat",
+      "shared:bob-cr-uid:bob-chat",
       [
         {
           id: "bob-secret-message",
@@ -173,20 +271,20 @@ test("reading another member's conversation is indistinguishable from a missing 
       read: (owner, chatId) =>
         Promise.resolve(
           privateMessages.get(
-            `${owner.namespace}:${owner.workspaceActor}:${chatId}`
+            `${owner.namespace}:${owner.userUid}:${chatId}`
           ) ?? null
         ),
     })
   );
 
   const foreign = await handlers.messagesGet(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/messages?namespace=shared&chatId=bob-chat",
       "alice-cr"
     )
   );
   const missing = await handlers.messagesGet(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/messages?namespace=shared&chatId=missing-chat",
       "alice-cr"
     )
@@ -214,12 +312,88 @@ test("a cross-namespace conversation request is forbidden before storage access"
   );
 
   const response = await handlers.threads(
-    authorizedRequest(
+    await authorizedRequest(
       "/api/chat/threads?namespace=another-workspace",
       "alice-cr"
     )
   );
 
   assert.equal(response.status, 403);
+  assert.equal(listed, false);
+});
+
+test("personal conversation routes return 401 without the app token header", async () => {
+  let listed = false;
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      list: () => {
+        listed = true;
+        return Promise.resolve([]);
+      },
+    })
+  );
+
+  const response = await handlers.threads(
+    new Request("https://brain.test/api/chat/threads?namespace=shared", {
+      headers: {
+        Authorization: `Bearer ${encodedKubeconfig("shared", "alice-cr")}`,
+      },
+    })
+  );
+
+  assert.equal(response.status, 401);
+  assert.equal(listed, false);
+});
+
+test("an app token signed with the wrong secret is refused with 401", async () => {
+  const handlers = createAssistantConversationHandlers(handlerDependencies());
+
+  const response = await handlers.session(
+    await authorizedRequest(
+      "/api/chat/session?namespace=shared",
+      "alice-cr",
+      await mintAppToken("alice-cr", "attacker-secret")
+    )
+  );
+
+  assert.equal(response.status, 401);
+});
+
+test("an app token bound to another actor is refused with 403", async () => {
+  const handlers = createAssistantConversationHandlers(handlerDependencies());
+
+  const response = await handlers.session(
+    await authorizedRequest(
+      "/api/chat/session?namespace=shared",
+      "alice-cr",
+      await mintAppToken("bob-cr")
+    )
+  );
+
+  assert.equal(response.status, 403);
+});
+
+test("a binding superseded by an account merge is refused with 401 before any read", async () => {
+  let listed = false;
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      list: () => {
+        listed = true;
+        return Promise.resolve([]);
+      },
+      observeFingerprint: () =>
+        Promise.resolve({
+          observedMintedAt: 1_753_700_000,
+          observedUserUid: "surviving-uid",
+          outcome: "superseded",
+        }),
+    })
+  );
+
+  const response = await handlers.threads(
+    await authorizedRequest("/api/chat/threads?namespace=shared", "alice-cr")
+  );
+
+  assert.equal(response.status, 401);
   assert.equal(listed, false);
 });

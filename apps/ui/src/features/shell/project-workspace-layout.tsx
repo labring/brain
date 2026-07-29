@@ -107,7 +107,8 @@ import {
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
 import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
-import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { appTokenRequestHeaders } from "@/lib/app-token-header";
+import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
@@ -392,6 +393,7 @@ function ProjectAssistantChatSession({
   const router = useRouter();
   const projectSurfaceRouter = useProjectSidePaneAssistantRouter();
   const { mutate: revalidateScopeSwr } = useSWRConfig();
+  const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
   const chatId = bootstrap.chatId;
@@ -460,10 +462,16 @@ function ProjectAssistantChatSession({
             wire.projectId
           );
 
+          const headersWithAppToken = new Headers(headers);
+          for (const [name, value] of Object.entries(
+            appTokenRequestHeaders(appToken)
+          )) {
+            headersWithAppToken.set(name, value);
+          }
           return {
             api,
             credentials,
-            headers,
+            headers: headersWithAppToken,
             body: {
               ...(body && typeof body === "object" ? body : {}),
               ...(assistantContext == null ? {} : { assistantContext }),
@@ -475,7 +483,7 @@ function ProjectAssistantChatSession({
           };
         },
       }),
-    [currentProject.displayName, kubeconfig, transportToken]
+    [appToken, currentProject.displayName, kubeconfig, transportToken]
   );
 
   const {
@@ -713,6 +721,7 @@ function ProjectAssistantChatSession({
 
 function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
+  const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespaceReady = isAssistantChatNamespaceReady(namespaceRaw);
   const sidePaneRouter = useProjectSidePaneAssistantRouter();
@@ -722,7 +731,7 @@ function ProjectAssistantChatPane() {
   const assistantStateRefreshSequenceRef = useRef(0);
   const prevBillingRef = useRef<"free" | "user" | null>(null);
 
-  const sessionResetKey = `${kubeconfig}\u0000${namespaceRaw}\u0000${namespaceReady}`;
+  const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}`;
   const [prevSessionResetKey, setPrevSessionResetKey] =
     useState(sessionResetKey);
   if (prevSessionResetKey !== sessionResetKey) {
@@ -741,7 +750,11 @@ function ProjectAssistantChatPane() {
       return;
     }
 
-    fetchAssistantSession(namespaceRaw, kubeconfig).then((payload) => {
+    fetchAssistantSession({
+      appToken,
+      kubeconfig,
+      namespace: namespaceRaw,
+    }).then((payload) => {
       if (cancelled) {
         return;
       }
@@ -758,7 +771,7 @@ function ProjectAssistantChatPane() {
       cancelled = true;
       assistantStateRefreshSequenceRef.current += 1;
     };
-  }, [kubeconfig, namespaceRaw, namespaceReady]);
+  }, [appToken, kubeconfig, namespaceRaw, namespaceReady]);
 
   const handleBillingHeaders = useCallback((headers: Headers) => {
     const billingHeader = headers.get("X-Chat-Billing");
@@ -791,11 +804,11 @@ function ProjectAssistantChatPane() {
       if (threadId === session?.chatId) {
         return;
       }
-      const messages = await fetchAssistantThreadMessages(
-        threadId,
-        namespaceRaw,
-        kubeconfig
-      );
+      const messages = await fetchAssistantThreadMessages(threadId, {
+        appToken,
+        kubeconfig,
+        namespace: namespaceRaw,
+      });
       if (messages == null) {
         return;
       }
@@ -803,7 +816,7 @@ function ProjectAssistantChatPane() {
         prev == null ? prev : { ...prev, chatId: threadId, messages }
       );
     },
-    [kubeconfig, namespaceRaw, session?.chatId]
+    [appToken, kubeconfig, namespaceRaw, session?.chatId]
   );
 
   // The verified actor is bound when the first message materializes this draft.
@@ -828,7 +841,11 @@ function ProjectAssistantChatPane() {
   const refreshAssistantState = useCallback(async () => {
     const sequence = assistantStateRefreshSequenceRef.current + 1;
     assistantStateRefreshSequenceRef.current = sequence;
-    const refreshed = await fetchAssistantSession(namespaceRaw, kubeconfig);
+    const refreshed = await fetchAssistantSession({
+      appToken,
+      kubeconfig,
+      namespace: namespaceRaw,
+    });
     if (
       refreshed == null ||
       sequence !== assistantStateRefreshSequenceRef.current
@@ -848,7 +865,7 @@ function ProjectAssistantChatPane() {
       });
     }
     prevBillingRef.current = refreshed.freeTier.billing;
-  }, [kubeconfig, namespaceRaw]);
+  }, [appToken, kubeconfig, namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {
     sidePaneRouter
