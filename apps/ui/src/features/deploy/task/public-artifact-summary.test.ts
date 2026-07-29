@@ -516,6 +516,83 @@ test("trusted public AI timeline strips output summaries from every dedupe key",
   assert.equal(timeline.steps[0]?.events[0]?.dedupeKey, outputPartialDedupeKey);
 });
 
+test("public AI result cards retain safe status and timeout events", () => {
+  const privateText = "private-resource-observation";
+  const cardId = "AP:ns-demo:demo";
+  const timeline = {
+    publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+    revision: 4,
+    status: "running",
+    steps: [
+      {
+        events: [],
+        id: "create-resources",
+        label: "Create resources",
+        order: 3,
+        resultCards: [
+          {
+            events: [
+              {
+                createdAt: "2026-07-23T00:00:00.000Z",
+                dedupeKey: `${cardId}:running:${privateText}`,
+                id: "card-status",
+                message: privateText,
+                reason: "APWorkloadReadiness",
+                severity: "success",
+                source: "resource-observer",
+              },
+              {
+                createdAt: "2026-07-23T00:00:01.000Z",
+                dedupeKey: `${cardId}:timeout`,
+                id: "card-timeout",
+                message: privateText,
+                reason: "ResourceReadinessTimeout",
+                severity: "error",
+                source: "resource-observer",
+              },
+              {
+                createdAt: "2026-07-23T00:00:02.000Z",
+                dedupeKey: `${cardId}:unknown-private-event`,
+                id: "card-unknown",
+                message: privateText,
+              },
+            ],
+            id: cardId,
+            latestStatusText: privateText,
+            required: true,
+            resultRef: { kind: "AP", name: "demo", namespace: "ns-demo" },
+            status: "failed",
+            title: privateText,
+          },
+        ],
+        status: "failed",
+      },
+    ],
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:02.000Z",
+  } as unknown as DeploymentTaskTimelineSnapshot;
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+  });
+  const events = projected?.steps[0]?.resultCards?.[0]?.events;
+
+  assert.deepEqual(
+    events?.map(({ dedupeKey, message }) => ({ dedupeKey, message })),
+    [
+      {
+        dedupeKey: "deployment_task.result_resource_observed",
+        message: "Deployment resource status updated.",
+      },
+      {
+        dedupeKey: "deployment_task.result_resource_timeout",
+        message: "Deployment resource did not become ready before timeout.",
+      },
+    ]
+  );
+  assert.equal(JSON.stringify(projected).includes(privateText), false);
+});
+
 test("public AI timeline shows allowlisted progress and omits unknown events", () => {
   const privateText = "private-timeline-text";
   const timeline = {

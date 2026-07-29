@@ -423,6 +423,12 @@ const AI_OUTPUT_TIMELINE_EVENT_KINDS = [
   "deployment_task.output_partial",
   "deployment_task.output_ready",
 ] as const;
+const AI_RESULT_CARD_EVENT_REASONS = new Set([
+  "APWorkloadReadiness",
+  "DBServiceReadiness",
+  "PublicAddressReadiness",
+  "TemplateWorkloadReadiness",
+]);
 
 type AiPublicEventKind = keyof typeof AI_PUBLIC_EVENT_MESSAGES;
 
@@ -442,6 +448,38 @@ function aiPublicTimelineEventKind(
   );
 }
 
+function aiPublicResultCardEventKind(input: {
+  cardId: string;
+  event: DeploymentTimelineEvent;
+}): AiPublicEventKind | null {
+  const { dedupeKey, reason, source } = input.event;
+  if (typeof dedupeKey !== "string" || source !== "resource-observer") {
+    return null;
+  }
+  if (
+    dedupeKey === `${input.cardId}:timeout` &&
+    reason === "ResourceReadinessTimeout"
+  ) {
+    return "deployment_task.result_resource_timeout";
+  }
+  if (typeof reason !== "string" || !AI_RESULT_CARD_EVENT_REASONS.has(reason)) {
+    return null;
+  }
+  const cardPrefix = `${input.cardId}:`;
+  if (!dedupeKey.startsWith(cardPrefix)) {
+    return null;
+  }
+  const statusAndText = dedupeKey.slice(cardPrefix.length);
+  const separatorIndex = statusAndText.indexOf(":");
+  const status =
+    separatorIndex === -1
+      ? statusAndText
+      : statusAndText.slice(0, separatorIndex);
+  return RESULT_CARD_STATUSES.has(status as DeploymentResultResourceCardStatus)
+    ? "deployment_task.result_resource_observed"
+    : null;
+}
+
 function safeIsoTimestamp(value: unknown, fallback: string): string {
   if (typeof value !== "string" || value.length > 30) {
     return fallback;
@@ -459,9 +497,11 @@ function publicAiTimelineEvent(input: {
   id: string;
   preserveInternalIdentity: boolean;
   retainUnknownPlaceholder: boolean;
+  trustedEventKind?: AiPublicEventKind | null;
 }): DeploymentTimelineEvent | null {
   const { event } = input;
-  const eventKind = aiPublicTimelineEventKind(event.dedupeKey);
+  const eventKind =
+    input.trustedEventKind ?? aiPublicTimelineEventKind(event.dedupeKey);
   const isTerminalFailure = isDeploymentTaskTerminalFailureEventKey(
     event.dedupeKey
   );
@@ -514,6 +554,9 @@ function projectAiTimelineEvents(input: {
   idPrefix: string;
   preserveInternalIdentity: boolean;
   retainUnknownPlaceholder: boolean;
+  trustedEventKind?: (
+    event: DeploymentTimelineEvent
+  ) => AiPublicEventKind | null;
 }): DeploymentTimelineEvent[] {
   const projected = input.events.flatMap((event, eventIndex) => {
     const publicEvent = publicAiTimelineEvent({
@@ -523,6 +566,7 @@ function projectAiTimelineEvents(input: {
       id: `${input.idPrefix}-event-${eventIndex}`,
       preserveInternalIdentity: input.preserveInternalIdentity,
       retainUnknownPlaceholder: input.retainUnknownPlaceholder,
+      trustedEventKind: input.trustedEventKind?.(event),
     });
     return publicEvent == null ? [] : [publicEvent];
   });
@@ -666,6 +710,11 @@ function publicAiResultCard(input: {
       idPrefix: `card-${input.index}`,
       preserveInternalIdentity: input.preserveInternalIdentity,
       retainUnknownPlaceholder: input.retainUnknownPlaceholder,
+      trustedEventKind: (event) =>
+        aiPublicResultCardEventKind({
+          cardId: input.card.id,
+          event,
+        }),
     }),
     id: resultCardId(ref),
     latestStatusText: resultCardStatusText(status),
