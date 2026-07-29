@@ -2134,6 +2134,17 @@ function assertPersistableSensitiveValues(values: readonly string[]): void {
   }
 }
 
+function assertResumableTemplateHasNoSensitiveValues(
+  templateYaml: string,
+  sensitiveValues: readonly string[]
+): void {
+  if (scrubSensitiveText(templateYaml, sensitiveValues) !== templateYaml) {
+    throw new Error(
+      "Generated deployment template contains a sensitive value outside a declared sensitive input."
+    );
+  }
+}
+
 function assertSensitiveInputLengths(input: {
   args: Record<string, string>;
   sensitiveInputs: readonly SensitiveDeploymentInputShape[];
@@ -2188,6 +2199,16 @@ export function persistableAiDeployOutput(input: {
     ]),
   ];
   assertPersistableSensitiveValues(sensitiveValues);
+  const resumableTemplateYaml = persistableTemplate?.templateYaml;
+  if (resumableTemplateYaml != null) {
+    // This template is the source for a later blocked-input resume. It must
+    // remain valid YAML, so reject leaked values instead of text-replacing
+    // them with a placeholder that could alter the YAML value's type.
+    assertResumableTemplateHasNoSensitiveValues(
+      resumableTemplateYaml,
+      sensitiveValues
+    );
+  }
   const deliveryManifest = scrubSensitiveJsonValue(
     {
       ...input.deliveryManifest,
@@ -2196,18 +2217,21 @@ export function persistableAiDeployOutput(input: {
     sensitiveValues
   );
   const output =
-    persistableTemplate == null
+    resumableTemplateYaml == null
       ? input.output
-      : {
-          ...input.output,
-          templateYaml: persistableTemplate.templateYaml,
-        };
+      : { ...input.output, templateYaml: resumableTemplateYaml };
+  const outputJson = scrubSensitiveJsonValue<Record<string, unknown>>(
+    { ...output, deliveryManifest },
+    sensitiveValues
+  );
+  // `outputJson` is otherwise scrubbed recursively. Restore the already
+  // validated source template so it remains executable on a later form submit.
+  if (resumableTemplateYaml != null) {
+    outputJson.templateYaml = resumableTemplateYaml;
+  }
   return {
     deliveryManifest,
-    outputJson: scrubSensitiveJsonValue(
-      { ...output, deliveryManifest },
-      sensitiveValues
-    ),
+    outputJson,
     sensitiveInputs,
     sensitiveValues,
   };
