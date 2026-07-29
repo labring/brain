@@ -5,6 +5,7 @@ import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
 import { publicDeployTaskBlockingInputs } from "../public-artifact-summary";
 import {
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
   type DeploymentTaskSource,
   type DeployTaskBlockingInput,
   type DeployTaskRow,
@@ -645,21 +646,15 @@ function isSubmittedScalar(value: unknown): value is string | number | boolean {
 function submittedInputValues(
   blockingInputs: DeployTaskBlockingInput[],
   values: Record<string, unknown>,
-  publicBlockingInputs: DeployTaskBlockingInput[],
-  strictPublicIdentifiers: boolean
+  options: { allowInternalIdFallback: boolean }
 ): Record<string, string | number | boolean> {
   return Object.fromEntries(
-    blockingInputs.flatMap((item, index) => {
+    blockingInputs.flatMap((item) => {
       const canonicalKey = item.key ?? item.id;
-      const publicInput = publicBlockingInputs[index];
-      const publicKey = publicInput?.key ?? publicInput?.id;
-      const candidates = strictPublicIdentifiers
-        ? [publicKey]
-        : [canonicalKey, item.id];
-      for (const candidate of new Set(candidates)) {
-        if (candidate == null) {
-          continue;
-        }
+      const candidates = options.allowInternalIdFallback
+        ? new Set([canonicalKey, item.id])
+        : [canonicalKey];
+      for (const candidate of candidates) {
         const value = values[candidate];
         if (isSubmittedScalar(value)) {
           return [[canonicalKey, value]];
@@ -695,17 +690,11 @@ function shortSensitiveSubmittedKey(
 
 function submittedEventInputKeys(input: {
   blockingInputs: DeployTaskBlockingInput[];
-  publicBlockingInputs: DeployTaskBlockingInput[];
   submittedValues: Record<string, string | number | boolean>;
 }): string[] {
-  return input.blockingInputs.flatMap((item, index) =>
+  return input.blockingInputs.flatMap((item) =>
     Object.hasOwn(input.submittedValues, item.key ?? item.id)
-      ? [
-          input.publicBlockingInputs[index]?.key ??
-            input.publicBlockingInputs[index]?.id ??
-            item.key ??
-            item.id,
-        ]
+      ? [item.key ?? item.id]
       : []
   );
 }
@@ -732,9 +721,9 @@ function hasUniqueCanonicalBlockingInputKeys(
 
 /**
  * Blocking Input submission performs the blocked → running claim itself and
- * hands values to the runner in process memory; only redacted key names are
- * ever persisted (ADR 0037). The legacy failed-at-configure resume path is
- * gone: blocked is the only waiting state.
+ * hands values to the runner in process memory; canonical key names may be
+ * persisted, but submitted values never are (ADR 0037). The legacy
+ * failed-at-configure resume path is gone: blocked is the only waiting state.
  */
 export async function submitDeployTaskInputAction(
   ctx: DeployTaskEngineContext,
@@ -757,7 +746,12 @@ export async function submitDeployTaskInputAction(
   }
   const publicBlockingInputs = publicDeployTaskBlockingInputs(
     currentBlockingInputs,
-    { runner: row.runner }
+    {
+      runner: row.runner,
+      trustedMetadata:
+        row.artifactSummary.publicProjectionVersion ===
+        CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    }
   );
   if (publicBlockingInputs.length !== currentBlockingInputs.length) {
     return {
@@ -769,8 +763,7 @@ export async function submitDeployTaskInputAction(
   const submittedValues = submittedInputValues(
     currentBlockingInputs,
     input.values,
-    publicBlockingInputs,
-    row.runner.kind === "ai"
+    { allowInternalIdFallback: row.runner.kind !== "ai" }
   );
   const submittedInputKeys = Object.keys(submittedValues);
   if (submittedInputKeys.length === 0) {
@@ -803,7 +796,6 @@ export async function submitDeployTaskInputAction(
   }
   const eventInputKeys = submittedEventInputKeys({
     blockingInputs: currentBlockingInputs,
-    publicBlockingInputs,
     submittedValues,
   });
 

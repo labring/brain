@@ -4,9 +4,10 @@ import {
   deploymentFailureMessage,
   isDeployTaskFailureReason,
 } from "../failure-summary";
-import type {
-  DeployTaskFailureDetails,
-  DeployTaskFailureReason,
+import {
+  CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+  type DeployTaskFailureDetails,
+  type DeployTaskFailureReason,
 } from "../schema";
 import type { DeployTaskEngineContext } from "./context";
 import {
@@ -112,12 +113,33 @@ function invalidBlockedFailureReason(
   return LEGACY_EMPTY_BLOCKED_REASON_BY_EVENT_KIND[eventKind] ?? "unknown";
 }
 
+function invalidBlockedTaskWhere(): SQL {
+  return sql`
+    "status" = 'blocked'
+    AND (
+      jsonb_array_length(COALESCE("blocking_inputs", '[]'::jsonb)) = 0
+      OR (
+        COALESCE("runner" ->> 'kind', '') = 'ai'
+        AND COALESCE(
+          "artifact_summary" ->> 'publicProjectionVersion',
+          ''
+        ) <> ${String(CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION)}
+      )
+    )
+  `;
+}
+
 async function sweepInvalidBlockedTasks(
   ctx: DeployTaskEngineContext
 ): Promise<number> {
   const candidates = rowsOf(
     await ctx.db.execute(sql`
-      SELECT task."id", cause."kind" AS "event_kind", cause."payload" AS "event_payload"
+      SELECT
+        task."id",
+        jsonb_array_length(COALESCE(task."blocking_inputs", '[]'::jsonb))
+          AS "blocking_input_count",
+        cause."kind" AS "event_kind",
+        cause."payload" AS "event_payload"
       FROM ${TASKS} task
       LEFT JOIN LATERAL (
         SELECT event."kind", event."payload"
@@ -134,8 +156,7 @@ async function sweepInvalidBlockedTasks(
         ORDER BY event."seq" DESC
         LIMIT 1
       ) cause ON true
-      WHERE task."status" = 'blocked'
-        AND jsonb_array_length(COALESCE(task."blocking_inputs", '[]'::jsonb)) = 0
+      WHERE ${invalidBlockedTaskWhere()}
     `)
   );
 
@@ -147,24 +168,28 @@ async function sweepInvalidBlockedTasks(
     }
     const reason = invalidBlockedFailureReason(candidate);
     const message = deploymentFailureMessage(reason);
+    const detail =
+      Number(candidate.blocking_input_count) === 0
+        ? "empty-blocking-inputs"
+        : "untrusted-ai-blocking-inputs";
     const rows = await sweepVerdict(ctx, {
       error: message,
       event: {
         kind: "deployment_task.engine_resolved",
         message,
         payload: {
-          detail: "empty-blocking-inputs",
+          detail,
           reason,
           verdict: "failed",
         },
       },
       failureDetails: {
-        detail: "empty-blocking-inputs",
+        detail,
         failureMessage: message,
         reason,
       },
       to: "failed",
-      where: sql`"id" = ${taskId} AND "status" = 'blocked' AND jsonb_array_length(COALESCE("blocking_inputs", '[]'::jsonb)) = 0`,
+      where: sql`"id" = ${taskId} AND ${invalidBlockedTaskWhere()}`,
     });
     repaired += rows.length;
   }

@@ -98,7 +98,10 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
           },
           {
             default: "3000",
+            description: "HTTP listen port",
             key: "port",
+            label: "Port",
+            options: ["3000", "8080"],
             required: false,
             type: "number",
           },
@@ -136,21 +139,24 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
     deploymentPlan: {
       inputs: [
         {
-          key: "configuration-1",
-          label: "Configuration value",
+          key: "api_key",
+          label: "api_key",
           required: true,
           sensitive: true,
           type: "secret",
         },
         {
-          key: "configuration-2",
-          label: "Configuration value",
+          default: "3000",
+          description: "HTTP listen port",
+          key: "port",
+          label: "Port",
+          options: ["3000", "8080"],
           required: false,
           type: "number",
         },
       ],
       kind: "sealos-template",
-      missingInputKeys: ["configuration-1", "configuration-2"],
+      missingInputKeys: ["api_key", "port"],
       templateName: "deployment",
     },
     resources: [
@@ -166,7 +172,7 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
   assert.equal("publicProjectionVersion" in summary, false);
 });
 
-test("stamped public AI blocking inputs keep generated metadata fail-closed", () => {
+test("input-level stamps cannot make untrusted AI blocking metadata public", () => {
   const legacySecret = "legacy-blocking-input-secret";
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
@@ -191,20 +197,48 @@ test("stamped public AI blocking inputs keep generated metadata fail-closed", ()
     }
   );
 
+  assert.deepEqual(blockingInputs, []);
+  assert.equal(JSON.stringify(blockingInputs).includes(legacySecret), false);
+});
+
+test("trusted public AI blocking inputs preserve canonical keys and labels without exposing values", () => {
+  const secretValue = "private-smtp-password";
+  const blockingInputs = publicDeployTaskBlockingInputs(
+    [
+      {
+        defaultValue: secretValue,
+        description: "Password used to authenticate with the SMTP server.",
+        id: "smtp_password",
+        key: "smtp_password",
+        label: "SMTP password",
+        options: [secretValue],
+        required: true,
+        sensitive: true,
+        type: "secret",
+      },
+    ],
+    {
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      trustedMetadata: true,
+    }
+  );
+
   assert.deepEqual(blockingInputs, [
     {
-      id: "configuration-1",
-      key: "configuration-1",
-      label: "Configuration value",
+      id: "smtp_password",
+      key: "smtp_password",
+      label: "SMTP password",
+      description: "Password used to authenticate with the SMTP server.",
       required: true,
       sensitive: true,
       type: "secret",
     },
   ]);
-  assert.equal(JSON.stringify(blockingInputs).includes(legacySecret), false);
+  assert.equal(JSON.stringify(blockingInputs).includes(secretValue), false);
+  assert.equal(JSON.stringify(blockingInputs).includes("smtp_password"), true);
 });
 
-test("legacy public AI inputs use opaque aliases", () => {
+test("legacy public AI inputs fail closed instead of inventing aliases", () => {
   const legacySecret = "abc";
   const summary = publicDeployTaskArtifactSummary(
     {
@@ -247,39 +281,15 @@ test("legacy public AI inputs use opaque aliases", () => {
     { runner: { kind: "ai", runtimeProvider: "devbox" } }
   );
 
-  assert.deepEqual(summary, {
-    deploymentPlan: {
-      inputs: [
-        {
-          key: "configuration-1",
-          label: "Configuration value",
-          required: true,
-          sensitive: true,
-          type: "secret",
-        },
-      ],
-      kind: "sealos-template",
-      missingInputKeys: ["configuration-1"],
-      templateName: "deployment",
-    },
-  });
-  assert.deepEqual(blockingInputs, [
-    {
-      id: "configuration-1",
-      key: "configuration-1",
-      label: "Configuration value",
-      required: true,
-      sensitive: true,
-      type: "secret",
-    },
-  ]);
+  assert.deepEqual(summary, {});
+  assert.deepEqual(blockingInputs, []);
   assert.equal(
     JSON.stringify({ blockingInputs, summary }).includes(legacySecret),
     false
   );
 });
 
-test("stamped public AI blockers always use opaque identifiers", () => {
+test("blocking-input stamps alone remain fail closed", () => {
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
       {
@@ -296,20 +306,11 @@ test("stamped public AI blockers always use opaque identifiers", () => {
     { runner: { kind: "ai", runtimeProvider: "devbox" } }
   );
 
-  assert.deepEqual(blockingInputs, [
-    {
-      id: "configuration-1",
-      key: "configuration-1",
-      label: "Configuration value",
-      required: true,
-      sensitive: true,
-      type: "secret",
-    },
-  ]);
+  assert.deepEqual(blockingInputs, []);
   assert.equal(JSON.stringify(blockingInputs).includes("_API_KEY"), false);
 });
 
-test("AI blocker aliases do not depend on generated canonical keys", () => {
+test("trusted AI blockers expose their canonical keys without aliases", () => {
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
       {
@@ -332,33 +333,37 @@ test("AI blocker aliases do not depend on generated canonical keys", () => {
         type: "secret",
       },
     ],
-    { runner: { kind: "ai", runtimeProvider: "devbox" } }
+    {
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      trustedMetadata: true,
+    }
   );
 
   assert.deepEqual(
     blockingInputs.map((input) => input.key),
-    ["configuration-1", "configuration-2"]
+    ["configuration-2", "_API_KEY"]
   );
 });
 
-test("stamped AI plan and blocker metadata cannot publish unknown secrets", () => {
-  const unknownSecret = "repo-secret-marker";
+test("trusted AI plan and blocker metadata retain keys while dropping secret values", () => {
+  const secretValue = "repo-secret-marker";
   const summary = publicDeployTaskArtifactSummary(
     {
       deploymentPlan: {
         inputs: [
           {
-            description: unknownSecret,
-            key: unknownSecret,
-            label: unknownSecret,
-            options: [unknownSecret],
+            description: "Password used to authenticate with SMTP.",
+            key: "smtp_password",
+            label: "SMTP password",
+            options: [secretValue],
             required: true,
-            type: unknownSecret,
+            sensitive: true,
+            type: "secret",
           },
         ],
         kind: "sealos-template",
-        missingInputKeys: [unknownSecret],
-        templateName: unknownSecret,
+        missingInputKeys: ["smtp_password"],
+        templateName: "demo",
       },
       publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
     },
@@ -367,49 +372,55 @@ test("stamped AI plan and blocker metadata cannot publish unknown secrets", () =
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
       {
-        description: unknownSecret,
-        id: unknownSecret,
-        key: unknownSecret,
-        label: unknownSecret,
-        options: [unknownSecret],
+        defaultValue: secretValue,
+        description: "Password used to authenticate with SMTP.",
+        id: "smtp_password",
+        key: "smtp_password",
+        label: "SMTP password",
+        options: [secretValue],
         publicProjectionVersion:
           CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
         required: true,
-        type: "text",
-        valueType: unknownSecret,
+        sensitive: true,
+        type: "secret",
       },
     ],
-    { runner: { kind: "ai", runtimeProvider: "devbox" } }
+    {
+      runner: { kind: "ai", runtimeProvider: "devbox" },
+      trustedMetadata: true,
+    }
   );
 
   assert.deepEqual(summary, {
     deploymentPlan: {
       inputs: [
         {
-          key: "configuration-1",
-          label: "Configuration value",
+          key: "smtp_password",
+          label: "SMTP password",
+          description: "Password used to authenticate with SMTP.",
           required: true,
           sensitive: true,
           type: "secret",
         },
       ],
       kind: "sealos-template",
-      missingInputKeys: ["configuration-1"],
+      missingInputKeys: ["smtp_password"],
       templateName: "deployment",
     },
   });
   assert.deepEqual(blockingInputs, [
     {
-      id: "configuration-1",
-      key: "configuration-1",
-      label: "Configuration value",
+      id: "smtp_password",
+      key: "smtp_password",
+      label: "SMTP password",
+      description: "Password used to authenticate with SMTP.",
       required: true,
       sensitive: true,
       type: "secret",
     },
   ]);
   assert.equal(
-    JSON.stringify({ blockingInputs, summary }).includes(unknownSecret),
+    JSON.stringify({ blockingInputs, summary }).includes(secretValue),
     false
   );
 });
@@ -433,6 +444,13 @@ test("trusted public AI timeline strips output summaries from every dedupe key",
             createdAt: "2026-07-23T00:00:00.000Z",
             dedupeKey: outputPartialDedupeKey,
             id: "step-output",
+            message: legacySecret,
+            unknown: legacySecret,
+          },
+          {
+            createdAt: "2026-07-23T00:00:02.000Z",
+            dedupeKey: "deployment_task.output_partial:second-signature",
+            id: "step-output-latest",
             message: legacySecret,
             unknown: legacySecret,
           },
@@ -475,6 +493,11 @@ test("trusted public AI timeline strips output summaries from every dedupe key",
     projected?.steps[0]?.events[0]?.dedupeKey,
     "deployment_task.output_partial"
   );
+  assert.equal(projected?.steps[0]?.events.length, 1);
+  assert.equal(
+    projected?.steps[0]?.events[0]?.createdAt,
+    "2026-07-23T00:00:02.000Z"
+  );
   assert.equal(
     projected?.steps[0]?.resultCards?.[0]?.events[0]?.dedupeKey,
     "deployment_task.output_ready"
@@ -491,6 +514,148 @@ test("trusted public AI timeline strips output summaries from every dedupe key",
   );
   assert.equal(JSON.stringify(projected).includes(legacySecret), false);
   assert.equal(timeline.steps[0]?.events[0]?.dedupeKey, outputPartialDedupeKey);
+});
+
+test("public AI result cards retain safe status and timeout events", () => {
+  const privateText = "private-resource-observation";
+  const cardId = "AP:ns-demo:demo";
+  const timeline = {
+    publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+    revision: 4,
+    status: "running",
+    steps: [
+      {
+        events: [],
+        id: "create-resources",
+        label: "Create resources",
+        order: 3,
+        resultCards: [
+          {
+            events: [
+              {
+                createdAt: "2026-07-23T00:00:00.000Z",
+                dedupeKey: `${cardId}:running:${privateText}`,
+                id: "card-status",
+                message: privateText,
+                reason: "APWorkloadReadiness",
+                severity: "success",
+                source: "resource-observer",
+              },
+              {
+                createdAt: "2026-07-23T00:00:01.000Z",
+                dedupeKey: `${cardId}:timeout`,
+                id: "card-timeout",
+                message: privateText,
+                reason: "ResourceReadinessTimeout",
+                severity: "error",
+                source: "resource-observer",
+              },
+              {
+                createdAt: "2026-07-23T00:00:02.000Z",
+                dedupeKey: `${cardId}:unknown-private-event`,
+                id: "card-unknown",
+                message: privateText,
+              },
+            ],
+            id: cardId,
+            latestStatusText: privateText,
+            required: true,
+            resultRef: { kind: "AP", name: "demo", namespace: "ns-demo" },
+            status: "failed",
+            title: privateText,
+          },
+        ],
+        status: "failed",
+      },
+    ],
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:02.000Z",
+  } as unknown as DeploymentTaskTimelineSnapshot;
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+  });
+  const events = projected?.steps[0]?.resultCards?.[0]?.events;
+
+  assert.deepEqual(
+    events?.map(({ dedupeKey, message }) => ({ dedupeKey, message })),
+    [
+      {
+        dedupeKey: "deployment_task.result_resource_observed",
+        message: "Deployment resource status updated.",
+      },
+      {
+        dedupeKey: "deployment_task.result_resource_timeout",
+        message: "Deployment resource did not become ready before timeout.",
+      },
+    ]
+  );
+  assert.equal(JSON.stringify(projected).includes(privateText), false);
+});
+
+test("public AI timeline shows allowlisted progress and omits unknown events", () => {
+  const privateText = "private-timeline-text";
+  const timeline = {
+    publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+    revision: 4,
+    status: "running",
+    steps: [
+      {
+        events: [
+          {
+            createdAt: "2026-07-23T00:00:00.000Z",
+            dedupeKey: "deployment_task.prepare_started",
+            id: "prepare-started",
+            message: privateText,
+          },
+          {
+            createdAt: "2026-07-23T00:00:01.000Z",
+            dedupeKey: "unknown-private-event",
+            id: "unknown-event",
+            message: privateText,
+          },
+          {
+            createdAt: "2026-07-23T00:00:02.000Z",
+            dedupeKey: "deployment_task.workspace_ready",
+            id: "workspace-ready",
+            message: privateText,
+          },
+        ],
+        id: "prepare-workspace",
+        label: privateText,
+        order: 99,
+        status: "completed",
+      },
+    ],
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:02.000Z",
+  } as unknown as DeploymentTaskTimelineSnapshot;
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+  });
+
+  assert.deepEqual(
+    projected?.steps[0]?.events.map(({ dedupeKey, message }) => ({
+      dedupeKey,
+      message,
+    })),
+    [
+      {
+        dedupeKey: "deployment_task.prepare_started",
+        message: "Preparing deployment.",
+      },
+      {
+        dedupeKey: "deployment_task.workspace_ready",
+        message: "Deployment workspace is ready.",
+      },
+    ]
+  );
+  assert.equal(JSON.stringify(projected).includes(privateText), false);
+  assert.equal(
+    JSON.stringify(projected).includes("Deployment progress updated."),
+    false
+  );
 });
 
 test("legacy public AI timeline hides result references", () => {
@@ -584,10 +749,7 @@ test("public AI timeline rebuilds legacy failure events without raw text", () =>
     projected?.steps[0]?.events[0]?.message,
     "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them."
   );
-  assert.equal(
-    projected?.steps[0]?.events[1]?.message,
-    "Deployment progress updated."
-  );
+  assert.equal(projected?.steps[0]?.events.length, 1);
   assert.equal(JSON.stringify(projected).includes(legacySecret), false);
 });
 

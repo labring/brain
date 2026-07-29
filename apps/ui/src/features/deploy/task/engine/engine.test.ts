@@ -362,7 +362,7 @@ test("reaper enforces cancel-ack deadline, max active run, and start deadline", 
   assert.equal(starved, null);
 });
 
-test("reaper fails legacy blocked tasks without inputs and preserves valid waits", async () => {
+test("reaper fails invalid blocked tasks and preserves trusted input waits", async () => {
   const ctx = testCtx();
   const unknown = await insertTaskRow(harness.db, {
     blockingInputs: [],
@@ -376,11 +376,36 @@ test("reaper fails legacy blocked tasks without inputs and preserves valid waits
   const outputMissing = await insertTaskRow(harness.db, { status: "blocked" });
   const buildRuntime = await insertTaskRow(harness.db, { status: "blocked" });
   const gateway = await insertTaskRow(harness.db, { status: "blocked" });
-  const valid = await insertTaskRow(harness.db, {
+  const legacyAi = await insertTaskRow(harness.db, {
+    blockingInputs: [
+      {
+        id: "internal-port",
+        key: "PORT",
+        label: "Port",
+        required: true,
+        type: "text",
+      },
+    ],
+    phase: "configure",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  const validTemplate = await insertTaskRow(harness.db, {
     blockingInputs: [
       { id: "port", key: "PORT", label: "Port", required: true, type: "text" },
     ],
     phase: "configure",
+    status: "blocked",
+  });
+  const validAi = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
+    blockingInputs: [
+      { id: "PORT", key: "PORT", label: "Port", required: true, type: "text" },
+    ],
+    phase: "configure",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
     status: "blocked",
   });
 
@@ -398,7 +423,7 @@ test("reaper fails legacy blocked tasks without inputs and preserves valid waits
 
   const summary = await runDeployTaskReaperSweep(ctx);
 
-  assert.equal(summary.invalidBlocked, 4);
+  assert.equal(summary.invalidBlocked, 5);
   assert.equal(summary.devboxPaused, 1);
   const unknownRow = await taskById(unknown.id);
   assert.equal(unknownRow.status, "failed");
@@ -409,7 +434,15 @@ test("reaper fails legacy blocked tasks without inputs and preserves valid waits
     failureMessage: deploymentFailureMessage("unknown"),
     reason: "unknown",
   });
-  assert.equal((await taskById(valid.id)).status, "blocked");
+  assert.equal((await taskById(validTemplate.id)).status, "blocked");
+  assert.equal((await taskById(validAi.id)).status, "blocked");
+  const legacyAiRow = await taskById(legacyAi.id);
+  assert.equal(legacyAiRow.status, "failed");
+  assert.deepEqual(legacyAiRow.failureDetails, {
+    detail: "untrusted-ai-blocking-inputs",
+    failureMessage: deploymentFailureMessage("unknown"),
+    reason: "unknown",
+  });
 
   const [unknownEvent] = await eventsFor(unknown.id);
   assert.equal(unknownEvent?.kind, "deployment_task.engine_resolved");
@@ -1009,6 +1042,9 @@ test("input submission claims blocked→running in place and hands values in mem
 test("partial required input submission stays blocked without launching", async () => {
   const ctx = testCtx();
   const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
     blockingInputs: [
       {
         id: "PORT",
@@ -1042,7 +1078,7 @@ test("partial required input submission stays blocked without launching", async 
       return Promise.resolve();
     },
     taskId: blocked.id,
-    values: { "configuration-1": "8080" },
+    values: { PORT: "8080" },
   });
 
   assert.equal(result.kind, "invalid-input");
@@ -1065,6 +1101,9 @@ test("partial required input submission stays blocked without launching", async 
 test("one AI public identifier cannot satisfy two required blockers", async () => {
   const ctx = testCtx();
   const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
     blockingInputs: [
       {
         id: "PORT",
@@ -1106,19 +1145,22 @@ test("one AI public identifier cannot satisfy two required blockers", async () =
   assert.equal((await taskById(blocked.id)).status, "blocked");
 });
 
-test("legacy AI public aliases bind each value to exactly one canonical key", async () => {
+test("trusted AI canonical keys bind each value without aliases", async () => {
   const ctx = testCtx();
   const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
     blockingInputs: [
       {
-        id: "configuration-2",
-        key: "configuration-2",
+        id: "internal-port-field",
+        key: "PORT",
         label: "Port",
         required: true,
         type: "env",
       },
       {
-        id: "PASSWORD",
+        id: "internal-password-field",
         key: "PASSWORD",
         label: "Password",
         required: true,
@@ -1140,8 +1182,8 @@ test("legacy AI public aliases bind each value to exactly one canonical key", as
     },
     taskId: blocked.id,
     values: {
-      "configuration-1": "8080",
-      "configuration-2": "secret-value",
+      PASSWORD: "secret-value",
+      PORT: "8080",
     },
   });
 
@@ -1151,9 +1193,44 @@ test("legacy AI public aliases bind each value to exactly one canonical key", as
   }
   await result.launched.done;
   assert.deepEqual(received, {
-    "configuration-2": "8080",
     PASSWORD: "secret-value",
+    PORT: "8080",
   });
+});
+
+test("trusted AI submissions reject unpublished internal blocker ids", async () => {
+  const ctx = testCtx();
+  const blocked = await insertTaskRow(harness.db, {
+    artifactSummary: {
+      publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
+    },
+    blockingInputs: [
+      {
+        id: "internal-port-field",
+        key: "PORT",
+        label: "Port",
+        required: true,
+        type: "env",
+      },
+    ],
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "blocked",
+  });
+  let runCalled = false;
+
+  const result = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
+    },
+    taskId: blocked.id,
+    values: { "internal-port-field": "8080" },
+  });
+
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(runCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
 });
 
 test("legacy AI blockers with duplicate canonical keys cannot resume", async () => {
@@ -1199,7 +1276,7 @@ test("legacy AI blockers with duplicate canonical keys cannot resume", async () 
   assert.equal((await taskById(blocked.id)).status, "blocked");
 });
 
-test("legacy AI input aliases map back only inside the resumed runner", async () => {
+test("legacy untrusted AI blocking inputs cannot resume", async () => {
   const ctx = testCtx();
   const legacySecretKey = "abc";
   const blocked = await insertTaskRow(harness.db, {
@@ -1217,50 +1294,27 @@ test("legacy AI input aliases map back only inside the resumed runner", async ()
     runner: { kind: "ai", runtimeProvider: "devbox" },
     status: "blocked",
   });
-  const short = await submitDeployTaskInputAction(ctx, {
-    namespace: "ns-test",
-    run: () => Promise.resolve(),
-    taskId: blocked.id,
-    values: { "configuration-1": "q7" },
-  });
-  assert.equal(short.kind, "invalid-input");
-  assert.equal(
-    short.kind === "invalid-input" && short.message.includes(legacySecretKey),
-    false
-  );
-
-  let received: Record<string, unknown> | null = null;
-  let receivedBlockingInputs: readonly { key?: string }[] = [];
+  let runCalled = false;
   const result = await submitDeployTaskInputAction(ctx, {
     namespace: "ns-test",
-    run: async (handle, _task, currentBlockingInputs, submittedValues) => {
-      received = submittedValues;
-      receivedBlockingInputs = currentBlockingInputs;
-      await handle.beginApplying();
-      await handle.complete();
+    run: () => {
+      runCalled = true;
+      return Promise.resolve();
     },
     taskId: blocked.id,
-    values: { "configuration-1": "submitted-secret" },
+    values: { [legacySecretKey]: "submitted-secret" },
   });
 
-  assert.equal(result.kind, "resumed");
-  if (result.kind !== "resumed") {
-    return;
-  }
-  await result.launched.done;
-  assert.deepEqual(received, { [legacySecretKey]: "submitted-secret" });
-  assert.deepEqual(
-    receivedBlockingInputs.map((input) => input.key),
-    [legacySecretKey]
+  assert.equal(result.kind, "invalid-input");
+  assert.equal(
+    result.kind === "invalid-input" && result.message,
+    "Deployment inputs are unavailable. Redeploy to try again."
   );
-  const inputEvent = (await eventsFor(blocked.id)).find(
-    (event) => event.kind === "deploy_task.input_submitted"
-  );
-  assert.deepEqual(inputEvent?.payload.inputKeys, ["configuration-1"]);
-  assert.equal(JSON.stringify(inputEvent).includes(legacySecretKey), false);
+  assert.equal(runCalled, false);
+  assert.equal((await taskById(blocked.id)).status, "blocked");
 });
 
-test("current AI input aliases restore identifiers outside the public grammar", async () => {
+test("current AI inputs submit canonical identifiers outside the public grammar", async () => {
   const ctx = testCtx();
   const canonicalKey = "_API_KEY";
   const blocked = await insertTaskRow(harness.db, {
@@ -1293,7 +1347,7 @@ test("current AI input aliases restore identifiers outside the public grammar", 
       await handle.complete();
     },
     taskId: blocked.id,
-    values: { "configuration-1": "submitted-secret" },
+    values: { [canonicalKey]: "submitted-secret" },
   });
 
   assert.equal(result.kind, "resumed");
@@ -1305,8 +1359,7 @@ test("current AI input aliases restore identifiers outside the public grammar", 
   const inputEvent = (await eventsFor(blocked.id)).find(
     (event) => event.kind === "deploy_task.input_submitted"
   );
-  assert.deepEqual(inputEvent?.payload.inputKeys, ["configuration-1"]);
-  assert.equal(JSON.stringify(inputEvent).includes(canonicalKey), false);
+  assert.deepEqual(inputEvent?.payload.inputKeys, [canonicalKey]);
 });
 
 test("input action treats a task from another namespace as not found", async () => {

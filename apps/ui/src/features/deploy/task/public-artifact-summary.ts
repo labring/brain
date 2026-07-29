@@ -14,7 +14,6 @@ import {
 } from "./schema";
 import {
   isSensitiveDeploymentInput,
-  legacyAiInputAlias,
   withoutSensitiveArgs,
 } from "./sensitive-inputs";
 import {
@@ -176,7 +175,7 @@ function publicDeploymentPlan(
   };
 }
 
-function publicAiDeploymentPlanInput(value: unknown, index: number) {
+function publicAiDeploymentPlanInput(value: unknown) {
   const input = recordValue(value);
   const sourceKey = typeof input?.key === "string" ? input.key : null;
   if (input == null || sourceKey == null) {
@@ -188,9 +187,14 @@ function publicAiDeploymentPlanInput(value: unknown, index: number) {
     sensitive: input.sensitive === true,
     type: typeof input.type === "string" ? input.type : undefined,
   });
-  const key = legacyAiInputAlias(index);
   const sourceType =
     typeof input.type === "string" ? input.type.trim().toLowerCase() : "";
+  const sourceLabel = typeof input.label === "string" ? input.label.trim() : "";
+  const sourceOptions = Array.isArray(input.options)
+    ? input.options.filter(
+        (option): option is string => typeof option === "string"
+      )
+    : null;
   let publicType = "string";
   if (sensitive) {
     publicType = "secret";
@@ -199,8 +203,17 @@ function publicAiDeploymentPlanInput(value: unknown, index: number) {
   }
   return {
     input: {
-      key,
-      label: "Configuration value",
+      ...(typeof input.description === "string"
+        ? { description: input.description }
+        : {}),
+      ...(!sensitive && typeof input.default === "string"
+        ? { default: input.default }
+        : {}),
+      key: sourceKey,
+      label: sourceLabel || sourceKey,
+      ...(!sensitive && sourceOptions != null
+        ? { options: sourceOptions }
+        : {}),
       ...(typeof input.required === "boolean"
         ? { required: input.required }
         : {}),
@@ -212,9 +225,11 @@ function publicAiDeploymentPlanInput(value: unknown, index: number) {
 }
 
 function publicAiDeploymentPlan(
-  plan: DeployTaskArtifactSummary["deploymentPlan"]
+  plan: DeployTaskArtifactSummary["deploymentPlan"],
+  options: { trustedMetadata: boolean }
 ): DeployTaskArtifactSummary["deploymentPlan"] {
   if (
+    !options.trustedMetadata ||
     plan == null ||
     plan.kind !== "sealos-template" ||
     !Array.isArray(plan.inputs) ||
@@ -223,8 +238,8 @@ function publicAiDeploymentPlan(
     return undefined;
   }
 
-  const projectedInputs = plan.inputs.flatMap((input, index) => {
-    const publicInput = publicAiDeploymentPlanInput(input, index);
+  const projectedInputs = plan.inputs.flatMap((input) => {
+    const publicInput = publicAiDeploymentPlanInput(input);
     return publicInput == null ? [] : [publicInput];
   });
   const inputs = projectedInputs.map((input) => input.input);
@@ -265,10 +280,7 @@ function publicAiBlockingInputType(
     : "text";
 }
 
-function publicAiBlockingInput(
-  value: unknown,
-  publicKey: string
-): DeployTaskBlockingInput | null {
+function publicAiBlockingInput(value: unknown): DeployTaskBlockingInput | null {
   const input = recordValue(value);
   const sourceId = typeof input?.id === "string" ? input.id : null;
   const sourceKey = typeof input?.key === "string" ? input.key : null;
@@ -287,10 +299,23 @@ function publicAiBlockingInput(
     ["boolean", "number"].includes(input.valueType.trim().toLowerCase())
       ? input.valueType.trim().toLowerCase()
       : null;
+  const sourceLabel = typeof input.label === "string" ? input.label.trim() : "";
+  const sourceOptions = Array.isArray(input.options)
+    ? input.options.filter(
+        (option): option is string => typeof option === "string"
+      )
+    : null;
   return {
-    id: publicKey,
-    key: publicKey,
-    label: "Configuration value",
+    ...(!sensitive && typeof input.defaultValue === "string"
+      ? { defaultValue: input.defaultValue }
+      : {}),
+    ...(typeof input.description === "string"
+      ? { description: input.description }
+      : {}),
+    id: canonicalKey,
+    key: canonicalKey,
+    label: sourceLabel || canonicalKey,
+    ...(!sensitive && sourceOptions != null ? { options: sourceOptions } : {}),
     required: typeof input.required === "boolean" ? input.required : true,
     type: sensitive ? "secret" : sourceType,
     ...(sensitive ? { sensitive: true } : {}),
@@ -298,26 +323,21 @@ function publicAiBlockingInput(
   };
 }
 
-function publicAiBlockingInputKeys(
-  blockingInputs: DeployTaskBlockingInput[]
-): string[] {
-  return blockingInputs.map((_, index) => legacyAiInputAlias(index));
-}
-
 export function publicDeployTaskBlockingInputs(
   blockingInputs: DeployTaskBlockingInput[],
-  options: { runner: DeploymentTaskRunner }
+  options: {
+    runner: DeploymentTaskRunner;
+    trustedMetadata?: boolean;
+  }
 ): DeployTaskBlockingInput[] {
   if (options.runner.kind !== "ai") {
     return blockingInputs;
   }
-  const publicKeys = publicAiBlockingInputKeys(blockingInputs);
-  return blockingInputs.flatMap((input, index) => {
-    const publicKey = publicKeys[index];
-    if (publicKey == null) {
-      return [];
-    }
-    const publicInput = publicAiBlockingInput(input, publicKey);
+  if (options.trustedMetadata !== true) {
+    return [];
+  }
+  return blockingInputs.flatMap((input) => {
+    const publicInput = publicAiBlockingInput(input);
     return publicInput == null ? [] : [publicInput];
   });
 }
@@ -357,7 +377,9 @@ function publicAiDeployTaskArtifactSummary(
   const trusted =
     summary.publicProjectionVersion ===
     CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION;
-  const deploymentPlan = publicAiDeploymentPlan(summary.deploymentPlan);
+  const deploymentPlan = publicAiDeploymentPlan(summary.deploymentPlan, {
+    trustedMetadata: trusted,
+  });
   const resources = publicAiResources(summary.resources, trusted);
   return {
     ...(trusted &&
@@ -401,6 +423,62 @@ const AI_OUTPUT_TIMELINE_EVENT_KINDS = [
   "deployment_task.output_partial",
   "deployment_task.output_ready",
 ] as const;
+const AI_RESULT_CARD_EVENT_REASONS = new Set([
+  "APWorkloadReadiness",
+  "DBServiceReadiness",
+  "PublicAddressReadiness",
+  "TemplateWorkloadReadiness",
+]);
+
+type AiPublicEventKind = keyof typeof AI_PUBLIC_EVENT_MESSAGES;
+
+function aiPublicTimelineEventKind(
+  dedupeKey: unknown
+): AiPublicEventKind | null {
+  if (typeof dedupeKey !== "string") {
+    return null;
+  }
+  if (Object.hasOwn(AI_PUBLIC_EVENT_MESSAGES, dedupeKey)) {
+    return dedupeKey as AiPublicEventKind;
+  }
+  return (
+    AI_OUTPUT_TIMELINE_EVENT_KINDS.find((kind) =>
+      dedupeKey.startsWith(`${kind}:`)
+    ) ?? null
+  );
+}
+
+function aiPublicResultCardEventKind(input: {
+  cardId: string;
+  event: DeploymentTimelineEvent;
+}): AiPublicEventKind | null {
+  const { dedupeKey, reason, source } = input.event;
+  if (typeof dedupeKey !== "string" || source !== "resource-observer") {
+    return null;
+  }
+  if (
+    dedupeKey === `${input.cardId}:timeout` &&
+    reason === "ResourceReadinessTimeout"
+  ) {
+    return "deployment_task.result_resource_timeout";
+  }
+  if (typeof reason !== "string" || !AI_RESULT_CARD_EVENT_REASONS.has(reason)) {
+    return null;
+  }
+  const cardPrefix = `${input.cardId}:`;
+  if (!dedupeKey.startsWith(cardPrefix)) {
+    return null;
+  }
+  const statusAndText = dedupeKey.slice(cardPrefix.length);
+  const separatorIndex = statusAndText.indexOf(":");
+  const status =
+    separatorIndex === -1
+      ? statusAndText
+      : statusAndText.slice(0, separatorIndex);
+  return RESULT_CARD_STATUSES.has(status as DeploymentResultResourceCardStatus)
+    ? "deployment_task.result_resource_observed"
+    : null;
+}
 
 function safeIsoTimestamp(value: unknown, fallback: string): string {
   if (typeof value !== "string" || value.length > 30) {
@@ -418,15 +496,20 @@ function publicAiTimelineEvent(input: {
   fallbackCreatedAt: string;
   id: string;
   preserveInternalIdentity: boolean;
-}): DeploymentTimelineEvent {
+  retainUnknownPlaceholder: boolean;
+  trustedEventKind?: AiPublicEventKind | null;
+}): DeploymentTimelineEvent | null {
   const { event } = input;
-  const eventKind = AI_OUTPUT_TIMELINE_EVENT_KINDS.find(
-    (kind) =>
-      event.dedupeKey === kind || event.dedupeKey?.startsWith(`${kind}:`)
-  );
+  const eventKind =
+    input.trustedEventKind ?? aiPublicTimelineEventKind(event.dedupeKey);
   const isTerminalFailure = isDeploymentTaskTerminalFailureEventKey(
     event.dedupeKey
   );
+  if (
+    !(isTerminalFailure || eventKind != null || input.retainUnknownPlaceholder)
+  ) {
+    return null;
+  }
   let message = "Deployment progress updated.";
   let publicDedupeKey: string | undefined;
   let reason: string | undefined;
@@ -462,6 +545,46 @@ function publicAiTimelineEvent(input: {
       ? { source: event.source }
       : {}),
   };
+}
+
+function projectAiTimelineEvents(input: {
+  events: readonly DeploymentTimelineEvent[];
+  failureReason: DeployTaskFailureReason;
+  fallbackCreatedAt: string;
+  idPrefix: string;
+  preserveInternalIdentity: boolean;
+  retainUnknownPlaceholder: boolean;
+  trustedEventKind?: (
+    event: DeploymentTimelineEvent
+  ) => AiPublicEventKind | null;
+}): DeploymentTimelineEvent[] {
+  const projected = input.events.flatMap((event, eventIndex) => {
+    const publicEvent = publicAiTimelineEvent({
+      event,
+      failureReason: input.failureReason,
+      fallbackCreatedAt: input.fallbackCreatedAt,
+      id: `${input.idPrefix}-event-${eventIndex}`,
+      preserveInternalIdentity: input.preserveInternalIdentity,
+      retainUnknownPlaceholder: input.retainUnknownPlaceholder,
+      trustedEventKind: input.trustedEventKind?.(event),
+    });
+    return publicEvent == null ? [] : [publicEvent];
+  });
+  if (input.preserveInternalIdentity) {
+    return projected;
+  }
+
+  const lastIndexByDedupeKey = new Map<string, number>();
+  for (const [index, event] of projected.entries()) {
+    const dedupeKey = event.dedupeKey?.trim();
+    if (dedupeKey) {
+      lastIndexByDedupeKey.set(dedupeKey, index);
+    }
+  }
+  return projected.filter((event, index) => {
+    const dedupeKey = event.dedupeKey?.trim();
+    return !dedupeKey || lastIndexByDedupeKey.get(dedupeKey) === index;
+  });
 }
 
 function safeKubernetesName(value: unknown): string | null {
@@ -570,6 +693,7 @@ function publicAiResultCard(input: {
   fallbackCreatedAt: string;
   index: number;
   preserveInternalIdentity: boolean;
+  retainUnknownPlaceholder: boolean;
 }): DeploymentResultResourceCard | null {
   const ref = publicAiResultRef(input.card.resultRef);
   if (ref == null) {
@@ -579,16 +703,19 @@ function publicAiResultCard(input: {
     ? input.card.status
     : "unknown";
   return {
-    events: (Array.isArray(input.card.events) ? input.card.events : []).map(
-      (event, eventIndex) =>
-        publicAiTimelineEvent({
+    events: projectAiTimelineEvents({
+      events: Array.isArray(input.card.events) ? input.card.events : [],
+      failureReason: input.failureReason,
+      fallbackCreatedAt: input.fallbackCreatedAt,
+      idPrefix: `card-${input.index}`,
+      preserveInternalIdentity: input.preserveInternalIdentity,
+      retainUnknownPlaceholder: input.retainUnknownPlaceholder,
+      trustedEventKind: (event) =>
+        aiPublicResultCardEventKind({
+          cardId: input.card.id,
           event,
-          failureReason: input.failureReason,
-          fallbackCreatedAt: input.fallbackCreatedAt,
-          id: `card-${input.index}-event-${eventIndex}`,
-          preserveInternalIdentity: input.preserveInternalIdentity,
-        })
-    ),
+        }),
+    }),
     id: resultCardId(ref),
     latestStatusText: resultCardStatusText(status),
     required: input.card.required === true,
@@ -625,6 +752,7 @@ function projectAiDeployTaskTimelineSnapshot(
     options.mode === "persistence" &&
     snapshot.publicProjectionVersion ===
       CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION;
+  const retainUnknownPlaceholder = options.mode === "persistence";
   return {
     ...(options.mode === "persistence"
       ? {
@@ -658,6 +786,7 @@ function projectAiDeployTaskTimelineSnapshot(
                     fallbackCreatedAt,
                     index: cardIndex,
                     preserveInternalIdentity,
+                    retainUnknownPlaceholder,
                   });
                   return projected == null ? [] : [projected];
                 }
@@ -665,16 +794,14 @@ function projectAiDeployTaskTimelineSnapshot(
             : [];
         return [
           {
-            events: (Array.isArray(step.events) ? step.events : []).map(
-              (event, eventIndex) =>
-                publicAiTimelineEvent({
-                  event,
-                  failureReason,
-                  fallbackCreatedAt,
-                  id: `${step.id}-event-${eventIndex}`,
-                  preserveInternalIdentity,
-                })
-            ),
+            events: projectAiTimelineEvents({
+              events: Array.isArray(step.events) ? step.events : [],
+              failureReason,
+              fallbackCreatedAt,
+              idPrefix: step.id,
+              preserveInternalIdentity,
+              retainUnknownPlaceholder,
+            }),
             id: step.id,
             label: metadata.label,
             order: metadata.order,
