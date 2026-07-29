@@ -9,12 +9,16 @@ import {
   type DeployTaskActionResult,
   redeployDeploymentTask,
 } from "./client";
+import type { DeploymentTaskSource } from "./types";
 
 export interface DeploymentTaskActions {
   cancel: (taskId: string) => Promise<DeployTaskActionResult>;
   /** Optimistic "cancelling" bridge until the stream carries the truth. */
   cancelPendingTaskIds: ReadonlySet<string>;
-  redeploy: (predecessorTaskId: string) => Promise<DeployTaskActionResult>;
+  redeploy: (
+    predecessorTaskId: string,
+    predecessorSourceKind: DeploymentTaskSource["kind"]
+  ) => Promise<DeployTaskActionResult>;
   redeployPendingTaskIds: ReadonlySet<string>;
 }
 
@@ -29,8 +33,9 @@ export function useDeploymentTaskActions(input: {
   namespace: string;
 }): DeploymentTaskActions {
   const { kubeconfig, namespace } = input;
-  // Redeploy alone attaches the app token (ADR-0059): it re-binds the
-  // initiator's credential, while cancel stays a namespace-shared action.
+  // Redeploy of a GitHub predecessor alone attaches the app token
+  // (ADR-0059): it re-binds the initiator's credential, while cancel and
+  // namespace-shared redeploys stay token-free.
   const appToken = useAtomValue(appTokenAtom);
   const [cancelPendingTaskIds, setCancelPendingTaskIds] = useState<
     ReadonlySet<string>
@@ -78,7 +83,10 @@ export function useDeploymentTaskActions(input: {
   );
 
   const redeploy = useCallback(
-    async (predecessorTaskId: string) => {
+    async (
+      predecessorTaskId: string,
+      predecessorSourceKind: DeploymentTaskSource["kind"]
+    ) => {
       const flightKey = `redeploy:${predecessorTaskId}`;
       if (inFlightRef.current.has(flightKey)) {
         return { conflict: false, task: null };
@@ -90,6 +98,7 @@ export function useDeploymentTaskActions(input: {
           appToken,
           kubeconfig,
           namespace,
+          predecessorSourceKind,
           predecessorTaskId,
         });
       } finally {

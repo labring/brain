@@ -68,9 +68,10 @@ export async function createDeploymentTaskFromApi({
   encodedKubeconfig: string;
   input: DeploymentTaskCreateInput;
 }): Promise<DeploymentTaskCreateResult> {
-  // Creation is a personal-resource authorization point for GitHub sources
+  // Only GitHub-source creation is a personal-resource authorization point
   // (ADR-0059): the server resolves the Deployment Credential Binding from
-  // the token-proven initiator's uid-keyed connection.
+  // the token-proven initiator's uid-keyed connection. Namespace-shared
+  // sources never carry the token.
   const response = await fetch("/api/deploy-tasks", {
     body: JSON.stringify({
       ...input,
@@ -78,7 +79,9 @@ export async function createDeploymentTaskFromApi({
     }),
     headers: {
       "Content-Type": "application/json",
-      ...appTokenRequestHeaders(appToken),
+      ...(input.source.kind === "github"
+        ? appTokenRequestHeaders(appToken)
+        : {}),
     },
     method: "POST",
   });
