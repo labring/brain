@@ -99,9 +99,7 @@ const token = await new SignJWT({
   .setExpirationTime("7d")
   .sign(new TextEncoder().encode(secret));
 
-console.error(
-  `Minted dev App Token (crName=${crName} userUid=${userUid} regionUid=${regionUid}).`
-);
+console.error("Minted dev App Token.");
 console.error(
   "Paste it into apps/ui/.env.local as NEXT_PUBLIC_DEV_APP_TOKEN:\n"
 );
