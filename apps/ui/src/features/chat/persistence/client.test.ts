@@ -11,8 +11,10 @@ afterEach(() => {
 
 test("conversation list and bootstrap requests do not send a client-owned user id", async () => {
   const requestedUrls: string[] = [];
-  globalThis.fetch = ((input: string | URL | Request) => {
+  const appTokenHeaders: (string | null)[] = [];
+  globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
     requestedUrls.push(String(input));
+    appTokenHeaders.push(new Headers(init?.headers).get("X-Sealos-App-Token"));
     const pathname = new URL(String(input), "https://brain.test").pathname;
     return Promise.resolve(
       Response.json(
@@ -28,11 +30,17 @@ test("conversation list and bootstrap requests do not send a client-owned user i
     );
   }) as typeof fetch;
 
-  await fetchAssistantSession("shared", "encoded-kubeconfig");
-  await fetchAssistantThreads("shared", "encoded-kubeconfig");
+  const credentials = {
+    appToken: "app-token",
+    kubeconfig: "encoded-kubeconfig",
+    namespace: "shared",
+  };
+  await fetchAssistantSession(credentials);
+  await fetchAssistantThreads(credentials);
 
   assert.deepEqual(requestedUrls, [
     "/api/chat/session?namespace=shared",
     "/api/chat/threads?namespace=shared",
   ]);
+  assert.deepEqual(appTokenHeaders, ["app-token", "app-token"]);
 });

@@ -3,7 +3,8 @@
 ## Status
 
 Accepted; owner identity and Deployment Task credential binding revised by
-ADR-0056.
+ADR-0056; the owner subject key and identity generation are revised by
+ADR-0059.
 
 Brain's GitHub deployment path must support repository clone and GHCR image
 push from the DevBox/Kaniko runner. GitHub App installation tokens can access

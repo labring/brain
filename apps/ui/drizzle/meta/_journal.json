@@ -57,6 +57,20 @@
       "when": 1785135611868,
       "tag": "0007_case_insensitive_project_display_names",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785232775042,
+      "tag": "0008_github_owner_identity_generation_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785254479905,
+      "tag": "0009_identity_fingerprints",
+      "breakpoints": true
     }
   ]
 }

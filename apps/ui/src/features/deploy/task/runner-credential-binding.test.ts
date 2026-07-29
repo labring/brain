@@ -13,9 +13,11 @@ describe("deployment task runner credential binding", () => {
       // Compatibility fields are deliberately foreign. They must never select
       // the runner credential once the immutable binding exists.
       actorUserId: "foreign-desktop-user",
+      // A current binding's owner is the initiator's global userUid
+      // (ADR-0059); crName-owned bindings are history.
       credentialBinding: {
         connectionRef: "connection-alice",
-        credentialOwner: "alice-cr",
+        credentialOwner: "uid-alice",
         version: 1,
       },
       githubConnectionId: "connection-mallory",
@@ -39,9 +41,9 @@ describe("deployment task runner credential binding", () => {
     assert.deepEqual(lookups, [
       {
         connectionRef: "connection-alice",
-        credentialOwner: "alice-cr",
+        credentialOwner: "uid-alice",
         namespace: "shared-workspace",
-        ownerIdentityVersion: 1,
+        ownerIdentityVersion: 2,
       },
     ]);
   });

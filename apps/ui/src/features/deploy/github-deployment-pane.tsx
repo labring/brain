@@ -3,7 +3,6 @@
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import {
   type DeploymentTaskEditRedeploy,
   REDEPLOY_OVERWRITE_WARNING,
@@ -26,6 +25,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -94,10 +94,10 @@ export function GitHubDeploymentPane({
     repos,
   } = useGithubRepos({ isAuthorized, namespace });
   const templateCatalog = useTemplateCatalog({ enabled: true });
-  const deploymentAdapters = useMemo(
-    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
-    [kubeconfig, namespace]
-  );
+  const deploymentAdapters = useDeploymentTargetAdapters({
+    kubeconfig,
+    namespace,
+  });
 
   const states: GithubDeployerStates = useMemo(
     () => ({

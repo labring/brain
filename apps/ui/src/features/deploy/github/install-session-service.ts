@@ -11,35 +11,51 @@ import {
   githubAppInstallSessions,
 } from "@/features/chat/persistence/schema";
 import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
+import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
 
 import {
   CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-  type GithubConnectionOwnerIdentity,
+  type VerifiedGithubConnectionActor,
 } from "./owner-identity";
 
 const INSTALL_SESSION_TTL_MS = 10 * 60 * 1000;
 
 export interface GithubAuthorizationSessionInput {
-  owner: GithubConnectionOwnerIdentity;
+  actor: VerifiedGithubConnectionActor;
   returnPath: string | null;
   state: string;
 }
 
+/**
+ * The state row binds `(userUid, namespace, generation, expiry)` before the
+ * browser redirect; the callback carries no kubeconfig and trusts only this
+ * binding (ADR-0059). Under generation 2 the `workspace_actor` column carries
+ * the uid; a merge re-keys pending current-generation rows to the survivor.
+ * Legacy pending rows expire naturally — never re-keyed.
+ */
 export async function createGithubAuthorizationSession(
   input: GithubAuthorizationSessionInput
 ): Promise<void> {
   const now = new Date();
+  const owner = input.actor.owner;
   await getAssistantDb().transaction(async (tx) => {
+    // The state row seeds a later uid-keyed connection write; re-check the
+    // fingerprint in the same transaction so a concurrent merge either
+    // sweeps this row or refuses the stale binding (ADR-0059).
+    await requireCurrentIdentityBinding(tx, {
+      crName: input.actor.legacyWorkspaceActor,
+      userUid: owner.userUid,
+    });
     await tx
       .delete(githubAppInstallSessions)
       .where(lt(githubAppInstallSessions.expiresAt, now));
     await tx.insert(githubAppInstallSessions).values({
       expiresAt: new Date(now.getTime() + INSTALL_SESSION_TTL_MS),
-      namespace: normalizeAssistantNamespace(input.owner.namespace),
-      ownerIdentityVersion: input.owner.ownerIdentityVersion,
+      namespace: normalizeAssistantNamespace(owner.namespace),
+      ownerIdentityVersion: owner.ownerIdentityVersion,
       returnPath: input.returnPath,
       state: input.state,
-      workspaceActor: input.owner.workspaceActor.trim(),
+      workspaceActor: owner.userUid.trim(),
     });
   });
 }

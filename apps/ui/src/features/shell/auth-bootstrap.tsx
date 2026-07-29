@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import { scheduleChatDevboxWarmup } from "@/features/chat/devbox/devbox.actions";
 import { applySealosSdkHydration } from "@/features/shell/auth-bootstrap-core";
 import {
+  appTokenAtom,
   desktopLanguageAtom,
   desktopUserIdAtom,
   kubeconfigAtom,
@@ -73,6 +74,7 @@ export default function AuthBootstrap({
 
 /** Hydrates credentials from the Sealos Desktop iframe SDK when available. */
 export function SealosSdkBootstrap() {
+  const setAppToken = useSetAtom(appTokenAtom);
   const setDesktopLanguage = useSetAtom(desktopLanguageAtom);
   const setDesktopUserId = useSetAtom(desktopUserIdAtom);
   const setKubeconfig = useSetAtom(kubeconfigAtom);
@@ -95,6 +97,7 @@ export function SealosSdkBootstrap() {
         applySealosSdkHydration({
           language,
           session,
+          setAppToken,
           setDesktopLanguage,
           setDesktopUserId,
           setKubeconfig,
@@ -124,7 +127,13 @@ export function SealosSdkBootstrap() {
       unsubscribeLanguage?.();
       cleanup?.();
     };
-  }, [setDesktopLanguage, setDesktopUserId, setKubeconfig, setNamespace]);
+  }, [
+    setAppToken,
+    setDesktopLanguage,
+    setDesktopUserId,
+    setKubeconfig,
+    setNamespace,
+  ]);
 
   return null;
 }

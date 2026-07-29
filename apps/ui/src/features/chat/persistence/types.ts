@@ -13,6 +13,10 @@ import {
   REFRESH_FRONTEND_SWR_TOOL_NAME,
   refreshFrontendSwrCachesOutputSchema,
 } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
+import type {
+  PersonalResourceOwner,
+  VerifiedPersonalResourceActor,
+} from "@/lib/verified-personal-actor";
 
 /** Postgres schema name for assistant chat tables (created by `drizzle/` migrations). */
 export const ASSISTANT_DB_SCHEMA = "sealai_assistant";
@@ -26,11 +30,20 @@ export function normalizeAssistantNamespace(namespace: string): string {
   return trimmed.length > 0 ? trimmed : DEFAULT_ASSISTANT_NAMESPACE_KEY;
 }
 
-/** Server-verified owner of a personal Assistant Conversation. */
-export interface AssistantConversationOwner {
-  namespace: string;
-  workspaceActor: string;
-}
+/**
+ * Server-verified owner of a personal Assistant Conversation. `userUid` is
+ * stored in the legacy-named `workspace_actor` column (ADR-0059); the
+ * per-region crName never enters uid-keyed conversation rows.
+ */
+export type AssistantConversationOwner = PersonalResourceOwner;
+
+/**
+ * A verified actor entering a conversation route. Conversation persistence
+ * consults the crName only to find the actor's legacy rows; surfaces still
+ * keyed by crName (the chat toolset's deploy-task actor) also read it from
+ * here.
+ */
+export type VerifiedAssistantConversationActor = VerifiedPersonalResourceActor;
 
 /** Wire shape for a thread row sent to the client. */
 export interface AssistantThreadDTO {

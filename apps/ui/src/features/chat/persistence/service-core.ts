@@ -10,6 +10,7 @@ import {
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   normalizeAssistantNamespace,
+  type VerifiedAssistantConversationActor,
 } from "./types";
 
 type ChatTitleModel = Parameters<typeof generateText>[0]["model"];
@@ -44,7 +45,7 @@ function normalizedOwner(
 ): AssistantConversationOwner {
   return {
     namespace: normalizeAssistantNamespace(owner.namespace),
-    workspaceActor: owner.workspaceActor,
+    userUid: owner.userUid,
   };
 }
 
@@ -97,11 +98,14 @@ export function createAssistantConversationService(
 
     ensureThread: (
       chatId: string,
-      owner: AssistantConversationOwner
+      actor: VerifiedAssistantConversationActor
     ): Promise<boolean> =>
       repository.ensureThreadForOwner({
+        actor: {
+          legacyWorkspaceActor: actor.legacyWorkspaceActor,
+          owner: normalizedOwner(actor.owner),
+        },
         id: chatId,
-        owner: normalizedOwner(owner),
         title: dependencies.placeholderTitle(),
       }),
 

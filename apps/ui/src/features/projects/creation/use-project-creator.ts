@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
-import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import type { DatabaseDeploymentSettings } from "@/features/deploy/database-deployer";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
 import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
@@ -19,6 +18,7 @@ import {
   runDeploymentTargetPipeline,
 } from "@/features/deploy/pipeline";
 import type { TemplateDeploymentSettings } from "@/features/deploy/template-deployer";
+import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import { requestAssistantDraftThread } from "@/features/panes/layout-store";
 import type { ProjectCreatorRootProps } from "@/features/projects/creation/creator/project-creator.context";
@@ -225,10 +225,10 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
     []
   );
 
-  const deploymentAdapters = useMemo(
-    () => createDeploymentTargetClientAdapters({ kubeconfig, namespace }),
-    [kubeconfig, namespace]
-  );
+  const deploymentAdapters = useDeploymentTargetAdapters({
+    kubeconfig,
+    namespace,
+  });
 
   const runDeployment = useCallback(
     (request: Parameters<typeof runDeploymentTargetPipeline>[0]["request"]) =>

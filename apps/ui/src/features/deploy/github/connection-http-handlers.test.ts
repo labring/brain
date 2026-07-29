@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { KubeconfigNamespaceVerification } from "@/lib/request-kubeconfig-auth";
+import { SignJWT } from "jose";
+
+import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
+import {
+  type KubeconfigNamespaceVerification,
+  workspaceActorFromAuthorizedKubeconfig,
+} from "@/lib/request-kubeconfig-auth";
 import {
   createGithubAppInstallSessionHandler,
   createGithubConnectionDeleteHandler,
@@ -12,6 +18,7 @@ import {
   type GithubAppInstallSessionCreate,
   type GithubConnectionDelete,
   type GithubConnectionStatusLookup,
+  type GithubLegacyConnectionAdoption,
   type GithubOAuthCallbackCancel,
   type GithubOAuthCallbackComplete,
   type GithubOAuthSessionCreate,
@@ -20,6 +27,33 @@ import {
 import type { GithubConnectionOwnerIdentity } from "./owner-identity";
 
 const PERSISTENCE_FAILURE_RE = /Failed to persist GitHub OAuth connection/;
+
+const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
+const APP_TOKEN_CONFIG = {
+  secret: APP_TOKEN_SECRET,
+};
+
+function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
+  return new SignJWT({
+    userCrName: crName,
+    userUid: `${crName}-uid`,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(1_753_600_000)
+    .sign(new TextEncoder().encode(secret));
+}
+
+/** Mints the app token desktop would deliver for the kubeconfig's actor. */
+async function appTokenHeaderFor(
+  encodedKubeconfig: string
+): Promise<Record<string, string>> {
+  const crName = workspaceActorFromAuthorizedKubeconfig(
+    decodeURIComponent(encodedKubeconfig)
+  );
+  return crName == null
+    ? {}
+    : { "X-Sealos-App-Token": await mintAppToken(crName) };
+}
 
 function jwt(subject: string, tokenId = "token"): string {
   const header = Buffer.from(
@@ -107,9 +141,13 @@ type CallbackWrite = Parameters<GithubOAuthCallbackComplete>[0] & {
 function createWorkspaceActorHttpHarness(input: {
   callbackFailures?: number;
   connections: ReadonlyMap<string, StoredConnection>;
+  observeFingerprint?: ObserveIdentityFingerprint;
   verification?: KubeconfigNamespaceVerification;
 }) {
+  const observeFingerprint: ObserveIdentityFingerprint =
+    input.observeFingerprint ?? (() => Promise.resolve({ outcome: "match" }));
   const connections = new Map(input.connections);
+  const adoptions: Parameters<GithubLegacyConnectionAdoption>[0][] = [];
   const appInstallSessions: Parameters<GithubAppInstallSessionCreate>[0][] = [];
   const authorizationTokens: string[] = [];
   const callbackWrites: CallbackWrite[] = [];
@@ -119,42 +157,59 @@ function createWorkspaceActorHttpHarness(input: {
   const oauthStates = new Map<string, StoredOAuthState>();
   let remainingCallbackFailures = input.callbackFailures ?? 0;
   const repositoryLookups: Parameters<GithubRepositoryList>[0][] = [];
+  const ownerKey = (owner: GithubConnectionOwnerIdentity) =>
+    `${owner.namespace}:${owner.userUid}:${owner.ownerIdentityVersion}`;
+  /** Mirrors the persistence seam: re-key the legacy generation-1 row to the uid; a conflicting current row wins and leaves the legacy row inert. */
+  const adoptLegacyConnection: GithubLegacyConnectionAdoption = (adoption) => {
+    adoptions.push(adoption);
+    const legacyKey = `${adoption.owner.namespace}:${adoption.legacyWorkspaceActor}:1`;
+    const legacy = connections.get(legacyKey);
+    if (legacy != null && !connections.has(ownerKey(adoption.owner))) {
+      connections.delete(legacyKey);
+      connections.set(ownerKey(adoption.owner), legacy);
+    }
+    return Promise.resolve();
+  };
   const handler = createGithubConnectionStatusHandler({
+    adoptLegacyConnection,
     getConnection: (owner) => {
       lookups.push(owner);
-      return Promise.resolve(
-        connections.get(
-          `${owner.namespace}:${owner.workspaceActor}:${owner.ownerIdentityVersion}`
-        ) ?? null
-      );
+      return Promise.resolve(connections.get(ownerKey(owner)) ?? null);
     },
+    appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
     },
   });
   const repositoriesHandler = createGithubRepositoryListHandler({
+    adoptLegacyConnection,
     listRepositories: (owner) => {
       repositoryLookups.push(owner);
       return Promise.resolve(
-        connections.get(
-          `${owner.namespace}:${owner.workspaceActor}:${owner.ownerIdentityVersion}`
-        )?.repositories ?? []
+        connections.get(ownerKey(owner))?.repositories ?? []
       );
     },
+    appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
     },
   });
   const deleteHandler = createGithubConnectionDeleteHandler({
-    deleteConnection: (owner) => {
-      deletes.push(owner);
+    /** Mirrors the persistence seam: forget the uid row and any legacy row. */
+    deleteConnection: (actor) => {
+      deletes.push(actor);
+      connections.delete(ownerKey(actor.owner));
       connections.delete(
-        `${owner.namespace}:${owner.workspaceActor}:${owner.ownerIdentityVersion}`
+        `${actor.owner.namespace}:${actor.legacyWorkspaceActor}:1`
       );
       return Promise.resolve();
     },
+    appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -165,7 +220,7 @@ function createWorkspaceActorHttpHarness(input: {
       oauthSessions.push(session);
       oauthStates.set("oauth-state", {
         expiresAt: new Date(Date.now() + 60_000),
-        owner: session.owner,
+        owner: session.actor.owner,
         returnPath: session.returnPath,
         state: "oauth-state",
       });
@@ -176,6 +231,8 @@ function createWorkspaceActorHttpHarness(input: {
       });
     },
     getBaseUrl: () => "https://brain.test",
+    appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -189,6 +246,8 @@ function createWorkspaceActorHttpHarness(input: {
         state: "app-state",
       });
     },
+    appTokenConfig: APP_TOKEN_CONFIG,
+    observeFingerprint,
     verify: ({ token }) => {
       authorizationTokens.push(token);
       return Promise.resolve(input.verification ?? { ok: true });
@@ -199,9 +258,9 @@ function createWorkspaceActorHttpHarness(input: {
     if (
       session == null ||
       session.expiresAt.getTime() <= Date.now() ||
-      session.owner.ownerIdentityVersion !== 1 ||
+      session.owner.ownerIdentityVersion !== 2 ||
       session.owner.namespace.trim() === "" ||
-      session.owner.workspaceActor.trim() === ""
+      session.owner.userUid.trim() === ""
     ) {
       return null;
     }
@@ -240,10 +299,9 @@ function createWorkspaceActorHttpHarness(input: {
           owner: session.owner,
           returnPath: session.returnPath,
         });
-        connections.set(
-          `${session.owner.namespace}:${session.owner.workspaceActor}:${session.owner.ownerIdentityVersion}`,
-          { accountLogin: `${session.owner.workspaceActor}-github` }
-        );
+        connections.set(ownerKey(session.owner), {
+          accountLogin: `${session.owner.userUid}-github`,
+        });
         return Promise.resolve(
           Response.redirect("https://brain.test/github/setup-complete")
         );
@@ -255,9 +313,11 @@ function createWorkspaceActorHttpHarness(input: {
     validateState: (state) => Promise.resolve(validOAuthState(state) != null),
   });
 
-  const buildRequest = (
+  const buildRequest = async (
     pathname: string,
     input: {
+      /** undefined → mint a matching token; null → omit the header; string → send as-is. */
+      appToken?: string | null;
       encodedKubeconfig?: string;
       legacyUserId?: string;
       method?: string;
@@ -272,24 +332,26 @@ function createWorkspaceActorHttpHarness(input: {
     if (input.legacyUserId != null) {
       url.searchParams.set("userId", input.legacyUserId);
     }
-    return new Request(url, {
-      headers:
-        input.encodedKubeconfig == null && input.token == null
-          ? undefined
-          : {
-              Authorization: `Bearer ${
-                input.encodedKubeconfig ??
-                kubeconfig({
-                  namespace: input.namespace ?? "shared",
-                  token: input.token ?? "",
-                })
-              }`,
-            },
-      method: input.method,
-    });
+    let headers: Record<string, string> | undefined;
+    if (input.encodedKubeconfig != null || input.token != null) {
+      const encodedKubeconfig =
+        input.encodedKubeconfig ??
+        kubeconfig({
+          namespace: input.namespace ?? "shared",
+          token: input.token ?? "",
+        });
+      headers = { Authorization: `Bearer ${encodedKubeconfig}` };
+      if (input.appToken === undefined) {
+        Object.assign(headers, await appTokenHeaderFor(encodedKubeconfig));
+      } else if (input.appToken !== null) {
+        headers["X-Sealos-App-Token"] = input.appToken;
+      }
+    }
+    return new Request(url, { headers, method: input.method });
   };
 
   return {
+    adoptions,
     appInstallSessions,
     authorizationTokens,
     connections,
@@ -315,90 +377,104 @@ function createWorkspaceActorHttpHarness(input: {
       return callbackHandler(new Request(url));
     },
     callbackWrites,
-    deleteConnection: (input: {
+    deleteConnection: async (input: {
       legacyUserId?: string;
       namespace: string;
       token: string;
     }) =>
       deleteHandler(
-        buildRequest("/api/github/connection", { ...input, method: "DELETE" })
+        await buildRequest("/api/github/connection", {
+          ...input,
+          method: "DELETE",
+        })
       ),
     deletes,
-    getStatus: (request: {
+    getStatus: async (request: {
+      appToken?: string | null;
       encodedKubeconfig?: string;
       legacyUserId?: string;
       namespace?: string;
       token?: string;
     }) => {
-      return handler(buildRequest("/api/github/connection", request));
+      return handler(await buildRequest("/api/github/connection", request));
     },
     oauthSessions,
     oauthStates,
-    startOAuth: (input: {
+    startOAuth: async (input: {
       legacyUserId?: string;
       namespace: string;
       returnPath?: string;
       token: string;
-    }) =>
-      oauthSessionHandler(
+    }) => {
+      const encodedKubeconfig = kubeconfig({
+        namespace: input.namespace,
+        token: input.token,
+      });
+      return oauthSessionHandler(
         new Request("https://brain.test/api/github/oauth-session", {
           body: JSON.stringify({
-            encodedKubeconfig: kubeconfig({
-              namespace: input.namespace,
-              token: input.token,
-            }),
+            encodedKubeconfig,
             namespace: input.namespace,
             returnPath: input.returnPath,
             userId: input.legacyUserId,
           }),
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(await appTokenHeaderFor(encodedKubeconfig)),
+          },
           method: "POST",
         })
-      ),
-    startAppInstall: (input: {
+      );
+    },
+    startAppInstall: async (input: {
       legacyUserId?: string;
       namespace: string;
       returnPath?: string;
       token: string;
-    }) =>
-      appInstallSessionHandler(
+    }) => {
+      const encodedKubeconfig = kubeconfig({
+        namespace: input.namespace,
+        token: input.token,
+      });
+      return appInstallSessionHandler(
         new Request("https://brain.test/api/github/install-session", {
           body: JSON.stringify({
-            encodedKubeconfig: kubeconfig({
-              namespace: input.namespace,
-              token: input.token,
-            }),
+            encodedKubeconfig,
             namespace: input.namespace,
             returnPath: input.returnPath,
             userId: input.legacyUserId,
           }),
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(await appTokenHeaderFor(encodedKubeconfig)),
+          },
           method: "POST",
         })
-      ),
-    listRepositories: (input: {
+      );
+    },
+    listRepositories: async (input: {
       legacyUserId?: string;
       namespace: string;
       token: string;
-    }) => repositoriesHandler(buildRequest("/api/github/repos", input)),
+    }) => repositoriesHandler(await buildRequest("/api/github/repos", input)),
     lookups,
     repositoryLookups,
   };
 }
 
-test("connection status ignores legacy userId and reads the verified actor's connection", async () => {
+test("connection status ignores legacy userId and reads the verified actor's uid-keyed connection", async () => {
   const aliceToken = jwt("system:serviceaccount:user-system:alice-cr");
   const harness = createWorkspaceActorHttpHarness({
     connections: new Map([
       [
-        "shared:alice-cr:1",
+        "shared:alice-cr-uid:2",
         {
           accessTokenCiphertext: "secret",
           accountLogin: "alice-github",
           id: "connection-alice",
         },
       ],
-      ["shared:bob-cr:1", { accountLogin: "bob-github" }],
+      ["shared:bob-cr-uid:2", { accountLogin: "bob-github" }],
     ]),
   });
 
@@ -416,8 +492,8 @@ test("connection status ignores legacy userId and reads the verified actor's con
   assert.deepEqual(harness.lookups, [
     {
       namespace: "shared",
-      ownerIdentityVersion: 1,
-      workspaceActor: "alice-cr",
+      ownerIdentityVersion: 2,
+      userUid: "alice-cr-uid",
     },
   ]);
 });
@@ -425,8 +501,8 @@ test("connection status ignores legacy userId and reads the verified actor's con
 test("members in one namespace see only their own connection status", async () => {
   const harness = createWorkspaceActorHttpHarness({
     connections: new Map([
-      ["shared:alice-cr:1", { accountLogin: "alice-github" }],
-      ["shared:bob-cr:1", { accountLogin: "bob-github" }],
+      ["shared:alice-cr-uid:2", { accountLogin: "alice-github" }],
+      ["shared:bob-cr-uid:2", { accountLogin: "bob-github" }],
     ]),
   });
 
@@ -451,14 +527,14 @@ test("repository listing ignores legacy userId and uses only the verified actor'
   const harness = createWorkspaceActorHttpHarness({
     connections: new Map([
       [
-        "shared:alice-cr:1",
+        "shared:alice-cr-uid:2",
         {
           accountLogin: "alice-github",
           repositories: [{ fullName: "alice/private" }],
         },
       ],
       [
-        "shared:bob-cr:1",
+        "shared:bob-cr-uid:2",
         {
           accountLogin: "bob-github",
           repositories: [{ fullName: "bob/private" }],
@@ -480,8 +556,8 @@ test("repository listing ignores legacy userId and uses only the verified actor'
   assert.deepEqual(harness.repositoryLookups, [
     {
       namespace: "shared",
-      ownerIdentityVersion: 1,
-      workspaceActor: "alice-cr",
+      ownerIdentityVersion: 2,
+      userUid: "alice-cr-uid",
     },
   ]);
 });
@@ -489,8 +565,8 @@ test("repository listing ignores legacy userId and uses only the verified actor'
 test("disconnect ignores legacy userId and removes only the verified actor's connection", async () => {
   const harness = createWorkspaceActorHttpHarness({
     connections: new Map([
-      ["shared:alice-cr:1", { accountLogin: "alice-github" }],
-      ["shared:bob-cr:1", { accountLogin: "bob-github" }],
+      ["shared:alice-cr-uid:2", { accountLogin: "alice-github" }],
+      ["shared:bob-cr-uid:2", { accountLogin: "bob-github" }],
     ]),
   });
 
@@ -502,13 +578,16 @@ test("disconnect ignores legacy userId and removes only the verified actor's con
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { connection: null });
-  assert.equal(harness.connections.has("shared:alice-cr:1"), true);
-  assert.equal(harness.connections.has("shared:bob-cr:1"), false);
+  assert.equal(harness.connections.has("shared:alice-cr-uid:2"), true);
+  assert.equal(harness.connections.has("shared:bob-cr-uid:2"), false);
   assert.deepEqual(harness.deletes, [
     {
-      namespace: "shared",
-      ownerIdentityVersion: 1,
-      workspaceActor: "bob-cr",
+      legacyWorkspaceActor: "bob-cr",
+      owner: {
+        namespace: "shared",
+        ownerIdentityVersion: 2,
+        userUid: "bob-cr-uid",
+      },
     },
   ]);
 });
@@ -530,12 +609,15 @@ test("OAuth session creation binds state to the verified actor and ignores legac
   });
   assert.deepEqual(harness.oauthSessions, [
     {
-      baseUrl: "https://brain.test",
-      owner: {
-        namespace: "shared",
-        ownerIdentityVersion: 1,
-        workspaceActor: "alice-cr",
+      actor: {
+        legacyWorkspaceActor: "alice-cr",
+        owner: {
+          namespace: "shared",
+          ownerIdentityVersion: 2,
+          userUid: "alice-cr-uid",
+        },
       },
+      baseUrl: "https://brain.test",
       returnPath: "/projects?source=github",
     },
   ]);
@@ -559,10 +641,13 @@ test("GitHub App install session uses the same verified owner authorization", as
   });
   assert.deepEqual(harness.appInstallSessions, [
     {
-      owner: {
-        namespace: "shared",
-        ownerIdentityVersion: 1,
-        workspaceActor: "alice-cr",
+      actor: {
+        legacyWorkspaceActor: "alice-cr",
+        owner: {
+          namespace: "shared",
+          ownerIdentityVersion: 2,
+          userUid: "alice-cr-uid",
+        },
       },
       returnPath: "/projects?source=github",
     },
@@ -603,11 +688,11 @@ test("OAuth callback consumes the bound owner exactly once under concurrency", a
   assert.equal(harness.callbackWrites.length, 1);
   assert.deepEqual(harness.callbackWrites[0]?.owner, {
     namespace: "shared",
-    ownerIdentityVersion: 1,
-    workspaceActor: "alice-cr",
+    ownerIdentityVersion: 2,
+    userUid: "alice-cr-uid",
   });
-  assert.equal(harness.connections.has("shared:alice-cr:1"), true);
-  assert.equal(harness.connections.has("shared:bob-cr:1"), false);
+  assert.equal(harness.connections.has("shared:alice-cr-uid:2"), true);
+  assert.equal(harness.connections.has("shared:bob-cr-uid:2"), false);
 });
 
 test("OAuth callback rolls state consumption back when connection persistence fails", async () => {
@@ -631,7 +716,7 @@ test("OAuth callback rolls state consumption back when connection persistence fa
 
   assert.equal(retry.status, 302);
   assert.equal(harness.callbackWrites.length, 1);
-  assert.equal(harness.connections.has("shared:alice-cr:1"), true);
+  assert.equal(harness.connections.has("shared:alice-cr-uid:2"), true);
 });
 
 test("OAuth denial consumes valid state and rejects replay", async () => {
@@ -705,7 +790,8 @@ test("OAuth callback and denial reject expired or identity-mismatched state", as
 
   harness.oauthStates.set("oauth-state", {
     ...state,
-    owner: { ...state.owner, ownerIdentityVersion: 0 },
+    // A legacy-generation pending state is never honored (nor re-keyed).
+    owner: { ...state.owner, ownerIdentityVersion: 1 },
   });
   const mismatched = await harness.callbackOAuth({
     code: "oauth-code",
@@ -722,7 +808,7 @@ test("OAuth callback and denial reject expired or identity-mismatched state", as
 test("reauthorization creates the current owner connection without reviving legacy state", async () => {
   const harness = createWorkspaceActorHttpHarness({
     connections: new Map([
-      ["shared:alice-cr:0", { accountLogin: "legacy-github" }],
+      ["shared:alice-cr:1", { accountLogin: "legacy-github" }],
     ]),
   });
   await harness.startOAuth({
@@ -737,12 +823,12 @@ test("reauthorization creates the current owner connection without reviving lega
 
   assert.equal(response.status, 302);
   assert.equal(
-    harness.connections.get("shared:alice-cr:0")?.accountLogin,
+    harness.connections.get("shared:alice-cr:1")?.accountLogin,
     "legacy-github"
   );
   assert.equal(
-    harness.connections.get("shared:alice-cr:1")?.accountLogin,
-    "alice-cr-github"
+    harness.connections.get("shared:alice-cr-uid:2")?.accountLogin,
+    "alice-cr-uid-github"
   );
 });
 
@@ -833,7 +919,7 @@ test("uses the active user token for both namespace authorization and actor reso
   const activeToken = jwt("system:serviceaccount:user-system:active-cr");
   const harness = createWorkspaceActorHttpHarness({
     connections: new Map([
-      ["shared:active-cr:1", { accountLogin: "active-github" }],
+      ["shared:active-cr-uid:2", { accountLogin: "active-github" }],
     ]),
   });
 
@@ -851,8 +937,8 @@ test("uses the active user token for both namespace authorization and actor reso
   assert.deepEqual(harness.lookups, [
     {
       namespace: "shared",
-      ownerIdentityVersion: 1,
-      workspaceActor: "active-cr",
+      ownerIdentityVersion: 2,
+      userUid: "active-cr-uid",
     },
   ]);
   assert.deepEqual(await response.json(), {
@@ -864,7 +950,7 @@ test("token rotation preserves the Workspace Actor and connection status", async
   const subject = "system:serviceaccount:user-system:alice-cr";
   const harness = createWorkspaceActorHttpHarness({
     connections: new Map([
-      ["shared:alice-cr:1", { accountLogin: "alice-github" }],
+      ["shared:alice-cr-uid:2", { accountLogin: "alice-github" }],
     ]),
   });
 
@@ -884,7 +970,212 @@ test("token rotation preserves the Workspace Actor and connection status", async
     connection: { accountLogin: "alice-github" },
   });
   assert.deepEqual(
-    harness.lookups.map((lookup) => lookup.workspaceActor),
-    ["alice-cr", "alice-cr"]
+    harness.lookups.map((lookup) => lookup.userUid),
+    ["alice-cr-uid", "alice-cr-uid"]
   );
+});
+
+test("personal connection routes return 401 without the app token header", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr-uid:2", { accountLogin: "alice-github" }],
+    ]),
+  });
+
+  const response = await harness.getStatus({
+    appToken: null,
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), {
+    code: "app_token_required",
+    error: "Authentication is required.",
+  });
+  assert.deepEqual(harness.lookups, []);
+});
+
+test("an app token bound to another actor is refused with 403", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr-uid:2", { accountLogin: "alice-github" }],
+    ]),
+  });
+
+  const response = await harness.getStatus({
+    appToken: await mintAppToken("bob-cr"),
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    code: "app_token_mismatch",
+    error: "App token does not match the authenticated actor.",
+  });
+  assert.deepEqual(harness.lookups, []);
+});
+
+test("an app token signed with the wrong secret is refused with 401", async () => {
+  const harness = createWorkspaceActorHttpHarness({ connections: new Map() });
+
+  const response = await harness.getStatus({
+    appToken: await mintAppToken("alice-cr", "attacker-secret"),
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), {
+    code: "app_token_invalid",
+    error: "Authentication is required.",
+  });
+  assert.deepEqual(harness.lookups, []);
+});
+
+test("a legacy generation-1 connection is adopted to the uid owner on first verified entry", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr:1", { accountLogin: "alice-github" }],
+    ]),
+  });
+
+  const first = await harness.getStatus({
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+  const second = await harness.getStatus({
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(first.status, 200);
+  assert.deepEqual(await first.json(), {
+    connection: { accountLogin: "alice-github" },
+  });
+  assert.deepEqual(await second.json(), {
+    connection: { accountLogin: "alice-github" },
+  });
+  assert.equal(harness.connections.has("shared:alice-cr:1"), false);
+  assert.equal(harness.connections.has("shared:alice-cr-uid:2"), true);
+  assert.deepEqual(harness.adoptions, [
+    {
+      legacyWorkspaceActor: "alice-cr",
+      owner: {
+        namespace: "shared",
+        ownerIdentityVersion: 2,
+        userUid: "alice-cr-uid",
+      },
+    },
+    {
+      legacyWorkspaceActor: "alice-cr",
+      owner: {
+        namespace: "shared",
+        ownerIdentityVersion: 2,
+        userUid: "alice-cr-uid",
+      },
+    },
+  ]);
+});
+
+test("adopting after reauthorization keeps the uid connection and leaves the legacy row inert", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr:1", { accountLogin: "legacy-github" }],
+      ["shared:alice-cr-uid:2", { accountLogin: "reauthorized-github" }],
+    ]),
+  });
+
+  const response = await harness.getStatus({
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    connection: { accountLogin: "reauthorized-github" },
+  });
+  assert.equal(
+    harness.connections.get("shared:alice-cr:1")?.accountLogin,
+    "legacy-github"
+  );
+});
+
+test("another member's verified entry never adopts a foreign legacy connection", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr:1", { accountLogin: "alice-github" }],
+    ]),
+  });
+
+  const response = await harness.getStatus({
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:bob-cr"),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { connection: null });
+  assert.equal(harness.connections.has("shared:alice-cr:1"), true);
+  assert.deepEqual(harness.adoptions, [
+    {
+      legacyWorkspaceActor: "bob-cr",
+      owner: {
+        namespace: "shared",
+        ownerIdentityVersion: 2,
+        userUid: "bob-cr-uid",
+      },
+    },
+  ]);
+});
+
+test("disconnect forgets the actor's connection across both generations", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr:1", { accountLogin: "alice-github" }],
+    ]),
+  });
+
+  const response = await harness.deleteConnection({
+    namespace: "shared",
+    token: jwt("system:serviceaccount:user-system:alice-cr"),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { connection: null });
+  assert.equal(harness.connections.size, 0);
+  assert.deepEqual(harness.deletes, [
+    {
+      legacyWorkspaceActor: "alice-cr",
+      owner: {
+        namespace: "shared",
+        ownerIdentityVersion: 2,
+        userUid: "alice-cr-uid",
+      },
+    },
+  ]);
+});
+
+test("a forgotten authorization never resurrects from the inert legacy row after disconnect", async () => {
+  const harness = createWorkspaceActorHttpHarness({
+    connections: new Map([
+      ["shared:alice-cr:1", { accountLogin: "legacy-github" }],
+      ["shared:alice-cr-uid:2", { accountLogin: "reauthorized-github" }],
+    ]),
+  });
+  const aliceToken = jwt("system:serviceaccount:user-system:alice-cr");
+
+  const disconnect = await harness.deleteConnection({
+    namespace: "shared",
+    token: aliceToken,
+  });
+  const statusAfter = await harness.getStatus({
+    namespace: "shared",
+    token: aliceToken,
+  });
+
+  assert.equal(disconnect.status, 200);
+  assert.equal(statusAfter.status, 200);
+  assert.deepEqual(await statusAfter.json(), { connection: null });
+  assert.equal(harness.connections.size, 0);
 });
