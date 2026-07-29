@@ -180,7 +180,7 @@ function ownedThreadWhere(chatId: string, owner: AssistantConversationOwner) {
   return and(
     eq(assistantChats.id, chatId),
     eq(assistantChats.namespace, owner.namespace),
-    eq(assistantChats.workspaceActor, owner.workspaceActor)
+    eq(assistantChats.workspaceActor, owner.userUid)
   );
 }
 
@@ -303,7 +303,7 @@ export function createAssistantConversationRepository(
       .where(
         and(
           eq(assistantChats.namespace, owner.namespace),
-          eq(assistantChats.workspaceActor, owner.workspaceActor)
+          eq(assistantChats.workspaceActor, owner.userUid)
         )
       )
       .orderBy(desc(assistantChats.updatedAt));
@@ -319,16 +319,16 @@ export function createAssistantConversationRepository(
     actor: VerifiedAssistantConversationActor
   ): Promise<void> => {
     const legacyWorkspaceActor = actor.legacyWorkspaceActor.trim();
-    const workspaceActor = actor.owner.workspaceActor.trim();
-    if (legacyWorkspaceActor === "" || workspaceActor === "") {
+    const userUid = actor.owner.userUid.trim();
+    if (legacyWorkspaceActor === "" || userUid === "") {
       throw new Error("A verified conversation actor identity is required.");
     }
-    if (legacyWorkspaceActor === workspaceActor) {
+    if (legacyWorkspaceActor === userUid) {
       return;
     }
     await getDb()
       .update(assistantChats)
-      .set({ workspaceActor })
+      .set({ workspaceActor: userUid })
       .where(
         and(
           eq(assistantChats.namespace, actor.owner.namespace),
@@ -347,7 +347,7 @@ export function createAssistantConversationRepository(
       .values({
         id: input.id,
         namespace: input.owner.namespace,
-        workspaceActor: input.owner.workspaceActor,
+        workspaceActor: input.owner.userUid,
         title: input.title,
         titleAiGenerated: false,
       })

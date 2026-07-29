@@ -10,9 +10,9 @@ import {
   type VerifyKubeconfigNamespace,
 } from "@/lib/request-kubeconfig-auth";
 import {
-  CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
   type GithubConnectionOwnerIdentity,
   type VerifiedGithubConnectionActor,
+  verifiedGithubConnectionActor,
 } from "./owner-identity";
 
 export type GithubConnectionStatusLookup = (
@@ -126,14 +126,7 @@ async function authorizeGithubConnectionOwner(input: {
       status: 400,
     });
   }
-  return {
-    legacyWorkspaceActor: authorization.workspaceActor,
-    owner: {
-      namespace: authorization.namespace,
-      ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-      userUid: authorization.actorBinding.userUid,
-    },
-  };
+  return verifiedGithubConnectionActor(authorization);
 }
 
 interface GithubConnectionAuthorizationOptions {

@@ -5,10 +5,7 @@ import {
   adoptLegacyGithubConnectionForOwner,
   getGithubConnectionStatusForOwner,
 } from "@/features/deploy/github/connection-service";
-import {
-  CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-  type VerifiedGithubConnectionActor,
-} from "@/features/deploy/github/owner-identity";
+import { verifiedGithubConnectionActor } from "@/features/deploy/github/owner-identity";
 import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
@@ -96,14 +93,7 @@ async function resolveCredentialBinding(input: {
       ),
     };
   }
-  const actor: VerifiedGithubConnectionActor = {
-    legacyWorkspaceActor: authorization.workspaceActor,
-    owner: {
-      namespace: authorization.namespace,
-      ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-      userUid: authorization.actorBinding.userUid,
-    },
-  };
+  const actor = verifiedGithubConnectionActor(authorization);
   // Every verified entry request first adopts the initiator's legacy
   // generation-1 crName row into the uid owner (lazy re-key, ADR-0059).
   await adoptLegacyGithubConnectionForOwner(actor);

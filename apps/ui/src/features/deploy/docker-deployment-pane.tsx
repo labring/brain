@@ -2,10 +2,8 @@
 
 import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-icons";
 import { SidePane } from "@workspace/ui/components/side-pane";
-import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
@@ -20,7 +18,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
-import { appTokenAtom } from "@/lib/auth-store";
+import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 function stringArrayField(value: unknown): string[] | undefined {
@@ -91,12 +89,10 @@ export function DockerDeploymentPane({
     namespace,
     projectId,
   });
-  const appToken = useAtomValue(appTokenAtom);
-  const deploymentAdapters = useMemo(
-    () =>
-      createDeploymentTargetClientAdapters({ appToken, kubeconfig, namespace }),
-    [appToken, kubeconfig, namespace]
-  );
+  const deploymentAdapters = useDeploymentTargetAdapters({
+    kubeconfig,
+    namespace,
+  });
   const projectName = currentProject.resourceName?.trim() ?? "";
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false

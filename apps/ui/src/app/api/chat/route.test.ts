@@ -46,7 +46,7 @@ interface TestLease {
 
 interface TestOwner {
   namespace: string;
-  workspaceActor: string;
+  userUid: string;
 }
 
 let activeLease: TestLease | null = null;
@@ -73,7 +73,7 @@ let serviceOwners: TestOwner[] = [];
 let titleCalls = 0;
 let titleWait: Promise<void> | null = null;
 let toolsetAvailable = true;
-let toolsetOwner: TestOwner | null = null;
+let toolsetOwner: { namespace: string; workspaceActor: string } | null = null;
 let transformSetup: (() => void) | null = null;
 
 const clientTool = tool({
@@ -736,7 +736,7 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   expect(serviceOwners).toEqual(
     serviceOwners.map(() => ({
       namespace: NAMESPACE,
-      workspaceActor: `${WORKSPACE_ACTOR}-uid`,
+      userUid: `${WORKSPACE_ACTOR}-uid`,
     }))
   );
   // …while the toolset's deploy-task actor stays the per-region crName:
@@ -749,7 +749,7 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   expect(adoptionCalls).toEqual([
     {
       legacyWorkspaceActor: WORKSPACE_ACTOR,
-      owner: { namespace: NAMESPACE, workspaceActor: `${WORKSPACE_ACTOR}-uid` },
+      owner: { namespace: NAMESPACE, userUid: `${WORKSPACE_ACTOR}-uid` },
     },
   ]);
 });

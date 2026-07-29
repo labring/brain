@@ -122,7 +122,7 @@ test("conversation listing keys the owner by the token-proven userUid, ignoring 
     handlerDependencies({
       list: (owner) =>
         Promise.resolve(
-          threads.get(`${owner.namespace}:${owner.workspaceActor}`) ?? []
+          threads.get(`${owner.namespace}:${owner.userUid}`) ?? []
         ),
     })
   );
@@ -147,12 +147,12 @@ test("every verified entry request adopts the actor's legacy conversations befor
       adoptLegacyConversations: (actor) => {
         calls.push(
           `adopt:${actor.legacyWorkspaceActor}->` +
-            `${actor.owner.namespace}:${actor.owner.workspaceActor}`
+            `${actor.owner.namespace}:${actor.owner.userUid}`
         );
         return Promise.resolve();
       },
       bootstrap: (owner) => {
-        calls.push(`bootstrap:${owner.namespace}:${owner.workspaceActor}`);
+        calls.push(`bootstrap:${owner.namespace}:${owner.userUid}`);
         return Promise.resolve({
           chatId: "bootstrap-chat",
           freeTier: { billing: "free" as const, limit: 10, remaining: 7 },
@@ -161,11 +161,11 @@ test("every verified entry request adopts the actor's legacy conversations befor
         });
       },
       list: (owner) => {
-        calls.push(`list:${owner.namespace}:${owner.workspaceActor}`);
+        calls.push(`list:${owner.namespace}:${owner.userUid}`);
         return Promise.resolve([]);
       },
       read: (owner) => {
-        calls.push(`read:${owner.namespace}:${owner.workspaceActor}`);
+        calls.push(`read:${owner.namespace}:${owner.userUid}`);
         return Promise.resolve([]);
       },
     })
@@ -220,15 +220,13 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
     handlerDependencies({
       bootstrap: (owner) =>
         Promise.resolve({
-          chatId: `${owner.workspaceActor}-chat`,
+          chatId: `${owner.userUid}-chat`,
           freeTier: { billing: "free", limit: 10, remaining: 7 },
           messages: [
             {
-              id: `${owner.workspaceActor}-message`,
+              id: `${owner.userUid}-message`,
               role: "assistant",
-              parts: [
-                { type: "text", text: `${owner.workspaceActor} content` },
-              ],
+              parts: [{ type: "text", text: `${owner.userUid} content` }],
             },
           ],
           threads: [],
@@ -276,7 +274,7 @@ test("reading another member's conversation is indistinguishable from a missing 
       read: (owner, chatId) =>
         Promise.resolve(
           privateMessages.get(
-            `${owner.namespace}:${owner.workspaceActor}:${chatId}`
+            `${owner.namespace}:${owner.userUid}:${chatId}`
           ) ?? null
         ),
     })

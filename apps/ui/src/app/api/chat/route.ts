@@ -64,6 +64,7 @@ import { buildChatToolset } from "@/features/chat/runtime/tools";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
+import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 
 const CHAT_TITLE_TIMEOUT_MS = 5000;
 
@@ -726,13 +727,8 @@ export async function POST(req: Request) {
   if (!authorization.ok) {
     return jsonError(authorization.message, authorization.status);
   }
-  const actor: VerifiedAssistantConversationActor = {
-    legacyWorkspaceActor: authorization.workspaceActor,
-    owner: {
-      namespace: authorization.namespace,
-      workspaceActor: authorization.actorBinding.userUid,
-    },
-  };
+  const actor: VerifiedAssistantConversationActor =
+    verifiedPersonalResourceActor(authorization);
   const kubeconfig = decodeKubeconfig(parsed.data.encodedKubeconfig);
   if (kubeconfig == null) {
     return jsonError("Authentication is required.", 401);

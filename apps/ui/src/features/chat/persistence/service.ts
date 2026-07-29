@@ -40,7 +40,7 @@ function normalizedOwner(
 ): AssistantConversationOwner {
   return {
     namespace: normalizeAssistantNamespace(owner.namespace),
-    workspaceActor: owner.workspaceActor,
+    userUid: owner.userUid,
   };
 }
 
