@@ -52,6 +52,15 @@ interface TemplateInitialArgsSeed {
   templateName: string;
 }
 
+interface TemplateDeployerFormState {
+  args: Record<string, string>;
+  initialSettingsReady: boolean;
+  pendingInitialArgs: TemplateInitialArgsSeed | null;
+  previousChoices: readonly TemplateDeploymentChoice[];
+  previousInitialSettings: TemplateDeploymentInitialSettings | undefined;
+  templateName: string;
+}
+
 function defaultTemplateName(options: readonly TemplateDeploymentChoice[]) {
   return options[0]?.name ?? "";
 }
@@ -147,6 +156,52 @@ function templateInitialSelection(
         : defaultArgs(choice);
   }
   return { args, choice, seed, templateName };
+}
+
+function initialTemplateDeployerFormState(
+  choices: readonly TemplateDeploymentChoice[],
+  initialSettings: TemplateDeploymentInitialSettings | undefined
+): TemplateDeployerFormState {
+  const selection = templateInitialSelection(choices, initialSettings);
+  return {
+    args: selection.args ?? {},
+    initialSettingsReady: selection.choice != null,
+    pendingInitialArgs: selection.choice == null ? selection.seed : null,
+    previousChoices: choices,
+    previousInitialSettings: initialSettings,
+    templateName: selection.templateName,
+  };
+}
+
+function formStateForChoices(
+  current: TemplateDeployerFormState,
+  choices: readonly TemplateDeploymentChoice[]
+): TemplateDeployerFormState {
+  const templateName =
+    current.templateName.trim() || defaultTemplateName(choices);
+  const choice = selectedChoice(choices, templateName);
+  const seed = current.pendingInitialArgs;
+  if (choice == null) {
+    return {
+      ...current,
+      args: seed == null ? {} : current.args,
+      initialSettingsReady: false,
+      previousChoices: choices,
+      templateName,
+    };
+  }
+  const seededArgs =
+    seed?.templateName === choice.name
+      ? argsForChoice(choice, seed.args)
+      : null;
+  return {
+    ...current,
+    args: seededArgs ?? defaultArgs(choice),
+    initialSettingsReady: true,
+    pendingInitialArgs: seededArgs == null ? seed : null,
+    previousChoices: choices,
+    templateName,
+  };
 }
 
 function templateLabel(choice: TemplateDeploymentChoice | null) {
@@ -375,67 +430,20 @@ export function TemplateDeployer({
   templateOptions: readonly TemplateDeploymentChoice[];
 }) {
   const inputIdPrefix = useId();
-  const [templateName, setTemplateName] = useState(
-    () => initialSettings?.templateName?.trim() || defaultTemplateName(choices)
+  const [formState, setFormState] = useState(() =>
+    initialTemplateDeployerFormState(choices, initialSettings)
   );
+  const { args, initialSettingsReady, templateName } = formState;
   const choice = selectedChoice(choices, templateName);
-  const [args, setArgs] = useState<Record<string, string>>(() =>
-    defaultArgs(choice)
-  );
-  const [initialSettingsReady, setInitialSettingsReady] = useState(false);
   const autoDeployStateRef = useRef<
     "cancelled" | "eligible" | "pending" | "triggered"
   >("pending");
-  // Prefill args apply once, when the initial template's choice first
-  // resolves from the catalog; switching templates resets to defaults.
-  const initialArgsRef = useRef<TemplateInitialArgsSeed | null>(
-    templateInitialArgsSeed(initialSettings)
-  );
-  const appliedInitialSettingsRef = useRef(initialSettings);
 
-  const [prevChoices, setPrevChoices] = useState(choices);
-  if (choices !== prevChoices) {
-    setPrevChoices(choices);
-    if (templateName.trim() === "") {
-      setTemplateName(defaultTemplateName(choices));
-    }
+  if (formState.previousInitialSettings !== initialSettings) {
+    setFormState(initialTemplateDeployerFormState(choices, initialSettings));
+  } else if (formState.previousChoices !== choices) {
+    setFormState(formStateForChoices(formState, choices));
   }
-
-  useEffect(() => {
-    if (appliedInitialSettingsRef.current !== initialSettings) {
-      const next = templateInitialSelection(choices, initialSettings);
-      setInitialSettingsReady(false);
-      appliedInitialSettingsRef.current = initialSettings;
-      initialArgsRef.current = next.seed;
-      if (next.args != null) {
-        setArgs(next.args);
-      }
-      if (
-        next.choice != null &&
-        choice === next.choice &&
-        templateName === next.templateName
-      ) {
-        initialArgsRef.current = null;
-        setInitialSettingsReady(true);
-      }
-      setTemplateName(next.templateName);
-      return;
-    }
-
-    const seed = initialArgsRef.current;
-    if (seed == null) {
-      setArgs(defaultArgs(choice));
-      setInitialSettingsReady(choice != null);
-      return;
-    }
-    if (choice == null || choice.name !== seed.templateName) {
-      setInitialSettingsReady(false);
-      return;
-    }
-    initialArgsRef.current = null;
-    setArgs(argsForChoice(choice, seed.args));
-    setInitialSettingsReady(true);
-  }, [choice, choices, initialSettings, templateName]);
 
   const settings = useMemo<TemplateDeploymentSettings>(
     () => ({
@@ -525,8 +533,14 @@ export function TemplateDeployer({
             choices={choices}
             disabled={busy || loading}
             onValueChange={(nextTemplateName) => {
-              initialArgsRef.current = null;
-              setTemplateName(nextTemplateName);
+              const nextChoice = selectedChoice(choices, nextTemplateName);
+              setFormState((current) => ({
+                ...current,
+                args: defaultArgs(nextChoice),
+                initialSettingsReady: nextChoice != null,
+                pendingInitialArgs: null,
+                templateName: nextTemplateName,
+              }));
             }}
             value={templateName}
           />
@@ -570,9 +584,12 @@ export function TemplateDeployer({
                       disabled={busy || loading}
                       id={inputId}
                       onValueChange={(nextValue) => {
-                        setArgs((current) => ({
+                        setFormState((current) => ({
                           ...current,
-                          [arg.key]: nextValue,
+                          args: {
+                            ...current.args,
+                            [arg.key]: nextValue,
+                          },
                         }));
                       }}
                       value={args[arg.key] ?? ""}
