@@ -113,8 +113,6 @@ ui:
     API_URL: ""
     NEXT_PUBLIC_APP_URL: ""
     DATABASE_URL: ""
-    # Required (ADR-0059): app-token verification for personal-resource
-    # routes. Production boots fail fast when either is unset.
     JWT_INTERNAL: ""
     REGION_UID: ""
     GITHUB_APP_ID: ""
