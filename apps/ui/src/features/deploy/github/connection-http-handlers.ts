@@ -133,7 +133,7 @@ async function authorizeGithubConnectionOwner(input: {
 }
 
 interface GithubConnectionAuthorizationOptions {
-  /** Test seam; defaults to `JWT_INTERNAL` + `REGION_UID` from the env. */
+  /** Test seam; defaults to `JWT_INTERNAL` from the env. */
   appTokenConfig?: AppTokenVerificationConfig | null;
   /** Test seam; defaults to the region-local Identity Fingerprint store. */
   observeFingerprint?: ObserveIdentityFingerprint;

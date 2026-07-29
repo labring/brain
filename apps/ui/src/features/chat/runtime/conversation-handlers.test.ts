@@ -10,15 +10,12 @@ import {
 } from "./conversation-handlers";
 
 const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
-const APP_TOKEN_REGION_UID = "0f2a6f47-6dcb-4a76-b177-6c0aa22eaf6e";
 const APP_TOKEN_CONFIG = {
-  regionUid: APP_TOKEN_REGION_UID,
   secret: APP_TOKEN_SECRET,
 };
 
 function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
   return new SignJWT({
-    regionUid: APP_TOKEN_REGION_UID,
     userCrName: crName,
     userUid: `${crName}-uid`,
   })

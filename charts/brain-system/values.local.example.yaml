@@ -38,11 +38,10 @@ ui:
     NEXT_PUBLIC_APP_URL: ""
     # Leave empty to use the chart-created brain-pg KubeBlocks credential.
     DATABASE_URL: ""
-    # Required (ADR-0059): the region's cluster-shared app-token secret and
-    # region uid (sealos-system desktop-frontend config). Production boots
-    # fail fast when either is unset.
+    # Required (ADR-0059): the region's cluster-shared app-token secret
+    # (sealos-system desktop-frontend config). Production boots fail fast
+    # when it is unset.
     JWT_INTERNAL: "REPLACE_ME_CLUSTER_JWT_INTERNAL"
-    REGION_UID: "REPLACE_ME_REGION_UID"
     GITHUB_APP_ID: "REPLACE_ME"
     GITHUB_APP_PRIVATE_KEY: "REPLACE_ME_PRIVATE_KEY"
     GITHUB_OAUTH_CLIENT_ID: "REPLACE_ME_OAUTH_CLIENT_ID"

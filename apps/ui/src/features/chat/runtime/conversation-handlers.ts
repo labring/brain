@@ -30,7 +30,7 @@ export interface AssistantConversationHandlerDependencies {
   adoptLegacyConversations: (
     actor: VerifiedAssistantConversationActor
   ) => Promise<void>;
-  /** Test seam; defaults to `JWT_INTERNAL` + `REGION_UID` from the env. */
+  /** Test seam; defaults to `JWT_INTERNAL` from the env. */
   appTokenConfig?: AppTokenVerificationConfig | null;
   bootstrap: (
     owner: AssistantConversationOwner

@@ -648,7 +648,7 @@ export async function authorizeKubeconfigNamespace(input: {
 export async function authorizeWorkspaceActor(input: {
   /** Bare `X-Sealos-App-Token` header value. */
   appToken: string | undefined;
-  /** Test seam; defaults to `JWT_INTERNAL` + `REGION_UID` from the env. */
+  /** Test seam; defaults to `JWT_INTERNAL` from the env. */
   appTokenConfig?: AppTokenVerificationConfig | null;
   encodedKubeconfig: string | undefined;
   expectedNamespace?: string;
@@ -790,7 +790,7 @@ async function enforceAppTokenBinding(input: {
     }
     return {
       code: "app_token_mismatch",
-      message: "App token does not match the authenticated actor or region.",
+      message: "App token does not match the authenticated actor.",
       ok: false,
       status: 403,
     };

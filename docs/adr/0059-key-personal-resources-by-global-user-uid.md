@@ -25,17 +25,16 @@ uid, and the authoritative mapping lives only in the region database. Instead
 of reading that database, Brain trusts the app token that desktop already
 mints and delivers to embedded apps: an HS256 JWT signed with the
 cluster-shared `jwtInternal`, carrying `userUid`, `userCrName`, and
-`regionUid`.
+`regionUid` (only the first two are read).
 
 Clients send the bare token in a new `X-Sealos-App-Token` header, attached
 only by personal-resource fetchers. Servers consult it only at the
-personal-resource authorization points and enforce four hard checks:
+personal-resource authorization points and enforce three hard checks:
 
 1. Signature verifies against `jwtInternal`. A missing key fails production
    startup; a default-secret fallback is forbidden.
 2. `userCrName` equals the crName authenticated from the request kubeconfig.
-3. `regionUid` equals the deployment's configured `REGION_UID`.
-4. The existing `user-system` ServiceAccount subject check stays.
+3. The existing `user-system` ServiceAccount subject check stays.
 
 Workspace claims in the token are never checked: namespace authorization
 remains the kubeconfig's SSAR path. The token proves who is acting, not where
@@ -48,14 +47,15 @@ request. A stolen token is useless without the victim's currently valid
 kubeconfig, so `exp` adds no marginal security; enforcing it would instead
 permanently 401 personal resources after seven days, because desktop mints the
 token only at login, region switch, and workspace switch and never refreshes
-it. Expired-token acceptance is logged to telemetry. Three load-bearing premises
-are recorded: `crName` is never recycled, desktop always mints `iat` into the
-token (jsonwebtoken embeds it whenever `expiresIn` is set) — a platform
-change to either forces re-review of this ADR — and stale post-merge bindings
-are caught by Identity Fingerprints below.
+it. Expired-token acceptance is logged to telemetry. Four load-bearing premises
+are recorded: `crName` is never recycled, `crName` values never coincide
+across regions, desktop always mints `iat` into the token (jsonwebtoken
+embeds it whenever `expiresIn` is set) — a platform change to any of these
+forces re-review of this ADR — and stale post-merge bindings are caught by
+Identity Fingerprints below.
 
 The degradation matrix: all checks pass, expired or not → uid path; signature
-failure → 401 with security log; crName or region mismatch → 403 with security
+failure → 401 with security log; crName mismatch → 403 with security
 log; token missing → 401, fail closed; `iat` missing → 401 with security log
 (minting-time monotonicity orders merge decisions below, so an unorderable
 binding is unverifiable — only a non-desktop minter produces one); binding
@@ -71,9 +71,15 @@ reversed on new evidence: the platform already runs on the shared
 hold it, and billing attribution trusts it alone — so Brain joining creates no
 new risk category. The residual risk stands: a `jwtInternal` compromise mints
 arbitrary identity bindings platform-wide. Brain does not copy the platform's
-two known weaknesses: it cross-checks the token against the kubeconfig
-identity (costcenter accepts either credential alone) and pins `regionUid`
-(the platform's `verifyAppToken` accepts cross-region replays).
+weakness of accepting a lone credential: it cross-checks the token against
+the kubeconfig identity (costcenter accepts either credential alone). Like
+the platform's `verifyAppToken`, Brain accepts cross-region token replays —
+the token is not pinned to a region. Cross-region replay is blocked one layer
+down instead: the kubeconfig liveness credential authenticates only against
+its own region's API server (Pods pin the internal API transport), so a
+replayed token additionally needs a target-region kubeconfig whose crName
+equals the token's — impossible while `crName` values never coincide across
+regions, the premise recorded above.
 
 ### Migrate existing rows by lazy re-key
 
@@ -140,15 +146,20 @@ re-keyed session or commits a connection row the sweep still catches.
 
 ### Keep one code path everywhere
 
-Local development mints a real token: a dev `JWT_INTERNAL` and `REGION_UID`
-in `.env.local`, and a script that signs a JWT for the dev kubeconfig's
-crName. The verifier has zero development branches — credentials may be fake,
+Local development mints a real token: a dev `JWT_INTERNAL` in `.env.local`,
+and a script that signs a JWT for the dev kubeconfig's crName. The verifier has zero development branches — credentials may be fake,
 code paths may not fork. Guest mode is not supported: the platform ships guest
 disabled, Brain carries no guest branches, and missing credentials take the
 generic fail-closed path.
 
 ## Considered Options
 
+- Pin the token to the region (check its `regionUid` claim against a
+  configured `REGION_UID`): rejected. The kubeconfig already region-scopes
+  every request, so the pin's only value is insurance on the cross-region
+  crName premise; it costs a required deployment setting in every region and
+  a dev-minting input. The premise is recorded as load-bearing instead of
+  enforced in code.
 - Resolve crName → userUid from the region database: rejected. It adds a
   standing infrastructure dependency and credentials for a mapping the app
   token already proves with what desktop delivers today.
@@ -182,8 +193,8 @@ Personal APIs keep failing closed, and ADR-0056's distinct error conditions
 are preserved. After re-key, rows carry only the uid key: no degraded path may
 assume personal resources are readable by crName.
 
-Deployments gain two required settings — `REGION_UID` and `JWT_INTERNAL` —
-and production fails fast without them.
+Deployments gain one required setting — `JWT_INTERNAL` — and production
+fails fast without it.
 
 One ADR-0056 enforcement point is weakened by the key switch: the task engine
 no longer asserts owner-equals-creator on GitHub Deployment Task creation,

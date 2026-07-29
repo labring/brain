@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 /**
  * Mints a local-dev App Token (ADR-0059) for the dev kubeconfig's crName,
- * signed with the dev `JWT_INTERNAL` and pinned to the dev `REGION_UID`.
- * The production verifier has zero development branches, so dev traffic
- * needs a genuinely signed token; this script is how it gets minted.
+ * signed with the dev `JWT_INTERNAL`. The production verifier has zero
+ * development branches, so dev traffic needs a genuinely signed token; this
+ * script is how it gets minted.
  *
  * Usage (from apps/ui; Bun auto-loads .env.local):
  *   bun scripts/mint-dev-app-token.mjs
  *
  * Prints the token on stdout; paste it into NEXT_PUBLIC_DEV_APP_TOKEN in
- * apps/ui/.env.local. Requires JWT_INTERNAL, REGION_UID, and
+ * apps/ui/.env.local. Requires JWT_INTERNAL and
  * NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG in the environment.
  */
 import { createHash } from "node:crypto";
@@ -80,7 +80,6 @@ function devUserUid(crName) {
 }
 
 const secret = requiredEnv("JWT_INTERNAL");
-const regionUid = requiredEnv("REGION_UID");
 const kubeconfigText = decodedKubeconfig(
   requiredEnv("NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG")
 );
@@ -90,7 +89,6 @@ const userUid =
   (process.env.DEV_APP_TOKEN_USER_UID ?? "").trim() || devUserUid(crName);
 
 const token = await new SignJWT({
-  regionUid,
   userCrName: crName,
   userUid,
 })

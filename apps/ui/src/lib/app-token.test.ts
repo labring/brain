@@ -18,9 +18,8 @@ const USER_UID = "6bd90648-b8b9-4a70-9be0-95c8391a0dcb";
 const CR_NAME = "alice-cr";
 const MINTED_AT = 1_753_600_000;
 
-const CONFIG = { regionUid: REGION_UID, secret: SECRET };
-const MISSING_BOTH_RE = /JWT_INTERNAL.*REGION_UID|REGION_UID.*JWT_INTERNAL/;
-const MISSING_REGION_RE = /REGION_UID/;
+const CONFIG = { secret: SECRET };
+const MISSING_SECRET_RE = /JWT_INTERNAL/;
 
 function mintAppToken(
   overrides: {
@@ -44,7 +43,7 @@ function mintAppToken(
   return jwt.sign(new TextEncoder().encode(overrides.secret ?? SECRET));
 }
 
-test("accepts a token whose binding matches the authenticated actor and region", async () => {
+test("accepts a token whose binding matches the authenticated actor", async () => {
   const token = await mintAppToken();
 
   assert.deepEqual(
@@ -98,7 +97,7 @@ test("an unexpired expiry and workspace claims are carried without effect", asyn
   );
 });
 
-// Passing the four hard checks is not admission: a null mintedAt cannot be
+// Passing the hard checks is not admission: a null mintedAt cannot be
 // fingerprinted, so the authorization layer refuses it with 401 (ADR-0059
 // degradation matrix). Desktop always mints `iat`; only a non-desktop minter
 // produces this shape.
@@ -223,7 +222,10 @@ test("a token minted for another crName is an actor mismatch", async () => {
   );
 });
 
-test("a token minted for another region is a region mismatch", async () => {
+// The regionUid claim desktop mints is never read: cross-region replay is
+// blocked by the kubeconfig liveness credential, which only the token's
+// region can authenticate.
+test("a token minted for another region is accepted", async () => {
   const token = await mintAppToken({
     claims: { regionUid: "b9a1c9c1-a1de-4c26-9c58-0f9b9c3c2f5d" },
   });
@@ -234,7 +236,11 @@ test("a token minted for another region is a region mismatch", async () => {
       expectedCrName: CR_NAME,
       token,
     }),
-    { ok: false, reason: "region_mismatch" }
+    {
+      binding: { crName: CR_NAME, mintedAt: MINTED_AT, userUid: USER_UID },
+      expired: false,
+      ok: true,
+    }
   );
 });
 
@@ -262,47 +268,36 @@ function withEnv<T>(values: Partial<NodeJS.ProcessEnv>, run: () => T): T {
   }
 }
 
-test("reads the verification config from JWT_INTERNAL and REGION_UID", () => {
-  withEnv({ JWT_INTERNAL: SECRET, REGION_UID }, () => {
+test("reads the verification config from JWT_INTERNAL", () => {
+  withEnv({ JWT_INTERNAL: SECRET }, () => {
     assert.deepEqual(appTokenVerificationConfigFromEnv(), {
-      regionUid: REGION_UID,
       secret: SECRET,
     });
   });
 });
 
-test("the verification config is null when either setting is absent", () => {
-  withEnv({ JWT_INTERNAL: SECRET, REGION_UID: undefined }, () => {
+test("the verification config is null when the secret is absent", () => {
+  withEnv({ JWT_INTERNAL: undefined }, () => {
     assert.equal(appTokenVerificationConfigFromEnv(), null);
   });
-  withEnv({ JWT_INTERNAL: "  ", REGION_UID }, () => {
+  withEnv({ JWT_INTERNAL: "  " }, () => {
     assert.equal(appTokenVerificationConfigFromEnv(), null);
   });
 });
 
-test("production startup fails fast when JWT_INTERNAL or REGION_UID is unset", () => {
+test("production startup fails fast when JWT_INTERNAL is unset", () => {
   assert.throws(
     () =>
       assertProductionAppTokenConfig({
         JWT_INTERNAL: "",
         NODE_ENV: "production",
-        REGION_UID: "",
       }),
-    MISSING_BOTH_RE
-  );
-  assert.throws(
-    () =>
-      assertProductionAppTokenConfig({
-        JWT_INTERNAL: SECRET,
-        NODE_ENV: "production",
-      }),
-    MISSING_REGION_RE
+    MISSING_SECRET_RE
   );
   assert.doesNotThrow(() =>
     assertProductionAppTokenConfig({
       JWT_INTERNAL: SECRET,
       NODE_ENV: "production",
-      REGION_UID,
     })
   );
   assert.doesNotThrow(() =>
@@ -359,7 +354,6 @@ users:
         ...process.env,
         JWT_INTERNAL: SECRET,
         NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG: devKubeconfig,
-        REGION_UID,
       },
     }
   );
@@ -368,7 +362,7 @@ users:
   assert.notEqual(token, "");
 
   return verifyAppTokenBinding({
-    config: { regionUid: REGION_UID, secret: SECRET },
+    config: { secret: SECRET },
     expectedCrName: CR_NAME,
     token,
   }).then((verification) => {

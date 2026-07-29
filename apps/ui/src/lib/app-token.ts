@@ -11,7 +11,6 @@ import { compactVerify } from "jose";
 import { APP_TOKEN_HEADER } from "./app-token-header";
 
 export interface AppTokenVerificationConfig {
-  regionUid: string;
   secret: string;
 }
 
@@ -21,15 +20,14 @@ export function appTokenFromRequest(request: Request): string {
 }
 
 /**
- * Both settings are required deployment configuration; a missing key must
+ * The signing key is required deployment configuration; a missing key must
  * fail production startup rather than degrade to a fallback secret.
  */
 export function appTokenVerificationConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env
 ): AppTokenVerificationConfig | null {
   const secret = env.JWT_INTERNAL?.trim() ?? "";
-  const regionUid = env.REGION_UID?.trim() ?? "";
-  return secret === "" || regionUid === "" ? null : { regionUid, secret };
+  return secret === "" ? null : { secret };
 }
 
 export function assertProductionAppTokenConfig(
@@ -38,12 +36,9 @@ export function assertProductionAppTokenConfig(
   if (env.NODE_ENV !== "production") {
     return;
   }
-  const missing = (["JWT_INTERNAL", "REGION_UID"] as const).filter(
-    (name) => (env[name]?.trim() ?? "") === ""
-  );
-  if (missing.length > 0) {
+  if ((env.JWT_INTERNAL?.trim() ?? "") === "") {
     throw new Error(
-      `App token verification requires ${missing.join(" and ")} in production.`
+      "App token verification requires JWT_INTERNAL in production."
     );
   }
 }
@@ -59,7 +54,7 @@ export type AppTokenBindingVerification =
   | { binding: VerifiedAppTokenBinding; expired: boolean; ok: true }
   | {
       ok: false;
-      reason: "actor_mismatch" | "missing" | "region_mismatch" | "unverifiable";
+      reason: "actor_mismatch" | "missing" | "unverifiable";
     };
 
 function tokenClaims(payload: Uint8Array): Record<string, unknown> | null {
@@ -89,8 +84,7 @@ export async function verifyAppTokenBinding(input: {
     return { ok: false, reason: "missing" };
   }
   const secret = input.config?.secret.trim() ?? "";
-  const regionUid = input.config?.regionUid.trim() ?? "";
-  if (secret === "" || regionUid === "") {
+  if (secret === "") {
     return { ok: false, reason: "unverifiable" };
   }
 
@@ -108,15 +102,11 @@ export async function verifyAppTokenBinding(input: {
   const claims = tokenClaims(payload);
   const userUid = nonEmptyString(claims?.userUid);
   const userCrName = nonEmptyString(claims?.userCrName);
-  const tokenRegionUid = nonEmptyString(claims?.regionUid);
-  if (userUid == null || userCrName == null || tokenRegionUid == null) {
+  if (userUid == null || userCrName == null) {
     return { ok: false, reason: "unverifiable" };
   }
   if (userCrName !== input.expectedCrName) {
     return { ok: false, reason: "actor_mismatch" };
-  }
-  if (tokenRegionUid !== regionUid) {
-    return { ok: false, reason: "region_mismatch" };
   }
 
   const issuedAt = claims?.iat;

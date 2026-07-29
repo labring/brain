@@ -119,7 +119,7 @@ mock.module("@/lib/request-kubeconfig-auth", () => ({
     if (tokenActor !== authorizedWorkspaceActor) {
       return Promise.resolve({
         code: "app_token_mismatch" as const,
-        message: "App token does not match the authenticated actor or region.",
+        message: "App token does not match the authenticated actor.",
         ok: false as const,
         status: 403,
       });
@@ -370,7 +370,7 @@ test("POST fails GitHub creation closed with the degradation matrix statuses", a
       {
         body: {
           code: "app_token_mismatch",
-          error: "App token does not match the authenticated actor or region.",
+          error: "App token does not match the authenticated actor.",
         },
         status: 403,
       }

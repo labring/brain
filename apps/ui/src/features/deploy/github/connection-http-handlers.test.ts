@@ -30,13 +30,11 @@ const PERSISTENCE_FAILURE_RE = /Failed to persist GitHub OAuth connection/;
 
 const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
 const APP_TOKEN_CONFIG = {
-  regionUid: "0f2a6f47-6dcb-4a76-b177-6c0aa22eaf6e",
   secret: APP_TOKEN_SECRET,
 };
 
 function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
   return new SignJWT({
-    regionUid: APP_TOKEN_CONFIG.regionUid,
     userCrName: crName,
     userUid: `${crName}-uid`,
   })
@@ -1014,7 +1012,7 @@ test("an app token bound to another actor is refused with 403", async () => {
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), {
     code: "app_token_mismatch",
-    error: "App token does not match the authenticated actor or region.",
+    error: "App token does not match the authenticated actor.",
   });
   assert.deepEqual(harness.lookups, []);
 });

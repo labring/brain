@@ -19,7 +19,7 @@ export async function register() {
   assertProductionAppTokenConfig();
   if (appTokenVerificationConfigFromEnv() == null) {
     console.warn(
-      "[instrumentation] JWT_INTERNAL / REGION_UID are unset; personal-resource routes will fail closed with 401."
+      "[instrumentation] JWT_INTERNAL is unset; personal-resource routes will fail closed with 401."
     );
   }
   const { runAppPostgresMigrations } = await import(

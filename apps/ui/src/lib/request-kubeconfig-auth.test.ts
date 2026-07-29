@@ -458,10 +458,8 @@ test("restricts off-cluster kubeconfig transport to safe development endpoints",
 // --- Workspace Actor authorization with the desktop-minted App Token ---
 
 const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
-const APP_TOKEN_REGION_UID = "0f2a6f47-6dcb-4a76-b177-6c0aa22eaf6e";
 const APP_TOKEN_USER_UID = "6bd90648-b8b9-4a70-9be0-95c8391a0dcb";
 const APP_TOKEN_CONFIG = {
-  regionUid: APP_TOKEN_REGION_UID,
   secret: APP_TOKEN_SECRET,
 };
 
@@ -491,7 +489,6 @@ function mintAppToken(
   } = {}
 ): Promise<string> {
   const jwt = new SignJWT({
-    regionUid: APP_TOKEN_REGION_UID,
     userCrName: "alice-cr",
     userUid: APP_TOKEN_USER_UID,
     ...overrides.claims,
@@ -521,7 +518,7 @@ function authorizeActor(input: {
   });
 }
 
-test("authorizes the actor when all four app-token checks pass", async () => {
+test("authorizes the actor when all app-token checks pass", async () => {
   assert.deepEqual(await authorizeActor({ appToken: await mintAppToken() }), {
     actorBinding: {
       crName: "alice-cr",
@@ -572,17 +569,15 @@ test("an app token bound to another crName is refused with 403", async () => {
   }
 });
 
-test("an app token minted for another region is refused with 403", async () => {
+// Cross-region replay is blocked by the kubeconfig liveness credential, not
+// by the token: a foreign region's regionUid claim is never read.
+test("an app token minted for another region is accepted", async () => {
   const authorization = await authorizeActor({
     appToken: await mintAppToken({
       claims: { regionUid: "b9a1c9c1-a1de-4c26-9c58-0f9b9c3c2f5d" },
     }),
   });
-  assert.equal(authorization.ok, false);
-  if (!authorization.ok) {
-    assert.equal(authorization.code, "app_token_mismatch");
-    assert.equal(authorization.status, 403);
-  }
+  assert.equal(authorization.ok, true);
 });
 
 test("an ineligible kubeconfig subject stays a distinct 403 despite a valid app token", async () => {
@@ -680,7 +675,6 @@ test("a token without a minting time cannot be fingerprinted and is refused with
   let consulted = 0;
   const authorization = await authorizeActor({
     appToken: await new SignJWT({
-      regionUid: APP_TOKEN_REGION_UID,
       userCrName: "alice-cr",
       userUid: APP_TOKEN_USER_UID,
     })
