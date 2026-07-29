@@ -38,6 +38,7 @@ const COMBOBOX_ROLE_RE = /role="combobox"/;
 const MYSQL_RE = /MySQL/;
 const SELECTED_COUNT_RE = /2 selected/;
 const SINGLE_ARIA_RE = /aria-label="Database engine"/;
+const SINGLE_DESCRIPTION_RE = /aria-describedby="database-engine-description"/;
 const MULTI_ARIA_RE = /aria-label="Log containers"/;
 const SINGLE_EMPTY_SLOT_RE = /data-slot="app-select-empty"/;
 const MULTI_EMPTY_SLOT_RE = /data-slot="app-multi-select-empty"/;
@@ -53,6 +54,7 @@ const SOURCE = readFileSync(
 test("AppSelect renders the selected option in the trigger", () => {
   const html = renderToStaticMarkup(
     <AppSelect
+      aria-describedby="database-engine-description"
       aria-label="Database engine"
       onValueChange={() => undefined}
       options={SINGLE_OPTIONS}
@@ -61,6 +63,7 @@ test("AppSelect renders the selected option in the trigger", () => {
   );
 
   assert.match(html, SINGLE_ARIA_RE);
+  assert.match(html, SINGLE_DESCRIPTION_RE);
   assert.match(html, MYSQL_RE);
   assert.match(html, COMBOBOX_ROLE_RE);
 });

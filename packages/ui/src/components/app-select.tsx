@@ -125,6 +125,7 @@ function SelectPopup({
 }
 
 export interface AppSelectProps {
+  "aria-describedby"?: string;
   "aria-label"?: string;
   className?: string;
   contentClassName?: string;
@@ -144,6 +145,7 @@ export interface AppSelectProps {
 }
 
 export function AppSelect({
+  "aria-describedby": ariaDescribedBy,
   "aria-label": ariaLabel,
   className,
   contentClassName,
@@ -195,6 +197,7 @@ export function AppSelect({
       value={value ?? null}
     >
       <Combobox.Trigger
+        aria-describedby={ariaDescribedBy}
         aria-label={ariaLabel}
         className={cn(triggerClass, className, triggerClassName)}
         data-slot="app-select-trigger"

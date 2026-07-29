@@ -91,6 +91,21 @@ const MAUTIC = {
   title: "Mautic",
 } satisfies TemplateDeploymentChoice;
 
+const SENSITIVE_BOOLEAN = {
+  args: [
+    {
+      default: "TRUE",
+      description: "Use secret integration",
+      key: "use_secret",
+      required: false,
+      type: "boolean",
+    },
+  ],
+  description: "Sensitive-looking Boolean template",
+  name: "sensitive-boolean",
+  title: "Sensitive Boolean",
+} satisfies TemplateDeploymentChoice;
+
 const CATALOG_ERROR_RE = /Could not load template catalog/;
 const FLOWISE_RE = /Flowise/;
 const LOADING_TEMPLATES_RE = /Loading templates/;
@@ -188,17 +203,24 @@ test("template controls submit canonical option and boolean values", async () =>
       const checkbox = rendered?.getByRole("checkbox", {
         name: "use_postgresql",
       });
+      const checkboxLabel = rendered?.getByText("use_postgresql");
       const timezone = rendered?.getByRole("combobox", { name: "timezone" });
       const token = rendered?.getByLabelText("api_token") as
         | HTMLInputElement
         | undefined;
+      const checkboxInput =
+        checkboxLabel instanceof HTMLLabelElement
+          ? checkboxLabel.ownerDocument.getElementById(checkboxLabel.htmlFor)
+          : null;
+      assert.equal(checkboxLabel?.tagName, "LABEL");
+      assert.equal(checkboxInput?.getAttribute("type"), "checkbox");
       assert.equal(checkbox?.getAttribute("aria-checked"), "false");
       assert.match(timezone?.textContent ?? "", UTC_RE);
       assert.equal(token?.type, "password");
 
       await act(() => {
-        if (checkbox != null) {
-          fireEvent.click(checkbox);
+        if (checkboxLabel != null) {
+          fireEvent.click(checkboxLabel);
         }
       });
       assert.equal(checkbox?.getAttribute("aria-checked"), "true");
@@ -219,6 +241,47 @@ test("template controls submit canonical option and boolean values", async () =>
           },
           sensitiveKeys: ["api_token"],
           templateName: "n8n",
+        },
+      ]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("explicit boolean types control sensitive-looking parameter names", async () => {
+  await withTestDom(async (act) => {
+    const deployments: TemplateDeploymentSettings[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            onDeploy={(settings) => {
+              deployments.push(settings);
+            }}
+            templateOptions={[SENSITIVE_BOOLEAN]}
+          />
+        );
+      });
+
+      const checkbox = rendered?.getByRole("checkbox", {
+        name: "use_secret",
+      });
+      assert.equal(checkbox?.getAttribute("aria-checked"), "true");
+
+      const submit = rendered?.getByTestId("template.deployer.submit");
+      await act(() => {
+        if (submit != null) {
+          fireEvent.click(submit);
+        }
+      });
+
+      assert.deepEqual(deployments, [
+        {
+          args: { use_secret: "true" },
+          sensitiveKeys: ["use_secret"],
+          templateName: "sensitive-boolean",
         },
       ]);
     } finally {
@@ -317,6 +380,39 @@ test("template changes reset option and boolean defaults", async () => {
         name: "timezone",
       });
       assert.ok(n8nTimezone?.textContent?.includes("UTC"));
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("new initial settings preserve seeded values when switching templates", async () => {
+  await withTestDom(async (act) => {
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            initialSettings={{ args: {}, templateName: "n8n" }}
+            templateOptions={[N8N, MAUTIC]}
+          />
+        );
+      });
+
+      await act(() => {
+        rendered?.rerender(
+          <TemplateDeployer
+            initialSettings={{
+              args: { TIMEZONE: "Asia/Shanghai" },
+              templateName: "mautic",
+            }}
+            templateOptions={[N8N, MAUTIC]}
+          />
+        );
+      });
+
+      const timezone = rendered?.getByRole("combobox", { name: "TIMEZONE" });
+      assert.equal(timezone?.textContent, "Asia/Shanghai");
     } finally {
       await act(() => rendered?.unmount());
     }
