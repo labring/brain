@@ -2,6 +2,38 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.3] - 2026-07-29
+
+### Added
+
+- Added optional `DEPLOY_SKILL_SOURCE` configuration for testing another
+  `sealos-deploy` source in staging while retaining the production
+  `brain-deploy` source by default.
+
+### Changed
+
+- AI Deployment Timelines now show stable, meaningful progress messages,
+  coalesce repeated updates, and retain safe resource status and timeout
+  events.
+- Sealos Template configuration now displays trusted canonical keys, labels,
+  descriptions, choices, and non-sensitive defaults. Submitted values and
+  sensitive defaults remain hidden and are never persisted.
+
+### Fixed
+
+- Fixed AI deployment configuration rendering generic unlabeled fields or
+  treating internal blocker IDs as user-facing submission keys.
+- Legacy AI tasks whose input metadata cannot be safely projected now fail
+  closed into a redeployable state instead of remaining blocked indefinitely.
+
+### Upgrade Notes
+
+- No database migration is required. Existing installations only need to roll
+  out the UI image for these changes.
+- `DEPLOY_SKILL_SOURCE` is optional. Changing it requires a UI rollout and
+  affects only new deployment runtimes; Devboxes where `sealos-deploy` is
+  already installed are not overwritten.
+
 ## [2.0.2] - 2026-07-28
 
 ### Added
@@ -138,6 +170,7 @@ databases, and day-to-day operations into one Project workspace.
 - Added Project Assistant for understanding the current Project context and
   starting supported operations.
 
+[2.0.3]: https://github.com/labring/brain/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/labring/brain/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/labring/brain/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/labring/brain/releases/tag/v2.0.0
