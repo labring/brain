@@ -196,7 +196,7 @@ function formStateForChoices(
       : null;
   return {
     ...current,
-    args: seededArgs ?? defaultArgs(choice),
+    args: seededArgs ?? argsForChoice(choice, current.args),
     initialSettingsReady: true,
     pendingInitialArgs: seededArgs == null ? seed : null,
     previousChoices: choices,

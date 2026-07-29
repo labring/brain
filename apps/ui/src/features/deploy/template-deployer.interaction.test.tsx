@@ -184,6 +184,56 @@ test("async catalog loading preserves and selects the requested template", async
   });
 });
 
+test("equivalent catalog refreshes preserve edited template args", async () => {
+  await withTestDom(async (act) => {
+    const settingsChanges: TemplateDeploymentSettings[] = [];
+    const onSettingsChange = (settings: TemplateDeploymentSettings) => {
+      settingsChanges.push(settings);
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <TemplateDeployer
+            onSettingsChange={onSettingsChange}
+            templateOptions={[FLOWISE]}
+          />
+        );
+      });
+
+      const port = rendered?.getByLabelText("port") as
+        | HTMLInputElement
+        | undefined;
+      await act(() => {
+        if (port != null) {
+          fireEvent.focus(port);
+          fireEvent.input(port, { target: { value: "8080" } });
+          // Flush React's input-event fallback in the Happy DOM harness.
+          fireEvent.keyUp(port, { key: "0" });
+        }
+      });
+      assert.equal(port?.value, "8080");
+      assert.equal(settingsChanges.at(-1)?.args.port, "8080");
+
+      await act(() => {
+        rendered?.rerender(
+          <TemplateDeployer
+            onSettingsChange={onSettingsChange}
+            templateOptions={[FLOWISE]}
+          />
+        );
+      });
+
+      const refreshedPort = rendered?.getByLabelText("port") as
+        | HTMLInputElement
+        | undefined;
+      assert.equal(refreshedPort?.value, "8080");
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("template controls submit canonical option and boolean values", async () => {
   await withTestDom(async (act) => {
     const deployments: TemplateDeploymentSettings[] = [];
