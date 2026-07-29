@@ -1,3 +1,10 @@
+import {
+  type PersonalResourceOwner,
+  type VerifiedPersonalResourceActor,
+  type VerifiedWorkspaceActorAuthorization,
+  verifiedPersonalResourceActor,
+} from "@/lib/verified-personal-actor";
+
 /**
  * The partial unique index `github_oauth_connections_current_owner_unique_idx`
  * and its upsert arbiter both key on this value, so bumping it requires a new
@@ -14,19 +21,29 @@ export const CURRENT_GITHUB_OWNER_IDENTITY_VERSION = 2;
  */
 export const LEGACY_GITHUB_OWNER_IDENTITY_VERSION = 1;
 
-export interface GithubConnectionOwnerIdentity {
-  namespace: string;
+/**
+ * Owner key of a GitHub Connection: the uid-keyed personal-resource owner
+ * (`userUid` lives in the legacy-named `workspace_actor` column) plus the
+ * identity generation it was written under.
+ */
+export interface GithubConnectionOwnerIdentity extends PersonalResourceOwner {
   ownerIdentityVersion: number;
-  /**
-   * The owning platform account's global `userUid`, stored in the
-   * `workspace_actor` column. The per-region crName never enters uid-keyed
-   * rows (ADR-0059).
-   */
-  userUid: string;
 }
 
 /** A verified actor entering a connection route: the uid-keyed owner plus the per-region crName, which is used only to find that actor's legacy rows. */
-export interface VerifiedGithubConnectionActor {
-  legacyWorkspaceActor: string;
-  owner: GithubConnectionOwnerIdentity;
+export type VerifiedGithubConnectionActor =
+  VerifiedPersonalResourceActor<GithubConnectionOwnerIdentity>;
+
+/** Stamp the choke point's verified binding with the current identity generation. */
+export function verifiedGithubConnectionActor(
+  authorization: VerifiedWorkspaceActorAuthorization
+): VerifiedGithubConnectionActor {
+  const actor = verifiedPersonalResourceActor(authorization);
+  return {
+    ...actor,
+    owner: {
+      ...actor.owner,
+      ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+    },
+  };
 }

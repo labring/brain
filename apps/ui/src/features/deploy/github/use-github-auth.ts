@@ -13,6 +13,7 @@ import {
 import { githubReposSWRKey } from "@/features/deploy/github/use-github-repos";
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 const GITHUB_APP_INSTALL_POPUP_NAME = "brain-github-app-install";
 const GITHUB_APP_INSTALL_POPUP_FEATURES = [
@@ -48,22 +49,28 @@ export interface UseGithubAuthResult {
   mutate: () => Promise<unknown>;
 }
 
+interface GithubConnectionCredentials {
+  appToken: string;
+  kubeconfig: string;
+  namespace: string;
+}
+
+function connectionRequestHeaders(
+  credentials: GithubConnectionCredentials
+): Record<string, string> | undefined {
+  return credentials.kubeconfig.trim() === ""
+    ? undefined
+    : personalResourceAuthHeaders(credentials);
+}
+
 async function fetchConnection(
-  namespace: string,
-  kubeconfig: string,
-  appToken: string
+  credentials: GithubConnectionCredentials
 ): Promise<GithubConnectionResponse> {
   const url = new URL("/api/github/connection", window.location.origin);
-  url.searchParams.set("namespace", namespace);
+  url.searchParams.set("namespace", credentials.namespace);
   const response = await fetch(url.toString(), {
     cache: "no-store",
-    headers:
-      kubeconfig.trim() === ""
-        ? undefined
-        : {
-            Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
-            ...appTokenRequestHeaders(appToken),
-          },
+    headers: connectionRequestHeaders(credentials),
   });
   if (!response.ok) {
     throw new Error(await response.text());
@@ -72,21 +79,13 @@ async function fetchConnection(
 }
 
 async function deleteConnection(
-  namespace: string,
-  kubeconfig: string,
-  appToken: string
+  credentials: GithubConnectionCredentials
 ): Promise<void> {
   const url = new URL("/api/github/connection", window.location.origin);
-  url.searchParams.set("namespace", namespace);
+  url.searchParams.set("namespace", credentials.namespace);
   const response = await fetch(url.toString(), {
     cache: "no-store",
-    headers:
-      kubeconfig.trim() === ""
-        ? undefined
-        : {
-            Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
-            ...appTokenRequestHeaders(appToken),
-          },
+    headers: connectionRequestHeaders(credentials),
     method: "DELETE",
   });
   if (!response.ok) {
@@ -95,21 +94,19 @@ async function deleteConnection(
 }
 
 async function createOAuthSession(
-  namespace: string,
-  kubeconfig: string,
-  appToken: string,
+  credentials: GithubConnectionCredentials,
   returnPath: string
 ): Promise<{ authorizeUrl: string; state: string }> {
   const response = await fetch("/api/github/oauth-session", {
     cache: "no-store",
     headers: {
       "Content-Type": "application/json",
-      ...appTokenRequestHeaders(appToken),
+      ...appTokenRequestHeaders(credentials.appToken),
     },
     method: "POST",
     body: JSON.stringify({
-      encodedKubeconfig: encodeURIComponent(kubeconfig),
-      namespace,
+      encodedKubeconfig: encodeURIComponent(credentials.kubeconfig),
+      namespace: credentials.namespace,
       returnPath,
     }),
   });
@@ -210,7 +207,7 @@ export function useGithubAuth(options?: {
 
   const { data, error, isLoading, mutate } = useSWR(
     swrKey,
-    () => fetchConnection(namespace, kubeconfig, appToken),
+    () => fetchConnection({ appToken, kubeconfig, namespace }),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
@@ -340,9 +337,7 @@ export function useGithubAuth(options?: {
         throw new Error("GitHub authorization requires workspace credentials.");
       }
       const { authorizeUrl, state } = await createOAuthSession(
-        normalizedNamespace,
-        kubeconfig,
-        appToken,
+        { appToken, kubeconfig, namespace: normalizedNamespace },
         next
       );
       pendingInstallStateRef.current = state;
@@ -374,7 +369,7 @@ export function useGithubAuth(options?: {
     if (!canCheck) {
       return;
     }
-    await deleteConnection(namespace, kubeconfig, appToken);
+    await deleteConnection({ appToken, kubeconfig, namespace });
     await mutate({ connection: null }, { revalidate: false });
   }, [appToken, canCheck, kubeconfig, mutate, namespace]);
 

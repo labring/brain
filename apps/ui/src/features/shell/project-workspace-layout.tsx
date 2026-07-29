@@ -750,20 +750,22 @@ function ProjectAssistantChatPane() {
       return;
     }
 
-    fetchAssistantSession(namespaceRaw, kubeconfig, appToken).then(
-      (payload) => {
-        if (cancelled) {
-          return;
-        }
-        if (payload == null) {
-          setSessionError(true);
-          return;
-        }
-        setSession(payload);
-        setFreeTier(payload.freeTier);
-        prevBillingRef.current = payload.freeTier.billing;
+    fetchAssistantSession({
+      appToken,
+      kubeconfig,
+      namespace: namespaceRaw,
+    }).then((payload) => {
+      if (cancelled) {
+        return;
       }
-    );
+      if (payload == null) {
+        setSessionError(true);
+        return;
+      }
+      setSession(payload);
+      setFreeTier(payload.freeTier);
+      prevBillingRef.current = payload.freeTier.billing;
+    });
 
     return () => {
       cancelled = true;
@@ -802,12 +804,11 @@ function ProjectAssistantChatPane() {
       if (threadId === session?.chatId) {
         return;
       }
-      const messages = await fetchAssistantThreadMessages(
-        threadId,
-        namespaceRaw,
+      const messages = await fetchAssistantThreadMessages(threadId, {
+        appToken,
         kubeconfig,
-        appToken
-      );
+        namespace: namespaceRaw,
+      });
       if (messages == null) {
         return;
       }
@@ -840,11 +841,11 @@ function ProjectAssistantChatPane() {
   const refreshAssistantState = useCallback(async () => {
     const sequence = assistantStateRefreshSequenceRef.current + 1;
     assistantStateRefreshSequenceRef.current = sequence;
-    const refreshed = await fetchAssistantSession(
-      namespaceRaw,
+    const refreshed = await fetchAssistantSession({
+      appToken,
       kubeconfig,
-      appToken
-    );
+      namespace: namespaceRaw,
+    });
     if (
       refreshed == null ||
       sequence !== assistantStateRefreshSequenceRef.current

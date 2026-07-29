@@ -9,6 +9,7 @@ import {
   encodedKubeconfigFromRequest,
   type VerifyKubeconfigNamespace,
 } from "@/lib/request-kubeconfig-auth";
+import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 import {
   type AssistantConversationOwner,
   type AssistantSessionPayload,
@@ -70,16 +71,7 @@ export function createAssistantConversationHandlers(
         response: jsonError(authorization.message, authorization.status),
       };
     }
-    return {
-      ok: true,
-      actor: {
-        legacyWorkspaceActor: authorization.workspaceActor,
-        owner: {
-          namespace: authorization.namespace,
-          workspaceActor: authorization.actorBinding.userUid,
-        },
-      },
-    };
+    return { actor: verifiedPersonalResourceActor(authorization), ok: true };
   };
 
   return {

@@ -30,8 +30,13 @@ test("conversation list and bootstrap requests do not send a client-owned user i
     );
   }) as typeof fetch;
 
-  await fetchAssistantSession("shared", "encoded-kubeconfig", "app-token");
-  await fetchAssistantThreads("shared", "encoded-kubeconfig", "app-token");
+  const credentials = {
+    appToken: "app-token",
+    kubeconfig: "encoded-kubeconfig",
+    namespace: "shared",
+  };
+  await fetchAssistantSession(credentials);
+  await fetchAssistantThreads(credentials);
 
   assert.deepEqual(requestedUrls, [
     "/api/chat/session?namespace=shared",

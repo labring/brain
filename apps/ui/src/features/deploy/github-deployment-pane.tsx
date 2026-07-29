@@ -1,10 +1,8 @@
 "use client";
 
 import { SidePane } from "@workspace/ui/components/side-pane";
-import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { createDeploymentTargetClientAdapters } from "@/features/deploy/client-adapters";
 import {
   type DeploymentTaskEditRedeploy,
   REDEPLOY_OVERWRITE_WARNING,
@@ -27,8 +25,8 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
-import { appTokenAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 function githubPaneTitle(input: {
@@ -96,12 +94,10 @@ export function GitHubDeploymentPane({
     repos,
   } = useGithubRepos({ isAuthorized, namespace });
   const templateCatalog = useTemplateCatalog({ enabled: true });
-  const appToken = useAtomValue(appTokenAtom);
-  const deploymentAdapters = useMemo(
-    () =>
-      createDeploymentTargetClientAdapters({ appToken, kubeconfig, namespace }),
-    [appToken, kubeconfig, namespace]
-  );
+  const deploymentAdapters = useDeploymentTargetAdapters({
+    kubeconfig,
+    namespace,
+  });
 
   const states: GithubDeployerStates = useMemo(
     () => ({

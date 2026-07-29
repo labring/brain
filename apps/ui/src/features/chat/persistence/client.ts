@@ -1,8 +1,7 @@
 import type { UIMessage } from "ai";
 import { z } from "zod";
 
-import { appTokenRequestHeaders } from "@/lib/app-token-header";
-import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 import {
   type AssistantSessionPayload,
@@ -39,19 +38,11 @@ const messagesResponseSchema = z.object({
   messages: z.array(uiMessageSchema),
 });
 
-/**
- * Personal conversation routes authorize the caller from the kubeconfig bearer
- * token plus the desktop-minted App Token (see
- * `createAssistantConversationHandlers`), so every request carries both.
- */
-function authHeaders(
-  kubeconfig: string,
-  appToken: string
-): Record<string, string> {
-  return {
-    Authorization: kubeconfigBearerHeader(kubeconfig),
-    ...appTokenRequestHeaders(appToken),
-  };
+/** Credentials every personal conversation fetcher sends (ADR-0059). */
+export interface AssistantFetcherCredentials {
+  appToken: string;
+  kubeconfig: string;
+  namespace: string;
 }
 
 async function safeJsonGet<T>(
@@ -72,41 +63,35 @@ async function safeJsonGet<T>(
 }
 
 export function fetchAssistantSession(
-  namespaceRaw: string,
-  kubeconfig: string,
-  appToken: string
+  credentials: AssistantFetcherCredentials
 ): Promise<AssistantSessionPayload | null> {
   return safeJsonGet(
-    `/api/chat/session?namespace=${encodeURIComponent(namespaceRaw)}`,
+    `/api/chat/session?namespace=${encodeURIComponent(credentials.namespace)}`,
     sessionResponseSchema,
-    authHeaders(kubeconfig, appToken)
+    personalResourceAuthHeaders(credentials)
   );
 }
 
 /** `null` when the handler failed (HTTP error / parse failure), including DB unavailable (503). */
 export async function fetchAssistantThreads(
-  namespaceRaw: string,
-  kubeconfig: string,
-  appToken: string
+  credentials: AssistantFetcherCredentials
 ): Promise<AssistantThreadDTO[] | null> {
   const data = await safeJsonGet(
-    `/api/chat/threads?namespace=${encodeURIComponent(namespaceRaw)}`,
+    `/api/chat/threads?namespace=${encodeURIComponent(credentials.namespace)}`,
     threadsResponseSchema,
-    authHeaders(kubeconfig, appToken)
+    personalResourceAuthHeaders(credentials)
   );
   return data === null ? null : data.threads;
 }
 
 export async function fetchAssistantThreadMessages(
   chatId: string,
-  namespaceRaw: string,
-  kubeconfig: string,
-  appToken: string
+  credentials: AssistantFetcherCredentials
 ): Promise<UIMessage[] | null> {
   const data = await safeJsonGet(
-    `/api/chat/messages?chatId=${encodeURIComponent(chatId)}&namespace=${encodeURIComponent(namespaceRaw)}`,
+    `/api/chat/messages?chatId=${encodeURIComponent(chatId)}&namespace=${encodeURIComponent(credentials.namespace)}`,
     messagesResponseSchema,
-    authHeaders(kubeconfig, appToken)
+    personalResourceAuthHeaders(credentials)
   );
   return data?.messages ?? null;
 }

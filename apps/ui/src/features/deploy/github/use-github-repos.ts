@@ -3,8 +3,8 @@
 import { useAtomValue } from "jotai";
 import useSWR from "swr";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
-import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import { appTokenAtom, kubeconfigAtom } from "@/lib/auth-store";
+import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 interface GithubReposResponse {
   repos: GithubDeployerRepo[];
@@ -27,22 +27,19 @@ export function githubReposSWRKey(input: {
     : null;
 }
 
-async function fetchRepos(
-  namespace: string,
-  kubeconfig: string,
-  appToken: string
-): Promise<GithubDeployerRepo[]> {
+async function fetchRepos(credentials: {
+  appToken: string;
+  kubeconfig: string;
+  namespace: string;
+}): Promise<GithubDeployerRepo[]> {
   const url = new URL("/api/github/repos", window.location.origin);
-  url.searchParams.set("namespace", namespace);
+  url.searchParams.set("namespace", credentials.namespace);
   const response = await fetch(url.toString(), {
     cache: "no-store",
     headers:
-      kubeconfig.trim() === ""
+      credentials.kubeconfig.trim() === ""
         ? undefined
-        : {
-            Authorization: `Bearer ${encodeURIComponent(kubeconfig)}`,
-            ...appTokenRequestHeaders(appToken),
-          },
+        : personalResourceAuthHeaders(credentials),
   });
   if (!response.ok) {
     throw new Error(await response.text());
@@ -64,7 +61,7 @@ export function useGithubRepos(input: {
 
   const { data, error, isLoading, mutate } = useSWR(
     swrKey,
-    () => fetchRepos(namespace, kubeconfig, appToken),
+    () => fetchRepos({ appToken, kubeconfig, namespace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 

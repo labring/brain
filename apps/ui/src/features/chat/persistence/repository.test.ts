@@ -54,8 +54,8 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   );
   await migrate(db, { migrationsFolder });
   const repository = createAssistantConversationRepository(() => db);
-  const alice = { namespace: "shared", workspaceActor: "alice-uid" };
-  const bob = { namespace: "shared", workspaceActor: "bob-uid" };
+  const alice = { namespace: "shared", userUid: "alice-uid" };
+  const bob = { namespace: "shared", userUid: "bob-uid" };
 
   assert.equal(
     await repository.ensureThreadForOwner({
@@ -195,11 +195,11 @@ const TEST_CHAT_ID = "chat-cas";
 const TEST_MESSAGE_ID = "message-cas";
 const TEST_OWNER = {
   namespace: "ns-test",
-  workspaceActor: "user-test",
+  userUid: "user-test",
 } as const;
 const OTHER_OWNER = {
   namespace: "ns-test",
-  workspaceActor: "other-user",
+  userUid: "other-user",
 } as const;
 const INITIAL_UPDATED_AT = new Date("2026-01-01T00:00:00.000Z");
 const expectedParts = [
@@ -270,7 +270,7 @@ async function seedThread() {
     namespace: "ns-test",
     title: "CAS test",
     updatedAt: INITIAL_UPDATED_AT,
-    workspaceActor: TEST_OWNER.workspaceActor,
+    workspaceActor: TEST_OWNER.userUid,
   });
 }
 
@@ -452,7 +452,7 @@ describe("chat stream lease", () => {
     expect(winners).toHaveLength(1);
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", workspaceActor: "user-test" },
+        { namespace: "ns-test", userUid: "user-test" },
         TEST_CHAT_ID
       )
     ).toEqual([]);
@@ -514,7 +514,7 @@ describe("chat stream lease", () => {
     ).toBe(true);
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", workspaceActor: "user-test" },
+        { namespace: "ns-test", userUid: "user-test" },
         TEST_CHAT_ID
       )
     ).toEqual([
@@ -656,7 +656,7 @@ describe("chat stream lease", () => {
     expect(committed).toBeNull();
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", workspaceActor: "user-test" },
+        { namespace: "ns-test", userUid: "user-test" },
         TEST_CHAT_ID
       )
     ).toEqual([
@@ -920,7 +920,7 @@ describe("adoptLegacyThreadsForActor", () => {
   // the re-key matches only legacy rows and needs no version column.
   const LEGACY_CR_NAME = "hendrwa1";
   const USER_UID = "31b8a2f4-0f9f-4a3e-9c56-0d9f6f9e2b41";
-  const UID_OWNER = { namespace: "ns-test", workspaceActor: USER_UID };
+  const UID_OWNER = { namespace: "ns-test", userUid: USER_UID };
   const VERIFIED_ACTOR = {
     legacyWorkspaceActor: LEGACY_CR_NAME,
     owner: UID_OWNER,
@@ -1074,7 +1074,7 @@ describe("adoptLegacyThreadsForActor", () => {
     await expect(
       assistantConversationRepository.adoptLegacyThreadsForActor({
         legacyWorkspaceActor: LEGACY_CR_NAME,
-        owner: { namespace: "ns-test", workspaceActor: " " },
+        owner: { namespace: "ns-test", userUid: " " },
       })
     ).rejects.toThrow(ACTOR_IDENTITY_REQUIRED_RE);
   });
