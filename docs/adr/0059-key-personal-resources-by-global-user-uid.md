@@ -123,6 +123,21 @@ bearing: fingerprints exist only from the table's creation onward, so merges
 occurring before it would be permanently unrecoverable. Deferring the table is
 equivalent to abandoning it.
 
+The fingerprint decision and the resource write are separate transactions, so
+the authorization-time observation alone cannot stop a request that verified
+before a merge from committing tombstone-keyed rows after the re-key sweep.
+Two mechanisms close that window. Every transaction that creates or adopts
+uid-keyed rows — new conversations, both lazy adoptions, pending GitHub
+authorization sessions — re-checks the fingerprint in-transaction under a
+share lock on the crName row, serializing it against the merge transaction's
+exclusive lock: the guarded write either commits first, and the sweep re-keys
+it, or fails closed with the superseded 401. And the merge transaction
+re-keys pending current-generation authorization sessions before connections:
+the OAuth callback consumes its session row under a row lock and writes the
+connection in that same transaction with no crName left to re-check, so the
+sweep order guarantees the callback either re-reads the survivor uid from its
+re-keyed session or commits a connection row the sweep still catches.
+
 ### Keep one code path everywhere
 
 Local development mints a real token: a dev `JWT_INTERNAL` and `REGION_UID`

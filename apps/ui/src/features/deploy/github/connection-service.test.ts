@@ -10,7 +10,11 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
 import type { AssistantPgTransaction } from "@/features/chat/persistence/db";
-import { githubOauthConnections } from "@/features/chat/persistence/schema";
+import {
+  githubOauthConnections,
+  identityFingerprints,
+} from "@/features/chat/persistence/schema";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 
 process.env.GITHUB_USER_TOKEN_ENCRYPTION_KEY = "connection-service-test-key";
 
@@ -28,6 +32,14 @@ mock.module("@/features/chat/persistence/db", () => ({
 }));
 
 await migrate(testDb, { migrationsFolder: MIGRATIONS_FOLDER });
+
+// Adoption re-checks the fingerprint in its own transaction (ADR-0059), so
+// every verified actor these tests use needs an observed binding.
+await testDb.insert(identityFingerprints).values([
+  { crName: "alice-cr", mintedAt: 1000, userUid: "alice-uid" },
+  { crName: "bob-cr", mintedAt: 1000, userUid: "bob-uid" },
+  { crName: "dave-cr", mintedAt: 1000, userUid: "dave-uid" },
+]);
 
 const {
   adoptLegacyGithubConnectionForOwner,
@@ -340,6 +352,40 @@ test("disconnect forgets both generations so the inert legacy row cannot resurre
     await getGithubConnectionStatusForOwner(owner("alice-uid", "forget")),
     null
   );
+});
+
+test("adoption refuses a uid tombstoned by a merge, keeping the legacy row adoptable", async () => {
+  await insertLegacyConnection({
+    githubLogin: "dave-github",
+    id: "tombstone-legacy",
+    namespace: "tombstone",
+    workspaceActor: "dave-cr",
+  });
+  await testDb
+    .update(identityFingerprints)
+    .set({ userUid: "dave-survivor-uid" })
+    .where(eq(identityFingerprints.crName, "dave-cr"));
+
+  await assert.rejects(
+    adoptLegacyGithubConnectionForOwner({
+      legacyWorkspaceActor: "dave-cr",
+      owner: owner("dave-uid", "tombstone"),
+    }),
+    IdentityBindingSupersededError
+  );
+
+  // The legacy row stays crName-keyed, so the survivor still adopts it.
+  await adoptLegacyGithubConnectionForOwner({
+    legacyWorkspaceActor: "dave-cr",
+    owner: owner("dave-survivor-uid", "tombstone"),
+  });
+  assert.deepEqual(await selectRows("tombstone"), [
+    {
+      githubLogin: "dave-github",
+      ownerIdentityVersion: 2,
+      workspaceActor: "dave-survivor-uid",
+    },
+  ]);
 });
 
 test("adoption requires the current generation owner identity", async () => {

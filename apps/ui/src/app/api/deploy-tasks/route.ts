@@ -33,6 +33,7 @@ import {
   deployTaskStatusSchema,
 } from "@/features/deploy/task/types";
 import { appTokenFromRequest } from "@/lib/app-token";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 
 export const dynamic = "force-dynamic";
@@ -96,7 +97,20 @@ async function resolveCredentialBinding(input: {
   const actor = verifiedGithubConnectionActor(authorization);
   // Every verified entry request first adopts the initiator's legacy
   // generation-1 crName row into the uid owner (lazy re-key, ADR-0059).
-  await adoptLegacyGithubConnectionForOwner(actor);
+  try {
+    await adoptLegacyGithubConnectionForOwner(actor);
+  } catch (error) {
+    if (error instanceof IdentityBindingSupersededError) {
+      return {
+        response: jsonError(
+          "Authentication is required.",
+          401,
+          "app_token_superseded"
+        ),
+      };
+    }
+    throw error;
+  }
   const connection = await getGithubConnectionStatusForOwner(actor.owner);
   if (connection == null) {
     return {

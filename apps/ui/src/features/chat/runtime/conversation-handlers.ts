@@ -3,7 +3,10 @@ import {
   type AppTokenVerificationConfig,
   appTokenFromRequest,
 } from "@/lib/app-token";
-import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
+import {
+  IdentityBindingSupersededError,
+  type ObserveIdentityFingerprint,
+} from "@/lib/identity-fingerprint-core";
 import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
@@ -44,6 +47,13 @@ export interface AssistantConversationHandlerDependencies {
 
 function conversationNotFound(): Response {
   return jsonError("Assistant conversation not found.", 404);
+}
+
+/** The adoption write found the binding superseded by a merge (ADR-0059). */
+function supersededBindingResponse(error: unknown): Response | null {
+  return error instanceof IdentityBindingSupersededError
+    ? jsonError("Authentication is required.", 401)
+    : null;
 }
 
 export function createAssistantConversationHandlers(
@@ -93,7 +103,11 @@ export function createAssistantConversationHandlers(
         return messages == null
           ? conversationNotFound()
           : Response.json({ messages });
-      } catch {
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
         console.error("[api/chat/messages] persistence unavailable");
         return jsonError("Assistant chat persistence is unavailable.", 503);
       }
@@ -108,7 +122,11 @@ export function createAssistantConversationHandlers(
         return Response.json(
           await dependencies.bootstrap(authorization.actor.owner)
         );
-      } catch {
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
         console.error("[api/chat/session] persistence unavailable");
         return jsonError(
           "Could not load assistant session (database / DATABASE_URL).",
@@ -126,7 +144,11 @@ export function createAssistantConversationHandlers(
         await dependencies.adoptLegacyConversations(authorization.actor);
         const threads = await dependencies.list(authorization.actor.owner);
         return Response.json({ threads });
-      } catch {
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
         console.error("[api/chat/threads] persistence unavailable");
         return jsonError(
           "Assistant chat persistence is unavailable (check DATABASE_URL).",

@@ -62,6 +62,7 @@ import {
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
 import { appTokenFromRequest } from "@/lib/app-token";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
@@ -545,7 +546,7 @@ async function runChatPipeline(input: {
     // conversation must find the re-keyed row instead of refusing its id.
     await adoptLegacyAssistantConversationsForActor(actor);
 
-    const threadReady = await ensureAssistantThreadForOwner(chatId, owner);
+    const threadReady = await ensureAssistantThreadForOwner(chatId, actor);
     if (!threadReady) {
       return jsonError("Assistant conversation not found.", 404);
     }
@@ -699,6 +700,11 @@ async function runChatPipeline(input: {
       lease: ownedLease,
       rollbackAssistant,
     });
+    if (error instanceof IdentityBindingSupersededError) {
+      // The binding was superseded by an account merge mid-request; the
+      // desktop re-login loop re-mints a current token (ADR-0059).
+      return jsonError("Authentication is required.", 401);
+    }
     console.error("[api/chat] pipeline:", error);
     return jsonError(
       "Could not handle chat request (DATABASE_URL, schema migrations, or upstream).",

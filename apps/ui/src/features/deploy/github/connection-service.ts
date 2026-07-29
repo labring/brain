@@ -14,6 +14,7 @@ import {
   githubOauthConnections,
 } from "@/features/chat/persistence/schema";
 import { normalizeAssistantNamespace } from "@/features/chat/persistence/types";
+import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
 
 import {
   type GithubOAuthTokenResponse,
@@ -314,22 +315,30 @@ export async function adoptLegacyGithubConnectionForOwner(
 ): Promise<void> {
   const { legacyWorkspaceActor, userUid } = requireVerifiedActor(actor);
   try {
-    await getAssistantDb()
-      .update(githubOauthConnections)
-      .set({
-        ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
-        updatedAt: new Date(),
-        workspaceActor: userUid,
-      })
-      .where(
-        and(
-          eq(
-            githubOauthConnections.namespace,
-            normalizeAssistantNamespace(actor.owner.namespace)
-          ),
-          legacyConnectionOf(legacyWorkspaceActor)
-        )
-      );
+    await getAssistantDb().transaction(async (tx) => {
+      // Adoption keys the legacy row to this uid, so it must not run after
+      // a merge tombstoned it — the survivor could never adopt it back.
+      await requireCurrentIdentityBinding(tx, {
+        crName: legacyWorkspaceActor,
+        userUid,
+      });
+      await tx
+        .update(githubOauthConnections)
+        .set({
+          ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+          updatedAt: new Date(),
+          workspaceActor: userUid,
+        })
+        .where(
+          and(
+            eq(
+              githubOauthConnections.namespace,
+              normalizeAssistantNamespace(actor.owner.namespace)
+            ),
+            legacyConnectionOf(legacyWorkspaceActor)
+          )
+        );
+    });
   } catch (error) {
     if (!isCurrentOwnerUniqueViolation(error)) {
       throw error;

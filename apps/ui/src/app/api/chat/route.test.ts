@@ -292,8 +292,11 @@ mock.module("@/features/chat/persistence/service", () => ({
     history = nextHistory;
     return Promise.resolve(input.lease);
   },
-  ensureAssistantThreadForOwner: (_chatId: string, owner: TestOwner) => {
-    serviceOwners.push(owner);
+  ensureAssistantThreadForOwner: (
+    _chatId: string,
+    actor: { legacyWorkspaceActor: string; owner: TestOwner }
+  ) => {
+    serviceOwners.push(actor.owner);
     return Promise.resolve(true);
   },
   isReservedChatMessageId: (messageId: string) =>

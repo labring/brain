@@ -18,11 +18,11 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
   const repository = {
     ensureThreadForOwner: (input) => {
       if (!owners.has(input.id)) {
-        owners.set(input.id, input.owner);
+        owners.set(input.id, input.actor.owner);
       }
       return Promise.resolve(
-        owners.get(input.id)?.namespace === input.owner.namespace &&
-          owners.get(input.id)?.userUid === input.owner.userUid
+        owners.get(input.id)?.namespace === input.actor.owner.namespace &&
+          owners.get(input.id)?.userUid === input.actor.owner.userUid
       );
     },
     selectThreadByOwner: (chatId, owner) =>
@@ -54,14 +54,16 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
   });
   const alice = { namespace: "shared", userUid: "alice-cr" };
   const bob = { namespace: "shared", userUid: "bob-cr" };
+  const aliceActor = { legacyWorkspaceActor: "alicecr1", owner: alice };
+  const bobActor = { legacyWorkspaceActor: "bobcrnm1", owner: bob };
 
   const draft = await service.bootstrap(alice);
 
   assert.equal(draft.chatId, "generated-chat");
   assert.deepEqual(draft.threads, []);
   assert.equal(owners.size, 0);
-  assert.equal(await service.ensureThread(draft.chatId, alice), true);
-  assert.equal(await service.ensureThread(draft.chatId, bob), false);
+  assert.equal(await service.ensureThread(draft.chatId, aliceActor), true);
+  assert.equal(await service.ensureThread(draft.chatId, bobActor), false);
   assert.deepEqual(owners.get(draft.chatId), alice);
 });
 

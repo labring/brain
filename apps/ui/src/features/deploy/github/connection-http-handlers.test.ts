@@ -222,7 +222,7 @@ function createWorkspaceActorHttpHarness(input: {
       oauthSessions.push(session);
       oauthStates.set("oauth-state", {
         expiresAt: new Date(Date.now() + 60_000),
-        owner: session.owner,
+        owner: session.actor.owner,
         returnPath: session.returnPath,
         state: "oauth-state",
       });
@@ -611,12 +611,15 @@ test("OAuth session creation binds state to the verified actor and ignores legac
   });
   assert.deepEqual(harness.oauthSessions, [
     {
-      baseUrl: "https://brain.test",
-      owner: {
-        namespace: "shared",
-        ownerIdentityVersion: 2,
-        userUid: "alice-cr-uid",
+      actor: {
+        legacyWorkspaceActor: "alice-cr",
+        owner: {
+          namespace: "shared",
+          ownerIdentityVersion: 2,
+          userUid: "alice-cr-uid",
+        },
       },
+      baseUrl: "https://brain.test",
       returnPath: "/projects?source=github",
     },
   ]);
@@ -640,10 +643,13 @@ test("GitHub App install session uses the same verified owner authorization", as
   });
   assert.deepEqual(harness.appInstallSessions, [
     {
-      owner: {
-        namespace: "shared",
-        ownerIdentityVersion: 2,
-        userUid: "alice-cr-uid",
+      actor: {
+        legacyWorkspaceActor: "alice-cr",
+        owner: {
+          namespace: "shared",
+          ownerIdentityVersion: 2,
+          userUid: "alice-cr-uid",
+        },
       },
       returnPath: "/projects?source=github",
     },

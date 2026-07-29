@@ -19,6 +19,8 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
+
 import {
   createAssistantConversationRepository,
   type ThreadRow,
@@ -56,11 +58,18 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   const repository = createAssistantConversationRepository(() => db);
   const alice = { namespace: "shared", userUid: "alice-uid" };
   const bob = { namespace: "shared", userUid: "bob-uid" };
+  const aliceActor = { legacyWorkspaceActor: "alicecr1", owner: alice };
+  const bobActor = { legacyWorkspaceActor: "bobcrnm1", owner: bob };
+  // Thread creation re-checks the fingerprint in-transaction (ADR-0059).
+  await db.insert(identityFingerprints).values([
+    { crName: "alicecr1", mintedAt: 1000, userUid: alice.userUid },
+    { crName: "bobcrnm1", mintedAt: 1000, userUid: bob.userUid },
+  ]);
 
   assert.equal(
     await repository.ensureThreadForOwner({
+      actor: bobActor,
       id: "bob-chat",
-      owner: bob,
       title: "Bob title",
     }),
     true
@@ -73,16 +82,16 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   });
   assert.equal(
     await repository.ensureThreadForOwner({
+      actor: aliceActor,
       id: "alice-chat",
-      owner: alice,
       title: "Alice title",
     }),
     true
   );
   assert.equal(
     await repository.ensureThreadForOwner({
+      actor: aliceActor,
       id: "bob-chat",
-      owner: alice,
       title: "Re-keyed title",
     }),
     false
@@ -920,11 +929,22 @@ describe("adoptLegacyThreadsForActor", () => {
   // the re-key matches only legacy rows and needs no version column.
   const LEGACY_CR_NAME = "hendrwa1";
   const USER_UID = "31b8a2f4-0f9f-4a3e-9c56-0d9f6f9e2b41";
+  const SURVIVOR_UID = "5c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f";
   const UID_OWNER = { namespace: "ns-test", userUid: USER_UID };
   const VERIFIED_ACTOR = {
     legacyWorkspaceActor: LEGACY_CR_NAME,
     owner: UID_OWNER,
   };
+
+  // Adoption re-checks the fingerprint in its own transaction (ADR-0059).
+  beforeEach(async () => {
+    await testDb.delete(identityFingerprints);
+    await testDb.insert(identityFingerprints).values({
+      crName: LEGACY_CR_NAME,
+      mintedAt: 1000,
+      userUid: USER_UID,
+    });
+  });
 
   function seedThreadRow(input: {
     id: string;
@@ -1077,5 +1097,49 @@ describe("adoptLegacyThreadsForActor", () => {
         owner: { namespace: "ns-test", userUid: " " },
       })
     ).rejects.toThrow(ACTOR_IDENTITY_REQUIRED_RE);
+  });
+
+  it("refuses adoption once a merge re-pointed the crName, keeping legacy rows adoptable by the survivor", async () => {
+    await seedThreadRow({
+      id: "post-merge-legacy-chat",
+      updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+      workspaceActor: LEGACY_CR_NAME,
+    });
+    await testDb
+      .update(identityFingerprints)
+      .set({ userUid: SURVIVOR_UID })
+      .where(eq(identityFingerprints.crName, LEGACY_CR_NAME));
+
+    await expect(
+      assistantConversationRepository.adoptLegacyThreadsForActor(VERIFIED_ACTOR)
+    ).rejects.toThrow(IdentityBindingSupersededError);
+
+    // The legacy row stays crName-keyed, so the survivor still adopts it.
+    expect((await allThreadRows()).map((row) => row.workspaceActor)).toEqual([
+      LEGACY_CR_NAME,
+    ]);
+    await assistantConversationRepository.adoptLegacyThreadsForActor({
+      legacyWorkspaceActor: LEGACY_CR_NAME,
+      owner: { namespace: "ns-test", userUid: SURVIVOR_UID },
+    });
+    expect((await allThreadRows()).map((row) => row.workspaceActor)).toEqual([
+      SURVIVOR_UID,
+    ]);
+  });
+
+  it("refuses a new thread row once a merge re-pointed the crName", async () => {
+    await testDb
+      .update(identityFingerprints)
+      .set({ userUid: SURVIVOR_UID })
+      .where(eq(identityFingerprints.crName, LEGACY_CR_NAME));
+
+    await expect(
+      assistantConversationRepository.ensureThreadForOwner({
+        actor: VERIFIED_ACTOR,
+        id: "tombstone-thread",
+        title: "Never created",
+      })
+    ).rejects.toThrow(IdentityBindingSupersededError);
+    expect(await allThreadRows()).toEqual([]);
   });
 });

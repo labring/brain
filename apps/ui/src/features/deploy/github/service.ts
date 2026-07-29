@@ -23,7 +23,7 @@ import {
   consumeGithubAuthorizationSession,
   createGithubAuthorizationSession,
 } from "./install-session-service";
-import type { GithubConnectionOwnerIdentity } from "./owner-identity";
+import type { VerifiedGithubConnectionActor } from "./owner-identity";
 import { parseInstallReturnPathParam } from "./types";
 import { buildInstallPopupCompleteUrl, getCallbackBaseUrl } from "./urls";
 
@@ -78,8 +78,8 @@ async function githubAppInstallUrl(state: string): Promise<string> {
 }
 
 export async function createGithubOAuthSessionUrl(input: {
+  actor: VerifiedGithubConnectionActor;
   baseUrl: string;
-  owner: GithubConnectionOwnerIdentity;
   returnPath: string | null;
 }): Promise<{ authorizeUrl: string; state: string }> {
   const state = await createGithubAuthorizationState(input);
@@ -94,7 +94,7 @@ export async function createGithubOAuthSessionUrl(input: {
 }
 
 export async function createGithubAppInstallSessionUrl(input: {
-  owner: GithubConnectionOwnerIdentity;
+  actor: VerifiedGithubConnectionActor;
   returnPath: string | null;
 }): Promise<{ installUrl: string; state: string }> {
   const state = await createGithubAuthorizationState(input);
@@ -102,12 +102,12 @@ export async function createGithubAppInstallSessionUrl(input: {
 }
 
 async function createGithubAuthorizationState(input: {
-  owner: GithubConnectionOwnerIdentity;
+  actor: VerifiedGithubConnectionActor;
   returnPath: string | null;
 }): Promise<string> {
   const state = randomUUID();
   await createGithubAuthorizationSession({
-    owner: input.owner,
+    actor: input.actor,
     returnPath: parseInstallReturnPathParam(input.returnPath),
     state,
   });

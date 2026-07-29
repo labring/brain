@@ -18,7 +18,11 @@ import {
   identityFingerprints,
 } from "@/features/chat/persistence/schema";
 
-import { createIdentityFingerprintStore } from "./identity-fingerprint-core";
+import {
+  createIdentityFingerprintStore,
+  IdentityBindingSupersededError,
+  requireCurrentIdentityBinding,
+} from "./identity-fingerprint-core";
 
 const assistantSchema = {
   assistantChatMessages,
@@ -98,6 +102,31 @@ function selectChats(namespace: string) {
     .orderBy(assistantChats.id);
 }
 
+function seedInstallSession(input: {
+  ownerIdentityVersion?: number;
+  state: string;
+  workspaceActor: string;
+}) {
+  return db.insert(githubAppInstallSessions).values({
+    expiresAt: new Date("2026-08-01T00:00:00Z"),
+    namespace: "session-ns",
+    ownerIdentityVersion: input.ownerIdentityVersion ?? 2,
+    state: input.state,
+    workspaceActor: input.workspaceActor,
+  });
+}
+
+function selectInstallSessions() {
+  return db
+    .select({
+      ownerIdentityVersion: githubAppInstallSessions.ownerIdentityVersion,
+      state: githubAppInstallSessions.state,
+      workspaceActor: githubAppInstallSessions.workspaceActor,
+    })
+    .from(githubAppInstallSessions)
+    .orderBy(githubAppInstallSessions.state);
+}
+
 function selectConnections(namespace: string) {
   return db
     .select({
@@ -114,6 +143,7 @@ function selectConnections(namespace: string) {
 const POISONED_RE = /poisoned owner re-key/;
 const OBSERVATION_REQUIRED_RE =
   /A verified identity binding observation is required\./;
+const BINDING_REQUIRED_RE = /A verified identity binding is required\./;
 
 test("a first observation records the binding and proceeds", async () => {
   assert.deepEqual(
@@ -295,6 +325,110 @@ test("where the survivor already reauthorized, that connection wins and the tomb
       workspaceActor: "winner-uid",
     },
   ]);
+});
+
+test("a merge re-keys pending current-generation authorization sessions and leaves legacy ones", async () => {
+  await observe({
+    crName: "session-cr",
+    mintedAt: 4200,
+    userUid: "session-tombstone-uid",
+  });
+  await seedInstallSession({
+    state: "pending-current",
+    workspaceActor: "session-tombstone-uid",
+  });
+  await seedInstallSession({
+    ownerIdentityVersion: 1,
+    state: "pending-legacy",
+    workspaceActor: "session-cr",
+  });
+  await seedInstallSession({
+    state: "pending-carol",
+    workspaceActor: "session-carol-uid",
+  });
+
+  assert.deepEqual(
+    await observe({
+      crName: "session-cr",
+      mintedAt: 4300,
+      userUid: "session-survivor-uid",
+    }),
+    { outcome: "merge" }
+  );
+
+  // The pending flow completes for the survivor; a foreign owner and the
+  // naturally expiring legacy row are never touched.
+  assert.deepEqual(await selectInstallSessions(), [
+    {
+      ownerIdentityVersion: 2,
+      state: "pending-carol",
+      workspaceActor: "session-carol-uid",
+    },
+    {
+      ownerIdentityVersion: 2,
+      state: "pending-current",
+      workspaceActor: "session-survivor-uid",
+    },
+    {
+      ownerIdentityVersion: 1,
+      state: "pending-legacy",
+      workspaceActor: "session-cr",
+    },
+  ]);
+});
+
+test("a write-transaction re-check passes only while the binding is current", async () => {
+  await observe({ crName: "guard-cr", mintedAt: 5100, userUid: "guard-uid" });
+
+  // Current binding: the guarded write proceeds.
+  await db.transaction((tx) =>
+    requireCurrentIdentityBinding(tx, {
+      crName: "guard-cr",
+      userUid: "guard-uid",
+    })
+  );
+
+  // After a merge re-points the crName, the stale uid is refused in the
+  // write transaction — the race the authorization-time observation alone
+  // cannot close.
+  await observe({
+    crName: "guard-cr",
+    mintedAt: 5200,
+    userUid: "guard-survivor-uid",
+  });
+  await assert.rejects(
+    db.transaction((tx) =>
+      requireCurrentIdentityBinding(tx, {
+        crName: "guard-cr",
+        userUid: "guard-uid",
+      })
+    ),
+    IdentityBindingSupersededError
+  );
+  await db.transaction((tx) =>
+    requireCurrentIdentityBinding(tx, {
+      crName: "guard-cr",
+      userUid: "guard-survivor-uid",
+    })
+  );
+
+  // A crName that was never observed fails closed, and an empty identity is
+  // a caller bug rather than a supersession.
+  await assert.rejects(
+    db.transaction((tx) =>
+      requireCurrentIdentityBinding(tx, {
+        crName: "never-observed-cr",
+        userUid: "guard-uid",
+      })
+    ),
+    IdentityBindingSupersededError
+  );
+  await assert.rejects(
+    db.transaction((tx) =>
+      requireCurrentIdentityBinding(tx, { crName: " ", userUid: "guard-uid" })
+    ),
+    BINDING_REQUIRED_RE
+  );
 });
 
 test("an older or equal-minted contradiction is superseded and mutates nothing", async () => {

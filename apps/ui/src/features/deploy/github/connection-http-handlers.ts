@@ -3,7 +3,10 @@ import {
   type AppTokenVerificationConfig,
   appTokenFromRequest,
 } from "@/lib/app-token";
-import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
+import {
+  IdentityBindingSupersededError,
+  type ObserveIdentityFingerprint,
+} from "@/lib/identity-fingerprint-core";
 import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
@@ -37,13 +40,13 @@ export type GithubLegacyConnectionAdoption = (
 ) => Promise<void>;
 
 export type GithubOAuthSessionCreate = (input: {
+  actor: VerifiedGithubConnectionActor;
   baseUrl: string;
-  owner: GithubConnectionOwnerIdentity;
   returnPath: string | null;
 }) => Promise<{ authorizeUrl: string; state: string }>;
 
 export type GithubAppInstallSessionCreate = (input: {
-  owner: GithubConnectionOwnerIdentity;
+  actor: VerifiedGithubConnectionActor;
   returnPath: string | null;
 }) => Promise<{ installUrl: string; state: string }>;
 
@@ -152,12 +155,23 @@ function authorizeGithubConnectionRequest(
   });
 }
 
+/** The write found the binding superseded by a concurrent merge (ADR-0059). */
+function supersededBindingResponse(error: unknown): Response | null {
+  return error instanceof IdentityBindingSupersededError
+    ? jsonError({
+        code: "app_token_superseded",
+        message: "Authentication is required.",
+        status: 401,
+      })
+    : null;
+}
+
 async function authorizeGithubSessionRequest(
   request: Request,
   options: GithubConnectionAuthorizationOptions
 ): Promise<
   | {
-      owner: GithubConnectionOwnerIdentity;
+      actor: VerifiedGithubConnectionActor;
       returnPath: string | null;
     }
   | Response
@@ -182,7 +196,7 @@ async function authorizeGithubSessionRequest(
   return actor instanceof Response
     ? actor
     : {
-        owner: actor.owner,
+        actor,
         returnPath:
           typeof body?.returnPath === "string" ? body.returnPath : null,
       };
@@ -200,7 +214,15 @@ export function createGithubConnectionStatusHandler(input: {
     if (actor instanceof Response) {
       return actor;
     }
-    await input.adoptLegacyConnection(actor);
+    try {
+      await input.adoptLegacyConnection(actor);
+    } catch (error) {
+      const superseded = supersededBindingResponse(error);
+      if (superseded == null) {
+        throw error;
+      }
+      return superseded;
+    }
     const connection = await input.getConnection(actor.owner);
     return Response.json({
       connection: publicConnectionStatus(connection),
@@ -220,7 +242,15 @@ export function createGithubRepositoryListHandler(input: {
     if (actor instanceof Response) {
       return actor;
     }
-    await input.adoptLegacyConnection(actor);
+    try {
+      await input.adoptLegacyConnection(actor);
+    } catch (error) {
+      const superseded = supersededBindingResponse(error);
+      if (superseded == null) {
+        throw error;
+      }
+      return superseded;
+    }
     try {
       return Response.json({
         repos: await input.listRepositories(actor.owner),
@@ -269,12 +299,20 @@ export function createGithubOAuthSessionHandler(input: {
     if (authorization instanceof Response) {
       return authorization;
     }
-    return Response.json(
-      await input.createSession({
-        baseUrl: input.getBaseUrl(request),
-        ...authorization,
-      })
-    );
+    try {
+      return Response.json(
+        await input.createSession({
+          baseUrl: input.getBaseUrl(request),
+          ...authorization,
+        })
+      );
+    } catch (error) {
+      const superseded = supersededBindingResponse(error);
+      if (superseded == null) {
+        throw error;
+      }
+      return superseded;
+    }
   };
 }
 
@@ -289,10 +327,18 @@ export function createGithubAppInstallSessionHandler(input: {
     if (authorization instanceof Response) {
       return authorization;
     }
-    return Response.json({
-      ...(await input.createSession(authorization)),
-      namespace: authorization.owner.namespace,
-    });
+    try {
+      return Response.json({
+        ...(await input.createSession(authorization)),
+        namespace: authorization.actor.owner.namespace,
+      });
+    } catch (error) {
+      const superseded = supersededBindingResponse(error);
+      if (superseded == null) {
+        throw error;
+      }
+      return superseded;
+    }
   };
 }
 

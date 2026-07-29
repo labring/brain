@@ -1,9 +1,13 @@
 import { and, eq, notExists } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
-import type { AssistantPgDatabase } from "@/features/chat/persistence/db";
+import type {
+  AssistantPgDatabase,
+  AssistantPgTransaction,
+} from "@/features/chat/persistence/db";
 import {
   assistantChats,
+  githubAppInstallSessions,
   githubOauthConnections,
   identityFingerprints,
 } from "@/features/chat/persistence/schema";
@@ -40,6 +44,51 @@ export type ObserveIdentityFingerprint = (
   binding: ObservedIdentityBinding
 ) => Promise<IdentityFingerprintObservation>;
 
+/**
+ * A write-time re-check found the request's binding no longer current: the
+ * crName was re-pointed by an account merge after authorization observed it.
+ * HTTP handlers map this to the same 401 as an authorization-time superseded
+ * token — the desktop re-login loop re-mints a current token.
+ */
+export class IdentityBindingSupersededError extends Error {
+  constructor() {
+    super("The verified identity binding was superseded by an account merge.");
+    this.name = "IdentityBindingSupersededError";
+  }
+}
+
+/**
+ * Serializes a personal-resource write with the merge decision (ADR-0059).
+ * Must run inside the same transaction that creates or adopts uid-keyed rows:
+ * the fingerprint decision and the resource write are separate transactions,
+ * so a request that authorized before a merge could otherwise commit
+ * tombstone-keyed rows after the merge's re-key sweep — invisible to the
+ * surviving uid forever. `FOR SHARE` on the crName row orders this
+ * transaction against the merge's `FOR UPDATE`: either the guarded write
+ * commits first and the sweep re-keys it, or the merge wins and the stale
+ * binding is refused here.
+ */
+export async function requireCurrentIdentityBinding(
+  tx: AssistantPgTransaction,
+  binding: { crName: string; userUid: string }
+): Promise<void> {
+  const crName = binding.crName.trim();
+  const userUid = binding.userUid.trim();
+  if (crName === "" || userUid === "") {
+    throw new Error("A verified identity binding is required.");
+  }
+  const [row] = await tx
+    .select({ userUid: identityFingerprints.userUid })
+    .from(identityFingerprints)
+    .where(eq(identityFingerprints.crName, crName))
+    .for("share");
+  // Authorization observes the fingerprint before any personal-resource
+  // write, so the row exists on every legal path; a missing row fails closed.
+  if (row == null || row.userUid !== userUid) {
+    throw new IdentityBindingSupersededError();
+  }
+}
+
 function requireObservableBinding(
   binding: ObservedIdentityBinding
 ): ObservedIdentityBinding {
@@ -66,6 +115,10 @@ export function createIdentityFingerprintStore(
     // Hot path: the binding agrees with the stored fingerprint and carries
     // no newer minting time, so there is nothing to maintain. An older
     // MATCHING token is fine — only contradictions are ordered by mint time.
+    // Lock-free is sound because this outcome only gates authorization: every
+    // transaction that later creates or adopts uid-keyed rows re-checks the
+    // fingerprint via requireCurrentIdentityBinding, which serializes with
+    // the merge transaction's row lock below.
     const [current] = await getDb()
       .select()
       .from(identityFingerprints)
@@ -148,10 +201,6 @@ export function createIdentityFingerprintStore(
   };
 }
 
-type AssistantPgTransaction = Parameters<
-  Parameters<AssistantPgDatabase["transaction"]>[0]
->[0];
-
 /**
  * Re-keys ALL personal resources from the tombstone uid to the surviving uid
  * (ADR-0059). Complete and idempotent because the tombstone uid can never be
@@ -166,7 +215,28 @@ async function rekeyPersonalResources(
   connectionsReleased: number;
   connectionsRekeyed: number;
   conversations: number;
+  installSessionsRekeyed: number;
 }> {
+  // Pending authorization sessions are swept BEFORE connections: the OAuth
+  // callback consumes its session row under a row lock and writes the
+  // connection in that same transaction, with no crName left to re-check.
+  // Sweeping sessions first orders the two — the callback either blocks on
+  // its re-keyed session and re-reads the survivor uid, or commits its
+  // connection row before the sweep below, which then re-keys it.
+  const rekeyedInstallSessions = await tx
+    .update(githubAppInstallSessions)
+    .set({ workspaceActor: input.survivorUserUid })
+    .where(
+      and(
+        eq(githubAppInstallSessions.workspaceActor, input.tombstoneUserUid),
+        eq(
+          githubAppInstallSessions.ownerIdentityVersion,
+          CURRENT_GITHUB_OWNER_IDENTITY_VERSION
+        )
+      )
+    )
+    .returning({ state: githubAppInstallSessions.state });
+
   const conversations = await tx
     .update(assistantChats)
     .set({ workspaceActor: input.survivorUserUid })
@@ -223,5 +293,6 @@ async function rekeyPersonalResources(
     connectionsReleased: releasedConnections.length,
     connectionsRekeyed: rekeyedConnections.length,
     conversations: conversations.length,
+    installSessionsRekeyed: rekeyedInstallSessions.length,
   };
 }
