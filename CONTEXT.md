@@ -550,6 +550,58 @@ stored.
 
 _Avoid_: raw answer text, display label, derived segment column, business intent field.
 
+## Account & Subscription
+
+Account-level money and workspace subscriptions, owned by the platform's account-service and presented read-mostly in the Billing Area. This is a different concept space from Assistant & Billing above: Free Chat Turns are a platform-funded assistant allowance and Chat Billing Mode decides who pays for one assistant turn, while the terms here describe real money and plan commitments. Brain reads and operates on these facts through account-service; it stores no billing state of its own.
+
+### Billing Area
+
+The product area under the `/billing` URL prefix where users manage the current workspace's Workspace Subscription and inspect costs, usage quota, and pricing. It is entered from a single App Sidebar entry and presented as one surface with Plan, Costs, Usage, and Pricing tabs; the Plan view is the area's index and the landing point of a Stripe Checkout Round-Trip.
+
+_Avoid_: cost center, billing app, separate billing pages.
+
+### Account Balance
+
+The user's account-level prepaid funds held by account-service, presented as the net of balance minus accumulated deductions. Account Balance is real money that can offset subscription charges; it is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. It is not a Free Chat Turns count, a quota, or an entitlement counter.
+
+_Avoid_: credits, wallet, free balance, top-up balance.
+
+### Subscription Plan
+
+A platform-defined subscription offering — name, price, cycle, and included resource quotas — served by account-service's plan catalog. Subscription Plans are shared catalog facts; a workspace's committed choice of one is its Workspace Subscription. Chat Billing Mode deliberately avoids the word "plan": Free Chat Turns are not a Subscription Plan benefit.
+
+_Avoid_: tier, package, chat plan, pricing row.
+
+### Workspace Subscription
+
+The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade) and its most recent transaction. Every workspace on a subscription-mode cluster has exactly one. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
+
+_Avoid_: account subscription, user subscription, namespace plan, workspace plan record.
+
+### Subscription Payment
+
+One recorded charge on the account's payment ledger for workspace subscriptions. Payment history and the Billing Area's income series are Subscription Payment lists filtered to paid records; Brain reads the ledger and never writes it. A Subscription Payment is money movement, distinct from metered Consumption Cost.
+
+_Avoid_: recharge, top-up, charge record.
+
+### Consumption Cost
+
+The metered cost of resource usage recorded by the platform's billing pipeline, read per workspace, per app, or as a trend series. Consumption Cost is usage-derived spending presented in the Costs view; it is not a Subscription Payment and not a quota.
+
+_Avoid_: recharge history, usage quota, bill (ambiguous).
+
+### Stripe Checkout Round-Trip
+
+The escape-and-return journey of a subscription payment: Brain leaves the desktop iframe to Stripe-hosted checkout (top-level redirect, or a new tab for upgrades while the original iframe polls the pending transaction) and returns through the desktop's Stripe callback, which routes back into Brain's Billing Area using the originating-app identifier the payment request declared. The return is a trusted redirect parameter, not a payment-status verification.
+
+_Avoid_: payment popup, in-place payment, webhook return.
+
+### Billing Currency
+
+The cluster-level display currency for the Billing Area, delivered server-side per request rather than baked into the client bundle at build time, so per-cluster configuration takes effect at runtime.
+
+_Avoid_: user currency preference, build-time currency.
+
 ## Design System
 
 ### Component Registry

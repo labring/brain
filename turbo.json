@@ -2,6 +2,7 @@
   "$schema": "https://v2-9-12.turborepo.dev/schema.json",
   "ui": "tui",
   "globalEnv": [
+    "ACCOUNT_API_BASE_URL",
     "AI_PROXY_TOKEN_NAME",
     "API_URL",
     "AP_USER_DOMAIN",

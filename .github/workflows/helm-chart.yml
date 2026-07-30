@@ -35,3 +35,6 @@ jobs:
 
       - name: Template example values
         run: helm template brain-system charts/brain-system -n brain-system -f charts/brain-system/values.local.example.yaml
+
+      - name: Verify account-service URL configuration
+        run: bash charts/brain-system/tests/account-api-env.sh
