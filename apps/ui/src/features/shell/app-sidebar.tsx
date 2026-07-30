@@ -19,7 +19,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
-import { House, PanelsTopLeft, Sparkles } from "lucide-react";
+import { CreditCard, House, PanelsTopLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -146,20 +146,6 @@ async function loadWorkspaceQuotaRows(): Promise<AppSidebarUpgradeUsageRow[]> {
   );
 }
 
-async function openCostCenterApp() {
-  await sealosApp.runEvents("openDesktopApp", {
-    appKey: "system-costcenter",
-    pathname: "/",
-    query: {
-      mode: "upgrade",
-    },
-    messageData: {
-      type: "InternalAppCall",
-      mode: "upgrade",
-    },
-  });
-}
-
 type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,
   "aria-label" | "children" | "className"
@@ -275,11 +261,6 @@ function AppSidebarUpgrade() {
   const [usageRows, setUsageRows] = useState<AppSidebarUpgradeUsageRow[]>(
     EMPTY_UPGRADE_USAGE_ROWS
   );
-  const handleUpgradeClick = () => {
-    openCostCenterApp().catch((error: unknown) => {
-      console.warn("[AppSidebarUpgrade] open cost center failed:", error);
-    });
-  };
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) {
@@ -332,8 +313,8 @@ function AppSidebarUpgrade() {
 
           <AppButton
             className="w-full"
-            onClick={handleUpgradeClick}
-            type="button"
+            nativeButton={false}
+            render={<Link href="/billing?mode=upgrade" />}
             variant="secondary"
           >
             <Sparkles
@@ -417,11 +398,13 @@ const AppSidebarProjectShortcuts = memo(function AppSidebarProjectShortcuts({
 });
 
 interface AppSidebarChromeProps {
+  billingActive: boolean;
   currentProjectId: string | undefined;
   projectsActive: boolean;
 }
 
 const AppSidebarChrome = memo(function AppSidebarChrome({
+  billingActive,
   currentProjectId,
   projectsActive,
 }: AppSidebarChromeProps) {
@@ -518,6 +501,14 @@ const AppSidebarChrome = memo(function AppSidebarChrome({
             className="w-9 rounded-full bg-border"
             data-slot="app-sidebar-bottom-separator"
           />
+          <AppSidebarLinkButton
+            active={billingActive}
+            aria-label="Billing"
+            href="/billing"
+            tooltip="Billing"
+          >
+            <CreditCard aria-hidden className="size-4" strokeWidth={1.8} />
+          </AppSidebarLinkButton>
           <AppSidebarDesktopReturn />
           <AppSidebarUpgrade />
         </div>
@@ -531,6 +522,7 @@ export default function AppSidebar() {
 
   return (
     <AppSidebarChrome
+      billingActive={pathname.startsWith("/billing")}
       currentProjectId={projectIdFromPathname(pathname)}
       projectsActive={pathname === "/project"}
     />

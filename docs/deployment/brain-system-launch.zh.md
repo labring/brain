@@ -90,6 +90,9 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 `http://account-service.account-system.svc:2333`；仅在需要连接其他
 account-service 时显式覆盖。
 
+`ui.env.BILLING_CURRENCY` 控制 Billing Area 的集群级展示货币，默认值为
+`usd`，并在每次请求时读取。
+
 GitHub 和 prompt AI 部署固定调用 `sealos-deploy`。如需在 staging 验证
 preview 分支，只设置：
 
