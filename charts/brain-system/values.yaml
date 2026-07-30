@@ -112,6 +112,7 @@ ui:
     AP_USER_DOMAIN: ""
     AP_USER_DOMAIN_TLS_SECRET_NAME: ""
     API_URL: ""
+    BILLING_CURRENCY: "usd"
     NEXT_PUBLIC_APP_URL: ""
     GTM_ID: ""
     DATABASE_URL: ""

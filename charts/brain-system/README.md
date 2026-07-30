@@ -78,6 +78,8 @@ When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived f
 
 `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty. `ui.env.ACCOUNT_API_BASE_URL` derives to the in-cluster `http://account-service.account-system.svc:2333` address when left empty.
 
+`ui.env.BILLING_CURRENCY` controls the Billing Area's cluster-level display currency and defaults to `usd`.
+
 Install or upgrade:
 
 ```bash
