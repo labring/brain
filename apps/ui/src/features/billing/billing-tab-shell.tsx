@@ -62,7 +62,7 @@ export function BillingNavigationFrame({
                   <Link
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 py-2 font-normal text-muted-foreground text-sm transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                      "flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 py-2 font-normal text-muted-foreground text-sm transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 lg:gap-2 lg:px-3",
                       active && "bg-muted font-medium text-foreground"
                     )}
                     href={tab.href}

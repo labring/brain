@@ -1,32 +1,8 @@
 import { z } from "zod";
+
+import { formatBillingAmount } from "@/features/billing/billing-amount";
 import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 import type { BillingCurrency } from "./config-core";
-
-const MICRO_UNITS_PER_CURRENCY_UNIT = 1_000_000;
-const USD_FORMATTER = new Intl.NumberFormat("en-US", {
-  currency: "USD",
-  currencyDisplay: "narrowSymbol",
-  maximumFractionDigits: 2,
-  minimumFractionDigits: 2,
-  style: "currency",
-});
-const CNY_FORMATTER = new Intl.NumberFormat("en-US", {
-  currency: "CNY",
-  currencyDisplay: "narrowSymbol",
-  maximumFractionDigits: 2,
-  minimumFractionDigits: 2,
-  style: "currency",
-});
-const SHELL_COIN_FORMATTER = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 2,
-  minimumFractionDigits: 2,
-});
-const CURRENCY_FORMATTERS = {
-  cny: (amount: number) => CNY_FORMATTER.format(amount),
-  shellCoin: (amount: number) =>
-    `${SHELL_COIN_FORMATTER.format(amount)} ShellCoin`,
-  usd: (amount: number) => USD_FORMATTER.format(amount),
-} satisfies Record<BillingCurrency, (amount: number) => string>;
 
 const accountBalanceResponseSchema = z.object({
   account: z.object({
@@ -87,7 +63,5 @@ export async function loadAccountBalance(
 }
 
 export function formatAccountBalance(balance: AccountBalance): string {
-  return CURRENCY_FORMATTERS[balance.currency](
-    balance.microUnits / MICRO_UNITS_PER_CURRENCY_UNIT
-  );
+  return formatBillingAmount(balance.microUnits, balance.currency);
 }
