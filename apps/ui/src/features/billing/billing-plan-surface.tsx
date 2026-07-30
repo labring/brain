@@ -38,6 +38,7 @@ import {
   CalendarClock,
   CircleCheck,
   CreditCard,
+  ExternalLink,
   Info,
   RotateCcw,
 } from "lucide-react";
@@ -159,19 +160,71 @@ function BillingPlanNotices({
   );
 }
 
+function BillingPaymentMethod({
+  canManage,
+  card,
+  isPending,
+  onManageCard,
+}: {
+  canManage: boolean;
+  card: BillingPlanSnapshot["card"];
+  isPending: boolean;
+  onManageCard?: () => void;
+}) {
+  return (
+    <section
+      className="rounded-xl border border-border bg-card p-2 shadow-xs"
+      data-slot="billing-payment-method-section"
+    >
+      <div className="flex min-h-20 flex-col gap-3 rounded-lg bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-input/40 text-muted-foreground">
+            <CreditCard aria-hidden className="size-5" strokeWidth={1.75} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h2 className="font-medium text-foreground text-sm">
+              Payment method
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              {card == null
+                ? "No saved card"
+                : `${cardBrand(card.brand)} ending in ${card.last4}`}
+            </p>
+          </div>
+        </div>
+        {card != null && canManage ? (
+          <AppButton
+            className="self-stretch sm:self-auto"
+            disabled={isPending}
+            onClick={onManageCard}
+            variant="secondary"
+          >
+            <ExternalLink aria-hidden data-icon="inline-start" />
+            {isPending ? "Opening..." : "Manage card"}
+          </AppButton>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 interface BillingPlanSurfaceProps {
   actionPending?: SubscriptionLifecycleAction | null;
   balance: ReactNode;
+  cardManagementPending?: boolean;
   currency: BillingCurrency;
   onLifecycleAction?: (operator: SubscriptionLifecycleAction) => void;
+  onManageCard?: () => void;
   snapshot: BillingPlanSnapshot;
 }
 
 export function BillingPlanSurface({
   actionPending = null,
   balance,
+  cardManagementPending = false,
   currency,
   onLifecycleAction,
+  onManageCard,
   snapshot,
 }: BillingPlanSurfaceProps) {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -340,26 +393,12 @@ export function BillingPlanSurface({
         </div>
       </section>
 
-      <section
-        className="rounded-xl border border-border bg-card p-2 shadow-xs"
-        data-slot="billing-payment-method-section"
-      >
-        <div className="flex min-h-20 items-center gap-3 rounded-lg bg-muted/30 px-4 py-3">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-input/40 text-muted-foreground">
-            <CreditCard aria-hidden className="size-5" strokeWidth={1.75} />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <h2 className="font-medium text-foreground text-sm">
-              Payment method
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              {snapshot.card == null
-                ? "No saved card"
-                : `${cardBrand(snapshot.card.brand)} ending in ${snapshot.card.last4}`}
-            </p>
-          </div>
-        </div>
-      </section>
+      <BillingPaymentMethod
+        canManage={current.canManage}
+        card={snapshot.card}
+        isPending={cardManagementPending}
+        onManageCard={onManageCard}
+      />
 
       <section data-slot="billing-all-plans-section">
         <h2 className="mb-4 font-medium text-foreground text-lg">

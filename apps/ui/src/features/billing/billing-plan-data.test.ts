@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  createBillingCardManagementSession,
   loadBillingPlanSnapshot,
   updateSubscriptionLifecycle,
 } from "./billing-plan-data";
@@ -263,6 +264,41 @@ test("updates a subscription lifecycle with verified personal-resource credentia
     operator: "canceled",
     payMethod: "stripe",
     planName: "Pro",
+    regionDomain: "us.example.test",
+    workspace: "workspace-a",
+  });
+});
+
+test("creates a hosted card management session with verified credentials", async () => {
+  let request: { init: RequestInit | undefined; url: string } | undefined;
+
+  const managementUrl = await createBillingCardManagementSession(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      regionDomain: "us.example.test",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input, init) => {
+        request = { init, url: input.toString() };
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            url: "https://checkout.stripe.test/setup-session",
+          })
+        );
+      },
+    }
+  );
+
+  assert.equal(managementUrl, "https://checkout.stripe.test/setup-session");
+  assert.equal(request?.url, "/api/billing/card/manage");
+  assert.equal(request?.init?.method, "POST");
+  const headers = new Headers(request?.init?.headers);
+  assert.equal(headers.get("Authorization"), "Bearer apiVersion%3A%20v1");
+  assert.equal(headers.get("X-Sealos-App-Token"), "desktop-app-token");
+  assert.deepEqual(JSON.parse(String(request?.init?.body)), {
     regionDomain: "us.example.test",
     workspace: "workspace-a",
   });

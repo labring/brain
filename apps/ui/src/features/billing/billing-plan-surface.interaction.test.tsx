@@ -113,3 +113,39 @@ test("resume refreshes the Plan lifecycle state", async () => {
     }
   });
 });
+
+test("saved card management is exposed as a Plan action", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanSurface } = await import("./billing-plan-surface");
+    let manageRequests = 0;
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanSurface
+            balance={<span>$3.00</span>}
+            currency="usd"
+            onManageCard={() => {
+              manageRequests += 1;
+            }}
+            snapshot={CANCELLING_PLAN}
+          />
+        );
+      });
+
+      await act(() => {
+        const manageCard = rendered?.getByRole("button", {
+          name: "Manage card",
+        });
+        if (manageCard != null) {
+          fireEvent.click(manageCard);
+        }
+      });
+
+      assert.equal(manageRequests, 1);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
