@@ -31,6 +31,7 @@ import {
   ChevronRight,
   Eye,
   Gauge,
+  Globe2,
   Layers3,
   ReceiptText,
 } from "lucide-react";
@@ -46,7 +47,7 @@ import {
   buildWorkspaceCostBreakdown,
   isPaidSubscriptionPayment,
   resolveBillingAppType,
-  type SubscriptionPayment,
+  subscriptionPaymentDescription,
 } from "@/features/billing/billing-costs-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
@@ -61,6 +62,7 @@ const EMPTY_SNAPSHOT: BillingCostsSnapshot = {
   appTypes: {},
   costPoints: [],
   payments: [],
+  region: null,
   totalAppOverviewPages: 1,
   totalAppOverviews: 0,
   totalConsumptionMicroUnits: 0,
@@ -69,25 +71,17 @@ const EMPTY_SNAPSHOT: BillingCostsSnapshot = {
 };
 
 interface BillingCostsSurfaceProps {
-  appPage?: number;
-  currency?: BillingCurrency;
-  dateFilter?: ReactNode;
-  dateRange?: { endTime: string; startTime: string };
-  error?: unknown;
-  isLoading?: boolean;
+  appPage: number;
+  currency: BillingCurrency;
+  dateFilter: ReactNode;
+  dateRange: { endTime: string; startTime: string };
+  error: unknown;
+  isLoading: boolean;
   onAppPageChange?: (page: number) => void;
   onSelectApp?: (app: SelectedBillingApp) => void;
   onSelectWorkspace?: (workspace: string | null) => void;
-  selectedWorkspace?: string | null;
+  selectedWorkspace: string | null;
   snapshot?: BillingCostsSnapshot;
-}
-
-function paymentDescription(payment: SubscriptionPayment): string {
-  if (payment.PlanName.trim() !== "") {
-    const operator = payment.Operator.replaceAll("_", " ").toLowerCase();
-    return `${payment.PlanName} ${operator}`.trim();
-  }
-  return payment.Type.replaceAll("_", " ").toLowerCase();
 }
 
 function workspaceName(
@@ -108,21 +102,16 @@ function LoadingTableRow({ columns }: { columns: number }) {
 }
 
 export function BillingCostsSurface({
-  appPage = 1,
-  currency = "usd",
-  dateFilter = (
-    <span className="text-muted-foreground text-sm">Last 30 days</span>
-  ),
-  dateRange = {
-    endTime: "2026-01-31T23:59:59.999Z",
-    startTime: "2026-01-01T00:00:00.000Z",
-  },
-  error = null,
-  isLoading = false,
+  appPage,
+  currency,
+  dateFilter,
+  dateRange,
+  error,
+  isLoading,
   onAppPageChange,
   onSelectApp,
   onSelectWorkspace,
-  selectedWorkspace = null,
+  selectedWorkspace,
   snapshot = EMPTY_SNAPSHOT,
 }: BillingCostsSurfaceProps) {
   const [paymentPage, setPaymentPage] = useState(1);
@@ -244,6 +233,18 @@ export function BillingCostsSurface({
                 </h2>
               </div>
               <div className="flex flex-col gap-1">
+                <div className="mb-1 flex min-h-11 items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                  <Globe2
+                    aria-hidden
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {snapshot.region?.name?.en ??
+                      snapshot.region?.domain ??
+                      "Current region"}
+                  </span>
+                  <Badge variant="outline">Region</Badge>
+                </div>
                 <button
                   aria-pressed={selectedWorkspace == null}
                   className={cn(
@@ -486,7 +487,7 @@ export function BillingCostsSurface({
                           {workspaceName(workspaceNames, payment.Workspace)}
                         </TableCell>
                         <TableCell className="capitalize">
-                          {paymentDescription(payment)}
+                          {subscriptionPaymentDescription(payment)}
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">Paid</Badge>

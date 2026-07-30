@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { formatCompactBillingAmount } from "./billing-amount";
 import {
   buildMonthlyBillingTrend,
   buildWorkspaceCostBreakdown,
@@ -8,6 +9,7 @@ import {
   loadBillingAppCosts,
   loadBillingCosts,
   resolveBillingAppType,
+  subscriptionPaymentDescription,
 } from "./billing-costs-data";
 
 const DATE_RANGE = {
@@ -29,6 +31,29 @@ test("calendar dates remain in the selected UTC billing month", () => {
   );
 });
 
+test("chart axes identify the cluster Billing Currency", () => {
+  assert.equal(formatCompactBillingAmount(1_500_000_000_000, "usd"), "$1.5M");
+  assert.equal(
+    formatCompactBillingAmount(1_500_000_000_000, "shellCoin"),
+    "1.5M ShellCoin"
+  );
+});
+
+test("payment descriptions never expose recharge terminology", () => {
+  assert.equal(
+    subscriptionPaymentDescription({
+      Amount: 1_000_000,
+      ID: "payment-a",
+      Operator: "",
+      PlanName: "",
+      Time: "2026-07-01T00:00:00.000Z",
+      Type: "account_recharge",
+      Workspace: "workspace-a",
+    }),
+    "account payment"
+  );
+});
+
 test("the selected date range drives every Costs data request", async () => {
   const requests: Array<{ pathname: string; body: Record<string, unknown> }> =
     [];
@@ -43,6 +68,15 @@ test("the selected date range drives every Costs data request", async () => {
       message: "ok",
     },
     "/api/billing/payments": { payments: [] },
+    "/api/billing/regions": {
+      regions: [
+        {
+          domain: "us.example.test",
+          name: { en: "United States", zh: "US" },
+          uid: "region-us",
+        },
+      ],
+    },
     "/api/billing/workspace-consumption": {
       amount: { "workspace-a": 4_000_000 },
     },
@@ -51,7 +85,7 @@ test("the selected date range drives every Costs data request", async () => {
     },
   };
 
-  await loadBillingCosts(
+  const snapshot = await loadBillingCosts(
     {
       appToken: "desktop-app-token",
       dateRange: DATE_RANGE,
@@ -62,7 +96,9 @@ test("the selected date range drives every Costs data request", async () => {
     },
     (input, init) => {
       const pathname = new URL(input.toString(), "https://brain.test").pathname;
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const body = init?.body
+        ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+        : {};
       requests.push({ body, pathname });
 
       const headers = new Headers(init?.headers);
@@ -77,7 +113,10 @@ test("the selected date range drives every Costs data request", async () => {
     Object.keys(responseByPathname).sort()
   );
   for (const { body, pathname } of requests) {
-    if (pathname === "/api/billing/app-types") {
+    if (
+      pathname === "/api/billing/app-types" ||
+      pathname === "/api/billing/regions"
+    ) {
       assert.deepEqual(body, {});
       continue;
     }
@@ -97,6 +136,11 @@ test("the selected date range drives every Costs data request", async () => {
       startTime: DATE_RANGE.startTime,
     }
   );
+  assert.deepEqual(snapshot.region, {
+    domain: "us.example.test",
+    name: { en: "United States", zh: "US" },
+    uid: "region-us",
+  });
 });
 
 test("monthly trends combine expenditure with paid Subscription Payments", () => {

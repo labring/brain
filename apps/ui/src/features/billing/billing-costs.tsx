@@ -22,7 +22,24 @@ import { appTokenAtom, kubeconfigAtom } from "@/lib/auth-store";
 
 const APP_PAGE_SIZE = 10;
 
-export const BillingCostsSurface = BillingCostsSurfaceView;
+export function BillingCostsSurface() {
+  return (
+    <BillingCostsSurfaceView
+      appPage={1}
+      currency="usd"
+      dateFilter={
+        <span className="text-muted-foreground text-sm">Last 30 days</span>
+      }
+      dateRange={{
+        endTime: "2026-01-31T23:59:59.999Z",
+        startTime: "2026-01-01T00:00:00.000Z",
+      }}
+      error={null}
+      isLoading={false}
+      selectedWorkspace={null}
+    />
+  );
+}
 
 interface DateInputs {
   end: string;
@@ -169,7 +186,7 @@ export default function BillingCosts({
 
   return (
     <>
-      <BillingCostsSurface
+      <BillingCostsSurfaceView
         appPage={appPage}
         currency={currency}
         dateFilter={dateFilter}

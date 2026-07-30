@@ -19,6 +19,16 @@ const paymentSchema = z.object({
   Type: z.string(),
   Workspace: z.string(),
 });
+const regionSchema = z.object({
+  domain: z.string().trim().min(1),
+  name: z
+    .object({
+      en: z.string().trim().min(1),
+      zh: z.string(),
+    })
+    .optional(),
+  uid: z.string().trim().min(1),
+});
 
 const appTypesResponseSchema = z.object({
   data: z.record(z.string(), z.string()),
@@ -42,6 +52,7 @@ const costsResponseSchema = z.object({
   message: z.string().optional(),
 });
 const paymentsResponseSchema = z.object({ payments: z.array(paymentSchema) });
+const regionsResponseSchema = z.object({ regions: z.array(regionSchema) });
 const appCostResourceSchema = z.object({
   amount: z.number().default(0),
   app_name: z.string().default(""),
@@ -118,6 +129,7 @@ export interface LoadBillingAppCostsInput {
 export type BillingWorkspace = z.infer<typeof workspaceSchema>;
 export type BillingAppOverview = z.infer<typeof appOverviewSchema>;
 export type SubscriptionPayment = z.infer<typeof paymentSchema>;
+export type BillingRegion = z.infer<typeof regionSchema>;
 export type BillingAppCost = z.infer<typeof appCostSchema>;
 
 export interface BillingAppCostsPage {
@@ -132,6 +144,7 @@ export interface BillingCostsSnapshot {
   appTypes: Record<string, string>;
   costPoints: [number, string | number][];
   payments: SubscriptionPayment[];
+  region: BillingRegion | null;
   totalAppOverviewPages: number;
   totalAppOverviews: number;
   totalConsumptionMicroUnits: number;
@@ -216,6 +229,18 @@ export function isPaidSubscriptionPayment(
   payment: SubscriptionPayment
 ): boolean {
   return payment.Status == null || payment.Status.toUpperCase() === "PAID";
+}
+
+export function subscriptionPaymentDescription(
+  payment: SubscriptionPayment
+): string {
+  if (payment.PlanName.trim() !== "") {
+    const operator = payment.Operator.replaceAll("_", " ").toLowerCase();
+    return `${payment.PlanName} ${operator}`.trim();
+  }
+  return payment.Type.replaceAll(/recharge/gi, "payment")
+    .replaceAll("_", " ")
+    .toLowerCase();
 }
 
 export function buildDailyExpenditureTrend(
@@ -343,6 +368,27 @@ async function postBilling<TSchema extends z.ZodType>(
   return parsed.data;
 }
 
+async function getBilling<TSchema extends z.ZodType>(
+  pathname: string,
+  schema: TSchema,
+  credentials: { appToken: string; kubeconfig: string },
+  fetch: BillingFetch
+): Promise<z.infer<TSchema>> {
+  const response = await fetch(pathname, {
+    cache: "no-store",
+    headers: personalResourceAuthHeaders(credentials),
+  });
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(responseErrorMessage(payload));
+  }
+  const parsed = schema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error("Billing costs response is invalid.");
+  }
+  return parsed.data;
+}
+
 export async function loadBillingAppCosts(
   input: LoadBillingAppCostsInput,
   fetch: BillingFetch = globalThis.fetch
@@ -385,6 +431,7 @@ export async function loadBillingCosts(
   };
 
   const [
+    regions,
     appTypes,
     consumption,
     workspaceConsumption,
@@ -393,6 +440,12 @@ export async function loadBillingCosts(
     costs,
     payments,
   ] = await Promise.all([
+    getBilling(
+      "/api/billing/regions",
+      regionsResponseSchema,
+      credentials,
+      fetch
+    ),
     postBilling(
       "/api/billing/app-types",
       {},
@@ -450,12 +503,17 @@ export async function loadBillingCosts(
       fetch
     ),
   ]);
+  const region = regions.regions[0];
+  if (region == null) {
+    throw new Error("Billing region is unavailable.");
+  }
 
   return {
     appOverviews: appOverview.data.overviews,
     appTypes: appTypes.data,
     costPoints: costs.data.costs,
     payments: payments.payments,
+    region,
     totalAppOverviews: appOverview.data.total,
     totalAppOverviewPages: appOverview.data.totalPage,
     totalConsumptionMicroUnits: consumption.amount,
