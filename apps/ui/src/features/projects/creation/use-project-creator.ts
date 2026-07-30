@@ -2,6 +2,10 @@
 
 import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
+import {
+  type BrainGtmMethod,
+  trackBrainGtmEvent,
+} from "@/features/analytics/brain-gtm";
 import type { DatabaseDeploymentSettings } from "@/features/deploy/database-deployer";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
 import type { DockerDeploymentSettings } from "@/features/deploy/docker-deployer";
@@ -40,6 +44,17 @@ const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [
   "database",
   "template",
 ];
+
+function trackDeploymentCreate(
+  method: BrainGtmMethod,
+  config?: { template_name?: string; template_version?: string }
+): void {
+  trackBrainGtmEvent({
+    ...(config === undefined ? {} : { config }),
+    event: "deployment_create",
+    method,
+  });
+}
 
 function sourceKindFromEntryMode(
   entryMode: ProjectCreationPaneEntryMode
@@ -274,6 +289,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       ) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
+          trackDeploymentCreate("docker");
           const outcome = await runDeployment({
             kind: "docker",
             settings,
@@ -296,6 +312,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       ) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
+          trackDeploymentCreate("database");
           const outcome = await runDeployment({
             kind: "database",
             settings,
@@ -319,6 +336,9 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       ) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
+          trackDeploymentCreate("template", {
+            template_name: settings.templateName,
+          });
           const outcome = await runDeployment({
             args: settings.args,
             kind: "template",
@@ -340,6 +360,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       onGithubConfirm: async (repo: GithubDeployerRepo, projectDescription) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
+          trackDeploymentCreate("github");
           const outcome = await runDeployment({
             kind: "github",
             repository: repo,
@@ -363,6 +384,7 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   const handleGithubDeploy = useCallback(
     async (repo: GithubDeployerRepo) => {
       await applyWithBusyState(async () => {
+        trackDeploymentCreate("github");
         const outcome = await runDeployment({
           kind: "github",
           repository: repo,
@@ -415,6 +437,9 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         return;
       }
       await applyWithBusyState(async () => {
+        trackDeploymentCreate("template", {
+          template_name: input.settings.templateName,
+        });
         const outcome = await runDeployment({
           args: input.settings.args,
           kind: "template",

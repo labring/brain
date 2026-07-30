@@ -16,6 +16,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
+  brainCardActionEventType,
+  trackBrainGtmEvent,
+} from "@/features/analytics/brain-gtm";
+import {
   acknowledgePendingDeployTaskCreatedEvent,
   DEPLOY_TASK_CREATED_EVENT,
   type DeployTaskCreatedEvent,
@@ -643,6 +647,16 @@ export function useProjectCanvasModule({
             ),
           writeSelection,
         });
+        const entry = plan.surface?.entry;
+        const eventType =
+          entry === undefined ? null : brainCardActionEventType(entry);
+        if (eventType !== null && projectId.trim() !== "") {
+          trackBrainGtmEvent({
+            event: "deployment_card_action",
+            event_type: eventType,
+            project_id: projectId,
+          });
+        }
       };
 
       if (plan.guard?.kind === "settingsLeave") {
@@ -1195,6 +1209,14 @@ export function useProjectCanvasModule({
       intent: ProjectSurfaceIntent,
       launchSource: SettingsLaunchSource = "toolbar"
     ) => {
+      const eventType = brainCardActionEventType(intent.entry);
+      if (eventType !== null && projectId.trim() !== "") {
+        trackBrainGtmEvent({
+          event: "deployment_card_action",
+          event_type: eventType,
+          project_id: projectId,
+        });
+      }
       if (intent.slot === "drawer") {
         openDrawerSurface(intent.entry);
         return;
@@ -1205,7 +1227,7 @@ export function useProjectCanvasModule({
       }
       openSideSurface(intent.entry, undefined, launchSource);
     },
-    [openDrawerSurface, openMainSurface, openSideSurface]
+    [openDrawerSurface, openMainSurface, openSideSurface, projectId]
   );
 
   return {

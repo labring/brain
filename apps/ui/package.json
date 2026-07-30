@@ -25,6 +25,7 @@
     "@kubernetes/client-node": "0.18.1",
     "@labring/sealos-desktop-sdk": "^0.1.21",
     "@monaco-editor/react": "^4.7.0",
+    "@next/third-parties": "16.2.6",
     "@workspace/api": "workspace:*",
     "@workspace/shared": "workspace:*",
     "@workspace/ui": "workspace:*",

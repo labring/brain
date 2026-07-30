@@ -24,6 +24,7 @@ import { ProjectExplorerVariant1 } from "./project-explorer.variant1";
 // biome-ignore lint/performance/noBarrelFile: compound hook re-export for `import { useProjectExplorer }`
 export { useProjectExplorer } from "./project-explorer.context";
 export type {
+  ProjectDeleteReason,
   ProjectExplorerActions,
   ProjectExplorerEmptyState,
   ProjectExplorerProject,

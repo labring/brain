@@ -36,6 +36,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
+import {
+  claimBrainAiEngagementFromSession,
+  trackBrainGtmEvent,
+} from "@/features/analytics/brain-gtm";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
 import { FreeTurnsIndicator } from "@/features/chat/free-turns-indicator";
@@ -656,6 +660,13 @@ function ProjectAssistantChatSession({
 
   const submitComposerText = useCallback(
     (text: string, selected: ProjectCanvasSelection | null) => {
+      if (claimBrainAiEngagementFromSession(projectId)) {
+        trackBrainGtmEvent({
+          event: "module_view",
+          project_id: projectId,
+          view_name: "ai_chat_engaged",
+        });
+      }
       const snapshot = buildSelectedResourceSnapshot(selected);
       if (snapshot == null) {
         sendMessage({ text }).catch(() => undefined);
@@ -669,7 +680,7 @@ function ProjectAssistantChatSession({
         ],
       }).catch(() => undefined);
     },
-    [sendMessage]
+    [projectId, sendMessage]
   );
 
   const stopComposerResponse = useCallback(() => {

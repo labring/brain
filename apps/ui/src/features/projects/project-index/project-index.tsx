@@ -5,6 +5,11 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useMemo } from "react";
+import {
+  type BrainGtmMethod,
+  trackBrainGtmEvent,
+} from "@/features/analytics/brain-gtm";
+import { BrainModuleView } from "@/features/analytics/brain-module-view";
 import { parseTemplateForm } from "@/features/deploy/template-deployment-intent";
 import type { ProjectSidePaneAssistantSurface } from "@/features/panes/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/panes/react";
@@ -12,6 +17,7 @@ import { PROJECT_SIDE_QUERY_KEY } from "@/features/panes/side-url-codec";
 import { projectListEntryForAssistantIntent } from "@/features/panes/surface-intents";
 import { serializeProjectSideSurfaceEntry } from "@/features/panes/url-codec";
 import { useProjectSideRouteState } from "@/features/panes/use-project-side-route-state";
+import type { ProjectCreatorSourceKind } from "@/features/projects/creation/creator/project-creator.types";
 import { ProjectCreationPane } from "@/features/projects/creation/project-creation-pane";
 import type { ProjectCreationPaneEntryMode } from "@/features/projects/creation/project-creation-pane-state";
 import {
@@ -26,6 +32,21 @@ import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
 import { ProjectIndexHorizon } from "./horizon/project-index-horizon";
 import styles from "./project-index.module.css";
 import { useSidePaneReserveFlip } from "./use-side-pane-reserve-flip";
+
+function brainGtmMethodFromCreatorSource(
+  source: ProjectCreatorSourceKind
+): BrainGtmMethod {
+  switch (source) {
+    case "docker-image":
+      return "docker";
+    case "github":
+    case "database":
+    case "template":
+      return source;
+    default:
+      return source satisfies never;
+  }
+}
 
 export function ProjectIndex() {
   const router = useRouter();
@@ -104,6 +125,19 @@ export function ProjectIndex() {
     namespace: ns,
     onProjectCreated,
   });
+  const onCreationPaneSourceChangeWithTracking = useCallback(
+    (source: ProjectCreatorSourceKind | null) => {
+      if (source != null) {
+        trackBrainGtmEvent({
+          event: "module_view",
+          method: brainGtmMethodFromCreatorSource(source),
+          view_name: "config_form",
+        });
+      }
+      onCreationPaneSourceChange(source);
+    },
+    [onCreationPaneSourceChange]
+  );
   useEffect(() => {
     if (creationSideEntryMode == null) {
       onCreationPaneOpenChange(false);
@@ -124,6 +158,7 @@ export function ProjectIndex() {
 
   const openProjectCreationPane = useCallback(
     (entryMode: ProjectCreationPaneEntryMode = "general") => {
+      trackBrainGtmEvent({ event: "deployment_start" });
       if (entryMode === "templateDirect") {
         openProjectSideRoute({ entryMode, kind: "projectCreation" });
         return;
@@ -169,7 +204,7 @@ export function ProjectIndex() {
           busy={githubDeployerLoading}
           creatorRootProps={creatorRootProps}
           entryMode={creationPaneEntryMode}
-          onActiveSourceChange={onCreationPaneSourceChange}
+          onActiveSourceChange={onCreationPaneSourceChangeWithTracking}
           onClose={() => closeProjectSideRoute()}
           resetKey={creatorResetKey}
         />
@@ -188,12 +223,13 @@ export function ProjectIndex() {
     creatorResetKey,
     creatorRootProps,
     githubDeployerLoading,
-    onCreationPaneSourceChange,
+    onCreationPaneSourceChangeWithTracking,
     skillsPaneOpen,
   ]);
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <BrainModuleView viewName="project_list" />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 overflow-hidden"

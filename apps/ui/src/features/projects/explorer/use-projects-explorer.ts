@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { trackBrainGtmEvent } from "@/features/analytics/brain-gtm";
 import { openAssistantPane } from "@/features/panes/layout-store";
 import {
   type BrainProjectResponse,
@@ -17,6 +18,7 @@ import {
   isProjectDisplayNameTaken,
 } from "@/features/projects/brain-projects";
 import type {
+  ProjectDeleteReason,
   ProjectExplorerActions,
   ProjectExplorerProject,
   ProjectExplorerStates,
@@ -341,12 +343,18 @@ export function useProjectsExplorer(
   );
 
   const onProjectDelete = useCallback(
-    async (p: ProjectExplorerProject) => {
+    async (p: ProjectExplorerProject, reason: ProjectDeleteReason) => {
       if (!hasKubeconfig) {
         toast.error("Credentials are not ready yet.");
         throw new Error("not ready");
       }
       try {
+        trackBrainGtmEvent({
+          app_name: p.name,
+          event: "deployment_delete",
+          project_id: p.id,
+          reason,
+        });
         await fetcher({
           base: window.location.origin,
           path: "/api/projects",
