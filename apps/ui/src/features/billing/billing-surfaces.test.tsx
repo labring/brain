@@ -5,9 +5,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { BillingCostsSurface } from "./billing-costs";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 import { BillingPlanSurface } from "./billing-plan-surface";
-import { BillingPricingSurface } from "./billing-pricing";
+import {
+  BillingPlanCatalog,
+  BillingPriceTable,
+  BillingPricingSurface,
+} from "./billing-pricing";
+import type {
+  BillingPricingPlan,
+  BillingPricingSnapshot,
+} from "./billing-pricing-data";
 import { BillingNavigationFrame } from "./billing-tab-shell";
 import { BillingUsageSurface } from "./billing-usage";
+import type { BillingUsageSnapshot } from "./billing-usage-data";
 
 function assertTextOrder(html: string, labels: readonly string[]) {
   let previousIndex = -1;
@@ -23,6 +32,100 @@ function assertIncludes(html: string, fragment: string) {
 }
 
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
+
+const USAGE_SNAPSHOT = {
+  rows: [
+    {
+      label: "CPU",
+      percentUsed: 37.5,
+      remaining: "2.5",
+      total: "4",
+      type: "cpu",
+      used: "1.5",
+    },
+    {
+      label: "Memory",
+      percentUsed: 37.5,
+      remaining: "5Gi",
+      total: "8Gi",
+      type: "memory",
+      used: "3Gi",
+    },
+    {
+      label: "Storage",
+      percentUsed: 40,
+      remaining: "60Gi",
+      total: "100Gi",
+      type: "storage",
+      used: "40Gi",
+    },
+    {
+      label: "Traffic",
+      percentUsed: 25,
+      remaining: "75Gi",
+      total: "100Gi",
+      type: "traffic",
+      used: "25Gi",
+    },
+    {
+      label: "GPU",
+      percentUsed: 50,
+      remaining: "1",
+      total: "2",
+      type: "gpu",
+      used: "1",
+    },
+  ],
+  selectedWorkspace: "workspace-a",
+  workspaces: [{ id: "workspace-a", name: "Workspace Alpha" }],
+} satisfies BillingUsageSnapshot;
+
+const PRICING_SNAPSHOT = {
+  isPayg: true,
+  plans: [
+    {
+      description: "For personal projects",
+      id: "plan-starter",
+      monthlyOriginalPriceMicroUnits: 0,
+      monthlyPriceMicroUnits: 5_000_000,
+      name: "Starter",
+      order: 1,
+      primaryPriceMicroUnits: 5_000_000,
+      resources: [
+        { label: "CPU", type: "cpu", value: "2" },
+        { label: "Memory", type: "memory", value: "4Gi" },
+        { label: "GPU", type: "gpu", value: "1" },
+      ],
+      tags: [],
+    },
+  ],
+  prices: [
+    {
+      hourlyPriceMicroUnits: 10_000,
+      label: "CPU",
+      billingBasis: "duration",
+      sourceName: "cpu",
+      type: "cpu",
+      unit: "vCPU",
+    },
+    {
+      hourlyPriceMicroUnits: 20_480,
+      label: "Memory",
+      billingBasis: "duration",
+      sourceName: "memory",
+      type: "memory",
+      unit: "GiB",
+    },
+    {
+      hourlyPriceMicroUnits: 750_000,
+      label: "NVIDIA A100",
+      billingBasis: "duration",
+      sourceName: "gpu-a100",
+      type: "gpu",
+      unit: "GPU",
+    },
+  ],
+} satisfies BillingPricingSnapshot;
 
 const CANCELLING_PLAN = {
   card: { brand: "visa", last4: "4242" },
@@ -261,7 +364,9 @@ test("Costs preserves Cost Center's detail and trend information layers", () => 
 });
 
 test("Usage preserves the quota table's workspace and resource hierarchy", () => {
-  const html = renderToStaticMarkup(<BillingUsageSurface />);
+  const html = renderToStaticMarkup(
+    <BillingUsageSurface gpuEnabled={false} snapshot={USAGE_SNAPSHOT} />
+  );
 
   assertTextOrder(html, [
     "Workspace usage",
@@ -271,16 +376,165 @@ test("Usage preserves the quota table's workspace and resource hierarchy", () =>
     "Used",
     "Remaining",
   ]);
-  assertIncludes(html, "Select workspace");
+  for (const text of [
+    "Workspace Alpha",
+    "CPU",
+    "Memory",
+    "Storage",
+    "Traffic",
+    "2.5",
+    "5Gi",
+    "60Gi",
+    "75Gi",
+  ]) {
+    assertIncludes(html, text);
+  }
+  assert.equal(html.includes(">GPU<"), false);
+});
+
+test("Usage adds the GPU quota row only when the cluster flag is enabled", () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSurface gpuEnabled snapshot={USAGE_SNAPSHOT} />
+  );
+
+  assertIncludes(html, ">GPU<");
+  assertTextOrder(html, ["CPU", "Memory", "Storage", "Traffic", "GPU"]);
 });
 
 test("Pricing preserves Cost Center's three pricing information layers", () => {
-  const html = renderToStaticMarkup(<BillingPricingSurface />);
+  const html = renderToStaticMarkup(
+    <BillingPricingSurface
+      currency="usd"
+      gpuEnabled={false}
+      snapshot={PRICING_SNAPSHOT}
+    />
+  );
 
   assertTextOrder(html, [
     "Subscription plans",
     "Price table",
     "Price calculator",
   ]);
-  assertIncludes(html, "Plan catalog");
+});
+
+test("Pricing hides metered views for subscription workspaces", () => {
+  const html = renderToStaticMarkup(
+    <BillingPricingSurface
+      currency="usd"
+      gpuEnabled
+      snapshot={{ ...PRICING_SNAPSHOT, isPayg: false }}
+    />
+  );
+
+  assertIncludes(html, "Subscription plans");
+  assert.equal(html.includes("Price table"), false);
+  assert.equal(html.includes("Price calculator"), false);
+});
+
+test("Pricing renders cluster currency and filters GPU catalog and price rows", () => {
+  const withoutGpu = renderToStaticMarkup(
+    <>
+      <BillingPlanCatalog
+        currency="cny"
+        gpuEnabled={false}
+        plans={PRICING_SNAPSHOT.plans}
+      />
+      <BillingPriceTable
+        currency="cny"
+        cycleIndex={0}
+        gpuEnabled={false}
+        prices={PRICING_SNAPSHOT.prices}
+      />
+    </>
+  );
+
+  assertIncludes(withoutGpu, "Starter");
+  assertIncludes(withoutGpu, "¥5.00");
+  assertIncludes(withoutGpu, "¥0.010000");
+  assert.equal(withoutGpu.includes("NVIDIA A100"), false);
+  assert.equal(withoutGpu.includes(">GPU<"), false);
+
+  const withGpu = renderToStaticMarkup(
+    <>
+      <BillingPlanCatalog
+        currency="usd"
+        gpuEnabled
+        plans={PRICING_SNAPSHOT.plans}
+      />
+      <BillingPriceTable
+        currency="usd"
+        cycleIndex={0}
+        gpuEnabled
+        prices={PRICING_SNAPSHOT.prices}
+      />
+    </>
+  );
+  assertIncludes(withGpu, "1 GPU");
+  assertIncludes(withGpu, "NVIDIA A100");
+});
+
+test("Pricing preserves main and additional subscription plan catalog behavior", () => {
+  const basePlan = PRICING_SNAPSHOT.plans[0];
+  assert.ok(basePlan);
+  const plans: BillingPricingPlan[] = [
+    {
+      ...basePlan,
+      id: "hobby",
+      name: "Hobby",
+      order: 1,
+    },
+    {
+      ...basePlan,
+      id: "standard",
+      monthlyOriginalPriceMicroUnits: 8_000_000,
+      name: "Standard",
+      order: 2,
+    },
+    {
+      ...basePlan,
+      id: "pro",
+      name: "Pro",
+      order: 3,
+      tags: ["more"],
+    },
+    {
+      ...basePlan,
+      id: "team",
+      name: "Team",
+      order: 4,
+      tags: ["more"],
+    },
+    {
+      ...basePlan,
+      id: "enterprise",
+      name: "Enterprise",
+      order: 5,
+      tags: ["more"],
+    },
+    {
+      ...basePlan,
+      id: "customized",
+      name: "Customized",
+      order: 0,
+      tags: ["more"],
+    },
+  ];
+  const html = renderToStaticMarkup(
+    <BillingPlanCatalog currency="usd" gpuEnabled={false} plans={plans} />
+  );
+
+  assertTextOrder(html, ["Hobby", "Standard", "More plans", "Pro", "Team"]);
+  for (const text of [
+    "Most popular",
+    "$8.00",
+    "Priority Support",
+    "All Hobby Features",
+    "99.99% SLA",
+    "24/7 Dedicated Support",
+    "Custom Contracts",
+  ]) {
+    assertIncludes(html, text);
+  }
+  assert.equal(html.includes("Customized"), false);
+  assert.equal(html.includes("Enterprise"), false);
 });

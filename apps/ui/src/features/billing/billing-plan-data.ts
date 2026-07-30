@@ -1,7 +1,13 @@
-import { Quantity } from "@workspace/shared";
 import { z } from "zod";
 
-import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
+import {
+  type BillingFetch,
+  createBillingJsonRequester,
+} from "./billing-data-client";
+import {
+  billingPlansResponseSchema,
+  normalizeBillingPlan,
+} from "./billing-plan-catalog";
 
 export type SubscriptionLifecycle =
   | "active"
@@ -52,11 +58,6 @@ export interface BillingPlanSnapshot {
 
 export type SubscriptionLifecycleAction = "canceled" | "resumed";
 
-type BillingFetch = (
-  input: RequestInfo | URL,
-  init?: RequestInit
-) => Promise<Response>;
-
 interface BillingPlanLoaderDependencies {
   fetch?: BillingFetch;
   now?: () => Date;
@@ -68,30 +69,6 @@ interface BillingWorkspaceOperationContext {
   regionDomain: string;
   workspace: string;
 }
-
-const resourceValueSchema = z.union([z.string(), z.number()]);
-const planSchema = z.object({
-  AIQuota: z.number().default(0),
-  Description: z.string().default(""),
-  ID: z.string().min(1),
-  MaxResources: z.union([
-    z.string(),
-    z.record(z.string(), resourceValueSchema),
-  ]),
-  Name: z.string().min(1),
-  Order: z.number().default(0),
-  Prices: z
-    .array(
-      z.object({
-        BillingCycle: z.string(),
-        Price: z.number(),
-      })
-    )
-    .default([]),
-  Tags: z.array(z.string()).default([]),
-  Traffic: z.number().default(0),
-});
-const plansResponseSchema = z.object({ plans: z.array(planSchema) });
 
 const subscriptionSchema = z.object({
   CancelAtPeriodEnd: z.boolean().default(false),
@@ -165,112 +142,7 @@ const workspacesResponseSchema = z.object({
   data: z.array(z.tuple([z.string().min(1), z.string()])),
 });
 
-const RESOURCE_LABELS: Record<string, string> = {
-  cpu: "CPU",
-  memory: "Memory",
-  nodeports: "Nodeports",
-  storage: "Storage",
-};
-const RESOURCE_ORDER = ["cpu", "memory", "storage", "nodeports"];
 const DAYS_31_IN_MILLISECONDS = 31 * 24 * 60 * 60 * 1000;
-
-function responseErrorMessage(payload: unknown): string {
-  if (
-    typeof payload === "object" &&
-    payload != null &&
-    "error" in payload &&
-    typeof payload.error === "string" &&
-    payload.error.trim() !== ""
-  ) {
-    return payload.error.trim();
-  }
-  return "Could not load billing plan data.";
-}
-
-async function requestBillingJson(
-  fetch: BillingFetch,
-  credentials: { appToken: string; kubeconfig: string },
-  url: string,
-  body?: unknown
-): Promise<unknown> {
-  const headers = new Headers(personalResourceAuthHeaders(credentials));
-  const init: RequestInit = {
-    cache: "no-store",
-    headers,
-    method: body === undefined ? "GET" : "POST",
-  };
-  if (body !== undefined) {
-    headers.set("Content-Type", "application/json");
-    init.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(url, init);
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(responseErrorMessage(payload));
-  }
-  return payload;
-}
-
-function parseMaxResources(
-  input: z.infer<typeof planSchema>["MaxResources"]
-): Record<string, string | number> {
-  if (typeof input !== "string") {
-    return input;
-  }
-  try {
-    const parsed = z
-      .record(z.string(), resourceValueSchema)
-      .safeParse(JSON.parse(input || "{}"));
-    return parsed.success ? parsed.data : {};
-  } catch {
-    return {};
-  }
-}
-
-function displayQuantity(value: string | number): string {
-  try {
-    return Quantity.fromJSON(value).formatForDisplay({ format: "BinarySI" });
-  } catch {
-    return String(value);
-  }
-}
-
-function planResources(
-  plan: z.infer<typeof planSchema>
-): BillingPlanResource[] {
-  const maxResources = parseMaxResources(plan.MaxResources);
-  const resourceKeys = Object.keys(maxResources).sort((left, right) => {
-    const leftIndex = RESOURCE_ORDER.indexOf(left);
-    const rightIndex = RESOURCE_ORDER.indexOf(right);
-    return (
-      (leftIndex === -1 ? RESOURCE_ORDER.length : leftIndex) -
-      (rightIndex === -1 ? RESOURCE_ORDER.length : rightIndex)
-    );
-  });
-  const resources = resourceKeys.map((key) => ({
-    label: RESOURCE_LABELS[key] ?? key,
-    value: displayQuantity(maxResources[key] ?? ""),
-  }));
-
-  if (plan.Traffic > 0) {
-    const bytes = BigInt(Math.round(plan.Traffic * 1024 * 1024));
-    resources.push({
-      label: "Traffic",
-      value: Quantity.newQuantity(bytes, "BinarySI").formatForDisplay({
-        format: "BinarySI",
-      }),
-    });
-  }
-  if (plan.AIQuota > 0) {
-    resources.push({ label: "AI quota", value: String(plan.AIQuota) });
-  }
-  return resources;
-}
-
-function monthlyPrice(plan: z.infer<typeof planSchema> | undefined): number {
-  return plan?.Prices.find((price) => price.BillingCycle === "1m")?.Price ?? 0;
-}
 
 function normalizedPayMethod(value: string): "balance" | "stripe" {
   return value.trim().toLowerCase() === "balance" ? "balance" : "stripe";
@@ -328,9 +200,14 @@ export async function loadBillingPlanSnapshot(
     appToken: credentials.appToken,
     kubeconfig: credentials.kubeconfig,
   };
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: auth,
+    fallbackErrorMessage: "Could not load billing plan data.",
+    fetch,
+  });
 
   const regions = regionsResponseSchema.parse(
-    await requestBillingJson(fetch, auth, "/api/billing/regions")
+    await requestBillingJson("/api/billing/regions")
   ).regions;
   const region = regions[0];
   if (region == null) {
@@ -355,35 +232,28 @@ export async function loadBillingPlanSnapshot(
     workspacesPayload,
     cardPayload,
   ] = await Promise.all([
-    requestBillingJson(fetch, auth, "/api/billing/plans"),
+    requestBillingJson("/api/billing/plans"),
+    requestBillingJson("/api/billing/subscription", workspaceRequest),
     requestBillingJson(
-      fetch,
-      auth,
-      "/api/billing/subscription",
-      workspaceRequest
-    ),
-    requestBillingJson(
-      fetch,
-      auth,
       "/api/billing/subscription/last-transaction",
       workspaceRequest
     ),
-    requestBillingJson(fetch, auth, "/api/billing/subscriptions"),
-    requestBillingJson(fetch, auth, "/api/billing/payments", {
+    requestBillingJson("/api/billing/subscriptions"),
+    requestBillingJson("/api/billing/payments", {
       endTime,
       startTime,
     }),
-    requestBillingJson(fetch, auth, "/api/billing/workspaces", {
+    requestBillingJson("/api/billing/workspaces", {
       endTime,
       startTime,
     }),
-    requestBillingJson(fetch, auth, "/api/billing/card", workspaceRequest),
+    requestBillingJson("/api/billing/card", workspaceRequest),
   ]);
 
-  const plans = plansResponseSchema
+  const plans = billingPlansResponseSchema
     .parse(plansPayload)
-    .plans.slice()
-    .sort((left, right) => left.Order - right.Order);
+    .plans.map(normalizeBillingPlan)
+    .sort((left, right) => left.order - right.order);
   const subscription =
     subscriptionResponseSchema.parse(subscriptionPayload).subscription;
   const transaction =
@@ -394,7 +264,7 @@ export async function loadBillingPlanSnapshot(
   const workspaces = workspacesResponseSchema.parse(workspacesPayload).data;
   const paymentMethod = cardResponseSchema.parse(cardPayload).payment_method;
   const pendingUpgrade = pendingUpgradeFromTransaction(transaction);
-  const currentPlan = plans.find((plan) => plan.Name === subscription.PlanName);
+  const currentPlan = plans.find((plan) => plan.name === subscription.PlanName);
   const subscriptionByWorkspace = new Map(
     subscriptions.map((item) => [item.Workspace, item])
   );
@@ -428,20 +298,22 @@ export async function loadBillingPlanSnapshot(
       }),
       payMethod: normalizedPayMethod(subscription.PayMethod),
       planName: subscription.PlanName,
-      priceMicroUnits: monthlyPrice(currentPlan),
+      priceMicroUnits: currentPlan?.monthlyPriceMicroUnits ?? 0,
       regionDomain: subscription.RegionDomain || region.domain,
-      resources: currentPlan == null ? [] : planResources(currentPlan),
+      resources:
+        currentPlan?.resources.map(({ label, value }) => ({ label, value })) ??
+        [],
       workspace: subscription.Workspace,
     },
     pendingUpgrade,
     plans: plans.map((plan) => ({
-      description: plan.Description,
-      id: plan.ID,
-      isCurrent: plan.Name === subscription.PlanName,
-      name: plan.Name,
-      order: plan.Order,
-      priceMicroUnits: monthlyPrice(plan),
-      resources: planResources(plan),
+      description: plan.description,
+      id: plan.id,
+      isCurrent: plan.name === subscription.PlanName,
+      name: plan.name,
+      order: plan.order,
+      priceMicroUnits: plan.monthlyPriceMicroUnits,
+      resources: plan.resources.map(({ label, value }) => ({ label, value })),
     })),
     workspaces: workspaces.map(([id, name]) => {
       const item = subscriptionByWorkspace.get(id);
@@ -470,33 +342,33 @@ export async function updateSubscriptionLifecycle(
   },
   dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
 ): Promise<void> {
-  await requestBillingJson(
-    dependencies.fetch ?? globalThis.fetch,
-    { appToken: input.appToken, kubeconfig: input.kubeconfig },
-    "/api/billing/subscription/pay",
-    {
-      operator: input.operator,
-      payMethod: input.payMethod,
-      planName: input.planName,
-      regionDomain: input.regionDomain,
-      workspace: input.workspace,
-    }
-  );
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fallbackErrorMessage: "Could not update the billing plan.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  await requestBillingJson("/api/billing/subscription/pay", {
+    operator: input.operator,
+    payMethod: input.payMethod,
+    planName: input.planName,
+    regionDomain: input.regionDomain,
+    workspace: input.workspace,
+  });
 }
 
 export async function createBillingCardManagementSession(
   input: BillingWorkspaceOperationContext,
   dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
 ): Promise<string> {
-  const payload = await requestBillingJson(
-    dependencies.fetch ?? globalThis.fetch,
-    { appToken: input.appToken, kubeconfig: input.kubeconfig },
-    "/api/billing/card/manage",
-    {
-      regionDomain: input.regionDomain,
-      workspace: input.workspace,
-    }
-  );
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fallbackErrorMessage: "Could not manage the billing card.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  const payload = await requestBillingJson("/api/billing/card/manage", {
+    regionDomain: input.regionDomain,
+    workspace: input.workspace,
+  });
   const session = cardManagementResponseSchema.parse(payload);
   if (!session.success || session.url == null || session.url.trim() === "") {
     throw new Error(

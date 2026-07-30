@@ -1,5 +1,6 @@
-import { BillingUsageSurface } from "@/features/billing/billing-usage";
+import BillingUsage from "@/features/billing/billing-usage";
+import { getBillingGpuEnabled } from "@/features/billing/config";
 
 export default function BillingUsagePage() {
-  return <BillingUsageSurface />;
+  return <BillingUsage gpuEnabled={getBillingGpuEnabled()} />;
 }
