@@ -484,8 +484,8 @@ function readOnlyReplicaStrategyRows({
   }
 
   rows.push(
-    { label: "Minimum replicas", value: formatReplicaValue(minReplicas) },
-    { label: "Maximum replicas", value: formatReplicaValue(maxReplicas) },
+    { label: "Minimum Replicas", value: formatReplicaValue(minReplicas) },
+    { label: "Maximum Replicas", value: formatReplicaValue(maxReplicas) },
     {
       label: "Scaling target",
       value: elasticTargetMetricDisplayName(targetMetric),
@@ -680,10 +680,10 @@ export function ReplicaStrategyContent({
         <div className="flex flex-col gap-3">
           <ResourceSettingsInset>
             <SettingsSlider
-              ariaLabel="Minimum replicas"
+              ariaLabel="Minimum Replicas"
               disabled={readOnly}
               formatBound={formatReplicaValue}
-              label="Minimum replicas"
+              label="Minimum Replicas"
               max={REPLICA_LIMITS.max}
               maxDecimals={0}
               min={REPLICA_LIMITS.min}
@@ -695,10 +695,10 @@ export function ReplicaStrategyContent({
 
           <ResourceSettingsInset>
             <SettingsSlider
-              ariaLabel="Maximum replicas"
+              ariaLabel="Maximum Replicas"
               disabled={readOnly}
               formatBound={formatReplicaValue}
-              label="Maximum replicas"
+              label="Maximum Replicas"
               max={REPLICA_LIMITS.max}
               maxDecimals={0}
               min={REPLICA_LIMITS.min}
