@@ -188,6 +188,9 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{ else if and (eq $component "api") (eq $key "WHODB_URL") (eq (toString $value) "") }}
 - name: {{ $key }}
   value: {{ include "brain-system.whodbUrl" $root | quote }}
+{{ else if and (eq $component "ui") (eq $key "ACCOUNT_API_BASE_URL") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: "http://account-service.account-system.svc:2333"
 {{ else if and (eq $component "ui") (eq $key "API_URL") (eq (toString $value) "") }}
 - name: {{ $key }}
   value: {{ include "brain-system.publicUrl" (dict "root" $root "namespace" $root.Release.Namespace "name" $root.Values.api.name "platformAddresses" $root.Values.api.platformAddresses "cloudDomain" (include "brain-system.cloudDomain" $root)) | quote }}

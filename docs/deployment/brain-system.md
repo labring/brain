@@ -39,6 +39,7 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - GitHub App and OAuth values
 - `GITHUB_USER_TOKEN_ENCRYPTION_KEY`: keep stable; changing it prevents decrypting previously stored GitHub user tokens
 - assistant model values
+- `JWT_INTERNAL`: the cluster-shared secret used for app-token verification and account-service request signing
 - Devbox runtime values
 - optional `DEPLOY_SKILL_SOURCE`; leave empty to use
   `https://github.com/labring/sealos-skills/tree/brain-deploy`
@@ -55,7 +56,7 @@ Request user authorization (OAuth) during installation: disabled
 `Redirect on update` is required so repository-selection changes return to Brain
 and the GitHub popup can close after users add or remove repositories.
 
-The install script reads `cloudDomain` and `cloudPort` from `sealos-system/sealos-config` and passes them to Helm. When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty.
+The install script reads `cloudDomain` and `cloudPort` from `sealos-system/sealos-config` and passes them to Helm. When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart. `ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty. `ui.env.ACCOUNT_API_BASE_URL` derives to the in-cluster `http://account-service.account-system.svc:2333` address when left empty.
 
 GitHub and prompt AI deployments install `sealos-deploy` from the production
 `brain-deploy` source by default. To exercise another source in an environment,

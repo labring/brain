@@ -90,6 +90,7 @@ const userUid =
 
 const token = await new SignJWT({
   userCrName: crName,
+  userId: userUid,
   userUid,
 })
   .setProtectedHeader({ alg: "HS256" })

@@ -32,6 +32,7 @@ Edit `/tmp/brain-system.values.yaml`, especially:
 - GitHub App and OAuth values (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`)
 - `GITHUB_USER_TOKEN_ENCRYPTION_KEY`: keep stable; changing it prevents decrypting previously stored GitHub user tokens
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
+- `JWT_INTERNAL`: the cluster-shared secret used for app-token verification and account-service request signing
 - Devbox runtime values (`DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` when the chart should create and reference `ghcr-cred`
 - `apPublicAccess.userDomains`: AP platform domain suffixes and their wildcard TLS Secrets; AP creation currently uses the first entry
@@ -75,7 +76,7 @@ without renaming its Kubernetes resources.
 
 When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived from the API/UI Ingress hosts rendered by this chart.
 
-`ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty.
+`ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty. `ui.env.ACCOUNT_API_BASE_URL` derives to the in-cluster `http://account-service.account-system.svc:2333` address when left empty.
 
 Install or upgrade:
 

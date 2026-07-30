@@ -40,6 +40,7 @@ kubectl get crd clusters.apps.kubeblocks.io
 
 - GitHub App / OAuth
 - OpenAI-compatible API 或 Sealos AI proxy
+- 集群共享的 `JWT_INTERNAL`（用于 App Token 校验和 account-service 请求签名）
 - Devbox token 或 Devbox JWT signing key
 
 ## 上线步骤
@@ -78,11 +79,16 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 - `ui.env.SYSTEM_OPENAI_API_BASE_URL`
 - `ui.env.FREE_CHAT_TURNS`
 - `ui.env.AI_PROXY_TOKEN_NAME`
+- `ui.env.JWT_INTERNAL`
 - `ui.env.DEVBOX_TOKEN` 或 `ui.env.DEVBOX_JWT_SIGNING_KEY`
 - 可选的 `ui.env.DEPLOY_SKILL_SOURCE`；留空时默认使用
   `https://github.com/labring/sealos-skills/tree/brain-deploy`
 
 不要修改已有生产环境的 `GITHUB_USER_TOKEN_ENCRYPTION_KEY`。
+
+`ui.env.ACCOUNT_API_BASE_URL` 留空时，Chart 会将它派生为集群内地址
+`http://account-service.account-system.svc:2333`；仅在需要连接其他
+account-service 时显式覆盖。
 
 GitHub 和 prompt AI 部署固定调用 `sealos-deploy`。如需在 staging 验证
 preview 分支，只设置：
