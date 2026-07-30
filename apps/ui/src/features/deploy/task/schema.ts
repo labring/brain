@@ -166,6 +166,7 @@ export type DeployTaskFailureReason =
   | "gateway-upstream-error"
   | "gateway-timeout"
   | "deployment-output-missing"
+  | "template-output-invalid"
   | "apply-failed"
   | "quota-exceeded"
   | "readiness-timeout"

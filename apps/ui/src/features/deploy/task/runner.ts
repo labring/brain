@@ -2599,9 +2599,9 @@ export function persistableAiDeployOutput(input: {
   assertPersistableSensitiveValues(sensitiveValues);
   const resumableTemplateYaml = persistableTemplate?.templateYaml;
   if (resumableTemplateYaml != null) {
-    // This template is the source for a later blocked-input resume. It must
-    // remain valid YAML, so reject leaked values instead of text-replacing
-    // them with a placeholder that could alter the YAML value's type.
+    // This raw Sealos Template DSL is the source for a later blocked-input
+    // resume. Reject leaked values instead of text-replacing them, which can
+    // alter the DSL's YAML scalar, sequence, map, or expression semantics.
     assertResumableTemplateHasNoSensitiveValues(
       resumableTemplateYaml,
       sensitiveValues

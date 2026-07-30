@@ -13,10 +13,6 @@ import {
   prepareSealosTemplateArtifact,
   sealosTemplateArtifactSummary,
 } from "./artifacts";
-import {
-  artifactSummaryWithScrubbedValues,
-  scrubSensitiveJsonValue,
-} from "./scrub-secrets";
 import { withoutSensitiveArgs } from "./sensitive-inputs";
 
 const UNSUPPORTED_ARTIFACT_REGEX = /Unsupported deploy artifact/;
@@ -32,6 +28,7 @@ const RENDERED_GHCR_IMAGE_REGEX = /ghcr\.io\/zjy365\/seakills-site/;
 const RENDERED_PULL_SECRET_TOKEN_REGEX = /SEALOS_GITHUB_TOKEN|dockerconfigjson/;
 const UNSUPPORTED_TEMPLATE_KIND_REGEX =
   /blocked Kubernetes kind ClusterRoleBinding/;
+const SENSITIVE_DEFAULT_VALUES_REGEX = /sensitive default values/;
 const DNS_1035_LABEL = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
 const DEMO_WEB_TEMPLATE_INSTANCE_REGEX = /^demo-web-[a-z]{6}$/;
 const GITHUB_TEMPLATE_INSTANCE_REGEX = /^seakills-site-[a-z]{6}$/;
@@ -658,30 +655,20 @@ test("blocking forms discard sensitive defaults and options defensively", () => 
   assert.equal(JSON.stringify(blockingInputs).includes("private"), false);
 });
 
-test("persistableSealosTemplateYaml strips generated secret metadata only", () => {
+test("persistableSealosTemplate preserves Sealos DSL source and sensitive declarations", () => {
   const rawTemplateYaml = `
 apiVersion: app.sealos.io/v1
 kind: Template
 metadata:
-  name: generated-secret-default
+  name: generated-template
 spec:
   title: Generated app
   templateType: inline
-  defaults:
-    app_host:
-      type: string
-      value: demo
-    internal_token:
-      type: string
-      value: private-global-default
   inputs:
     API_KEY:
-      default: private-input-default
       label: API key
-      options:
-        - private-input-default
-        - private-input-alternative
       required: true
+      sensitive: true
       type: string
     MODE:
       default: production
@@ -696,81 +683,27 @@ metadata:
   name: demo
 data:
   mode: \${{ inputs.MODE }}
+---
+\${{ if(inputs.MODE === 'production') }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo
+\${{ endif() }}
 `;
   const persistence = persistableSealosTemplate(rawTemplateYaml);
-  const persistableYaml = persistence.templateYaml;
-
-  const documents = YAML.parseAllDocuments(persistableYaml).map((document) =>
-    document.toJS()
-  ) as Array<{
-    data?: Record<string, string>;
-    kind?: string;
-    metadata?: { name?: string };
-    spec?: {
-      defaults?: Record<string, { type?: string; value?: string }>;
-      inputs?: Record<
-        string,
-        { default?: string; label?: string; options?: string[]; type?: string }
-      >;
-      title?: string;
-    };
-  }>;
-  const template = documents[0];
-  const sensitiveInput = template?.spec?.inputs?.API_KEY;
-  const publicInput = template?.spec?.inputs?.MODE;
-  const rawTemplate = YAML.parseAllDocuments(rawTemplateYaml)[0]?.toJS() as {
-    spec?: {
-      defaults?: Record<string, { value?: string }>;
-      inputs?: Record<string, { default?: string; options?: string[] }>;
-    };
-  };
-
-  assert.equal(
-    rawTemplate.spec?.defaults?.internal_token?.value,
-    "private-global-default"
-  );
-  assert.equal(
-    rawTemplate.spec?.inputs?.API_KEY?.default,
-    "private-input-default"
-  );
-  assert.deepEqual(rawTemplate.spec?.inputs?.API_KEY?.options, [
-    "private-input-default",
-    "private-input-alternative",
-  ]);
-  assert.equal(rawTemplateYaml.includes("private-global-default"), true);
-  assert.equal(rawTemplateYaml.includes("private-input-default"), true);
-  assert.equal(template?.metadata?.name, "generated-secret-default");
-  assert.equal(template?.spec?.title, "Generated app");
-  assert.deepEqual(template?.spec?.defaults?.app_host, {
-    type: "string",
-    value: "demo",
-  });
-  assert.equal(template?.spec?.defaults?.internal_token, undefined);
-  assert.equal(sensitiveInput?.default, undefined);
-  assert.equal(sensitiveInput?.options, undefined);
-  assert.equal(sensitiveInput?.label, "API key");
-  assert.equal(sensitiveInput?.type, "string");
-  assert.equal(publicInput?.default, "production");
-  assert.deepEqual(publicInput?.options, ["production", "development"]);
-  assert.equal(documents[1]?.kind, "ConfigMap");
-  assert.equal(documents[1]?.data?.mode, ["$", "{{ inputs.MODE }}"].join(""));
+  assert.equal(persistence.templateYaml, rawTemplateYaml);
   assert.deepEqual(
     persistence.sensitiveInputs.map((input) => input.key),
     ["API_KEY"]
   );
-  assert.deepEqual(
-    new Set(persistence.sensitiveValues),
-    new Set([
-      "private-global-default",
-      "private-input-alternative",
-      "private-input-default",
-    ])
-  );
-  assert.equal(persistableYaml.includes("private"), false);
+  assert.deepEqual(persistence.sensitiveValues, []);
 });
 
-test("persistableSealosTemplateYaml sanitizes array-form sensitive inputs", () => {
-  const persistableYaml = persistableSealosTemplateYaml(`
+test("persistableSealosTemplate rejects sensitive input defaults and options", () => {
+  assert.throws(
+    () =>
+      persistableSealosTemplateYaml(`
 apiVersion: app.sealos.io/v1
 kind: Template
 metadata:
@@ -792,20 +725,12 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: demo
-`);
-  const template = YAML.parseAllDocuments(persistableYaml)[0]?.toJS() as {
-    spec?: {
-      inputs?: Array<{ default?: string; key?: string; options?: string[] }>;
-    };
-  };
-
-  assert.equal(template.spec?.inputs?.[0]?.default, undefined);
-  assert.equal(template.spec?.inputs?.[0]?.options, undefined);
-  assert.equal(template.spec?.inputs?.[1]?.default, "usw-1");
-  assert.deepEqual(template.spec?.inputs?.[1]?.options, ["usw-1"]);
+`),
+    SENSITIVE_DEFAULT_VALUES_REGEX
+  );
 });
 
-test("persisted templates preserve safe defaults and scrub secret default copies", () => {
+test("persistableSealosTemplate rejects sensitive template defaults instead of rewriting source", () => {
   const rawTemplateYaml = `
 apiVersion: app.sealos.io/v1
 kind: Template
@@ -834,53 +759,123 @@ data:
   port: "\${{ inputs.PORT }}"
   token: \${{ defaults.internal_token }}
 `;
-  const persistence = persistableSealosTemplate(rawTemplateYaml);
-  const prepare = (templateYaml: string) =>
+  assert.throws(
+    () => persistableSealosTemplate(rawTemplateYaml),
+    SENSITIVE_DEFAULT_VALUES_REGEX
+  );
+});
+
+test("persistableSealosTemplate rejects structured sensitive default values", () => {
+  for (const templateYaml of [
+    `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: structured-input-default
+spec:
+  templateType: inline
+  inputs:
+    API_KEY:
+      default: { token: leaked-token }
+      type: secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: structured-input-default
+`,
+    `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: structured-input-options
+spec:
+  templateType: inline
+  inputs:
+    API_KEY:
+      options: [{ token: leaked-token }]
+      type: secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: structured-input-options
+`,
+    `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: structured-template-default
+spec:
+  templateType: inline
+  defaults:
+    internal_token:
+      type: secret
+      value: { token: leaked-token }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: structured-template-default
+`,
+  ]) {
+    assert.throws(
+      () => persistableSealosTemplate(templateYaml),
+      SENSITIVE_DEFAULT_VALUES_REGEX
+    );
+  }
+});
+
+test("prepareSealosTemplateArtifact renders persisted conditional DSL source", () => {
+  const templateYaml = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: conditional-dsl
+spec:
+  templateType: inline
+  inputs:
+    DOMAIN:
+      default: ''
+      type: string
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: conditional-dsl
+---
+\${{ if(inputs.DOMAIN !== '') }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: conditional-dsl
+spec:
+  dnsNames:
+    - \${{ inputs.DOMAIN }}
+\${{ endif() }}
+`;
+  const persistence = persistableSealosTemplate(templateYaml);
+  const prepare = (DOMAIN: string) =>
     prepareSealosTemplateArtifact({
-      args: { PORT: "8080" },
+      args: { DOMAIN },
       buildResult: { status: "skipped" },
       deliveryManifest: { args: {} },
       task: task(),
-      templateYaml,
+      templateYaml: persistence.templateYaml,
     });
-  const rawArtifact = prepare(rawTemplateYaml);
-  const resumedArtifact = prepare(persistence.templateYaml);
-  const configData = (artifact: typeof rawArtifact) =>
-    artifact.rendered.resources.find(
-      (resource) => resource.kind === "ConfigMap"
-    )?.data as Record<string, unknown> | undefined;
 
-  assert.equal(configData(rawArtifact)?.host, "demo");
-  assert.equal(configData(resumedArtifact)?.host, "demo");
-  assert.equal(configData(rawArtifact)?.token, "private-global-default");
+  assert.equal(persistence.templateYaml, templateYaml);
   assert.equal(
-    JSON.stringify(configData(resumedArtifact)).includes(
-      "private-global-default"
+    prepare("").rendered.resources.some(
+      (resource) => resource.kind === "Certificate"
     ),
     false
   );
-
-  const rawSummary = sealosTemplateArtifactSummary({ artifact: rawArtifact });
   assert.equal(
-    JSON.stringify(rawSummary).includes("private-global-default"),
+    prepare("metrics.example.com").rendered.resources.some(
+      (resource) => resource.kind === "Certificate"
+    ),
     true
-  );
-  const scrubbedSummary = artifactSummaryWithScrubbedValues(
-    rawSummary,
-    persistence.sensitiveValues
-  );
-  const scrubbedOutput = scrubSensitiveJsonValue(
-    {
-      buildResult: { detail: "private-global-default" },
-      outputJson: { echoed: "private-global-default" },
-    },
-    persistence.sensitiveValues
-  );
-  assert.equal(
-    JSON.stringify({ scrubbedOutput, scrubbedSummary }).includes(
-      "private-global-default"
-    ),
-    false
   );
 });
 

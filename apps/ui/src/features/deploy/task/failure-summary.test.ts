@@ -138,6 +138,7 @@ describe("deploymentFailureReason", () => {
       "deploy-runtime-unavailable": "workspace did not become ready",
       "deploy-skill-install-failed": "skill installation failed",
       "deployment-output-missing": "without a deployable result",
+      "template-output-invalid": "invalid deployment template",
       "gateway-not-exposed": "did not expose",
       "gateway-timeout": "analysis timed out",
       "gateway-unavailable": "service is unavailable",
@@ -176,5 +177,13 @@ describe("deploymentFailureReason", () => {
     expect(
       aiFailureReason("Codex gateway completed without deployment output")
     ).toBe("deployment-output-missing");
+    expect(aiFailureReason("Rendered Sealos template is not valid YAML.")).toBe(
+      "template-output-invalid"
+    );
+    expect(
+      aiFailureReason(
+        "Generated deployment template contains sensitive default values."
+      )
+    ).toBe("template-output-invalid");
   });
 });

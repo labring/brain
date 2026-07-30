@@ -179,37 +179,37 @@ function templateYamlSensitiveShape(
   };
 }
 
-function sensitiveScalarValue(value: unknown): string | null {
-  if (
-    typeof value !== "string" &&
-    typeof value !== "number" &&
-    typeof value !== "boolean"
-  ) {
-    return null;
+function hasSensitiveTemplateYamlValue(value: unknown): boolean {
+  if (value == null) {
+    return false;
   }
-  const normalized = String(value);
-  return normalized.length > 0 ? normalized : null;
+  if (typeof value === "string") {
+    return value.length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return true;
 }
 
-function stripSensitiveTemplateYamlInputs(input: {
-  document: ReturnType<typeof YAML.parseAllDocuments>[number];
-  inputs: unknown;
-}): {
+function sensitiveTemplateYamlInputs(input: { inputs: unknown }): {
+  hasSensitiveValues: boolean;
   sensitiveInputs: SensitiveDeploymentInputShape[];
-  sensitiveValues: string[];
 } {
   const entries = Array.isArray(input.inputs)
-    ? input.inputs.flatMap((value, index) => {
+    ? input.inputs.flatMap((value) => {
         const key = stringValue(objectValue(value)?.key);
-        return key == null ? [] : [{ key, pathKey: index, value }];
+        return key == null ? [] : [{ key, value }];
       })
     : Object.entries(objectValue(input.inputs) ?? {}).map(([key, value]) => ({
         key,
-        pathKey: key,
         value,
       }));
   const sensitiveInputs: SensitiveDeploymentInputShape[] = [];
-  const sensitiveValues: string[] = [];
+  let hasSensitiveValues = false;
   for (const entry of entries) {
     const shape = templateYamlSensitiveShape(entry.key, entry.value);
     if (!isSensitiveDeploymentInput(shape)) {
@@ -217,27 +217,21 @@ function stripSensitiveTemplateYamlInputs(input: {
     }
     sensitiveInputs.push({ ...shape, sensitive: true });
     const record = objectValue(entry.value);
-    const defaultValue = sensitiveScalarValue(record?.default);
-    if (defaultValue != null) {
-      sensitiveValues.push(defaultValue);
+    if (hasSensitiveTemplateYamlValue(record?.default)) {
+      hasSensitiveValues = true;
     }
     for (const option of Array.isArray(record?.options) ? record.options : []) {
-      const optionValue = sensitiveScalarValue(option);
-      if (optionValue != null) {
-        sensitiveValues.push(optionValue);
+      if (hasSensitiveTemplateYamlValue(option)) {
+        hasSensitiveValues = true;
       }
     }
-    input.document.deleteIn(["spec", "inputs", entry.pathKey, "default"]);
-    input.document.deleteIn(["spec", "inputs", entry.pathKey, "options"]);
   }
-  return { sensitiveInputs, sensitiveValues };
+  return { hasSensitiveValues, sensitiveInputs };
 }
 
-function stripSensitiveTemplateYamlDefaults(input: {
+function hasSensitiveTemplateYamlDefaults(input: {
   defaults: unknown;
-  document: ReturnType<typeof YAML.parseAllDocuments>[number];
-}): string[] {
-  const sensitiveValues: string[] = [];
+}): boolean {
   for (const [key, value] of Object.entries(
     objectValue(input.defaults) ?? {}
   )) {
@@ -245,15 +239,15 @@ function stripSensitiveTemplateYamlDefaults(input: {
       continue;
     }
     const record = objectValue(value);
-    const sensitiveValue = sensitiveScalarValue(
-      record != null && "value" in record ? record.value : value
-    );
-    if (sensitiveValue != null) {
-      sensitiveValues.push(sensitiveValue);
+    if (
+      hasSensitiveTemplateYamlValue(
+        record != null && "value" in record ? record.value : value
+      )
+    ) {
+      return true;
     }
-    input.document.deleteIn(["spec", "defaults", key]);
   }
-  return sensitiveValues;
+  return false;
 }
 
 export function persistableSealosTemplate(templateYaml: string): {
@@ -263,6 +257,9 @@ export function persistableSealosTemplate(templateYaml: string): {
 } {
   const documents = YAML.parseAllDocuments(templateYaml);
   const templateDocument = documents[0];
+  if (templateDocument?.errors.length) {
+    throw new Error("Sealos template header is not valid YAML.");
+  }
   const template = objectValue(templateDocument?.toJS());
   if (
     templateDocument == null ||
@@ -273,25 +270,24 @@ export function persistableSealosTemplate(templateYaml: string): {
   }
 
   const spec = objectValue(template.spec);
-  const inputSecrets = stripSensitiveTemplateYamlInputs({
-    document: templateDocument,
+  const inputSecrets = sensitiveTemplateYamlInputs({
     inputs: spec?.inputs,
   });
-  const sensitiveValues = [
-    ...inputSecrets.sensitiveValues,
-    ...stripSensitiveTemplateYamlDefaults({
+  if (
+    inputSecrets.hasSensitiveValues ||
+    hasSensitiveTemplateYamlDefaults({
       defaults: spec?.defaults,
-      document: templateDocument,
-    }),
-  ];
+    })
+  ) {
+    throw new Error(
+      "Generated deployment template contains sensitive default values."
+    );
+  }
 
   return {
     sensitiveInputs: inputSecrets.sensitiveInputs,
-    sensitiveValues: [...new Set(sensitiveValues)],
-    templateYaml: documents
-      .map((document) => document.toString())
-      .join("")
-      .trimEnd(),
+    sensitiveValues: [],
+    templateYaml,
   };
 }
 

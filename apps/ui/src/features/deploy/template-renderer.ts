@@ -1231,7 +1231,11 @@ function applyResourceLabels(
 }
 
 function parseRenderedObjects(yaml: string): TemplateK8sObject[] {
-  return YAML.parseAllDocuments(yaml)
+  const documents = YAML.parseAllDocuments(yaml);
+  if (documents.some((document) => document.errors.length > 0)) {
+    throw new Error("Rendered Sealos template is not valid YAML.");
+  }
+  return documents
     .map((doc) => doc.toJS())
     .filter((doc) => doc != null)
     .map((doc) => doc as TemplateK8sObject);
@@ -1313,8 +1317,16 @@ export function templateSourceFromInlineYaml(yaml: string): {
   source: TemplateSourcePayload;
   templateName: string;
 } {
-  const docs = parseRenderedObjects(yaml);
-  const [template, ...resources] = docs;
+  // A Sealos inline template is a DSL, not standalone YAML: resource
+  // documents may contain top-level if/endif directives. Only the leading
+  // Template document is YAML before expression rendering; preserve the
+  // remaining source byte-for-byte for renderTemplateString().
+  const documents = YAML.parseAllDocuments(yaml);
+  const templateDocument = documents[0];
+  if (templateDocument?.errors.length) {
+    throw new Error("Sealos template header is not valid YAML.");
+  }
+  const template = templateDocument?.toJS() as TemplateK8sObject | undefined;
   if (template == null) {
     throw new Error("Sealos template artifact is empty.");
   }
@@ -1326,7 +1338,12 @@ export function templateSourceFromInlineYaml(yaml: string): {
       "Sealos template artifact must start with app.sealos.io/v1 Template."
     );
   }
-  if (resources.length === 0) {
+  const resourceSourceOffset = templateDocument?.range?.[2];
+  const appYaml =
+    typeof resourceSourceOffset === "number"
+      ? yaml.slice(resourceSourceOffset)
+      : "";
+  if (appYaml.trim() === "") {
     throw new Error(
       "Sealos template artifact must include workload resources."
     );
@@ -1339,7 +1356,7 @@ export function templateSourceFromInlineYaml(yaml: string): {
   const spec = asRecord(template.spec) ?? {};
   return {
     source: {
-      appYaml: resources.map(dumpObject).join("\n---\n"),
+      appYaml,
       source: {
         ...spec,
         defaults: normalizeTemplateDefaults(spec.defaults),
@@ -1426,17 +1443,19 @@ export function renderTemplateDeployment(
     SEALOS_NAMESPACE: input.namespace,
   };
   const instance = templateInstanceObject(input.source, input.instanceName);
-  const sourceResources = parseRenderedObjects(input.source.appYaml);
+  const renderedSource = renderTemplateString(input.source.appYaml, context);
+  const sourceResources = parseRenderedObjects(renderedSource);
   const sourceHasInstance = sourceResources.some(
     (resource) =>
       resource.kind === TEMPLATE_INSTANCE_KIND &&
       resource.apiVersion === TEMPLATE_INSTANCE_API_VERSION
   );
   const fullYaml = sourceHasInstance
-    ? input.source.appYaml
-    : `${dumpObject(instance)}\n---\n${input.source.appYaml}`;
-  const rendered = renderTemplateString(fullYaml, context);
-  const resources = parseRenderedObjects(rendered);
+    ? renderedSource
+    : `${dumpObject(instance)}\n---\n${renderedSource}`;
+  const resources = sourceHasInstance
+    ? sourceResources
+    : parseRenderedObjects(fullYaml);
   if (resources.length === 0) {
     throw new Error("Template rendered no Kubernetes resources.");
   }

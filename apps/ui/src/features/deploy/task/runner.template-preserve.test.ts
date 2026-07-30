@@ -1,7 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createRequire } from "node:module";
-import YAML from "yaml";
-
 import type { DeployTaskHandle } from "./engine/handle";
 import {
   CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
@@ -665,7 +663,7 @@ describe("AI prepared output failure handling", () => {
     process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
   });
 
-  it("scrubs hidden secret args and default echoes from persisted AI output", () => {
+  it("rejects generated templates that embed sensitive default values", () => {
     const templateYaml = `
 apiVersion: app.sealos.io/v1
 kind: Template
@@ -703,42 +701,23 @@ data:
         enabled: "false",
       },
     };
-    const persisted = persistableAiDeployOutput({
-      deliveryManifest,
-      output: {
-        buildResult: {
-          detail:
-            "provider-secret-token private-input-default private-global-default",
-          status: "skipped",
-        },
+    expect(() =>
+      persistableAiDeployOutput({
         deliveryManifest,
-        templateYaml,
-      },
-      planInputs: [{ key: "enabled", sensitive: false, type: "boolean" }],
-    });
-    const serialized = JSON.stringify({
-      deliveryManifest: persisted.deliveryManifest,
-      outputJson: persisted.outputJson,
-    });
-    const persistedTemplate = YAML.parseAllDocuments(
-      (persisted.outputJson.templateYaml as string) ?? ""
-    )[0]?.toJS() as {
-      spec?: {
-        defaults?: Record<string, unknown>;
-        inputs?: Record<string, { default?: string; options?: string[] }>;
-      };
-    };
-
-    expect(persisted.deliveryManifest.args).toEqual({ enabled: "false" });
-    expect(serialized).not.toContain("provider-secret-token");
-    expect(serialized).not.toContain("private-input-default");
-    expect(serialized).not.toContain("private-global-default");
-    expect(persistedTemplate.spec?.defaults?.app_host).toEqual({
-      value: "demo",
-    });
-    expect(persistedTemplate.spec?.defaults?.internal_token).toBeUndefined();
-    expect(persistedTemplate.spec?.inputs?.credential?.default).toBeUndefined();
-    expect(persistedTemplate.spec?.inputs?.credential?.options).toBeUndefined();
+        output: {
+          buildResult: {
+            detail:
+              "provider-secret-token private-input-default private-global-default",
+            status: "skipped",
+          },
+          deliveryManifest,
+          templateYaml,
+        },
+        planInputs: [{ key: "enabled", sensitive: false, type: "boolean" }],
+      })
+    ).toThrow(
+      "Generated deployment template contains sensitive default values."
+    );
   });
 
   it("rejects generated sensitive values that are too short to scrub safely", () => {
