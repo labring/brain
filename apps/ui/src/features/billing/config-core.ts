@@ -21,3 +21,14 @@ export function getBillingCurrencyFromEnv(env: BillingEnv): BillingCurrency {
   }
   return configured;
 }
+
+export function getBillingGpuEnabledFromEnv(env: BillingEnv): boolean {
+  const configured = env.BILLING_GPU_ENABLED?.trim() ?? "";
+  if (configured === "" || configured === "false") {
+    return false;
+  }
+  if (configured === "true") {
+    return true;
+  }
+  throw new Error('BILLING_GPU_ENABLED must be either "true" or "false".');
+}

@@ -93,6 +93,9 @@ account-service 时显式覆盖。
 `ui.env.BILLING_CURRENCY` 控制 Billing Area 的集群级展示货币，默认值为
 `usd`，并在每次请求时读取。
 
+`ui.env.BILLING_GPU_ENABLED` 控制 GPU 配额和计价行是否可见，默认值为
+`false`。该值同样由 UI 服务在每次请求时读取。
+
 GitHub 和 prompt AI 部署固定调用 `sealos-deploy`。如需在 staging 验证
 preview 分支，只设置：
 

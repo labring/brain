@@ -37,6 +37,24 @@ const COMPACT_SHELL_COIN_FORMATTER = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
   notation: "compact",
 });
+const PRECISE_USD_FORMATTER = new Intl.NumberFormat("en-US", {
+  currency: "USD",
+  currencyDisplay: "narrowSymbol",
+  maximumFractionDigits: 6,
+  minimumFractionDigits: 6,
+  style: "currency",
+});
+const PRECISE_CNY_FORMATTER = new Intl.NumberFormat("en-US", {
+  currency: "CNY",
+  currencyDisplay: "narrowSymbol",
+  maximumFractionDigits: 6,
+  minimumFractionDigits: 6,
+  style: "currency",
+});
+const PRECISE_SHELL_COIN_FORMATTER = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 6,
+  minimumFractionDigits: 6,
+});
 const CURRENCY_FORMATTERS = {
   cny: (amount: number) => CNY_FORMATTER.format(amount),
   shellCoin: (amount: number) =>
@@ -48,6 +66,12 @@ const COMPACT_CURRENCY_FORMATTERS = {
   shellCoin: (amount: number) =>
     `${COMPACT_SHELL_COIN_FORMATTER.format(amount)} ShellCoin`,
   usd: (amount: number) => COMPACT_USD_FORMATTER.format(amount),
+} satisfies Record<BillingCurrency, (amount: number) => string>;
+const PRECISE_CURRENCY_FORMATTERS = {
+  cny: (amount: number) => PRECISE_CNY_FORMATTER.format(amount),
+  shellCoin: (amount: number) =>
+    `${PRECISE_SHELL_COIN_FORMATTER.format(amount)} ShellCoin`,
+  usd: (amount: number) => PRECISE_USD_FORMATTER.format(amount),
 } satisfies Record<BillingCurrency, (amount: number) => string>;
 
 export function formatBillingAmount(
@@ -64,6 +88,15 @@ export function formatCompactBillingAmount(
   currency: BillingCurrency
 ): string {
   return COMPACT_CURRENCY_FORMATTERS[currency](
+    microUnits / MICRO_UNITS_PER_CURRENCY_UNIT
+  );
+}
+
+export function formatPreciseBillingAmount(
+  microUnits: number,
+  currency: BillingCurrency
+): string {
+  return PRECISE_CURRENCY_FORMATTERS[currency](
     microUnits / MICRO_UNITS_PER_CURRENCY_UNIT
   );
 }

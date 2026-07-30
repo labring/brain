@@ -1,5 +1,14 @@
-import { BillingPricingSurface } from "@/features/billing/billing-pricing";
+import BillingPricing from "@/features/billing/billing-pricing";
+import {
+  getBillingCurrency,
+  getBillingGpuEnabled,
+} from "@/features/billing/config";
 
 export default function BillingPricingPage() {
-  return <BillingPricingSurface />;
+  return (
+    <BillingPricing
+      currency={getBillingCurrency()}
+      gpuEnabled={getBillingGpuEnabled()}
+    />
+  );
 }

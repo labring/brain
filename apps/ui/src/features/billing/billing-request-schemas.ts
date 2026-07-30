@@ -5,6 +5,10 @@ export const billingWorkspaceRequestSchema = z.object({
   workspace: z.string().trim().min(1),
 });
 
+export const billingWorkspaceQuotaRequestSchema = z.object({
+  workspace: z.string().trim().min(1),
+});
+
 export const billingTimeRangeRequestSchema = z.object({
   endTime: z.iso.datetime(),
   startTime: z.iso.datetime(),
