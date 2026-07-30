@@ -112,6 +112,7 @@ import {
 import {
   DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
   getDeployDevboxStorageLimitFromEnv,
+  getDeploySkillSourceFromEnv,
 } from "./runtime-config";
 import {
   CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
@@ -180,8 +181,6 @@ const DEPLOY_TEMPLATE_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/template/inde
 const SKILL_INSTALL_COMMAND_TIMEOUT_SECONDS =
   DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000;
 const DEPLOY_SKILLS_CLI_VERSION = "1.5.20";
-const DEPLOY_SKILLS_REVISION = "cbb428ca852db1c5076ff15e9524fc5c1eb4cee3";
-const DEPLOY_SKILLS_SOURCE = `https://github.com/labring/sealos-skills.git#${DEPLOY_SKILLS_REVISION}`;
 const READ_OUTPUT_TIMEOUT_SECONDS = DEPLOY_TIMEOUT_POLICY.outputReadMs / 1000;
 const DEPLOY_OUTPUT_PROGRESS_POLL_MS = DEPLOY_TIMEOUT_POLICY.outputPollMs;
 const DIRECT_AP_READINESS_POLL_MS = 5000;
@@ -1688,13 +1687,12 @@ function prepareEmptyWorkspaceCommand(): string {
   ].join("\n");
 }
 
-export function installSkillsCommand(): string {
+/** Branch/tree URL for `skills add`; default brain-deploy, override via DEPLOY_SKILL_SOURCE. */
+export function buildDeploySkillInstallCommand(skillSource: string): string {
   return [
     "set -euo pipefail",
     `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
-    `expected_revision=${shellQuote(DEPLOY_SKILLS_REVISION)}`,
-    `skill_source=${shellQuote(DEPLOY_SKILLS_SOURCE)}`,
-    'revision_marker="$workspace_dir/.sealos/deploy-skills-revision"',
+    `skill_source=${shellQuote(skillSource)}`,
     'agent_skill_marker="$workspace_dir/.agents/skills/sealos-deploy/SKILL.md"',
     'agent_build_skill_marker="$workspace_dir/.agents/skills/k8s-kaniko-job/SKILL.md"',
     'codex_skill_marker="$workspace_dir/.codex/skills/sealos-deploy/SKILL.md"',
@@ -1717,8 +1715,6 @@ export function installSkillsCommand(): string {
     "  printf 'ERROR: k8s-kaniko-job skill not found after install\\n' >&2",
     "  exit 1",
     "fi",
-    'mkdir -p "$(dirname "$revision_marker")"',
-    'printf "%s\\n" "$expected_revision" > "$revision_marker"',
   ].join("\n");
 }
 
@@ -3691,7 +3687,9 @@ async function runAiDeploymentTask(input: {
   });
   try {
     await execOrThrow({
-      command: installSkillsCommand(),
+      command: buildDeploySkillInstallCommand(
+        getDeploySkillSourceFromEnv(process.env)
+      ),
       deadlineAtMs: prepareDeadlineAtMs,
       namespace: input.task.namespace,
       runtimeName: runtime.name,

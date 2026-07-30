@@ -13,6 +13,7 @@ import type { DeployTaskRow } from "./schema";
 
 const requireModule = createRequire(import.meta.url);
 const originalFetch = globalThis.fetch;
+const PINNED_SKILL_COMMIT_SOURCE_RE = /sealos-skills\.git#[0-9a-f]{7,}/;
 const ENV_KEYS = [
   "AI_PROXY_TOKEN_NAME",
   "CODEX_GATEWAY_MODEL",
@@ -35,9 +36,12 @@ mock.module("server-only", () => ({}));
 const {
   buildCodexGatewayEnv,
   ensureAiDeploymentDevbox,
-  installSkillsCommand,
+  buildDeploySkillInstallCommand,
   resolveGithubCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
+const { getDeploySkillSourceFromEnv } = requireModule(
+  "./runtime-config"
+) as typeof import("./runtime-config");
 const {
   CodexGatewayApiError,
   CodexGatewayTimeoutError,
@@ -104,17 +108,33 @@ function devbox(name: string, phase = "Running") {
   };
 }
 
-describe("deployment skill revision", () => {
-  it("pins and refreshes the complete deploy skill set", () => {
-    const command = installSkillsCommand();
+describe("deploy skill installation", () => {
+  it("installs from the configured branch source without pinning a commit", () => {
+    const command = buildDeploySkillInstallCommand(
+      "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
+    );
 
-    expect(command).toContain("cbb428ca852db1c5076ff15e9524fc5c1eb4cee3");
-    expect(command).toContain("deploy-skills-revision");
-    expect(command).toContain("k8s-kaniko-job/SKILL.md");
+    expect(command).toContain(
+      "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
+    );
     expect(command).toContain('npx --yes skills@1.5.20 add "$skill_source" -y');
-    expect(command).not.toContain("installed_revision");
+    expect(command).toContain("k8s-kaniko-job/SKILL.md");
     expect(command).toContain(
       "for skill_name in sealos-deploy dockerfile-skill k8s-kaniko-job cloud-native-readiness docker-to-sealos"
+    );
+    expect(command).not.toContain("deploy-skills-revision");
+    expect(command).not.toMatch(PINNED_SKILL_COMMIT_SOURCE_RE);
+  });
+
+  it("defaults to the brain-deploy branch via runtime config", () => {
+    expect(getDeploySkillSourceFromEnv({})).toBe(
+      "https://github.com/labring/sealos-skills/tree/brain-deploy"
+    );
+    const command = buildDeploySkillInstallCommand(
+      getDeploySkillSourceFromEnv({})
+    );
+    expect(command).toContain(
+      "https://github.com/labring/sealos-skills/tree/brain-deploy"
     );
   });
 });
