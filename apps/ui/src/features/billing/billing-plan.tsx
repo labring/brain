@@ -11,6 +11,7 @@ import {
   loadAccountBalance,
 } from "@/features/billing/account-balance";
 import {
+  createBillingCardManagementSession,
   loadBillingPlanSnapshot,
   type SubscriptionLifecycleAction,
   updateSubscriptionLifecycle,
@@ -58,6 +59,7 @@ export default function BillingPlan({
   const workspace = useAtomValue(namespaceAtom).trim();
   const [actionPending, setActionPending] =
     useState<SubscriptionLifecycleAction | null>(null);
+  const [cardManagementPending, setCardManagementPending] = useState(false);
   const credentialsReady =
     appToken.trim() !== "" && kubeconfig.trim() !== "" && workspace !== "";
   const {
@@ -119,6 +121,45 @@ export default function BillingPlan({
     }
   };
 
+  const manageCard = async () => {
+    const current = snapshot?.current;
+    if (cardManagementPending || current == null) {
+      return;
+    }
+
+    const managementWindow = window.open("about:blank", "_blank");
+    if (managementWindow == null) {
+      toastErrorDetail(
+        "Could not open card management.",
+        "The card management page was blocked."
+      );
+      return;
+    }
+    managementWindow.opener = null;
+
+    setCardManagementPending(true);
+    try {
+      const managementUrl = await createBillingCardManagementSession({
+        appToken,
+        kubeconfig,
+        regionDomain: current.regionDomain,
+        workspace: current.workspace,
+      });
+      managementWindow.location.replace(managementUrl);
+    } catch (error) {
+      managementWindow.close();
+      toastErrorDetail(
+        "Could not open card management.",
+        errorDescription(
+          error,
+          "The card management page could not be created."
+        )
+      );
+    } finally {
+      setCardManagementPending(false);
+    }
+  };
+
   if (!credentialsReady || snapshotLoading) {
     return (
       <div
@@ -160,8 +201,10 @@ export default function BillingPlan({
           })}
         </div>
       }
+      cardManagementPending={cardManagementPending}
       currency={currency}
       onLifecycleAction={updateLifecycle}
+      onManageCard={manageCard}
       snapshot={snapshot}
     />
   );

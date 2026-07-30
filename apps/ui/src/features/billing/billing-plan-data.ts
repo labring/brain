@@ -62,6 +62,13 @@ interface BillingPlanLoaderDependencies {
   now?: () => Date;
 }
 
+interface BillingWorkspaceOperationContext {
+  appToken: string;
+  kubeconfig: string;
+  regionDomain: string;
+  workspace: string;
+}
+
 const resourceValueSchema = z.union([z.string(), z.number()]);
 const planSchema = z.object({
   AIQuota: z.number().default(0),
@@ -130,6 +137,11 @@ const cardResponseSchema = z.object({
       }),
     })
     .nullable(),
+});
+
+const cardManagementResponseSchema = z.object({
+  success: z.boolean(),
+  url: z.string().optional(),
 });
 
 const paymentSchema = z.object({
@@ -451,14 +463,10 @@ export async function loadBillingPlanSnapshot(
 }
 
 export async function updateSubscriptionLifecycle(
-  input: {
-    appToken: string;
-    kubeconfig: string;
+  input: BillingWorkspaceOperationContext & {
     operator: SubscriptionLifecycleAction;
     payMethod: "balance" | "stripe";
     planName: string;
-    regionDomain: string;
-    workspace: string;
   },
   dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
 ): Promise<void> {
@@ -474,4 +482,33 @@ export async function updateSubscriptionLifecycle(
       workspace: input.workspace,
     }
   );
+}
+
+export async function createBillingCardManagementSession(
+  input: BillingWorkspaceOperationContext,
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<string> {
+  const payload = await requestBillingJson(
+    dependencies.fetch ?? globalThis.fetch,
+    { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    "/api/billing/card/manage",
+    {
+      regionDomain: input.regionDomain,
+      workspace: input.workspace,
+    }
+  );
+  const session = cardManagementResponseSchema.parse(payload);
+  if (!session.success || session.url == null || session.url.trim() === "") {
+    throw new Error(
+      "The billing service did not create a card management session."
+    );
+  }
+
+  const managementUrl = new URL(session.url);
+  if (managementUrl.protocol !== "https:") {
+    throw new Error(
+      "The billing service returned an invalid card management URL."
+    );
+  }
+  return managementUrl.toString();
 }
