@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   assertProjectHasNoManagedResources,
   deleteProjectManagedResources,
+  inspectProjectManagedResources,
   ProjectDeleteBlockedError,
   type ProjectDeleteFetch,
   ProjectManagedResourceCleanupError,
@@ -128,6 +129,31 @@ test("project delete guard allows deletion when no managed resources exist", asy
     id: "project-a",
     namespace: "ns-a",
   });
+});
+
+test("project deletion inspection returns the complete scope without deleting", async () => {
+  const calls: string[] = [];
+  const summary = await inspectProjectManagedResources({
+    apiBaseUrl: "https://brain.test",
+    encodedKubeconfig: "kubeconfig",
+    fetchImpl: (url, init) => {
+      calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ items: managedResourceItems(new URL(String(url))) }),
+          { status: 200 }
+        )
+      );
+    },
+    id: "project-a",
+    namespace: "ns-a",
+  });
+
+  assert.equal(calls.length, 16);
+  assert.ok(calls.every((call) => call.startsWith("GET ")));
+  assert.deepEqual(summary.ap, ["api"]);
+  assert.deepEqual(summary.db, ["postgres"]);
+  assert.deepEqual(summary.template, ["template-memos"]);
 });
 
 test("project delete guard does not double encode kubeconfig authorization", async () => {

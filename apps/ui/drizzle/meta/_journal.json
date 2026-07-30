@@ -71,6 +71,13 @@
       "when": 1785254479905,
       "tag": "0009_identity_fingerprints",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785399621883,
+      "tag": "0010_tiny_cardiac",
+      "breakpoints": true
     }
   ]
 }

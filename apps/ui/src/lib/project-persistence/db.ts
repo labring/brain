@@ -6,11 +6,17 @@ import { getAppPostgresPool } from "@/lib/app-postgres/db";
 
 import {
   projectCanvasLayouts,
+  projectDeleteOperations,
+  projectDeletePreviews,
+  projectManagementAuditEvents,
   projectNavigationPreferences,
   projects,
 } from "./schema";
 
 const projectSchema = {
+  projectDeleteOperations,
+  projectDeletePreviews,
+  projectManagementAuditEvents,
   projectCanvasLayouts,
   projectNavigationPreferences,
   projects,

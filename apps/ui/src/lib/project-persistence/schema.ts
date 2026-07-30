@@ -12,6 +12,7 @@ import {
 
 import type { CanvasLayoutNode } from "@/features/project-canvas/layout/types";
 
+import type { ProjectChildResourceSummary } from "./delete-guard";
 import { PROJECT_DB_SCHEMA } from "./types";
 
 export const ns = pgSchema(PROJECT_DB_SCHEMA);
@@ -101,6 +102,101 @@ export const projectNavigationPreferences = ns.table(
   ]
 );
 
+/** One-time, actor-bound evidence for an Agent-requested Project deletion. */
+export const projectDeletePreviews = ns.table(
+  "project_delete_previews",
+  {
+    id: text("id").notNull(),
+    actorUid: text("actor_uid").notNull(),
+    chatId: text("chat_id").notNull(),
+    namespace: text("namespace").notNull(),
+    projectId: text("project_id").notNull(),
+    displayName: text("display_name").notNull(),
+    resourceSummary: jsonb("resource_summary")
+      .notNull()
+      .$type<ProjectChildResourceSummary>(),
+    fingerprint: text("fingerprint").notNull(),
+    expiresAt: timestamp("expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    consumedAt: timestamp("consumed_at", { mode: "date", withTimezone: true }),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.id],
+      name: "project_delete_previews_pk",
+    }),
+    index("project_delete_previews_expires_at_idx").on(table.expiresAt),
+    index("project_delete_previews_target_idx").on(
+      table.namespace,
+      table.projectId
+    ),
+  ]
+);
+
+/** Short-lived mutual exclusion for external Project resource cleanup. */
+export const projectDeleteOperations = ns.table(
+  "project_delete_operations",
+  {
+    namespace: text("namespace").notNull(),
+    projectId: text("project_id").notNull(),
+    actorUid: text("actor_uid").notNull(),
+    previewId: text("preview_id").notNull(),
+    expiresAt: timestamp("expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.namespace, table.projectId],
+      name: "project_delete_operations_pk",
+    }),
+    index("project_delete_operations_expires_at_idx").on(table.expiresAt),
+  ]
+);
+
+/** Durable Agent Project-management audit trail; deliberately independent of Project deletion. */
+export const projectManagementAuditEvents = ns.table(
+  "project_management_audit_events",
+  {
+    id: text("id").notNull(),
+    action: text("action").notNull(),
+    status: text("status").notNull(),
+    source: text("source").notNull(),
+    actorUid: text("actor_uid").notNull(),
+    chatId: text("chat_id").notNull(),
+    namespace: text("namespace").notNull(),
+    projectId: text("project_id").notNull(),
+    displayName: text("display_name").notNull(),
+    resourceSummary: jsonb("resource_summary")
+      .notNull()
+      .$type<ProjectChildResourceSummary>(),
+    failureCode: text("failure_code"),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.id],
+      name: "project_management_audit_events_pk",
+    }),
+    index("project_management_audit_events_target_idx").on(
+      table.namespace,
+      table.projectId,
+      table.createdAt
+    ),
+  ]
+);
+
 // `sealai_project.ap_image_versions` is intentionally NOT declared here: the Go
 // API owns that table end-to-end (DDL + retention pruning) in
 // `apps/api/service/apversion/store.go`; the UI only reads it over HTTP.
@@ -109,3 +205,4 @@ export type ProjectRow = typeof projects.$inferSelect;
 export type ProjectCanvasLayoutRow = typeof projectCanvasLayouts.$inferSelect;
 export type ProjectNavigationPreferencesRow =
   typeof projectNavigationPreferences.$inferSelect;
+export type ProjectDeletePreviewRow = typeof projectDeletePreviews.$inferSelect;
