@@ -1,5 +1,6 @@
-import { BillingCostsSurface } from "@/features/billing/billing-costs";
+import BillingCosts from "@/features/billing/billing-costs";
+import { getBillingCurrency } from "@/features/billing/config";
 
 export default function BillingCostsPage() {
-  return <BillingCostsSurface />;
+  return <BillingCosts currency={getBillingCurrency()} />;
 }
