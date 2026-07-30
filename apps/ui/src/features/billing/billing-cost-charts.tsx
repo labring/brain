@@ -18,7 +18,10 @@ import {
   YAxis,
 } from "recharts";
 
-import { formatBillingAmount } from "@/features/billing/billing-amount";
+import {
+  formatBillingAmount,
+  formatCompactBillingAmount,
+} from "@/features/billing/billing-amount";
 import type {
   DailyExpenditurePoint,
   MonthlyBillingTrendPoint,
@@ -43,12 +46,6 @@ const MONTHLY_CHART_CONFIG = {
   },
 } satisfies ChartConfig;
 
-const BAR_RADIUS: [number, number, number, number] = [4, 4, 0, 0];
-const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 1,
-  notation: "compact",
-});
-
 interface BillingCostChartsProps {
   currency: BillingCurrency;
   daily: DailyExpenditurePoint[];
@@ -62,7 +59,7 @@ export function BillingCostCharts({
 }: BillingCostChartsProps) {
   const formatAmount = (value: number) => formatBillingAmount(value, currency);
   const formatAxisAmount = (value: number) =>
-    COMPACT_NUMBER_FORMATTER.format(value / 1_000_000);
+    formatCompactBillingAmount(value, currency);
 
   return (
     <div className="grid gap-8 xl:grid-cols-2" data-slot="billing-cost-charts">
@@ -87,7 +84,6 @@ export function BillingCostCharts({
               axisLine={false}
               tickFormatter={formatAxisAmount}
               tickLine={false}
-              width={44}
             />
             <ChartTooltip
               content={<ChartTooltipContent valueFormatter={formatAmount} />}
@@ -97,7 +93,6 @@ export function BillingCostCharts({
               dataKey="expenditureMicroUnits"
               dot={false}
               stroke="var(--color-expenditureMicroUnits)"
-              strokeWidth={2}
               type="monotone"
             />
           </LineChart>
@@ -127,7 +122,6 @@ export function BillingCostCharts({
               axisLine={false}
               tickFormatter={formatAxisAmount}
               tickLine={false}
-              width={44}
             />
             <ChartTooltip
               content={<ChartTooltipContent valueFormatter={formatAmount} />}
@@ -137,12 +131,10 @@ export function BillingCostCharts({
             <Bar
               dataKey="expenditureMicroUnits"
               fill="var(--color-expenditureMicroUnits)"
-              radius={BAR_RADIUS}
             />
             <Bar
               dataKey="paymentMicroUnits"
               fill="var(--color-paymentMicroUnits)"
-              radius={BAR_RADIUS}
             />
           </BarChart>
         </ChartContainer>
