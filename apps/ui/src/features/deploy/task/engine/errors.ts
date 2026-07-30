@@ -1,7 +1,8 @@
 export type DeployTaskAbortReason =
   | "cancel-requested"
   | "shutdown"
-  | "superseded";
+  | "superseded"
+  | "timeout";
 
 /**
  * Cancellation is a typed outcome, never a failure (ADR 0038): runners catch
@@ -26,10 +27,23 @@ export class DeployTaskRunSupersededError extends Error {
   }
 }
 
+/**
+ * The active execution deadline elapsed. The engine owns the terminal timeout
+ * transition; runner code must stop side effects and must not record a generic
+ * runner-error fallback.
+ */
+export class DeployTaskRunTimeoutError extends Error {
+  constructor(message = "Deployment task execution timed out.") {
+    super(message);
+    this.name = "DeployTaskRunTimeoutError";
+  }
+}
+
 export function isDeployTaskAbortError(error: unknown): boolean {
   return (
     error instanceof DeployTaskRunCancelledError ||
     error instanceof DeployTaskRunSupersededError ||
+    error instanceof DeployTaskRunTimeoutError ||
     (error instanceof Error && error.name === "AbortError")
   );
 }

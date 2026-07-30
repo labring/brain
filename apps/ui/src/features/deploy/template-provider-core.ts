@@ -374,6 +374,7 @@ export async function deployTemplateInstance(input: {
   encodedKubeconfig: string;
   extraLabels?: TemplateDeploymentExtraLabels;
   instanceName: string;
+  signal?: AbortSignal;
   templateName: string;
 }): Promise<{
   instanceName: string;
@@ -393,6 +394,7 @@ export async function deployTemplateInstance(input: {
         "Content-Type": "application/json",
       },
       method: "POST",
+      signal: input.signal,
     }
   );
   const body = await readJsonResponse(response);

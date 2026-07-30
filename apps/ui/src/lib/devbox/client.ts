@@ -251,10 +251,14 @@ export async function getDevbox(
   });
 }
 
-export async function pauseDevbox(authNamespace: string, name: string) {
+export async function pauseDevbox(
+  authNamespace: string,
+  name: string,
+  signal?: AbortSignal
+) {
   return await devboxRequest<PauseDevboxResult>(
     `/${encodeURIComponent(name)}/pause`,
-    { authNamespace, method: "POST" }
+    { authNamespace, method: "POST", signal }
   );
 }
 

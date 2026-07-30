@@ -3,17 +3,18 @@ import "server-only";
 import type { DevboxInfo } from "@/lib/devbox/types";
 import { buildGatewayPrompt, buildGatewayRepairPrompt } from "./gateway-prompt";
 import {
+  deployTaskRunSignal,
   recordDeployTaskEvent,
   throwIfDeployTaskAborted,
   updateDeployTaskState,
 } from "./runner-writes";
 import type { DeployTaskFailureDetails, DeployTaskRow } from "./schema";
+import {
+  DEPLOY_TIMEOUT_POLICY,
+  remainingDeploymentTimeoutMs,
+} from "./timeout-policy";
 
-const CODEX_GATEWAY_STARTUP_TIMEOUT_MS = 60_000;
 const CODEX_GATEWAY_STARTUP_RETRY_MS = 1000;
-const CODEX_GATEWAY_REQUEST_TIMEOUT_MS = 60_000;
-const CODEX_GATEWAY_TURN_TIMEOUT_MS = 15 * 60 * 1000;
-const CODEX_GATEWAY_TURN_POLL_MS = 2500;
 export const DEPLOY_GATEWAY_MODEL = "gpt-5.5";
 const GATEWAY_SESSION_IDENTIFIER_REGEX =
   /^(?:session[-_][A-Za-z0-9][A-Za-z0-9._:-]{0,95}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
@@ -108,8 +109,19 @@ export function codexGatewayFailureDetails(
   return { reason: "gateway-unavailable" };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function objectStringValue(
@@ -271,7 +283,9 @@ async function parseGatewayResponse(response: Response): Promise<unknown> {
 async function gatewayRequest<T>(
   context: GatewayContext,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  deadlineAtMs?: number,
+  runSignal?: AbortSignal
 ): Promise<T> {
   const headers = new Headers(init?.headers);
   if (!headers.has("content-type") && init?.body != null) {
@@ -281,12 +295,29 @@ async function gatewayRequest<T>(
     headers.set("authorization", `Bearer ${context.authToken}`);
   }
 
+  const requestDeadlineAtMs =
+    deadlineAtMs ?? Date.now() + DEPLOY_TIMEOUT_POLICY.gatewayRequestMs;
+  const requestTimeoutMs = remainingDeploymentTimeoutMs({
+    capMs: DEPLOY_TIMEOUT_POLICY.gatewayRequestMs,
+    deadlineAtMs: requestDeadlineAtMs,
+  });
+  if (requestTimeoutMs <= 0) {
+    throw new CodexGatewayTimeoutError();
+  }
+
+  const requestSignals = [
+    AbortSignal.timeout(Math.max(1, requestTimeoutMs)),
+    ...(init?.signal == null ? [] : [init.signal]),
+    ...(runSignal == null ? [] : [runSignal]),
+  ];
   const response = await fetch(buildUrl(context.url, path), {
     ...init,
     cache: "no-store",
     headers,
     signal:
-      init?.signal ?? AbortSignal.timeout(CODEX_GATEWAY_REQUEST_TIMEOUT_MS),
+      requestSignals.length === 1
+        ? requestSignals[0]
+        : AbortSignal.any(requestSignals),
   });
   const body = await parseGatewayResponse(response);
 
@@ -305,26 +336,49 @@ async function gatewayRequest<T>(
 }
 
 async function waitForCodexGatewayReady(
-  context: GatewayContext
+  context: GatewayContext,
+  deadlineAtMs: number,
+  runSignal: AbortSignal
 ): Promise<void> {
-  const deadline = Date.now() + CODEX_GATEWAY_STARTUP_TIMEOUT_MS;
+  const deadline = Math.min(
+    deadlineAtMs,
+    Date.now() + DEPLOY_TIMEOUT_POLICY.gatewayStartupMs
+  );
   let lastError: unknown = null;
 
   while (Date.now() < deadline) {
     try {
       const health = await gatewayRequest<CodexGatewayHealth>(
         context,
-        "/healthz"
+        "/healthz",
+        undefined,
+        deadline,
+        runSignal
       );
-      const ready = await gatewayRequest<CodexGatewayReady>(context, "/readyz");
+      const ready = await gatewayRequest<CodexGatewayReady>(
+        context,
+        "/readyz",
+        undefined,
+        deadline,
+        runSignal
+      );
       if (health.ok && ready.ok) {
         return;
       }
       lastError = new Error("Codex gateway is not ready.");
     } catch (error) {
+      if (runSignal.aborted) {
+        throw runSignal.reason instanceof Error ? runSignal.reason : error;
+      }
       lastError = error;
     }
-    await sleep(CODEX_GATEWAY_STARTUP_RETRY_MS);
+    await sleep(
+      Math.min(
+        CODEX_GATEWAY_STARTUP_RETRY_MS,
+        Math.max(0, deadline - Date.now())
+      ),
+      runSignal
+    );
   }
 
   if (lastError instanceof Error) {
@@ -334,7 +388,9 @@ async function waitForCodexGatewayReady(
 }
 
 async function createGatewaySession(
-  context: GatewayContext
+  context: GatewayContext,
+  deadlineAtMs: number,
+  runSignal: AbortSignal
 ): Promise<CodexGatewaySessionResponse> {
   return await gatewayRequest<CodexGatewaySessionResponse>(
     context,
@@ -342,14 +398,18 @@ async function createGatewaySession(
     {
       body: JSON.stringify({ model: DEPLOY_GATEWAY_MODEL }),
       method: "POST",
-    }
+    },
+    deadlineAtMs,
+    runSignal
   );
 }
 
 async function sendGatewayTurn(
   context: GatewayContext,
   sessionId: string,
-  prompt: string
+  prompt: string,
+  deadlineAtMs: number,
+  runSignal: AbortSignal
 ): Promise<CodexGatewaySessionResponse> {
   return await gatewayRequest<CodexGatewaySessionResponse>(
     context,
@@ -357,18 +417,173 @@ async function sendGatewayTurn(
     {
       body: JSON.stringify({ prompt }),
       method: "POST",
-    }
+    },
+    deadlineAtMs,
+    runSignal
   );
 }
 
 async function getGatewaySessionState(
   context: GatewayContext,
-  sessionId: string
+  sessionId: string,
+  deadlineAtMs: number,
+  runSignal?: AbortSignal
 ): Promise<CodexGatewaySessionResponse> {
   return await gatewayRequest<CodexGatewaySessionResponse>(
     context,
-    `/api/sessions/${encodeURIComponent(sessionId)}/state`
+    `/api/sessions/${encodeURIComponent(sessionId)}/state`,
+    undefined,
+    deadlineAtMs,
+    runSignal
   );
+}
+
+async function requestCodexGatewayTurnInterrupt(
+  context: GatewayContext,
+  sessionId: string,
+  deadlineAtMs: number
+): Promise<CodexGatewaySessionResponse> {
+  return await gatewayRequest<CodexGatewaySessionResponse>(
+    context,
+    `/api/sessions/${encodeURIComponent(sessionId)}/turn/interrupt`,
+    {
+      body: JSON.stringify({}),
+      method: "POST",
+    },
+    deadlineAtMs
+  );
+}
+
+async function recordGatewayInterruptEvent(input: {
+  httpStatus?: number;
+  outcome: "failed" | "requested" | "settled";
+  taskId: string;
+}): Promise<void> {
+  const presentation = {
+    failed: {
+      kind: "deploy_task.gateway_interrupt_failed",
+      message: "Codex gateway turn interrupt failed.",
+    },
+    requested: {
+      kind: "deploy_task.gateway_interrupt_requested",
+      message: "Codex gateway turn interrupt was requested.",
+    },
+    settled: {
+      kind: "deploy_task.gateway_turn_settled",
+      message: "Codex gateway turn was already settled.",
+    },
+  }[input.outcome];
+  await recordDeployTaskEvent(input.taskId, {
+    kind: presentation.kind,
+    message: presentation.message,
+    payload: input.httpStatus == null ? {} : { httpStatus: input.httpStatus },
+    phase: "plan",
+  }).catch(() => undefined);
+}
+
+interface GatewayInterruptAttempt {
+  httpStatus?: number;
+  outcome: "failed" | "requested" | "retry" | "settled";
+}
+
+function gatewayHttpStatus(error: unknown): number | undefined {
+  return error instanceof CodexGatewayApiError ? error.status : undefined;
+}
+
+async function attemptCodexGatewayTurnInterrupt(input: {
+  context: GatewayContext;
+  deadlineAtMs: number;
+  sessionId: string;
+  turnSubmissionConfirmed: boolean;
+}): Promise<GatewayInterruptAttempt> {
+  try {
+    await requestCodexGatewayTurnInterrupt(
+      input.context,
+      input.sessionId,
+      input.deadlineAtMs
+    );
+    return { outcome: "requested" };
+  } catch (error) {
+    if (!(error instanceof CodexGatewayApiError)) {
+      return { outcome: "failed" };
+    }
+    if (error.status === 404) {
+      return { httpStatus: error.status, outcome: "settled" };
+    }
+    if (error.status !== 409) {
+      return { httpStatus: error.status, outcome: "failed" };
+    }
+
+    try {
+      const state = await getGatewaySessionState(
+        input.context,
+        input.sessionId,
+        input.deadlineAtMs
+      );
+      return {
+        httpStatus: error.status,
+        outcome:
+          state.state.activeTurn || !input.turnSubmissionConfirmed
+            ? "retry"
+            : "settled",
+      };
+    } catch (stateError) {
+      if (
+        stateError instanceof CodexGatewayApiError &&
+        stateError.status === 404
+      ) {
+        return { httpStatus: stateError.status, outcome: "settled" };
+      }
+      return {
+        httpStatus: gatewayHttpStatus(stateError) ?? error.status,
+        outcome: "retry",
+      };
+    }
+  }
+}
+
+async function interruptCodexGatewayTurnBestEffort(input: {
+  context: GatewayContext;
+  sessionId: string;
+  taskId: string;
+  turnSubmissionConfirmed: boolean;
+}): Promise<boolean> {
+  const deadlineAtMs = Date.now() + DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs;
+  let lastHttpStatus: number | undefined;
+
+  while (Date.now() < deadlineAtMs) {
+    const attempt = await attemptCodexGatewayTurnInterrupt({
+      context: input.context,
+      deadlineAtMs,
+      sessionId: input.sessionId,
+      turnSubmissionConfirmed: input.turnSubmissionConfirmed,
+    });
+    lastHttpStatus = attempt.httpStatus;
+
+    if (attempt.outcome === "requested" || attempt.outcome === "settled") {
+      await recordGatewayInterruptEvent({
+        httpStatus: attempt.httpStatus,
+        outcome: attempt.outcome,
+        taskId: input.taskId,
+      });
+      return true;
+    }
+    if (attempt.outcome === "failed") {
+      break;
+    }
+    await sleep(Math.min(100, Math.max(0, deadlineAtMs - Date.now())));
+  }
+
+  console.warn(
+    `[deploy-task] Codex gateway interrupt failed for ${input.taskId}.`,
+    lastHttpStatus == null ? {} : { httpStatus: lastHttpStatus }
+  );
+  await recordGatewayInterruptEvent({
+    httpStatus: lastHttpStatus,
+    outcome: "failed",
+    taskId: input.taskId,
+  });
+  return false;
 }
 
 export function gatewayEventProjection(eventName: string): {
@@ -415,18 +630,20 @@ async function projectGatewayState(input: {
 
 async function waitForGatewayTurnCompletion(input: {
   context: GatewayContext;
+  deadlineAtMs: number;
+  runSignal: AbortSignal;
   sessionId: string;
   taskId: string;
 }): Promise<CodexGatewayState> {
-  const deadline = Date.now() + CODEX_GATEWAY_TURN_TIMEOUT_MS;
-
-  while (Date.now() < deadline) {
-    // A cancel request aborts the wait between polls; the gateway turn keeps
-    // running remotely, but this run stops watching and unwinds to its ack.
+  while (Date.now() < input.deadlineAtMs) {
+    // The outer turn boundary handles a local abort by interrupting the remote
+    // turn before it rethrows the run's original cancellation or timeout.
     throwIfDeployTaskAborted(input.taskId);
     const sessionState = await getGatewaySessionState(
       input.context,
-      input.sessionId
+      input.sessionId,
+      input.deadlineAtMs,
+      input.runSignal
     );
     await projectGatewayState({
       state: sessionState.state,
@@ -437,7 +654,13 @@ async function waitForGatewayTurnCompletion(input: {
       return sessionState.state;
     }
 
-    await sleep(CODEX_GATEWAY_TURN_POLL_MS);
+    await sleep(
+      Math.min(
+        DEPLOY_TIMEOUT_POLICY.gatewayPollMs,
+        Math.max(0, input.deadlineAtMs - Date.now())
+      ),
+      input.runSignal
+    );
   }
 
   await recordDeployTaskEvent(input.taskId, {
@@ -488,9 +711,12 @@ export async function persistDeployGatewayEvent(input: {
 
 export async function runDeployTaskGateway(input: {
   context: GatewayContext;
+  deadlineAtMs: number;
   repairOutput?: boolean;
   task: DeployTaskRow;
 }): Promise<void> {
+  const runSignal = deployTaskRunSignal(input.task.id);
+  throwIfDeployTaskAborted(input.task.id);
   const gatewayUrl = safeCodexGatewayUrl(input.context.url);
   if (gatewayUrl == null) {
     throw new CodexGatewayApiError("Invalid Codex gateway URL.", 502);
@@ -505,9 +731,13 @@ export async function runDeployTaskGateway(input: {
     phase: "plan",
   });
 
-  await waitForCodexGatewayReady(input.context);
+  await waitForCodexGatewayReady(input.context, input.deadlineAtMs, runSignal);
 
-  const session = await createGatewaySession(input.context);
+  const session = await createGatewaySession(
+    input.context,
+    input.deadlineAtMs,
+    runSignal
+  );
   const sessionId = safeGatewaySessionIdentifier(session.sessionId);
   if (sessionId == null) {
     throw new CodexGatewayApiError(
@@ -525,28 +755,79 @@ export async function runDeployTaskGateway(input: {
     phase: "plan",
   });
 
-  const turn = await sendGatewayTurn(
-    input.context,
-    sessionId,
-    input.repairOutput
-      ? buildGatewayRepairPrompt(input.task)
-      : buildGatewayPrompt(input.task)
-  );
-  await updateDeployTaskState(input.task.id, {
-    gatewayStateSnapshot: gatewayStateSnapshot({ state: turn.state }),
+  let turnMayBeActive = false;
+  let turnSubmissionConfirmed = false;
+  let interruptPromise: Promise<boolean> | undefined;
+  const turnBoundarySignal = AbortSignal.any([
+    runSignal,
+    AbortSignal.timeout(
+      Math.max(
+        1,
+        remainingDeploymentTimeoutMs({ deadlineAtMs: input.deadlineAtMs })
+      )
+    ),
+  ]);
+  const interruptTurnOnce = (): Promise<boolean> => {
+    if (!turnMayBeActive) {
+      return Promise.resolve(false);
+    }
+    interruptPromise ??= interruptCodexGatewayTurnBestEffort({
+      context: input.context,
+      sessionId,
+      taskId: input.task.id,
+      turnSubmissionConfirmed,
+    });
+    return interruptPromise;
+  };
+  const interruptOnBoundary = () => {
+    interruptTurnOnce().catch(() => undefined);
+  };
+  turnBoundarySignal.addEventListener("abort", interruptOnBoundary, {
+    once: true,
   });
-  await recordDeployTaskEvent(input.task.id, {
-    kind: "deploy_task.gateway_turn_sent",
-    message: "Codex gateway turn started.",
-    payload: {},
-    phase: "plan",
-  });
+  try {
+    // Set this before sending: the gateway may accept the turn even if the
+    // client loses the response or its local signal aborts.
+    turnMayBeActive = true;
+    if (turnBoundarySignal.aborted) {
+      interruptOnBoundary();
+    }
+    const turn = await sendGatewayTurn(
+      input.context,
+      sessionId,
+      input.repairOutput
+        ? buildGatewayRepairPrompt(input.task)
+        : buildGatewayPrompt(input.task),
+      input.deadlineAtMs,
+      runSignal
+    );
+    turnSubmissionConfirmed = true;
+    await updateDeployTaskState(input.task.id, {
+      gatewayStateSnapshot: gatewayStateSnapshot({ state: turn.state }),
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deploy_task.gateway_turn_sent",
+      message: "Codex gateway turn started.",
+      payload: {},
+      phase: "plan",
+    });
 
-  await waitForGatewayTurnCompletion({
-    context: input.context,
-    sessionId,
-    taskId: input.task.id,
-  });
+    await waitForGatewayTurnCompletion({
+      context: input.context,
+      deadlineAtMs: input.deadlineAtMs,
+      runSignal,
+      sessionId,
+      taskId: input.task.id,
+    });
+    turnMayBeActive = false;
+  } catch (error) {
+    if (turnMayBeActive) {
+      await interruptTurnOnce();
+    }
+    throw error;
+  } finally {
+    turnBoundarySignal.removeEventListener("abort", interruptOnBoundary);
+  }
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_turn_completed",
     message: "Codex gateway turn completed.",

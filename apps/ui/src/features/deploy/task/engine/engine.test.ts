@@ -23,9 +23,15 @@ import type {
   DeployTaskEngineContext,
   DeployTaskEngineDevbox,
 } from "./context";
-import { DeployTaskRunCancelledError } from "./errors";
+import {
+  DeployTaskRunCancelledError,
+  DeployTaskRunTimeoutError,
+} from "./errors";
 import { runDeployTaskReaperSweep } from "./reaper";
-import { stopDeployTaskEngineRuntimeForTests } from "./runtime";
+import {
+  getActiveDeployTaskHandle,
+  stopDeployTaskEngineRuntimeForTests,
+} from "./runtime";
 import { insertTaskRow } from "./testing/fixtures";
 import {
   createDeployTaskTestHarness,
@@ -33,6 +39,7 @@ import {
 } from "./testing/harness";
 import {
   appendDeployTaskEvent,
+  recordDeployTaskCancelRequest,
   renewDeployTaskLease,
   transitionDeployTask,
 } from "./transitions";
@@ -320,9 +327,9 @@ test("reaper enforces cancel-ack deadline, max active run, and start deadline", 
     status: "running",
   });
   const overrun = await insertTaskRow(harness.db, {
-    leaseClaimedAt: new Date(now - 31 * 60_000),
+    leaseClaimedAt: new Date(now - 71 * 60_000),
     leaseEpoch: 1,
-    leaseExpiresAt: liveLease,
+    leaseExpiresAt: new Date(now - 1000),
     leaseOwner: "live-proc",
     status: "applying",
   });
@@ -1039,6 +1046,82 @@ test("input submission claims blocked→running in place and hands values in mem
   assert.equal(conflict.kind, "conflict");
 });
 
+test("a stale blocked run cannot unregister its resumed successor", async () => {
+  const ctx = testCtx();
+  let releaseOldRun!: () => void;
+  let releaseResumedRun!: () => void;
+  let blockedReady!: () => void;
+  let resumedReady!: () => void;
+  const oldRunGate = new Promise<void>((resolve) => {
+    releaseOldRun = resolve;
+  });
+  const resumedRunGate = new Promise<void>((resolve) => {
+    releaseResumedRun = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    blockedReady = resolve;
+  });
+  const resumed = new Promise<void>((resolve) => {
+    resumedReady = resolve;
+  });
+
+  const created = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async (handle) => {
+      await handle.requestInputs({
+        blockingInputs: [
+          {
+            id: "release-name",
+            label: "Release name",
+            required: true,
+            type: "text",
+          },
+        ],
+      });
+      blockedReady();
+      await oldRunGate;
+    },
+  });
+  assert.equal(created.kind, "created");
+  if (created.kind !== "created") {
+    return;
+  }
+  await blocked;
+
+  const resumedResult = await submitDeployTaskInputAction(ctx, {
+    namespace: "ns-test",
+    run: async (handle) => {
+      resumedReady();
+      await resumedRunGate;
+      await handle.beginApplying();
+      await handle.complete();
+    },
+    taskId: created.task.id,
+    values: { "release-name": "stable" },
+  });
+  assert.equal(resumedResult.kind, "resumed");
+  if (resumedResult.kind !== "resumed") {
+    return;
+  }
+  await resumed;
+
+  releaseOldRun();
+  await created.launched?.done;
+  assert.equal(
+    getActiveDeployTaskHandle(created.task.id),
+    resumedResult.launched.handle
+  );
+
+  releaseResumedRun();
+  await resumedResult.launched.done;
+  assert.equal((await taskById(created.task.id)).status, "completed");
+});
+
 test("partial required input submission stays blocked without launching", async () => {
   const ctx = testCtx();
   const blocked = await insertTaskRow(harness.db, {
@@ -1437,6 +1520,256 @@ test("launched run acknowledges cancel as a typed outcome, never failure", async
   const stored = await taskById(result.task.id);
   assert.equal(stored.status, "cancelled");
   assert.ok(stored.completedAt != null);
+});
+
+test("local watchdog resolves a live run at the active execution deadline", async () => {
+  const ctx = testCtx({
+    leaseRenewIntervalMs: 20,
+    maxActiveRunMs: 60,
+  });
+
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async (handle) => {
+      await new Promise<void>((_resolve, reject) => {
+        handle.signal.addEventListener(
+          "abort",
+          () => reject(handle.signal.reason),
+          { once: true }
+        );
+      });
+    },
+  });
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+
+  await result.launched?.done;
+  const stored = await taskById(result.task.id);
+  assert.equal(stored.status, "failed");
+  assert.equal(
+    (stored.failureDetails as { reason?: string } | null)?.reason,
+    "timeout"
+  );
+});
+
+test("local watchdog stops the runner before a slow timeout transition completes", async () => {
+  const baseCtx = testCtx({
+    leaseRenewIntervalMs: 10_000,
+    maxActiveRunMs: 100,
+  });
+  let delayExecute = false;
+  let releaseExecute!: () => void;
+  const executeGate = new Promise<void>((resolve) => {
+    releaseExecute = resolve;
+  });
+  const originalExecute = baseCtx.db.execute.bind(baseCtx.db);
+  const delayedExecute = (async (...args: unknown[]) => {
+    if (delayExecute) {
+      await executeGate;
+    }
+    return await originalExecute(...(args as [never]));
+  }) as typeof baseCtx.db.execute;
+  const delayedDb = new Proxy(baseCtx.db, {
+    get(target, property) {
+      if (property === "execute") {
+        return delayedExecute;
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const ctx: DeployTaskEngineContext = {
+    ...baseCtx,
+    db: delayedDb,
+  };
+
+  let observeAbort!: (reason: unknown) => void;
+  const abortObserved = new Promise<unknown>((resolve) => {
+    observeAbort = resolve;
+  });
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async (handle) => {
+      await new Promise<void>((_resolve, reject) => {
+        handle.signal.addEventListener(
+          "abort",
+          () => {
+            observeAbort(handle.signal.reason);
+            reject(handle.signal.reason);
+          },
+          { once: true }
+        );
+      });
+    },
+  });
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+
+  delayExecute = true;
+  let abortGuardTimer: ReturnType<typeof setTimeout> | undefined;
+  const abortReason = await Promise.race([
+    abortObserved,
+    new Promise<never>((_resolve, reject) => {
+      abortGuardTimer = setTimeout(
+        () => reject(new Error("watchdog did not abort before transition")),
+        1000
+      );
+    }),
+  ]);
+  clearTimeout(abortGuardTimer);
+  assert.ok(abortReason instanceof DeployTaskRunTimeoutError);
+  assert.equal((await taskById(result.task.id)).status, "running");
+
+  releaseExecute();
+  await result.launched?.done;
+  const stored = await taskById(result.task.id);
+  assert.equal(stored.status, "failed");
+  assert.equal(
+    (stored.failureDetails as { reason?: string } | null)?.reason,
+    "timeout"
+  );
+});
+
+test("local watchdog gives an already-persisted cancel intent precedence", async () => {
+  const ctx = testCtx({
+    leaseRenewIntervalMs: 10_000,
+    maxActiveRunMs: 100,
+  });
+  let abortReason: unknown;
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      namespace: "ns-test",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "demo" },
+      target: { kind: "existingProject", projectId: "project-test" },
+    },
+    run: async (handle) => {
+      await new Promise<void>((_resolve, reject) => {
+        handle.signal.addEventListener(
+          "abort",
+          () => {
+            abortReason = handle.signal.reason;
+            reject(handle.signal.reason);
+          },
+          { once: true }
+        );
+      });
+    },
+  });
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+
+  const recorded = await recordDeployTaskCancelRequest(ctx, {
+    taskId: result.task.id,
+  });
+  assert.ok(recorded?.cancelRequestedAt != null);
+  await result.launched?.done;
+
+  assert.ok(abortReason instanceof DeployTaskRunTimeoutError);
+  const stored = await taskById(result.task.id);
+  assert.equal(stored.status, "cancelled");
+  assert.equal(
+    (stored.failureDetails as { detail?: string } | null)?.detail,
+    "cancel-requested-at-deadline"
+  );
+});
+
+test("deadline transition CAS defines cancel-versus-timeout boundary priority", async () => {
+  const ctx = testCtx();
+  const cancelFirst = await insertTaskRow(harness.db, {
+    cancelRequestedAt: new Date(),
+    leaseClaimedAt: new Date(),
+    leaseEpoch: 3,
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+    leaseOwner: ctx.processId,
+    status: "running",
+  });
+  const timeoutBlocked = await transitionDeployTask(ctx, {
+    cancelRequest: "absent",
+    expectedLeaseEpoch: 3,
+    from: ["running"],
+    taskId: cancelFirst.id,
+    to: "failed",
+  });
+  assert.equal(timeoutBlocked, null);
+  const cancelled = await transitionDeployTask(ctx, {
+    cancelRequest: "present",
+    expectedLeaseEpoch: 3,
+    from: ["running"],
+    taskId: cancelFirst.id,
+    to: "cancelled",
+  });
+  assert.ok(cancelled != null);
+
+  const timeoutFirst = await insertTaskRow(harness.db, {
+    leaseClaimedAt: new Date(),
+    leaseEpoch: 4,
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+    leaseOwner: ctx.processId,
+    status: "running",
+  });
+  const timedOut = await transitionDeployTask(ctx, {
+    cancelRequest: "absent",
+    expectedLeaseEpoch: 4,
+    from: ["running"],
+    taskId: timeoutFirst.id,
+    to: "failed",
+  });
+  assert.ok(timedOut != null);
+  assert.equal(
+    await recordDeployTaskCancelRequest(ctx, { taskId: timeoutFirst.id }),
+    null
+  );
+
+  const boundary = await insertTaskRow(harness.db, {
+    leaseClaimedAt: new Date(),
+    leaseEpoch: 5,
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+    leaseOwner: ctx.processId,
+    status: "running",
+  });
+  const [boundaryTimeout, boundaryCancel] = await Promise.all([
+    transitionDeployTask(ctx, {
+      cancelRequest: "absent",
+      expectedLeaseEpoch: 5,
+      from: ["running"],
+      taskId: boundary.id,
+      to: "failed",
+    }),
+    recordDeployTaskCancelRequest(ctx, { taskId: boundary.id }),
+  ]);
+  if (boundaryCancel == null) {
+    assert.ok(boundaryTimeout != null);
+    assert.equal((await taskById(boundary.id)).status, "failed");
+  } else {
+    assert.equal(boundaryTimeout, null);
+    assert.ok(
+      await transitionDeployTask(ctx, {
+        cancelRequest: "present",
+        expectedLeaseEpoch: 5,
+        from: ["running"],
+        taskId: boundary.id,
+        to: "cancelled",
+      })
+    );
+    assert.equal((await taskById(boundary.id)).status, "cancelled");
+  }
 });
 
 test("reaper pauses devboxes of terminal tasks and purges after retention", async () => {

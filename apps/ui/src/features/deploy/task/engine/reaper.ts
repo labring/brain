@@ -378,6 +378,18 @@ export async function runDeployTaskReaperSweep(
     where: sql`${leased} AND "cancel_requested_at" IS NOT NULL AND "lease_expires_at" IS NOT NULL AND "lease_expires_at" < now()`,
   });
 
+  const timedOut = await sweepVerdict(ctx, {
+    error: timeoutMessage,
+    event: {
+      kind: "deployment_task.engine_resolved",
+      message: timeoutMessage,
+      payload: { reason: "timeout", verdict: "failed" },
+    },
+    failureDetails: { failureMessage: timeoutMessage, reason: "timeout" },
+    to: "failed",
+    where: sql`${leased} AND "cancel_requested_at" IS NULL AND "lease_claimed_at" IS NOT NULL AND "lease_claimed_at" < now() - ${intervalFromMs(ctx.cadence.maxActiveRunMs)}`,
+  });
+
   const interrupted = await sweepVerdict(ctx, {
     error: interruptedMessage,
     event: {
@@ -391,18 +403,6 @@ export async function runDeployTaskReaperSweep(
     },
     to: "failed",
     where: sql`${leased} AND "cancel_requested_at" IS NULL AND "lease_expires_at" IS NOT NULL AND "lease_expires_at" < now()`,
-  });
-
-  const timedOut = await sweepVerdict(ctx, {
-    error: timeoutMessage,
-    event: {
-      kind: "deployment_task.engine_resolved",
-      message: timeoutMessage,
-      payload: { reason: "timeout", verdict: "failed" },
-    },
-    failureDetails: { failureMessage: timeoutMessage, reason: "timeout" },
-    to: "failed",
-    where: sql`${leased} AND "cancel_requested_at" IS NULL AND "lease_claimed_at" IS NOT NULL AND "lease_claimed_at" < now() - ${intervalFromMs(ctx.cadence.maxActiveRunMs)}`,
   });
 
   const neverStarted = await sweepVerdict(ctx, {

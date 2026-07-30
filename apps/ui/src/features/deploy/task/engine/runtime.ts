@@ -3,6 +3,7 @@ import type { DeployTaskEngineContext } from "./context";
 import {
   DeployTaskRunCancelledError,
   DeployTaskRunSupersededError,
+  DeployTaskRunTimeoutError,
   isDeployTaskAbortError,
 } from "./errors";
 import { createDeployTaskHandle, type DeployTaskHandle } from "./handle";
@@ -23,6 +24,7 @@ class DeployTaskShutdownError extends Error {
 
 interface DeployTaskActiveRun {
   controller: AbortController;
+  deadlineTimer: ReturnType<typeof setTimeout>;
   handle: DeployTaskHandle | null;
   leaseEpoch: number;
   renewTimer: ReturnType<typeof setInterval>;
@@ -52,13 +54,16 @@ function getRuntime(): DeployTaskEngineRuntime {
   return globalRuntime.__sealaiDeployTaskEngineRuntime;
 }
 
-function unregisterRun(runtime: DeployTaskEngineRuntime, taskId: string): void {
-  const run = runtime.activeRuns.get(taskId);
-  if (run == null) {
+function unregisterRun(
+  runtime: DeployTaskEngineRuntime,
+  expectedRun: DeployTaskActiveRun
+): void {
+  if (runtime.activeRuns.get(expectedRun.taskId) !== expectedRun) {
     return;
   }
-  clearInterval(run.renewTimer);
-  runtime.activeRuns.delete(taskId);
+  clearTimeout(expectedRun.deadlineTimer);
+  clearInterval(expectedRun.renewTimer);
+  runtime.activeRuns.delete(expectedRun.taskId);
 }
 
 /**
@@ -109,7 +114,7 @@ async function drainForShutdown(
           error
         );
       } finally {
-        unregisterRun(runtime, run.taskId);
+        unregisterRun(runtime, run);
       }
     })
   );
@@ -199,6 +204,7 @@ export function stopDeployTaskEngineRuntimeForTests(): void {
     clearInterval(runtime.reaperTimer);
   }
   for (const run of runtime.activeRuns.values()) {
+    clearTimeout(run.deadlineTimer);
     clearInterval(run.renewTimer);
   }
   globalRuntime.__sealaiDeployTaskEngineRuntime = undefined;
@@ -227,6 +233,13 @@ export function launchDeployTaskRun(
 ): LaunchedDeployTaskRun {
   const runtime = getRuntime();
   const controller = new AbortController();
+  let activeRun: DeployTaskActiveRun | null = null;
+  let deadlineResolution: Promise<void> | null = null;
+  const unregisterActiveRun = () => {
+    if (activeRun != null) {
+      unregisterRun(runtime, activeRun);
+    }
+  };
   if (runtime.shuttingDown) {
     controller.abort(new DeployTaskShutdownError());
   }
@@ -235,7 +248,7 @@ export function launchDeployTaskRun(
     controller,
     leaseEpoch: input.claim.leaseEpoch,
     namespace: input.claim.namespace,
-    onEnded: () => unregisterRun(runtime, input.claim.taskId),
+    onEnded: unregisterActiveRun,
     taskId: input.claim.taskId,
   });
 
@@ -249,7 +262,7 @@ export function launchDeployTaskRun(
         if (!controller.signal.aborted) {
           controller.abort(new DeployTaskRunSupersededError());
         }
-        unregisterRun(runtime, input.claim.taskId);
+        unregisterActiveRun();
         return;
       }
       if (renewed.cancelRequestedAt != null && !controller.signal.aborted) {
@@ -263,17 +276,90 @@ export function launchDeployTaskRun(
     });
   }, ctx.cadence.leaseRenewIntervalMs);
 
-  runtime.activeRuns.set(input.claim.taskId, {
+  const deadlineTimer = setTimeout(() => {
+    const timeoutMessage = deploymentFailureMessage("timeout");
+    // Stop local side effects before touching the database. Removing the
+    // active handle also makes runner-write shims fail closed while the
+    // terminal transition is slow or temporarily unavailable.
+    if (!controller.signal.aborted) {
+      controller.abort(new DeployTaskRunTimeoutError());
+    }
+    unregisterActiveRun();
+
+    deadlineResolution = (async () => {
+      const timedOut = await transitionDeployTask(ctx, {
+        cancelRequest: "absent",
+        event: {
+          kind: "deployment_task.engine_resolved",
+          message: timeoutMessage,
+          payload: { reason: "timeout", verdict: "failed" },
+        },
+        expectedLeaseEpoch: input.claim.leaseEpoch,
+        from: DEPLOY_TASK_LEASED_STATUSES,
+        set: {
+          error: timeoutMessage,
+          failureDetails: {
+            failureMessage: timeoutMessage,
+            reason: "timeout",
+          },
+        },
+        taskId: input.claim.taskId,
+        to: "failed",
+      });
+      if (timedOut != null) {
+        return;
+      }
+
+      // A cancel intent persisted before the timeout CAS owns the verdict.
+      // If another terminal transition won instead, this guarded write is a
+      // no-op and that already-persisted outcome remains authoritative.
+      await transitionDeployTask(ctx, {
+        cancelRequest: "present",
+        event: {
+          kind: "deployment_task.engine_resolved",
+          message:
+            "Cancellation was pending at the execution deadline; the task was resolved to cancelled.",
+          payload: {
+            reason: "cancel-requested-at-deadline",
+            verdict: "cancelled",
+          },
+        },
+        expectedLeaseEpoch: input.claim.leaseEpoch,
+        from: DEPLOY_TASK_LEASED_STATUSES,
+        set: {
+          failureDetails: {
+            detail: "cancel-requested-at-deadline",
+            reason: "cancelled",
+          },
+        },
+        taskId: input.claim.taskId,
+        to: "cancelled",
+      });
+    })().catch((error) => {
+      console.error(
+        `[deploy-task-engine] deadline resolution failed for ${input.claim.taskId}:`,
+        error
+      );
+    });
+  }, ctx.cadence.maxActiveRunMs);
+
+  activeRun = {
     controller,
+    deadlineTimer,
     handle,
     leaseEpoch: input.claim.leaseEpoch,
     renewTimer,
     taskId: input.claim.taskId,
-  });
+  };
+  runtime.activeRuns.set(input.claim.taskId, activeRun);
 
   const done = (async () => {
     try {
       await input.run(handle);
+      if (controller.signal.reason instanceof DeployTaskRunTimeoutError) {
+        await deadlineResolution;
+        return;
+      }
       if (handle.outcome() == null) {
         const failureMessage = deploymentFailureMessage("runner-error");
         await handle.fail({
@@ -287,9 +373,14 @@ export function launchDeployTaskRun(
         });
       }
     } catch (error) {
-      await resolveRunError(handle, controller, error);
+      await resolveRunError(
+        handle,
+        controller,
+        error,
+        () => deadlineResolution
+      );
     } finally {
-      unregisterRun(runtime, input.claim.taskId);
+      unregisterActiveRun();
     }
   })();
 
@@ -299,7 +390,8 @@ export function launchDeployTaskRun(
 async function resolveRunError(
   handle: DeployTaskHandle,
   controller: AbortController,
-  error: unknown
+  error: unknown,
+  deadlineResolution: () => Promise<void> | null
 ): Promise<void> {
   if (handle.outcome() != null) {
     if (!isDeployTaskAbortError(error)) {
@@ -312,6 +404,13 @@ async function resolveRunError(
   }
   const reason = controller.signal.aborted ? controller.signal.reason : error;
   try {
+    if (
+      reason instanceof DeployTaskRunTimeoutError ||
+      error instanceof DeployTaskRunTimeoutError
+    ) {
+      await deadlineResolution();
+      return;
+    }
     if (
       reason instanceof DeployTaskRunCancelledError ||
       error instanceof DeployTaskRunCancelledError

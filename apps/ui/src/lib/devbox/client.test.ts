@@ -18,7 +18,7 @@ afterAll(() => {
   process.env.DEVBOX_TOKEN = originalToken;
 });
 
-const { execDevbox } = await import("./client");
+const { execDevbox, pauseDevbox } = await import("./client");
 
 test("exec Devbox fetch is cancelled by the caller abort signal", async () => {
   let fetchSignal: AbortSignal | null | undefined;
@@ -65,4 +65,19 @@ test("an abort during Devbox network retry delay prevents another fetch", async 
   );
 
   assert.equal(fetchCalls, 1);
+});
+
+test("pause Devbox fetch is cancelled by the caller abort signal", async () => {
+  let fetchSignal: AbortSignal | null | undefined;
+  globalThis.fetch = ((_input, init) => {
+    fetchSignal = init?.signal;
+    return Promise.resolve(Response.json({ data: {} }));
+  }) as typeof fetch;
+  const controller = new AbortController();
+
+  await pauseDevbox("ns-test", "runtime", controller.signal);
+
+  assert.equal(fetchSignal?.aborted, false);
+  controller.abort();
+  assert.equal(fetchSignal?.aborted, true);
 });

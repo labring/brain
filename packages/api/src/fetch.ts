@@ -6,6 +6,7 @@ export interface FetcherOptions {
   path: string;
   query?: Record<string, string | number | boolean | null | undefined>;
   select?: (data: unknown) => unknown;
+  signal?: AbortSignal;
 }
 
 function resolveUrl(base: string, path: string): string {
@@ -66,7 +67,12 @@ export async function fetcher<T = unknown>(
     }
   }
 
-  const res = await fetch(url.toString(), { method, headers, body });
+  const res = await fetch(url.toString(), {
+    body,
+    headers,
+    method,
+    signal: options.signal,
+  });
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`API ${res.status}: ${err}`);

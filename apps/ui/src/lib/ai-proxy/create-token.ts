@@ -18,6 +18,7 @@ export async function fetchOrCreateAiProxyToken(options: {
   clusterHostname: string;
   authorizationEncodedKubeconfig: string;
   name: string;
+  signal?: AbortSignal;
 }): Promise<
   | { ok: true; token: AiProxyCreatedToken }
   | { ok: false; status: number; bodyText: string }
@@ -31,6 +32,7 @@ export async function fetchOrCreateAiProxyToken(options: {
       Authorization: options.authorizationEncodedKubeconfig,
     },
     body: JSON.stringify({ name: options.name }),
+    signal: options.signal,
   });
 
   const bodyText = await response.text();

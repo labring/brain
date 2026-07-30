@@ -15,13 +15,15 @@ const PROJECTS_BUTTON_ACTIVE_BACKGROUND_OVERRIDE_RE =
 const PROJECTS_BUTTON_PROJECT_HOVER_RE =
   /showIconOnHover=\{currentProjectId !== undefined\}/;
 const WORKSPACE_QUOTA_LOADER_RE = /sealosApp\.getWorkspaceQuota\(\)/;
+const DESKTOP_HOST_CONFIG_RE = /sealosApp\.getHostConfig\(\)/;
+const DESKTOP_HOST_DOMAIN_RE = /hostConfig\.cloud\.domain/;
 const CREATE_SEALOS_APP_RE = /createSealosApp/;
 const HARDCODED_USAGE_VALUE_RE = /"0\.0\/0"/;
 const DESKTOP_RETURN_BUTTON_RE = /aria-label="Back to Sealos Desktop"/;
-const DESKTOP_RETURN_URL_RE =
-  /const SEALOS_DESKTOP_URL = "https:\/\/usw-1\.sealos\.io\/\?openapp="/;
 const DESKTOP_RETURN_NEW_TAB_RE =
-  /href=\{SEALOS_DESKTOP_URL\}[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"/;
+  /href=\{desktopUrl\}[\s\S]*rel="noopener noreferrer"[\s\S]*target="_blank"/;
+const DESKTOP_RETURN_DISABLED_RE = /disabled=\{desktopUrl === null\}/;
+const HARD_CODED_DESKTOP_DOMAIN_RE = /usw-1\.sealos\.io/;
 const CLOSE_BRAIN_EVENT_RE = /closeDesktopApp/;
 const DESKTOP_RETURN_BEFORE_UPGRADE_RE =
   /data-slot="app-sidebar-bottom-actions"[\s\S]*<AppSidebarDesktopReturn \/>[\s\S]*<AppSidebarUpgrade \/>/;
@@ -49,8 +51,11 @@ test("app sidebar upgrade popover reads workspace quota from the Sealos SDK", ()
 });
 
 test("app sidebar opens Sealos Desktop in a new tab", () => {
-  assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_URL_RE);
+  assert.match(APP_SIDEBAR_SOURCE, DESKTOP_HOST_CONFIG_RE);
+  assert.match(APP_SIDEBAR_SOURCE, DESKTOP_HOST_DOMAIN_RE);
   assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_NEW_TAB_RE);
+  assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_DISABLED_RE);
+  assert.doesNotMatch(APP_SIDEBAR_SOURCE, HARD_CODED_DESKTOP_DOMAIN_RE);
   assert.doesNotMatch(APP_SIDEBAR_SOURCE, CLOSE_BRAIN_EVENT_RE);
 });
 
