@@ -104,7 +104,12 @@ export function LogWindowSelector({
           <CalendarClock className="size-4 shrink-0 text-muted-foreground" />
         )}
         <span className="truncate">{formatLogWindowLabel(value)}</span>
-        <ChevronDown className="size-3.5 shrink-0 opacity-50" />
+        <ChevronDown
+          className={cn(
+            "size-3.5 shrink-0 opacity-50 transition-transform duration-150 ease-out motion-reduce:transition-none",
+            open && "rotate-180"
+          )}
+        />
       </PopoverTrigger>
       <PopoverContent
         align="start"
