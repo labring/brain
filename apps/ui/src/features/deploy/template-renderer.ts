@@ -1562,6 +1562,9 @@ export function renderTemplateDeployment(
   const instance = templateInstanceObject(input.source, input.instanceName);
   const renderedSource = renderTemplateString(input.source.appYaml, context);
   const sourceResources = parseRenderedObjects(renderedSource);
+  if (sourceResources.length === 0) {
+    throw new Error("Template rendered no Kubernetes resources.");
+  }
   const sourceHasInstance = sourceResources.some(
     (resource) =>
       resource.kind === TEMPLATE_INSTANCE_KIND &&
@@ -1573,9 +1576,6 @@ export function renderTemplateDeployment(
   const resources = sourceHasInstance
     ? sourceResources
     : parseRenderedObjects(fullYaml);
-  if (resources.length === 0) {
-    throw new Error("Template rendered no Kubernetes resources.");
-  }
   const classifications = templateResourceClassifications(resources);
   for (const resource of resources) {
     applyResourceLabels(
