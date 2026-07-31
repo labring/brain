@@ -88,7 +88,9 @@ const subscriptionSchema = z.object({
   PlanName: z.string().default("PAYG"),
   RegionDomain: z.string().default(""),
   Status: z.string().default(""),
-  Workspace: z.string().min(1),
+  // Absent for PAYG workspaces: the upstream embeds a nil subscription and
+  // serializes only `{"type":"PAYG"}`.
+  Workspace: z.string().default(""),
   role: z.enum(["MANAGER", "DEVELOPER", "OWNER"]).optional(),
   type: z.enum(["SUBSCRIPTION", "PAYG"]).optional(),
 });
@@ -278,6 +280,7 @@ export async function loadBillingPlanSnapshot(
     requestBillingJson("/api/billing/workspaces", {
       endTime,
       startTime,
+      type: 0,
     }),
     requestBillingJson("/api/billing/card", workspaceRequest),
   ]);

@@ -41,19 +41,21 @@ test("loads plan and metered pricing for the current PAYG workspace", async () =
       ],
     },
     "/api/billing/properties": {
-      properties: [
-        { name: "network", unit: "MiB", unit_price: 2 },
-        {
-          name: "gpu-a100",
-          alias: "NVIDIA A100",
-          unit: "gpu",
-          unit_price: 750_000,
-        },
-        { name: "storage", unit: "GiB", unit_price: 5 },
-        { name: "memory", unit: "GiB", unit_price: 20 },
-        { name: "cpu", unit: "vCPU", unit_price: 10 },
-        { name: "services.nodeports", unit: "port", unit_price: 1000 },
-      ],
+      data: {
+        properties: [
+          { name: "network", unit: "MiB", unit_price: 2 },
+          {
+            name: "gpu-a100",
+            alias: "NVIDIA A100",
+            unit: "gpu",
+            unit_price: 750_000,
+          },
+          { name: "storage", unit: "GiB", unit_price: 5 },
+          { name: "memory", unit: "GiB", unit_price: 20 },
+          { name: "cpu", unit: "vCPU", unit_price: 10 },
+          { name: "services.nodeports", unit: "port", unit_price: 1000 },
+        ],
+      },
     },
     "/api/billing/regions": {
       regions: [{ domain: "us.example.test", uid: "region-us" }],

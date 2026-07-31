@@ -87,10 +87,13 @@ const kubeconfigText = decodedKubeconfig(
 const crName = crNameFromKubeconfig(kubeconfigText);
 const userUid =
   (process.env.DEV_APP_TOKEN_USER_UID ?? "").trim() || devUserUid(crName);
+// account-service resolves some endpoints (e.g. /account) by the `User.id`
+// column, not the uid, so the claim must be overridable independently.
+const userId = (process.env.DEV_APP_TOKEN_USER_ID ?? "").trim() || userUid;
 
 const token = await new SignJWT({
   userCrName: crName,
-  userId: userUid,
+  userId,
   userUid,
 })
   .setProtectedHeader({ alg: "HS256" })

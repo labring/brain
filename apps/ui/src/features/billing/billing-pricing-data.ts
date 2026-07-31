@@ -42,14 +42,16 @@ interface BillingPricingDependencies {
 }
 
 const propertiesResponseSchema = z.object({
-  properties: z.array(
-    z.object({
-      alias: z.string().optional(),
-      name: z.string().trim().min(1),
-      unit: z.string().default(""),
-      unit_price: z.number().optional(),
-    })
-  ),
+  data: z.object({
+    properties: z.array(
+      z.object({
+        alias: z.string().optional(),
+        name: z.string().trim().min(1),
+        unit: z.string().default(""),
+        unit_price: z.number().optional(),
+      })
+    ),
+  }),
 });
 const regionsResponseSchema = z.object({
   regions: z.array(z.object({ domain: z.string().trim().min(1) })),
@@ -121,7 +123,7 @@ const PROPERTY_METADATA: Readonly<Record<string, PropertyMetadata>> = {
 };
 
 function normalizePrices(
-  properties: z.infer<typeof propertiesResponseSchema>["properties"]
+  properties: z.infer<typeof propertiesResponseSchema>["data"]["properties"]
 ): BillingMeteredPrice[] {
   return properties
     .flatMap((property) => {
@@ -198,6 +200,6 @@ export async function loadBillingPricing(
   return {
     isPayg: subscription.subscription.type === "PAYG",
     plans,
-    prices: normalizePrices(properties.properties),
+    prices: normalizePrices(properties.data.properties),
   };
 }
