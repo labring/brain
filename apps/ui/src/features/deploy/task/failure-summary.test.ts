@@ -150,6 +150,7 @@ describe("deploymentFailureReason", () => {
       "readiness-timeout": "didn't become ready",
       "repository-clone-failed": "could not be cloned",
       "runner-error": "internal error",
+      "template-parse-failed": "template could not be processed",
       timeout: "maximum run time",
       unknown: "unknown reason",
     } satisfies Record<DeployTaskFailureReason, string>;
@@ -173,6 +174,11 @@ describe("deploymentFailureReason", () => {
     expect(aiFailureReason("BuildKit build could not start")).toBe(
       "buildkit-start-failed"
     );
+    expect(
+      aiFailureReason(
+        "Sealos template parse failed: rendered YAML document 2 is invalid"
+      )
+    ).toBe("template-parse-failed");
     expect(
       aiFailureReason("Codex gateway completed without deployment output")
     ).toBe("deployment-output-missing");

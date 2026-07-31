@@ -6,6 +6,7 @@ import {
   evaluateTemplateCondition,
   type RenderedTemplateDeployment,
   renderTemplateDeploymentFromYaml,
+  splitSealosTemplateYaml,
   type TemplateEvaluationContext,
   templateSourceFromInlineYaml,
 } from "@/features/deploy/template-renderer";
@@ -160,7 +161,12 @@ function stringRecordValue(value: unknown): Record<string, string> {
 }
 
 function templateNameFromYaml(templateYaml: string): string | null {
-  const templateDoc = YAML.parseAllDocuments(templateYaml)[0]?.toJS() as
+  const metadataYaml = splitSealosTemplateYaml(templateYaml).templateYaml;
+  const document = YAML.parseDocument(metadataYaml);
+  if (document.errors.length > 0) {
+    return null;
+  }
+  const templateDoc = document.toJS() as
     | { metadata?: { name?: string } }
     | null
     | undefined;
@@ -261,8 +267,11 @@ export function persistableSealosTemplate(templateYaml: string): {
   sensitiveValues: string[];
   templateYaml: string;
 } {
-  const documents = YAML.parseAllDocuments(templateYaml);
-  const templateDocument = documents[0];
+  const parts = splitSealosTemplateYaml(templateYaml);
+  const templateDocument = YAML.parseDocument(parts.templateYaml);
+  if (templateDocument.errors.length > 0) {
+    return { sensitiveInputs: [], sensitiveValues: [], templateYaml };
+  }
   const template = objectValue(templateDocument?.toJS());
   if (
     templateDocument == null ||
@@ -288,10 +297,9 @@ export function persistableSealosTemplate(templateYaml: string): {
   return {
     sensitiveInputs: inputSecrets.sensitiveInputs,
     sensitiveValues: [...new Set(sensitiveValues)],
-    templateYaml: documents
-      .map((document) => document.toString())
-      .join("")
-      .trimEnd(),
+    templateYaml: `${templateDocument.toString().trimEnd()}\n---\n${
+      parts.resourceYaml
+    }`.trimEnd(),
   };
 }
 
@@ -833,6 +841,7 @@ export function prepareSealosTemplateArtifact(input: {
   /** Recorded result identity to converge on (redeploy, ADR 0038). */
   instanceName?: string;
   routingDomain?: string;
+  serviceAccountName?: string;
   task: DeployTaskArtifactContext;
   templateYaml: string;
 }): DeploymentSealosTemplateArtifact {
@@ -864,6 +873,7 @@ export function prepareSealosTemplateArtifact(input: {
     projectId: input.task.projectId ?? projectName,
     projectName,
     routingDomain: input.routingDomain,
+    serviceAccountName: input.serviceAccountName,
     templateYaml: input.templateYaml,
   });
   assertSupportedSealosTemplateResources(rendered);

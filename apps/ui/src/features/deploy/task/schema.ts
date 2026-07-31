@@ -161,6 +161,7 @@ export type DeployTaskFailureReason =
   | "deploy-skill-install-failed"
   | "buildkit-start-failed"
   | "image-build-failed"
+  | "template-parse-failed"
   | "gateway-not-exposed"
   | "gateway-unavailable"
   | "gateway-upstream-error"

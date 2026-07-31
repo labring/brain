@@ -35,6 +35,10 @@ const UNSUPPORTED_TEMPLATE_KIND_REGEX =
 const DNS_1035_LABEL = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
 const DEMO_WEB_TEMPLATE_INSTANCE_REGEX = /^demo-web-[a-z]{6}$/;
 const GITHUB_TEMPLATE_INSTANCE_REGEX = /^seakills-site-[a-z]{6}$/;
+const S3_CONDITION_LINE_REGEX =
+  /^\s*\$\{\{ if\(inputs\.enable_s3_storage === 'true'\) \}\}\s*$/m;
+const COLLAPSED_S3_CONDITION_REGEX =
+  /\$\{\{ if\(inputs\.enable_s3_storage.*- name/;
 
 test("build result status normalization covers failure and incomplete aliases", () => {
   for (const status of [
@@ -767,6 +771,48 @@ data:
     ])
   );
   assert.equal(persistableYaml.includes("private"), false);
+});
+
+test("persistableSealosTemplate preserves conditional resource YAML verbatim", () => {
+  const conditionalResources = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mastodon
+spec:
+  template:
+    spec:
+      containers:
+        - name: mastodon
+          image: tootsuite/mastodon:v4.6.3
+          env:
+            \${{ if(inputs.enable_s3_storage === 'true') }}
+            - name: AWS_ACCESS_KEY_ID
+              value: access
+            \${{ endif() }}
+`;
+  const persistence = persistableSealosTemplate(`apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: mastodon
+spec:
+  inputs:
+    admin_password:
+      default: private-password
+      required: true
+      type: secret
+    enable_s3_storage:
+      default: "false"
+      type: boolean
+---
+${conditionalResources}`);
+
+  assert.equal(persistence.templateYaml.includes("private-password"), false);
+  assert.equal(
+    persistence.templateYaml.endsWith(conditionalResources.trimEnd()),
+    true
+  );
+  assert.match(persistence.templateYaml, S3_CONDITION_LINE_REGEX);
+  assert.doesNotMatch(persistence.templateYaml, COLLAPSED_S3_CONDITION_REGEX);
 });
 
 test("persistableSealosTemplateYaml sanitizes array-form sensitive inputs", () => {

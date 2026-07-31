@@ -16,6 +16,9 @@ import {
   templateSourceFromInlineYaml,
 } from "./template-renderer";
 
+const S3_TEMPLATE_CONDITION_REGEX = /\$\{\{ if\(inputs\.enable_s3_storage/;
+const HEX_SECRET_128_REGEX = /^[0-9a-f]{128}$/;
+
 const source = {
   appYaml: `apiVersion: apps/v1
 kind: StatefulSet
@@ -842,6 +845,131 @@ spec:
   assert.equal(instance.metadata.name, "template-inline");
   assert.equal(service?.metadata?.name, "template-inline");
   assert.match(ingressYaml ?? "", TEMPLATE_SECRET_NAME_RE);
+});
+
+test("renderTemplateDeploymentFromYaml expands Mastodon array conditionals before YAML parsing", () => {
+  // Regression shape extracted from labring-actions/templates@13b22da8,
+  // template/mastodon/index.yaml.
+  const templateYaml = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: mastodon
+spec:
+  title: Mastodon
+  defaults:
+    app_name:
+      type: string
+      value: mastodon-\${{ random(8) }}
+    secret_key_base:
+      type: string
+      value: \${{ random(128).toLowerCase().replace(/[^0-9a-f]/g, 'a') }}
+  inputs:
+    enable_s3_storage:
+      type: boolean
+      default: "false"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: \${{ defaults.app_name }}-env
+data:
+  SECRET_KEY_BASE: '\${{ defaults.secret_key_base }}'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  selector:
+    matchLabels:
+      app: \${{ defaults.app_name }}
+  template:
+    metadata:
+      labels:
+        app: \${{ defaults.app_name }}
+    spec:
+      containers:
+        - name: mastodon
+          image: tootsuite/mastodon:v4.6.3
+          env:
+            - name: STATIC_VALUE
+              value: present
+            \${{ if(inputs.enable_s3_storage === 'true') }}
+            - name: AWS_ACCESS_KEY_ID
+              value: access
+            - name: S3_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: object-storage-key-\${{ SEALOS_SERVICE_ACCOUNT }}-\${{ defaults.app_name }}
+                  key: bucket
+            \${{ endif() }}
+            \${{ if(inputs.enable_s3_storage === 'false') }}
+            - name: LOCAL_STORAGE
+              value: enabled
+            \${{ endif() }}
+  `;
+  const parsed = templateSourceFromInlineYaml(templateYaml);
+  assert.match(parsed.source.appYaml, S3_TEMPLATE_CONDITION_REGEX);
+
+  const render = (enableS3: string) =>
+    renderTemplateDeploymentFromYaml({
+      args: { enable_s3_storage: enableS3 },
+      instanceName: "mastodon-test",
+      namespace: "ns-admin",
+      projectId: "project-uid",
+      projectName: "project-uid",
+      serviceAccountName: "alice-cr",
+      templateYaml,
+    });
+
+  const s3Rendered = render("true");
+  const s3Deployment = s3Rendered.resources.find(
+    (resource) => resource.kind === "Deployment"
+  );
+  const s3Container = (
+    s3Deployment?.spec?.template as {
+      spec?: {
+        containers?: Array<{
+          env?: Array<{
+            name?: string;
+            valueFrom?: { secretKeyRef?: { name?: string } };
+          }>;
+        }>;
+      };
+    }
+  )?.spec?.containers?.[0];
+  const s3Environment = s3Container?.env ?? [];
+  assert.deepEqual(
+    s3Environment.map((entry) => entry.name),
+    ["STATIC_VALUE", "AWS_ACCESS_KEY_ID", "S3_BUCKET"]
+  );
+  assert.equal(
+    s3Environment.find((entry) => entry.name === "S3_BUCKET")?.valueFrom
+      ?.secretKeyRef?.name,
+    "object-storage-key-alice-cr-mastodon-test"
+  );
+  const environmentConfig = s3Rendered.resources.find(
+    (resource) => resource.kind === "ConfigMap"
+  ) as { data?: Record<string, string> } | undefined;
+  assert.match(
+    environmentConfig?.data?.SECRET_KEY_BASE ?? "",
+    HEX_SECRET_128_REGEX
+  );
+
+  const localRendered = render("false");
+  const localDeployment = localRendered.resources.find(
+    (resource) => resource.kind === "Deployment"
+  );
+  const localContainer = (
+    localDeployment?.spec?.template as {
+      spec?: { containers?: Array<{ env?: Array<{ name?: string }> }> };
+    }
+  )?.spec?.containers?.[0];
+  assert.deepEqual(
+    localContainer?.env?.map((entry) => entry.name),
+    ["STATIC_VALUE", "LOCAL_STORAGE"]
+  );
 });
 
 test("renderTemplateDeployment keeps declaration-only input fields off Instance", () => {

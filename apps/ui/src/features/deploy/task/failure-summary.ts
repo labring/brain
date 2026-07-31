@@ -21,6 +21,8 @@ const FAILURE_MESSAGES = {
     "BuildKit could not start. Redeploy; if the problem continues, contact support.",
   "image-build-failed":
     "The application image could not be built. Check the repository build configuration, then redeploy.",
+  "template-parse-failed":
+    "The deployment template could not be processed. Redeploy; if the problem continues, contact support.",
   "gateway-not-exposed":
     "The workspace did not expose the deployment analysis service. Redeploy; if the problem continues, contact support.",
   "gateway-unavailable":
@@ -71,6 +73,9 @@ export function aiFailureReason(
   }
   if (message.includes("BuildKit build could not start")) {
     return "buildkit-start-failed";
+  }
+  if (message.startsWith("Sealos template parse failed:")) {
+    return "template-parse-failed";
   }
   if (message.includes("Codex gateway completed without deployment output")) {
     return "deployment-output-missing";

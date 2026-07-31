@@ -54,6 +54,7 @@ import {
   getProject,
   ProjectPersistenceError,
 } from "@/lib/project-persistence/projects";
+import { workspaceActorFromAuthorizedKubeconfig } from "@/lib/request-kubeconfig-auth";
 
 import {
   blockingInputsFromDeploymentPlan,
@@ -2806,6 +2807,8 @@ async function applyAiDeploymentFromPreparedOutput(input: {
       instanceName:
         input.task.artifactSummary.resultIdentities?.templateInstanceName,
       routingDomain: apUserDomain(input.kubeconfig),
+      serviceAccountName:
+        workspaceActorFromAuthorizedKubeconfig(input.kubeconfig) ?? undefined,
       task: input.task,
       templateYaml: input.templateYaml,
     });

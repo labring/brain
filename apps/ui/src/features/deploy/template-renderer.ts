@@ -25,16 +25,19 @@ const TEMPLATE_INSTANCE_KIND = "Instance";
 const OWNER_REFERENCES_LABEL = "cloud.sealos.io/owner-references";
 const OWNER_REFERENCES_READY_VALUE = "ready";
 const YAML_IF_ENDIF_RE =
-  /^\s*\$\{\{\s*?(if|elif|else|endif)\((.*?)\)\s*?\}\}\s*$/gm;
+  /^[ \t]*\$\{\{[ \t]*?(if|elif|else|endif)\((.*?)\)[ \t]*?\}\}[ \t]*$/gm;
+const YAML_DOCUMENT_SEPARATOR_RE = /^---[ \t]*(?:#.*)?$/m;
 const DNS_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const BRACKET_PATH_RE = /\[['"]([^'"]+)['"]\]/g;
 const NUMERIC_RE = /^-?\d+(?:\.\d+)?$/;
 const RANDOM_CALL_RE = /^random\((\d+)\)$/;
+const RANDOM_HEX_CALL_RE =
+  /^random\((\d+)\)\.toLowerCase\(\)\.replace\(\/\[\^0-9a-f\]\/g,\s*(?:'a'|"a")\)$/;
 const BASE64_CALL_RE = /^base64\(([\s\S]*)\)$/;
 const TERNARY_RE = /^(.+?)\?(.+?):(.+)$/;
 const COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
 const BOOLEAN_VALUE_RE = /^(true|false)$/i;
-const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
+const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const NGINX_SSL_REDIRECT_ANNOTATION =
   "nginx.ingress.kubernetes.io/ssl-redirect";
 const NGINX_CONFIGURATION_SNIPPET_ANNOTATION =
@@ -62,6 +65,7 @@ export interface RenderTemplateDeploymentInput {
   projectId: string;
   projectName: string;
   routingDomain?: string;
+  serviceAccountName?: string;
   source: TemplateSourcePayload;
   templateName: string;
 }
@@ -135,6 +139,13 @@ export class TemplateInputValidationError extends Error {
   }
 }
 
+export class TemplateParseError extends Error {
+  constructor(message: string) {
+    super(`Sealos template parse failed: ${message}`);
+    this.name = "TemplateParseError";
+  }
+}
+
 type EvaluationContext = TemplateEvaluationContext;
 
 interface TemplateApWorkloadInfo {
@@ -171,7 +182,10 @@ function randomLowercase(length: number): string {
   } else {
     globalThis.crypto.getRandomValues(bytes);
   }
-  return Array.from(bytes, (byte) => RANDOM_ALPHABET[byte % 26]).join("");
+  return Array.from(
+    bytes,
+    (byte) => RANDOM_ALPHABET[byte % RANDOM_ALPHABET.length]
+  ).join("");
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -232,6 +246,13 @@ function expressionValue(
   const randomMatch = trimmed.match(RANDOM_CALL_RE);
   if (randomMatch) {
     return randomLowercase(Number(randomMatch[1]));
+  }
+  const randomHexMatch = trimmed.match(RANDOM_HEX_CALL_RE);
+  if (randomHexMatch) {
+    return randomLowercase(Number(randomHexMatch[1])).replace(
+      /[^0-9a-f]/g,
+      "a"
+    );
   }
   const base64Match = trimmed.match(BASE64_CALL_RE);
   if (base64Match) {
@@ -432,7 +453,7 @@ function parseYamlIfEndif(source: string, context: EvaluationContext): string {
     } else if (type === "endif") {
       ifCount -= 1;
       if (ifCount < 0) {
-        throw new Error("endif without matching if");
+        throw new TemplateParseError("endif without matching if");
       }
     }
     if (type === "if" || type === "elif" || type === "else") {
@@ -457,7 +478,7 @@ function parseYamlIfEndif(source: string, context: EvaluationContext): string {
       }
     }
     if (ifMatch == null) {
-      throw new Error("endif without matching if");
+      throw new TemplateParseError("endif without matching if");
     }
     if (stack.length !== 0) {
       continue;
@@ -481,7 +502,7 @@ function parseYamlIfEndif(source: string, context: EvaluationContext): string {
     return parseYamlIfEndif(start + between + end, context);
   }
   if (ifCount !== 0) {
-    throw new Error("Unmatched if statement found");
+    throw new TemplateParseError("unmatched if statement");
   }
   return source;
 }
@@ -1231,10 +1252,15 @@ function applyResourceLabels(
 }
 
 function parseRenderedObjects(yaml: string): TemplateK8sObject[] {
-  return YAML.parseAllDocuments(yaml)
-    .map((doc) => doc.toJS())
-    .filter((doc) => doc != null)
-    .map((doc) => doc as TemplateK8sObject);
+  return YAML.parseAllDocuments(yaml).flatMap((document, index) => {
+    if (document.errors.length > 0) {
+      throw new TemplateParseError(
+        `rendered YAML document ${index + 1} is invalid`
+      );
+    }
+    const value = document.toJS();
+    return value == null ? [] : [value as TemplateK8sObject];
+  });
 }
 
 function dumpObject(object: TemplateK8sObject): string {
@@ -1313,8 +1339,8 @@ export function templateSourceFromInlineYaml(yaml: string): {
   source: TemplateSourcePayload;
   templateName: string;
 } {
-  const docs = parseRenderedObjects(yaml);
-  const [template, ...resources] = docs;
+  const { resourceYaml, templateYaml } = splitSealosTemplateYaml(yaml);
+  const [template] = parseRenderedObjects(templateYaml);
   if (template == null) {
     throw new Error("Sealos template artifact is empty.");
   }
@@ -1326,7 +1352,7 @@ export function templateSourceFromInlineYaml(yaml: string): {
       "Sealos template artifact must start with app.sealos.io/v1 Template."
     );
   }
-  if (resources.length === 0) {
+  if (resourceYaml.trim() === "") {
     throw new Error(
       "Sealos template artifact must include workload resources."
     );
@@ -1339,7 +1365,7 @@ export function templateSourceFromInlineYaml(yaml: string): {
   const spec = asRecord(template.spec) ?? {};
   return {
     source: {
-      appYaml: resources.map(dumpObject).join("\n---\n"),
+      appYaml: resourceYaml,
       source: {
         ...spec,
         defaults: normalizeTemplateDefaults(spec.defaults),
@@ -1348,6 +1374,26 @@ export function templateSourceFromInlineYaml(yaml: string): {
       templateYaml: template,
     },
     templateName,
+  };
+}
+
+export function splitSealosTemplateYaml(yaml: string): {
+  resourceYaml: string;
+  templateYaml: string;
+} {
+  const separator = YAML_DOCUMENT_SEPARATOR_RE.exec(yaml);
+  if (separator?.index == null) {
+    return { resourceYaml: "", templateYaml: yaml };
+  }
+  let resourceStart = separator.index + separator[0].length;
+  if (yaml.startsWith("\r\n", resourceStart)) {
+    resourceStart += 2;
+  } else if (yaml.startsWith("\n", resourceStart)) {
+    resourceStart += 1;
+  }
+  return {
+    resourceYaml: yaml.slice(resourceStart),
+    templateYaml: yaml.slice(0, separator.index),
   };
 }
 
@@ -1400,10 +1446,22 @@ export function renderTemplateDeployment(
   if (!DNS_NAME_RE.test(input.instanceName) || input.instanceName.length > 63) {
     throw new Error("Template instance name must be a valid DNS name.");
   }
+  const routingDomain = input.routingDomain?.trim();
+  const serviceAccountName = input.serviceAccountName?.trim();
+  const systemContext = {
+    ...(routingDomain ? { SEALOS_CLOUD_DOMAIN: routingDomain } : {}),
+    ...(input.certSecretName?.trim()
+      ? { SEALOS_CERT_SECRET_NAME: input.certSecretName.trim() }
+      : {}),
+    ...(serviceAccountName
+      ? { SEALOS_SERVICE_ACCOUNT: serviceAccountName }
+      : {}),
+    SEALOS_NAMESPACE: input.namespace,
+  };
   const baseContext: EvaluationContext = {
     defaults: {},
     inputs: {},
-    SEALOS_NAMESPACE: input.namespace,
+    ...systemContext,
   };
   const defaults = {
     ...flattenDefaults(input.source.source.defaults, baseContext),
@@ -1414,29 +1472,31 @@ export function renderTemplateDeployment(
     input.args,
     defaults
   );
-  const routingDomain = input.routingDomain?.trim();
   const context: EvaluationContext = {
     ...input.source.source,
     defaults,
     inputs,
-    ...(routingDomain ? { SEALOS_CLOUD_DOMAIN: routingDomain } : {}),
-    ...(input.certSecretName?.trim()
-      ? { SEALOS_CERT_SECRET_NAME: input.certSecretName.trim() }
-      : {}),
-    SEALOS_NAMESPACE: input.namespace,
+    ...systemContext,
   };
   const instance = templateInstanceObject(input.source, input.instanceName);
-  const sourceResources = parseRenderedObjects(input.source.appYaml);
+  const renderedSourceYaml = renderTemplateString(
+    input.source.appYaml,
+    context
+  );
+  const sourceResources = parseRenderedObjects(renderedSourceYaml);
   const sourceHasInstance = sourceResources.some(
     (resource) =>
       resource.kind === TEMPLATE_INSTANCE_KIND &&
       resource.apiVersion === TEMPLATE_INSTANCE_API_VERSION
   );
-  const fullYaml = sourceHasInstance
-    ? input.source.appYaml
-    : `${dumpObject(instance)}\n---\n${input.source.appYaml}`;
-  const rendered = renderTemplateString(fullYaml, context);
-  const resources = parseRenderedObjects(rendered);
+  const resources = sourceHasInstance
+    ? sourceResources
+    : [
+        ...parseRenderedObjects(
+          renderTemplateString(dumpObject(instance), context)
+        ),
+        ...sourceResources,
+      ];
   if (resources.length === 0) {
     throw new Error("Template rendered no Kubernetes resources.");
   }
