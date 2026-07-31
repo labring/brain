@@ -1,6 +1,6 @@
 "use client";
 
-import { SidePane } from "@workspace/ui/components/side-pane";
+import { SidePane, SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { Blocks } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -130,11 +130,10 @@ export function TemplateDeploymentPane({
       }
       title={redeploy == null ? "Deploy Template" : "Edit & Redeploy Template"}
     >
-      <TemplateDeployer
+      <TemplateDeployer.Root
         busy={
           deploying || currentProject.isLoading || templateCatalog.isLoading
         }
-        deployLabel={redeploy == null ? undefined : "Redeploy"}
         errorMessage={templateCatalog.error?.message}
         initialSettings={initialSettings}
         loading={templateCatalog.isLoading}
@@ -144,7 +143,15 @@ export function TemplateDeploymentPane({
           });
         }}
         templateOptions={templateCatalog.templates}
-      />
+      >
+        <TemplateDeployer.Fields />
+        <SidePaneFooter>
+          <TemplateDeployer.Submit
+            className="w-full"
+            label={redeploy == null ? undefined : "Redeploy"}
+          />
+        </SidePaneFooter>
+      </TemplateDeployer.Root>
       {overwriteGate.dialog}
     </SidePane>
   );

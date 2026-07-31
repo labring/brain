@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ProjectCreator } from "./project-creator";
 
 const TRAIL_BACK_RE = />Back</;
-const DOCKER_DEPLOYER_RE = /data-slot="docker-deployer"/;
+const DOCKER_DEPLOYER_RE = /data-slot="docker-deployer-fields"/;
 const DOCKER_IMAGE_RE = /Docker image/;
 const PROJECT_NAME_RE = /Project Name/;
 const DESCRIPTION_RE = /Description/;

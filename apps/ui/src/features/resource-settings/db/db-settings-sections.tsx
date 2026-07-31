@@ -18,6 +18,7 @@ import {
   ResourceSettingsSection,
 } from "@workspace/ui/components/resource-settings/resource-settings";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
+import { SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { Switch } from "@workspace/ui/components/switch";
 import {
   Cpu,
@@ -426,7 +427,7 @@ function DatabaseSettingsFooter({
     <ResourceSettingsDraftFooter
       cancelAriaLabel="Discard database configuration changes"
       canSubmit={canUpdate}
-      className="p-2.5"
+      className="w-full"
       conflictMessage={conflictMessage}
       dirty={dirty}
       onCancel={onCancel}
@@ -1108,7 +1109,9 @@ export function DatabaseSettingsPaneContent({
           </ResourceSettingsSection>
         )
       )}
-      {model.footer}
+      {model.footer == null ? null : (
+        <SidePaneFooter>{model.footer}</SidePaneFooter>
+      )}
     </>
   );
 

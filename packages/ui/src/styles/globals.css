@@ -434,6 +434,25 @@
     will-change: opacity, transform;
   }
 
+  /* Side Pane Footer lift: a soft cast shadow instead of a separator line,
+     painted only while content still sits below the fold (SidePane sets
+     data-lifted from scroll position). The transition is box-shadow-only —
+     no width/max-width may enter a transition-property here (ADR 0048). */
+  .side-pane-footer-lift {
+    box-shadow: none;
+    transition: box-shadow 200ms ease;
+  }
+
+  .side-pane-footer-lift[data-lifted="true"] {
+    box-shadow: 0 -12px 28px -18px rgb(0 0 0 / 0.9);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .side-pane-footer-lift {
+      transition: none;
+    }
+  }
+
   .cn-toast[data-sonner-toast] {
     width: fit-content !important;
     min-width: min(12rem, calc(100vw - 2rem));

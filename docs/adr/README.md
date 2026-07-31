@@ -51,6 +51,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0057 — Forget GitHub Connections Locally on Disconnect](0057-forget-github-connections-locally-on-disconnect.md)
 - [0058 — Derive Project Display Names from Deployment Sources at Creation](0058-derive-project-display-names-from-deployment-sources.md)
 - [0059 — Key Personal Resources by the Global User UID](0059-key-personal-resources-by-global-user-uid.md) *(revises ADR-0036, ADR-0047, and ADR-0056)*
+- [0060 — Pin Pane-Level Actions in the Side Pane Footer; Hosts Place Compound Deployer Parts](0060-pin-pane-level-actions-in-side-pane-footer-hosts-place-compound-deployer-parts.md)
 
 ## Conventions
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
+import { SidePaneFooter } from "@workspace/ui/components/side-pane";
 import type { SettingsViewModel } from "./settings-types";
 
 export function SettingsSections({ model }: { model: SettingsViewModel }) {
@@ -27,7 +28,9 @@ export function SettingsSections({ model }: { model: SettingsViewModel }) {
           </ResourceSettingsSection>
         )
       )}
-      {model.footer}
+      {model.footer == null ? null : (
+        <SidePaneFooter>{model.footer}</SidePaneFooter>
+      )}
     </div>
   );
 }

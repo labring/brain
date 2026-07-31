@@ -544,7 +544,7 @@ export function ApSettingsDraftFooter({
     <ResourceSettingsDraftFooter
       cancelAriaLabel={discardAriaLabel}
       canSubmit={canSave}
-      className="p-2.5"
+      className="w-full"
       conflictMessage={conflictMessage}
       data-slot="ap-settings-draft-actions"
       dirty={dirty}

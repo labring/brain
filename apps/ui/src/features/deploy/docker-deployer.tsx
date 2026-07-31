@@ -18,8 +18,19 @@ import {
   TerminalSquare,
   Trash2,
 } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import type {
+  ComponentProps,
+  Dispatch,
+  ReactNode,
+  SetStateAction,
+} from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 import { StorageSizeInput } from "@/lib/storage-size-input";
 import { DeploymentSettings } from "./deployment-settings";
 import {
@@ -29,6 +40,7 @@ import {
   type DockerDeploymentEnvVar,
   type DockerDeploymentSettings,
   type DockerDeploymentStorageMount,
+  type DockerDeploymentValidationError,
   normalizeDockerDeploymentSettings,
   validateDockerDeploymentSettings,
 } from "./docker-deployment-settings";
@@ -121,18 +133,55 @@ function AppTextarea({ className, ...props }: ComponentProps<typeof Textarea>) {
   );
 }
 
-export function DockerDeployer({
+interface DockerDeployerContextValue {
+  appListeningPort: string;
+  argsText: string;
+  busy: boolean;
+  canDeploy: boolean;
+  commandText: string;
+  configMapRows: DockerDeploymentConfigMapRowState[];
+  envRows: DockerDeploymentEnvRowState[];
+  image: string;
+  portError: DockerDeploymentValidationError | undefined;
+  requestDeploy: () => Promise<void>;
+  setAppListeningPort: Dispatch<SetStateAction<string>>;
+  setArgsText: Dispatch<SetStateAction<string>>;
+  setCommandText: Dispatch<SetStateAction<string>>;
+  setConfigMapRows: Dispatch<
+    SetStateAction<DockerDeploymentConfigMapRowState[]>
+  >;
+  setEnvRows: Dispatch<SetStateAction<DockerDeploymentEnvRowState[]>>;
+  setImage: Dispatch<SetStateAction<string>>;
+  setImageTouched: Dispatch<SetStateAction<boolean>>;
+  setStorageRows: Dispatch<SetStateAction<DockerDeploymentStorageRowState[]>>;
+  storageRows: DockerDeploymentStorageRowState[];
+  validation: ReturnType<typeof validateDockerDeploymentSettings>;
+  visibleImageError: DockerDeploymentValidationError | undefined;
+}
+
+const DockerDeployerContext = createContext<DockerDeployerContextValue | null>(
+  null
+);
+
+function useDockerDeployer(): DockerDeployerContextValue {
+  const value = useContext(DockerDeployerContext);
+  if (!value) {
+    throw new Error(
+      "DockerDeployer: parts must be used within DockerDeployer.Root"
+    );
+  }
+  return value;
+}
+
+/** Owns the Docker deployment form state; parts read it through context. */
+function DockerDeployerRoot({
   busy = false,
-  childrenBeforeDeploy,
-  className,
-  deployLabel = "Deploy",
+  children,
   initialSettings,
   onDeploy,
 }: {
   busy?: boolean;
-  childrenBeforeDeploy?: ReactNode;
-  className?: string;
-  deployLabel?: string;
+  children?: ReactNode;
   /** Prefill (US10): any subset; missing fields fall back to defaults. */
   initialSettings?: Partial<DockerDeploymentSettings>;
   onDeploy?: (settings: DockerDeploymentSettings) => void | Promise<void>;
@@ -212,342 +261,317 @@ export function DockerDeployer({
     (error) => error.field === "appListeningPort"
   );
   const canDeploy = !busy && validation.valid && onDeploy != null;
+  const requestDeploy = useCallback(async () => {
+    if (!(canDeploy && onDeploy)) {
+      return;
+    }
+    await onDeploy(normalizeDockerDeploymentSettings(settings));
+  }, [canDeploy, onDeploy, settings]);
+
+  const value = useMemo<DockerDeployerContextValue>(
+    () => ({
+      appListeningPort,
+      argsText,
+      busy,
+      canDeploy,
+      commandText,
+      configMapRows,
+      envRows,
+      image,
+      portError,
+      requestDeploy,
+      setAppListeningPort,
+      setArgsText,
+      setCommandText,
+      setConfigMapRows,
+      setEnvRows,
+      setImage,
+      setImageTouched,
+      setStorageRows,
+      storageRows,
+      validation,
+      visibleImageError,
+    }),
+    [
+      appListeningPort,
+      argsText,
+      busy,
+      canDeploy,
+      commandText,
+      configMapRows,
+      envRows,
+      image,
+      portError,
+      requestDeploy,
+      storageRows,
+      validation,
+      visibleImageError,
+    ]
+  );
+
+  return (
+    <DockerDeployerContext.Provider value={value}>
+      {children}
+    </DockerDeployerContext.Provider>
+  );
+}
+
+/** Docker settings sections; extra content (`children`) renders after them. */
+function DockerDeployerFields({
+  children,
+  className,
+}: {
+  children?: ReactNode;
+  className?: string;
+}) {
+  const {
+    appListeningPort,
+    argsText,
+    busy,
+    commandText,
+    configMapRows,
+    envRows,
+    image,
+    portError,
+    setAppListeningPort,
+    setArgsText,
+    setCommandText,
+    setConfigMapRows,
+    setEnvRows,
+    setImage,
+    setImageTouched,
+    setStorageRows,
+    storageRows,
+    validation,
+    visibleImageError,
+  } = useDockerDeployer();
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
-      data-slot="docker-deployer"
+      className={cn("flex min-w-0 flex-col gap-3.5", className)}
+      data-slot="docker-deployer-fields"
     >
-      <div className="flex min-w-0 flex-col gap-3.5">
-        <DeploymentSettings.Section
-          description="Choose the container image to run."
-          icon={<Package aria-hidden className="size-4" />}
-          title="Image"
-        >
-          <DeploymentSettings.Control>
-            <AppInput
-              aria-describedby={
-                visibleImageError ? "docker-deployer-image-error" : undefined
-              }
-              aria-invalid={visibleImageError ? true : undefined}
-              aria-label="Docker image"
-              autoComplete="off"
+      <DeploymentSettings.Section
+        description="Choose the container image to run."
+        icon={<Package aria-hidden className="size-4" />}
+        title="Image"
+      >
+        <DeploymentSettings.Control>
+          <AppInput
+            aria-describedby={
+              visibleImageError ? "docker-deployer-image-error" : undefined
+            }
+            aria-invalid={visibleImageError ? true : undefined}
+            aria-label="Docker image"
+            autoComplete="off"
+            disabled={busy}
+            id="docker-deployer-image"
+            onChange={(event) => {
+              setImageTouched(true);
+              setImage(event.currentTarget.value);
+            }}
+            placeholder="image:tag"
+            value={image}
+          />
+          {visibleImageError ? (
+            <p
+              className="text-destructive text-xs leading-4"
+              id="docker-deployer-image-error"
+              role="alert"
+            >
+              {visibleImageError.message}
+            </p>
+          ) : null}
+        </DeploymentSettings.Control>
+      </DeploymentSettings.Section>
+
+      <DeploymentSettings.Section
+        description="Override the image default startup process."
+        icon={<TerminalSquare aria-hidden className="size-4" />}
+        title="Launch"
+      >
+        <div className="grid min-w-0 grid-cols-1 gap-3.5">
+          <DeploymentSettings.Field
+            htmlFor="docker-deployer-command"
+            label="Command"
+          >
+            <AppTextarea
               disabled={busy}
-              id="docker-deployer-image"
-              onChange={(event) => {
-                setImageTouched(true);
-                setImage(event.currentTarget.value);
-              }}
-              placeholder="image:tag"
-              value={image}
+              id="docker-deployer-command"
+              onChange={(event) => setCommandText(event.currentTarget.value)}
+              placeholder="/app/server"
+              value={commandText}
             />
-            {visibleImageError ? (
-              <p
-                className="text-destructive text-xs leading-4"
-                id="docker-deployer-image-error"
-                role="alert"
-              >
-                {visibleImageError.message}
-              </p>
-            ) : null}
-          </DeploymentSettings.Control>
-        </DeploymentSettings.Section>
-
-        <DeploymentSettings.Section
-          description="Override the image default startup process."
-          icon={<TerminalSquare aria-hidden className="size-4" />}
-          title="Launch"
-        >
-          <div className="grid min-w-0 grid-cols-1 gap-3.5">
-            <DeploymentSettings.Field
-              htmlFor="docker-deployer-command"
-              label="Command"
-            >
-              <AppTextarea
-                disabled={busy}
-                id="docker-deployer-command"
-                onChange={(event) => setCommandText(event.currentTarget.value)}
-                placeholder="/app/server"
-                value={commandText}
-              />
-            </DeploymentSettings.Field>
-            <DeploymentSettings.Field
-              htmlFor="docker-deployer-args"
-              label="Args"
-            >
-              <AppTextarea
-                disabled={busy}
-                id="docker-deployer-args"
-                onChange={(event) => setArgsText(event.currentTarget.value)}
-                placeholder={"--config\n/etc/app/config.yaml"}
-                value={argsText}
-              />
-            </DeploymentSettings.Field>
-          </div>
-        </DeploymentSettings.Section>
-
-        <DeploymentSettings.Section
-          action={
-            <AppButton
-              aria-label="Add environment variable"
+          </DeploymentSettings.Field>
+          <DeploymentSettings.Field htmlFor="docker-deployer-args" label="Args">
+            <AppTextarea
               disabled={busy}
-              onClick={() =>
-                setEnvRows((rows) => [
-                  ...rows,
-                  {
-                    id: createEnvRowId(),
-                    name: nextEnvName(rows),
-                    value: "",
-                  },
-                ])
-              }
-              size="default"
-              type="button"
-              variant="secondary"
-            >
-              <Plus aria-hidden />
-              Add
-            </AppButton>
-          }
-          description="Set direct environment variables for startup."
-          icon={<Settings2 aria-hidden className="size-4" />}
-          title="Runtime"
-        >
-          {envRows.length === 0 ? null : (
-            <div
-              className="flex min-w-0 flex-col gap-2"
-              data-slot="docker-env-rows"
-            >
-              {envRows.map((row, index) => {
-                const rowError = envErrorForIndex(validation, index);
-                return (
-                  <div
-                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2.5"
-                    key={row.id}
+              id="docker-deployer-args"
+              onChange={(event) => setArgsText(event.currentTarget.value)}
+              placeholder={"--config\n/etc/app/config.yaml"}
+              value={argsText}
+            />
+          </DeploymentSettings.Field>
+        </div>
+      </DeploymentSettings.Section>
+
+      <DeploymentSettings.Section
+        action={
+          <AppButton
+            aria-label="Add environment variable"
+            disabled={busy}
+            onClick={() =>
+              setEnvRows((rows) => [
+                ...rows,
+                {
+                  id: createEnvRowId(),
+                  name: nextEnvName(rows),
+                  value: "",
+                },
+              ])
+            }
+            size="default"
+            type="button"
+            variant="secondary"
+          >
+            <Plus aria-hidden />
+            Add
+          </AppButton>
+        }
+        description="Set direct environment variables for startup."
+        icon={<Settings2 aria-hidden className="size-4" />}
+        title="Runtime"
+      >
+        {envRows.length === 0 ? null : (
+          <div
+            className="flex min-w-0 flex-col gap-2"
+            data-slot="docker-env-rows"
+          >
+            {envRows.map((row, index) => {
+              const rowError = envErrorForIndex(validation, index);
+              return (
+                <div
+                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2.5"
+                  key={row.id}
+                >
+                  <AppInput
+                    aria-invalid={rowError ? true : undefined}
+                    aria-label={`Environment variable ${index + 1} name`}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const nextName = event.currentTarget.value;
+                      setEnvRows((rows) =>
+                        rows.map((current, rowIndex) =>
+                          rowIndex === index
+                            ? { ...current, name: nextName }
+                            : current
+                        )
+                      );
+                    }}
+                    placeholder="NAME"
+                    value={row.name}
+                  />
+                  <AppInput
+                    aria-label={`Environment variable ${index + 1} value`}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
+                      setEnvRows((rows) =>
+                        rows.map((current, rowIndex) =>
+                          rowIndex === index
+                            ? { ...current, value: nextValue }
+                            : current
+                        )
+                      );
+                    }}
+                    placeholder="value"
+                    value={row.value}
+                  />
+                  <AppIconButton
+                    aria-label="Remove environment variable"
+                    disabled={busy}
+                    onClick={() =>
+                      setEnvRows((rows) =>
+                        rows.filter((_, rowIndex) => rowIndex !== index)
+                      )
+                    }
+                    size="lg"
+                    type="button"
+                    variant="danger"
                   >
+                    <Trash2 aria-hidden className="size-4" />
+                  </AppIconButton>
+                  {rowError ? (
+                    <p className="col-span-3 text-destructive text-xs leading-4">
+                      {rowError.message}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DeploymentSettings.Section>
+
+      <DeploymentSettings.Section
+        action={
+          <AppButton
+            aria-label="Add config file"
+            disabled={busy}
+            onClick={() =>
+              setConfigMapRows((rows) => [
+                ...rows,
+                {
+                  id: createConfigMapRowId(),
+                  path: "/etc/app/config.yaml",
+                  value: "",
+                },
+              ])
+            }
+            size="default"
+            type="button"
+            variant="secondary"
+          >
+            <Plus aria-hidden />
+            Add
+          </AppButton>
+        }
+        description="Mount file contents into the container."
+        icon={<ScrollText aria-hidden className="size-4" />}
+        title="Config Files"
+      >
+        {configMapRows.length === 0 ? null : (
+          <div className="flex min-w-0 flex-col gap-4">
+            {configMapRows.map((row, index) => {
+              const rowError = rowErrorForIndex(
+                validation,
+                "configMaps",
+                index
+              );
+              return (
+                <div className="flex min-w-0 flex-col gap-2" key={row.id}>
+                  <div className="flex min-w-0 items-center gap-2.5">
                     <AppInput
                       aria-invalid={rowError ? true : undefined}
-                      aria-label={`Environment variable ${index + 1} name`}
-                      disabled={busy}
-                      onChange={(event) => {
-                        const nextName = event.currentTarget.value;
-                        setEnvRows((rows) =>
-                          rows.map((current, rowIndex) =>
-                            rowIndex === index
-                              ? { ...current, name: nextName }
-                              : current
-                          )
-                        );
-                      }}
-                      placeholder="NAME"
-                      value={row.name}
-                    />
-                    <AppInput
-                      aria-label={`Environment variable ${index + 1} value`}
-                      disabled={busy}
-                      onChange={(event) => {
-                        const nextValue = event.currentTarget.value;
-                        setEnvRows((rows) =>
-                          rows.map((current, rowIndex) =>
-                            rowIndex === index
-                              ? { ...current, value: nextValue }
-                              : current
-                          )
-                        );
-                      }}
-                      placeholder="value"
-                      value={row.value}
-                    />
-                    <AppIconButton
-                      aria-label="Remove environment variable"
-                      disabled={busy}
-                      onClick={() =>
-                        setEnvRows((rows) =>
-                          rows.filter((_, rowIndex) => rowIndex !== index)
-                        )
-                      }
-                      size="lg"
-                      type="button"
-                      variant="danger"
-                    >
-                      <Trash2 aria-hidden className="size-4" />
-                    </AppIconButton>
-                    {rowError ? (
-                      <p className="col-span-3 text-destructive text-xs leading-4">
-                        {rowError.message}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </DeploymentSettings.Section>
-
-        <DeploymentSettings.Section
-          action={
-            <AppButton
-              aria-label="Add config file"
-              disabled={busy}
-              onClick={() =>
-                setConfigMapRows((rows) => [
-                  ...rows,
-                  {
-                    id: createConfigMapRowId(),
-                    path: "/etc/app/config.yaml",
-                    value: "",
-                  },
-                ])
-              }
-              size="default"
-              type="button"
-              variant="secondary"
-            >
-              <Plus aria-hidden />
-              Add
-            </AppButton>
-          }
-          description="Mount file contents into the container."
-          icon={<ScrollText aria-hidden className="size-4" />}
-          title="Config Files"
-        >
-          {configMapRows.length === 0 ? null : (
-            <div className="flex min-w-0 flex-col gap-4">
-              {configMapRows.map((row, index) => {
-                const rowError = rowErrorForIndex(
-                  validation,
-                  "configMaps",
-                  index
-                );
-                return (
-                  <div className="flex min-w-0 flex-col gap-2" key={row.id}>
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <AppInput
-                        aria-invalid={rowError ? true : undefined}
-                        aria-label={`Config file ${index + 1} path`}
-                        className="font-mono"
-                        disabled={busy}
-                        onChange={(event) => {
-                          const path = event.currentTarget.value;
-                          setConfigMapRows((rows) =>
-                            rows.map((current, rowIndex) =>
-                              rowIndex === index
-                                ? { ...current, path }
-                                : current
-                            )
-                          );
-                        }}
-                        placeholder="/etc/app/config.yaml"
-                        value={row.path}
-                      />
-                      <AppIconButton
-                        aria-label="Remove config file"
-                        disabled={busy}
-                        onClick={() =>
-                          setConfigMapRows((rows) =>
-                            rows.filter((_, rowIndex) => rowIndex !== index)
-                          )
-                        }
-                        size="lg"
-                        type="button"
-                        variant="danger"
-                      >
-                        <Trash2 aria-hidden className="size-4" />
-                      </AppIconButton>
-                    </div>
-                    <AppTextarea
-                      aria-label={`Config file ${index + 1} value`}
-                      className="min-h-28 font-mono"
-                      disabled={busy}
-                      onChange={(event) => {
-                        const value = event.currentTarget.value;
-                        setConfigMapRows((rows) =>
-                          rows.map((current, rowIndex) =>
-                            rowIndex === index ? { ...current, value } : current
-                          )
-                        );
-                      }}
-                      placeholder="file contents"
-                      value={row.value}
-                    />
-                    {rowError ? (
-                      <p className="text-destructive text-xs leading-4">
-                        {rowError.message}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </DeploymentSettings.Section>
-
-        <DeploymentSettings.Section
-          action={
-            <AppButton
-              aria-label="Add storage mount"
-              disabled={busy}
-              onClick={() =>
-                setStorageRows((rows) => [
-                  ...rows,
-                  { id: createStorageRowId(), path: "/data", size: "1Gi" },
-                ])
-              }
-              size="default"
-              type="button"
-              variant="secondary"
-            >
-              <Plus aria-hidden />
-              Add
-            </AppButton>
-          }
-          description="Persist data at container paths."
-          icon={<HardDrive aria-hidden className="size-4" />}
-          title="Storage"
-        >
-          {storageRows.length === 0 ? null : (
-            <div className="flex min-w-0 flex-col gap-2">
-              {storageRows.map((row, index) => {
-                const rowError = rowErrorForIndex(validation, "storage", index);
-                const sizeError = rowError?.type === "invalid-storage-size";
-                return (
-                  <div
-                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem_2.25rem] gap-2.5"
-                    key={row.id}
-                  >
-                    <AppInput
-                      aria-invalid={rowError && !sizeError ? true : undefined}
-                      aria-label={`Storage ${index + 1} path`}
+                      aria-label={`Config file ${index + 1} path`}
+                      className="font-mono"
                       disabled={busy}
                       onChange={(event) => {
                         const path = event.currentTarget.value;
-                        setStorageRows((rows) =>
+                        setConfigMapRows((rows) =>
                           rows.map((current, rowIndex) =>
                             rowIndex === index ? { ...current, path } : current
                           )
                         );
                       }}
-                      placeholder="/data"
+                      placeholder="/etc/app/config.yaml"
                       value={row.path}
                     />
-                    <StorageSizeInput
-                      aria-invalid={sizeError ? true : undefined}
-                      aria-label={`Storage ${index + 1} size`}
-                      disabled={busy}
-                      onChange={(size) => {
-                        setStorageRows((rows) =>
-                          rows.map((current, rowIndex) =>
-                            rowIndex === index ? { ...current, size } : current
-                          )
-                        );
-                      }}
-                      value={row.size}
-                    />
                     <AppIconButton
-                      aria-label="Remove storage mount"
+                      aria-label="Remove config file"
                       disabled={busy}
                       onClick={() =>
-                        setStorageRows((rows) =>
+                        setConfigMapRows((rows) =>
                           rows.filter((_, rowIndex) => rowIndex !== index)
                         )
                       }
@@ -557,88 +581,248 @@ export function DockerDeployer({
                     >
                       <Trash2 aria-hidden className="size-4" />
                     </AppIconButton>
-                    {rowError ? (
-                      <p className="col-span-3 text-destructive text-xs leading-4">
-                        {rowError.message}
-                      </p>
-                    ) : null}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </DeploymentSettings.Section>
-
-        <DeploymentSettings.Section
-          description="Request public routing to the port where the app listens."
-          icon={<Network aria-hidden className="size-4" />}
-          title="Network"
-        >
-          <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-            <DeploymentSettings.Field
-              htmlFor="docker-deployer-port"
-              label="App Listening Port"
-            >
-              <AppInput
-                aria-describedby={
-                  portError ? "docker-deployer-port-error" : undefined
-                }
-                aria-invalid={portError ? true : undefined}
-                disabled={busy}
-                id="docker-deployer-port"
-                inputMode="numeric"
-                max={65_535}
-                min={1}
-                onChange={(event) =>
-                  setAppListeningPort(event.currentTarget.value)
-                }
-                type="number"
-                value={appListeningPort}
-              />
-              {portError ? (
-                <p
-                  className="text-destructive text-xs leading-4"
-                  id="docker-deployer-port-error"
-                  role="alert"
-                >
-                  {portError.message}
-                </p>
-              ) : null}
-            </DeploymentSettings.Field>
-            <DeploymentSettings.Field label="Public Address">
-              <AppInput
-                aria-label="Public Address"
-                disabled
-                readOnly
-                value="Auto-generated Public Address"
-              />
-            </DeploymentSettings.Field>
+                  <AppTextarea
+                    aria-label={`Config file ${index + 1} value`}
+                    className="min-h-28 font-mono"
+                    disabled={busy}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
+                      setConfigMapRows((rows) =>
+                        rows.map((current, rowIndex) =>
+                          rowIndex === index ? { ...current, value } : current
+                        )
+                      );
+                    }}
+                    placeholder="file contents"
+                    value={row.value}
+                  />
+                  {rowError ? (
+                    <p className="text-destructive text-xs leading-4">
+                      {rowError.message}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
-        </DeploymentSettings.Section>
-
-        {childrenBeforeDeploy}
-      </div>
-
-      <AppButton
-        aria-busy={busy}
-        aria-label="Deploy Docker image"
-        className="w-full"
-        disabled={!canDeploy}
-        onClick={async () => {
-          if (!canDeploy) {
-            return;
-          }
-          await onDeploy?.(normalizeDockerDeploymentSettings(settings));
-        }}
-        type="button"
-      >
-        {busy ? (
-          <Spinner aria-hidden className="size-4 shrink-0" />
-        ) : (
-          <Rocket aria-hidden className="size-4 shrink-0" />
         )}
-        {busy ? "Deploying" : deployLabel}
-      </AppButton>
+      </DeploymentSettings.Section>
+
+      <DeploymentSettings.Section
+        action={
+          <AppButton
+            aria-label="Add storage mount"
+            disabled={busy}
+            onClick={() =>
+              setStorageRows((rows) => [
+                ...rows,
+                { id: createStorageRowId(), path: "/data", size: "1Gi" },
+              ])
+            }
+            size="default"
+            type="button"
+            variant="secondary"
+          >
+            <Plus aria-hidden />
+            Add
+          </AppButton>
+        }
+        description="Persist data at container paths."
+        icon={<HardDrive aria-hidden className="size-4" />}
+        title="Storage"
+      >
+        {storageRows.length === 0 ? null : (
+          <div className="flex min-w-0 flex-col gap-2">
+            {storageRows.map((row, index) => {
+              const rowError = rowErrorForIndex(validation, "storage", index);
+              const sizeError = rowError?.type === "invalid-storage-size";
+              return (
+                <div
+                  className="grid min-w-0 grid-cols-[minmax(0,1fr)_8rem_2.25rem] gap-2.5"
+                  key={row.id}
+                >
+                  <AppInput
+                    aria-invalid={rowError && !sizeError ? true : undefined}
+                    aria-label={`Storage ${index + 1} path`}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const path = event.currentTarget.value;
+                      setStorageRows((rows) =>
+                        rows.map((current, rowIndex) =>
+                          rowIndex === index ? { ...current, path } : current
+                        )
+                      );
+                    }}
+                    placeholder="/data"
+                    value={row.path}
+                  />
+                  <StorageSizeInput
+                    aria-invalid={sizeError ? true : undefined}
+                    aria-label={`Storage ${index + 1} size`}
+                    disabled={busy}
+                    onChange={(size) => {
+                      setStorageRows((rows) =>
+                        rows.map((current, rowIndex) =>
+                          rowIndex === index ? { ...current, size } : current
+                        )
+                      );
+                    }}
+                    value={row.size}
+                  />
+                  <AppIconButton
+                    aria-label="Remove storage mount"
+                    disabled={busy}
+                    onClick={() =>
+                      setStorageRows((rows) =>
+                        rows.filter((_, rowIndex) => rowIndex !== index)
+                      )
+                    }
+                    size="lg"
+                    type="button"
+                    variant="danger"
+                  >
+                    <Trash2 aria-hidden className="size-4" />
+                  </AppIconButton>
+                  {rowError ? (
+                    <p className="col-span-3 text-destructive text-xs leading-4">
+                      {rowError.message}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </DeploymentSettings.Section>
+
+      <DeploymentSettings.Section
+        description="Request public routing to the port where the app listens."
+        icon={<Network aria-hidden className="size-4" />}
+        title="Network"
+      >
+        <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <DeploymentSettings.Field
+            htmlFor="docker-deployer-port"
+            label="App Listening Port"
+          >
+            <AppInput
+              aria-describedby={
+                portError ? "docker-deployer-port-error" : undefined
+              }
+              aria-invalid={portError ? true : undefined}
+              disabled={busy}
+              id="docker-deployer-port"
+              inputMode="numeric"
+              max={65_535}
+              min={1}
+              onChange={(event) =>
+                setAppListeningPort(event.currentTarget.value)
+              }
+              type="number"
+              value={appListeningPort}
+            />
+            {portError ? (
+              <p
+                className="text-destructive text-xs leading-4"
+                id="docker-deployer-port-error"
+                role="alert"
+              >
+                {portError.message}
+              </p>
+            ) : null}
+          </DeploymentSettings.Field>
+          <DeploymentSettings.Field label="Public Address">
+            <AppInput
+              aria-label="Public Address"
+              disabled
+              readOnly
+              value="Auto-generated Public Address"
+            />
+          </DeploymentSettings.Field>
+        </div>
+      </DeploymentSettings.Section>
+
+      {children}
     </div>
   );
 }
+
+/** Separately placeable Deploy action; hosts decide where it lands. */
+function DockerDeployerSubmit({
+  className,
+  label = "Deploy",
+}: {
+  className?: string;
+  label?: string;
+}) {
+  const { busy, canDeploy, requestDeploy } = useDockerDeployer();
+  return (
+    <AppButton
+      aria-busy={busy}
+      aria-label="Deploy Docker image"
+      className={className}
+      disabled={!canDeploy}
+      onClick={async () => {
+        await requestDeploy();
+      }}
+      type="button"
+    >
+      {busy ? (
+        <Spinner aria-hidden className="size-4 shrink-0" />
+      ) : (
+        <Rocket aria-hidden className="size-4 shrink-0" />
+      )}
+      {busy ? "Deploying" : label}
+    </AppButton>
+  );
+}
+
+/** Assembled default form: sections with an inline full-width Deploy action. */
+function DockerDeployerForm({
+  busy = false,
+  childrenBeforeDeploy,
+  className,
+  deployLabel = "Deploy",
+  initialSettings,
+  onDeploy,
+}: {
+  busy?: boolean;
+  childrenBeforeDeploy?: ReactNode;
+  className?: string;
+  deployLabel?: string;
+  /** Prefill (US10): any subset; missing fields fall back to defaults. */
+  initialSettings?: Partial<DockerDeploymentSettings>;
+  onDeploy?: (settings: DockerDeploymentSettings) => void | Promise<void>;
+}) {
+  return (
+    <DockerDeployerRoot
+      busy={busy}
+      initialSettings={initialSettings}
+      onDeploy={onDeploy}
+    >
+      <div
+        className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
+        data-slot="docker-deployer"
+      >
+        <DockerDeployerFields>{childrenBeforeDeploy}</DockerDeployerFields>
+        <DockerDeployerSubmit className="w-full" label={deployLabel} />
+      </div>
+    </DockerDeployerRoot>
+  );
+}
+
+DockerDeployerRoot.displayName = "DockerDeployer.Root";
+DockerDeployerFields.displayName = "DockerDeployer.Fields";
+DockerDeployerSubmit.displayName = "DockerDeployer.Submit";
+
+/**
+ * Compound Docker deployment form. The assembled component keeps the inline
+ * submit for hosts without pane chrome; pane hosts compose `Root` + `Fields`
+ * and place `Submit` in the Side Pane Footer (ADR 0060).
+ */
+export const DockerDeployer = Object.assign(DockerDeployerForm, {
+  Fields: DockerDeployerFields,
+  Root: DockerDeployerRoot,
+  Submit: DockerDeployerSubmit,
+});

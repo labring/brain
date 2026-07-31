@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { render } from "@testing-library/react/pure";
 import { DATABASE_CONNECTION_MASK } from "@workspace/ui/components/database-node/database-node";
+import { SidePane } from "@workspace/ui/components/side-pane";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -129,6 +130,81 @@ test("database settings pane renders shared draft actions", () => {
 
   assert.match(html, UPDATE_BUTTON_RE);
   assert.match(html, DISCARD_BUTTON_RE);
+});
+
+test("database settings pane delivers the draft footer through the side pane footer slot", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <SidePane label="Settings pane" onClose={noop} title="Settings">
+          <DatabaseSettingsPaneContent data={BASE_DATA} onSubmitPatch={noop} />
+        </SidePane>
+      );
+    });
+    const container = rendered?.container;
+    assert.ok(container);
+    const footer = container.querySelector('[data-slot="side-pane-footer"]');
+    assert.ok(footer, "editable settings pin the draft footer in pane chrome");
+    assert.ok(
+      footer.querySelector('button[aria-label="Update database settings"]'),
+      "the pinned footer carries the Update action"
+    );
+    assert.ok(
+      footer.querySelector(
+        'button[aria-label="Discard database configuration changes"]'
+      ),
+      "the pinned footer carries the Discard action"
+    );
+    assert.equal(
+      footer.closest(".overflow-y-auto"),
+      null,
+      "the footer stays outside the scroll container"
+    );
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+test("read-only database settings pane pins no footer in pane chrome", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <SidePane label="Settings pane" onClose={noop} title="Settings">
+          <DatabaseSettingsPaneContent
+            data={{ ...BASE_DATA, settingsAccess: { readOnly: true } }}
+            onSubmitPatch={noop}
+          />
+        </SidePane>
+      );
+    });
+    const container = rendered?.container;
+    assert.ok(container);
+    assert.equal(
+      container.querySelector('[data-slot="side-pane-footer"]'),
+      null,
+      "read-only surfaces render no footer region"
+    );
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
 });
 
 test("database settings pane does not show unsaved changes for region repair only", () => {
