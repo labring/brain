@@ -1269,7 +1269,7 @@ export function DeploymentTaskTimelineActions({
   return (
     <SidePaneFooter>
       <div
-        className="flex items-center justify-end gap-2"
+        className="flex items-center justify-end gap-2.5"
         data-slot="deployment-task-actions"
       >
         <AppButton
