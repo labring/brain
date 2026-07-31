@@ -29,6 +29,7 @@ import {
   type BillingDateRange,
   loadBillingAppCosts,
 } from "@/features/billing/billing-costs-data";
+import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
@@ -65,11 +66,9 @@ export interface SelectedBillingApp extends BillingAppOverview {
   workspaceName: string;
 }
 
-interface BillingAppCostDrawerProps {
-  appToken: string;
+interface BillingAppCostDrawerProps extends BillingCredentials {
   currency: BillingCurrency;
   dateRange: BillingDateRange;
-  kubeconfig: string;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   selectedApp: SelectedBillingApp | null;

@@ -27,6 +27,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
+import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import {
   type BillingPlanSnapshot,
   cancelSubscriptionInvoice,
@@ -48,19 +49,14 @@ interface CheckoutWindowHandle {
   navigate: (url: string) => void;
 }
 
-interface BillingPlanChangeCredentials {
-  appToken: string;
-  kubeconfig: string;
-}
-
-interface UpgradeQuoteInput extends BillingPlanChangeCredentials {
+interface UpgradeQuoteInput extends BillingCredentials {
   planName: string;
   promotionCode?: string;
   regionDomain: string;
   workspace: string;
 }
 
-interface PlanPaymentInput extends BillingPlanChangeCredentials {
+interface PlanPaymentInput extends BillingCredentials {
   operator: "downgraded" | "renewed" | "upgraded";
   planName: string;
   promotionCode?: string;
@@ -68,7 +64,7 @@ interface PlanPaymentInput extends BillingPlanChangeCredentials {
   workspace: string;
 }
 
-interface PlanWorkspaceInput extends BillingPlanChangeCredentials {
+interface PlanWorkspaceInput extends BillingCredentials {
   regionDomain: string;
   workspace: string;
 }
@@ -125,7 +121,7 @@ function scheduleBrowserPoll(callback: () => void, delay: number): () => void {
 }
 
 interface BillingPlanChangeDialogProps {
-  credentials: BillingPlanChangeCredentials;
+  credentials: BillingCredentials;
   currency: BillingCurrency;
   now?: () => number;
   onOpenChange: (open: boolean) => void;
@@ -478,7 +474,7 @@ async function pollUpgradePayment({
   workspace,
 }: {
   checkoutPayId: string | null | undefined;
-  credentials: BillingPlanChangeCredentials;
+  credentials: BillingCredentials;
   elapsedMs: number;
   onSubscriptionChanged: () => Promise<void>;
   paymentTimeoutMs: number;

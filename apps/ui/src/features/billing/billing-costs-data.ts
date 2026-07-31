@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
+import {
+  type BillingCredentials,
+  type BillingFetch,
+  createBillingJsonRequester,
+} from "./billing-data-client";
 
 const workspaceSchema = z.tuple([z.string(), z.string()]);
 const appOverviewSchema = z.object({
@@ -78,11 +82,6 @@ const appCostsResponseSchema = z.object({
   }),
 });
 
-type BillingFetch = (
-  input: RequestInfo | URL,
-  init?: RequestInit
-) => Promise<Response>;
-
 export interface BillingDateRange {
   endTime: string;
   startTime: string;
@@ -106,21 +105,17 @@ export function calendarBillingDateRange(input: {
   return { endTime: end.toISOString(), startTime: start.toISOString() };
 }
 
-export interface LoadBillingCostsInput {
-  appToken: string;
+export interface LoadBillingCostsInput extends BillingCredentials {
   dateRange: BillingDateRange;
-  kubeconfig: string;
   page: number;
   pageSize: number;
   workspace: string | null;
 }
 
-export interface LoadBillingAppCostsInput {
+export interface LoadBillingAppCostsInput extends BillingCredentials {
   appName: string;
-  appToken: string;
   appType: string;
   dateRange: BillingDateRange;
-  kubeconfig: string;
   namespace: string;
   page: number;
   pageSize: number;
@@ -328,60 +323,19 @@ export function buildWorkspaceCostBreakdown(input: {
   });
 }
 
-function responseErrorMessage(payload: unknown): string {
-  if (
-    typeof payload === "object" &&
-    payload != null &&
-    "error" in payload &&
-    typeof payload.error === "string" &&
-    payload.error.trim() !== ""
-  ) {
-    return payload.error.trim();
-  }
-  return "Could not load billing costs.";
-}
-
-async function postBilling<TSchema extends z.ZodType>(
-  pathname: string,
-  body: Record<string, unknown>,
-  schema: TSchema,
-  credentials: { appToken: string; kubeconfig: string },
-  fetch: BillingFetch
-): Promise<z.infer<TSchema>> {
-  const response = await fetch(pathname, {
-    body: JSON.stringify(body),
-    cache: "no-store",
-    headers: {
-      ...personalResourceAuthHeaders(credentials),
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(responseErrorMessage(payload));
-  }
-  const parsed = schema.safeParse(payload);
-  if (!parsed.success) {
-    throw new Error("Billing costs response is invalid.");
-  }
-  return parsed.data;
-}
-
-async function getBilling<TSchema extends z.ZodType>(
+async function requestBillingCosts<TSchema extends z.ZodType>(
   pathname: string,
   schema: TSchema,
-  credentials: { appToken: string; kubeconfig: string },
-  fetch: BillingFetch
+  credentials: BillingCredentials,
+  fetch: BillingFetch,
+  body?: Record<string, unknown>
 ): Promise<z.infer<TSchema>> {
-  const response = await fetch(pathname, {
-    cache: "no-store",
-    headers: personalResourceAuthHeaders(credentials),
+  const requestBillingJson = createBillingJsonRequester({
+    credentials,
+    fallbackErrorMessage: "Could not load billing costs.",
+    fetch,
   });
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(responseErrorMessage(payload));
-  }
+  const payload = await requestBillingJson(pathname, body);
   const parsed = schema.safeParse(payload);
   if (!parsed.success) {
     throw new Error("Billing costs response is invalid.");
@@ -393,8 +347,11 @@ export async function loadBillingAppCosts(
   input: LoadBillingAppCostsInput,
   fetch: BillingFetch = globalThis.fetch
 ): Promise<BillingAppCostsPage> {
-  const response = await postBilling(
+  const response = await requestBillingCosts(
     "/api/billing/app-costs",
+    appCostsResponseSchema,
+    { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fetch,
     {
       appName: input.appName,
       appType: input.appType,
@@ -404,10 +361,7 @@ export async function loadBillingAppCosts(
       page: input.page,
       pageSize: input.pageSize,
       startTime: input.dateRange.startTime,
-    },
-    appCostsResponseSchema,
-    { appToken: input.appToken, kubeconfig: input.kubeconfig },
-    fetch
+    }
   );
   return {
     costs: response.app_costs.costs,
@@ -440,42 +394,45 @@ export async function loadBillingCosts(
     costs,
     payments,
   ] = await Promise.all([
-    getBilling(
+    requestBillingCosts(
       "/api/billing/regions",
       regionsResponseSchema,
       credentials,
       fetch
     ),
-    postBilling(
+    requestBillingCosts(
       "/api/billing/app-types",
-      {},
       appTypesResponseSchema,
       credentials,
-      fetch
+      fetch,
+      {}
     ),
-    postBilling(
+    requestBillingCosts(
       "/api/billing/consumption",
-      { ...range, appName: "", appType: "", namespace: "" },
       consumptionResponseSchema,
       credentials,
-      fetch
+      fetch,
+      { ...range, appName: "", appType: "", namespace: "" }
     ),
-    postBilling(
+    requestBillingCosts(
       "/api/billing/workspace-consumption",
-      range,
       workspaceConsumptionResponseSchema,
       credentials,
-      fetch
+      fetch,
+      range
     ),
-    postBilling(
+    requestBillingCosts(
       "/api/billing/workspaces",
-      { ...range, type: 0 },
       workspacesResponseSchema,
       credentials,
-      fetch
+      fetch,
+      { ...range, type: 0 }
     ),
-    postBilling(
+    requestBillingCosts(
       "/api/billing/app-overview",
+      appOverviewResponseSchema,
+      credentials,
+      fetch,
       {
         ...range,
         appName: "",
@@ -483,24 +440,21 @@ export async function loadBillingCosts(
         namespace: input.workspace ?? "",
         page: input.page,
         pageSize: input.pageSize,
-      },
-      appOverviewResponseSchema,
-      credentials,
-      fetch
+      }
     ),
-    postBilling(
+    requestBillingCosts(
       "/api/billing/costs",
-      range,
       costsResponseSchema,
       credentials,
-      fetch
+      fetch,
+      range
     ),
-    postBilling(
+    requestBillingCosts(
       "/api/billing/payments",
-      range,
       paymentsResponseSchema,
       credentials,
-      fetch
+      fetch,
+      range
     ),
   ]);
   const region = regions.regions[0];

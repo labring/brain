@@ -2,6 +2,7 @@ import { Quantity, Scale } from "@workspace/shared";
 import { z } from "zod";
 
 import {
+  type BillingCredentials,
   type BillingFetch,
   createBillingJsonRequester,
 } from "./billing-data-client";
@@ -118,11 +119,7 @@ function quotaRows(
 }
 
 export async function loadBillingUsage(
-  input: {
-    appToken: string;
-    kubeconfig: string;
-    workspace: string;
-  },
+  input: BillingCredentials & { workspace: string },
   dependencies: BillingUsageDependencies = {}
 ): Promise<BillingUsageSnapshot> {
   const fetch = dependencies.fetch ?? globalThis.fetch;

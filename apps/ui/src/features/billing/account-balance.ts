@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
-import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
+import {
+  type BillingFetch,
+  createBillingJsonRequester,
+} from "./billing-data-client";
 import type { BillingCurrency } from "./config-core";
 
 const accountBalanceResponseSchema = z.object({
@@ -11,27 +14,9 @@ const accountBalanceResponseSchema = z.object({
   }),
 });
 
-type BillingFetch = (
-  input: RequestInfo | URL,
-  init?: RequestInit
-) => Promise<Response>;
-
 export interface AccountBalance {
   currency: BillingCurrency;
   microUnits: number;
-}
-
-function responseErrorMessage(payload: unknown): string {
-  if (
-    typeof payload === "object" &&
-    payload != null &&
-    "error" in payload &&
-    typeof payload.error === "string" &&
-    payload.error.trim() !== ""
-  ) {
-    return payload.error.trim();
-  }
-  return "Could not load Account Balance.";
 }
 
 export async function loadAccountBalance(
@@ -42,15 +27,12 @@ export async function loadAccountBalance(
   },
   fetch: BillingFetch = globalThis.fetch
 ): Promise<AccountBalance> {
-  const response = await fetch("/api/billing/account", {
-    cache: "no-store",
-    headers: personalResourceAuthHeaders(credentials),
+  const requestBillingJson = createBillingJsonRequester({
+    credentials,
+    fallbackErrorMessage: "Could not load Account Balance.",
+    fetch,
   });
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(responseErrorMessage(payload));
-  }
-
+  const payload = await requestBillingJson("/api/billing/account");
   const parsed = accountBalanceResponseSchema.safeParse(payload);
   if (!parsed.success) {
     throw new Error("Account Balance response is invalid.");
