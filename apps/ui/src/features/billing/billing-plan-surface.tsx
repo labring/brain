@@ -35,8 +35,12 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import {
   AlertCircle,
+  ArrowDownRight,
+  ArrowRightLeft,
+  ArrowUpRight,
   CalendarClock,
   CircleCheck,
+  CircleX,
   CreditCard,
   ExternalLink,
   Info,
@@ -104,10 +108,15 @@ function isNearFutureExpiry(value: string): boolean {
 
 function BillingPlanNotices({
   current,
+  invoiceCancellationPending,
+  onCancelInvoice,
 }: {
   current: BillingPlanSnapshot["current"];
+  invoiceCancellationPending: boolean;
+  onCancelInvoice?: (invoiceId: string) => void;
 }) {
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
+  const invoiceId = current.invoiceId;
 
   return (
     <div className="flex flex-col gap-3" data-slot="billing-plan-notices">
@@ -121,15 +130,31 @@ function BillingPlanNotices({
           <AlertDescription>
             Complete payment to keep this workspace active.
           </AlertDescription>
-          <AlertAction className="static col-start-2 row-start-3 mt-2 justify-self-start sm:absolute sm:mt-0">
+          <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
             <a
               className={appButtonVariants({ size: "sm", variant: "danger" })}
               href={current.invoicePaymentUrl}
               rel="noreferrer"
               target="_blank"
             >
+              <ExternalLink aria-hidden data-icon="inline-start" />
               Pay invoice
             </a>
+            {current.canManage &&
+            invoiceId != null &&
+            onCancelInvoice != null ? (
+              <AppButton
+                disabled={invoiceCancellationPending}
+                onClick={() => onCancelInvoice(invoiceId)}
+                size="sm"
+                variant="secondary"
+              >
+                <CircleX aria-hidden data-icon="inline-start" />
+                {invoiceCancellationPending
+                  ? "Cancelling..."
+                  : "Cancel invoice"}
+              </AppButton>
+            ) : null}
           </AlertAction>
         </Alert>
       )}
@@ -208,13 +233,126 @@ function BillingPaymentMethod({
   );
 }
 
+function BillingPlanActions({
+  actionPending,
+  current,
+  onLifecycleAction,
+  onPlanChange,
+  onRenew,
+  renewalPending,
+}: {
+  actionPending: SubscriptionLifecycleAction | null;
+  current: BillingPlanSnapshot["current"];
+  onLifecycleAction?: (operator: SubscriptionLifecycleAction) => void;
+  onPlanChange?: (planId: string | null) => void;
+  onRenew?: () => void;
+  renewalPending: boolean;
+}) {
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  if (!current.canManage) {
+    return null;
+  }
+
+  const isFreePlan = current.planName.trim().toLowerCase() === "free";
+  const canResume = current.lifecycle === "cancelling";
+  const canRenew = current.lifecycle === "payment-due";
+  const canCancel =
+    (current.lifecycle === "active" ||
+      current.lifecycle === "pending-upgrade") &&
+    !isFreePlan;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {canRenew ? (
+        <AppButton
+          disabled={renewalPending || actionPending != null}
+          onClick={onRenew}
+          size="lg"
+        >
+          <CreditCard aria-hidden data-icon="inline-start" />
+          {renewalPending ? "Opening..." : "Renew subscription"}
+        </AppButton>
+      ) : null}
+      <AppButton
+        disabled={actionPending != null}
+        onClick={() => onPlanChange?.(null)}
+        size="lg"
+        variant="secondary"
+      >
+        <ArrowRightLeft aria-hidden data-icon="inline-start" />
+        Change plan
+      </AppButton>
+      {canResume ? (
+        <AppButton
+          disabled={actionPending != null}
+          onClick={() => onLifecycleAction?.("resumed")}
+          size="lg"
+        >
+          <RotateCcw aria-hidden data-icon="inline-start" />
+          {actionPending === "resumed" ? "Resuming..." : "Resume subscription"}
+        </AppButton>
+      ) : null}
+      {canCancel ? (
+        <AlertDialog
+          onOpenChange={setCancelDialogOpen}
+          open={cancelDialogOpen}
+          triggerId="billing-cancel-subscription-trigger"
+        >
+          <AlertDialogTrigger
+            className={cn(
+              appButtonVariants({ size: "lg", variant: "secondary" }),
+              "cursor-pointer"
+            )}
+            disabled={actionPending != null}
+            id="billing-cancel-subscription-trigger"
+          >
+            Cancel subscription
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancel subscription?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {current.planName} remains active until{" "}
+                {formatDate(current.currentPeriodEndAt)}. You can resume it
+                before then.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={actionPending != null}>
+                Keep subscription
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={actionPending != null}
+                onClick={() => {
+                  setCancelDialogOpen(false);
+                  onLifecycleAction?.("canceled");
+                }}
+                variant="destructive"
+              >
+                {actionPending === "canceled"
+                  ? "Cancelling..."
+                  : "Cancel subscription"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
+    </div>
+  );
+}
+
 interface BillingPlanSurfaceProps {
   actionPending?: SubscriptionLifecycleAction | null;
   balance: ReactNode;
   cardManagementPending?: boolean;
   currency: BillingCurrency;
+  invoiceCancellationPending?: boolean;
+  onCancelInvoice?: (invoiceId: string) => void;
   onLifecycleAction?: (operator: SubscriptionLifecycleAction) => void;
   onManageCard?: () => void;
+  onPlanChange?: (planId: string | null) => void;
+  onRenew?: () => void;
+  renewalPending?: boolean;
   snapshot: BillingPlanSnapshot;
 }
 
@@ -223,23 +361,25 @@ export function BillingPlanSurface({
   balance,
   cardManagementPending = false,
   currency,
+  invoiceCancellationPending = false,
+  onCancelInvoice,
   onLifecycleAction,
   onManageCard,
+  onPlanChange,
+  onRenew,
+  renewalPending = false,
   snapshot,
 }: BillingPlanSurfaceProps) {
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const { current } = snapshot;
-  const isFreePlan = current.planName.trim().toLowerCase() === "free";
-  const canResume = current.lifecycle === "cancelling";
-  const canCancel =
-    (current.lifecycle === "active" ||
-      current.lifecycle === "pending-upgrade") &&
-    !isFreePlan;
   const lifecycleMetadata = LIFECYCLE_METADATA[current.lifecycle];
 
   return (
     <div className="flex flex-col gap-8 pb-16" data-slot="billing-plan-surface">
-      <BillingPlanNotices current={current} />
+      <BillingPlanNotices
+        current={current}
+        invoiceCancellationPending={invoiceCancellationPending}
+        onCancelInvoice={onCancelInvoice}
+      />
 
       <section
         className="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xs"
@@ -266,69 +406,14 @@ export function BillingPlanSurface({
               </div>
             </div>
 
-            {current.canManage ? (
-              <div className="flex flex-wrap gap-2">
-                {canResume ? (
-                  <AppButton
-                    disabled={actionPending != null}
-                    onClick={() => onLifecycleAction?.("resumed")}
-                    size="lg"
-                  >
-                    <RotateCcw aria-hidden data-icon="inline-start" />
-                    {actionPending === "resumed"
-                      ? "Resuming..."
-                      : "Resume subscription"}
-                  </AppButton>
-                ) : null}
-                {canCancel ? (
-                  <AlertDialog
-                    onOpenChange={setCancelDialogOpen}
-                    open={cancelDialogOpen}
-                    triggerId="billing-cancel-subscription-trigger"
-                  >
-                    <AlertDialogTrigger
-                      className={cn(
-                        appButtonVariants({ size: "lg", variant: "secondary" }),
-                        "cursor-pointer"
-                      )}
-                      disabled={actionPending != null}
-                      id="billing-cancel-subscription-trigger"
-                    >
-                      Cancel subscription
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          Cancel subscription?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {current.planName} remains active until{" "}
-                          {formatDate(current.currentPeriodEndAt)}. You can
-                          resume it before then.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel disabled={actionPending != null}>
-                          Keep subscription
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                          disabled={actionPending != null}
-                          onClick={() => {
-                            setCancelDialogOpen(false);
-                            onLifecycleAction?.("canceled");
-                          }}
-                          variant="destructive"
-                        >
-                          {actionPending === "canceled"
-                            ? "Cancelling..."
-                            : "Cancel subscription"}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                ) : null}
-              </div>
-            ) : null}
+            <BillingPlanActions
+              actionPending={actionPending}
+              current={current}
+              onLifecycleAction={onLifecycleAction}
+              onPlanChange={onPlanChange}
+              onRenew={onRenew}
+              renewalPending={renewalPending}
+            />
           </div>
 
           <Separator />
@@ -440,6 +525,21 @@ export function BillingPlanSurface({
                   </li>
                 ))}
               </ul>
+              {current.canManage && plan.changeKind != null ? (
+                <AppButton
+                  className="mt-auto w-full"
+                  onClick={() => onPlanChange?.(plan.id)}
+                  variant="secondary"
+                >
+                  {plan.changeKind === "upgrade" ? (
+                    <ArrowUpRight aria-hidden data-icon="inline-start" />
+                  ) : (
+                    <ArrowDownRight aria-hidden data-icon="inline-start" />
+                  )}
+                  {plan.changeKind === "upgrade" ? "Upgrade" : "Downgrade"} to{" "}
+                  {plan.name}
+                </AppButton>
+              ) : null}
             </article>
           ))}
         </div>

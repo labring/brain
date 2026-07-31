@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  cancelSubscriptionInvoice,
+  checkSubscriptionDowngrade,
   createBillingCardManagementSession,
+  createSubscriptionPlanPayment,
   loadBillingPlanSnapshot,
+  loadSubscriptionTransactionStatus,
+  loadSubscriptionUpgradeQuote,
+  SubscriptionPromotionCodeError,
   updateSubscriptionLifecycle,
 } from "./billing-plan-data";
 
@@ -50,6 +56,7 @@ const RESPONSES: Record<string, unknown> = {
       {
         AIQuota: 0,
         Description: "For personal projects",
+        DowngradePlanList: [],
         ID: "plan-starter",
         MaxResources: JSON.stringify({ cpu: "1", memory: "2Gi" }),
         Name: "Starter",
@@ -57,10 +64,12 @@ const RESPONSES: Record<string, unknown> = {
         Prices: [{ BillingCycle: "1m", Price: 5_000_000 }],
         Tags: [],
         Traffic: 1024,
+        UpgradePlanList: ["Pro", "Team"],
       },
       {
         AIQuota: 10,
         Description: "For growing workloads",
+        DowngradePlanList: ["Starter"],
         ID: "plan-pro",
         MaxResources: JSON.stringify({
           cpu: "4",
@@ -72,10 +81,12 @@ const RESPONSES: Record<string, unknown> = {
         Prices: [{ BillingCycle: "1m", Price: 20_000_000 }],
         Tags: [],
         Traffic: 4096,
+        UpgradePlanList: ["Team"],
       },
       {
         AIQuota: 40,
         Description: "For larger teams",
+        DowngradePlanList: ["Starter", "Pro"],
         ID: "plan-team",
         MaxResources: JSON.stringify({ cpu: "12", memory: "24Gi" }),
         Name: "Team",
@@ -83,6 +94,7 @@ const RESPONSES: Record<string, unknown> = {
         Prices: [{ BillingCycle: "1m", Price: 50_000_000 }],
         Tags: [],
         Traffic: 8192,
+        UpgradePlanList: [],
       },
     ],
   },
@@ -102,6 +114,7 @@ const RESPONSES: Record<string, unknown> = {
       CurrentPeriodEndAt: "2026-08-31T00:00:00Z",
       ExpireAt: "2026-08-31T00:00:00Z",
       InvoiceInfo: {
+        ID: "invoice-1",
         PaymentUrl: "https://payments.example.test/invoice-1",
       },
       PayMethod: "stripe",
@@ -178,6 +191,7 @@ test("loads the verified account's Plan snapshot and aggregates recent workspace
 
   assert.equal(snapshot.current.planName, "Pro");
   assert.equal(snapshot.current.lifecycle, "cancelling");
+  assert.equal(snapshot.current.invoiceId, "invoice-1");
   assert.equal(snapshot.current.priceMicroUnits, 20_000_000);
   assert.deepEqual(snapshot.current.resources.slice(0, 3), [
     { label: "CPU", value: "4" },
@@ -190,13 +204,18 @@ test("loads the verified account's Plan snapshot and aggregates recent workspace
   });
   assert.deepEqual(snapshot.card, { brand: "visa", last4: "4242" });
   assert.deepEqual(
-    snapshot.plans.map((plan) => [plan.name, plan.isCurrent]),
+    snapshot.plans.map((plan) => [plan.name, plan.isCurrent, plan.changeKind]),
     [
-      ["Starter", false],
-      ["Pro", true],
-      ["Team", false],
+      ["Starter", false, "downgrade"],
+      ["Pro", true, null],
+      ["Team", false, "upgrade"],
     ]
   );
+  assert.deepEqual(snapshot.plans[0]?.limits, {
+    cpu: "1",
+    memory: "2Gi",
+    traffic: "1Gi",
+  });
   assert.deepEqual(
     snapshot.workspaces.map((workspace) => ({
       lifecycle: workspace.lifecycle,
@@ -233,6 +252,66 @@ test("loads the verified account's Plan snapshot and aggregates recent workspace
   });
 });
 
+test("uses plan order only when authoritative transition lists are absent", async () => {
+  const plansResponse = RESPONSES["/api/billing/plans"] as {
+    plans: Record<string, unknown>[];
+  };
+  const loadWithTransitions = (transitionLists: "absent" | "restricted") => {
+    const plans = plansResponse.plans.map((plan) => {
+      if (plan.Name !== "Pro") {
+        return plan;
+      }
+      const currentPlan = { ...plan };
+      if (transitionLists === "absent") {
+        Reflect.deleteProperty(currentPlan, "DowngradePlanList");
+        Reflect.deleteProperty(currentPlan, "UpgradePlanList");
+      } else {
+        currentPlan.DowngradePlanList = [];
+        currentPlan.UpgradePlanList = [];
+      }
+      return currentPlan;
+    });
+    return loadBillingPlanSnapshot(
+      {
+        appToken: "desktop-app-token",
+        kubeconfig: "apiVersion: v1",
+        workspace: "workspace-a",
+      },
+      {
+        fetch: (input) => {
+          const url = input.toString();
+          return Promise.resolve(
+            Response.json(
+              url === "/api/billing/plans" ? { plans } : RESPONSES[url]
+            )
+          );
+        },
+        now: () => NOW,
+      }
+    );
+  };
+
+  const restrictedSnapshot = await loadWithTransitions("restricted");
+  assert.deepEqual(
+    restrictedSnapshot.plans.map((plan) => [plan.name, plan.changeKind]),
+    [
+      ["Starter", null],
+      ["Pro", null],
+      ["Team", null],
+    ]
+  );
+
+  const fallbackSnapshot = await loadWithTransitions("absent");
+  assert.deepEqual(
+    fallbackSnapshot.plans.map((plan) => [plan.name, plan.changeKind]),
+    [
+      ["Starter", "downgrade"],
+      ["Pro", null],
+      ["Team", "upgrade"],
+    ]
+  );
+});
+
 test("updates a subscription lifecycle with verified personal-resource credentials", async () => {
   const requests: Array<{ init: RequestInit | undefined; url: string }> = [];
 
@@ -266,6 +345,243 @@ test("updates a subscription lifecycle with verified personal-resource credentia
     planName: "Pro",
     regionDomain: "us.example.test",
     workspace: "workspace-a",
+  });
+});
+
+test("loads the exact prorated upgrade amount with a promotion code", async () => {
+  let request: { init: RequestInit | undefined; url: string } | undefined;
+
+  const quote = await loadSubscriptionUpgradeQuote(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      planName: "Team",
+      promotionCode: "SAVE20",
+      regionDomain: "us.example.test",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input, init) => {
+        request = { init, url: input.toString() };
+        return Promise.resolve(
+          Response.json({
+            amount: 7_500_000,
+            has_discount: true,
+            original_amount: 9_000_000,
+            promotion_code: "SAVE20",
+          })
+        );
+      },
+    }
+  );
+
+  assert.deepEqual(quote, {
+    amountMicroUnits: 7_500_000,
+    discountMicroUnits: 1_500_000,
+    hasDiscount: true,
+    originalAmountMicroUnits: 9_000_000,
+    promotionCode: "SAVE20",
+  });
+  assert.equal(request?.url, "/api/billing/subscription/upgrade-amount");
+  assert.equal(request?.init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(request?.init?.body)), {
+    operator: "upgraded",
+    payMethod: "stripe",
+    period: "1m",
+    planName: "Team",
+    promotionCode: "SAVE20",
+    regionDomain: "us.example.test",
+    workspace: "workspace-a",
+  });
+});
+
+test("distinguishes unknown, expired, and exhausted promotion codes", async () => {
+  for (const [status, kind] of [
+    [404, "unknown"],
+    [410, "expired"],
+    [409, "exhausted"],
+  ] as const) {
+    await assert.rejects(
+      loadSubscriptionUpgradeQuote(
+        {
+          appToken: "desktop-app-token",
+          kubeconfig: "apiVersion: v1",
+          planName: "Team",
+          promotionCode: "NOPE",
+          regionDomain: "us.example.test",
+          workspace: "workspace-a",
+        },
+        {
+          fetch: () =>
+            Promise.resolve(
+              Response.json({ error: `Promotion code ${kind}` }, { status })
+            ),
+        }
+      ),
+      (error) =>
+        error instanceof SubscriptionPromotionCodeError && error.kind === kind
+    );
+  }
+});
+
+test("creates an upgrade checkout and retains its cancellation identifiers", async () => {
+  let request: { init: RequestInit | undefined; url: string } | undefined;
+
+  const checkout = await createSubscriptionPlanPayment(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      operator: "upgraded",
+      planName: "Team",
+      promotionCode: "SAVE20",
+      regionDomain: "us.example.test",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input, init) => {
+        request = { init, url: input.toString() };
+        return Promise.resolve(
+          Response.json({
+            invoiceID: "invoice-1",
+            payID: "payment-1",
+            redirectUrl: "https://checkout.stripe.test/invoice-1",
+            success: true,
+          })
+        );
+      },
+    }
+  );
+
+  assert.deepEqual(checkout, {
+    invoiceId: "invoice-1",
+    payId: "payment-1",
+    redirectUrl: "https://checkout.stripe.test/invoice-1",
+    success: true,
+  });
+  assert.equal(request?.url, "/api/billing/subscription/pay");
+  assert.deepEqual(JSON.parse(String(request?.init?.body)), {
+    operator: "upgraded",
+    payMethod: "stripe",
+    period: "1m",
+    planName: "Team",
+    promotionCode: "SAVE20",
+    regionDomain: "us.example.test",
+    workspace: "workspace-a",
+  });
+});
+
+test("cancels an unpaid upgrade invoice", async () => {
+  let request: { init: RequestInit | undefined; url: string } | undefined;
+
+  await cancelSubscriptionInvoice(
+    {
+      appToken: "desktop-app-token",
+      invoiceId: "invoice-1",
+      kubeconfig: "apiVersion: v1",
+      regionDomain: "us.example.test",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input, init) => {
+        request = { init, url: input.toString() };
+        return Promise.resolve(
+          Response.json({
+            invoice_id: "invoice-1",
+            message: "cancelled",
+            success: true,
+          })
+        );
+      },
+    }
+  );
+
+  assert.equal(request?.url, "/api/billing/subscription/invoice-cancel");
+  assert.deepEqual(JSON.parse(String(request?.init?.body)), {
+    invoiceID: "invoice-1",
+    regionDomain: "us.example.test",
+    workspace: "workspace-a",
+  });
+});
+
+test("loads the latest subscription transaction status for payment waiting", async () => {
+  let request: { init: RequestInit | undefined; url: string } | undefined;
+
+  const transaction = await loadSubscriptionTransactionStatus(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      regionDomain: "us.example.test",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input, init) => {
+        request = { init, url: input.toString() };
+        return Promise.resolve(
+          Response.json({
+            transaction: {
+              ID: "transaction-1",
+              NewPlanName: "Team",
+              Operator: "upgraded",
+              PayID: "payment-1",
+              Status: "completed",
+            },
+          })
+        );
+      },
+    }
+  );
+
+  assert.deepEqual(transaction, {
+    id: "transaction-1",
+    payId: "payment-1",
+    planName: "Team",
+    status: "completed",
+  });
+  assert.equal(request?.url, "/api/billing/subscription/last-transaction");
+  assert.deepEqual(JSON.parse(String(request?.init?.body)), {
+    regionDomain: "us.example.test",
+    workspace: "workspace-a",
+  });
+});
+
+test("blocks a downgrade when current usage exceeds the target plan", async () => {
+  const result = await checkSubscriptionDowngrade(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      limits: {
+        cpu: "1",
+        memory: "4Gi",
+        storage: "10Gi",
+        traffic: "50Gi",
+      },
+      regionDomain: "us.example.test",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: () =>
+        Promise.resolve(
+          Response.json({
+            quota: {
+              hard: {},
+              used: {
+                "limits.cpu": "1500m",
+                "limits.memory": "3Gi",
+                "requests.storage": "12Gi",
+                traffic: "25Gi",
+              },
+            },
+          })
+        ),
+    }
+  );
+
+  assert.deepEqual(result, {
+    allowed: false,
+    exceededResources: [
+      { label: "CPU", limit: "1", used: "1.5" },
+      { label: "Storage", limit: "10Gi", used: "12Gi" },
+    ],
   });
 });
 

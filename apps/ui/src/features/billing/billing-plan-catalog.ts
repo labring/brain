@@ -6,6 +6,7 @@ const resourceValueSchema = z.union([z.string(), z.number()]);
 export const billingPlanSchema = z.object({
   AIQuota: z.number().default(0),
   Description: z.string().default(""),
+  DowngradePlanList: z.array(z.string()).nullable().optional(),
   ID: z.string().min(1),
   MaxResources: z.union([
     z.string(),
@@ -25,6 +26,7 @@ export const billingPlanSchema = z.object({
     .default([]),
   Tags: z.array(z.string()).default([]),
   Traffic: z.number().default(0),
+  UpgradePlanList: z.array(z.string()).nullable().optional(),
 });
 
 export const billingPlansResponseSchema = z.object({
@@ -44,7 +46,9 @@ export type BillingPlanResourceType =
 
 export interface NormalizedBillingPlan {
   description: string;
+  downgradePlanNames?: string[];
   id: string;
+  limits?: Partial<Record<BillingPlanResourceType, string>>;
   monthlyOriginalPriceMicroUnits: number;
   monthlyPriceMicroUnits: number;
   name: string;
@@ -56,6 +60,7 @@ export interface NormalizedBillingPlan {
     value: string;
   }>;
   tags: string[];
+  upgradePlanNames?: string[];
 }
 
 const RESOURCE_METADATA: Record<
@@ -146,9 +151,21 @@ export function normalizeBillingPlan(
     });
   }
 
+  const limits = Object.fromEntries(
+    resources
+      .filter(({ type }) =>
+        ["cpu", "gpu", "memory", "nodeport", "storage", "traffic"].includes(
+          type
+        )
+      )
+      .map(({ type, value }) => [type, value])
+  ) as Partial<Record<BillingPlanResourceType, string>>;
+
   return {
     description: plan.Description,
+    downgradePlanNames: plan.DowngradePlanList ?? undefined,
     id: plan.ID,
+    limits,
     monthlyOriginalPriceMicroUnits:
       plan.Prices.find((price) => price.BillingCycle === "1m")?.OriginalPrice ??
       0,
@@ -159,5 +176,6 @@ export function normalizeBillingPlan(
     primaryPriceMicroUnits: plan.Prices[0]?.Price ?? 0,
     resources,
     tags: plan.Tags,
+    upgradePlanNames: plan.UpgradePlanList ?? undefined,
   };
 }

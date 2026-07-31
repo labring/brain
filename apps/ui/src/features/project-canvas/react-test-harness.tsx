@@ -60,6 +60,20 @@ export function restoreActEnvironment(previous: boolean | undefined) {
   reactGlobals.IS_REACT_ACT_ENVIRONMENT = previous;
 }
 
+/** Runs a React interaction scenario with isolated DOM and act globals. */
+export async function withTestDom(
+  run: (act: typeof actAndDrain) => Promise<void>
+) {
+  const dom = installTestDom();
+  const previousAct = setActEnvironment(true);
+  try {
+    await run(actAndDrain);
+  } finally {
+    restoreActEnvironment(previousAct);
+    await dom.restore();
+  }
+}
+
 /**
  * Settles React, then drains work queued on a timer. Adapters that commit
  * through a queue (nuqs URL writes) would otherwise leave the observable
