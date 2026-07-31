@@ -187,6 +187,7 @@ export function DockerDeploymentPane({
         <DockerDeployer.Fields />
         <SidePaneFooter>
           <DockerDeployer.Submit
+            className="w-full"
             label={redeploy == null ? undefined : "Redeploy"}
           />
         </SidePaneFooter>

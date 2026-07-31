@@ -35,10 +35,14 @@ default component kept backwards-compatible with its inline full-width
 submit. The GitHub deployer is reused in chat surfaces that have no pane
 chrome, so placement can never be baked into a form component — the same
 rule now covers all deployers. Deploy panes and the project creation pane
-place `Submit` in the footer (regular width, right-aligned, icon retained);
-hosts without pane chrome keep the assembled inline form. The footer
-container owns the right-aligned action-row layout; contributors supply
-plain buttons, and the settings draft footer — already a complete row —
+place `Submit` in the footer at full width (icon retained) — a deploy form's
+submit is the pane's whole reason for being open, and at regular width in a
+right-aligned row it lost the visual weight it carried as the form's inline
+full-width action; hosts without pane chrome keep the assembled inline form.
+This is a property of the deploy submit, not a footer-wide width rule: the
+footer container owns the right-aligned action-row layout and contributors
+supply plain buttons, so the timeline's lifecycle actions stay a
+right-aligned row and the settings draft footer — already a complete row —
 slots in whole.
 
 ## Considered Options

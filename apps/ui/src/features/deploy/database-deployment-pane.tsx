@@ -160,6 +160,7 @@ export function DatabaseDeploymentPane({
         <DatabaseDeployer.Fields />
         <SidePaneFooter>
           <DatabaseDeployer.Submit
+            className="w-full"
             label={redeploy == null ? undefined : "Redeploy"}
           />
         </SidePaneFooter>

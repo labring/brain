@@ -119,7 +119,7 @@ function DockerPanel() {
       >
         <DockerDeployer.Fields />
         <SidePaneFooter>
-          <DockerDeployer.Submit />
+          <DockerDeployer.Submit className="w-full" />
         </SidePaneFooter>
       </DockerDeployer.Root>
     </div>
@@ -158,7 +158,7 @@ function DatabasePanel({
       >
         <DatabaseDeployer.Fields />
         <SidePaneFooter>
-          <DatabaseDeployer.Submit />
+          <DatabaseDeployer.Submit className="w-full" />
         </SidePaneFooter>
       </DatabaseDeployer.Root>
     </div>
@@ -209,7 +209,7 @@ function TemplatePanel() {
       >
         <TemplateDeployer.Fields />
         <SidePaneFooter>
-          <TemplateDeployer.Submit />
+          <TemplateDeployer.Submit className="w-full" />
         </SidePaneFooter>
       </TemplateDeployer.Root>
     </div>

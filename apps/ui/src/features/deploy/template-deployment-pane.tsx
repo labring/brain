@@ -147,6 +147,7 @@ export function TemplateDeploymentPane({
         <TemplateDeployer.Fields />
         <SidePaneFooter>
           <TemplateDeployer.Submit
+            className="w-full"
             label={redeploy == null ? undefined : "Redeploy"}
           />
         </SidePaneFooter>
