@@ -1033,6 +1033,70 @@ stringData:
   });
 });
 
+test("renderTemplateDeployment tracks submitted inputs used in resource identities", () => {
+  const rendered = renderTemplateDeployment({
+    args: { storage: "8" },
+    identityInputKeys: new Set(["storage"]),
+    instanceName: "template-memos",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-\${{ base64(inputs.storage) }}`,
+    },
+    templateName: "memos",
+  });
+
+  assert.deepEqual(rendered.submittedIdentityInputKeys, ["storage"]);
+});
+
+test("renderTemplateDeployment tracks submitted inputs in flow-style metadata", () => {
+  const rendered = renderTemplateDeployment({
+    args: { storage: "8" },
+    identityInputKeys: new Set(["storage"]),
+    instanceName: "template-memos",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: v1
+kind: ConfigMap
+metadata: { name: app-\${{ base64(inputs.storage) }} }`,
+    },
+    templateName: "memos",
+  });
+
+  assert.deepEqual(rendered.submittedIdentityInputKeys, ["storage"]);
+});
+
+test("renderTemplateDeployment ignores submitted inputs in metadata labels", () => {
+  const rendered = renderTemplateDeployment({
+    args: { storage: "8" },
+    identityInputKeys: new Set(["storage"]),
+    instanceName: "template-memos",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    name: \${{ base64(inputs.storage) }}
+  name: app`,
+    },
+    templateName: "memos",
+  });
+
+  assert.deepEqual(rendered.submittedIdentityInputKeys, []);
+});
+
 test("renderTemplateDeploymentFromYaml skips inactive conditional required inputs", () => {
   const rendered = renderTemplateDeploymentFromYaml({
     args: { auth_enabled: "false" },

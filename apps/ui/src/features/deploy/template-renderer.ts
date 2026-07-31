@@ -33,6 +33,8 @@ const RANDOM_CALL_RE = /^random\((\d+)\)$/;
 const BASE64_CALL_RE = /^base64\(([\s\S]*)\)$/;
 const TERNARY_RE = /^(.+?)\?(.+?):(.+)$/;
 const COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
+const INPUT_REFERENCE_RE =
+  /\binputs(?:\.([A-Za-z_][A-Za-z0-9_-]*)|\[['"]([^'"]+)['"]\])/g;
 const BOOLEAN_VALUE_RE = /^(true|false)$/i;
 const NAMESPACE_PREFIX_RE = /^ns-/;
 const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
@@ -59,6 +61,7 @@ export interface RenderTemplateDeploymentInput {
   args?: Record<string, string>;
   certSecretName?: string;
   declarationState?: TemplateDeclarationState;
+  identityInputKeys?: ReadonlySet<string>;
   instanceName: string;
   namespace: string;
   platformValues?: Record<string, string>;
@@ -74,6 +77,7 @@ export interface RenderedTemplateDeployment {
   instanceName: string;
   instanceYaml: string;
   resources: TemplateK8sObject[];
+  submittedIdentityInputKeys?: string[];
 }
 
 /**
@@ -443,6 +447,62 @@ function renderTemplateExpressions(
     cursor = match.end;
   }
   return rendered;
+}
+
+function expressionInputKeys(
+  expression: string,
+  allowedKeys: ReadonlySet<string>
+): Set<string> {
+  const keys = new Set<string>();
+  for (const match of expression.matchAll(INPUT_REFERENCE_RE)) {
+    const key = match[1] ?? match[2];
+    if (key != null && allowedKeys.has(key)) {
+      keys.add(key);
+    }
+  }
+  return keys;
+}
+
+function templateIdentityInputKeys(input: {
+  source: string;
+  submittedInputKeys: ReadonlySet<string>;
+}): string[] {
+  const expressionKeys = new Map<string, Set<string>>();
+  let cursor = 0;
+  let markerIndex = 0;
+  let parsedSource = "";
+  while (cursor < input.source.length) {
+    const expression = nextTemplateExpression(input.source, cursor);
+    if (expression == null) {
+      parsedSource += input.source.slice(cursor);
+      break;
+    }
+    const marker = `brain-input-marker-${markerIndex}`;
+    markerIndex += 1;
+    expressionKeys.set(
+      marker,
+      expressionInputKeys(expression.expression, input.submittedInputKeys)
+    );
+    parsedSource += input.source.slice(cursor, expression.start) + marker;
+    cursor = expression.end;
+  }
+
+  const keys = new Set<string>();
+  for (const resource of parseRenderedObjects(parsedSource)) {
+    for (const value of [
+      resource.metadata?.name,
+      resource.metadata?.namespace,
+    ]) {
+      for (const [marker, referencedKeys] of expressionKeys) {
+        if (value?.includes(marker)) {
+          for (const key of referencedKeys) {
+            keys.add(key);
+          }
+        }
+      }
+    }
+  }
+  return [...keys].sort();
 }
 
 // Sealos template condition blocks support nested if/elif/else/endif markers.
@@ -1560,7 +1620,8 @@ export function renderTemplateDeployment(
     inputs,
   };
   const instance = templateInstanceObject(input.source, input.instanceName);
-  const renderedSource = renderTemplateString(input.source.appYaml, context);
+  const activeSource = parseYamlIfEndif(input.source.appYaml, context);
+  const renderedSource = renderTemplateExpressions(activeSource, context);
   const sourceResources = parseRenderedObjects(renderedSource);
   const sourceHasInstance = sourceResources.some(
     (resource) =>
@@ -1611,6 +1672,14 @@ export function renderTemplateDeployment(
     instanceName: input.instanceName,
     instanceYaml: dumpObject(instanceResource),
     resources,
+    ...(input.identityInputKeys == null
+      ? {}
+      : {
+          submittedIdentityInputKeys: templateIdentityInputKeys({
+            source: activeSource,
+            submittedInputKeys: input.identityInputKeys,
+          }),
+        }),
   };
 }
 

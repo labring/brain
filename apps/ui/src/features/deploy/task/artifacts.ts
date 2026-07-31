@@ -715,6 +715,7 @@ export function prepareSealosTemplateArtifact(input: {
   certSecretName?: string;
   declarationState?: DeploymentTaskDeploymentPlan["renderState"];
   deliveryManifest: Record<string, unknown>;
+  identityInputKeys?: ReadonlySet<string>;
   /** Recorded result identity to converge on (redeploy, ADR 0038). */
   instanceName?: string;
   platformValues?: Record<string, string>;
@@ -748,6 +749,7 @@ export function prepareSealosTemplateArtifact(input: {
     ...(input.declarationState == null
       ? {}
       : { declarationState: input.declarationState }),
+    identityInputKeys: input.identityInputKeys,
     instanceName,
     namespace: input.task.namespace,
     platformValues: input.platformValues,

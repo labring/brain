@@ -398,7 +398,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: app-\${{ inputs.API_KEY }}
+  name: app-\${{ base64(inputs.API_KEY) }}
 data:
   ready: "true"
 `;
@@ -955,8 +955,8 @@ data:
     ).not.toContain(shortSecret);
   });
 
-  it("rejects sensitive resource names before apply or persistence", async () => {
-    const secret = "private-resource-token";
+  it("rejects submitted values transformed into resource names", async () => {
+    const secret = "zzzzzz";
     currentRow = preparedAiInputTaskRow({
       missingInputKeys: ["API_KEY"],
       planInputs: [

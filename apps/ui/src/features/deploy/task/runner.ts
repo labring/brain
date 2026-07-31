@@ -2292,6 +2292,19 @@ function assertArtifactOperationalIdentifiers(
   }
 }
 
+function assertAiArtifactHasNoSubmittedIdentityInputs(
+  artifact: DeploymentArtifact
+): void {
+  if (
+    artifact.kind === "sealos-template" &&
+    (artifact.rendered.submittedIdentityInputKeys?.length ?? 0) > 0
+  ) {
+    throw new Error(
+      "Deployment resource identity cannot depend on a submitted input value."
+    );
+  }
+}
+
 async function completeTaskWithArtifact(input: {
   artifact: DeploymentArtifact;
   artifactSummaryExtras?: Partial<DeployTaskArtifactSummary>;
@@ -2692,13 +2705,6 @@ async function applyAiDeploymentFromPreparedOutput(input: {
     generatedByCurrentRunner: input.trustedPublicProjection,
     task: input.task,
   });
-  const submittedValues = [
-    ...new Set(
-      [...(input.submittedInputKeys ?? [])]
-        .map((key) => input.args[key])
-        .filter((value): value is string => value != null && value !== "")
-    ),
-  ];
   // A recorded identity predates this run (clone copy per ADR 0038, or an
   // earlier run's fenced allocation), so the cleanup label selector may match
   // preserved resources this run never created.
@@ -2719,6 +2725,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
       instanceName:
         input.task.artifactSummary.resultIdentities?.templateInstanceName ??
         deploymentPlan?.instanceName,
+      identityInputKeys: input.submittedInputKeys,
       routingDomain: apUserDomain(input.kubeconfig),
       task: input.task,
       templateYaml: input.templateYaml,
@@ -2751,7 +2758,7 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   }
   // Every user-submitted value is request-memory-only. Resource identities
   // are persisted, so reject a render that would copy a submitted value there.
-  assertArtifactOperationalIdentifiers(artifact, submittedValues);
+  assertAiArtifactHasNoSubmittedIdentityInputs(artifact);
   const summary = {
     ...sealosTemplateArtifactSummary({ artifact, includeRenderedYaml: false }),
     ...(deploymentPlan == null ? {} : { deploymentPlan }),
