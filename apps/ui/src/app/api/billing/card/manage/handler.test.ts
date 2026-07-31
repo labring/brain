@@ -88,7 +88,8 @@ test("card management route binds the Brain return to the verified workspace", a
     "/account/v1alpha1/workspace-subscription/card-manage"
   );
   assert.deepEqual(JSON.parse(String(accountRequest?.init?.body)), {
-    redirectUrl: "https://us.example.test/?openapp=system-brain%3F%2Fbilling",
+    redirectUrl:
+      "https://us.example.test/?openapp=system-brain%3F%2Fbilling%3F",
     regionDomain: "us.example.test",
     workspace: "workspace-a",
   });
