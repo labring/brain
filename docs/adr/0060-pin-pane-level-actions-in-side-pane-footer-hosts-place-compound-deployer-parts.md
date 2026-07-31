@@ -7,18 +7,22 @@ content: out of sight whenever the content outgrew the pane, and shaped
 differently on every surface (full-width buttons in deploy forms,
 right-aligned rows in settings and the timeline). The shared Side Pane now
 has a third chrome region, the Side Pane Footer (CONTEXT.md): an optional
-bottom region inside the inner chrome surface, separated by a top border,
-that stays visible while content scrolls beneath it.
+bottom region inside the inner chrome surface that stays visible while
+content scrolls beneath it. It carries no separator line — the pane's visual
+grammar layers by light rather than rules — and instead casts a soft shadow
+onto the content, painted only while content still sits below the fold.
 
 ## Decision
 
 Footer placement belongs to hosts, not to content components. Content mounts
 into the region through a slot (`SidePaneFooter`) that works from any depth
 of pane content: presence registers on mount (no contributor → no region, no
-border), and the content itself travels through a portal into the region's
+chrome), and the content itself travels through a portal into the region's
 element, so contributor re-renders never touch pane-shell state — the
 timeline's header-freeze design (stream ticks must not repaint the shell)
-survives pinning. Outside a Side Pane the slot renders its children in
+survives pinning. The lift shadow follows the same rule: scroll position is
+written straight to the region's `data-lifted` attribute, never through
+React state, so scroll ticks cannot repaint the shell either. Outside a Side Pane the slot renders its children in
 place, so chrome-less hosts keep a working surface. Settings providers keep
 delivering their draft footer as view-model data (the anti-loop chrome-model
 design is untouched); the sections renderer wraps that node in the slot.

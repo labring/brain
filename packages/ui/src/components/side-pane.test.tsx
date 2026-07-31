@@ -187,8 +187,64 @@ test("side pane footer pins slot content outside the scroll container", async ()
         "footer container owns the right-aligned action row"
       );
       assert.ok(
-        region.className.includes("border-t"),
-        "footer is separated by a top border"
+        !region.className.includes("border-t"),
+        "footer sits flush on the chrome surface without a separator"
+      );
+      assert.ok(
+        region.className.includes("side-pane-footer-lift"),
+        "footer separates with a lift shadow instead of a border"
+      );
+    }
+  );
+});
+
+test("side pane footer lifts only while content sits below the fold", async () => {
+  await withMountedPane(
+    <SidePane label="Details pane" onClose={noop} title="Details">
+      <p>Pane body</p>
+      <SidePaneFooter>
+        <button type="button">Deploy</button>
+      </SidePaneFooter>
+    </SidePane>,
+    async ({ container }) => {
+      const region = footerRegion(container);
+      assert.ok(region);
+      assert.equal(
+        region.getAttribute("data-lifted"),
+        "false",
+        "content that fits leaves the footer flat"
+      );
+
+      const scrollBody =
+        container.querySelector<HTMLElement>(".overflow-y-auto");
+      assert.ok(scrollBody);
+      // happy-dom reports zero layout, so drive the measurements the effect reads.
+      Object.defineProperty(scrollBody, "scrollHeight", {
+        configurable: true,
+        value: 600,
+      });
+      Object.defineProperty(scrollBody, "clientHeight", {
+        configurable: true,
+        value: 300,
+      });
+      scrollBody.scrollTop = 0;
+      await act(() => {
+        scrollBody.dispatchEvent(new Event("scroll"));
+      });
+      assert.equal(
+        region.getAttribute("data-lifted"),
+        "true",
+        "content below the fold casts the footer shadow"
+      );
+
+      scrollBody.scrollTop = 300;
+      await act(() => {
+        scrollBody.dispatchEvent(new Event("scroll"));
+      });
+      assert.equal(
+        region.getAttribute("data-lifted"),
+        "false",
+        "scrolling to the end drops the shadow again"
       );
     }
   );

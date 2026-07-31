@@ -81,6 +81,37 @@ export function SidePane({
     () => ({ host: footerHost, register: registerFooter }),
     [footerHost, registerFooter]
   );
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Footer lift: the cast shadow appears only while content still sits below
+  // the fold, so a pane whose content fits — or that is scrolled to the end —
+  // shows no separator at all. State is written straight to the DOM because
+  // scroll ticks must never repaint the pane shell (the timeline's
+  // header-freeze design depends on that).
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (footerHost == null || scrollEl == null) {
+      return;
+    }
+    const sync = () => {
+      const scrolledToEnd =
+        scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1;
+      footerHost.dataset.lifted = String(!scrolledToEnd);
+    };
+    sync();
+    scrollEl.addEventListener("scroll", sync, { passive: true });
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(sync);
+    observer?.observe(scrollEl);
+    const scrollContent = scrollEl.firstElementChild;
+    if (scrollContent != null) {
+      observer?.observe(scrollContent);
+    }
+    return () => {
+      scrollEl.removeEventListener("scroll", sync);
+      observer?.disconnect();
+    };
+  }, [footerHost]);
 
   return (
     <aside
@@ -143,7 +174,10 @@ export function SidePane({
               <X aria-hidden className="size-4" />
             </AppIconButton>
           </header>
-          <div className="scrollbar-chat-thin min-h-0 flex-1 overflow-y-auto">
+          <div
+            className="scrollbar-chat-thin min-h-0 flex-1 overflow-y-auto"
+            ref={scrollRef}
+          >
             <div
               className={cn(
                 "flex min-h-full min-w-0 flex-col gap-5 px-5 pt-2.5 pb-5",
@@ -158,7 +192,7 @@ export function SidePane({
         </div>
         {footerContributors > 0 ? (
           <div
-            className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2.5 border-border border-t px-5 py-4"
+            className="side-pane-footer-lift flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2.5 px-5 py-3"
             data-slot="side-pane-footer"
             ref={setFooterHost}
           />
