@@ -1562,14 +1562,20 @@ export function renderTemplateDeployment(
   const instance = templateInstanceObject(input.source, input.instanceName);
   const renderedSource = renderTemplateString(input.source.appYaml, context);
   const sourceResources = parseRenderedObjects(renderedSource);
-  if (sourceResources.length === 0) {
-    throw new Error("Template rendered no Kubernetes resources.");
-  }
   const sourceHasInstance = sourceResources.some(
     (resource) =>
       resource.kind === TEMPLATE_INSTANCE_KIND &&
       resource.apiVersion === TEMPLATE_INSTANCE_API_VERSION
   );
+  if (
+    !sourceResources.some(
+      (resource) =>
+        resource.kind !== TEMPLATE_INSTANCE_KIND ||
+        resource.apiVersion !== TEMPLATE_INSTANCE_API_VERSION
+    )
+  ) {
+    throw new Error("Template rendered no deployable Kubernetes resources.");
+  }
   const fullYaml = sourceHasInstance
     ? renderedSource
     : `${renderTemplateString(dumpObject(instance), context)}\n---\n${renderedSource}`;

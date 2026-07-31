@@ -2500,6 +2500,21 @@ function deploymentPlanArgsFromTask(
   return args == null ? {} : { ...args };
 }
 
+export function resolveAiTemplateInstanceName(input: {
+  deliveryManifest: Record<string, unknown>;
+  task: DeployTaskRow;
+  templateName: string;
+}): string {
+  return (
+    recordedTemplateInstanceName(input.task) ||
+    sealosTemplateInstanceName({
+      deliveryManifest: input.deliveryManifest,
+      projectName: input.task.projectName ?? input.templateName,
+      templateName: input.templateName,
+    })
+  );
+}
+
 /**
  * Direct/template runner secret contract (ADR 0037): submitted sensitive
  * values must never be persisted anywhere on the task row. The full args live
@@ -2811,9 +2826,9 @@ async function applyGeneratedAiDeployOutput(input: {
   );
   const templateYaml = requiredStringValue(input.output, "templateYaml");
   const templateName = templateSourceFromInlineYaml(templateYaml).templateName;
-  const plannedInstanceName = sealosTemplateInstanceName({
+  const plannedInstanceName = resolveAiTemplateInstanceName({
     deliveryManifest,
-    projectName: input.task.projectName ?? templateName,
+    task: input.task,
     templateName,
   });
   const deploymentPlan = createSealosTemplateDeploymentPlan({

@@ -105,7 +105,7 @@ const TEMPLATE_SECRET_NAME_RE = /secretName: wildcard-cert/;
 const TEMPLATE_EXPR_MARKER_RE = /\$/;
 const TEMPLATE_EXPRESSION_START = String.fromCharCode(36, 123, 123);
 const EMPTY_TEMPLATE_RESOURCE_SET_RE =
-  /Template rendered no Kubernetes resources/;
+  /Template rendered no deployable Kubernetes resources/;
 
 function captureTemplateInputValidationError(input: {
   args?: Record<string, string>;
@@ -1091,6 +1091,45 @@ spec:
     enabled:
       type: boolean
       default: "false"
+---
+\${{ if(inputs.enabled == "true") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: conditional-web
+\${{ endif() }}
+`,
+      }),
+    EMPTY_TEMPLATE_RESOURCE_SET_RE
+  );
+});
+
+test("renderTemplateDeploymentFromYaml rejects an Instance-only resource set", () => {
+  assert.throws(
+    () =>
+      renderTemplateDeploymentFromYaml({
+        args: { enabled: "false" },
+        instanceName: "conditional-web",
+        namespace: "ns-admin",
+        projectId: "project-uid",
+        projectName: "project-uid",
+        templateYaml: `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: conditional-web
+spec:
+  title: Conditional Web
+  templateType: inline
+  inputs:
+    enabled:
+      type: boolean
+      default: "false"
+---
+apiVersion: app.sealos.io/v1
+kind: Instance
+metadata:
+  name: conditional-web
 ---
 \${{ if(inputs.enabled == "true") }}
 apiVersion: v1

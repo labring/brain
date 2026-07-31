@@ -195,9 +195,11 @@ mock.module("./result-readiness", () => ({
     Promise.reject(new Error("provider-secret-readiness-token")),
 }));
 
-const { persistableAiDeployOutput, runDeployTask } = requireModule(
-  "./runner"
-) as typeof import("./runner");
+const {
+  persistableAiDeployOutput,
+  resolveAiTemplateInstanceName,
+  runDeployTask,
+} = requireModule("./runner") as typeof import("./runner");
 
 function templateTaskRow(input: {
   recordedInstanceName?: string;
@@ -661,6 +663,21 @@ describe("AI prepared output failure handling", () => {
     timelineEvents.length = 0;
     projectedTimeline = null;
     process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
+  });
+
+  it("plans an AI redeploy with its recorded Template identity", () => {
+    const task = preparedAiInputTaskRow();
+    task.artifactSummary.resultIdentities = {
+      templateInstanceName: "demo-existing",
+    };
+
+    expect(
+      resolveAiTemplateInstanceName({
+        deliveryManifest: { args: {} },
+        task,
+        templateName: "demo",
+      })
+    ).toBe("demo-existing");
   });
 
   it("retains generated Template configuration unchanged", () => {
