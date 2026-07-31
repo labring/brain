@@ -33,8 +33,6 @@ const RANDOM_CALL_RE = /^random\((\d+)\)$/;
 const BASE64_CALL_RE = /^base64\(([\s\S]*)\)$/;
 const TERNARY_RE = /^(.+?)\?(.+?):(.+)$/;
 const COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
-const INPUT_REFERENCE_RE =
-  /\binputs(?:\.([A-Za-z_][A-Za-z0-9_-]*)|\[['"]([^'"]+)['"]\])/g;
 const BOOLEAN_VALUE_RE = /^(true|false)$/i;
 const NAMESPACE_PREFIX_RE = /^ns-/;
 const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
@@ -251,80 +249,226 @@ function unquote(value: string): string | null {
   return trimmed.slice(1, -1);
 }
 
-function expressionValue(
+interface TemplateExpressionEvaluation {
+  inputKeys: Set<string>;
+  value: unknown;
+}
+
+const NO_TEMPLATE_INPUT_KEYS = new Set<string>();
+
+function expressionEvaluation(input: {
+  inputKeys?: Iterable<string>;
+  value: unknown;
+}): TemplateExpressionEvaluation {
+  return { inputKeys: new Set(input.inputKeys), value: input.value };
+}
+
+function inputKeyForPath(
+  path: string,
+  trackedInputKeys: ReadonlySet<string>
+): string | null {
+  const parts = splitPath(path);
+  const key = parts[0] === "inputs" ? parts[1] : undefined;
+  return key != null && trackedInputKeys.has(key) ? key : null;
+}
+
+function expressionValueWithInputKeys(
   expression: string,
-  context: EvaluationContext
-): unknown {
+  context: EvaluationContext,
+  trackedInputKeys: ReadonlySet<string>
+): TemplateExpressionEvaluation {
   const trimmed = expression.trim();
   const quoted = unquote(trimmed);
   if (quoted != null) {
-    return quoted;
+    return expressionEvaluation({ value: quoted });
   }
   if (NUMERIC_RE.test(trimmed)) {
-    return Number(trimmed);
+    return expressionEvaluation({ value: Number(trimmed) });
   }
   const randomMatch = trimmed.match(RANDOM_CALL_RE);
   if (randomMatch) {
-    return randomLowercase(Number(randomMatch[1]));
+    return expressionEvaluation({
+      value: randomLowercase(Number(randomMatch[1])),
+    });
   }
   const base64Match = trimmed.match(BASE64_CALL_RE);
   if (base64Match) {
-    return Buffer.from(
-      String(evaluateExpression(base64Match[1] ?? "", context) ?? "")
-    ).toString("base64");
+    const nested = evaluateExpressionWithInputKeys(
+      base64Match[1] ?? "",
+      context,
+      trackedInputKeys
+    );
+    return expressionEvaluation({
+      inputKeys: nested.inputKeys,
+      value: Buffer.from(String(nested.value ?? "")).toString("base64"),
+    });
   }
-  return readPath(context, trimmed);
+  const inputKey = inputKeyForPath(trimmed, trackedInputKeys);
+  return expressionEvaluation({
+    ...(inputKey == null ? {} : { inputKeys: [inputKey] }),
+    value: readPath(context, trimmed),
+  });
+}
+
+function evaluateExpressionWithInputKeys(
+  expression: string,
+  context: EvaluationContext,
+  trackedInputKeys: ReadonlySet<string>
+): TemplateExpressionEvaluation {
+  const ternary = expression.match(TERNARY_RE);
+  if (ternary) {
+    const condition = evaluateTemplateConditionWithInputKeys(
+      ternary[1] ?? "",
+      context,
+      trackedInputKeys
+    );
+    const branch = evaluateExpressionWithInputKeys(
+      condition.value ? (ternary[2] ?? "") : (ternary[3] ?? ""),
+      context,
+      trackedInputKeys
+    );
+    return expressionEvaluation({
+      inputKeys: [...condition.inputKeys, ...branch.inputKeys],
+      value: branch.value,
+    });
+  }
+  const orParts = splitTopLevelOperator(expression, "||");
+  if (orParts.length > 1) {
+    const inputKeys = new Set<string>();
+    for (const part of orParts) {
+      const evaluated = evaluateExpressionWithInputKeys(
+        part,
+        context,
+        trackedInputKeys
+      );
+      for (const key of evaluated.inputKeys) {
+        inputKeys.add(key);
+      }
+      if (evaluated.value) {
+        return expressionEvaluation({ inputKeys, value: evaluated.value });
+      }
+    }
+    return expressionEvaluation({ inputKeys, value: "" });
+  }
+  const concatParts = splitTopLevelOperator(expression, "+");
+  if (concatParts.length > 1) {
+    const inputKeys = new Set<string>();
+    const value = concatParts
+      .map((part) => {
+        const evaluated = evaluateExpressionWithInputKeys(
+          part,
+          context,
+          trackedInputKeys
+        );
+        for (const key of evaluated.inputKeys) {
+          inputKeys.add(key);
+        }
+        return String(evaluated.value ?? "");
+      })
+      .join("");
+    return expressionEvaluation({ inputKeys, value });
+  }
+  return expressionValueWithInputKeys(expression, context, trackedInputKeys);
 }
 
 function evaluateExpression(
   expression: string,
   context: EvaluationContext
 ): unknown {
-  const ternary = expression.match(TERNARY_RE);
-  if (ternary) {
-    return evaluateCondition(ternary[1] ?? "", context)
-      ? evaluateExpression(ternary[2] ?? "", context)
-      : evaluateExpression(ternary[3] ?? "", context);
-  }
-  const orParts = splitTopLevelOperator(expression, "||");
+  return evaluateExpressionWithInputKeys(
+    expression,
+    context,
+    NO_TEMPLATE_INPUT_KEYS
+  ).value;
+}
+
+function evaluateTemplateConditionWithInputKeys(
+  expression: string,
+  context: EvaluationContext,
+  trackedInputKeys: ReadonlySet<string>
+): TemplateExpressionEvaluation {
+  const inputKeys = new Set<string>();
+  const merge = (evaluated: TemplateExpressionEvaluation) => {
+    for (const key of evaluated.inputKeys) {
+      inputKeys.add(key);
+    }
+    return evaluated.value;
+  };
+  const trimmed = expression.trim();
+  const orParts = splitTopLevelOperator(trimmed, "||");
   if (orParts.length > 1) {
     for (const part of orParts) {
-      const value = evaluateExpression(part, context);
-      if (value) {
-        return value;
+      if (
+        merge(
+          evaluateTemplateConditionWithInputKeys(
+            part,
+            context,
+            trackedInputKeys
+          )
+        )
+      ) {
+        return expressionEvaluation({ inputKeys, value: true });
       }
     }
-    return "";
+    return expressionEvaluation({ inputKeys, value: false });
   }
-  const concatParts = splitTopLevelOperator(expression, "+");
-  if (concatParts.length > 1) {
-    return concatParts
-      .map((part) => String(evaluateExpression(part, context) ?? ""))
-      .join("");
+  const andParts = splitTopLevelOperator(trimmed, "&&");
+  if (andParts.length > 1) {
+    for (const part of andParts) {
+      if (
+        !merge(
+          evaluateTemplateConditionWithInputKeys(
+            part,
+            context,
+            trackedInputKeys
+          )
+        )
+      ) {
+        return expressionEvaluation({ inputKeys, value: false });
+      }
+    }
+    return expressionEvaluation({ inputKeys, value: true });
   }
-  return expressionValue(expression, context);
+  const comparison = trimmed.match(COMPARISON_RE);
+  if (comparison) {
+    const left = merge(
+      evaluateExpressionWithInputKeys(
+        comparison[1] ?? "",
+        context,
+        trackedInputKeys
+      )
+    );
+    const right = merge(
+      evaluateExpressionWithInputKeys(
+        comparison[3] ?? "",
+        context,
+        trackedInputKeys
+      )
+    );
+    return expressionEvaluation({
+      inputKeys,
+      value: comparison[2]?.includes("!") ? left !== right : left === right,
+    });
+  }
+  return expressionEvaluation({
+    inputKeys,
+    value: Boolean(
+      merge(evaluateExpressionWithInputKeys(trimmed, context, trackedInputKeys))
+    ),
+  });
 }
 
 export function evaluateTemplateCondition(
   expression: string,
   context: EvaluationContext
 ): boolean {
-  const trimmed = expression.trim();
-  const orParts = splitTopLevelOperator(trimmed, "||");
-  if (orParts.length > 1) {
-    return orParts.some((part) => evaluateTemplateCondition(part, context));
-  }
-  const andParts = splitTopLevelOperator(trimmed, "&&");
-  if (andParts.length > 1) {
-    return andParts.every((part) => evaluateTemplateCondition(part, context));
-  }
-  const comparison = trimmed.match(COMPARISON_RE);
-  if (comparison) {
-    const left = evaluateExpression(comparison[1] ?? "", context);
-    const right = evaluateExpression(comparison[3] ?? "", context);
-    return comparison[2]?.includes("!") ? left !== right : left === right;
-  }
-  return Boolean(evaluateExpression(trimmed, context));
+  return Boolean(
+    evaluateTemplateConditionWithInputKeys(
+      expression,
+      context,
+      NO_TEMPLATE_INPUT_KEYS
+    ).value
+  );
 }
 
 const evaluateCondition = evaluateTemplateCondition;
@@ -449,25 +593,17 @@ function renderTemplateExpressions(
   return rendered;
 }
 
-function expressionInputKeys(
-  expression: string,
-  allowedKeys: ReadonlySet<string>
-): Set<string> {
-  const keys = new Set<string>();
-  for (const match of expression.matchAll(INPUT_REFERENCE_RE)) {
-    const key = match[1] ?? match[2];
-    if (key != null && allowedKeys.has(key)) {
-      keys.add(key);
-    }
-  }
-  return keys;
-}
-
 function templateIdentityInputKeys(input: {
+  context: EvaluationContext;
   source: string;
   submittedInputKeys: ReadonlySet<string>;
 }): string[] {
   const expressionKeys = new Map<string, Set<string>>();
+  let markerPrefix = "";
+  do {
+    markerPrefix = `brain-input-marker-${randomLowercase(16)}-`;
+  } while (input.source.includes(markerPrefix));
+
   let cursor = 0;
   let markerIndex = 0;
   let parsedSource = "";
@@ -477,11 +613,15 @@ function templateIdentityInputKeys(input: {
       parsedSource += input.source.slice(cursor);
       break;
     }
-    const marker = `brain-input-marker-${markerIndex}`;
+    const marker = `${markerPrefix}${markerIndex}`;
     markerIndex += 1;
     expressionKeys.set(
       marker,
-      expressionInputKeys(expression.expression, input.submittedInputKeys)
+      evaluateExpressionWithInputKeys(
+        expression.expression,
+        input.context,
+        input.submittedInputKeys
+      ).inputKeys
     );
     parsedSource += input.source.slice(cursor, expression.start) + marker;
     cursor = expression.end;
@@ -1676,6 +1816,7 @@ export function renderTemplateDeployment(
       ? {}
       : {
           submittedIdentityInputKeys: templateIdentityInputKeys({
+            context,
             source: activeSource,
             submittedInputKeys: input.identityInputKeys,
           }),

@@ -1054,6 +1054,27 @@ metadata:
   assert.deepEqual(rendered.submittedIdentityInputKeys, ["storage"]);
 });
 
+test("renderTemplateDeployment tracks identity inputs with whitespace in paths", () => {
+  const rendered = renderTemplateDeployment({
+    args: { storage: "8" },
+    identityInputKeys: new Set(["storage"]),
+    instanceName: "template-memos",
+    namespace: "ns-admin",
+    projectId: "project-uid",
+    projectName: "project-uid",
+    source: {
+      ...source,
+      appYaml: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-\${{ base64(inputs . storage) }}`,
+    },
+    templateName: "memos",
+  });
+
+  assert.deepEqual(rendered.submittedIdentityInputKeys, ["storage"]);
+});
+
 test("renderTemplateDeployment tracks submitted inputs in flow-style metadata", () => {
   const rendered = renderTemplateDeployment({
     args: { storage: "8" },

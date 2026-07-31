@@ -398,7 +398,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: app-\${{ base64(inputs.API_KEY) }}
+  name: app-\${{ base64(inputs . API_KEY) }}
 data:
   ready: "true"
 `;
