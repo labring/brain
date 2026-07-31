@@ -21,7 +21,9 @@ function addBrainReturnUrl(
   }
 
   const redirectUrl = new URL(`https://${desktopDomain}/`);
-  redirectUrl.searchParams.set("openapp", "system-brain?/billing");
+  // Desktop's parseOpenappQuery grammar is `appkey?<path>?<query>`; without the
+  // trailing "?" the path segment would be read as the app query instead.
+  redirectUrl.searchParams.set("openapp", "system-brain?/billing?");
 
   return {
     ...cardRequest,
