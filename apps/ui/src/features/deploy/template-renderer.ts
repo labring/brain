@@ -34,6 +34,7 @@ const BASE64_CALL_RE = /^base64\(([\s\S]*)\)$/;
 const TERNARY_RE = /^(.+?)\?(.+?):(.+)$/;
 const COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
 const BOOLEAN_VALUE_RE = /^(true|false)$/i;
+const NAMESPACE_PREFIX_RE = /^ns-/;
 const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
 const NGINX_SSL_REDIRECT_ANNOTATION =
   "nginx.ingress.kubernetes.io/ssl-redirect";
@@ -57,8 +58,10 @@ const CLUSTER_SCOPED_KINDS = new Set([
 export interface RenderTemplateDeploymentInput {
   args?: Record<string, string>;
   certSecretName?: string;
+  declarationState?: TemplateDeclarationState;
   instanceName: string;
   namespace: string;
+  platformValues?: Record<string, string>;
   projectId: string;
   projectName: string;
   routingDomain?: string;
@@ -71,6 +74,33 @@ export interface RenderedTemplateDeployment {
   instanceName: string;
   instanceYaml: string;
   resources: TemplateK8sObject[];
+}
+
+/**
+ * Public values resolved from the Template header before a blocking input
+ * form is shown. The raw Template remains the executable source; this state
+ * only keeps random/default expansion stable across the blocked resume.
+ */
+export interface TemplateDeclarationState {
+  defaults: Record<string, string>;
+  inputs: TemplateSourceInput[];
+}
+
+export class TemplateDeclarationError extends Error {
+  readonly code: TemplateInputValidationErrorCode;
+  readonly inputKey: string;
+
+  constructor(input: {
+    code: TemplateInputValidationErrorCode;
+    inputKey: string;
+  }) {
+    super(
+      `Generated Sealos template declaration is invalid for input "${input.inputKey}".`
+    );
+    this.name = "TemplateDeclarationError";
+    this.code = input.code;
+    this.inputKey = input.inputKey;
+  }
 }
 
 export interface TemplateK8sObject {
@@ -505,6 +535,83 @@ function flattenDefaults(
     });
   }
   return out;
+}
+
+function templatePlatformContext(input: {
+  certSecretName?: string;
+  namespace: string;
+  platformValues?: Record<string, string>;
+  routingDomain?: string;
+}): EvaluationContext {
+  const routingDomain = input.routingDomain?.trim();
+  const certSecretName = input.certSecretName?.trim();
+  return {
+    ...(input.platformValues ?? {}),
+    ...(routingDomain ? { SEALOS_CLOUD_DOMAIN: routingDomain } : {}),
+    ...(certSecretName ? { SEALOS_CERT_SECRET_NAME: certSecretName } : {}),
+    SEALOS_NAMESPACE: input.namespace,
+    SEALOS_SERVICE_ACCOUNT: input.namespace.replace(NAMESPACE_PREFIX_RE, ""),
+    defaults: {},
+    inputs: {},
+  };
+}
+
+/**
+ * Mirrors the provider's header-only declaration pass. Resource documents
+ * deliberately stay untouched until every user value is available.
+ */
+export function resolveTemplateDeclarationState(input: {
+  certSecretName?: string;
+  instanceName: string;
+  namespace: string;
+  platformValues?: Record<string, string>;
+  routingDomain?: string;
+  source: TemplateSourcePayload;
+  validateDefaults?: boolean;
+}): TemplateDeclarationState {
+  const baseContext = templatePlatformContext(input);
+  const defaults = {
+    ...flattenDefaults(input.source.source.defaults, baseContext),
+    app_name: input.instanceName,
+  };
+  const declarationContext: EvaluationContext = {
+    ...baseContext,
+    defaults,
+  };
+  const validateDefaults = input.validateDefaults === true;
+  const inputs = (input.source.source.inputs ?? []).map((input) => {
+    const normalized = {
+      ...input,
+      ...(input.description === undefined
+        ? {}
+        : {
+            description: renderTemplateString(
+              input.description,
+              declarationContext
+            ),
+          }),
+      ...(input.default === undefined
+        ? {}
+        : {
+            default: renderTemplateString(input.default, declarationContext),
+          }),
+    };
+    if (validateDefaults && normalized.default !== undefined) {
+      try {
+        validateTemplateInputValue(normalized, normalized.default, "default");
+      } catch (error) {
+        if (error instanceof TemplateInputValidationError) {
+          throw new TemplateDeclarationError({
+            code: error.code,
+            inputKey: error.inputKey,
+          });
+        }
+        throw error;
+      }
+    }
+    return normalized;
+  });
+  return { defaults, inputs };
 }
 
 function resolveTemplateInputValue(
@@ -1441,30 +1548,16 @@ export function renderTemplateDeployment(
   if (!DNS_NAME_RE.test(input.instanceName) || input.instanceName.length > 63) {
     throw new Error("Template instance name must be a valid DNS name.");
   }
-  const baseContext: EvaluationContext = {
-    defaults: {},
-    inputs: {},
-    SEALOS_NAMESPACE: input.namespace,
-  };
-  const defaults = {
-    ...flattenDefaults(input.source.source.defaults, baseContext),
-    app_name: input.instanceName,
-  };
-  const inputs = resolvedInputs(
-    input.source.source.inputs,
-    input.args,
-    defaults
-  );
-  const routingDomain = input.routingDomain?.trim();
+  const declarationState =
+    input.declarationState ??
+    resolveTemplateDeclarationState({ ...input, validateDefaults: false });
+  const defaults = declarationState.defaults;
+  const inputs = resolvedInputs(declarationState.inputs, input.args, defaults);
   const context: EvaluationContext = {
     ...input.source.source,
+    ...templatePlatformContext(input),
     defaults,
     inputs,
-    ...(routingDomain ? { SEALOS_CLOUD_DOMAIN: routingDomain } : {}),
-    ...(input.certSecretName?.trim()
-      ? { SEALOS_CERT_SECRET_NAME: input.certSecretName.trim() }
-      : {}),
-    SEALOS_NAMESPACE: input.namespace,
   };
   const instance = templateInstanceObject(input.source, input.instanceName);
   const renderedSource = renderTemplateString(input.source.appYaml, context);

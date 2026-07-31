@@ -182,7 +182,7 @@ describe("deploymentFailureReason", () => {
     );
     expect(
       aiFailureReason(
-        "Generated deployment template contains sensitive default values."
+        'Generated Sealos template declaration is invalid for input "smtp_from_address".'
       )
     ).toBe("template-output-invalid");
   });

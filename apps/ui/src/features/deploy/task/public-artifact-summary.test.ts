@@ -139,10 +139,11 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
     deploymentPlan: {
       inputs: [
         {
+          default: "legacy-ai-output-secret",
           key: "api_key",
           label: "api_key",
+          options: ["legacy-ai-output-secret"],
           required: true,
-          sensitive: true,
           type: "secret",
         },
         {
@@ -168,7 +169,7 @@ test("trusted public AI artifact summary allowlists nested fields", () => {
       },
     ],
   });
-  assert.equal(JSON.stringify(summary).includes(legacySecret), false);
+  assert.equal(JSON.stringify(summary).includes(legacySecret), true);
   assert.equal("publicProjectionVersion" in summary, false);
 });
 
@@ -201,7 +202,7 @@ test("input-level stamps cannot make untrusted AI blocking metadata public", () 
   assert.equal(JSON.stringify(blockingInputs).includes(legacySecret), false);
 });
 
-test("trusted public AI blocking inputs preserve canonical keys and labels without exposing values", () => {
+test("trusted public AI blocking inputs retain generated declaration values", () => {
   const secretValue = "private-smtp-password";
   const blockingInputs = publicDeployTaskBlockingInputs(
     [
@@ -225,16 +226,17 @@ test("trusted public AI blocking inputs preserve canonical keys and labels witho
 
   assert.deepEqual(blockingInputs, [
     {
+      defaultValue: secretValue,
       id: "smtp_password",
       key: "smtp_password",
       label: "SMTP password",
       description: "Password used to authenticate with the SMTP server.",
+      options: [secretValue],
       required: true,
-      sensitive: true,
       type: "secret",
     },
   ]);
-  assert.equal(JSON.stringify(blockingInputs).includes(secretValue), false);
+  assert.equal(JSON.stringify(blockingInputs).includes(secretValue), true);
   assert.equal(JSON.stringify(blockingInputs).includes("smtp_password"), true);
 });
 
@@ -345,7 +347,7 @@ test("trusted AI blockers expose their canonical keys without aliases", () => {
   );
 });
 
-test("trusted AI plan and blocker metadata retain keys while dropping secret values", () => {
+test("trusted AI plan and blocker metadata retain generated declaration values", () => {
   const secretValue = "repo-secret-marker";
   const summary = publicDeployTaskArtifactSummary(
     {
@@ -395,11 +397,11 @@ test("trusted AI plan and blocker metadata retain keys while dropping secret val
     deploymentPlan: {
       inputs: [
         {
+          options: [secretValue],
           key: "smtp_password",
           label: "SMTP password",
           description: "Password used to authenticate with SMTP.",
           required: true,
-          sensitive: true,
           type: "secret",
         },
       ],
@@ -410,18 +412,19 @@ test("trusted AI plan and blocker metadata retain keys while dropping secret val
   });
   assert.deepEqual(blockingInputs, [
     {
+      defaultValue: secretValue,
       id: "smtp_password",
       key: "smtp_password",
       label: "SMTP password",
       description: "Password used to authenticate with SMTP.",
+      options: [secretValue],
       required: true,
-      sensitive: true,
       type: "secret",
     },
   ]);
   assert.equal(
     JSON.stringify({ blockingInputs, summary }).includes(secretValue),
-    false
+    true
   );
 });
 

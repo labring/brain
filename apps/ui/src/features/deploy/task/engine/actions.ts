@@ -781,17 +781,17 @@ export async function submitDeployTaskInputAction(
       task: row,
     };
   }
-  const shortSensitiveKey = shortSensitiveSubmittedKey(
-    currentBlockingInputs,
-    submittedValues
-  );
+  // AI Template declarations are public configuration. Their field names and
+  // control type do not prove that a submitted scalar is a secret; values are
+  // request-memory-only for this path, so no heuristic length gate applies.
+  const shortSensitiveKey =
+    row.runner.kind === "ai"
+      ? null
+      : shortSensitiveSubmittedKey(currentBlockingInputs, submittedValues);
   if (shortSensitiveKey != null) {
     return {
       kind: "invalid-input",
-      message:
-        row.runner.kind === "ai"
-          ? `Sensitive deployment inputs must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`
-          : `Deployment input "${shortSensitiveKey}" must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`,
+      message: `Deployment input "${shortSensitiveKey}" must be at least ${MIN_SENSITIVE_INPUT_LENGTH} characters.`,
       task: row,
     };
   }

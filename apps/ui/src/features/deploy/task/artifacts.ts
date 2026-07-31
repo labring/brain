@@ -6,6 +6,7 @@ import {
   evaluateTemplateCondition,
   type RenderedTemplateDeployment,
   renderTemplateDeploymentFromYaml,
+  resolveTemplateDeclarationState,
   type TemplateEvaluationContext,
   templateHeaderFromInlineYaml,
   templateSourceFromInlineYaml,
@@ -17,7 +18,6 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
 } from "./schema";
-import { isSensitiveDeploymentInput } from "./sensitive-inputs";
 
 const SUPPORTED_API_VERSION = "brain.io/direct";
 const SUPPORTED_KINDS = new Set(["AP", "DB"]);
@@ -190,7 +190,7 @@ export function persistableSealosTemplateYaml(templateYaml: string): string {
   return persistableSealosTemplate(templateYaml).templateYaml;
 }
 
-function templateInstanceName(input: {
+export function sealosTemplateInstanceName(input: {
   deliveryManifest: Record<string, unknown>;
   projectName: string;
   templateName: string;
@@ -589,16 +589,11 @@ function templateInputDefaults(
 
 function visibleTemplatePlanInputs(input: {
   args: Record<string, string>;
-  defaults?: DeploymentTaskDeploymentPlan["defaults"];
+  defaults: Record<string, string>;
   inputs: DeploymentTaskDeploymentPlanInput[];
 }): DeploymentTaskDeploymentPlanInput[] {
   const context: TemplateEvaluationContext = {
-    defaults: Object.fromEntries(
-      Object.entries(input.defaults ?? {}).map(([key, value]) => [
-        key,
-        value.value,
-      ])
-    ),
+    defaults: input.defaults,
     inputs: templateInputDefaults(input.inputs, input.args),
   };
   return input.inputs.filter((item) => {
@@ -617,10 +612,10 @@ function templateInputLabel(input: { key: string; label?: string }) {
 function templateInputBlockingType(
   input: DeploymentTaskDeploymentPlanInput
 ): DeployTaskBlockingInput["type"] {
-  if (input.sensitive) {
+  const type = input.type?.trim().toLowerCase();
+  if (type === "secret" || type === "password") {
     return "secret";
   }
-  const type = input.type?.trim().toLowerCase();
   if (type === "env" || input.key === input.key.toUpperCase()) {
     return "env";
   }
@@ -628,18 +623,38 @@ function templateInputBlockingType(
 }
 
 export function createSealosTemplateDeploymentPlan(input: {
+  declarationContext?: {
+    certSecretName?: string;
+    instanceName: string;
+    namespace: string;
+    platformValues?: Record<string, string>;
+    routingDomain?: string;
+  };
   deliveryManifest: Record<string, unknown>;
   templateYaml: string;
 }): DeploymentTaskDeploymentPlan {
   const parsed = templateSourceFromInlineYaml(input.templateYaml);
   const args = stringRecordValue(input.deliveryManifest.args);
-  const inputs = (parsed.source.source.inputs ?? []).map((item) => ({
-    ...item,
-    sensitive: isSensitiveDeploymentInput(item),
-  }));
+  const renderState =
+    input.declarationContext == null
+      ? null
+      : resolveTemplateDeclarationState({
+          ...input.declarationContext,
+          source: parsed.source,
+          validateDefaults: true,
+        });
+  const inputs = (renderState?.inputs ?? parsed.source.source.inputs ?? []).map(
+    (item) => ({ ...item })
+  );
   const visibleInputs = visibleTemplatePlanInputs({
     args,
-    defaults: parsed.source.source.defaults,
+    defaults:
+      renderState?.defaults ??
+      Object.fromEntries(
+        Object.entries(parsed.source.source.defaults ?? {}).map(
+          ([key, value]) => [key, value.value]
+        )
+      ),
     inputs,
   });
   const missingInputKeys = visibleInputs.flatMap((item) => {
@@ -657,9 +672,13 @@ export function createSealosTemplateDeploymentPlan(input: {
   });
   return {
     args,
+    ...(input.declarationContext == null
+      ? {}
+      : { instanceName: input.declarationContext.instanceName }),
     inputs: visibleInputs,
     kind: "sealos-template",
     ...(missingInputKeys.length === 0 ? {} : { missingInputKeys }),
+    ...(renderState == null ? {} : { renderState }),
     templateName: parsed.templateName,
   };
 }
@@ -685,7 +704,6 @@ export function blockingInputsFromDeploymentPlan(
       label: templateInputLabel(input),
       ...(input.options === undefined ? {} : { options: input.options }),
       required: missing.has(input.key) || input.required === true,
-      sensitive: input.sensitive,
       type: templateInputBlockingType(input),
       valueType: input.type,
     }));
@@ -695,9 +713,11 @@ export function prepareSealosTemplateArtifact(input: {
   args?: Record<string, string>;
   buildResult: Record<string, unknown>;
   certSecretName?: string;
+  declarationState?: DeploymentTaskDeploymentPlan["renderState"];
   deliveryManifest: Record<string, unknown>;
   /** Recorded result identity to converge on (redeploy, ADR 0038). */
   instanceName?: string;
+  platformValues?: Record<string, string>;
   routingDomain?: string;
   task: DeployTaskArtifactContext;
   templateYaml: string;
@@ -713,7 +733,7 @@ export function prepareSealosTemplateArtifact(input: {
   const templateName = templateNameFromYaml(input.templateYaml) ?? projectName;
   const instanceName =
     input.instanceName?.trim() ||
-    templateInstanceName({
+    sealosTemplateInstanceName({
       deliveryManifest: input.deliveryManifest,
       projectName,
       templateName,
@@ -725,8 +745,12 @@ export function prepareSealosTemplateArtifact(input: {
       ...(input.args ?? {}),
     },
     certSecretName: input.certSecretName,
+    ...(input.declarationState == null
+      ? {}
+      : { declarationState: input.declarationState }),
     instanceName,
     namespace: input.task.namespace,
+    platformValues: input.platformValues,
     projectId: input.task.projectId ?? projectName,
     projectName,
     routingDomain: input.routingDomain,

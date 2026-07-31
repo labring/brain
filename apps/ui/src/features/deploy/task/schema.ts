@@ -94,12 +94,23 @@ export interface DeploymentTaskDeploymentPlanInput extends TemplateSourceInput {
   sensitive?: boolean;
 }
 
+/**
+ * Public header-only render values for an AI-generated Sealos Template. Raw
+ * source remains in outputJson; submitted Blocking Input values are excluded.
+ */
+export interface DeploymentTaskTemplateRenderState {
+  defaults: Record<string, string>;
+  inputs: TemplateSourceInput[];
+}
+
 export interface DeploymentTaskDeploymentPlan {
   args?: Record<string, string>;
   defaults?: Record<string, TemplateDefaultValue>;
   inputs: DeploymentTaskDeploymentPlanInput[];
+  instanceName?: string;
   kind: "sealos-template";
   missingInputKeys?: string[];
+  renderState?: DeploymentTaskTemplateRenderState;
   templateName: string;
 }
 

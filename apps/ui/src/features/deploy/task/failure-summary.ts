@@ -80,12 +80,7 @@ export function aiFailureReason(
   if (
     message.includes("Sealos template header is not valid YAML.") ||
     message.includes("Rendered Sealos template is not valid YAML.") ||
-    message.includes(
-      "Generated deployment template contains sensitive default values."
-    ) ||
-    message.includes(
-      "Generated deployment template contains a sensitive value outside a declared sensitive input."
-    )
+    message.includes("Generated Sealos template declaration is invalid")
   ) {
     return "template-output-invalid";
   }

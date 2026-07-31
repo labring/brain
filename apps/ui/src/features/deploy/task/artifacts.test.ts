@@ -30,6 +30,7 @@ const UNSUPPORTED_TEMPLATE_KIND_REGEX =
 const DNS_1035_LABEL = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
 const DEMO_WEB_TEMPLATE_INSTANCE_REGEX = /^demo-web-[a-z]{6}$/;
 const GITHUB_TEMPLATE_INSTANCE_REGEX = /^seakills-site-[a-z]{6}$/;
+const TEMPLATE_EXPRESSION_START = String.fromCharCode(36, 123, 123);
 
 test("build result status normalization covers failure and incomplete aliases", () => {
   for (const status of [
@@ -489,7 +490,7 @@ test("createSealosTemplateDeploymentPlan reports missing required inputs", () =>
 
   assert.deepEqual(plan.missingInputKeys, ["ai_gateway_api_key"]);
   assert.equal(plan.inputs.length, 2);
-  assert.equal(plan.inputs[0]?.sensitive, true);
+  assert.equal(plan.inputs[0]?.sensitive, undefined);
 
   const blockingInputs = blockingInputsFromDeploymentPlan(plan);
   assert.deepEqual(blockingInputs, [
@@ -499,7 +500,6 @@ test("createSealosTemplateDeploymentPlan reports missing required inputs", () =>
       key: "ai_gateway_api_key",
       label: "AI Gateway API key",
       required: true,
-      sensitive: true,
       type: "secret",
       valueType: "secret",
     },
@@ -513,6 +513,49 @@ test("deployment plans retain generated input values without re-prompting", () =
   });
   assert.equal(plan.missingInputKeys, undefined);
   assert.deepEqual(plan.args, { ai_gateway_api_key: "prefilled-secret" });
+});
+
+test("AI plans retain resolved Sealos declaration state across a blocking resume", () => {
+  const plan = createSealosTemplateDeploymentPlan({
+    declarationContext: {
+      instanceName: "mastodon-abc123",
+      namespace: "ns-6f1st0py",
+    },
+    deliveryManifest: { args: {} },
+    templateYaml: [
+      "apiVersion: app.sealos.io/v1",
+      "kind: Template",
+      "metadata:",
+      "  name: mastodon",
+      "spec:",
+      "  templateType: inline",
+      "  defaults:",
+      "    app_name:",
+      `      value: mastodon-${TEMPLATE_EXPRESSION_START} random(8) }}`,
+      "  inputs:",
+      "    smtp_from_address:",
+      `      default: admin+${TEMPLATE_EXPRESSION_START} defaults.app_name }}@example.com`,
+      "      type: string",
+      "    vapid_private_key:",
+      "      required: true",
+      "      type: secret",
+      "---",
+      "apiVersion: v1",
+      "kind: ConfigMap",
+      "metadata:",
+      `  name: ${TEMPLATE_EXPRESSION_START} defaults.app_name }}`,
+      "data:",
+      `  smtp_from_address: ${TEMPLATE_EXPRESSION_START} inputs.smtp_from_address }}`,
+    ].join("\n"),
+  });
+
+  assert.equal(plan.instanceName, "mastodon-abc123");
+  assert.equal(
+    plan.renderState?.inputs.find((item) => item.key === "smtp_from_address")
+      ?.default,
+    "admin+mastodon-abc123@example.com"
+  );
+  assert.deepEqual(plan.missingInputKeys, ["vapid_private_key"]);
 });
 
 test("plans retain conditional generated configuration and only collect missing inputs", () => {
@@ -589,7 +632,7 @@ data:
   });
 
   assert.equal(plan.defaults, undefined);
-  assert.equal(plan.inputs[0]?.sensitive, true);
+  assert.equal(plan.inputs[0]?.sensitive, undefined);
   assert.equal(plan.missingInputKeys, undefined);
   const blockingInputs = blockingInputsFromDeploymentPlan(plan);
   assert.deepEqual(blockingInputs, []);

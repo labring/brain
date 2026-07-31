@@ -10,6 +10,8 @@ import {
   generateTemplateInstanceOwnerReference,
   renderTemplateDeployment,
   renderTemplateDeploymentFromYaml,
+  resolveTemplateDeclarationState,
+  TemplateDeclarationError,
   TemplateInputValidationError,
   type TemplateInputValidationErrorCode,
   type TemplateInputValidationValueSource,
@@ -101,6 +103,7 @@ const SINGLE_LINE_PARAMETER_RE =
 const NUMBER_PARAMETER_RE = /Template parameter "storage" must be a number/;
 const TEMPLATE_SECRET_NAME_RE = /secretName: wildcard-cert/;
 const TEMPLATE_EXPR_MARKER_RE = /\$/;
+const TEMPLATE_EXPRESSION_START = String.fromCharCode(36, 123, 123);
 
 function captureTemplateInputValidationError(input: {
   args?: Record<string, string>;
@@ -782,6 +785,89 @@ test("template input failures expose only the rejected key and stable code", () 
     assert.equal(error.code, testCase.code);
     assert.equal(error.valueSource, testCase.valueSource);
   }
+});
+
+test("Template declaration defaults resolve Sealos DSL before input validation", () => {
+  const declarationSource: TemplateSourcePayload = {
+    appYaml: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: \${{ defaults.app_name }}
+data:
+  smtp_from_address: \${{ inputs.smtp_from_address }}
+  vapid_private_key: \${{ inputs.vapid_private_key }}`,
+    source: {
+      defaults: {
+        app_name: {
+          value: `mastodon-${TEMPLATE_EXPRESSION_START} random(8) }}`,
+        },
+      },
+      inputs: [
+        {
+          default: `admin+${TEMPLATE_EXPRESSION_START} defaults.app_name }}@example.com`,
+          description: `Language: ${TEMPLATE_EXPRESSION_START} FORCED_LANGUAGE }}`,
+          key: "smtp_from_address",
+          type: "string",
+        },
+        { key: "vapid_private_key", required: true, type: "secret" },
+      ],
+    },
+    templateYaml: {},
+  };
+  const declarationState = resolveTemplateDeclarationState({
+    instanceName: "mastodon-fixed",
+    namespace: "ns-6f1st0py",
+    platformValues: { FORCED_LANGUAGE: "zh" },
+    source: declarationSource,
+  });
+
+  assert.equal(
+    declarationState.inputs[0]?.default,
+    "admin+mastodon-fixed@example.com"
+  );
+  assert.equal(declarationState.inputs[0]?.description, "Language: zh");
+  const rendered = renderTemplateDeployment({
+    args: { vapid_private_key: "user-provided-vapid" },
+    declarationState,
+    instanceName: "mastodon-fixed",
+    namespace: "ns-6f1st0py",
+    projectId: "project-id",
+    projectName: "mastodon",
+    source: declarationSource,
+    templateName: "mastodon",
+  });
+  const configMap = rendered.resources.find(
+    (item) => item.kind === "ConfigMap"
+  );
+  assert.deepEqual(configMap?.data, {
+    smtp_from_address: "admin+mastodon-fixed@example.com",
+    vapid_private_key: "user-provided-vapid",
+  });
+});
+
+test("invalid generated input defaults fail as a declaration error before Apply", () => {
+  assert.throws(
+    () =>
+      resolveTemplateDeclarationState({
+        instanceName: "template-memos",
+        namespace: "ns-admin",
+        validateDefaults: true,
+        source: {
+          ...source,
+          source: {
+            ...source.source,
+            inputs: [
+              {
+                default: "invalid-default",
+                key: "storage",
+                type: "number",
+              },
+            ],
+          },
+        },
+      }),
+    TemplateDeclarationError
+  );
 });
 
 test("renderTemplateDeploymentFromYaml renders inline Sealos Template documents", () => {

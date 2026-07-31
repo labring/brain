@@ -22,7 +22,10 @@ import {
   getTemplateSource,
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
-import { TemplateInputValidationError } from "@/features/deploy/template-renderer";
+import {
+  TemplateInputValidationError,
+  templateSourceFromInlineYaml,
+} from "@/features/deploy/template-renderer";
 import { deriveProjectDisplayName } from "@/features/projects/derived-project-display-name";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
@@ -66,6 +69,7 @@ import {
   prepareBrainManifestArtifact,
   prepareSealosTemplateArtifact,
   sealosTemplateArtifactSummary,
+  sealosTemplateInstanceName,
 } from "./artifacts";
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
@@ -2497,11 +2501,11 @@ function deploymentPlanArgsFromTask(
 }
 
 /**
- * Row-level secrets contract (ADR 0037): submitted values for sensitive plan
- * inputs must never be persisted anywhere on the task row. The full args
- * live only in process memory for the apply itself. The persisted plan keeps
- * non-sensitive args and input metadata, but omits generated default maps and
- * sensitive input defaults.
+ * Direct/template runner secret contract (ADR 0037): submitted sensitive
+ * values must never be persisted anywhere on the task row. The full args live
+ * only in process memory for the apply itself. AI-generated Template output
+ * follows its separate public-configuration contract and does not call this
+ * guard.
  */
 function assertPersistableSensitiveValues(values: readonly string[]): void {
   if (values.some((value) => value.length < MIN_SENSITIVE_INPUT_LENGTH)) {
@@ -2658,6 +2662,7 @@ function aiArtifactSummaryExtras(input: {
 
 async function applyAiDeploymentFromPreparedOutput(input: {
   args: Record<string, string>;
+  deploymentPlan?: DeploymentTaskDeploymentPlan;
   encodedKubeconfig: string;
   githubToken?: string;
   kubeconfig: string;
@@ -2684,6 +2689,8 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   // preserved resources this run never created.
   const identityFreshlyAllocated =
     recordedTemplateInstanceName(input.task) === "";
+  const deploymentPlan =
+    input.deploymentPlan ?? input.task.artifactSummary.deploymentPlan;
   let artifact: DeploymentArtifact;
   try {
     artifact = prepareSealosTemplateArtifact({
@@ -2695,10 +2702,12 @@ async function applyAiDeploymentFromPreparedOutput(input: {
         "deliveryManifest"
       ),
       instanceName:
-        input.task.artifactSummary.resultIdentities?.templateInstanceName,
+        input.task.artifactSummary.resultIdentities?.templateInstanceName ??
+        deploymentPlan?.instanceName,
       routingDomain: apUserDomain(input.kubeconfig),
       task: input.task,
       templateYaml: input.templateYaml,
+      declarationState: deploymentPlan?.renderState,
     });
   } catch (error) {
     if (isDeployTaskAbortError(error)) {
@@ -2728,7 +2737,6 @@ async function applyAiDeploymentFromPreparedOutput(input: {
   // Every user-submitted value is request-memory-only. Resource identities
   // are persisted, so reject a render that would copy a submitted value there.
   assertArtifactOperationalIdentifiers(artifact, submittedValues);
-  const deploymentPlan = input.task.artifactSummary.deploymentPlan;
   const summary = {
     ...sealosTemplateArtifactSummary({ artifact, includeRenderedYaml: false }),
     ...(deploymentPlan == null ? {} : { deploymentPlan }),
@@ -2801,9 +2809,22 @@ async function applyGeneratedAiDeployOutput(input: {
     input.output,
     "deliveryManifest"
   );
-  const deploymentPlan = createSealosTemplateDeploymentPlan({
+  const templateYaml = requiredStringValue(input.output, "templateYaml");
+  const templateName = templateSourceFromInlineYaml(templateYaml).templateName;
+  const plannedInstanceName = sealosTemplateInstanceName({
     deliveryManifest,
-    templateYaml: requiredStringValue(input.output, "templateYaml"),
+    projectName: input.task.projectName ?? templateName,
+    templateName,
+  });
+  const deploymentPlan = createSealosTemplateDeploymentPlan({
+    declarationContext: {
+      certSecretName: sealosCertSecretName(),
+      instanceName: plannedInstanceName,
+      namespace: input.task.namespace,
+      routingDomain: apUserDomain(input.kubeconfig),
+    },
+    deliveryManifest,
+    templateYaml,
   });
   const persistable = persistableAiDeployOutput({
     deliveryManifest,
@@ -2847,12 +2868,13 @@ async function applyGeneratedAiDeployOutput(input: {
 
   await applyAiDeploymentFromPreparedOutput({
     args: deployTaskStringRecordValue(deliveryManifest.args),
+    deploymentPlan,
     encodedKubeconfig: input.encodedKubeconfig,
     githubToken: input.githubToken ?? undefined,
     kubeconfig: input.kubeconfig,
     outputJson: persistable.outputJson,
     task: input.task,
-    templateYaml: requiredStringValue(input.output, "templateYaml"),
+    templateYaml,
     trustedPublicProjection: true,
   });
 }

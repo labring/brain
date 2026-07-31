@@ -12,10 +12,7 @@ import {
   type DeployTaskFailureReason,
   type DeployTaskStatus,
 } from "./schema";
-import {
-  isSensitiveDeploymentInput,
-  withoutSensitiveArgs,
-} from "./sensitive-inputs";
+import { withoutSensitiveArgs } from "./sensitive-inputs";
 import {
   DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentResultResourceCard,
@@ -182,11 +179,6 @@ function publicAiDeploymentPlanInput(value: unknown) {
     return null;
   }
 
-  const sensitive = isSensitiveDeploymentInput({
-    key: sourceKey,
-    sensitive: input.sensitive === true,
-    type: typeof input.type === "string" ? input.type : undefined,
-  });
   const sourceType =
     typeof input.type === "string" ? input.type.trim().toLowerCase() : "";
   const sourceLabel = typeof input.label === "string" ? input.label.trim() : "";
@@ -196,9 +188,12 @@ function publicAiDeploymentPlanInput(value: unknown) {
       )
     : null;
   let publicType = "string";
-  if (sensitive) {
-    publicType = "secret";
-  } else if (sourceType === "boolean" || sourceType === "number") {
+  if (
+    sourceType === "boolean" ||
+    sourceType === "number" ||
+    sourceType === "secret" ||
+    sourceType === "password"
+  ) {
     publicType = sourceType;
   }
   return {
@@ -206,18 +201,13 @@ function publicAiDeploymentPlanInput(value: unknown) {
       ...(typeof input.description === "string"
         ? { description: input.description }
         : {}),
-      ...(!sensitive && typeof input.default === "string"
-        ? { default: input.default }
-        : {}),
+      ...(typeof input.default === "string" ? { default: input.default } : {}),
       key: sourceKey,
       label: sourceLabel || sourceKey,
-      ...(!sensitive && sourceOptions != null
-        ? { options: sourceOptions }
-        : {}),
+      ...(sourceOptions == null ? {} : { options: sourceOptions }),
       ...(typeof input.required === "boolean"
         ? { required: input.required }
         : {}),
-      ...(sensitive ? { sensitive: true } : {}),
       type: publicType,
     },
     sourceKey,
@@ -289,11 +279,6 @@ function publicAiBlockingInput(value: unknown): DeployTaskBlockingInput | null {
     return null;
   }
   const sourceType = publicAiBlockingInputType(input.type);
-  const sensitive = isSensitiveDeploymentInput({
-    key: canonicalKey,
-    sensitive: input.sensitive === true,
-    type: sourceType,
-  });
   const valueType =
     typeof input.valueType === "string" &&
     ["boolean", "number"].includes(input.valueType.trim().toLowerCase())
@@ -306,7 +291,7 @@ function publicAiBlockingInput(value: unknown): DeployTaskBlockingInput | null {
       )
     : null;
   return {
-    ...(!sensitive && typeof input.defaultValue === "string"
+    ...(typeof input.defaultValue === "string"
       ? { defaultValue: input.defaultValue }
       : {}),
     ...(typeof input.description === "string"
@@ -315,11 +300,10 @@ function publicAiBlockingInput(value: unknown): DeployTaskBlockingInput | null {
     id: canonicalKey,
     key: canonicalKey,
     label: sourceLabel || canonicalKey,
-    ...(!sensitive && sourceOptions != null ? { options: sourceOptions } : {}),
+    ...(sourceOptions == null ? {} : { options: sourceOptions }),
     required: typeof input.required === "boolean" ? input.required : true,
-    type: sensitive ? "secret" : sourceType,
-    ...(sensitive ? { sensitive: true } : {}),
-    ...(sensitive || valueType == null ? {} : { valueType }),
+    type: sourceType,
+    ...(valueType == null ? {} : { valueType }),
   };
 }
 
