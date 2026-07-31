@@ -1,8 +1,7 @@
 /**
- * The one sensitivity predicate for deployment inputs (ADR 0037 row-level
- * UI masking predicate. A declaration can request a masked control, but a
- * field name never proves that a value is secret. Pure module: safe in client
- * bundles.
+ * Shared sensitivity predicate for deterministic direct/template deployment
+ * paths and UI masking. AI-generated Template content has its own contract:
+ * it is persisted without calling these value-scrubbing helpers.
  */
 export interface SensitiveDeploymentInputShape {
   key: string;
@@ -19,7 +18,15 @@ export function isSensitiveDeploymentInput(
     return true;
   }
   const type = input.type?.trim().toLowerCase();
-  return type === "password" || type === "secret";
+  const key = input.key.toLowerCase();
+  return (
+    type === "password" ||
+    type === "secret" ||
+    key.includes("secret") ||
+    key.includes("password") ||
+    key.endsWith("_key") ||
+    key.endsWith("_token")
+  );
 }
 
 export function sensitiveDeploymentInputKeys(
@@ -31,9 +38,10 @@ export function sensitiveDeploymentInputKeys(
 }
 
 /**
- * Args safe to persist: drops explicitly declared masked fields. Callers that
- * handle AI-generated Template DSL must not use this helper: generated output
- * is public deployment configuration and is retained unchanged.
+ * Args safe to persist: drops explicitly declared fields plus name-heuristic
+ * matches. Callers that handle AI-generated Template DSL must not use this
+ * helper: generated output is public deployment configuration and is retained
+ * unchanged.
  */
 export function withoutSensitiveArgs(
   args: Record<string, string> | undefined,
@@ -41,7 +49,9 @@ export function withoutSensitiveArgs(
 ): Record<string, string> {
   const declared = sensitiveDeploymentInputKeys(inputs);
   return Object.fromEntries(
-    Object.entries(args ?? {}).filter(([key]) => !declared.has(key))
+    Object.entries(args ?? {}).filter(
+      ([key]) => !(declared.has(key) || isSensitiveDeploymentInput({ key }))
+    )
   );
 }
 
@@ -66,7 +76,7 @@ export function allSensitiveArgValues(
 ): string[] {
   const declared = sensitiveDeploymentInputKeys(inputs);
   return Object.entries(args ?? {})
-    .filter(([key]) => declared.has(key))
+    .filter(([key]) => declared.has(key) || isSensitiveDeploymentInput({ key }))
     .map(([, value]) => value)
     .filter((value) => value.length > 0);
 }
@@ -77,7 +87,7 @@ export function shortSensitiveArgKeys(
 ): string[] {
   const declared = sensitiveDeploymentInputKeys(inputs);
   return Object.entries(args ?? {}).flatMap(([key, value]) =>
-    declared.has(key) &&
+    (declared.has(key) || isSensitiveDeploymentInput({ key })) &&
     value.length > 0 &&
     value.length < MIN_SENSITIVE_INPUT_LENGTH
       ? [key]

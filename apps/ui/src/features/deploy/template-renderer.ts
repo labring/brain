@@ -1476,7 +1476,7 @@ export function renderTemplateDeployment(
   );
   const fullYaml = sourceHasInstance
     ? renderedSource
-    : `${dumpObject(instance)}\n---\n${renderedSource}`;
+    : `${renderTemplateString(dumpObject(instance), context)}\n---\n${renderedSource}`;
   const resources = sourceHasInstance
     ? sourceResources
     : parseRenderedObjects(fullYaml);

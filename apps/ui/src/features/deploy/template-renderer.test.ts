@@ -807,6 +807,9 @@ spec:
     app_name:
       type: string
       value: inline-web
+    generated_from_input:
+      type: string
+      value: \${{ inputs.storage }}
   inputs:
     storage:
       type: number
@@ -840,6 +843,7 @@ spec:
 
   assert.equal(instance.kind, "Instance");
   assert.equal(instance.metadata.name, "template-inline");
+  assert.equal(instance.spec.defaults.generated_from_input.value, 1);
   assert.equal(service?.metadata?.name, "template-inline");
   assert.match(ingressYaml ?? "", TEMPLATE_SECRET_NAME_RE);
 });

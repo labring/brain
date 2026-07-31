@@ -2858,8 +2858,8 @@ async function applyGeneratedAiDeployOutput(input: {
 }
 
 /**
- * Direct deployments do not infer secrets from environment variable names.
- * Explicit template declarations carry masking metadata where it is needed.
+ * This direct run's known sensitive values are used to scrub an apply error
+ * that echoed one (ADR 0042). Database settings hold no user secret.
  */
 function directSensitiveValues(task: DeployTaskRow): string[] {
   if (task.source.kind !== "docker") {
