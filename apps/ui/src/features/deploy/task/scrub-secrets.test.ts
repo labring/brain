@@ -90,7 +90,7 @@ test("scrubSensitiveJsonValue never rewrites JSON primitive structure", () => {
   );
 });
 
-test("withoutSensitiveArgs drops declared and name-heuristic keys", () => {
+test("withoutSensitiveArgs drops only explicitly declared fields", () => {
   assert.deepEqual(
     withoutSensitiveArgs(
       {
@@ -101,24 +101,26 @@ test("withoutSensitiveArgs drops declared and name-heuristic keys", () => {
       },
       [{ key: "custom_field", sensitive: true }]
     ),
-    { mode: "fast" }
+    { ADMIN_PASSWORD: "x", api_token: "y", mode: "fast" }
   );
 });
 
-test("sensitiveArgValues collects sensitive values, skipping short ones", () => {
+test("sensitiveArgValues collects explicitly declared sensitive values", () => {
   assert.deepEqual(
-    sensitiveArgValues({ DB_PASSWORD: "abc", SIGNING_KEY: SECRET }),
+    sensitiveArgValues({ DB_PASSWORD: "abc", SIGNING_KEY: SECRET }, [
+      { key: "SIGNING_KEY", type: "secret" },
+    ]),
     [SECRET]
   );
 });
 
-test("isSensitiveDeploymentInput matches declared flags, types, and names", () => {
+test("isSensitiveDeploymentInput matches declarations and never field names", () => {
   assert.ok(isSensitiveDeploymentInput({ key: "anything", sensitive: true }));
   assert.ok(isSensitiveDeploymentInput({ key: "value", type: "password" }));
   assert.ok(isSensitiveDeploymentInput({ key: "value", type: "secret" }));
-  assert.ok(isSensitiveDeploymentInput({ key: "ADMIN_PASSWORD" }));
-  assert.ok(isSensitiveDeploymentInput({ key: "client_secret" }));
-  assert.ok(isSensitiveDeploymentInput({ key: "signing_key" }));
-  assert.ok(isSensitiveDeploymentInput({ key: "github_token" }));
+  assert.ok(!isSensitiveDeploymentInput({ key: "ADMIN_PASSWORD" }));
+  assert.ok(!isSensitiveDeploymentInput({ key: "client_secret" }));
+  assert.ok(!isSensitiveDeploymentInput({ key: "signing_key" }));
+  assert.ok(!isSensitiveDeploymentInput({ key: "github_token" }));
   assert.ok(!isSensitiveDeploymentInput({ key: "mode", type: "string" }));
 });

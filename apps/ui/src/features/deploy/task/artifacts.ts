@@ -7,6 +7,7 @@ import {
   type RenderedTemplateDeployment,
   renderTemplateDeploymentFromYaml,
   type TemplateEvaluationContext,
+  templateHeaderFromInlineYaml,
   templateSourceFromInlineYaml,
 } from "@/features/deploy/template-renderer";
 
@@ -16,12 +17,7 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
 } from "./schema";
-import {
-  isSensitiveDeploymentInput,
-  MIN_SENSITIVE_INPUT_LENGTH,
-  type SensitiveDeploymentInputShape,
-  withoutSensitiveArgs,
-} from "./sensitive-inputs";
+import { isSensitiveDeploymentInput } from "./sensitive-inputs";
 
 const SUPPORTED_API_VERSION = "brain.io/direct";
 const SUPPORTED_KINDS = new Set(["AP", "DB"]);
@@ -160,104 +156,23 @@ function stringRecordValue(value: unknown): Record<string, string> {
 }
 
 function templateNameFromYaml(templateYaml: string): string | null {
-  const templateDoc = YAML.parseAllDocuments(templateYaml)[0]?.toJS() as
-    | { metadata?: { name?: string } }
-    | null
-    | undefined;
+  const templateDoc = YAML.parseDocument(
+    templateHeaderFromInlineYaml(templateYaml).headerYaml
+  ).toJS() as { metadata?: { name?: string } } | null | undefined;
   return templateDoc?.metadata?.name?.trim() || null;
 }
 
-function templateYamlSensitiveShape(
-  key: string,
-  value: unknown
-): SensitiveDeploymentInputShape {
-  const record = objectValue(value);
-  return {
-    key,
-    sensitive: record?.sensitive === true,
-    type: typeof record?.type === "string" ? record.type : undefined,
-  };
-}
-
-function hasSensitiveTemplateYamlValue(value: unknown): boolean {
-  if (value == null) {
-    return false;
-  }
-  if (typeof value === "string") {
-    return value.length > 0;
-  }
-  if (Array.isArray(value)) {
-    return value.length > 0;
-  }
-  if (typeof value === "object") {
-    return Object.keys(value).length > 0;
-  }
-  return true;
-}
-
-function sensitiveTemplateYamlInputs(input: { inputs: unknown }): {
-  hasSensitiveValues: boolean;
-  sensitiveInputs: SensitiveDeploymentInputShape[];
-} {
-  const entries = Array.isArray(input.inputs)
-    ? input.inputs.flatMap((value) => {
-        const key = stringValue(objectValue(value)?.key);
-        return key == null ? [] : [{ key, value }];
-      })
-    : Object.entries(objectValue(input.inputs) ?? {}).map(([key, value]) => ({
-        key,
-        value,
-      }));
-  const sensitiveInputs: SensitiveDeploymentInputShape[] = [];
-  let hasSensitiveValues = false;
-  for (const entry of entries) {
-    const shape = templateYamlSensitiveShape(entry.key, entry.value);
-    if (!isSensitiveDeploymentInput(shape)) {
-      continue;
-    }
-    sensitiveInputs.push({ ...shape, sensitive: true });
-    const record = objectValue(entry.value);
-    if (hasSensitiveTemplateYamlValue(record?.default)) {
-      hasSensitiveValues = true;
-    }
-    for (const option of Array.isArray(record?.options) ? record.options : []) {
-      if (hasSensitiveTemplateYamlValue(option)) {
-        hasSensitiveValues = true;
-      }
-    }
-  }
-  return { hasSensitiveValues, sensitiveInputs };
-}
-
-function hasSensitiveTemplateYamlDefaults(input: {
-  defaults: unknown;
-}): boolean {
-  for (const [key, value] of Object.entries(
-    objectValue(input.defaults) ?? {}
-  )) {
-    if (!isSensitiveDeploymentInput(templateYamlSensitiveShape(key, value))) {
-      continue;
-    }
-    const record = objectValue(value);
-    if (
-      hasSensitiveTemplateYamlValue(
-        record != null && "value" in record ? record.value : value
-      )
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
+/**
+ * Validates only the standard-YAML Template header. The remainder is Sealos
+ * DSL, not generic YAML, and must be retained byte-for-byte for later render.
+ */
 export function persistableSealosTemplate(templateYaml: string): {
-  sensitiveInputs: SensitiveDeploymentInputShape[];
-  sensitiveValues: string[];
   templateYaml: string;
 } {
-  const documents = YAML.parseAllDocuments(templateYaml);
-  const templateDocument = documents[0];
-  if (templateDocument?.errors.length) {
+  const templateDocument = YAML.parseDocument(
+    templateHeaderFromInlineYaml(templateYaml).headerYaml
+  );
+  if (templateDocument.errors.length) {
     throw new Error("Sealos template header is not valid YAML.");
   }
   const template = objectValue(templateDocument?.toJS());
@@ -266,29 +181,9 @@ export function persistableSealosTemplate(templateYaml: string): {
     template?.apiVersion !== "app.sealos.io/v1" ||
     template.kind !== "Template"
   ) {
-    return { sensitiveInputs: [], sensitiveValues: [], templateYaml };
+    return { templateYaml };
   }
-
-  const spec = objectValue(template.spec);
-  const inputSecrets = sensitiveTemplateYamlInputs({
-    inputs: spec?.inputs,
-  });
-  if (
-    inputSecrets.hasSensitiveValues ||
-    hasSensitiveTemplateYamlDefaults({
-      defaults: spec?.defaults,
-    })
-  ) {
-    throw new Error(
-      "Generated deployment template contains sensitive default values."
-    );
-  }
-
-  return {
-    sensitiveInputs: inputSecrets.sensitiveInputs,
-    sensitiveValues: [],
-    templateYaml,
-  };
+  return { templateYaml };
 }
 
 export function persistableSealosTemplateYaml(templateYaml: string): string {
@@ -734,8 +629,6 @@ function templateInputBlockingType(
 
 export function createSealosTemplateDeploymentPlan(input: {
   deliveryManifest: Record<string, unknown>;
-  /** AI-authored secret values must be re-collected from a user submission. */
-  requireFreshSensitiveValues?: boolean;
   templateYaml: string;
 }): DeploymentTaskDeploymentPlan {
   const parsed = templateSourceFromInlineYaml(input.templateYaml);
@@ -750,18 +643,6 @@ export function createSealosTemplateDeploymentPlan(input: {
     inputs,
   });
   const missingInputKeys = visibleInputs.flatMap((item) => {
-    if (item.sensitive) {
-      const provided = args[item.key];
-      // Gateway-authored args/defaults are not user proof for a secret. The AI
-      // path explicitly requires a fresh submission; the template runner may
-      // trust a value already supplied by its credentialed request.
-      return input.requireFreshSensitiveValues === true ||
-        provided === undefined ||
-        provided === "" ||
-        provided.length < MIN_SENSITIVE_INPUT_LENGTH
-        ? [item.key]
-        : [];
-    }
     const provided = args[item.key];
     if (provided !== undefined && provided !== "") {
       return [];
@@ -774,16 +655,9 @@ export function createSealosTemplateDeploymentPlan(input: {
     }
     return [];
   });
-  const persistableInputs = visibleInputs.map((item) => {
-    if (!item.sensitive) {
-      return item;
-    }
-    const { default: _default, options: _options, ...persistable } = item;
-    return persistable;
-  });
   return {
-    args: withoutSensitiveArgs(args, inputs),
-    inputs: persistableInputs,
+    args,
+    inputs: visibleInputs,
     kind: "sealos-template",
     ...(missingInputKeys.length === 0 ? {} : { missingInputKeys }),
     templateName: parsed.templateName,
@@ -791,29 +665,25 @@ export function createSealosTemplateDeploymentPlan(input: {
 }
 
 /**
- * Inputs the blocking form must (re)collect to resume: missing values, plus
- * every sensitive input — sensitive values are never persisted (ADR 0037),
- * so a resume can only get them from a fresh submission (US15).
+ * Inputs the blocking form must collect to resume. `secret` and `password`
+ * affect only the UI control; Template declarations/defaults remain generated
+ * deployment configuration.
  */
 export function blockingInputsFromDeploymentPlan(
   plan: DeploymentTaskDeploymentPlan
 ): DeployTaskBlockingInput[] {
   const missing = new Set(plan.missingInputKeys ?? []);
   return plan.inputs
-    .filter((input) => missing.has(input.key) || input.sensitive === true)
+    .filter((input) => missing.has(input.key))
     .map((input) => ({
-      ...(input.default === undefined || input.sensitive === true
-        ? {}
-        : { defaultValue: input.default }),
+      ...(input.default === undefined ? {} : { defaultValue: input.default }),
       ...(input.description === undefined
         ? {}
         : { description: input.description }),
       id: input.key,
       key: input.key,
       label: templateInputLabel(input),
-      ...(input.options === undefined || input.sensitive === true
-        ? {}
-        : { options: input.options }),
+      ...(input.options === undefined ? {} : { options: input.options }),
       required: missing.has(input.key) || input.required === true,
       sensitive: input.sensitive,
       type: templateInputBlockingType(input),
@@ -876,6 +746,7 @@ export function prepareSealosTemplateArtifact(input: {
 export function sealosTemplateArtifactSummary(input: {
   appliedResources?: { name: string; resourceType: string; uid: string }[];
   artifact: DeploymentSealosTemplateArtifact;
+  includeRenderedYaml?: boolean;
   notes?: string;
 }): DeployTaskArtifactSummary {
   const renderedYaml = joinKubeYamlDocuments([
@@ -902,6 +773,8 @@ export function sealosTemplateArtifactSummary(input: {
     ...(input.notes === undefined ? {} : { notes: input.notes }),
     buildResult: input.artifact.build,
     resources,
-    resourceYamls: [renderedYaml],
+    ...(input.includeRenderedYaml === false
+      ? {}
+      : { resourceYamls: [renderedYaml] }),
   };
 }

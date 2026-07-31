@@ -13,7 +13,6 @@ import {
   prepareSealosTemplateArtifact,
   sealosTemplateArtifactSummary,
 } from "./artifacts";
-import { withoutSensitiveArgs } from "./sensitive-inputs";
 
 const UNSUPPORTED_ARTIFACT_REGEX = /Unsupported deploy artifact/;
 const MISSING_PROJECT_NAME_REGEX = /without a Project name/;
@@ -28,7 +27,6 @@ const RENDERED_GHCR_IMAGE_REGEX = /ghcr\.io\/zjy365\/seakills-site/;
 const RENDERED_PULL_SECRET_TOKEN_REGEX = /SEALOS_GITHUB_TOKEN|dockerconfigjson/;
 const UNSUPPORTED_TEMPLATE_KIND_REGEX =
   /blocked Kubernetes kind ClusterRoleBinding/;
-const SENSITIVE_DEFAULT_VALUES_REGEX = /sensitive default values/;
 const DNS_1035_LABEL = /^[a-z]([-a-z0-9]*[a-z0-9])?$/;
 const DEMO_WEB_TEMPLATE_INSTANCE_REGEX = /^demo-web-[a-z]{6}$/;
 const GITHUB_TEMPLATE_INSTANCE_REGEX = /^seakills-site-[a-z]{6}$/;
@@ -508,34 +506,16 @@ test("createSealosTemplateDeploymentPlan reports missing required inputs", () =>
   ]);
 });
 
-test("deployment plans require sensitive inputs even when generated args provide values", () => {
+test("deployment plans retain generated input values without re-prompting", () => {
   const plan = createSealosTemplateDeploymentPlan({
     deliveryManifest: { args: { ai_gateway_api_key: "prefilled-secret" } },
-    requireFreshSensitiveValues: true,
     templateYaml: TEMPLATE_WITH_REQUIRED_INPUT,
   });
-  assert.deepEqual(plan.missingInputKeys, ["ai_gateway_api_key"]);
-  assert.deepEqual(plan.args, {});
-
-  // Gateway-authored args are not user proof. A resume can only get the value
-  // from a fresh submission, so the form must include it (ADR 0037 / US15).
-  const blockingInputs = blockingInputsFromDeploymentPlan(plan);
-  assert.equal(blockingInputs.length, 1);
-  assert.equal(blockingInputs[0]?.key, "ai_gateway_api_key");
-  assert.equal(blockingInputs[0]?.sensitive, true);
-});
-
-test("template-request sensitive inputs satisfy the plan without an AI re-prompt", () => {
-  const plan = createSealosTemplateDeploymentPlan({
-    deliveryManifest: { args: { ai_gateway_api_key: "submitted-secret" } },
-    templateYaml: TEMPLATE_WITH_REQUIRED_INPUT,
-  });
-
   assert.equal(plan.missingInputKeys, undefined);
-  assert.deepEqual(plan.args, {});
+  assert.deepEqual(plan.args, { ai_gateway_api_key: "prefilled-secret" });
 });
 
-test("persistence metadata includes conditionally hidden secret inputs", () => {
+test("plans retain conditional generated configuration and only collect missing inputs", () => {
   const templateYaml = `
 apiVersion: app.sealos.io/v1
 kind: Template
@@ -566,27 +546,16 @@ data:
     deliveryManifest: { args: generatedArgs },
     templateYaml,
   });
-  const persistence = persistableSealosTemplate(templateYaml);
-
   assert.deepEqual(
     plan.inputs.map((input) => input.key),
     ["enabled"]
   );
-  assert.deepEqual(plan.args, { enabled: "false" });
-  assert.deepEqual(
-    persistence.sensitiveInputs.map((input) => input.key),
-    ["credential"]
-  );
-  assert.deepEqual(
-    withoutSensitiveArgs(generatedArgs, persistence.sensitiveInputs),
-    { enabled: "false" }
-  );
+  assert.deepEqual(plan.args, generatedArgs);
 });
 
-test("deployment plans and blocking forms omit sensitive generated defaults", () => {
+test("blocking forms use generated defaults and options", () => {
   const plan = createSealosTemplateDeploymentPlan({
     deliveryManifest: { args: {} },
-    requireFreshSensitiveValues: true,
     templateYaml: `
 apiVersion: app.sealos.io/v1
 kind: Template
@@ -608,7 +577,7 @@ spec:
         - private-input-default
         - private-input-alternative
       required: true
-      type: string
+      type: secret
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -621,19 +590,12 @@ data:
 
   assert.equal(plan.defaults, undefined);
   assert.equal(plan.inputs[0]?.sensitive, true);
-  assert.equal(plan.inputs[0]?.default, undefined);
-  assert.equal(plan.inputs[0]?.options, undefined);
-  assert.deepEqual(plan.missingInputKeys, ["API_KEY"]);
+  assert.equal(plan.missingInputKeys, undefined);
   const blockingInputs = blockingInputsFromDeploymentPlan(plan);
-  assert.equal(blockingInputs[0]?.defaultValue, undefined);
-  assert.equal(blockingInputs[0]?.options, undefined);
-  assert.equal(
-    JSON.stringify({ blockingInputs, plan }).includes("private"),
-    false
-  );
+  assert.deepEqual(blockingInputs, []);
 });
 
-test("blocking forms discard sensitive defaults and options defensively", () => {
+test("blocking forms preserve generated secret defaults and options", () => {
   const blockingInputs = blockingInputsFromDeploymentPlan({
     inputs: [
       {
@@ -650,12 +612,14 @@ test("blocking forms discard sensitive defaults and options defensively", () => 
     templateName: "generated-secret-default",
   });
 
-  assert.equal(blockingInputs[0]?.defaultValue, undefined);
-  assert.equal(blockingInputs[0]?.options, undefined);
-  assert.equal(JSON.stringify(blockingInputs).includes("private"), false);
+  assert.equal(blockingInputs[0]?.defaultValue, "private-input-default");
+  assert.deepEqual(blockingInputs[0]?.options, [
+    "private-input-default",
+    "private-input-alternative",
+  ]);
 });
 
-test("persistableSealosTemplate preserves Sealos DSL source and sensitive declarations", () => {
+test("persistableSealosTemplate preserves Sealos DSL source byte-for-byte", () => {
   const rawTemplateYaml = `
 apiVersion: app.sealos.io/v1
 kind: Template
@@ -693,17 +657,33 @@ metadata:
 `;
   const persistence = persistableSealosTemplate(rawTemplateYaml);
   assert.equal(persistence.templateYaml, rawTemplateYaml);
-  assert.deepEqual(
-    persistence.sensitiveInputs.map((input) => input.key),
-    ["API_KEY"]
-  );
-  assert.deepEqual(persistence.sensitiveValues, []);
 });
 
-test("persistableSealosTemplate rejects sensitive input defaults and options", () => {
-  assert.throws(
-    () =>
-      persistableSealosTemplateYaml(`
+test("persistableSealosTemplate parses only the Template header", () => {
+  const templateYaml = `
+apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: dsl-header-only
+spec:
+  templateType: inline
+---
+\${{ if(inputs.enabled) }}
+this is Sealos DSL, not Kubernetes YAML
+\${{ endif() }}
+`;
+  assert.equal(persistableSealosTemplateYaml(templateYaml), templateYaml);
+  assert.equal(
+    createSealosTemplateDeploymentPlan({
+      deliveryManifest: { args: {} },
+      templateYaml,
+    }).templateName,
+    "dsl-header-only"
+  );
+});
+
+test("persistableSealosTemplate accepts generated declarations and defaults", () => {
+  const templateYaml = `
 apiVersion: app.sealos.io/v1
 kind: Template
 metadata:
@@ -725,105 +705,8 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: demo
-`),
-    SENSITIVE_DEFAULT_VALUES_REGEX
-  );
-});
-
-test("persistableSealosTemplate rejects sensitive template defaults instead of rewriting source", () => {
-  const rawTemplateYaml = `
-apiVersion: app.sealos.io/v1
-kind: Template
-metadata:
-  name: resumable-defaults
-spec:
-  templateType: inline
-  defaults:
-    app_host:
-      type: string
-      value: demo
-    internal_token:
-      type: secret
-      value: private-global-default
-  inputs:
-    PORT:
-      required: true
-      type: number
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: resumable-defaults
-data:
-  host: \${{ defaults.app_host }}
-  port: "\${{ inputs.PORT }}"
-  token: \${{ defaults.internal_token }}
 `;
-  assert.throws(
-    () => persistableSealosTemplate(rawTemplateYaml),
-    SENSITIVE_DEFAULT_VALUES_REGEX
-  );
-});
-
-test("persistableSealosTemplate rejects structured sensitive default values", () => {
-  for (const templateYaml of [
-    `
-apiVersion: app.sealos.io/v1
-kind: Template
-metadata:
-  name: structured-input-default
-spec:
-  templateType: inline
-  inputs:
-    API_KEY:
-      default: { token: leaked-token }
-      type: secret
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: structured-input-default
-`,
-    `
-apiVersion: app.sealos.io/v1
-kind: Template
-metadata:
-  name: structured-input-options
-spec:
-  templateType: inline
-  inputs:
-    API_KEY:
-      options: [{ token: leaked-token }]
-      type: secret
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: structured-input-options
-`,
-    `
-apiVersion: app.sealos.io/v1
-kind: Template
-metadata:
-  name: structured-template-default
-spec:
-  templateType: inline
-  defaults:
-    internal_token:
-      type: secret
-      value: { token: leaked-token }
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: structured-template-default
-`,
-  ]) {
-    assert.throws(
-      () => persistableSealosTemplate(templateYaml),
-      SENSITIVE_DEFAULT_VALUES_REGEX
-    );
-  }
+  assert.equal(persistableSealosTemplateYaml(templateYaml), templateYaml);
 });
 
 test("prepareSealosTemplateArtifact renders persisted conditional DSL source", () => {

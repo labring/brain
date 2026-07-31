@@ -1313,6 +1313,32 @@ function normalizeTemplateInputs(value: unknown): TemplateSourceInput[] {
   );
 }
 
+export function templateHeaderFromInlineYaml(yaml: string): {
+  headerYaml: string;
+  resourceSourceOffset: number;
+} {
+  const marker = /^---[\t ]*(?:#.*)?\r?$/gm;
+  const firstMarker = marker.exec(yaml);
+  if (firstMarker == null) {
+    return { headerYaml: yaml, resourceSourceOffset: yaml.length };
+  }
+  const resourceMarker =
+    yaml.slice(0, firstMarker.index).trim() === ""
+      ? marker.exec(yaml)
+      : firstMarker;
+  if (resourceMarker == null) {
+    return { headerYaml: yaml, resourceSourceOffset: yaml.length };
+  }
+  const resourceSourceOffset =
+    resourceMarker.index +
+    resourceMarker[0].length +
+    (yaml[resourceMarker.index + resourceMarker[0].length] === "\n" ? 1 : 0);
+  return {
+    headerYaml: yaml.slice(0, resourceMarker.index),
+    resourceSourceOffset,
+  };
+}
+
 export function templateSourceFromInlineYaml(yaml: string): {
   source: TemplateSourcePayload;
   templateName: string;
@@ -1321,12 +1347,13 @@ export function templateSourceFromInlineYaml(yaml: string): {
   // documents may contain top-level if/endif directives. Only the leading
   // Template document is YAML before expression rendering; preserve the
   // remaining source byte-for-byte for renderTemplateString().
-  const documents = YAML.parseAllDocuments(yaml);
-  const templateDocument = documents[0];
-  if (templateDocument?.errors.length) {
+  const { headerYaml, resourceSourceOffset } =
+    templateHeaderFromInlineYaml(yaml);
+  const templateDocument = YAML.parseDocument(headerYaml);
+  if (templateDocument.errors.length) {
     throw new Error("Sealos template header is not valid YAML.");
   }
-  const template = templateDocument?.toJS() as TemplateK8sObject | undefined;
+  const template = templateDocument.toJS() as TemplateK8sObject | undefined;
   if (template == null) {
     throw new Error("Sealos template artifact is empty.");
   }
@@ -1338,11 +1365,8 @@ export function templateSourceFromInlineYaml(yaml: string): {
       "Sealos template artifact must start with app.sealos.io/v1 Template."
     );
   }
-  const resourceSourceOffset = templateDocument?.range?.[2];
   const appYaml =
-    typeof resourceSourceOffset === "number"
-      ? yaml.slice(resourceSourceOffset)
-      : "";
+    resourceSourceOffset < yaml.length ? yaml.slice(resourceSourceOffset) : "";
   if (appYaml.trim() === "") {
     throw new Error(
       "Sealos template artifact must include workload resources."

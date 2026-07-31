@@ -663,7 +663,7 @@ describe("AI prepared output failure handling", () => {
     process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
   });
 
-  it("rejects generated templates that embed sensitive default values", () => {
+  it("retains generated Template configuration unchanged", () => {
     const templateYaml = `
 apiVersion: app.sealos.io/v1
 kind: Template
@@ -701,58 +701,46 @@ data:
         enabled: "false",
       },
     };
-    expect(() =>
-      persistableAiDeployOutput({
-        deliveryManifest,
-        output: {
-          buildResult: {
-            detail:
-              "provider-secret-token private-input-default private-global-default",
-            status: "skipped",
-          },
-          deliveryManifest,
-          templateYaml,
+    const persisted = persistableAiDeployOutput({
+      deliveryManifest,
+      output: {
+        buildResult: {
+          detail:
+            "provider-secret-token private-input-default private-global-default",
+          status: "skipped",
         },
-        planInputs: [{ key: "enabled", sensitive: false, type: "boolean" }],
-      })
-    ).toThrow(
-      "Generated deployment template contains sensitive default values."
-    );
+        deliveryManifest,
+        templateYaml,
+      },
+    });
+    expect(persisted.deliveryManifest).toEqual(deliveryManifest);
+    expect(persisted.outputJson.templateYaml).toBe(templateYaml);
   });
 
-  it("rejects generated sensitive values that are too short to scrub safely", () => {
+  it("does not infer sensitivity from generated input declarations", () => {
     const deliveryManifest = { args: { API_KEY: "q7" } };
 
-    expect(() =>
-      persistableAiDeployOutput({
+    const persisted = persistableAiDeployOutput({
+      deliveryManifest,
+      output: {
+        buildResult: { status: "skipped" },
         deliveryManifest,
-        output: {
-          buildResult: { status: "skipped" },
-          deliveryManifest,
-          templateYaml: AI_TEMPLATE_WITH_CONFIG_INPUTS,
-        },
-        planInputs: [
-          {
-            key: "API_KEY",
-            sensitive: true,
-            type: "secret",
-          },
-        ],
-      })
-    ).toThrow("sensitive value shorter than four characters");
+        templateYaml: AI_TEMPLATE_WITH_CONFIG_INPUTS,
+      },
+    });
+    expect(persisted.outputJson.deliveryManifest).toEqual(deliveryManifest);
   });
 
-  it("rejects a resumable template that still embeds a submitted secret", () => {
+  it("retains raw DSL even when declarations use secret as a UI type", () => {
     const secret = "provider-secret-token";
     const deliveryManifest = { args: { API_KEY: secret } };
 
-    expect(() =>
-      persistableAiDeployOutput({
+    const persisted = persistableAiDeployOutput({
+      deliveryManifest,
+      output: {
+        buildResult: { status: "skipped" },
         deliveryManifest,
-        output: {
-          buildResult: { status: "skipped" },
-          deliveryManifest,
-          templateYaml: `
+        templateYaml: `
 apiVersion: app.sealos.io/v1
 kind: Template
 metadata:
@@ -772,32 +760,30 @@ metadata:
 data:
   value: safe
 `,
-        },
-        planInputs: [{ key: "API_KEY", sensitive: true, type: "secret" }],
-      })
-    ).toThrow(
-      "Generated deployment template contains a sensitive value outside a declared sensitive input."
-    );
+      },
+    });
+    expect(persisted.outputJson.templateYaml).toContain(secret);
   });
 
-  it("scrubs sensitive echoes from persisted plan text and ordinary options", async () => {
-    const secret = "sensitive-plan-token";
+  it("keeps generated configuration but never persists submitted values or rendered YAML", async () => {
+    const generatedValue = "generated-template-metadata";
+    const submittedValue = "submitted-input-value";
     currentRow = preparedAiInputTaskRow({
       missingInputKeys: [],
       planInputs: [
         {
-          description: `Uses ${secret}`,
+          description: `Uses ${generatedValue}`,
           key: "PORT",
-          label: `Port for ${secret}`,
-          options: ["8080", secret],
+          label: `Port for ${generatedValue}`,
+          options: ["8080", generatedValue],
           required: true,
           sensitive: false,
           type: "number",
         },
         {
-          description: `Credential ${secret}`,
+          description: `Credential ${generatedValue}`,
           key: "API_KEY",
-          label: `API key ${secret}`,
+          label: `API key ${generatedValue}`,
           required: true,
           sensitive: true,
           type: "secret",
@@ -808,7 +794,7 @@ data:
     await runDeployTask(runnerHandle(), {
       currentBlockingInputs: currentAiBlockingInputs("PORT", "API_KEY"),
       encodedKubeconfig: "kubeconfig-for-tests",
-      submittedInputValues: { API_KEY: secret, PORT: "8080" },
+      submittedInputValues: { API_KEY: submittedValue, PORT: "8080" },
       taskId: "task-1",
     });
 
@@ -827,8 +813,9 @@ data:
         return summary?.deploymentPlan != null;
       })
     ).toBe(true);
-    expect(persistedState).not.toContain(secret);
-    expect(persistedState).toContain("[redacted]");
+    expect(persistedState).toContain(generatedValue);
+    expect(persistedState).not.toContain("resourceYamls");
+    expect(persistedState).not.toContain(submittedValue);
   });
 
   it("does not promote legacy prepared output to a trusted public projection", async () => {
@@ -928,7 +915,7 @@ data:
     expect(JSON.stringify(rejectedEvent)).not.toContain("must be a number");
   });
 
-  it("re-blocks a submitted short secret without persisting its value", async () => {
+  it("accepts short submitted values without persisting them", async () => {
     const shortSecret = "q7";
     currentRow = preparedAiInputTaskRow();
 
@@ -939,17 +926,10 @@ data:
       taskId: "task-1",
     });
 
-    expect(failCalls).toHaveLength(0);
-    expect(requestInputsCalls).toHaveLength(1);
-    const rejectedEvent = recordedEvents.find(
-      (event) => event.kind === "deployment_task.input_rejected"
-    );
-    expect(rejectedEvent?.payload).toEqual({
-      code: "minimum-length",
-      inputKey: "API_KEY",
-    });
+    expect(requestInputsCalls).toHaveLength(0);
     expect(
       JSON.stringify({
+        failCalls,
         recordedEvents,
         requestInputsCalls,
         stateWrites,
