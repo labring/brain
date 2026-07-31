@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { render } from "@testing-library/react/pure";
+import { act, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { SidePane, SidePanePresence } from "./side-pane";
+import { SidePane, SidePaneFooter, SidePanePresence } from "./side-pane";
 
 const noop = () => {
   /* test noop */
@@ -108,6 +111,185 @@ test("side pane closed state is non-interactive and keeps reduced-motion structu
   assert.match(html, POINTER_EVENTS_NONE_RE);
   assert.match(html, CLOSED_SLIDE_FULL_RE);
   assert.match(html, MOTION_REDUCE_TRANSFORM_RE);
+});
+
+function installSidePaneTestDom() {
+  if (GlobalRegistrator.isRegistered) {
+    throw new Error("a test DOM is already registered");
+  }
+  GlobalRegistrator.register({ url: "https://side-pane.test" });
+  return () => GlobalRegistrator.unregister();
+}
+
+async function withMountedPane(
+  element: ReactElement,
+  run: (rendered: ReturnType<typeof render>) => Promise<void> | void
+) {
+  const restoreDom = installSidePaneTestDom();
+  const reactTestGlobals = globalThis as typeof globalThis & {
+    IS_REACT_ACT_ENVIRONMENT?: boolean;
+  };
+  const previousActEnvironment = reactTestGlobals.IS_REACT_ACT_ENVIRONMENT;
+  reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = true;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await act(() => {
+      rendered = render(element);
+    });
+    assert.ok(rendered);
+    await run(rendered);
+  } finally {
+    if (rendered) {
+      await act(() => {
+        rendered?.unmount();
+      });
+    }
+    reactTestGlobals.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
+    await restoreDom();
+  }
+}
+
+function footerRegion(container: HTMLElement) {
+  return container.querySelector('[data-slot="side-pane-footer"]');
+}
+
+test("side pane footer pins slot content outside the scroll container", async () => {
+  await withMountedPane(
+    <SidePane label="Details pane" onClose={noop} title="Details">
+      <p>Pane body</p>
+      <SidePaneFooter>
+        <button type="button">Deploy</button>
+      </SidePaneFooter>
+    </SidePane>,
+    ({ container }) => {
+      const region = footerRegion(container);
+      assert.ok(region, "footer region should render");
+      const deploy = region.querySelector("button");
+      assert.equal(deploy?.textContent, "Deploy");
+      assert.equal(
+        region.closest(".overflow-y-auto"),
+        null,
+        "footer must not live inside the scroll container"
+      );
+      assert.ok(
+        region.closest(".project-chrome-surface"),
+        "footer must slide with the inner chrome surface"
+      );
+      const scrollBody = container.querySelector(".overflow-y-auto");
+      assert.ok(scrollBody);
+      const documentOrder = [...container.querySelectorAll("*")];
+      assert.ok(
+        documentOrder.indexOf(scrollBody) < documentOrder.indexOf(region),
+        "footer must follow the scroll body in tab order"
+      );
+      assert.ok(
+        region.className.includes("justify-end"),
+        "footer container owns the right-aligned action row"
+      );
+      assert.ok(
+        region.className.includes("border-t"),
+        "footer is separated by a top border"
+      );
+    }
+  );
+});
+
+test("side pane footer accepts contributions from deep in the children tree", async () => {
+  function DeepContributor() {
+    return (
+      <SidePaneFooter>
+        <button type="button">Update</button>
+      </SidePaneFooter>
+    );
+  }
+  await withMountedPane(
+    <SidePane label="Details pane" onClose={noop} title="Details">
+      <div>
+        <section>
+          <DeepContributor />
+        </section>
+      </div>
+    </SidePane>,
+    ({ container }) => {
+      const region = footerRegion(container);
+      assert.ok(region, "deep contribution should open the footer region");
+      assert.equal(region.querySelector("button")?.textContent, "Update");
+      assert.equal(region.closest(".overflow-y-auto"), null);
+    }
+  );
+});
+
+test("side pane without footer contribution renders no footer region", async () => {
+  await withMountedPane(
+    <SidePane label="Details pane" onClose={noop} title="Details">
+      <p>Pane body</p>
+    </SidePane>,
+    ({ container }) => {
+      assert.equal(footerRegion(container), null);
+    }
+  );
+});
+
+test("side pane footer region unmounts when its contributor leaves", async () => {
+  await withMountedPane(
+    <SidePane label="Details pane" onClose={noop} title="Details">
+      <SidePaneFooter>
+        <button type="button">Deploy</button>
+      </SidePaneFooter>
+    </SidePane>,
+    async (rendered) => {
+      assert.ok(footerRegion(rendered.container));
+      await act(() => {
+        rendered.rerender(
+          <SidePane label="Details pane" onClose={noop} title="Details">
+            <p>No actions here</p>
+          </SidePane>
+        );
+      });
+      assert.equal(footerRegion(rendered.container), null);
+    }
+  );
+});
+
+test("side pane footer slot without a side pane renders its content in place", async () => {
+  await withMountedPane(
+    <SidePaneFooter>
+      <button type="button">Deploy</button>
+    </SidePaneFooter>,
+    ({ container }) => {
+      assert.equal(footerRegion(container), null);
+      assert.equal(container.querySelector("button")?.textContent, "Deploy");
+    }
+  );
+});
+
+test("side pane presence choreography is unchanged by footer presence", async () => {
+  await withMountedPane(
+    <SidePanePresence>
+      <SidePane label="Details pane" onClose={noop} title="Details">
+        <p>Pane body</p>
+        <SidePaneFooter>
+          <button type="button">Deploy</button>
+        </SidePaneFooter>
+      </SidePane>
+    </SidePanePresence>,
+    async ({ container }) => {
+      // Enter choreography defers the open transform by two frames.
+      await act(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => resolve());
+            });
+          })
+      );
+      const aside = container.querySelector("aside");
+      assert.ok(aside);
+      assert.equal(aside.getAttribute("data-state"), "open");
+      assert.match(aside.className, OPEN_SLIDE_RE);
+      assert.ok(footerRegion(container));
+    }
+  );
 });
 
 test("side pane presence renders initial pane content open", () => {

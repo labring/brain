@@ -1,5 +1,6 @@
 "use client";
 
+import { SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { useMemo } from "react";
 import { DatabaseDeployer } from "@/features/deploy/database-deployer";
 import { DockerDeployer } from "@/features/deploy/docker-deployer";
@@ -103,7 +104,7 @@ function DockerPanel() {
       className="flex min-w-0 flex-col gap-3"
       data-slot="project-creator-docker"
     >
-      <DockerDeployer
+      <DockerDeployer.Root
         busy={busy}
         onDeploy={(settings) => {
           const projectDescription = states.projectDescription.trim();
@@ -115,7 +116,12 @@ function DockerPanel() {
           }
           actions.onDockerConfirm?.(settings, projectDescription);
         }}
-      />
+      >
+        <DockerDeployer.Fields />
+        <SidePaneFooter>
+          <DockerDeployer.Submit />
+        </SidePaneFooter>
+      </DockerDeployer.Root>
     </div>
   );
 }
@@ -133,7 +139,7 @@ function DatabasePanel({
       className="flex min-w-0 flex-col gap-3"
       data-slot="project-creator-database"
     >
-      <DatabaseDeployer
+      <DatabaseDeployer.Root
         busy={busy}
         databaseOptions={databaseOptions}
         onDeploy={(settings) => {
@@ -149,7 +155,12 @@ function DatabasePanel({
           }
           actions.onDatabaseConfirm?.(settings, projectDescription);
         }}
-      />
+      >
+        <DatabaseDeployer.Fields />
+        <SidePaneFooter>
+          <DatabaseDeployer.Submit />
+        </SidePaneFooter>
+      </DatabaseDeployer.Root>
     </div>
   );
 }
@@ -175,7 +186,7 @@ function TemplatePanel() {
       className="flex min-w-0 flex-col gap-3"
       data-slot="project-creator-template"
     >
-      <TemplateDeployer
+      <TemplateDeployer.Root
         autoDeploy={meta.templateDirect && meta.initialTemplateArgs != null}
         busy={busy}
         errorMessage={meta.templateOptionsError}
@@ -195,7 +206,12 @@ function TemplatePanel() {
           actions.onTemplateConfirm?.(settings, choice, projectDescription);
         }}
         templateOptions={meta.templateOptions}
-      />
+      >
+        <TemplateDeployer.Fields />
+        <SidePaneFooter>
+          <TemplateDeployer.Submit />
+        </SidePaneFooter>
+      </TemplateDeployer.Root>
     </div>
   );
 }

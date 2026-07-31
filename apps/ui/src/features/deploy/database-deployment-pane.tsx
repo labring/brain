@@ -1,6 +1,6 @@
 "use client";
 
-import { SidePane } from "@workspace/ui/components/side-pane";
+import { SidePane, SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { Database } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -147,17 +147,23 @@ export function DatabaseDeploymentPane({
       }
       title={redeploy == null ? "Deploy Database" : "Edit & Redeploy Database"}
     >
-      <DatabaseDeployer
+      <DatabaseDeployer.Root
         busy={deploying || currentProject.isLoading}
         databaseOptions={databaseOptions}
-        deployLabel={redeploy == null ? undefined : "Redeploy"}
         initialSettings={initialSettings}
         onDeploy={(settings) => {
           overwriteGate.gate(() => {
             deploy(settings).catch(() => undefined);
           });
         }}
-      />
+      >
+        <DatabaseDeployer.Fields />
+        <SidePaneFooter>
+          <DatabaseDeployer.Submit
+            label={redeploy == null ? undefined : "Redeploy"}
+          />
+        </SidePaneFooter>
+      </DatabaseDeployer.Root>
       {overwriteGate.dialog}
     </SidePane>
   );

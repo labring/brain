@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { render } from "@testing-library/react/pure";
+import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import {
+  actAndDrain,
+  installTestDom,
+  restoreActEnvironment,
+  setActEnvironment,
+} from "@/features/project-canvas/react-test-harness";
 import { ProjectCreationPane } from "./project-creation-pane";
 
 const noop = () => {
@@ -35,9 +43,9 @@ const GITHUB_REPOSITORY_LOCKED_RE =
 const SCENARIO_RE = /Scenario/;
 const TWO_COLUMN_PICKER_RE = /sm:grid-cols-2/;
 const TRAIL_BACK_RE = />Back</;
-const DATABASE_DEPLOYER_RE = /data-slot="database-deployer"/;
+const DATABASE_DEPLOYER_RE = /data-slot="database-deployer-fields"/;
 const DATABASE_ICON_RE = /lucide-database/;
-const DOCKER_DEPLOYER_RE = /data-slot="docker-deployer"/;
+const DOCKER_DEPLOYER_RE = /data-slot="docker-deployer-fields"/;
 const DOCKER_TITLE_RE = /<title>Docker<\/title>/;
 const GITHUB_TITLE_RE = /<title>GitHub<\/title>/;
 const PLUS_ICON_RE = /lucide-plus/;
@@ -181,6 +189,103 @@ test("project creation pane Database direct entry opens deployment settings with
   assert.doesNotMatch(html, PROJECT_NAME_RE);
   assert.doesNotMatch(html, SCENARIO_RE);
   assert.doesNotMatch(html, TRAIL_BACK_RE);
+});
+
+async function withMountedCreationPane(
+  element: ReactElement,
+  run: (rendered: ReturnType<typeof render>) => Promise<void> | void
+) {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(element);
+    });
+    assert.ok(rendered);
+    await run(rendered);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+}
+
+function creationPaneFooter(container: HTMLElement) {
+  return container.querySelector('[data-slot="side-pane-footer"]');
+}
+
+test("project creation pane pins the Docker step's submit in the side pane footer", async () => {
+  await withMountedCreationPane(
+    <ProjectCreationPane
+      creatorRootProps={{ databaseOptions: [] }}
+      entryMode="dockerDirect"
+      onClose={noop}
+      resetKey={1}
+    />,
+    ({ container }) => {
+      const footer = creationPaneFooter(container);
+      assert.ok(footer, "the active step's submit should pin in the footer");
+      assert.ok(
+        footer.querySelector('button[aria-label="Deploy Docker image"]'),
+        "the pinned action is the Docker deploy submit"
+      );
+      assert.equal(
+        footer.closest(".overflow-y-auto"),
+        null,
+        "the footer stays outside the scroll container"
+      );
+      assert.equal(
+        container.querySelector(
+          '[data-slot="docker-deployer-fields"] button[aria-label="Deploy Docker image"]'
+        ),
+        null,
+        "the submit no longer renders inline inside the form"
+      );
+    }
+  );
+});
+
+test("project creation pane source picker contributes no footer", async () => {
+  await withMountedCreationPane(
+    <ProjectCreationPane
+      creatorRootProps={{ databaseOptions: [] }}
+      onClose={noop}
+      resetKey={1}
+    />,
+    ({ container }) => {
+      assert.equal(creationPaneFooter(container), null);
+    }
+  );
+});
+
+test("project creation pane GitHub step contributes no footer", async () => {
+  await withMountedCreationPane(
+    <ProjectCreationPane
+      creatorRootProps={{
+        databaseOptions: [],
+        githubDeployer: {
+          actions: { onAuthorize: noop },
+          states: {
+            deployedRepo: null,
+            isAuthorized: false,
+            isLoading: false,
+            repos: [],
+          },
+        },
+      }}
+      entryMode="githubDirect"
+      onClose={noop}
+      resetKey={1}
+    />,
+    ({ container }) => {
+      assert.equal(creationPaneFooter(container), null);
+    }
+  );
 });
 
 test("project creation pane Docker direct entry opens Docker deployment settings without generic project naming first", () => {

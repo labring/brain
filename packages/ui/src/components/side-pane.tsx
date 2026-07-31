@@ -7,13 +7,25 @@ import { X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 const SidePaneMotionContext = createContext(true);
+
+interface SidePaneFooterAttachment {
+  host: HTMLElement | null;
+  register: () => () => void;
+}
+
+const SidePaneFooterContext = createContext<SidePaneFooterAttachment | null>(
+  null
+);
 type SidePaneGlowPhase = "enter" | "exit" | null;
 const SidePaneGlowPhaseContext = createContext<SidePaneGlowPhase>(null);
 const SIDE_PANE_GLOW_SETTLE_DURATION_VAR = "--side-pane-glow-settle-duration";
@@ -59,6 +71,16 @@ export function SidePane({
 }: SidePaneProps) {
   const motionOpen = useSidePaneMotionOpen(open);
   const glowPhase = useContext(SidePaneGlowPhaseContext);
+  const [footerContributors, setFooterContributors] = useState(0);
+  const [footerHost, setFooterHost] = useState<HTMLDivElement | null>(null);
+  const registerFooter = useCallback(() => {
+    setFooterContributors((count) => count + 1);
+    return () => setFooterContributors((count) => Math.max(0, count - 1));
+  }, []);
+  const footerAttachment = useMemo<SidePaneFooterAttachment>(
+    () => ({ host: footerHost, register: registerFooter }),
+    [footerHost, registerFooter]
+  );
 
   return (
     <aside
@@ -128,10 +150,19 @@ export function SidePane({
                 bodyClassName
               )}
             >
-              {children}
+              <SidePaneFooterContext.Provider value={footerAttachment}>
+                {children}
+              </SidePaneFooterContext.Provider>
             </div>
           </div>
         </div>
+        {footerContributors > 0 ? (
+          <div
+            className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2.5 border-border border-t px-5 py-4"
+            data-slot="side-pane-footer"
+            ref={setFooterHost}
+          />
+        ) : null}
         <div
           aria-hidden
           className={cn(
@@ -144,6 +175,33 @@ export function SidePane({
       </div>
     </aside>
   );
+}
+
+/**
+ * Side Pane Footer slot: mounts its children into the pane's pinned footer
+ * region from any depth of pane content. Presence is registered on mount, so
+ * a pane with no contributor renders no footer region and no border; content
+ * itself travels through a portal, so contributor re-renders (e.g. timeline
+ * stream ticks) never repaint the pane shell. Outside a Side Pane the slot
+ * renders its children in place, keeping chrome-less hosts functional.
+ */
+export function SidePaneFooter({ children }: { children: ReactNode }) {
+  const attachment = useContext(SidePaneFooterContext);
+
+  useEffect(() => {
+    if (attachment == null) {
+      return;
+    }
+    return attachment.register();
+  }, [attachment]);
+
+  if (attachment == null) {
+    return <>{children}</>;
+  }
+  if (attachment.host == null) {
+    return null;
+  }
+  return createPortal(children, attachment.host);
 }
 
 export function SidePanePresence({ children }: { children: ReactNode }) {

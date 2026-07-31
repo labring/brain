@@ -9,7 +9,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@workspace/ui/components/collapsible";
-import { SidePane } from "@workspace/ui/components/side-pane";
+import { SidePane, SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { useStatusHeartbeat } from "@workspace/ui/lib/status-heartbeat";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -1264,83 +1264,87 @@ export function DeploymentTaskTimelineActions({
     redeployable &&
     onEditRedeploy != null &&
     editRedeploySurfaceKind(task.source.kind) != null;
+  // Task lifecycle actions are pane-level (US14/15): inside the timeline pane
+  // they pin in the Side Pane Footer; chrome-less hosts keep the row in place.
   return (
-    <div
-      className="flex items-center justify-end gap-2"
-      data-slot="deployment-task-actions"
-    >
-      <AppButton
-        disabled={!cancellable || cancelling}
-        onClick={() => {
-          cancelGate.gate(() => {
-            actions.cancel(task.id).catch(() => undefined);
-          });
-        }}
-        type="button"
-        variant="secondary"
+    <SidePaneFooter>
+      <div
+        className="flex items-center justify-end gap-2"
+        data-slot="deployment-task-actions"
       >
-        {cancelling ? (
-          <>
-            <LoaderCircle
-              aria-hidden
-              className="animate-spin"
-              data-icon="inline-start"
-            />
-            Cancelling…
-          </>
-        ) : (
-          <>
-            <X aria-hidden data-icon="inline-start" />
-            Cancel Deployment
-          </>
-        )}
-      </AppButton>
-      {cancelGate.dialog}
-      {editable ? (
         <AppButton
-          disabled={redeployPending}
+          disabled={!cancellable || cancelling}
           onClick={() => {
-            onEditRedeploy(task);
-          }}
-          type="button"
-          variant="secondary"
-        >
-          <PencilLine aria-hidden data-icon="inline-start" />
-          Edit & Redeploy
-        </AppButton>
-      ) : null}
-      {redeployable ? (
-        <AppButton
-          disabled={redeployPending}
-          onClick={() => {
-            overwriteGate.gate(() => {
-              actions
-                .redeploy(task.id, task.source.kind)
-                .catch(() => undefined);
+            cancelGate.gate(() => {
+              actions.cancel(task.id).catch(() => undefined);
             });
           }}
           type="button"
           variant="secondary"
         >
-          {redeployPending ? (
+          {cancelling ? (
             <>
               <LoaderCircle
                 aria-hidden
                 className="animate-spin"
                 data-icon="inline-start"
               />
-              Redeploying…
+              Cancelling…
             </>
           ) : (
             <>
-              <RotateCcw aria-hidden data-icon="inline-start" />
-              Redeploy
+              <X aria-hidden data-icon="inline-start" />
+              Cancel Deployment
             </>
           )}
         </AppButton>
-      ) : null}
-      {overwriteGate.dialog}
-    </div>
+        {cancelGate.dialog}
+        {editable ? (
+          <AppButton
+            disabled={redeployPending}
+            onClick={() => {
+              onEditRedeploy(task);
+            }}
+            type="button"
+            variant="secondary"
+          >
+            <PencilLine aria-hidden data-icon="inline-start" />
+            Edit & Redeploy
+          </AppButton>
+        ) : null}
+        {redeployable ? (
+          <AppButton
+            disabled={redeployPending}
+            onClick={() => {
+              overwriteGate.gate(() => {
+                actions
+                  .redeploy(task.id, task.source.kind)
+                  .catch(() => undefined);
+              });
+            }}
+            type="button"
+            variant="secondary"
+          >
+            {redeployPending ? (
+              <>
+                <LoaderCircle
+                  aria-hidden
+                  className="animate-spin"
+                  data-icon="inline-start"
+                />
+                Redeploying…
+              </>
+            ) : (
+              <>
+                <RotateCcw aria-hidden data-icon="inline-start" />
+                Redeploy
+              </>
+            )}
+          </AppButton>
+        ) : null}
+        {overwriteGate.dialog}
+      </div>
+    </SidePaneFooter>
   );
 }
 

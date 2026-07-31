@@ -716,6 +716,12 @@ A non-modal, temporary project surface used for focused project work such as res
 
 A Side Pane is distinct from the Project Assistant Pane: the Project Assistant Pane is a persistent layout region for chat, while a Side Pane is a temporary surface triggered by a user action or assistant action.
 
+### Side Pane Footer
+
+The pinned action region at the bottom of a Side Pane that stays visible while the pane's content scrolls. It presents the hosted surface's pane-level actions — a deploy form's submit, a Settings Draft's confirmation controls with their conflict and failure context, or a Deployment Task's lifecycle actions. Which actions it carries is decided by the surface hosted in the pane, not by the pane itself; a surface without pane-level actions has no Side Pane Footer, and an action that belongs to one content row or step stays in the content.
+
+_Avoid_: scrolled bottom button, sticky form button, per-row action in footer.
+
 ### Main Action Surface
 
 A temporary project surface opened for focused resource work, occupying the project main area rather than the Project Assistant Pane. A Main Action Surface is distinct from a Side Pane because it is not a right-side inspection surface and may host different action-specific experiences over time.
