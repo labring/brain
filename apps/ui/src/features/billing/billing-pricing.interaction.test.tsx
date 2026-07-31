@@ -3,12 +3,7 @@ import { test } from "node:test";
 
 import { fireEvent, render } from "@testing-library/react/pure";
 
-import {
-  actAndDrain,
-  installTestDom,
-  restoreActEnvironment,
-  setActEnvironment,
-} from "@/features/project-canvas/react-test-harness";
+import { withTestDom } from "@/features/project-canvas/react-test-harness";
 import type { BillingMeteredPrice } from "./billing-pricing-data";
 
 const PRICES: BillingMeteredPrice[] = [
@@ -45,17 +40,6 @@ const PRICES: BillingMeteredPrice[] = [
     unit: "GPU",
   },
 ];
-
-async function withTestDom(run: (act: typeof actAndDrain) => Promise<void>) {
-  const dom = installTestDom();
-  const previousAct = setActEnvironment(true);
-  try {
-    await run(actAndDrain);
-  } finally {
-    restoreActEnvironment(previousAct);
-    await dom.restore();
-  }
-}
 
 function editNumberInput(input: Element | undefined, value: string) {
   if (input == null) {

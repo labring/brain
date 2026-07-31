@@ -134,6 +134,7 @@ const CANCELLING_PLAN = {
     cancelAtPeriodEnd: true,
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
     expireAt: "2026-08-31T00:00:00Z",
+    invoiceId: "invoice-1",
     invoicePaymentUrl: "https://payments.example.test/invoice-1",
     lifecycle: "cancelling",
     payMethod: "stripe",
@@ -279,6 +280,7 @@ test("Plan shows the free-plan expiry warning when expiry is within seven days",
       currentPeriodEndAt: new Date(
         Date.now() + 6 * DAY_IN_MILLISECONDS
       ).toISOString(),
+      invoiceId: null,
       invoicePaymentUrl: null,
       lifecycle: "active",
       planName: "Free",
@@ -309,6 +311,7 @@ test("Plan hides the free-plan expiry warning outside the near-expiry window", (
         currentPeriodEndAt: new Date(
           Date.now() + daysUntilExpiry * DAY_IN_MILLISECONDS
         ).toISOString(),
+        invoiceId: null,
         invoicePaymentUrl: null,
         lifecycle: "active",
         planName: "Free",
@@ -334,6 +337,7 @@ test("Plan keeps cancellation available while an upgrade is pending", () => {
     current: {
       ...CANCELLING_PLAN.current,
       cancelAtPeriodEnd: false,
+      invoiceId: null,
       invoicePaymentUrl: null,
       lifecycle: "pending-upgrade",
     },

@@ -85,7 +85,68 @@ test("subscription pay route sends cancel and resume as the verified actor", asy
   }
 });
 
-test("subscription pay route requires a non-empty existing workspace", async () => {
+test("subscription pay route declares Brain and returns checkout URLs for paid plan changes", async () => {
+  const accountRequests: AccountServiceRequest[] = [];
+  const handler = createBillingSubscriptionPayHandler({
+    authorizeWorkspaceActor: () => Promise.resolve(VERIFIED_ACTOR),
+    requestAccountService: (request) => {
+      accountRequests.push(request);
+      return Promise.resolve(
+        Response.json({
+          invoiceID: "invoice-1",
+          redirectUrl: "https://checkout.stripe.test/invoice-1",
+          success: true,
+        })
+      );
+    },
+  });
+
+  for (const operator of ["upgraded", "downgraded", "renewed"] as const) {
+    const response = await handler(
+      billingRequest({
+        createWorkspace: {
+          teamName: "must-not-pass",
+          userType: "subscription",
+        },
+        operator,
+        payApp: "system-costcenter",
+        payMethod: "stripe",
+        period: "1m",
+        planName: "Team",
+        promotionCode: "SAVE20",
+        regionDomain: "us.example.test",
+        workspace: "workspace-a",
+      })
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      invoiceID: "invoice-1",
+      redirectUrl: "https://checkout.stripe.test/invoice-1",
+      success: true,
+    });
+  }
+
+  assert.equal(accountRequests.length, 3);
+  for (const [index, operator] of [
+    "upgraded",
+    "downgraded",
+    "renewed",
+  ].entries()) {
+    assert.deepEqual(JSON.parse(String(accountRequests[index]?.init?.body)), {
+      operator,
+      payApp: "system-brain",
+      payMethod: "stripe",
+      period: "1m",
+      planName: "Team",
+      promotionCode: "SAVE20",
+      regionDomain: "us.example.test",
+      workspace: "workspace-a",
+    });
+  }
+});
+
+test("subscription pay route rejects removed subscription creation", async () => {
   let accountCalls = 0;
   const handler = createBillingSubscriptionPayHandler({
     authorizeWorkspaceActor: () => Promise.resolve(VERIFIED_ACTOR),
@@ -97,11 +158,11 @@ test("subscription pay route requires a non-empty existing workspace", async () 
 
   const response = await handler(
     billingRequest({
-      operator: "canceled",
+      operator: "created",
       payMethod: "stripe",
       planName: "Pro",
       regionDomain: "us.example.test",
-      workspace: "  ",
+      workspace: "workspace-a",
     })
   );
 
@@ -109,6 +170,35 @@ test("subscription pay route requires a non-empty existing workspace", async () 
   assert.deepEqual(await response.json(), {
     error: "Invalid subscription payment request.",
   });
+  assert.equal(accountCalls, 0);
+});
+
+test("subscription pay route requires workspace and rejects blank values", async () => {
+  let accountCalls = 0;
+  const handler = createBillingSubscriptionPayHandler({
+    authorizeWorkspaceActor: () => Promise.resolve(VERIFIED_ACTOR),
+    requestAccountService: () => {
+      accountCalls += 1;
+      return Promise.resolve(Response.json({ success: true }));
+    },
+  });
+
+  for (const workspace of [undefined, "  "]) {
+    const response = await handler(
+      billingRequest({
+        operator: "canceled",
+        payMethod: "stripe",
+        planName: "Pro",
+        regionDomain: "us.example.test",
+        workspace,
+      })
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "Invalid subscription payment request.",
+    });
+  }
   assert.equal(accountCalls, 0);
 });
 

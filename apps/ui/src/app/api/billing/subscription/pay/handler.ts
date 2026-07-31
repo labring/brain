@@ -5,16 +5,29 @@ import {
   createAuthorizedBillingProxy,
 } from "@/features/billing/server/authorized-proxy";
 
-const subscriptionLifecycleRequestSchema = z.object({
-  operator: z.enum(["canceled", "resumed"]),
+const subscriptionRequestFields = {
   payMethod: z.enum(["stripe", "balance"]),
   planName: z.string().trim().min(1),
   regionDomain: z.string().trim().min(1),
   workspace: z.string().trim().min(1),
-});
+};
+
+const subscriptionPayRequestSchema = z.discriminatedUnion("operator", [
+  z.object({
+    ...subscriptionRequestFields,
+    operator: z.enum(["canceled", "resumed"]),
+  }),
+  z.object({
+    ...subscriptionRequestFields,
+    cardId: z.string().trim().min(1).optional(),
+    operator: z.enum(["upgraded", "downgraded", "renewed"]),
+    period: z.enum(["1m", "1y"]),
+    promotionCode: z.string().trim().min(1).optional(),
+  }),
+]);
 
 function addBrainPayApp(data: unknown) {
-  const request = subscriptionLifecycleRequestSchema.parse(data);
+  const request = subscriptionPayRequestSchema.parse(data);
   return { ...request, payApp: "system-brain" };
 }
 
@@ -25,6 +38,6 @@ export function createBillingSubscriptionPayHandler(
     invalidRequestMessage: "Invalid subscription payment request.",
     mapRequestBody: addBrainPayApp,
     pathname: "/account/v1alpha1/workspace-subscription/pay",
-    requestSchema: subscriptionLifecycleRequestSchema,
+    requestSchema: subscriptionPayRequestSchema,
   });
 }

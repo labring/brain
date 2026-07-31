@@ -11,6 +11,18 @@ interface BillingJsonRequesterOptions {
   fetch: BillingFetch;
 }
 
+export class BillingRequestError extends Error {
+  readonly payload: unknown;
+  readonly status: number;
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message);
+    this.name = "BillingRequestError";
+    this.payload = payload;
+    this.status = status;
+  }
+}
+
 function responseErrorMessage(payload: unknown, fallback: string): string {
   if (
     typeof payload === "object" &&
@@ -47,7 +59,11 @@ export function createBillingJsonRequester({
     const response = await fetch(pathname, init);
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(responseErrorMessage(payload, fallbackErrorMessage));
+      throw new BillingRequestError(
+        responseErrorMessage(payload, fallbackErrorMessage),
+        response.status,
+        payload
+      );
     }
     return payload;
   };

@@ -1,7 +1,9 @@
+import { Quantity } from "@workspace/shared";
 import { z } from "zod";
 
 import {
   type BillingFetch,
+  BillingRequestError,
   createBillingJsonRequester,
 } from "./billing-data-client";
 import {
@@ -27,6 +29,7 @@ export interface BillingPlanSnapshot {
     cancelAtPeriodEnd: boolean;
     currentPeriodEndAt: string;
     expireAt: string | null;
+    invoiceId: string | null;
     invoicePaymentUrl: string | null;
     lifecycle: SubscriptionLifecycle;
     payMethod: "balance" | "stripe";
@@ -38,9 +41,11 @@ export interface BillingPlanSnapshot {
   };
   pendingUpgrade: { planName: string; startsAt: string } | null;
   plans: Array<{
+    changeKind?: "downgrade" | "upgrade" | null;
     description: string;
     id: string;
     isCurrent: boolean;
+    limits?: SubscriptionPlanLimits;
     name: string;
     order: number;
     priceMicroUnits: number;
@@ -76,6 +81,7 @@ const subscriptionSchema = z.object({
   ExpireAt: z.string().nullable().optional(),
   InvoiceInfo: z
     .object({
+      ID: z.string().trim().min(1).optional(),
       PaymentUrl: z.string().trim().min(1),
     })
     .optional(),
@@ -97,8 +103,10 @@ const subscriptionsResponseSchema = z.object({
 const transactionResponseSchema = z.object({
   transaction: z
     .object({
+      ID: z.string().optional(),
       NewPlanName: z.string().optional(),
       Operator: z.string().optional(),
+      PayID: z.string().optional(),
       StartAt: z.string().optional(),
       Status: z.string().optional(),
     })
@@ -119,6 +127,35 @@ const cardResponseSchema = z.object({
 const cardManagementResponseSchema = z.object({
   success: z.boolean(),
   url: z.string().optional(),
+});
+
+const upgradeAmountResponseSchema = z.object({
+  amount: z.number(),
+  has_discount: z.boolean(),
+  original_amount: z.number(),
+  promotion_code: z.string(),
+});
+
+const subscriptionPaymentResponseSchema = z.object({
+  invoiceID: z.string().optional(),
+  payID: z.string().optional(),
+  redirectUrl: z.string().optional(),
+  success: z.boolean(),
+});
+
+const invoiceCancelResponseSchema = z.object({
+  invoice_id: z.string(),
+  message: z.string(),
+  success: z.literal(true),
+});
+
+const downgradeQuotaResponseSchema = z.object({
+  quota: z.object({
+    used: z
+      .record(z.string(), z.union([z.string(), z.number()]))
+      .optional()
+      .default({}),
+  }),
 });
 
 const paymentSchema = z.object({
@@ -289,6 +326,7 @@ export async function loadBillingPlanSnapshot(
       cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
       currentPeriodEndAt: subscription.CurrentPeriodEndAt,
       expireAt: subscription.ExpireAt ?? null,
+      invoiceId: subscription.InvoiceInfo?.ID ?? null,
       invoicePaymentUrl: subscription.InvoiceInfo?.PaymentUrl ?? null,
       lifecycle: subscriptionLifecycle({
         cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
@@ -306,15 +344,35 @@ export async function loadBillingPlanSnapshot(
       workspace: subscription.Workspace,
     },
     pendingUpgrade,
-    plans: plans.map((plan) => ({
-      description: plan.description,
-      id: plan.id,
-      isCurrent: plan.name === subscription.PlanName,
-      name: plan.name,
-      order: plan.order,
-      priceMicroUnits: plan.monthlyPriceMicroUnits,
-      resources: plan.resources.map(({ label, value }) => ({ label, value })),
-    })),
+    plans: plans.map((plan) => {
+      const isCurrent = plan.name === subscription.PlanName;
+      let changeKind: "downgrade" | "upgrade" | null = null;
+      if (!isCurrent && currentPlan != null) {
+        const hasExplicitTransitions =
+          currentPlan.upgradePlanNames !== undefined ||
+          currentPlan.downgradePlanNames !== undefined;
+        if (currentPlan.upgradePlanNames?.includes(plan.name)) {
+          changeKind = "upgrade";
+        } else if (currentPlan.downgradePlanNames?.includes(plan.name)) {
+          changeKind = "downgrade";
+        } else if (!hasExplicitTransitions && plan.order > currentPlan.order) {
+          changeKind = "upgrade";
+        } else if (!hasExplicitTransitions && plan.order < currentPlan.order) {
+          changeKind = "downgrade";
+        }
+      }
+      return {
+        changeKind,
+        description: plan.description,
+        id: plan.id,
+        isCurrent,
+        limits: plan.limits ?? {},
+        name: plan.name,
+        order: plan.order,
+        priceMicroUnits: plan.monthlyPriceMicroUnits,
+        resources: plan.resources.map(({ label, value }) => ({ label, value })),
+      };
+    }),
     workspaces: workspaces.map(([id, name]) => {
       const item = subscriptionByWorkspace.get(id);
       const planName = item?.PlanName ?? "PAYG";
@@ -354,6 +412,276 @@ export async function updateSubscriptionLifecycle(
     regionDomain: input.regionDomain,
     workspace: input.workspace,
   });
+}
+
+export interface SubscriptionUpgradeQuote {
+  amountMicroUnits: number;
+  discountMicroUnits: number;
+  hasDiscount: boolean;
+  originalAmountMicroUnits: number;
+  promotionCode: string;
+}
+
+export type SubscriptionPromotionCodeErrorKind =
+  | "exhausted"
+  | "expired"
+  | "unknown";
+
+const PROMOTION_CODE_ERROR_MESSAGES: Record<
+  SubscriptionPromotionCodeErrorKind,
+  string
+> = {
+  exhausted: "This promotion code has already been fully redeemed.",
+  expired: "This promotion code has expired.",
+  unknown: "This promotion code was not found.",
+};
+
+export class SubscriptionPromotionCodeError extends Error {
+  readonly kind: SubscriptionPromotionCodeErrorKind;
+
+  constructor(kind: SubscriptionPromotionCodeErrorKind) {
+    super(PROMOTION_CODE_ERROR_MESSAGES[kind]);
+    this.name = "SubscriptionPromotionCodeError";
+    this.kind = kind;
+  }
+}
+
+export interface SubscriptionPlanCheckout {
+  invoiceId: string | null;
+  payId: string | null;
+  redirectUrl: string | null;
+  success: boolean;
+}
+
+export async function createSubscriptionPlanPayment(
+  input: BillingWorkspaceOperationContext & {
+    operator: "downgraded" | "renewed" | "upgraded";
+    planName: string;
+    promotionCode?: string;
+  },
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<SubscriptionPlanCheckout> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fallbackErrorMessage: "Could not create the subscription payment.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  const payload = await requestBillingJson("/api/billing/subscription/pay", {
+    operator: input.operator,
+    payMethod: "stripe",
+    period: "1m",
+    planName: input.planName,
+    ...(input.promotionCode == null
+      ? {}
+      : { promotionCode: input.promotionCode }),
+    regionDomain: input.regionDomain,
+    workspace: input.workspace,
+  });
+  const checkout = subscriptionPaymentResponseSchema.parse(payload);
+
+  return {
+    invoiceId: checkout.invoiceID ?? null,
+    payId: checkout.payID ?? null,
+    redirectUrl: checkout.redirectUrl ?? null,
+    success: checkout.success,
+  };
+}
+
+export async function cancelSubscriptionInvoice(
+  input: BillingWorkspaceOperationContext & { invoiceId: string },
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<void> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fallbackErrorMessage: "Could not cancel the unpaid upgrade invoice.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  const payload = await requestBillingJson(
+    "/api/billing/subscription/invoice-cancel",
+    {
+      invoiceID: input.invoiceId,
+      regionDomain: input.regionDomain,
+      workspace: input.workspace,
+    }
+  );
+  invoiceCancelResponseSchema.parse(payload);
+}
+
+export interface SubscriptionTransactionStatus {
+  id: string;
+  payId: string;
+  planName: string;
+  status: string;
+}
+
+export async function loadSubscriptionTransactionStatus(
+  input: BillingWorkspaceOperationContext,
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<SubscriptionTransactionStatus | null> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fallbackErrorMessage: "Could not check the subscription payment.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  const payload = await requestBillingJson(
+    "/api/billing/subscription/last-transaction",
+    {
+      regionDomain: input.regionDomain,
+      workspace: input.workspace,
+    }
+  );
+  const transaction =
+    transactionResponseSchema.parse(payload).transaction ?? null;
+  if (transaction == null) {
+    return null;
+  }
+  return {
+    id: transaction.ID ?? "",
+    payId: transaction.PayID ?? "",
+    planName: transaction.NewPlanName ?? "",
+    status: transaction.Status?.trim().toLowerCase() ?? "",
+  };
+}
+
+type SubscriptionPlanLimitType =
+  | "cpu"
+  | "gpu"
+  | "memory"
+  | "nodeport"
+  | "storage"
+  | "traffic";
+
+export type SubscriptionPlanLimits = Partial<
+  Record<SubscriptionPlanLimitType, string>
+>;
+
+export interface SubscriptionDowngradeCheck {
+  allowed: boolean;
+  exceededResources: Array<{
+    label: string;
+    limit: string;
+    used: string;
+  }>;
+}
+
+const DOWNGRADE_QUOTA_RESOURCES: ReadonlyArray<{
+  key: string;
+  label: string;
+  type: SubscriptionPlanLimitType;
+}> = [
+  { key: "limits.cpu", label: "CPU", type: "cpu" },
+  { key: "limits.memory", label: "Memory", type: "memory" },
+  { key: "requests.storage", label: "Storage", type: "storage" },
+  { key: "traffic", label: "Traffic", type: "traffic" },
+  { key: "limits.nvidia.com/gpu", label: "GPU", type: "gpu" },
+  { key: "services.nodeports", label: "Public ports", type: "nodeport" },
+];
+
+function displayDowngradeQuantity(
+  value: Quantity,
+  type: SubscriptionPlanLimitType
+): string {
+  return value.formatForDisplay({
+    format:
+      type === "memory" || type === "storage" || type === "traffic"
+        ? "BinarySI"
+        : "DecimalSI",
+  });
+}
+
+export async function checkSubscriptionDowngrade(
+  input: BillingWorkspaceOperationContext & {
+    limits: SubscriptionPlanLimits;
+  },
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<SubscriptionDowngradeCheck> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fallbackErrorMessage: "Could not check workspace usage for downgrade.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  const payload = await requestBillingJson("/api/billing/workspace-quota", {
+    workspace: input.workspace,
+  });
+  const used = downgradeQuotaResponseSchema.parse(payload).quota.used;
+  const exceededResources = DOWNGRADE_QUOTA_RESOURCES.flatMap((resource) => {
+    const limitValue = input.limits[resource.type];
+    const usedValue = used[resource.key];
+    if (limitValue == null || usedValue == null) {
+      return [];
+    }
+    const limit = Quantity.fromJSON(limitValue);
+    const consumed = Quantity.fromJSON(usedValue);
+    if (consumed.cmp(limit) <= 0) {
+      return [];
+    }
+    return [
+      {
+        label: resource.label,
+        limit: displayDowngradeQuantity(limit, resource.type),
+        used: displayDowngradeQuantity(consumed, resource.type),
+      },
+    ];
+  });
+
+  return {
+    allowed: exceededResources.length === 0,
+    exceededResources,
+  };
+}
+
+export async function loadSubscriptionUpgradeQuote(
+  input: BillingWorkspaceOperationContext & {
+    planName: string;
+    promotionCode?: string;
+  },
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<SubscriptionUpgradeQuote> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fallbackErrorMessage: "Could not calculate the prorated upgrade amount.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  let payload: unknown;
+  try {
+    payload = await requestBillingJson(
+      "/api/billing/subscription/upgrade-amount",
+      {
+        operator: "upgraded",
+        payMethod: "stripe",
+        period: "1m",
+        planName: input.planName,
+        ...(input.promotionCode == null
+          ? {}
+          : { promotionCode: input.promotionCode }),
+        regionDomain: input.regionDomain,
+        workspace: input.workspace,
+      }
+    );
+  } catch (error) {
+    if (input.promotionCode != null && error instanceof BillingRequestError) {
+      const kind = {
+        404: "unknown",
+        409: "exhausted",
+        410: "expired",
+      }[error.status] as SubscriptionPromotionCodeErrorKind | undefined;
+      if (kind != null) {
+        throw new SubscriptionPromotionCodeError(kind);
+      }
+    }
+    throw error;
+  }
+  const quote = upgradeAmountResponseSchema.parse(payload);
+
+  return {
+    amountMicroUnits: quote.amount,
+    discountMicroUnits: quote.has_discount
+      ? Math.max(0, quote.original_amount - quote.amount)
+      : 0,
+    hasDiscount: quote.has_discount,
+    originalAmountMicroUnits: quote.original_amount,
+    promotionCode: quote.promotion_code,
+  };
 }
 
 export async function createBillingCardManagementSession(

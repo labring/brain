@@ -1,8 +1,25 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@workspace/ui/components/dialog";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useAtomValue } from "jotai";
-import { type ReactNode, useState } from "react";
+import { CircleCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import {
@@ -10,8 +27,12 @@ import {
   formatAccountBalance,
   loadAccountBalance,
 } from "@/features/billing/account-balance";
+import { BillingPlanChangeDialog } from "@/features/billing/billing-plan-change-dialog";
 import {
+  type BillingPlanSnapshot,
+  cancelSubscriptionInvoice,
   createBillingCardManagementSession,
+  createSubscriptionPlanPayment,
   loadBillingPlanSnapshot,
   type SubscriptionLifecycleAction,
   updateSubscriptionLifecycle,
@@ -20,6 +41,219 @@ import { BillingPlanSurface } from "@/features/billing/billing-plan-surface";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
+
+export interface BillingStripeReturn {
+  payId: string;
+  workspaceId: string;
+}
+
+interface BillingPlanWorkflowProps {
+  actionPending?: SubscriptionLifecycleAction | null;
+  balance: ReactNode;
+  cardManagementPending?: boolean;
+  credentials: {
+    appToken: string;
+    kubeconfig: string;
+  };
+  currency: BillingCurrency;
+  initialMode?: "upgrade" | null;
+  invoiceCancellationPending?: boolean;
+  onCancelInvoice?: (invoiceId: string) => void;
+  onLifecycleAction?: (operator: SubscriptionLifecycleAction) => void;
+  onManageCard?: () => void;
+  onRefreshSnapshot: (workspaceId?: string) => Promise<BillingPlanSnapshot>;
+  onRenew?: () => void;
+  renewalPending?: boolean;
+  replaceUrl: (url: string) => void;
+  snapshot: BillingPlanSnapshot;
+  stripeReturn?: BillingStripeReturn | null;
+}
+
+function currentUrlWithout(parameters: readonly string[]): string {
+  const url = new URL(window.location.href);
+  for (const parameter of parameters) {
+    url.searchParams.delete(parameter);
+  }
+  const search = url.searchParams.toString();
+  return `${url.pathname}${search === "" ? "" : `?${search}`}${url.hash}`;
+}
+
+export function BillingPlanWorkflow({
+  actionPending = null,
+  balance,
+  cardManagementPending = false,
+  credentials,
+  currency,
+  initialMode = null,
+  invoiceCancellationPending = false,
+  onCancelInvoice,
+  onLifecycleAction,
+  onManageCard,
+  onRefreshSnapshot,
+  onRenew,
+  replaceUrl,
+  renewalPending = false,
+  snapshot,
+  stripeReturn = null,
+}: BillingPlanWorkflowProps) {
+  const modeConsumedRef = useRef(false);
+  const stripeAcknowledgedKeyRef = useRef<string | null>(null);
+  const stripeRefreshRef = useRef<{
+    key: string;
+    request: Promise<BillingPlanSnapshot>;
+  } | null>(null);
+  const [planDialogOpen, setPlanDialogOpen] = useState(
+    initialMode === "upgrade"
+  );
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [congratulationsSnapshot, setCongratulationsSnapshot] =
+    useState<BillingPlanSnapshot | null>(null);
+
+  useEffect(() => {
+    if (initialMode !== "upgrade") {
+      modeConsumedRef.current = false;
+      return;
+    }
+    if (modeConsumedRef.current) {
+      return;
+    }
+    modeConsumedRef.current = true;
+    setSelectedPlanId(null);
+    setPlanDialogOpen(true);
+    replaceUrl(currentUrlWithout(["mode"]));
+  }, [initialMode, replaceUrl]);
+
+  useEffect(() => {
+    if (stripeReturn == null) {
+      return;
+    }
+
+    const key = `${stripeReturn.workspaceId}:${stripeReturn.payId}`;
+    if (stripeAcknowledgedKeyRef.current === key) {
+      return;
+    }
+    let refresh = stripeRefreshRef.current;
+    if (refresh?.key !== key) {
+      refresh = {
+        key,
+        request: onRefreshSnapshot(stripeReturn.workspaceId),
+      };
+      stripeRefreshRef.current = refresh;
+    }
+
+    setPlanDialogOpen(false);
+    setSelectedPlanId(null);
+    let active = true;
+    refresh.request
+      .then((nextSnapshot) => {
+        if (active) {
+          stripeAcknowledgedKeyRef.current = key;
+          setCongratulationsSnapshot(nextSnapshot);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          toastErrorDetail(
+            "Payment succeeded, but the Plan could not be refreshed.",
+            errorDescription(
+              error,
+              "Refresh the page to load the updated subscription."
+            )
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [onRefreshSnapshot, stripeReturn]);
+
+  const handlePlanDialogOpenChange = useCallback((open: boolean) => {
+    setPlanDialogOpen(open);
+    if (!open) {
+      setSelectedPlanId(null);
+    }
+  }, []);
+  const handlePlanChange = useCallback((planId: string | null) => {
+    setSelectedPlanId(planId);
+    setPlanDialogOpen(true);
+  }, []);
+  const handleSubscriptionChanged = useCallback(async () => {
+    await onRefreshSnapshot();
+  }, [onRefreshSnapshot]);
+  const handleCongratulationsClose = useCallback(() => {
+    setCongratulationsSnapshot(null);
+    replaceUrl(currentUrlWithout(["stripeState", "payId", "workspaceId"]));
+  }, [replaceUrl]);
+
+  return (
+    <>
+      <BillingPlanSurface
+        actionPending={actionPending}
+        balance={balance}
+        cardManagementPending={cardManagementPending}
+        currency={currency}
+        invoiceCancellationPending={invoiceCancellationPending}
+        onCancelInvoice={onCancelInvoice}
+        onLifecycleAction={onLifecycleAction}
+        onManageCard={onManageCard}
+        onPlanChange={handlePlanChange}
+        onRenew={onRenew}
+        renewalPending={renewalPending}
+        snapshot={snapshot}
+      />
+      <BillingPlanChangeDialog
+        credentials={credentials}
+        currency={currency}
+        onOpenChange={handlePlanDialogOpenChange}
+        onSelectedPlanChange={setSelectedPlanId}
+        onSubscriptionChanged={handleSubscriptionChanged}
+        open={planDialogOpen}
+        selectedPlanId={selectedPlanId}
+        snapshot={snapshot}
+      />
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open) {
+            handleCongratulationsClose();
+          }
+        }}
+        open={congratulationsSnapshot != null}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader className="items-center text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <CircleCheck aria-hidden className="size-7" />
+            </div>
+            <DialogTitle>Congratulations!</DialogTitle>
+            <DialogDescription>
+              {congratulationsSnapshot == null
+                ? ""
+                : `${congratulationsSnapshot.current.workspace} is now on ${congratulationsSnapshot.current.planName}.`}
+            </DialogDescription>
+          </DialogHeader>
+          {congratulationsSnapshot == null ? null : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {congratulationsSnapshot.current.resources.map((resource) => (
+                <div
+                  className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm"
+                  key={resource.label}
+                >
+                  <CircleCheck aria-hidden className="size-4 text-primary" />
+                  <span>
+                    {resource.label}: {resource.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <AppButton onClick={handleCongratulationsClose}>Done</AppButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 function accountBalanceContent(input: {
   balance: AccountBalance | undefined;
@@ -51,15 +285,23 @@ function accountBalanceContent(input: {
 
 export default function BillingPlan({
   currency,
+  initialMode = null,
+  stripeReturn = null,
 }: {
   currency: BillingCurrency;
+  initialMode?: "upgrade" | null;
+  stripeReturn?: BillingStripeReturn | null;
 }) {
+  const router = useRouter();
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const workspace = useAtomValue(namespaceAtom).trim();
   const [actionPending, setActionPending] =
     useState<SubscriptionLifecycleAction | null>(null);
   const [cardManagementPending, setCardManagementPending] = useState(false);
+  const [invoiceCancellationPending, setInvoiceCancellationPending] =
+    useState(false);
+  const [renewalPending, setRenewalPending] = useState(false);
   const credentialsReady =
     appToken.trim() !== "" && kubeconfig.trim() !== "" && workspace !== "";
   const {
@@ -160,6 +402,92 @@ export default function BillingPlan({
     }
   };
 
+  const cancelInvoice = async (invoiceId: string) => {
+    const current = snapshot?.current;
+    if (invoiceCancellationPending || current == null) {
+      return;
+    }
+
+    setInvoiceCancellationPending(true);
+    try {
+      await cancelSubscriptionInvoice({
+        appToken,
+        invoiceId,
+        kubeconfig,
+        regionDomain: current.regionDomain,
+        workspace: current.workspace,
+      });
+      await refreshSnapshot();
+      toast.success("Unpaid invoice cancelled.");
+    } catch (error) {
+      toastErrorDetail(
+        "Could not cancel the unpaid invoice.",
+        errorDescription(error, "The invoice could not be cancelled.")
+      );
+    } finally {
+      setInvoiceCancellationPending(false);
+    }
+  };
+
+  const renewSubscription = async () => {
+    const current = snapshot?.current;
+    if (renewalPending || current == null) {
+      return;
+    }
+
+    setRenewalPending(true);
+    try {
+      const checkout = await createSubscriptionPlanPayment({
+        appToken,
+        kubeconfig,
+        operator: "renewed",
+        planName: current.planName,
+        regionDomain: current.regionDomain,
+        workspace: current.workspace,
+      });
+      if (checkout.redirectUrl != null) {
+        window.parent.location.href = checkout.redirectUrl;
+        return;
+      }
+      if (!checkout.success) {
+        throw new Error("The billing service did not accept the renewal.");
+      }
+      await refreshSnapshot();
+      toast.success("Subscription renewed.");
+    } catch (error) {
+      toastErrorDetail(
+        "Could not renew the subscription.",
+        errorDescription(error, "The renewal could not be started.")
+      );
+    } finally {
+      setRenewalPending(false);
+    }
+  };
+
+  const refreshPlanSnapshot = useCallback(
+    async (targetWorkspace?: string) => {
+      const nextSnapshot =
+        targetWorkspace == null || targetWorkspace === workspace
+          ? await refreshSnapshot()
+          : await loadBillingPlanSnapshot({
+              appToken,
+              kubeconfig,
+              workspace: targetWorkspace,
+            });
+      if (nextSnapshot == null) {
+        throw new Error("The refreshed subscription is unavailable.");
+      }
+      return nextSnapshot;
+    },
+    [appToken, kubeconfig, refreshSnapshot, workspace]
+  );
+  const replaceUrl = useCallback(
+    (url: string) => {
+      router.replace(url, { scroll: false });
+    },
+    [router]
+  );
+
   if (!credentialsReady || snapshotLoading) {
     return (
       <div
@@ -189,7 +517,7 @@ export default function BillingPlan({
   }
 
   return (
-    <BillingPlanSurface
+    <BillingPlanWorkflow
       actionPending={actionPending}
       balance={
         <div aria-live="polite">
@@ -202,10 +530,19 @@ export default function BillingPlan({
         </div>
       }
       cardManagementPending={cardManagementPending}
+      credentials={{ appToken, kubeconfig }}
       currency={currency}
+      initialMode={initialMode}
+      invoiceCancellationPending={invoiceCancellationPending}
+      onCancelInvoice={cancelInvoice}
       onLifecycleAction={updateLifecycle}
       onManageCard={manageCard}
+      onRefreshSnapshot={refreshPlanSnapshot}
+      onRenew={renewSubscription}
+      renewalPending={renewalPending}
+      replaceUrl={replaceUrl}
       snapshot={snapshot}
+      stripeReturn={stripeReturn}
     />
   );
 }

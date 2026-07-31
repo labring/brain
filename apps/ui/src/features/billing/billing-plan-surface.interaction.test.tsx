@@ -4,12 +4,7 @@ import { test } from "node:test";
 import { fireEvent, render } from "@testing-library/react/pure";
 import { useState } from "react";
 
-import {
-  actAndDrain,
-  installTestDom,
-  restoreActEnvironment,
-  setActEnvironment,
-} from "@/features/project-canvas/react-test-harness";
+import { withTestDom } from "@/features/project-canvas/react-test-harness";
 import type {
   BillingPlanSnapshot,
   SubscriptionLifecycleAction,
@@ -26,6 +21,7 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
     cancelAtPeriodEnd: true,
     currentPeriodEndAt: "2099-08-31T00:00:00Z",
     expireAt: "2099-08-31T00:00:00Z",
+    invoiceId: null,
     invoicePaymentUrl: null,
     lifecycle: "cancelling",
     payMethod: "stripe",
@@ -39,17 +35,6 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
   plans: [],
   workspaces: [],
 };
-
-async function withTestDom(run: (act: typeof actAndDrain) => Promise<void>) {
-  const dom = installTestDom();
-  const previousAct = setActEnvironment(true);
-  try {
-    await run(actAndDrain);
-  } finally {
-    restoreActEnvironment(previousAct);
-    await dom.restore();
-  }
-}
 
 test("resume refreshes the Plan lifecycle state", async () => {
   await withTestDom(async (act) => {
@@ -144,6 +129,190 @@ test("saved card management is exposed as a Plan action", async () => {
       });
 
       assert.equal(manageRequests, 1);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("an unpaid invoice can be cancelled from its Plan banner", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanSurface } = await import("./billing-plan-surface");
+    const invoiceIds: string[] = [];
+    const snapshot: BillingPlanSnapshot = {
+      ...CANCELLING_PLAN,
+      current: {
+        ...CANCELLING_PLAN.current,
+        invoiceId: "invoice-1",
+        invoicePaymentUrl: "https://payments.example.test/invoice-1",
+      },
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanSurface
+            balance={<span>$3.00</span>}
+            currency="usd"
+            onCancelInvoice={(invoiceId) => invoiceIds.push(invoiceId)}
+            snapshot={snapshot}
+          />
+        );
+      });
+
+      assert.ok(
+        rendered?.getByRole("link", {
+          name: "Pay invoice",
+        })
+      );
+      await act(() => {
+        const cancelInvoice = rendered?.getByRole("button", {
+          name: "Cancel invoice",
+        });
+        if (cancelInvoice != null) {
+          fireEvent.click(cancelInvoice);
+        }
+      });
+
+      assert.deepEqual(invoiceIds, ["invoice-1"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a payment-due subscription exposes the renewal action", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanSurface } = await import("./billing-plan-surface");
+    let renewalRequests = 0;
+    const snapshot: BillingPlanSnapshot = {
+      ...CANCELLING_PLAN,
+      current: {
+        ...CANCELLING_PLAN.current,
+        cancelAtPeriodEnd: false,
+        lifecycle: "payment-due",
+      },
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanSurface
+            balance={<span>$3.00</span>}
+            currency="usd"
+            onRenew={() => {
+              renewalRequests += 1;
+            }}
+            snapshot={snapshot}
+          />
+        );
+      });
+
+      await act(() => {
+        const renew = rendered?.getByRole("button", {
+          name: "Renew subscription",
+        });
+        if (renew != null) {
+          fireEvent.click(renew);
+        }
+      });
+
+      assert.equal(renewalRequests, 1);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("plan actions open the change workflow with the selected plan", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanSurface } = await import("./billing-plan-surface");
+    const selections: Array<string | null> = [];
+    const snapshot: BillingPlanSnapshot = {
+      ...CANCELLING_PLAN,
+      current: {
+        ...CANCELLING_PLAN.current,
+        cancelAtPeriodEnd: false,
+        lifecycle: "active",
+      },
+      plans: [
+        {
+          changeKind: "downgrade",
+          description: "For personal projects",
+          id: "starter",
+          isCurrent: false,
+          limits: { cpu: "1" },
+          name: "Starter",
+          order: 1,
+          priceMicroUnits: 5_000_000,
+          resources: [{ label: "CPU", value: "1" }],
+        },
+        {
+          changeKind: null,
+          description: "For growing workloads",
+          id: "pro",
+          isCurrent: true,
+          limits: { cpu: "4" },
+          name: "Pro",
+          order: 2,
+          priceMicroUnits: 20_000_000,
+          resources: [{ label: "CPU", value: "4" }],
+        },
+        {
+          changeKind: "upgrade",
+          description: "For larger teams",
+          id: "team",
+          isCurrent: false,
+          limits: { cpu: "12" },
+          name: "Team",
+          order: 3,
+          priceMicroUnits: 50_000_000,
+          resources: [{ label: "CPU", value: "12" }],
+        },
+      ],
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanSurface
+            balance={<span>$3.00</span>}
+            currency="usd"
+            onPlanChange={(planId) => selections.push(planId)}
+            snapshot={snapshot}
+          />
+        );
+      });
+
+      await act(() => {
+        const changePlan = rendered?.getByRole("button", {
+          name: "Change plan",
+        });
+        if (changePlan != null) {
+          fireEvent.click(changePlan);
+        }
+      });
+      await act(() => {
+        const upgrade = rendered?.getByRole("button", {
+          name: "Upgrade to Team",
+        });
+        if (upgrade != null) {
+          fireEvent.click(upgrade);
+        }
+      });
+      await act(() => {
+        const downgrade = rendered?.getByRole("button", {
+          name: "Downgrade to Starter",
+        });
+        if (downgrade != null) {
+          fireEvent.click(downgrade);
+        }
+      });
+
+      assert.deepEqual(selections, [null, "team", "starter"]);
     } finally {
       await act(() => rendered?.unmount());
     }
