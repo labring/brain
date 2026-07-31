@@ -27,6 +27,7 @@ import {
   formatAccountBalance,
   loadAccountBalance,
 } from "@/features/billing/account-balance";
+import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import { BillingPlanChangeDialog } from "@/features/billing/billing-plan-change-dialog";
 import {
   type BillingPlanSnapshot,
@@ -51,10 +52,7 @@ interface BillingPlanWorkflowProps {
   actionPending?: SubscriptionLifecycleAction | null;
   balance: ReactNode;
   cardManagementPending?: boolean;
-  credentials: {
-    appToken: string;
-    kubeconfig: string;
-  };
+  credentials: BillingCredentials;
   currency: BillingCurrency;
   initialMode?: "upgrade" | null;
   invoiceCancellationPending?: boolean;

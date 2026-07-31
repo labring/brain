@@ -2,6 +2,7 @@ import { Quantity } from "@workspace/shared";
 import { z } from "zod";
 
 import {
+  type BillingCredentials,
   type BillingFetch,
   BillingRequestError,
   createBillingJsonRequester,
@@ -68,9 +69,7 @@ interface BillingPlanLoaderDependencies {
   now?: () => Date;
 }
 
-interface BillingWorkspaceOperationContext {
-  appToken: string;
-  kubeconfig: string;
+interface BillingWorkspaceOperationContext extends BillingCredentials {
   regionDomain: string;
   workspace: string;
 }
@@ -224,11 +223,7 @@ function pendingUpgradeFromTransaction(
 }
 
 export async function loadBillingPlanSnapshot(
-  credentials: {
-    appToken: string;
-    kubeconfig: string;
-    workspace: string;
-  },
+  credentials: BillingCredentials & { workspace: string },
   dependencies: BillingPlanLoaderDependencies = {}
 ): Promise<BillingPlanSnapshot> {
   const fetch = dependencies.fetch ?? globalThis.fetch;

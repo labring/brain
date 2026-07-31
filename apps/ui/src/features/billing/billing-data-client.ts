@@ -5,8 +5,13 @@ export type BillingFetch = (
   init?: RequestInit
 ) => Promise<Response>;
 
+export interface BillingCredentials {
+  appToken: string;
+  kubeconfig: string;
+}
+
 interface BillingJsonRequesterOptions {
-  credentials: { appToken: string; kubeconfig: string };
+  credentials: BillingCredentials;
   fallbackErrorMessage: string;
   fetch: BillingFetch;
 }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  type BillingCredentials,
   type BillingFetch,
   createBillingJsonRequester,
 } from "./billing-data-client";
@@ -158,7 +159,7 @@ function normalizePrices(
 }
 
 export async function loadBillingPricing(
-  input: { appToken: string; kubeconfig: string; workspace: string },
+  input: BillingCredentials & { workspace: string },
   dependencies: BillingPricingDependencies = {}
 ): Promise<BillingPricingSnapshot> {
   const fetch = dependencies.fetch ?? globalThis.fetch;
