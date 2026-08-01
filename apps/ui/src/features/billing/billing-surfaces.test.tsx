@@ -128,7 +128,7 @@ const PRICING_SNAPSHOT = {
 } satisfies BillingPricingSnapshot;
 
 const CANCELLING_PLAN = {
-  card: { brand: "visa", last4: "4242" },
+  card: { brand: "visa", expMonth: 12, expYear: 2028, last4: "4242" },
   current: {
     canManage: true,
     cancelAtPeriodEnd: true,
@@ -136,6 +136,7 @@ const CANCELLING_PLAN = {
     expireAt: "2026-08-31T00:00:00Z",
     invoiceId: "invoice-1",
     invoicePaymentUrl: "https://payments.example.test/invoice-1",
+    isPayg: false,
     lifecycle: "cancelling",
     payMethod: "stripe",
     planName: "Pro",
@@ -187,7 +188,8 @@ const CANCELLING_PLAN = {
       lifecycle: "cancelling",
       name: "Workspace Alpha",
       planName: "Pro",
-      recentSpendMicroUnits: 12_500_000,
+      priceMicroUnits: 20_000_000,
+      renewalAt: "2026-08-31T00:00:00Z",
     },
     {
       id: "workspace-b",
@@ -195,7 +197,8 @@ const CANCELLING_PLAN = {
       lifecycle: "active",
       name: "Workspace Beta",
       planName: "Starter",
-      recentSpendMicroUnits: 3_000_000,
+      priceMicroUnits: 5_000_000,
+      renewalAt: "2026-08-15T00:00:00Z",
     },
   ],
 } satisfies BillingPlanSnapshot;
@@ -232,17 +235,17 @@ test("Plan keeps Cost Center's section order around the live balance", () => {
     "Current workspace plan",
     "Account Balance",
     "Payment method",
-    "Compare plans",
     "All workspaces",
   ]);
   assertIncludes(html, "$3.00");
   assertIncludes(html, 'data-slot="billing-plan-summary"');
   assertIncludes(html, 'data-slot="billing-balance-section"');
   assertIncludes(html, 'data-slot="billing-payment-method-section"');
-  assertIncludes(html, 'data-slot="billing-all-plans-section"');
+  assertIncludes(html, 'data-slot="billing-all-workspaces-section"');
+  assert.equal(html.includes("Compare plans"), false);
 });
 
-test("Plan renders lifecycle notices, card facts, the catalog, and workspace spend", () => {
+test("Plan renders lifecycle notices, card facts, and workspace plan rows", () => {
   const html = renderToStaticMarkup(
     <BillingPlanSurface
       balance={<span>$3.00</span>}
@@ -256,19 +259,59 @@ test("Plan renders lifecycle notices, card facts, the catalog, and workspace spe
     "Pending upgrade to Team",
     "Your subscription is being cancelled",
     "You have an unpaid invoice",
-    "Visa ending in 4242",
-    "Starter",
-    "Pro",
-    "Team",
+    "Visa",
+    "•••• 4242",
+    "Expires 12/28",
+    "us.example.test",
     "Workspace Alpha",
     "Workspace Beta",
-    "$12.50",
+    "Starter",
+    "Aug 15, 2026",
+    "$20.00",
+    "$5.00",
     "$3.00",
   ]) {
     assertIncludes(html, text);
   }
   assertIncludes(html, 'href="https://payments.example.test/invoice-1"');
-  assertIncludes(html, 'data-slot="subscription-plan-comparison"');
+});
+
+test("Plan renders the compact PAYG summary next to the balance", () => {
+  const snapshot: BillingPlanSnapshot = {
+    ...CANCELLING_PLAN,
+    card: null,
+    current: {
+      ...CANCELLING_PLAN.current,
+      cancelAtPeriodEnd: false,
+      currentPeriodEndAt: "",
+      invoiceId: null,
+      invoicePaymentUrl: null,
+      isPayg: true,
+      lifecycle: "active",
+      planName: "PAYG",
+      priceMicroUnits: 0,
+    },
+    pendingUpgrade: null,
+  };
+  const html = renderToStaticMarkup(
+    <BillingPlanSurface
+      balance={<span>$3.00</span>}
+      currency="usd"
+      snapshot={snapshot}
+    />
+  );
+
+  assertTextOrder(html, ["Current workspace plan", "PAYG", "Account Balance"]);
+  assertIncludes(html, "Subscribe plan");
+  for (const absent of [
+    "Cancel subscription",
+    "Change plan",
+    "Price per month",
+    "No included resource quota",
+    "Payment method",
+  ]) {
+    assert.equal(html.includes(absent), false, `${absent} is not rendered`);
+  }
 });
 
 test("Plan shows the free-plan expiry warning when expiry is within seven days", () => {

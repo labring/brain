@@ -24,7 +24,12 @@ export interface BillingPlanResource {
 }
 
 export interface BillingPlanSnapshot {
-  card: { brand: string; last4: string } | null;
+  card: {
+    brand: string;
+    expMonth?: number | null;
+    expYear?: number | null;
+    last4: string;
+  } | null;
   current: {
     canManage: boolean;
     cancelAtPeriodEnd: boolean;
@@ -32,6 +37,7 @@ export interface BillingPlanSnapshot {
     expireAt: string | null;
     invoiceId: string | null;
     invoicePaymentUrl: string | null;
+    isPayg: boolean;
     lifecycle: SubscriptionLifecycle;
     payMethod: "balance" | "stripe";
     planName: string;
@@ -58,7 +64,8 @@ export interface BillingPlanSnapshot {
     lifecycle: SubscriptionLifecycle;
     name: string;
     planName: string;
-    recentSpendMicroUnits: number;
+    priceMicroUnits: number | null;
+    renewalAt: string | null;
   }>;
 }
 
@@ -119,6 +126,8 @@ const cardResponseSchema = z.object({
     .object({
       card: z.object({
         brand: z.string(),
+        exp_month: z.number().optional(),
+        exp_year: z.number().optional(),
         last4: z.string(),
       }),
     })
@@ -157,14 +166,6 @@ const downgradeQuotaResponseSchema = z.object({
       .optional()
       .default({}),
   }),
-});
-
-const paymentSchema = z.object({
-  Amount: z.number(),
-  Workspace: z.string(),
-});
-const paymentsResponseSchema = z.object({
-  payments: z.array(paymentSchema),
 });
 
 const regionsResponseSchema = z.object({
@@ -262,7 +263,6 @@ export async function loadBillingPlanSnapshot(
     subscriptionPayload,
     transactionPayload,
     subscriptionsPayload,
-    paymentsPayload,
     workspacesPayload,
     cardPayload,
   ] = await Promise.all([
@@ -273,10 +273,6 @@ export async function loadBillingPlanSnapshot(
       workspaceRequest
     ),
     requestBillingJson("/api/billing/subscriptions"),
-    requestBillingJson("/api/billing/payments", {
-      endTime,
-      startTime,
-    }),
     requestBillingJson("/api/billing/workspaces", {
       endTime,
       startTime,
@@ -295,7 +291,6 @@ export async function loadBillingPlanSnapshot(
     transactionResponseSchema.parse(transactionPayload).transaction;
   const subscriptions =
     subscriptionsResponseSchema.parse(subscriptionsPayload).subscriptions;
-  const payments = paymentsResponseSchema.parse(paymentsPayload).payments;
   const workspaces = workspacesResponseSchema.parse(workspacesPayload).data;
   const paymentMethod = cardResponseSchema.parse(cardPayload).payment_method;
   const pendingUpgrade = pendingUpgradeFromTransaction(transaction);
@@ -303,13 +298,9 @@ export async function loadBillingPlanSnapshot(
   const subscriptionByWorkspace = new Map(
     subscriptions.map((item) => [item.Workspace, item])
   );
-  const spendByWorkspace = new Map<string, number>();
-  for (const payment of payments) {
-    spendByWorkspace.set(
-      payment.Workspace,
-      (spendByWorkspace.get(payment.Workspace) ?? 0) + payment.Amount
-    );
-  }
+  const planPriceByName = new Map(
+    plans.map((plan) => [plan.name, plan.monthlyPriceMicroUnits])
+  );
 
   return {
     card:
@@ -317,6 +308,8 @@ export async function loadBillingPlanSnapshot(
         ? null
         : {
             brand: paymentMethod.card.brand,
+            expMonth: paymentMethod.card.exp_month ?? null,
+            expYear: paymentMethod.card.exp_year ?? null,
             last4: paymentMethod.card.last4,
           },
     current: {
@@ -326,6 +319,7 @@ export async function loadBillingPlanSnapshot(
       expireAt: subscription.ExpireAt ?? null,
       invoiceId: subscription.InvoiceInfo?.ID ?? null,
       invoicePaymentUrl: subscription.InvoiceInfo?.PaymentUrl ?? null,
+      isPayg: subscription.type === "PAYG",
       lifecycle: subscriptionLifecycle({
         cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
         hasPendingUpgrade: pendingUpgrade != null,
@@ -384,7 +378,9 @@ export async function loadBillingPlanSnapshot(
         }),
         name: name.trim() || id,
         planName,
-        recentSpendMicroUnits: spendByWorkspace.get(id) ?? 0,
+        priceMicroUnits:
+          item == null ? null : (planPriceByName.get(planName) ?? 0),
+        renewalAt: item?.CurrentPeriodEndAt.trim() || null,
       };
     }),
   };

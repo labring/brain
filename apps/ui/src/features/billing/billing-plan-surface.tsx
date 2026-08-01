@@ -35,9 +35,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import {
   AlertCircle,
-  ArrowDownRight,
   ArrowRightLeft,
-  ArrowUpRight,
   CalendarClock,
   CircleCheck,
   CircleX,
@@ -185,6 +183,15 @@ function BillingPlanNotices({
   );
 }
 
+function cardExpiryLabel(card: NonNullable<BillingPlanSnapshot["card"]>) {
+  if (card.expMonth == null || card.expYear == null) {
+    return null;
+  }
+  const month = String(card.expMonth).padStart(2, "0");
+  const year = String(card.expYear).slice(-2);
+  return `${month}/${year}`;
+}
+
 function BillingPaymentMethod({
   canManage,
   card,
@@ -196,28 +203,39 @@ function BillingPaymentMethod({
   isPending: boolean;
   onManageCard?: () => void;
 }) {
+  if (card == null) {
+    return null;
+  }
+
+  const expiry = cardExpiryLabel(card);
+
   return (
     <section
       className="rounded-xl border border-border bg-card p-2 shadow-xs"
       data-slot="billing-payment-method-section"
     >
-      <div className="flex min-h-20 flex-col gap-3 rounded-lg bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <h2 className="sr-only">Payment method</h2>
+      <div className="flex min-h-16 flex-col gap-3 rounded-lg bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-input/40 text-muted-foreground">
             <CreditCard aria-hidden className="size-5" strokeWidth={1.75} />
           </div>
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <h2 className="font-medium text-foreground text-sm">
-              Payment method
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              {card == null
-                ? "No saved card"
-                : `${cardBrand(card.brand)} ending in ${card.last4}`}
-            </p>
-          </div>
+          <span className="font-medium text-foreground text-sm">
+            {cardBrand(card.brand)}
+          </span>
+          <span className="font-medium text-foreground text-sm">
+            •••• {card.last4}
+          </span>
+          {expiry == null ? null : (
+            <>
+              <div aria-hidden className="h-3 w-px bg-border" />
+              <span className="text-muted-foreground text-xs">
+                Expires {expiry}
+              </span>
+            </>
+          )}
         </div>
-        {card != null && canManage ? (
+        {canManage ? (
           <AppButton
             className="self-stretch sm:self-auto"
             disabled={isPending}
@@ -228,6 +246,22 @@ function BillingPaymentMethod({
             {isPending ? "Opening..." : "Manage card"}
           </AppButton>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+function BillingBalanceSection({ balance }: { balance: ReactNode }) {
+  return (
+    <section
+      className="rounded-xl border border-border bg-card p-2 shadow-xs"
+      data-slot="billing-balance-section"
+    >
+      <div className="flex h-full min-h-24 items-center rounded-lg bg-muted/30 px-6 py-5">
+        <div className="flex flex-col gap-1.5">
+          <span className="text-muted-foreground text-sm">Account Balance</span>
+          {balance}
+        </div>
       </div>
     </section>
   );
@@ -373,14 +407,43 @@ export function BillingPlanSurface({
   const { current } = snapshot;
   const lifecycleMetadata = LIFECYCLE_METADATA[current.lifecycle];
 
-  return (
-    <div className="flex flex-col gap-8 pb-16" data-slot="billing-plan-surface">
-      <BillingPlanNotices
-        current={current}
-        invoiceCancellationPending={invoiceCancellationPending}
-        onCancelInvoice={onCancelInvoice}
-      />
-
+  const planSummary = current.isPayg ? (
+    <div className="grid gap-4 lg:grid-cols-3">
+      <section
+        className="rounded-xl border border-border bg-card p-2 text-card-foreground shadow-xs lg:col-span-2"
+        data-slot="billing-plan-summary"
+      >
+        <div className="flex h-full min-h-24 flex-col justify-between gap-4 rounded-lg bg-muted/30 px-6 py-5 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-1">
+            <span className="text-muted-foreground text-sm">
+              Current workspace plan
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold text-2xl text-foreground">
+                {current.planName}
+              </h2>
+              {current.lifecycle === "active" ? null : (
+                <Badge variant={lifecycleMetadata.variant}>
+                  {lifecycleMetadata.label}
+                </Badge>
+              )}
+            </div>
+          </div>
+          {current.canManage ? (
+            <AppButton
+              disabled={actionPending != null}
+              onClick={() => onPlanChange?.(null)}
+              size="lg"
+            >
+              Subscribe plan
+            </AppButton>
+          ) : null}
+        </div>
+      </section>
+      <BillingBalanceSection balance={balance} />
+    </div>
+  ) : (
+    <>
       <section
         className="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xs"
         data-slot="billing-plan-summary"
@@ -395,9 +458,11 @@ export function BillingPlanSurface({
                 <h2 className="font-semibold text-2xl text-foreground">
                   {current.planName}
                 </h2>
-                <Badge variant={lifecycleMetadata.variant}>
-                  {lifecycleMetadata.label}
-                </Badge>
+                {current.lifecycle === "active" ? null : (
+                  <Badge variant={lifecycleMetadata.variant}>
+                    {lifecycleMetadata.label}
+                  </Badge>
+                )}
                 {snapshot.pendingUpgrade == null ? null : (
                   <Badge variant="outline">
                     Pending upgrade to {snapshot.pendingUpgrade.planName}
@@ -464,19 +529,19 @@ export function BillingPlanSurface({
         </dl>
       </section>
 
-      <section
-        className="rounded-xl border border-border bg-card p-2 shadow-xs"
-        data-slot="billing-balance-section"
-      >
-        <div className="flex min-h-24 items-center rounded-lg bg-muted/30 px-6 py-5">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-muted-foreground text-sm">
-              Account Balance
-            </span>
-            {balance}
-          </div>
-        </div>
-      </section>
+      <BillingBalanceSection balance={balance} />
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-8 pb-16" data-slot="billing-plan-surface">
+      <BillingPlanNotices
+        current={current}
+        invoiceCancellationPending={invoiceCancellationPending}
+        onCancelInvoice={onCancelInvoice}
+      />
+
+      {planSummary}
 
       <BillingPaymentMethod
         canManage={current.canManage}
@@ -485,80 +550,20 @@ export function BillingPlanSurface({
         onManageCard={onManageCard}
       />
 
-      <section data-slot="billing-all-plans-section">
-        <h2 className="mb-4 font-medium text-foreground text-lg">
-          Compare plans
-        </h2>
-        <div
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
-          data-slot="subscription-plan-comparison"
-        >
-          {snapshot.plans.map((plan) => (
-            <article
-              className="flex min-h-64 flex-col gap-5 rounded-xl border border-border bg-card p-5 shadow-xs"
-              key={plan.id}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-foreground text-lg">
-                    {plan.name}
-                  </h3>
-                  <p className="mt-1 text-muted-foreground text-sm">
-                    {plan.description}
-                  </p>
-                </div>
-                {plan.isCurrent ? <Badge>Current</Badge> : null}
-              </div>
-              <p className="font-semibold text-2xl text-foreground tabular-nums">
-                {formatBillingAmount(plan.priceMicroUnits, currency)}
-                <span className="font-normal text-muted-foreground text-sm">
-                  /month
-                </span>
-              </p>
-              <ul className="flex flex-col gap-2 text-sm">
-                {plan.resources.map((resource) => (
-                  <li className="flex items-center gap-2" key={resource.label}>
-                    <CircleCheck aria-hidden className="size-4 text-primary" />
-                    <span className="text-muted-foreground">
-                      {resource.value} {resource.label}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {current.canManage && plan.changeKind != null ? (
-                <AppButton
-                  className="mt-auto w-full"
-                  onClick={() => onPlanChange?.(plan.id)}
-                  variant="secondary"
-                >
-                  {plan.changeKind === "upgrade" ? (
-                    <ArrowUpRight aria-hidden data-icon="inline-start" />
-                  ) : (
-                    <ArrowDownRight aria-hidden data-icon="inline-start" />
-                  )}
-                  {plan.changeKind === "upgrade" ? "Upgrade" : "Downgrade"} to{" "}
-                  {plan.name}
-                </AppButton>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section data-slot="billing-all-workspaces-section">
         <h2 className="mb-4 font-medium text-foreground text-lg">
           All workspaces
         </h2>
         <TableLayout>
           <TableLayoutCaption className="font-medium">
-            Recent spend covers the last 31 days
+            {current.regionDomain}
           </TableLayoutCaption>
           <TableLayoutContent>
             <TableLayoutHeadRow>
               <TableHead>Workspace</TableHead>
-              <TableHead>Subscription</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Recent spend</TableHead>
+              <TableHead>Plan</TableHead>
+              <TableHead>Quota resets on</TableHead>
+              <TableHead className="text-right">Price</TableHead>
             </TableLayoutHeadRow>
             <TableLayoutBody>
               {snapshot.workspaces.map((workspace) => (
@@ -574,21 +579,29 @@ export function BillingPlanSurface({
                       {workspace.isCurrent ? (
                         <Badge variant="outline">Current</Badge>
                       ) : null}
+                      {workspace.lifecycle === "payment-due" ? (
+                        <Badge variant="destructive">In debt</Badge>
+                      ) : null}
+                      {workspace.lifecycle === "cancelling" ? (
+                        <Badge variant="secondary">Cancelled</Badge>
+                      ) : null}
                     </div>
                   </TableCell>
-                  <TableCell>{workspace.planName}</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={LIFECYCLE_METADATA[workspace.lifecycle].variant}
-                    >
-                      {LIFECYCLE_METADATA[workspace.lifecycle].label}
-                    </Badge>
+                    <Badge variant="secondary">{workspace.planName}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    {workspace.lifecycle === "cancelling"
+                      ? "-"
+                      : formatDate(workspace.renewalAt)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatBillingAmount(
-                      workspace.recentSpendMicroUnits,
-                      currency
-                    )}
+                    {workspace.priceMicroUnits == null
+                      ? "—"
+                      : formatBillingAmount(
+                          workspace.priceMicroUnits,
+                          currency
+                        )}
                   </TableCell>
                 </TableRow>
               ))}

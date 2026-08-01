@@ -10,7 +10,6 @@ import type {
   SubscriptionLifecycleAction,
 } from "./billing-plan-data";
 
-const ACTIVE_PATTERN = /Active/;
 const CANCELLING_BANNER_PATTERN = /Your subscription is being cancelled/;
 const CANCELLING_PATTERN = /Cancelling/;
 
@@ -23,6 +22,7 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
     expireAt: "2099-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
+    isPayg: false,
     lifecycle: "cancelling",
     payMethod: "stripe",
     planName: "Pro",
@@ -85,7 +85,10 @@ test("resume refreshes the Plan lifecycle state", async () => {
       });
 
       assert.deepEqual(actions, ["resumed"]);
-      assert.match(rendered?.container.textContent ?? "", ACTIVE_PATTERN);
+      assert.doesNotMatch(
+        rendered?.container.textContent ?? "",
+        CANCELLING_PATTERN
+      );
       assert.equal(
         (rendered?.container.textContent ?? "").includes(
           "Your subscription is being cancelled"
@@ -295,24 +298,67 @@ test("plan actions open the change workflow with the selected plan", async () =>
           fireEvent.click(changePlan);
         }
       });
+
+      assert.deepEqual(selections, [null]);
+      assert.equal(
+        rendered?.queryByRole("button", { name: "Upgrade to Team" }),
+        null
+      );
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a PAYG workspace exposes only the subscribe entry point", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanSurface } = await import("./billing-plan-surface");
+    const selections: Array<string | null> = [];
+    const snapshot: BillingPlanSnapshot = {
+      ...CANCELLING_PLAN,
+      card: null,
+      current: {
+        ...CANCELLING_PLAN.current,
+        cancelAtPeriodEnd: false,
+        currentPeriodEndAt: "",
+        isPayg: true,
+        lifecycle: "active",
+        planName: "PAYG",
+        priceMicroUnits: 0,
+      },
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
       await act(() => {
-        const upgrade = rendered?.getByRole("button", {
-          name: "Upgrade to Team",
-        });
-        if (upgrade != null) {
-          fireEvent.click(upgrade);
-        }
+        rendered = render(
+          <BillingPlanSurface
+            balance={<span>$3.00</span>}
+            currency="usd"
+            onPlanChange={(planId) => selections.push(planId)}
+            snapshot={snapshot}
+          />
+        );
       });
+
+      assert.equal(
+        rendered?.queryByRole("button", { name: "Cancel subscription" }),
+        null
+      );
+      assert.equal(
+        rendered?.queryByRole("button", { name: "Change plan" }),
+        null
+      );
       await act(() => {
-        const downgrade = rendered?.getByRole("button", {
-          name: "Downgrade to Starter",
+        const subscribe = rendered?.getByRole("button", {
+          name: "Subscribe plan",
         });
-        if (downgrade != null) {
-          fireEvent.click(downgrade);
+        if (subscribe != null) {
+          fireEvent.click(subscribe);
         }
       });
 
-      assert.deepEqual(selections, [null, "team", "starter"]);
+      assert.deepEqual(selections, [null]);
     } finally {
       await act(() => rendered?.unmount());
     }

@@ -19,6 +19,7 @@ const SNAPSHOT: BillingPlanSnapshot = {
     expireAt: "2026-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
+    isPayg: false,
     lifecycle: "active",
     payMethod: "stripe",
     planName: "Pro",

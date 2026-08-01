@@ -17,39 +17,10 @@ const NOW = new Date("2026-07-30T12:00:00Z");
 
 const RESPONSES: Record<string, unknown> = {
   "/api/billing/card": {
-    payment_method: { card: { brand: "visa", last4: "4242" } },
+    payment_method: {
+      card: { brand: "visa", exp_month: 12, exp_year: 2028, last4: "4242" },
+    },
     success: true,
-  },
-  "/api/billing/payments": {
-    payments: [
-      {
-        Amount: 10_000_000,
-        ID: "payment-1",
-        Operator: "renewed",
-        PlanName: "Pro",
-        Time: "2026-07-12T00:00:00Z",
-        Type: "SUBSCRIPTION",
-        Workspace: "workspace-a",
-      },
-      {
-        Amount: 2_500_000,
-        ID: "payment-2",
-        Operator: "upgraded",
-        PlanName: "Pro",
-        Time: "2026-07-20T00:00:00Z",
-        Type: "SUBSCRIPTION",
-        Workspace: "workspace-a",
-      },
-      {
-        Amount: 3_000_000,
-        ID: "payment-3",
-        Operator: "renewed",
-        PlanName: "Starter",
-        Time: "2026-07-21T00:00:00Z",
-        Type: "SUBSCRIPTION",
-        Workspace: "workspace-b",
-      },
-    ],
   },
   "/api/billing/plans": {
     plans: [
@@ -164,7 +135,7 @@ const RESPONSES: Record<string, unknown> = {
   },
 };
 
-test("loads the verified account's Plan snapshot and aggregates recent workspace spend", async () => {
+test("loads the verified account's Plan snapshot with workspace plan facts", async () => {
   const requests: Array<{ init: RequestInit | undefined; url: string }> = [];
 
   const snapshot = await loadBillingPlanSnapshot(
@@ -202,7 +173,13 @@ test("loads the verified account's Plan snapshot and aggregates recent workspace
     planName: "Team",
     startsAt: "2026-08-31T00:00:00Z",
   });
-  assert.deepEqual(snapshot.card, { brand: "visa", last4: "4242" });
+  assert.equal(snapshot.current.isPayg, false);
+  assert.deepEqual(snapshot.card, {
+    brand: "visa",
+    expMonth: 12,
+    expYear: 2028,
+    last4: "4242",
+  });
   assert.deepEqual(
     snapshot.plans.map((plan) => [plan.name, plan.isCurrent, plan.changeKind]),
     [
@@ -220,35 +197,39 @@ test("loads the verified account's Plan snapshot and aggregates recent workspace
     snapshot.workspaces.map((workspace) => ({
       lifecycle: workspace.lifecycle,
       name: workspace.name,
-      recentSpendMicroUnits: workspace.recentSpendMicroUnits,
+      priceMicroUnits: workspace.priceMicroUnits,
+      renewalAt: workspace.renewalAt,
     })),
     [
       {
         lifecycle: "cancelling",
         name: "Workspace Alpha",
-        recentSpendMicroUnits: 12_500_000,
+        priceMicroUnits: 20_000_000,
+        renewalAt: "2026-08-31T00:00:00Z",
       },
       {
         lifecycle: "active",
         name: "Workspace Beta",
-        recentSpendMicroUnits: 3_000_000,
+        priceMicroUnits: 5_000_000,
+        renewalAt: "2026-08-31T00:00:00Z",
       },
     ]
   );
 
-  assert.equal(requests.length, 8);
+  assert.equal(requests.length, 7);
   for (const request of requests) {
     const headers = new Headers(request.init?.headers);
     assert.equal(headers.get("Authorization"), "Bearer apiVersion%3A%20v1");
     assert.equal(headers.get("X-Sealos-App-Token"), "desktop-app-token");
   }
 
-  const paymentRequest = requests.find(
-    (request) => request.url === "/api/billing/payments"
+  const workspacesRequest = requests.find(
+    (request) => request.url === "/api/billing/workspaces"
   );
-  assert.deepEqual(JSON.parse(String(paymentRequest?.init?.body)), {
+  assert.deepEqual(JSON.parse(String(workspacesRequest?.init?.body)), {
     endTime: "2026-07-30T12:00:00.000Z",
     startTime: "2026-06-29T12:00:00.000Z",
+    type: 0,
   });
 });
 
