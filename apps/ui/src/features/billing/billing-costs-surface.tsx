@@ -42,7 +42,7 @@ import type { SelectedBillingApp } from "@/features/billing/billing-app-cost-dra
 import { BillingCostCharts } from "@/features/billing/billing-cost-charts";
 import {
   type BillingCostsSnapshot,
-  buildDailyExpenditureTrend,
+  buildDailyCostTrend,
   buildMonthlyBillingTrend,
   buildWorkspaceCostBreakdown,
   isPaidSubscriptionPayment,
@@ -145,7 +145,12 @@ export function BillingCostsSurface({
     dateRange,
     payments: snapshot.payments,
   });
-  const dailyTrend = buildDailyExpenditureTrend(snapshot.costPoints);
+  const regionLabel =
+    snapshot.region?.name?.en ?? snapshot.region?.domain ?? "Current region";
+  const dailyTrend = buildDailyCostTrend({
+    dateRange,
+    regions: [{ costPoints: snapshot.costPoints, label: regionLabel }],
+  });
   const totalPaymentPages = Math.max(
     1,
     Math.ceil(scopedPayments.length / PAYMENT_PAGE_SIZE)
@@ -239,9 +244,7 @@ export function BillingCostsSurface({
                     className="size-4 shrink-0 text-muted-foreground"
                   />
                   <span className="min-w-0 flex-1 truncate font-medium">
-                    {snapshot.region?.name?.en ??
-                      snapshot.region?.domain ??
-                      "Current region"}
+                    {regionLabel}
                   </span>
                   <Badge variant="outline">Region</Badge>
                 </div>

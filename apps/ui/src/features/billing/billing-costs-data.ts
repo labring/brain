@@ -154,8 +154,22 @@ export interface MonthlyBillingTrendPoint {
   paymentMicroUnits: number;
 }
 
-export interface DailyExpenditurePoint {
-  expenditureMicroUnits: number;
+export interface DailyCostTrendSeries {
+  dataKey: string;
+  label: string;
+}
+
+export interface DailyCostTrendPoint extends Record<string, number | string> {
+  label: string;
+}
+
+export interface DailyCostTrend {
+  points: DailyCostTrendPoint[];
+  series: DailyCostTrendSeries[];
+}
+
+export interface RegionCostPoints {
+  costPoints: BillingCostsSnapshot["costPoints"];
   label: string;
 }
 
@@ -238,25 +252,70 @@ export function subscriptionPaymentDescription(
     .toLowerCase();
 }
 
-export function buildDailyExpenditureTrend(
-  costPoints: BillingCostsSnapshot["costPoints"]
-): DailyExpenditurePoint[] {
-  const amountByDay = new Map<string, number>();
-  for (const [timestampSeconds, rawAmount] of costPoints) {
-    const date = new Date(timestampSeconds * 1000);
-    const amount = Number(rawAmount);
-    if (Number.isNaN(date.getTime()) || !Number.isFinite(amount)) {
-      continue;
-    }
-    const day = date.toISOString().slice(0, 10);
-    amountByDay.set(day, (amountByDay.get(day) ?? 0) + amount);
+function daysInRange(dateRange: BillingDateRange): string[] {
+  const start = new Date(dateRange.startTime);
+  const end = new Date(dateRange.endTime);
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime()) ||
+    start > end
+  ) {
+    return [];
   }
-  return [...amountByDay.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([day, expenditureMicroUnits]) => ({
-      expenditureMicroUnits,
-      label: DAY_LABEL_FORMATTER.format(new Date(`${day}T00:00:00.000Z`)),
-    }));
+
+  const days: string[] = [];
+  const cursor = new Date(
+    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())
+  );
+  const lastDay = Date.UTC(
+    end.getUTCFullYear(),
+    end.getUTCMonth(),
+    end.getUTCDate()
+  );
+  while (cursor.getTime() <= lastDay) {
+    days.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return days;
+}
+
+export function buildDailyCostTrend(input: {
+  dateRange: BillingDateRange;
+  regions: RegionCostPoints[];
+}): DailyCostTrend {
+  const series: DailyCostTrendSeries[] = [
+    { dataKey: "total", label: "Total" },
+    ...input.regions.map((region, index) => ({
+      dataKey: `region${index}`,
+      label: region.label,
+    })),
+  ];
+
+  const pointByDay = new Map<string, DailyCostTrendPoint>(
+    daysInRange(input.dateRange).map((day) => [
+      day,
+      Object.fromEntries([
+        ["label", DAY_LABEL_FORMATTER.format(new Date(`${day}T00:00:00.000Z`))],
+        ...series.map(({ dataKey }) => [dataKey, 0]),
+      ]) as DailyCostTrendPoint,
+    ])
+  );
+  input.regions.forEach((region, index) => {
+    for (const [timestampSeconds, rawAmount] of region.costPoints) {
+      const date = new Date(timestampSeconds * 1000);
+      const amount = Number(rawAmount);
+      if (Number.isNaN(date.getTime()) || !Number.isFinite(amount)) {
+        continue;
+      }
+      const point = pointByDay.get(date.toISOString().slice(0, 10));
+      if (point == null) {
+        continue;
+      }
+      point[`region${index}`] = Number(point[`region${index}`]) + amount;
+      point.total = Number(point.total) + amount;
+    }
+  });
+  return { points: [...pointByDay.values()], series };
 }
 
 export function buildMonthlyBillingTrend(input: {
