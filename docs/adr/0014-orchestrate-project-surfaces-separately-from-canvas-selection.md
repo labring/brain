@@ -20,10 +20,6 @@ Canvas selection is separate from surface targets. Resource-related surface inte
 
 ## Consequences
 
-The URL model should separate canvas selection from project surface slots. Surface entries belong to slots such as `side`, `main`, and `drawer`, while canvas selection records which AP, DB, AP Public Access Node, or edge is selected.
-
-The refactor will move directly to the slot-based URL model rather than preserving the old AP, DB, public access, and canvas action query parameters through a compatibility codec.
-
-The target URL shape should use independent `selected`, `side`, `main`, and `drawer` query keys rather than resource-specific pane keys such as `apPane`, `dbPane`, `entryPane`, or `canvasAction`.
+The URL model separates canvas selection from project surface slots: surface entries belong to slots such as `side`, `main`, and `drawer`, while canvas selection records which AP, DB, AP Public Access Node, or edge is selected. The URL shape uses independent `selected`, `side`, `main`, and `drawer` query keys.
 
 User-initiated route-state transitions use browser history entries so Back can return to a previous workbench state. System repairs such as invalid query cleanup and stale target cleanup replace the current history entry so broken or unsupported state does not remain in the history stack.

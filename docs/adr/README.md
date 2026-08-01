@@ -14,8 +14,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0018 — Model AP Environment as Raw Source and Compiled Runtime Env](0018-model-ap-environment-as-raw-source-and-compiled-runtime-env.md)
 - [0019 — Model Project Settings as Provider-Defined Side Pane Views](0019-model-project-settings-as-provider-defined-side-pane-views.md)
 - [0020 — Keep Shared UI Free of Product Workflows](0020-keep-shared-ui-free-of-product-workflows.md)
-- [0021 — Persist First Incremental Canvas Placements](0021-persist-first-incremental-canvas-placements.md)
-- [0022 — Use Row-Major Global Canvas Placement](0022-use-row-major-global-canvas-placement.md)
+- [0022 — Use Row-Major Global Placement and Persist First Canvas Placements](0022-row-major-global-placement-and-persisted-first-placement.md) *(absorbs ADR-0021)*
 - [0023 — Model All Deployments as Deployment Tasks](0023-model-all-deployments-as-deployment-tasks.md)
 - [0024 — Model Canvas Placement Owners for Deployment Projections](0024-model-canvas-placement-owners-for-deployment-projections.md)
 - [0025 — Stream Project Deployment Task Projections](0025-stream-project-deployment-task-projections.md)
@@ -57,4 +56,4 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 
 - An ADR without a `Status` section is accepted as written.
 - When a later ADR revises or replaces part of an earlier one, give the earlier ADR a `Status` section naming the reviser (see ADR 0002), and trim the superseded text instead of leaving it to mislead.
-- Gaps in the sequence (0004–0007, 0010–0012, 0017, 0045–0046) are ADRs deleted because their decisions were superseded, merged, or withdrawn before release. 0017's decision (DB Service Restore creates a new DB Service) lives on as the CONTEXT.md definition.
+- Gaps in the sequence (0004–0007, 0010–0012, 0017, 0021, 0045–0046) are ADRs deleted because their decisions were superseded, merged, or withdrawn before release. 0017's decision (DB Service Restore creates a new DB Service) lives on as the CONTEXT.md definition; 0021's persistence rule lives on inside ADR-0022.

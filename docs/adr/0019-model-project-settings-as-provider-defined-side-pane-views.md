@@ -6,7 +6,7 @@ Settings Views are provider-defined product scopes, not arbitrary section bundle
 
 Settings targets identify the Settings Owner rather than the entry source. AP and DB resources are initial Settings Owners, with room for future owners such as Project; Public Addresses is not a Settings Owner, so AP Public Access Node selection opens the associated AP settings target with a Public Addresses view.
 
-The route model should move directly to a unified settings side entry such as `settings:<owner-target>[:view]` and should not preserve the old settings side URL forms. Unsupported settings targets close the Side Pane and repair URL state, because there is no safe fallback provider.
+The route model uses a unified settings side entry, `settings:<owner-target>[:view]`. Unsupported settings targets close the Side Pane and repair URL state, because there is no safe fallback provider.
 
 ## Considered Options
 
@@ -20,6 +20,4 @@ The route model should move directly to a unified settings side entry such as `s
 
 Project Canvas, assistant actions, and toolbar actions should request `kind: "settings"` with a Settings Owner target and optional view, rather than directly choosing AP or DB pane components. The settings feature becomes the boundary for provider registration, view validation, and settings draft/leave-guard behavior; shared UI packages remain focused on reusable controls and layout primitives rather than AP/DB provider knowledge.
 
-The existing monolithic AP settings pane should be split into provider-local rendered sections as part of this architecture change rather than kept as an opaque pane behind the new host. The host renders shared settings chrome and section layout, while providers return structured section models and section content.
-
-When AP settings are split, do not keep a `ContainerSettingsPane` compatibility layer. Product-owned AP settings sections should move to the AP settings provider boundary in the same change, while shared UI packages retain only reusable settings controls and layout primitives.
+AP settings render as provider-local sections rather than as an opaque pane behind the host. The host renders shared settings chrome and section layout, while providers return structured section models and section content.
