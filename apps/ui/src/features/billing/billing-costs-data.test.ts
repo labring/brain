@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { formatCompactBillingAmount } from "./billing-amount";
 import {
+  buildDailyCostTrend,
   buildMonthlyBillingTrend,
   buildWorkspaceCostBreakdown,
   calendarBillingDateRange,
@@ -29,6 +30,50 @@ test("calendar dates remain in the selected UTC billing month", () => {
     calendarBillingDateRange({ end: "2026-02-30", start: "2026-02-01" }),
     null
   );
+});
+
+test("daily cost trend zero-fills the range and leads with the merged Total", () => {
+  const trend = buildDailyCostTrend({
+    dateRange: {
+      endTime: "2026-07-03T23:59:59.999Z",
+      startTime: "2026-07-01T00:00:00.000Z",
+    },
+    regions: [
+      {
+        costPoints: [
+          [Date.UTC(2026, 6, 1, 8) / 1000, "1000000"],
+          [Date.UTC(2026, 6, 3, 8) / 1000, 500_000],
+        ],
+        label: "US West",
+      },
+      {
+        costPoints: [[Date.UTC(2026, 6, 3, 9) / 1000, "250000"]],
+        label: "Hangzhou",
+      },
+    ],
+  });
+
+  assert.deepEqual(trend.series, [
+    { dataKey: "total", label: "Total" },
+    { dataKey: "region0", label: "US West" },
+    { dataKey: "region1", label: "Hangzhou" },
+  ]);
+  assert.deepEqual(
+    trend.points.map(({ label }) => label),
+    ["Jul 1", "Jul 2", "Jul 3"]
+  );
+  assert.deepEqual(trend.points[1], {
+    label: "Jul 2",
+    region0: 0,
+    region1: 0,
+    total: 0,
+  });
+  assert.deepEqual(trend.points[2], {
+    label: "Jul 3",
+    region0: 500_000,
+    region1: 250_000,
+    total: 750_000,
+  });
 });
 
 test("chart axes identify the cluster Billing Currency", () => {
