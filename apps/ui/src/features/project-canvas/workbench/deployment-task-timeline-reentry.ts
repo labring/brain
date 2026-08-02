@@ -3,9 +3,51 @@ import {
   deploymentTaskProjectionIsVisible,
 } from "@/features/deploy/task/projection";
 
-export const DEPLOYMENT_TASK_DOCK_DESKTOP_LIMIT = 3;
-export const DEPLOYMENT_TASK_DOCK_MOBILE_LIMIT = 1;
 export const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS = 6000;
+
+/**
+ * Dock chip slot geometry (px). The chip floor mirrors the row's `min-w-32`
+ * class (a chip narrower than this stops being readable, so it folds into
+ * the overflow instead); the gap is one chip → divider → chip span
+ * (gap-1 + 1px divider + gap-1); the reserve holds room for the widest
+ * realistic "+N" trigger plus the divider before it.
+ */
+export const DEPLOYMENT_TASK_DOCK_CHIP_MIN_PX = 128;
+export const DEPLOYMENT_TASK_DOCK_CHIP_GAP_PX = 9;
+export const DEPLOYMENT_TASK_DOCK_OVERFLOW_RESERVE_PX = 84;
+
+/**
+ * How many chips (highest-priority first) fit the measured slot width.
+ * Every task is shown only when each chip can take at least its floor width
+ * with no overflow trigger; otherwise each visible chip must fit at its
+ * floor alongside the "+N" reserve. Pure arithmetic so the fold decision
+ * stays unit-testable — the DOM contributes only the measured width.
+ */
+export function fitDeploymentTaskDockChipCount(
+  slotWidth: number,
+  taskCount: number
+): number {
+  if (taskCount === 0) {
+    return 0;
+  }
+  const allChipsWidth =
+    taskCount * DEPLOYMENT_TASK_DOCK_CHIP_MIN_PX +
+    (taskCount - 1) * DEPLOYMENT_TASK_DOCK_CHIP_GAP_PX;
+  if (allChipsWidth <= slotWidth) {
+    return taskCount;
+  }
+  let count = 0;
+  while (
+    count < taskCount &&
+    (count + 1) *
+      (DEPLOYMENT_TASK_DOCK_CHIP_MIN_PX + DEPLOYMENT_TASK_DOCK_CHIP_GAP_PX) +
+      DEPLOYMENT_TASK_DOCK_OVERFLOW_RESERVE_PX <=
+      slotWidth
+  ) {
+    count += 1;
+  }
+  return count;
+}
 
 export interface DeploymentTaskDockItem {
   active: boolean;
@@ -13,10 +55,6 @@ export interface DeploymentTaskDockItem {
 }
 
 export interface DeploymentTaskDockModel {
-  desktopHiddenCount: number;
-  desktopTasks: DeploymentTaskDockItem[];
-  mobileHiddenCount: number;
-  mobileTasks: DeploymentTaskDockItem[];
   tasks: DeploymentTaskDockItem[];
 }
 
@@ -127,20 +165,5 @@ export function selectDeploymentTaskDock(input: {
     })
   );
 
-  const desktopTasks = tasks.slice(0, DEPLOYMENT_TASK_DOCK_DESKTOP_LIMIT);
-  const mobileTasks = tasks.slice(0, DEPLOYMENT_TASK_DOCK_MOBILE_LIMIT);
-
-  return {
-    desktopHiddenCount: Math.max(
-      0,
-      tasks.length - DEPLOYMENT_TASK_DOCK_DESKTOP_LIMIT
-    ),
-    desktopTasks,
-    mobileHiddenCount: Math.max(
-      0,
-      tasks.length - DEPLOYMENT_TASK_DOCK_MOBILE_LIMIT
-    ),
-    mobileTasks,
-    tasks,
-  };
+  return { tasks };
 }

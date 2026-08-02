@@ -107,6 +107,10 @@ import {
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
 import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
+import {
+  ProjectTopBarSlotHost,
+  ProjectTopBarSlotProvider,
+} from "@/features/shell/project-top-bar-slot";
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
@@ -999,7 +1003,11 @@ function ProjectRouteTopBar({
           !assistantPaneOpen && "pr-12"
         )}
       >
-        <div className="pointer-events-auto flex min-w-0 shrink-0 basis-40 items-center">
+        {/* Content-hugging with a cap: the name keeps priority over the dock
+            up to the cap, then truncates; the dock flows right after it. The
+            cap tightens on mobile so the dock's chip and overflow trigger
+            always keep room. */}
+        <div className="pointer-events-auto flex min-w-0 max-w-40 shrink-0 items-center sm:max-w-64">
           {showProjectName ? (
             <div className="flex min-w-0 items-center gap-1 rounded-lg bg-background/10 backdrop-blur-lg">
               {currentProject.isLoading ? (
@@ -1008,7 +1016,7 @@ function ProjectRouteTopBar({
                 <>
                   <button
                     aria-label={`Edit project name: ${projectName}`}
-                    className="flex min-w-0 shrink-0 cursor-pointer items-center gap-[6px] overflow-hidden rounded-md p-2 text-left transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
+                    className="flex min-w-0 cursor-pointer items-center gap-[6px] overflow-hidden rounded-md p-2 text-left transition-colors hover:bg-input/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                     onClick={() => setEditOpen(true)}
                     type="button"
                   >
@@ -1031,6 +1039,10 @@ function ProjectRouteTopBar({
             </div>
           ) : null}
         </div>
+        {/* Rented to page modules (Deployment Task Dock); slot content
+            centers in the bar, and overflow opens as a popover panel, so
+            the row keeps its fixed height. */}
+        <ProjectTopBarSlotHost className="flex min-w-0 flex-1 items-center" />
       </header>
       <ProjectEditDialog
         currentDescription={projectDescription}
@@ -1443,9 +1455,11 @@ export default function ProjectWorkspaceLayout({
   return (
     <ProjectSidePaneProvider>
       <ProjectIdProvider>
-        <ProjectWorkspaceLayoutContent>
-          {children}
-        </ProjectWorkspaceLayoutContent>
+        <ProjectTopBarSlotProvider>
+          <ProjectWorkspaceLayoutContent>
+            {children}
+          </ProjectWorkspaceLayoutContent>
+        </ProjectTopBarSlotProvider>
       </ProjectIdProvider>
     </ProjectSidePaneProvider>
   );
