@@ -532,6 +532,8 @@ A Project Canvas affordance that presents the current Project's visible Deployme
 
 A dock chip carries no inline lifecycle actions: it shows a source summary and status, opens the Deployment Task Timeline pane on click, and — for terminal tasks only — offers a dismiss control. Cancel and Redeploy are performed in the Deployment Task Timeline pane the chip opens, not on the chip itself.
 
+The dock shows as many of the highest-priority tasks as fit the space available to it — never a fixed count — and keeps the remainder reachable behind a single overflow control. Visible chips stay readable rather than shrinking without bound; a chip that cannot stay readable folds into the overflow, and on the narrowest surfaces the dock may degrade to the overflow control alone. The open pane's task gets no special claim on a visible chip.
+
 _Avoid_: canvas task list, deployment history list, task center, chat task status.
 
 ### Deployment Task Dock Dismissal

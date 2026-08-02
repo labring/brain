@@ -20,6 +20,7 @@ import {
   type ProjectCanvasNodeCommands,
   ProjectCanvasNodeCommandsProvider,
 } from "@/features/project-canvas/workbench/node-commands-react";
+import { ProjectTopBarSlot } from "@/features/shell/project-top-bar-slot";
 
 const PROJECT_CANVAS_LOADING_TOAST_ID = "project-canvas-loading-workloads";
 const PROJECT_CANVAS_NO_WORKLOADS_TOAST_ID = "project-canvas-no-workloads";
@@ -159,12 +160,16 @@ export function ProjectCanvasOverlayLayer({
 }: ProjectCanvasOverlayLayerProps) {
   return (
     <>
-      <ProjectCanvasDeploymentTaskDock
-        className="absolute top-2 left-48 z-20"
-        dock={deploymentTaskDock}
-        onDismiss={onDismissDeploymentTask}
-        onOpen={onOpenDeploymentTask}
-      />
+      {/* The dock's DOM mounts into the shell top bar's slot; its model and
+          callbacks stay canvas-owned, so nothing crosses the shell boundary
+          but the rendered output. */}
+      <ProjectTopBarSlot>
+        <ProjectCanvasDeploymentTaskDock
+          dock={deploymentTaskDock}
+          onDismiss={onDismissDeploymentTask}
+          onOpen={onOpenDeploymentTask}
+        />
+      </ProjectTopBarSlot>
       <ProjectCanvasLoadingToast active={frameState.overlay === "loading"} />
       <ProjectCanvasFrameStateToast overlay={frameState.overlay} />
     </>
