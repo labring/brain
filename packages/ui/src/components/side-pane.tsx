@@ -73,6 +73,13 @@ export function SidePane({
   const glowPhase = useContext(SidePaneGlowPhaseContext);
   const [footerContributors, setFooterContributors] = useState(0);
   const [footerHost, setFooterHost] = useState<HTMLDivElement | null>(null);
+  // The same node, held in a ref: the footer's lift flag is written straight to
+  // the DOM, and only a ref may be mutated outside render.
+  const footerHostRef = useRef<HTMLDivElement | null>(null);
+  const attachFooterHost = useCallback((node: HTMLDivElement | null) => {
+    footerHostRef.current = node;
+    setFooterHost(node);
+  }, []);
   const registerFooter = useCallback(() => {
     setFooterContributors((count) => count + 1);
     return () => setFooterContributors((count) => Math.max(0, count - 1));
@@ -96,7 +103,10 @@ export function SidePane({
     const sync = () => {
       const scrolledToEnd =
         scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1;
-      footerHost.dataset.lifted = String(!scrolledToEnd);
+      const hostEl = footerHostRef.current;
+      if (hostEl != null) {
+        hostEl.dataset.lifted = String(!scrolledToEnd);
+      }
     };
     sync();
     scrollEl.addEventListener("scroll", sync, { passive: true });
@@ -194,7 +204,7 @@ export function SidePane({
           <div
             className="side-pane-footer-lift flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2.5 px-5 py-3"
             data-slot="side-pane-footer"
-            ref={setFooterHost}
+            ref={attachFooterHost}
           />
         ) : null}
         <div
