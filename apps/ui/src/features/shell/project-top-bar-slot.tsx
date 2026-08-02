@@ -49,12 +49,9 @@ export function ProjectTopBarSlotHost({ className }: { className?: string }) {
   if (attachment == null) {
     return null;
   }
+  const { setHost } = attachment;
   return (
-    <div
-      className={className}
-      data-slot="project-top-bar-slot"
-      ref={attachment.setHost}
-    />
+    <div className={className} data-slot="project-top-bar-slot" ref={setHost} />
   );
 }
 
