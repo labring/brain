@@ -2,6 +2,7 @@
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { AppSelect } from "@workspace/ui/components/app-select";
 import { CanvasNodeStatusDot } from "@workspace/ui/components/canvas-node/canvas-node.status";
 import {
   DropdownMenu,
@@ -23,11 +24,23 @@ import {
   type ProjectEditDialogValues,
 } from "../project-edit-dialog";
 import { useProjectExplorer } from "./project-explorer.context";
-import type { ProjectExplorerProject } from "./project-explorer.types";
+import type {
+  ProjectDeleteReason,
+  ProjectExplorerProject,
+} from "./project-explorer.types";
 import { formatCreatedAt, toDate } from "./project-explorer.utils";
 
 const PROJECT_DESCRIPTION_EMPTY_ACCESSIBLE_LABEL = "No project description";
 const PROJECT_DESCRIPTION_EMPTY_LABEL = "-";
+const PROJECT_DELETE_REASON_OPTIONS: readonly {
+  label: string;
+  value: ProjectDeleteReason;
+}[] = [
+  { label: "Not working", value: "not_working" },
+  { label: "Too slow", value: "too_slow" },
+  { label: "Deployment failed", value: "failed" },
+  { label: "Cleanup", value: "cleanup" },
+];
 
 function projectExplorerItemRowClassName(interactive: boolean) {
   return cn(
@@ -252,12 +265,16 @@ export function ProjectExplorerListItem({
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteReason, setDeleteReason] = useState<ProjectDeleteReason | "">(
+    ""
+  );
   const [deleteVerification, setDeleteVerification] = useState("");
 
   const [prevDeleteOpen, setPrevDeleteOpen] = useState(deleteOpen);
   if (deleteOpen !== prevDeleteOpen) {
     setPrevDeleteOpen(deleteOpen);
     if (deleteOpen) {
+      setDeleteReason("");
       setDeleteVerification("");
     }
   }
@@ -289,17 +306,20 @@ export function ProjectExplorerListItem({
     if (!onProjectDelete) {
       return;
     }
-    if (!isProjectDeleteVerificationMatch(deleteVerification, project.name)) {
+    if (
+      !isProjectDeleteVerificationMatch(deleteVerification, project.name) ||
+      deleteReason === ""
+    ) {
       return;
     }
     setDeleteBusy(true);
     try {
-      await onProjectDelete(project);
+      await onProjectDelete(project, deleteReason);
       setDeleteOpen(false);
     } finally {
       setDeleteBusy(false);
     }
-  }, [actions, deleteVerification, project]);
+  }, [actions, deleteReason, deleteVerification, project]);
 
   const togglePin = useCallback(() => {
     if (!actions.onProjectPinToggle || pinLimitReached) {
@@ -434,6 +454,24 @@ export function ProjectExplorerListItem({
                 value={deleteVerification}
               />
             </AppDialog.Field>
+            <AppDialog.Field>
+              <label
+                className="text-sm/5 text-zinc-300"
+                htmlFor={`project-delete-reason-${project.id}`}
+              >
+                Why are you deleting this project?
+              </label>
+              <AppSelect
+                aria-label="Deletion reason"
+                id={`project-delete-reason-${project.id}`}
+                onValueChange={(value) =>
+                  setDeleteReason(value as ProjectDeleteReason)
+                }
+                options={PROJECT_DELETE_REASON_OPTIONS}
+                placeholder="Select a reason"
+                value={deleteReason}
+              />
+            </AppDialog.Field>
           </AppDialog.Body>
           <AppDialog.Footer>
             <AppDialog.Cancel disabled={deleteBusy}>Cancel</AppDialog.Cancel>
@@ -442,7 +480,7 @@ export function ProjectExplorerListItem({
                 !isProjectDeleteVerificationMatch(
                   deleteVerification,
                   project.name
-                )
+                ) || deleteReason === ""
               }
               loading={deleteBusy}
               loadingLabel="Deleting"

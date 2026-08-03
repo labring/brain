@@ -1,5 +1,5 @@
+import { GoogleTagManager } from "@next/third-parties/google";
 import { Geist, JetBrains_Mono } from "next/font/google";
-
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { Suspense } from "react";
 
@@ -11,6 +11,10 @@ import { cn } from "@workspace/ui/lib/utils";
 import { DevTweaks } from "@/features/dev-tweaks/dev-tweaks";
 import { StatusHeartbeatTweaks } from "@/features/dev-tweaks/status-heartbeat-tweaks";
 import { JotaiProvider } from "@/features/shell/jotai-provider";
+
+// GTM_ID is injected by the deployment environment and must not be baked into
+// a statically generated layout.
+export const dynamic = "force-dynamic";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -34,6 +38,8 @@ window.reactScan?.({
   trackUnnecessaryRenders: true,
 });
 `;
+
+const gtmId = process.env.GTM_ID?.trim() ?? "";
 
 export default function RootLayout({
   children,
@@ -74,6 +80,7 @@ export default function RootLayout({
             </ThemeProvider>
           </NuqsAdapter>
         </JotaiProvider>
+        {gtmId === "" ? null : <GoogleTagManager gtmId={gtmId} />}
       </body>
     </html>
   );
