@@ -532,6 +532,8 @@ A Project Canvas affordance that presents the current Project's visible Deployme
 
 A dock chip carries no inline lifecycle actions: it shows a source summary and status, opens the Deployment Task Timeline pane on click, and — for terminal tasks only — offers a dismiss control. Cancel and Redeploy are performed in the Deployment Task Timeline pane the chip opens, not on the chip itself.
 
+The dock shows as many of the highest-priority tasks as fit the space available to it — never a fixed count — and keeps the remainder reachable behind a single overflow control. Visible chips stay readable rather than shrinking without bound; a chip that cannot stay readable folds into the overflow, and on the narrowest surfaces the dock may degrade to the overflow control alone. The open pane's task gets no special claim on a visible chip.
+
 _Avoid_: canvas task list, deployment history list, task center, chat task status.
 
 ### Deployment Task Dock Dismissal
@@ -568,7 +570,7 @@ Route restoration may create a current-session launch source for the restored en
 
 The single module that orchestrates the Project Canvas page. It takes three identifiers (kubeconfig, namespace, project) and returns three semantic groups: actions, canvas, and surfaces. It privately instantiates Project Runtime observation and Canvas Layout persistence, and it coordinates Project Surfaces, canvas selection and route sync, Settings Launch Context, leave guards, the Deployment Task Dock and Timeline, Resource Actions, and viewport directives.
 
-Its orchestration decisions are pure transitions in a plain TypeScript core; the React hook only reads facts, submits events, and executes the returned effect plans (ADR 0051). The workbench interface is the test surface for all of the behavior above.
+Its orchestration decisions are pure transitions in a plain TypeScript core; the React hook only reads facts, submits events, and executes the returned effect plans. The workbench interface is the test surface for all of the behavior above.
 
 ### Container Node
 
@@ -715,6 +717,12 @@ _Avoid_: generic unavailable state, silent disabled state.
 A non-modal, temporary project surface used for focused project work such as resource inspection, settings, or deployment flows.
 
 A Side Pane is distinct from the Project Assistant Pane: the Project Assistant Pane is a persistent layout region for chat, while a Side Pane is a temporary surface triggered by a user action or assistant action.
+
+### Side Pane Footer
+
+The pinned action region at the bottom of a Side Pane that stays visible while the pane's content scrolls. It presents the hosted surface's pane-level actions — a deploy form's submit, a Settings Draft's confirmation controls with their conflict and failure context, or a Deployment Task's lifecycle actions. Which actions it carries is decided by the surface hosted in the pane, not by the pane itself; a surface without pane-level actions has no Side Pane Footer, and an action that belongs to one content row or step stays in the content.
+
+_Avoid_: scrolled bottom button, sticky form button, per-row action in footer.
 
 ### Main Action Surface
 

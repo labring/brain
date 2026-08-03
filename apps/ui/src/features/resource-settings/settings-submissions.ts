@@ -235,6 +235,17 @@ export function createSettingsSubmissionStore({
     snapshot() {
       return entries;
     },
+    /**
+     * Submission identity is owned here, not by AP or DB sections: one shared
+     * boundary keyed by the same owner tuple as pending updates (cluster
+     * fingerprint, kind, namespace, name, observed UID when available, and
+     * domain) — weaker kind/namespace/name keys would cross clusters and
+     * recreated resources. Concurrent submissions for the same owner and
+     * domain are refused rather than queued, because two in-flight writes can
+     * reorder accepted pending targets or let an older rejection overwrite a
+     * newer draft; a multi-domain submission is blocked whole rather than
+     * partially submitted, so recovery always restores one coherent draft.
+     */
     start({ baseDraft, draft, owner, updates }) {
       const domains = uniqueDomains(updates);
       if (domains.length === 0) {

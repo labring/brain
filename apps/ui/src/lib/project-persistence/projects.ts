@@ -10,7 +10,12 @@ import {
 } from "@/features/projects/derived-project-display-name";
 
 import { getProjectDb } from "./db";
-import { type ProjectRow, projects } from "./schema";
+import {
+  type ProjectRow,
+  projectCanvasLayouts,
+  projectNavigationPreferences,
+  projects,
+} from "./schema";
 
 /** Bounded so a crowded namespace ends on a fallback name instead of spinning. */
 const DISPLAY_NAME_SUFFIX_ATTEMPTS = 20;
@@ -266,11 +271,37 @@ export async function updateProject(
 }
 
 export async function deleteProject(input: DeleteProjectInput): Promise<void> {
-  const [row] = await getProjectDb()
-    .delete(projects)
-    .where(whereProject(input.namespace, input.id))
-    .returning();
-  if (row === undefined) {
-    throw new ProjectPersistenceError("not_found", "Project not found.");
-  }
+  await getProjectDb().transaction(async (tx) => {
+    const [row] = await tx
+      .delete(projects)
+      .where(whereProject(input.namespace, input.id))
+      .returning();
+    if (row === undefined) {
+      throw new ProjectPersistenceError("not_found", "Project not found.");
+    }
+    await tx
+      .delete(projectCanvasLayouts)
+      .where(
+        and(
+          eq(projectCanvasLayouts.namespace, input.namespace),
+          eq(projectCanvasLayouts.projectId, input.id)
+        )
+      );
+    const [preferences] = await tx
+      .select()
+      .from(projectNavigationPreferences)
+      .where(eq(projectNavigationPreferences.namespace, input.namespace))
+      .limit(1);
+    if (preferences !== undefined) {
+      await tx
+        .update(projectNavigationPreferences)
+        .set({
+          pinnedProjectIds: preferences.pinnedProjectIds.filter(
+            (projectId) => projectId !== input.id
+          ),
+          updatedAt: new Date(),
+        })
+        .where(eq(projectNavigationPreferences.namespace, input.namespace));
+    }
+  });
 }

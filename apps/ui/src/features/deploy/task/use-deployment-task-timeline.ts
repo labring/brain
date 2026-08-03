@@ -11,7 +11,7 @@ import { applyDeploymentTaskTimelineSnapshot } from "./timeline-client-state";
 import type { DeploymentTaskTimelineSnapshotDTO } from "./types";
 
 const STREAM_RECONNECT_DELAY_MS = 1500;
-/** Coalesce the SSE snapshot storm to at most one React commit per window (ADR 0043). */
+/** Coalesce the SSE snapshot storm to at most one React commit per window. */
 const TIMELINE_COALESCE_MS = 200;
 
 export interface UseDeploymentTaskTimelineInput {

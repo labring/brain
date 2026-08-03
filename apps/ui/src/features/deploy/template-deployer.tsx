@@ -11,7 +11,17 @@ import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Blocks, Rocket, Upload } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { isSensitiveDeploymentInput } from "@/features/deploy/task/sensitive-inputs";
 import { DeploymentSettings } from "./deployment-settings";
 
@@ -398,12 +408,38 @@ function TemplateParameterControl({
   );
 }
 
-export function TemplateDeployer({
+interface TemplateDeployerContextValue {
+  args: Record<string, string>;
+  busy: boolean;
+  canDeploy: boolean;
+  catalogError: string;
+  choice: TemplateDeploymentChoice | null;
+  choices: readonly TemplateDeploymentChoice[];
+  loading: boolean;
+  requestDeploy: () => void;
+  selectTemplate: (templateName: string) => void;
+  setArgValue: (key: string, value: string) => void;
+  templateName: string;
+}
+
+const TemplateDeployerContext =
+  createContext<TemplateDeployerContextValue | null>(null);
+
+function useTemplateDeployer(): TemplateDeployerContextValue {
+  const value = useContext(TemplateDeployerContext);
+  if (!value) {
+    throw new Error(
+      "TemplateDeployer: parts must be used within TemplateDeployer.Root"
+    );
+  }
+  return value;
+}
+
+/** Owns the template selection + argument state; parts read it through context. */
+function TemplateDeployerRoot({
   autoDeploy = false,
   busy = false,
-  className,
-  deployLabel = "Deploy",
-  emptyMessage = "No templates are available.",
+  children,
   errorMessage,
   initialSettings,
   loading = false,
@@ -413,9 +449,7 @@ export function TemplateDeployer({
 }: {
   autoDeploy?: boolean;
   busy?: boolean;
-  className?: string;
-  deployLabel?: string;
-  emptyMessage?: string;
+  children?: ReactNode;
   errorMessage?: string;
   onDeploy?: (
     settings: TemplateDeploymentSettings,
@@ -429,7 +463,6 @@ export function TemplateDeployer({
   loading?: boolean;
   templateOptions: readonly TemplateDeploymentChoice[];
 }) {
-  const inputIdPrefix = useId();
   const [formState, setFormState] = useState(() =>
     initialTemplateDeployerFormState(choices, initialSettings)
   );
@@ -501,6 +534,94 @@ export function TemplateDeployer({
     settings,
   ]);
 
+  const requestDeploy = useCallback(() => {
+    if (choice == null || !canDeploy) {
+      return;
+    }
+    onDeploy?.(settings, choice);
+  }, [canDeploy, choice, onDeploy, settings]);
+
+  const selectTemplate = useCallback(
+    (nextTemplateName: string) => {
+      const nextChoice = selectedChoice(choices, nextTemplateName);
+      setFormState((current) => ({
+        ...current,
+        args: defaultArgs(nextChoice),
+        initialSettingsReady: nextChoice != null,
+        pendingInitialArgs: null,
+        templateName: nextTemplateName,
+      }));
+    },
+    [choices]
+  );
+
+  const setArgValue = useCallback((key: string, nextValue: string) => {
+    setFormState((current) => ({
+      ...current,
+      args: {
+        ...current.args,
+        [key]: nextValue,
+      },
+    }));
+  }, []);
+
+  const value = useMemo<TemplateDeployerContextValue>(
+    () => ({
+      args,
+      busy,
+      canDeploy,
+      catalogError,
+      choice,
+      choices,
+      loading,
+      requestDeploy,
+      selectTemplate,
+      setArgValue,
+      templateName,
+    }),
+    [
+      args,
+      busy,
+      canDeploy,
+      catalogError,
+      choice,
+      choices,
+      loading,
+      requestDeploy,
+      selectTemplate,
+      setArgValue,
+      templateName,
+    ]
+  );
+
+  return (
+    <TemplateDeployerContext.Provider value={value}>
+      {children}
+    </TemplateDeployerContext.Provider>
+  );
+}
+
+/** Template choice + parameter sections; renders the catalog status when empty. */
+function TemplateDeployerFields({
+  className,
+  emptyMessage = "No templates are available.",
+}: {
+  className?: string;
+  emptyMessage?: string;
+}) {
+  const inputIdPrefix = useId();
+  const {
+    args,
+    busy,
+    catalogError,
+    choice,
+    choices,
+    loading,
+    selectTemplate,
+    setArgValue,
+    templateName,
+  } = useTemplateDeployer();
+
   if (choices.length === 0) {
     const statusMessage =
       catalogError || (loading ? "Loading templates..." : emptyMessage);
@@ -520,9 +641,8 @@ export function TemplateDeployer({
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
-      data-slot="template-deployer"
-      data-testid="template.deployer"
+      className={cn("flex min-w-0 flex-col gap-3.5", className)}
+      data-slot="template-deployer-fields"
     >
       <DeploymentSettings.Section
         icon={<TemplateIcon choice={choice} />}
@@ -532,16 +652,7 @@ export function TemplateDeployer({
           <TemplateSearchSelect
             choices={choices}
             disabled={busy || loading}
-            onValueChange={(nextTemplateName) => {
-              const nextChoice = selectedChoice(choices, nextTemplateName);
-              setFormState((current) => ({
-                ...current,
-                args: defaultArgs(nextChoice),
-                initialSettingsReady: nextChoice != null,
-                pendingInitialArgs: null,
-                templateName: nextTemplateName,
-              }));
-            }}
+            onValueChange={selectTemplate}
             value={templateName}
           />
           <p
@@ -584,13 +695,7 @@ export function TemplateDeployer({
                       disabled={busy || loading}
                       id={inputId}
                       onValueChange={(nextValue) => {
-                        setFormState((current) => ({
-                          ...current,
-                          args: {
-                            ...current.args,
-                            [arg.key]: nextValue,
-                          },
-                        }));
+                        setArgValue(arg.key, nextValue);
                       }}
                       value={args[arg.key] ?? ""}
                     />
@@ -601,26 +706,110 @@ export function TemplateDeployer({
           </DeploymentSettings.Control>
         </DeploymentSettings.Section>
       ) : null}
-
-      <AppButton
-        className="w-full"
-        data-testid="template.deployer.submit"
-        disabled={!canDeploy}
-        onClick={() => {
-          if (choice == null || !canDeploy) {
-            return;
-          }
-          onDeploy?.(settings, choice);
-        }}
-        type="button"
-      >
-        {busy ? (
-          <Spinner aria-hidden className="size-4" />
-        ) : (
-          <Rocket aria-hidden className="size-4" />
-        )}
-        {deployLabel}
-      </AppButton>
     </div>
   );
 }
+
+/** Separately placeable Deploy action; hosts decide where it lands. */
+function TemplateDeployerSubmit({
+  className,
+  label = "Deploy",
+}: {
+  className?: string;
+  label?: string;
+}) {
+  const { busy, canDeploy, requestDeploy } = useTemplateDeployer();
+  return (
+    <AppButton
+      className={className}
+      data-testid="template.deployer.submit"
+      disabled={!canDeploy}
+      onClick={requestDeploy}
+      type="button"
+    >
+      {busy ? (
+        <Spinner aria-hidden className="size-4" />
+      ) : (
+        <Rocket aria-hidden className="size-4" />
+      )}
+      {label}
+    </AppButton>
+  );
+}
+
+/** Assembled default form: sections with an inline full-width Deploy action. */
+function TemplateDeployerForm({
+  autoDeploy,
+  busy,
+  className,
+  deployLabel = "Deploy",
+  emptyMessage,
+  errorMessage,
+  initialSettings,
+  loading,
+  onDeploy,
+  onSettingsChange,
+  templateOptions,
+}: {
+  autoDeploy?: boolean;
+  busy?: boolean;
+  className?: string;
+  deployLabel?: string;
+  emptyMessage?: string;
+  errorMessage?: string;
+  onDeploy?: (
+    settings: TemplateDeploymentSettings,
+    choice: TemplateDeploymentChoice
+  ) => void | Promise<void>;
+  onSettingsChange?: (
+    settings: TemplateDeploymentSettings,
+    choice: TemplateDeploymentChoice | null
+  ) => void;
+  initialSettings?: TemplateDeploymentInitialSettings;
+  loading?: boolean;
+  templateOptions: readonly TemplateDeploymentChoice[];
+}) {
+  return (
+    <TemplateDeployerRoot
+      autoDeploy={autoDeploy}
+      busy={busy}
+      errorMessage={errorMessage}
+      initialSettings={initialSettings}
+      loading={loading}
+      onDeploy={onDeploy}
+      onSettingsChange={onSettingsChange}
+      templateOptions={templateOptions}
+    >
+      {templateOptions.length === 0 ? (
+        <TemplateDeployerFields
+          className={className}
+          emptyMessage={emptyMessage}
+        />
+      ) : (
+        <div
+          className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
+          data-slot="template-deployer"
+          data-testid="template.deployer"
+        >
+          <TemplateDeployerFields />
+          <TemplateDeployerSubmit className="w-full" label={deployLabel} />
+        </div>
+      )}
+    </TemplateDeployerRoot>
+  );
+}
+
+TemplateDeployerRoot.displayName = "TemplateDeployer.Root";
+TemplateDeployerFields.displayName = "TemplateDeployer.Fields";
+TemplateDeployerSubmit.displayName = "TemplateDeployer.Submit";
+
+/**
+ * Compound template deployment form. The assembled component keeps the inline
+ * submit for hosts without pane chrome; pane hosts compose `Root` + `Fields`
+ * and place `Submit` in the Side Pane Footer.
+ */
+export const TemplateDeployer = Object.assign(TemplateDeployerForm, {
+  Fields: TemplateDeployerFields,
+  Root: TemplateDeployerRoot,
+  Submit: TemplateDeployerSubmit,
+});

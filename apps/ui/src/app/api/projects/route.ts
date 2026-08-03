@@ -8,6 +8,7 @@ import {
 import {
   createProject,
   deleteProject,
+  getProject,
   listProjects,
   ProjectPersistenceError,
   updateProject,
@@ -101,6 +102,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const id = request.nextUrl.searchParams.get("id")?.trim();
+    if (id) {
+      const project = await getProject(namespace.data, id);
+      return project === null
+        ? jsonError("Project not found.", 404)
+        : NextResponse.json({ project });
+    }
     return NextResponse.json({ projects: await listProjects(namespace.data) });
   } catch {
     return jsonError("Project persistence is unavailable.", 503);

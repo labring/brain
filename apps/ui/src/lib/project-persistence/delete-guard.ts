@@ -340,70 +340,14 @@ function directDbProjectLabelSelector(projectId: string): string {
 export async function assertProjectHasNoManagedResources(
   input: ProjectDeleteGuardInput
 ): Promise<void> {
-  const templateSelector = templateProjectLabelSelector(input.id);
-  const [
-    ap,
-    db,
-    template,
-    templateCertificates,
-    templateClusters,
-    templateConfigMaps,
-    templateDeployments,
-    templateIngresses,
-    templateIssuers,
-    templateJobs,
-    templateOpsRequests,
-    templatePods,
-    templatePersistentVolumeClaims,
-    templateSecrets,
-    templateServices,
-    templateStatefulSets,
-  ] = await Promise.all([
-    listProjectResources(input, API_ROUTES.ap.root, {
-      "label-selector": directApProjectLabelSelector(input.id),
-    }),
-    listProjectResources(input, API_ROUTES.db.root, {
-      "label-selector": directDbProjectLabelSelector(input.id),
-    }),
-    listProjectK8sResources(input, "instances", templateSelector),
-    listProjectK8sResources(input, "certificates", templateSelector),
-    listProjectK8sResources(input, "clusters", templateSelector),
-    listProjectK8sResources(input, "configmaps", templateSelector),
-    listProjectK8sResources(input, "deployments", templateSelector),
-    listProjectK8sResources(input, "ingresses", templateSelector),
-    listProjectK8sResources(input, "issuers", templateSelector),
-    listProjectK8sResources(input, "jobs", templateSelector),
-    listProjectK8sResources(input, "opsrequests", templateSelector),
-    listProjectK8sResources(input, "pods", templateSelector),
-    listProjectK8sResources(input, "persistentvolumeclaims", templateSelector),
-    listProjectK8sResources(input, "secrets", templateSelector),
-    listProjectK8sResources(input, "services", templateSelector),
-    listProjectK8sResources(input, "statefulsets", templateSelector),
-  ]);
-  const resources = {
-    ap,
-    db,
-    template,
-    templateCertificates,
-    templateClusters,
-    templateConfigMaps,
-    templateDeployments,
-    templateIngresses,
-    templateIssuers,
-    templateJobs,
-    templateOpsRequests,
-    templatePods,
-    templatePersistentVolumeClaims,
-    templateSecrets,
-    templateServices,
-    templateStatefulSets,
-  };
+  const resources = await inspectProjectManagedResources(input);
   if (Object.values(resources).some((items) => items.length > 0)) {
     throw new ProjectDeleteBlockedError(resources);
   }
 }
 
-export async function deleteProjectManagedResources(
+/** Read the complete managed-resource scope before displaying or deleting it. */
+export async function inspectProjectManagedResources(
   input: ProjectDeleteGuardInput
 ): Promise<ProjectChildResourceSummary> {
   const templateSelector = templateProjectLabelSelector(input.id);
@@ -446,13 +390,38 @@ export async function deleteProjectManagedResources(
     listProjectK8sResources(input, "services", templateSelector),
     listProjectK8sResources(input, "statefulsets", templateSelector),
   ]);
-  for (const name of db) {
+  return {
+    ap,
+    db,
+    template,
+    templateCertificates,
+    templateClusters,
+    templateConfigMaps,
+    templateDeployments,
+    templateIngresses,
+    templateIssuers,
+    templateJobs,
+    templateOpsRequests,
+    templatePods,
+    templatePersistentVolumeClaims,
+    templateSecrets,
+    templateServices,
+    templateStatefulSets,
+  };
+}
+
+export async function deleteProjectManagedResources(
+  input: ProjectDeleteGuardInput
+): Promise<ProjectChildResourceSummary> {
+  const resources = await inspectProjectManagedResources(input);
+  const templateSelector = templateProjectLabelSelector(input.id);
+  for (const name of resources.db) {
     await deleteProjectResource(input, API_ROUTES.db.root, name);
   }
-  for (const name of ap) {
+  for (const name of resources.ap) {
     await deleteProjectResource(input, API_ROUTES.ap.root, name);
   }
-  for (const name of template) {
+  for (const name of resources.template) {
     await deleteProjectK8sResource(input, "instances", name);
   }
   const selectorCleanupKinds = [
@@ -473,22 +442,5 @@ export async function deleteProjectManagedResources(
   for (const kind of selectorCleanupKinds) {
     await deleteProjectK8sResourcesBySelector(input, kind, templateSelector);
   }
-  return {
-    ap,
-    db,
-    template,
-    templateCertificates,
-    templateClusters,
-    templateConfigMaps,
-    templateDeployments,
-    templateIngresses,
-    templateIssuers,
-    templateJobs,
-    templateOpsRequests,
-    templatePods,
-    templatePersistentVolumeClaims,
-    templateSecrets,
-    templateServices,
-    templateStatefulSets,
-  };
+  return resources;
 }

@@ -9,7 +9,16 @@ import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-ico
 import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Database, Rocket, Upload } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  createContext,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 import { DeploymentSettings } from "./deployment-settings";
 
 export type DatabaseInstancePreset = "xs" | "s" | "m" | "l";
@@ -131,20 +140,44 @@ function DatabaseChoiceIcon({ choice }: { choice: DatabaseDeploymentChoice }) {
   );
 }
 
-export function DatabaseDeployer({
+interface DatabaseDeployerContextValue {
+  busy: boolean;
+  canDeploy: boolean;
+  choice: DatabaseDeploymentChoice | null;
+  databaseSelectOptions: AppSelectOption[];
+  effectiveDatabaseId: string;
+  instancePreset: DatabaseInstancePreset;
+  replicas: string;
+  requestDeploy: () => Promise<void>;
+  setDatabaseId: Dispatch<SetStateAction<string>>;
+  setInstancePreset: Dispatch<SetStateAction<DatabaseInstancePreset>>;
+  setReplicas: Dispatch<SetStateAction<string>>;
+}
+
+const DatabaseDeployerContext =
+  createContext<DatabaseDeployerContextValue | null>(null);
+
+function useDatabaseDeployer(): DatabaseDeployerContextValue {
+  const value = useContext(DatabaseDeployerContext);
+  if (!value) {
+    throw new Error(
+      "DatabaseDeployer: parts must be used within DatabaseDeployer.Root"
+    );
+  }
+  return value;
+}
+
+/** Owns the database deployment form state; parts read it through context. */
+function DatabaseDeployerRoot({
   busy = false,
-  className,
+  children,
   databaseOptions,
-  deployLabel = "Deploy",
-  emptyMessage = "No database engines are available.",
   initialSettings,
   onDeploy,
 }: {
   busy?: boolean;
-  className?: string;
+  children?: ReactNode;
   databaseOptions: readonly DatabaseDeploymentChoice[];
-  deployLabel?: string;
-  emptyMessage?: string;
   /** Prefill for edited redeploys (US10): predecessor source values. */
   initialSettings?: Partial<DatabaseDeploymentSettings>;
   onDeploy?: (
@@ -186,7 +219,10 @@ export function DatabaseDeployer({
     }
   }
 
-  const choice = selectedChoice(databaseOptions, databaseId);
+  const choice = useMemo(
+    () => selectedChoice(databaseOptions, databaseId),
+    [databaseId, databaseOptions]
+  );
   const effectiveDatabaseId = choice?.id ?? "";
   const databaseSelectOptions = useMemo(
     (): AppSelectOption[] =>
@@ -205,99 +241,220 @@ export function DatabaseDeployer({
     replicaCount >= 1 &&
     replicaCount <= 10 &&
     onDeploy != null;
+  const requestDeploy = useCallback(async () => {
+    if (!(choice && canDeploy && onDeploy)) {
+      return;
+    }
+    await onDeploy(
+      {
+        databaseId: choice.id,
+        instancePreset,
+        replicas: replicaCount,
+      },
+      choice
+    );
+  }, [canDeploy, choice, instancePreset, onDeploy, replicaCount]);
+
+  const value = useMemo<DatabaseDeployerContextValue>(
+    () => ({
+      busy,
+      canDeploy,
+      choice,
+      databaseSelectOptions,
+      effectiveDatabaseId,
+      instancePreset,
+      replicas,
+      requestDeploy,
+      setDatabaseId,
+      setInstancePreset,
+      setReplicas,
+    }),
+    [
+      busy,
+      canDeploy,
+      choice,
+      databaseSelectOptions,
+      effectiveDatabaseId,
+      instancePreset,
+      replicas,
+      requestDeploy,
+    ]
+  );
+
+  return (
+    <DatabaseDeployerContext.Provider value={value}>
+      {children}
+    </DatabaseDeployerContext.Provider>
+  );
+}
+
+/** Database settings sections (engine choice + instance sizing). */
+function DatabaseDeployerFields({
+  className,
+  emptyMessage = "No database engines are available.",
+}: {
+  className?: string;
+  emptyMessage?: string;
+}) {
+  const {
+    busy,
+    choice,
+    databaseSelectOptions,
+    effectiveDatabaseId,
+    instancePreset,
+    replicas,
+    setDatabaseId,
+    setInstancePreset,
+    setReplicas,
+  } = useDatabaseDeployer();
 
   return (
     <div
-      className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
-      data-slot="database-deployer"
+      className={cn("flex min-w-0 flex-col gap-3.5", className)}
+      data-slot="database-deployer-fields"
     >
-      <div className="flex min-w-0 flex-col gap-3.5">
-        <DeploymentSettings.Section
-          description="Choose a managed database engine for this workspace."
-          icon={<Database aria-hidden className="size-4" />}
-          title="Type"
-        >
-          <DeploymentSettings.Control>
-            <AppSelect
-              aria-label="Database engine"
-              disabled={busy}
-              emptyMessage={emptyMessage}
-              onValueChange={setDatabaseId}
-              options={databaseSelectOptions}
-              placeholder="Choose a database"
-              value={effectiveDatabaseId}
-            />
-          </DeploymentSettings.Control>
-        </DeploymentSettings.Section>
-
-        <DeploymentSettings.Section
-          description={`${choiceLabel(choice)} instance preset and replica count.`}
-          icon={<Upload aria-hidden className="size-4" />}
-          title="Instance"
-        >
-          <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
-            <DeploymentSettings.Field
-              htmlFor="database-deployer-instance-preset"
-              label="Instance Preset"
-            >
-              <AppSelect
-                disabled={busy || choice === null}
-                id="database-deployer-instance-preset"
-                onValueChange={(value) =>
-                  setInstancePreset(value as DatabaseInstancePreset)
-                }
-                options={INSTANCE_PRESET_SELECT_OPTIONS}
-                value={instancePreset}
-              />
-              <p className="min-h-4 text-muted-foreground text-xs leading-4">
-                {choice == null
-                  ? "Select a database engine first."
-                  : presetSummary(choice.engine, instancePreset)}
-              </p>
-            </DeploymentSettings.Field>
-            <DeploymentSettings.Field
-              htmlFor="database-deployer-replicas"
-              label="Replicas"
-            >
-              <AppSelect
-                disabled={busy || choice === null}
-                id="database-deployer-replicas"
-                onValueChange={setReplicas}
-                options={REPLICA_SELECT_OPTIONS}
-                value={replicas}
-              />
-            </DeploymentSettings.Field>
-          </div>
-        </DeploymentSettings.Section>
-      </div>
-
-      <AppButton
-        aria-busy={busy}
-        aria-label="Deploy database"
-        className="w-full"
-        disabled={!canDeploy}
-        onClick={async () => {
-          if (!(choice && canDeploy)) {
-            return;
-          }
-          await onDeploy?.(
-            {
-              databaseId: choice.id,
-              instancePreset,
-              replicas: replicaCount,
-            },
-            choice
-          );
-        }}
-        type="button"
+      <DeploymentSettings.Section
+        description="Choose a managed database engine for this workspace."
+        icon={<Database aria-hidden className="size-4" />}
+        title="Type"
       >
-        {busy ? (
-          <Spinner aria-hidden className="size-4 shrink-0" />
-        ) : (
-          <Rocket aria-hidden className="size-4 shrink-0" />
-        )}
-        {busy ? "Deploying" : deployLabel}
-      </AppButton>
+        <DeploymentSettings.Control>
+          <AppSelect
+            aria-label="Database engine"
+            disabled={busy}
+            emptyMessage={emptyMessage}
+            onValueChange={setDatabaseId}
+            options={databaseSelectOptions}
+            placeholder="Choose a database"
+            value={effectiveDatabaseId}
+          />
+        </DeploymentSettings.Control>
+      </DeploymentSettings.Section>
+
+      <DeploymentSettings.Section
+        description={`${choiceLabel(choice)} instance preset and replica count.`}
+        icon={<Upload aria-hidden className="size-4" />}
+        title="Instance"
+      >
+        <div className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <DeploymentSettings.Field
+            htmlFor="database-deployer-instance-preset"
+            label="Instance Preset"
+          >
+            <AppSelect
+              disabled={busy || choice === null}
+              id="database-deployer-instance-preset"
+              onValueChange={(value) =>
+                setInstancePreset(value as DatabaseInstancePreset)
+              }
+              options={INSTANCE_PRESET_SELECT_OPTIONS}
+              value={instancePreset}
+            />
+            <p className="min-h-4 text-muted-foreground text-xs leading-4">
+              {choice == null
+                ? "Select a database engine first."
+                : presetSummary(choice.engine, instancePreset)}
+            </p>
+          </DeploymentSettings.Field>
+          <DeploymentSettings.Field
+            htmlFor="database-deployer-replicas"
+            label="Replicas"
+          >
+            <AppSelect
+              disabled={busy || choice === null}
+              id="database-deployer-replicas"
+              onValueChange={setReplicas}
+              options={REPLICA_SELECT_OPTIONS}
+              value={replicas}
+            />
+          </DeploymentSettings.Field>
+        </div>
+      </DeploymentSettings.Section>
     </div>
   );
 }
+
+/** Separately placeable Deploy action; hosts decide where it lands. */
+function DatabaseDeployerSubmit({
+  className,
+  label = "Deploy",
+}: {
+  className?: string;
+  label?: string;
+}) {
+  const { busy, canDeploy, requestDeploy } = useDatabaseDeployer();
+  return (
+    <AppButton
+      aria-busy={busy}
+      aria-label="Deploy database"
+      className={className}
+      disabled={!canDeploy}
+      onClick={async () => {
+        await requestDeploy();
+      }}
+      type="button"
+    >
+      {busy ? (
+        <Spinner aria-hidden className="size-4 shrink-0" />
+      ) : (
+        <Rocket aria-hidden className="size-4 shrink-0" />
+      )}
+      {busy ? "Deploying" : label}
+    </AppButton>
+  );
+}
+
+/** Assembled default form: sections with an inline full-width Deploy action. */
+function DatabaseDeployerForm({
+  busy = false,
+  className,
+  databaseOptions,
+  deployLabel = "Deploy",
+  emptyMessage,
+  initialSettings,
+  onDeploy,
+}: {
+  busy?: boolean;
+  className?: string;
+  databaseOptions: readonly DatabaseDeploymentChoice[];
+  deployLabel?: string;
+  emptyMessage?: string;
+  /** Prefill for edited redeploys (US10): predecessor source values. */
+  initialSettings?: Partial<DatabaseDeploymentSettings>;
+  onDeploy?: (
+    settings: DatabaseDeploymentSettings,
+    choice: DatabaseDeploymentChoice
+  ) => void | Promise<void>;
+}) {
+  return (
+    <DatabaseDeployerRoot
+      busy={busy}
+      databaseOptions={databaseOptions}
+      initialSettings={initialSettings}
+      onDeploy={onDeploy}
+    >
+      <div
+        className={cn("dark flex min-w-0 flex-col gap-3.5", className)}
+        data-slot="database-deployer"
+      >
+        <DatabaseDeployerFields emptyMessage={emptyMessage} />
+        <DatabaseDeployerSubmit className="w-full" label={deployLabel} />
+      </div>
+    </DatabaseDeployerRoot>
+  );
+}
+
+DatabaseDeployerRoot.displayName = "DatabaseDeployer.Root";
+DatabaseDeployerFields.displayName = "DatabaseDeployer.Fields";
+DatabaseDeployerSubmit.displayName = "DatabaseDeployer.Submit";
+
+/**
+ * Compound database deployment form. The assembled component keeps the inline
+ * submit for hosts without pane chrome; pane hosts compose `Root` + `Fields`
+ * and place `Submit` in the Side Pane Footer.
+ */
+export const DatabaseDeployer = Object.assign(DatabaseDeployerForm, {
+  Fields: DatabaseDeployerFields,
+  Root: DatabaseDeployerRoot,
+  Submit: DatabaseDeployerSubmit,
+});

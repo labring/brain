@@ -349,6 +349,8 @@ test("a clean Settings pane closes without prompting", async () => {
 test("a settings surface opened from the canvas carries its launch context", async () => {
   const harness = await mountWorkbench({ aps: APS });
   try {
+    const dataLayer: unknown[] = [];
+    Object.assign(window, { dataLayer });
     await harness.act(() => {
       harness
         .latest()
@@ -359,6 +361,11 @@ test("a settings surface opened from the canvas carries its launch context", asy
     });
 
     assert.equal(settingsLaunchContext(harness)?.launchSource, "assistant");
+    assert.deepEqual(
+      dataLayer,
+      [],
+      "assistant navigation is not a user card action"
+    );
   } finally {
     await harness.unmount();
   }

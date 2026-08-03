@@ -8,7 +8,7 @@
  * a sustained storm settles to one run per interval.
  *
  * We use it to coalesce high-frequency SSE stream events into far fewer React
- * state commits (ADR 0043): the caller buffers each event synchronously, and
+ * state commits: the caller buffers each event synchronously, and
  * `run` reads whatever has been buffered by the time it fires.
  */
 export interface ThrottleScheduler {

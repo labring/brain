@@ -7,6 +7,7 @@ import {
   TaskTrigger,
 } from "@workspace/ui/components/ai-elements/task";
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppInput } from "@workspace/ui/components/app-input";
 import {
   Collapsible,
   CollapsibleContent,
@@ -275,8 +276,10 @@ const ChatToolGroupItem = memo(
 /** Approval id + human label for a tool part awaiting the user's decision. */
 interface PendingApproval {
   id: string;
+  input: unknown;
   key: string;
   label: string;
+  type: string;
 }
 
 function collectPendingApprovals(parts: ChatToolPart[]): PendingApproval[] {
@@ -291,11 +294,135 @@ function collectPendingApprovals(parts: ChatToolPart[]): PendingApproval[] {
     return [
       {
         id,
+        input: part.input,
         key: part.toolCallId,
         label: readIntention(part.input) ?? humanizeToolType(part.type),
+        type: part.type,
       },
     ];
   });
+}
+
+export function projectDeletionApprovalInput(input: unknown): {
+  displayName: string;
+  projectId: string;
+  resources: [string, string[]][];
+} | null {
+  if (input == null || typeof input !== "object") {
+    return null;
+  }
+  const value = input as {
+    projectDisplayName?: unknown;
+    projectId?: unknown;
+    resourceSummary?: unknown;
+  };
+  if (
+    typeof value.projectDisplayName !== "string" ||
+    typeof value.projectId !== "string" ||
+    value.resourceSummary == null ||
+    typeof value.resourceSummary !== "object" ||
+    Array.isArray(value.resourceSummary)
+  ) {
+    return null;
+  }
+  const resources: [string, string[]][] = [];
+  for (const [kind, names] of Object.entries(value.resourceSummary)) {
+    if (
+      !(Array.isArray(names) && names.every((name) => typeof name === "string"))
+    ) {
+      return null;
+    }
+    resources.push([kind, names]);
+  }
+  return {
+    displayName: value.projectDisplayName,
+    projectId: value.projectId,
+    resources,
+  };
+}
+
+function ProjectDeletionApprovalCard({
+  approval,
+  input,
+  onRespond,
+}: {
+  approval: PendingApproval;
+  input: NonNullable<ReturnType<typeof projectDeletionApprovalInput>>;
+  onRespond?: ChatAddToolApproveResponseFunction;
+}) {
+  const [confirmation, setConfirmation] = useState("");
+  const confirmed = confirmation.trim() === input.displayName;
+  const nonEmptyResources = input.resources.filter(
+    ([, names]) => names.length > 0
+  );
+
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-background p-3"
+      data-slot="chat-project-delete-approval"
+    >
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="text-foreground text-sm">Delete project permanently?</p>
+        <p className="text-muted-foreground text-xs">{input.displayName}</p>
+        <p className="break-all font-mono text-muted-foreground text-xs">
+          {input.projectId}
+        </p>
+      </div>
+      <div className="max-h-40 overflow-y-auto rounded-md border border-border/60 bg-input/15 p-2 text-xs">
+        {nonEmptyResources.length === 0 ? (
+          <p className="text-muted-foreground">No managed resources found.</p>
+        ) : (
+          <ul className="space-y-1 text-muted-foreground">
+            {nonEmptyResources.map(([kind, names]) => (
+              <li key={kind}>
+                <span className="text-foreground">{kind}</span>:{" "}
+                {names.join(", ")}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <label
+        className="flex flex-col gap-1.5 text-muted-foreground text-xs"
+        htmlFor={`${approval.id}-project-name`}
+      >
+        Type{" "}
+        <span className="font-medium text-foreground">{input.displayName}</span>{" "}
+        to confirm
+        <AppInput
+          aria-label="Project name confirmation"
+          id={`${approval.id}-project-name`}
+          onChange={(event) => setConfirmation(event.target.value)}
+          value={confirmation}
+        />
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <AppButton
+          disabled={!confirmed}
+          onClick={() => onRespond?.({ approved: true, id: approval.id })}
+          size="sm"
+          type="button"
+          variant="danger"
+        >
+          Delete project
+        </AppButton>
+        <AppButton
+          onClick={() =>
+            onRespond?.({
+              approved: false,
+              id: approval.id,
+              reason: "User declined Project deletion.",
+            })
+          }
+          size="sm"
+          type="button"
+          variant="quiet"
+        >
+          Cancel
+        </AppButton>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -310,6 +437,19 @@ function ChatToolApprovalCard({
   approval: PendingApproval;
   onRespond?: ChatAddToolApproveResponseFunction;
 }) {
+  const projectDeletion =
+    approval.type === "tool-deleteProject"
+      ? projectDeletionApprovalInput(approval.input)
+      : null;
+  if (projectDeletion !== null) {
+    return (
+      <ProjectDeletionApprovalCard
+        approval={approval}
+        input={projectDeletion}
+        onRespond={onRespond}
+      />
+    );
+  }
   return (
     <div
       className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3"

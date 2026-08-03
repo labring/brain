@@ -574,9 +574,11 @@ async function runChatPipeline(input: {
     // kubeconfig-verified identity (AIM-154 keeps them token-free).
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
+      chatId,
       kubeconfig,
       kubernetesNamespace: owner.namespace,
       workspaceActor: actor.legacyWorkspaceActor,
+      workspaceUserUid: owner.userUid,
     });
 
     const openAi = await resolveChatOpenAiConnection({

@@ -20,6 +20,12 @@ export interface ProjectExplorerProject {
   status?: CanvasNodeVisualStatusTone;
 }
 
+export type ProjectDeleteReason =
+  | "cleanup"
+  | "failed"
+  | "not_working"
+  | "too_slow";
+
 /** Copy shown when `projects` is empty (list uses defaults when fields are omitted). */
 export interface ProjectExplorerEmptyState {
   /** Set to `""` to hide the secondary line. */
@@ -48,7 +54,10 @@ export interface ProjectExplorerActions {
   /** Opens the create-project flow when the header action is used. */
   onNewProject?: () => void;
   onProjectClick?: (project: ProjectExplorerProject) => void;
-  onProjectDelete?: (project: ProjectExplorerProject) => void | Promise<void>;
+  onProjectDelete?: (
+    project: ProjectExplorerProject,
+    reason: ProjectDeleteReason
+  ) => void | Promise<void>;
   onProjectPinToggle?: (
     project: ProjectExplorerProject
   ) => void | Promise<void>;

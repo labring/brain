@@ -4,7 +4,9 @@ import type { DateRange } from "react-day-picker";
 /**
  * A log window is anchored either to "now" (live: relative span, follows new
  * output) or to fixed wall-clock bounds (frozen: never moves on its own).
- * There is no independent realtime flag — see docs/adr/0034.
+ * There is no independent realtime flag: pairing one with a range permits
+ * incoherent states by construction — polling a fixed historical range that
+ * can never yield new lines, or a relative label describing a stale snapshot.
  */
 export type LogWindow =
   | { mode: "live"; spanMs: number }

@@ -12,6 +12,7 @@ import { createDeployTaskTools } from "@/features/chat/tool/chat-deploy-task-too
 import { navigateAppTool } from "@/features/chat/tool/chat-navigate-app-tool";
 import { openProjectSurfaceTool } from "@/features/chat/tool/chat-open-project-surface-tool";
 import { createChatProductTools } from "@/features/chat/tool/chat-product-tools";
+import { createChatProjectTools } from "@/features/chat/tool/chat-project-tools";
 import { refreshFrontendSwrCachesTool } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
 import {
   buildChatSkillsDiscoveryPrompt,
@@ -56,12 +57,16 @@ export interface ChatToolset {
 export async function buildChatToolset({
   kubeconfig,
   kubernetesNamespace,
+  chatId,
   workspaceActor,
+  workspaceUserUid,
   assistantContext,
 }: {
+  chatId: string;
   kubeconfig: string;
   kubernetesNamespace: string;
   workspaceActor: string;
+  workspaceUserUid: string;
   assistantContext?: AssistantContextPayload;
 }): Promise<ChatToolset> {
   const [skillIndex, { tools: bashTools }] = await Promise.all([
@@ -78,10 +83,17 @@ export async function buildChatToolset({
     kubeconfig,
     kubernetesNamespace,
   });
+  const projectTools = createChatProjectTools({
+    chatId,
+    kubeconfig,
+    kubernetesNamespace,
+    workspaceUserUid,
+  });
 
   const tools = {
     ...deployTaskTools,
     ...productTools,
+    ...projectTools,
     emitGenUISpec,
     navigateApp: navigateAppTool,
     openProjectSurface: openProjectSurfaceTool,

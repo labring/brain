@@ -81,8 +81,8 @@ const SCALING_TARGET_TOGGLE_OPTIONS = [
   {
     ariaLabel: "CPU utilization target",
     label: (
-      <span className="inline-flex items-center gap-1.5">
-        <Cpu aria-hidden className="size-3.5" />
+      <span className="inline-flex items-center gap-2">
+        <Cpu aria-hidden className="size-4" />
         Target CPU
       </span>
     ),
@@ -91,8 +91,8 @@ const SCALING_TARGET_TOGGLE_OPTIONS = [
   {
     ariaLabel: "Memory average target",
     label: (
-      <span className="inline-flex items-center gap-1.5">
-        <MemoryStick aria-hidden className="size-3.5" />
+      <span className="inline-flex items-center gap-2">
+        <MemoryStick aria-hidden className="size-4" />
         Target Memory
       </span>
     ),
@@ -533,7 +533,6 @@ function ScalingTargetSlider({
   memoryTargetMib,
   onCpuTargetChange,
   onMemoryTargetChange,
-  onTargetMetricChange,
   targetMetric,
 }: {
   cpuTargetPercent: number;
@@ -541,7 +540,6 @@ function ScalingTargetSlider({
   memoryTargetMib: number;
   onCpuTargetChange: (value: number) => void;
   onMemoryTargetChange: (value: number) => void;
-  onTargetMetricChange: (metric: ElasticTargetMetric) => void;
   targetMetric: ElasticTargetMetric;
 }) {
   const config =
@@ -550,6 +548,7 @@ function ScalingTargetSlider({
           ariaLabel: "Memory average target",
           displayValue: memoryMibDisplayValue(memoryTargetMib),
           format: formatMemoryMibValue,
+          label: "Target Memory",
           max: MEMORY_AVERAGE_TARGET_LIMITS.max,
           maxDecimals: 2,
           min: MEMORY_AVERAGE_TARGET_LIMITS.min,
@@ -561,6 +560,7 @@ function ScalingTargetSlider({
           ariaLabel: "CPU utilization target",
           displayValue: cpuTargetPercent,
           format: (next: number) => `${formatPlainNumber(next, 0)}%`,
+          label: "Target CPU",
           max: CPU_UTILIZATION_TARGET_LIMITS.max,
           maxDecimals: 0,
           min: CPU_UTILIZATION_TARGET_LIMITS.min,
@@ -571,10 +571,12 @@ function ScalingTargetSlider({
 
   return (
     <ResourceSettingsInset>
-      <SettingsSlider.Root
+      <SettingsSlider
+        ariaLabel={config.ariaLabel}
         disabled={disabled}
         displayValue={config.displayValue}
         formatBound={config.format}
+        label={config.label}
         max={config.max}
         maxDecimals={config.maxDecimals}
         min={config.min}
@@ -582,29 +584,7 @@ function ScalingTargetSlider({
         step={1}
         value={config.value}
         valueSuffix={config.valueSuffix}
-      >
-        <SettingsSlider.Stack>
-          <SettingsSlider.Header>
-            <SlidingToggle
-              ariaLabel="Scaling target"
-              disabled={disabled}
-              onValueChange={onTargetMetricChange}
-              options={SCALING_TARGET_TOGGLE_OPTIONS}
-              size="sm"
-              value={targetMetric}
-              width="auto"
-            />
-            <SettingsSlider.Value />
-          </SettingsSlider.Header>
-          <SettingsSlider.Control aria-label={config.ariaLabel}>
-            <SettingsSlider.Track>
-              <SettingsSlider.Range />
-            </SettingsSlider.Track>
-            <SettingsSlider.Thumb />
-          </SettingsSlider.Control>
-          <SettingsSlider.Bounds />
-        </SettingsSlider.Stack>
-      </SettingsSlider.Root>
+      />
     </ResourceSettingsInset>
   );
 }
@@ -708,13 +688,21 @@ export function ReplicaStrategyContent({
             />
           </ResourceSettingsInset>
 
+          <SlidingToggle
+            ariaLabel="Scaling target"
+            disabled={readOnly}
+            indicatorClassName="dark:bg-input/30"
+            onValueChange={onElasticTargetMetricChange}
+            options={SCALING_TARGET_TOGGLE_OPTIONS}
+            value={targetMetric}
+          />
+
           <ScalingTargetSlider
             cpuTargetPercent={cpuTargetPercent}
             disabled={readOnly}
             memoryTargetMib={memoryTargetMib}
             onCpuTargetChange={onElasticCpuTargetChange}
             onMemoryTargetChange={onElasticMemoryTargetChange}
-            onTargetMetricChange={onElasticTargetMetricChange}
             targetMetric={targetMetric}
           />
         </div>

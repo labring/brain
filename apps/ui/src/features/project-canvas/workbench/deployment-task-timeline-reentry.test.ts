@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
-import { selectDeploymentTaskDock } from "./deployment-task-timeline-reentry";
+import {
+  DEPLOYMENT_TASK_DOCK_CHIP_GAP_PX,
+  DEPLOYMENT_TASK_DOCK_CHIP_MIN_PX,
+  DEPLOYMENT_TASK_DOCK_OVERFLOW_RESERVE_PX,
+  fitDeploymentTaskDockChipCount,
+  selectDeploymentTaskDock,
+} from "./deployment-task-timeline-reentry";
 
 const NOW = new Date("2026-06-17T10:04:00.000Z");
 
@@ -111,7 +117,7 @@ test("deployment task dock hides dismissed task only for the dismissed update", 
   assert.equal(visibleAfterUpdate.tasks.length, 1);
 });
 
-test("deployment task dock exposes desktop and mobile collapsed counts", () => {
+test("deployment task dock keeps the full ordered task list without pre-split views", () => {
   const dock = selectDeploymentTaskDock({
     activeTaskId: null,
     dismissedTaskUpdatedAtById: new Map(),
@@ -124,10 +130,37 @@ test("deployment task dock exposes desktop and mobile collapsed counts", () => {
     ],
   });
 
-  assert.equal(dock.desktopTasks.length, 3);
-  assert.equal(dock.desktopHiddenCount, 1);
-  assert.equal(dock.mobileTasks.length, 1);
-  assert.equal(dock.mobileHiddenCount, 3);
+  assert.equal(dock.tasks.length, 4);
+});
+
+test("dock chip fit shows every task when all fit at the chip floor", () => {
+  const chip = DEPLOYMENT_TASK_DOCK_CHIP_MIN_PX;
+  const gap = DEPLOYMENT_TASK_DOCK_CHIP_GAP_PX;
+  const exactWidth = 3 * chip + 2 * gap;
+
+  assert.equal(fitDeploymentTaskDockChipCount(exactWidth, 3), 3);
+  // One pixel short of "all fit" folds into the overflow instead, and the
+  // overflow reserve now competes with the chips for room.
+  assert.equal(fitDeploymentTaskDockChipCount(exactWidth - 1, 3), 2);
+});
+
+test("dock chip fit reserves room for the overflow trigger when folding", () => {
+  const unit =
+    DEPLOYMENT_TASK_DOCK_CHIP_MIN_PX + DEPLOYMENT_TASK_DOCK_CHIP_GAP_PX;
+  const reserve = DEPLOYMENT_TASK_DOCK_OVERFLOW_RESERVE_PX;
+  const twoChipsWithTrigger = 2 * unit + reserve;
+
+  assert.equal(fitDeploymentTaskDockChipCount(twoChipsWithTrigger, 5), 2);
+  assert.equal(fitDeploymentTaskDockChipCount(twoChipsWithTrigger - 1, 5), 1);
+});
+
+test("dock chip fit degrades to the overflow trigger alone in a tiny slot", () => {
+  assert.equal(fitDeploymentTaskDockChipCount(90, 4), 0);
+  assert.equal(fitDeploymentTaskDockChipCount(0, 4), 0);
+});
+
+test("dock chip fit is zero for an empty dock", () => {
+  assert.equal(fitDeploymentTaskDockChipCount(1000, 0), 0);
 });
 
 test("deployment task dock does not show completed tasks during projection grace", () => {

@@ -21,7 +21,7 @@ import {
 } from "@/features/project-canvas/throttle-scheduler";
 
 const DEPLOYMENT_PROJECTION_RECONNECT_MS = 4000;
-/** Coalesce the projection-delta storm to at most one React commit per window (ADR 0043). */
+/** Coalesce the projection-delta storm to at most one React commit per window. */
 const DEPLOYMENT_PROJECTION_COALESCE_MS = 200;
 
 export interface DeploymentTasksStore {
@@ -92,7 +92,7 @@ export function useDeploymentTasksStore(options: {
 
   // Coalesce the projection-delta storm: many resources emit a burst of events,
   // and publishing each one re-renders the whole canvas subtree and rebuilds the
-  // resource graph (ADR 0043). Fold every event into projectionsRef immediately
+  // resource graph. Fold every event into projectionsRef immediately
   // but publish at most once per DEPLOYMENT_PROJECTION_COALESCE_MS.
   const schedulerRef = useRef<ThrottleScheduler | null>(null);
   useEffect(() => {

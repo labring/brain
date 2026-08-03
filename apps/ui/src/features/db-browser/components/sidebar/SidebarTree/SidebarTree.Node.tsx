@@ -98,7 +98,7 @@ export const TreeNode = memo(function TreeNode({ node, depth }: TreeNodeProps) {
   const isSystem = node.metadata.system === true;
   // System children always share one Logical Database (a node's descendants
   // all come from its own database), so the node subscribes to that single
-  // database's reveal state instead of the whole aggregate (ADR-0049).
+  // database's reveal state instead of the whole aggregate.
   const systemChildDatabase = children?.find((child) => child.metadata.system)
     ?.metadata.database;
   const systemObjectsRevealed =

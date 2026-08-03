@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { render } from "@testing-library/react/pure";
+import { SidePane } from "@workspace/ui/components/side-pane";
 import { renderToStaticMarkup } from "react-dom/server";
 import { deploymentFailureMessage } from "@/features/deploy/task/failure-summary";
 import type { DeployTaskDTO } from "@/features/deploy/task/types";
+import {
+  actAndDrain,
+  installTestDom,
+  restoreActEnvironment,
+  setActEnvironment,
+} from "@/features/project-canvas/react-test-harness";
 import {
   DeploymentTaskTimelineActions,
   DeploymentTaskTimelinePaneContent,
@@ -735,4 +743,49 @@ test("deployment task timeline actions keep cancel visible but disabled on termi
   assert.equal((failed.match(DISABLED_ATTR_RE) ?? []).length, 1);
   // The confirm dialog only mounts after a click on the enabled button.
   assert.doesNotMatch(failed, CANCEL_DIALOG_SLOT_RE);
+});
+
+test("deployment task lifecycle actions pin in the side pane footer slot", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <SidePane
+          label="Deployment task timeline pane"
+          onClose={() => undefined}
+          title="Deployment Timeline"
+        >
+          <p>Timeline steps</p>
+          <DeploymentTaskTimelineActions
+            kubeconfig="kubeconfig"
+            namespace="default"
+            task={actionsTask("failed")}
+          />
+        </SidePane>
+      );
+    });
+    const container = rendered?.container;
+    assert.ok(container);
+    const footer = container.querySelector('[data-slot="side-pane-footer"]');
+    assert.ok(footer, "the lifecycle action row opens the footer region");
+    assert.ok(
+      footer.querySelector('[data-slot="deployment-task-actions"]'),
+      "the action row lands in the footer slot"
+    );
+    assert.equal(
+      footer.closest(".overflow-y-auto"),
+      null,
+      "the footer stays outside the scroll container"
+    );
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
 });
