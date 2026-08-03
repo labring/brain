@@ -8,6 +8,25 @@ const { createChatProjectTools, deleteProjectInputSchema } = await import(
   "./chat-project-tools"
 );
 
+const COMPLETE_RESOURCE_SUMMARY = {
+  ap: ["api"],
+  db: [],
+  template: [],
+  templateCertificates: [],
+  templateClusters: [],
+  templateConfigMaps: [],
+  templateDeployments: [],
+  templateIngresses: [],
+  templateIssuers: [],
+  templateJobs: [],
+  templateOpsRequests: [],
+  templatePersistentVolumeClaims: [],
+  templatePods: [],
+  templateSecrets: [],
+  templateServices: [],
+  templateStatefulSets: [],
+} as const;
+
 test("Project delete tool requires AI SDK approval", () => {
   const tools = createChatProjectTools({
     chatId: "chat-1",
@@ -29,7 +48,7 @@ test("Project deletion input binds the server preview summary to the approval", 
       previewId: "preview-1",
       projectDisplayName: "Payments",
       projectId: "project-1",
-      resourceSummary: { ap: ["api"] },
+      resourceSummary: COMPLETE_RESOURCE_SUMMARY,
     }).success,
     true
   );
@@ -39,6 +58,7 @@ test("Project deletion input binds the server preview summary to the approval", 
       previewId: "preview-1",
       projectDisplayName: "Payments",
       projectId: "project-1",
+      resourceSummary: { ap: ["api"] },
     }).success,
     false
   );

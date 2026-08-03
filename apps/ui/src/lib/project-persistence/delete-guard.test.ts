@@ -184,26 +184,36 @@ test("project delete guard does not double encode kubeconfig authorization", asy
 });
 
 test("project delete guard requires an API base URL", async () => {
-  await assert.rejects(
-    () =>
-      assertProjectHasNoManagedResources({
-        encodedKubeconfig: "kubeconfig",
-        fetchImpl: () =>
-          Promise.resolve(
-            new Response(JSON.stringify({ items: [] }), { status: 200 })
-          ),
-        id: "project-a",
-        namespace: "ns-a",
-      }),
-    (error) => {
-      assert.equal(error instanceof ProjectManagedResourceCleanupError, true);
-      assert.equal(
-        (error as ProjectManagedResourceCleanupError).message,
-        "API_URL is required to clean up project resources."
-      );
-      return true;
+  const previousApiUrl = process.env.API_URL;
+  delete process.env.API_URL;
+  try {
+    await assert.rejects(
+      () =>
+        assertProjectHasNoManagedResources({
+          encodedKubeconfig: "kubeconfig",
+          fetchImpl: () =>
+            Promise.resolve(
+              new Response(JSON.stringify({ items: [] }), { status: 200 })
+            ),
+          id: "project-a",
+          namespace: "ns-a",
+        }),
+      (error) => {
+        assert.equal(error instanceof ProjectManagedResourceCleanupError, true);
+        assert.equal(
+          (error as ProjectManagedResourceCleanupError).message,
+          "API_URL is required to clean up project resources."
+        );
+        return true;
+      }
+    );
+  } finally {
+    if (previousApiUrl === undefined) {
+      delete process.env.API_URL;
+    } else {
+      process.env.API_URL = previousApiUrl;
     }
-  );
+  }
 });
 
 test("project delete guard surfaces downstream cleanup errors", async () => {

@@ -14,10 +14,27 @@ import {
 } from "./chat-tool-intention";
 
 const projectIdSchema = z.string().trim().min(1).max(256);
-const resourceSummarySchema = z.record(
-  z.string().min(1).max(80),
-  z.array(z.string().min(1).max(253)).max(10_000)
-);
+const resourceNamesSchema = z.array(z.string().min(1).max(253)).max(10_000);
+const resourceSummarySchema = z
+  .object({
+    ap: resourceNamesSchema,
+    db: resourceNamesSchema,
+    template: resourceNamesSchema,
+    templateCertificates: resourceNamesSchema,
+    templateClusters: resourceNamesSchema,
+    templateConfigMaps: resourceNamesSchema,
+    templateDeployments: resourceNamesSchema,
+    templateIngresses: resourceNamesSchema,
+    templateIssuers: resourceNamesSchema,
+    templateJobs: resourceNamesSchema,
+    templateOpsRequests: resourceNamesSchema,
+    templatePersistentVolumeClaims: resourceNamesSchema,
+    templatePods: resourceNamesSchema,
+    templateSecrets: resourceNamesSchema,
+    templateServices: resourceNamesSchema,
+    templateStatefulSets: resourceNamesSchema,
+  })
+  .strict();
 
 const listProjectsInputSchema = z.object({
   intention: chatToolIntentionField,
