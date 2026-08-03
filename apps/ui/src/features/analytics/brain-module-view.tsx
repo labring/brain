@@ -3,6 +3,19 @@
 import { useEffect, useRef } from "react";
 import { type BrainGtmMethod, trackBrainGtmEvent } from "./brain-gtm";
 
+export function BrainDeploymentStart({ open }: { open: boolean }) {
+  const previousOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (open && !previousOpenRef.current) {
+      trackBrainGtmEvent({ event: "deployment_start" });
+    }
+    previousOpenRef.current = open;
+  }, [open]);
+
+  return null;
+}
+
 export function BrainModuleView({
   method,
   projectId,

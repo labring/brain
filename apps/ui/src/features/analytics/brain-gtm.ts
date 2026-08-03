@@ -76,17 +76,26 @@ export function brainGtmEventPayloadBytes(event: BrainGtmEvent): number {
 }
 
 export function trackBrainGtmEvent(event: BrainGtmEvent): boolean {
-  const payload = {
-    context: "app" as const,
-    module: "brain" as const,
-    ...event,
-  };
-  if (brainGtmEventPayloadBytes(event) >= BRAIN_GTM_MAX_PAYLOAD_BYTES) {
-    console.warn("[Brain GTM] Event payload exceeds the 2KB limit.", payload);
+  try {
+    const payload = {
+      context: "app" as const,
+      module: "brain" as const,
+      ...event,
+    };
+    if (brainGtmEventPayloadBytes(event) >= BRAIN_GTM_MAX_PAYLOAD_BYTES) {
+      console.warn("[Brain GTM] Event payload exceeds the 2KB limit.", payload);
+      return false;
+    }
+    sendGTMEvent(payload);
+    return true;
+  } catch (error) {
+    try {
+      console.warn("[Brain GTM] Failed to send event.", error);
+    } catch {
+      // Analytics must remain best-effort even if logging is unavailable.
+    }
     return false;
   }
-  sendGTMEvent(payload);
-  return true;
 }
 
 export async function trackBrainGtmEventAfterSuccess<T>(

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   BRAIN_GTM_MAX_PAYLOAD_BYTES,
+  type BrainGtmEvent,
   brainAiEngagementSessionKey,
   brainCardActionEventType,
   brainGtmEventPayloadBytes,
@@ -49,6 +50,42 @@ test("Brain GTM drops payloads at or above the 2KB limit", () => {
 
   assert.ok(brainGtmEventPayloadBytes(event) >= BRAIN_GTM_MAX_PAYLOAD_BYTES);
   assert.equal(trackBrainGtmEvent(event), false);
+});
+
+test("Brain GTM transport and serialization failures do not escape", () => {
+  const previousWindow = globalThis.window;
+  Object.assign(globalThis, {
+    window: {
+      dataLayer: {
+        push: () => {
+          throw new Error("transport failed");
+        },
+      },
+    },
+  });
+
+  try {
+    assert.equal(
+      trackBrainGtmEvent({
+        event: "module_view",
+        view_name: "project_list",
+      }),
+      false
+    );
+
+    const circularConfig: { self?: unknown } = {};
+    circularConfig.self = circularConfig;
+    assert.equal(
+      trackBrainGtmEvent({
+        config: circularConfig,
+        event: "deployment_create",
+        method: "template",
+      } as unknown as BrainGtmEvent),
+      false
+    );
+  } finally {
+    Object.assign(globalThis, { window: previousWindow });
+  }
 });
 
 test("Brain GTM success events wait for the operation and skip failures", async () => {

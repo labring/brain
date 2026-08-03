@@ -9,7 +9,10 @@ import {
   type BrainGtmMethod,
   trackBrainGtmEvent,
 } from "@/features/analytics/brain-gtm";
-import { BrainModuleView } from "@/features/analytics/brain-module-view";
+import {
+  BrainDeploymentStart,
+  BrainModuleView,
+} from "@/features/analytics/brain-module-view";
 import { parseTemplateForm } from "@/features/deploy/template-deployment-intent";
 import type { ProjectSidePaneAssistantSurface } from "@/features/panes/assistant-router";
 import { useProjectSidePaneSurface } from "@/features/panes/react";
@@ -158,7 +161,6 @@ export function ProjectIndex() {
 
   const openProjectCreationPane = useCallback(
     (entryMode: ProjectCreationPaneEntryMode = "general") => {
-      trackBrainGtmEvent({ event: "deployment_start" });
       if (entryMode === "templateDirect") {
         openProjectSideRoute({ entryMode, kind: "projectCreation" });
         return;
@@ -229,6 +231,7 @@ export function ProjectIndex() {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <BrainDeploymentStart open={creationPaneOpen} />
       <BrainModuleView viewName="project_list" />
       <div
         aria-hidden
