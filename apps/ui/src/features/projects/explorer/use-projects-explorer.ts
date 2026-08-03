@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { trackBrainGtmEvent } from "@/features/analytics/brain-gtm";
+import { trackBrainGtmEventAfterSuccess } from "@/features/analytics/brain-gtm";
 import { openAssistantPane } from "@/features/panes/layout-store";
 import {
   type BrainProjectResponse,
@@ -349,22 +349,25 @@ export function useProjectsExplorer(
         throw new Error("not ready");
       }
       try {
-        trackBrainGtmEvent({
-          app_name: p.name,
-          event: "deployment_delete",
-          project_id: p.id,
-          reason,
-        });
-        await fetcher({
-          base: window.location.origin,
-          path: "/api/projects",
-          method: "DELETE",
-          header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
-          body: {
-            id: p.id,
-            namespace: ns,
-          },
-        });
+        await trackBrainGtmEventAfterSuccess(
+          () =>
+            fetcher({
+              base: window.location.origin,
+              path: "/api/projects",
+              method: "DELETE",
+              header: { Authorization: kubeconfigBearerHeader(kubeconfig) },
+              body: {
+                id: p.id,
+                namespace: ns,
+              },
+            }),
+          {
+            app_name: p.name,
+            event: "deployment_delete",
+            project_id: p.id,
+            reason,
+          }
+        );
         await mutate();
         toast.success(`Deleted "${p.name}".`);
         const uidEnc = encodeURIComponent(p.id);

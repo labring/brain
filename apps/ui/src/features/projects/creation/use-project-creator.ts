@@ -4,7 +4,7 @@ import { useCallback, useMemo, useReducer, useState } from "react";
 import { toast } from "sonner";
 import {
   type BrainGtmMethod,
-  trackBrainGtmEvent,
+  trackBrainGtmEventAfterSuccess,
 } from "@/features/analytics/brain-gtm";
 import type { DatabaseDeploymentSettings } from "@/features/deploy/database-deployer";
 import { DIRECT_DB_DEPLOYMENT_OPTIONS } from "@/features/deploy/direct-db-deployment-options";
@@ -45,11 +45,12 @@ const CREATION_PANE_SOURCES: readonly ProjectCreatorSourceKind[] = [
   "template",
 ];
 
-function trackDeploymentCreate(
+function trackDeploymentCreateOnSuccess<T>(
   method: BrainGtmMethod,
+  operation: () => Promise<T>,
   config?: { template_name?: string; template_version?: string }
-): void {
-  trackBrainGtmEvent({
+): Promise<T> {
+  return trackBrainGtmEventAfterSuccess(operation, {
     ...(config === undefined ? {} : { config }),
     event: "deployment_create",
     method,
@@ -289,12 +290,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       ) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
-          trackDeploymentCreate("docker");
-          const outcome = await runDeployment({
-            kind: "docker",
-            settings,
-            target: newProjectDeploymentTarget(description),
-          });
+          const outcome = await trackDeploymentCreateOnSuccess("docker", () =>
+            runDeployment({
+              kind: "docker",
+              settings,
+              target: newProjectDeploymentTarget(description),
+            })
+          );
           if (outcome.kind !== "docker") {
             return;
           }
@@ -312,12 +314,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       ) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
-          trackDeploymentCreate("database");
-          const outcome = await runDeployment({
-            kind: "database",
-            settings,
-            target: newProjectDeploymentTarget(description),
-          });
+          const outcome = await trackDeploymentCreateOnSuccess("database", () =>
+            runDeployment({
+              kind: "database",
+              settings,
+              target: newProjectDeploymentTarget(description),
+            })
+          );
           if (outcome.kind !== "database") {
             return;
           }
@@ -336,16 +339,18 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       ) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
-          trackDeploymentCreate("template", {
-            template_name: settings.templateName,
-          });
-          const outcome = await runDeployment({
-            args: settings.args,
-            kind: "template",
-            sensitiveKeys: settings.sensitiveKeys,
-            target: newProjectDeploymentTarget(description),
-            templateName: settings.templateName,
-          });
+          const outcome = await trackDeploymentCreateOnSuccess(
+            "template",
+            () =>
+              runDeployment({
+                args: settings.args,
+                kind: "template",
+                sensitiveKeys: settings.sensitiveKeys,
+                target: newProjectDeploymentTarget(description),
+                templateName: settings.templateName,
+              }),
+            { template_name: settings.templateName }
+          );
           if (outcome.kind !== "template") {
             return;
           }
@@ -360,12 +365,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       onGithubConfirm: async (repo: GithubDeployerRepo, projectDescription) => {
         const description = projectDescription.trim();
         await applyWithBusyState(async () => {
-          trackDeploymentCreate("github");
-          const outcome = await runDeployment({
-            kind: "github",
-            repository: repo,
-            target: newProjectDeploymentTarget(description),
-          });
+          const outcome = await trackDeploymentCreateOnSuccess("github", () =>
+            runDeployment({
+              kind: "github",
+              repository: repo,
+              target: newProjectDeploymentTarget(description),
+            })
+          );
           if (outcome.kind !== "github") {
             return;
           }
@@ -384,12 +390,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   const handleGithubDeploy = useCallback(
     async (repo: GithubDeployerRepo) => {
       await applyWithBusyState(async () => {
-        trackDeploymentCreate("github");
-        const outcome = await runDeployment({
-          kind: "github",
-          repository: repo,
-          target: newProjectDeploymentTarget(),
-        });
+        const outcome = await trackDeploymentCreateOnSuccess("github", () =>
+          runDeployment({
+            kind: "github",
+            repository: repo,
+            target: newProjectDeploymentTarget(),
+          })
+        );
         if (outcome.kind !== "github") {
           return;
         }
@@ -437,16 +444,18 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         return;
       }
       await applyWithBusyState(async () => {
-        trackDeploymentCreate("template", {
-          template_name: input.settings.templateName,
-        });
-        const outcome = await runDeployment({
-          args: input.settings.args,
-          kind: "template",
-          sensitiveKeys: input.settings.sensitiveKeys,
-          target: newProjectDeploymentTarget(),
-          templateName: input.settings.templateName,
-        });
+        const outcome = await trackDeploymentCreateOnSuccess(
+          "template",
+          () =>
+            runDeployment({
+              args: input.settings.args,
+              kind: "template",
+              sensitiveKeys: input.settings.sensitiveKeys,
+              target: newProjectDeploymentTarget(),
+              templateName: input.settings.templateName,
+            }),
+          { template_name: input.settings.templateName }
+        );
         if (outcome.kind !== "template") {
           return;
         }

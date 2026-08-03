@@ -1210,7 +1210,11 @@ export function useProjectCanvasModule({
       launchSource: SettingsLaunchSource = "toolbar"
     ) => {
       const eventType = brainCardActionEventType(intent.entry);
-      if (eventType !== null && projectId.trim() !== "") {
+      if (
+        launchSource !== "assistant" &&
+        eventType !== null &&
+        projectId.trim() !== ""
+      ) {
         trackBrainGtmEvent({
           event: "deployment_card_action",
           event_type: eventType,

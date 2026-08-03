@@ -89,6 +89,15 @@ export function trackBrainGtmEvent(event: BrainGtmEvent): boolean {
   return true;
 }
 
+export async function trackBrainGtmEventAfterSuccess<T>(
+  operation: () => Promise<T>,
+  event: BrainGtmEvent
+): Promise<T> {
+  const result = await operation();
+  trackBrainGtmEvent(event);
+  return result;
+}
+
 export function brainAiEngagementSessionKey(projectId: string): string {
   return `brain:gtm:ai-chat-engaged:${projectId.trim()}`;
 }

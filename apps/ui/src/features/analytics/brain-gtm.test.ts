@@ -8,7 +8,10 @@ import {
   claimBrainAiEngagement,
   claimBrainAiEngagementFromSession,
   trackBrainGtmEvent,
+  trackBrainGtmEventAfterSuccess,
 } from "./brain-gtm";
+
+const OPERATION_FAILED_RE = /operation failed/;
 
 test("Brain GTM events add the required context and module", () => {
   const previousWindow = globalThis.window;
@@ -46,6 +49,44 @@ test("Brain GTM drops payloads at or above the 2KB limit", () => {
 
   assert.ok(brainGtmEventPayloadBytes(event) >= BRAIN_GTM_MAX_PAYLOAD_BYTES);
   assert.equal(trackBrainGtmEvent(event), false);
+});
+
+test("Brain GTM success events wait for the operation and skip failures", async () => {
+  const previousWindow = globalThis.window;
+  const dataLayer: unknown[] = [];
+  Object.assign(globalThis, { window: { dataLayer } });
+
+  try {
+    let resolveOperation: ((value: string) => void) | undefined;
+    const pending = trackBrainGtmEventAfterSuccess(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveOperation = resolve;
+        }),
+      { event: "deployment_create", method: "docker" }
+    );
+
+    assert.deepEqual(dataLayer, []);
+    resolveOperation?.("created");
+    assert.equal(await pending, "created");
+    assert.equal(dataLayer.length, 1);
+
+    await assert.rejects(
+      trackBrainGtmEventAfterSuccess(
+        () => Promise.reject(new Error("operation failed")),
+        {
+          app_name: "failed-project",
+          event: "deployment_delete",
+          project_id: "project-1",
+          reason: "failed",
+        }
+      ),
+      OPERATION_FAILED_RE
+    );
+    assert.equal(dataLayer.length, 1);
+  } finally {
+    Object.assign(globalThis, { window: previousWindow });
+  }
 });
 
 test("AI engagement claims once per project in session storage", () => {
