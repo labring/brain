@@ -15,6 +15,7 @@ import {
   CircuitBoard,
   Cpu,
   HardDrive,
+  HdmiPort,
   type LucideIcon,
   MemoryStick,
   Network,
@@ -34,6 +35,7 @@ const QUOTA_ICONS = {
   cpu: Cpu,
   gpu: CircuitBoard,
   memory: MemoryStick,
+  nodeport: HdmiPort,
   storage: HardDrive,
   traffic: Network,
 } satisfies Record<BillingQuotaType, LucideIcon>;
@@ -49,23 +51,18 @@ interface BillingUsageSurfaceProps {
 function UsageProgress({ value }: { value: number }) {
   const visibleValue = Math.min(100, Math.max(0, value));
   return (
-    <div className="flex min-w-40 items-center gap-3">
+    <div
+      aria-label={`${value}% used`}
+      aria-valuemax={100}
+      aria-valuemin={0}
+      aria-valuenow={value}
+      className="h-1 w-4/5 overflow-hidden rounded-full bg-muted"
+      role="progressbar"
+    >
       <div
-        aria-label={`${value}% used`}
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={value}
-        className="h-2 min-w-24 flex-1 overflow-hidden rounded-full bg-muted"
-        role="progressbar"
-      >
-        <div
-          className="h-full rounded-full bg-primary transition-[width]"
-          style={{ width: `${visibleValue}%` }}
-        />
-      </div>
-      <span className="w-12 text-right text-muted-foreground text-xs tabular-nums">
-        {value}%
-      </span>
+        className="h-full rounded-full bg-primary transition-[width]"
+        style={{ width: `${visibleValue}%` }}
+      />
     </div>
   );
 }
@@ -88,15 +85,10 @@ export function BillingUsageSurface({
   return (
     <TableLayout data-slot="billing-usage-surface">
       <TableLayoutCaption className="flex-col gap-3 sm:flex-row">
-        <div className="flex flex-col gap-0.5">
-          <h2 className="font-medium text-foreground">Workspace usage</h2>
-          <span className="text-muted-foreground text-xs">
-            Current quota allocation
-          </span>
-        </div>
+        <h2 className="font-medium text-foreground">Usage</h2>
         <AppSelect
           aria-label="Workspace"
-          className="w-full sm:w-56"
+          className="w-full sm:w-36"
           disabled={isLoading}
           emptyMessage="No workspaces"
           onValueChange={onWorkspaceChange}
@@ -109,8 +101,8 @@ export function BillingUsageSurface({
 
       <TableLayoutContent>
         <TableLayoutHeadRow>
-          <TableHead className="w-1/5">Resource</TableHead>
-          <TableHead className="w-1/5">Usage</TableHead>
+          <TableHead className="w-1/5">Resource Name</TableHead>
+          <TableHead className="w-1/5">Chart</TableHead>
           <TableHead className="w-1/5">Total</TableHead>
           <TableHead className="w-1/5">Used</TableHead>
           <TableHead className="w-1/5">Remaining</TableHead>
@@ -140,10 +132,10 @@ export function BillingUsageSurface({
           {!isLoading && error == null && rows.length === 0 ? (
             <TableRow>
               <TableCell
-                className="h-28 text-center text-muted-foreground"
+                className="h-20 text-center text-muted-foreground"
                 colSpan={5}
               >
-                Select a workspace to view quota usage.
+                Please select a specific workspace
               </TableCell>
             </TableRow>
           ) : null}
@@ -153,13 +145,13 @@ export function BillingUsageSurface({
                 return (
                   <TableRow key={row.type}>
                     <TableCell className="h-14">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-2">
                         <Icon
                           aria-hidden
-                          className="size-4 text-muted-foreground"
-                          strokeWidth={1.75}
+                          className="size-5 text-muted-foreground"
+                          strokeWidth={1}
                         />
-                        <span className="font-medium">{row.label}</span>
+                        <span>{row.label}</span>
                       </div>
                     </TableCell>
                     <TableCell>

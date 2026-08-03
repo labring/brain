@@ -60,6 +60,14 @@ const USAGE_SNAPSHOT = {
       used: "40Gi",
     },
     {
+      label: "Ports",
+      percentUsed: 30,
+      remaining: "7",
+      total: "10",
+      type: "nodeport",
+      used: "3",
+    },
+    {
       label: "Traffic",
       percentUsed: 25,
       remaining: "75Gi",
@@ -416,9 +424,9 @@ test("Usage preserves the quota table's workspace and resource hierarchy", () =>
   );
 
   assertTextOrder(html, [
-    "Workspace usage",
-    "Resource",
     "Usage",
+    "Resource Name",
+    "Chart",
     "Total",
     "Used",
     "Remaining",
@@ -428,15 +436,19 @@ test("Usage preserves the quota table's workspace and resource hierarchy", () =>
     "CPU",
     "Memory",
     "Storage",
+    "Ports",
     "Traffic",
     "2.5",
     "5Gi",
     "60Gi",
+    "7",
     "75Gi",
   ]) {
     assertIncludes(html, text);
   }
   assert.equal(html.includes(">GPU<"), false);
+  assert.equal(html.includes(">37.5%<"), false);
+  assert.equal(html.includes("Current quota allocation"), false);
 });
 
 test("Usage adds the GPU quota row only when the cluster flag is enabled", () => {
@@ -445,7 +457,14 @@ test("Usage adds the GPU quota row only when the cluster flag is enabled", () =>
   );
 
   assertIncludes(html, ">GPU<");
-  assertTextOrder(html, ["CPU", "Memory", "Storage", "Traffic", "GPU"]);
+  assertTextOrder(html, [
+    "CPU",
+    "Memory",
+    "Storage",
+    "Ports",
+    "Traffic",
+    "GPU",
+  ]);
 });
 
 test("Pricing preserves Cost Center's three pricing information layers", () => {

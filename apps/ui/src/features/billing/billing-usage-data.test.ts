@@ -18,6 +18,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
           "limits.memory": "8Gi",
           "limits.nvidia.com/gpu": "2",
           "requests.storage": "100Gi",
+          "services.nodeports": "10",
           traffic: "100Gi",
         },
         used: {
@@ -25,6 +26,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
           "limits.memory": "3Gi",
           "limits.nvidia.com/gpu": "1",
           "requests.storage": "40Gi",
+          "services.nodeports": "3",
           traffic: "25Gi",
         },
       },
@@ -92,6 +94,14 @@ test("loads current workspace quota with ordered headroom rows", async () => {
       total: "100Gi",
       type: "storage",
       used: "40Gi",
+    },
+    {
+      label: "Ports",
+      percentUsed: 30,
+      remaining: "7",
+      total: "10",
+      type: "nodeport",
+      used: "3",
     },
     {
       label: "Traffic",

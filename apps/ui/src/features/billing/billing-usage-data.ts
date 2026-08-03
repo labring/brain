@@ -7,7 +7,13 @@ import {
   createBillingJsonRequester,
 } from "./billing-data-client";
 
-export type BillingQuotaType = "cpu" | "gpu" | "memory" | "storage" | "traffic";
+export type BillingQuotaType =
+  | "cpu"
+  | "gpu"
+  | "memory"
+  | "nodeport"
+  | "storage"
+  | "traffic";
 
 export interface BillingUsageRow {
   label: string;
@@ -53,6 +59,7 @@ const QUOTA_RESOURCES: ReadonlyArray<{
   { keys: ["limits.cpu"], label: "CPU", type: "cpu" },
   { keys: ["limits.memory"], label: "Memory", type: "memory" },
   { keys: ["requests.storage"], label: "Storage", type: "storage" },
+  { keys: ["services.nodeports"], label: "Ports", type: "nodeport" },
   { keys: ["traffic"], label: "Traffic", type: "traffic" },
   {
     keys: ["limits.nvidia.com/gpu", "requests.nvidia.com/gpu"],
