@@ -2,13 +2,14 @@
 
 import { AppSelect } from "@workspace/ui/components/app-select";
 import { Badge } from "@workspace/ui/components/badge";
+import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
+import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { TableCell, TableHead, TableRow } from "@workspace/ui/components/table";
 import {
   TableLayout,
   TableLayoutBody,
-  TableLayoutCaption,
   TableLayoutContent,
   TableLayoutHeadRow,
 } from "@workspace/ui/components/table-layout";
@@ -18,26 +19,32 @@ import {
   TabsList,
   TabsTrigger,
 } from "@workspace/ui/components/vercel-tabs";
+import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import {
   Bot,
   Boxes,
   CircleCheck,
   CircuitBoard,
+  Clock3,
   Cpu,
   HardDrive,
   HdmiPort,
   type LucideIcon,
   MemoryStick,
+  Minus,
   Network,
+  Plus,
   Users,
 } from "lucide-react";
-import { useId, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import useSWR from "swr";
 
 import {
+  billingCurrencySymbol,
   formatBillingAmount,
   formatPreciseBillingAmount,
+  formatPreciseBillingNumber,
 } from "@/features/billing/billing-amount";
 import type { BillingPlanResourceType } from "@/features/billing/billing-plan-catalog";
 import {
@@ -58,6 +65,11 @@ export const PRICING_CYCLES = [
   { hours: 720, label: "Month" },
   { hours: 8760, label: "Year" },
 ] as const;
+
+const PRICING_CYCLE_OPTIONS = PRICING_CYCLES.map((cycle, index) => ({
+  label: cycle.label,
+  value: String(index),
+}));
 
 const PRICE_ICONS = {
   cpu: Cpu,
@@ -269,45 +281,44 @@ export function BillingPriceTable({
   currency,
   cycleIndex,
   gpuEnabled,
-  onCycleChange,
   prices,
 }: {
   currency: BillingCurrency;
   cycleIndex: number;
   gpuEnabled: boolean;
-  onCycleChange?: (cycleIndex: number) => void;
   prices: BillingMeteredPrice[];
 }) {
   const cycle = PRICING_CYCLES[cycleIndex] ?? PRICING_CYCLES[0];
   const rows = prices.filter((price) => gpuEnabled || price.type !== "gpu");
+  const sections = [
+    {
+      rows: rows.filter(
+        (price) => price.type !== "gpu" && price.billingBasis === "duration"
+      ),
+      title: "Basic Pricing",
+    },
+    {
+      rows: rows.filter((price) => price.billingBasis === "quantity"),
+      title: "Network Pricing",
+    },
+    {
+      rows: rows.filter((price) => price.type === "gpu"),
+      title: "GPU Price Table",
+    },
+  ].filter((section) => section.rows.length > 0);
+
   return (
     <TableLayout data-slot="billing-price-table">
-      <TableLayoutCaption className="flex-col gap-3 sm:flex-row">
-        <div>
-          <h2 className="font-medium text-foreground">Metered prices</h2>
-          <p className="text-muted-foreground text-xs">
-            Base rates for usage-based workspaces
-          </p>
-        </div>
-        <AppSelect
-          aria-label="Billing cycle"
-          className="w-full sm:w-40"
-          onValueChange={(value) => onCycleChange?.(Number(value))}
-          options={PRICING_CYCLES.map((item, index) => ({
-            label: `Per ${item.label.toLowerCase()}`,
-            value: String(index),
-          }))}
-          value={String(cycleIndex)}
-        />
-      </TableLayoutCaption>
       <TableLayoutContent>
         <TableLayoutHeadRow>
-          <TableHead>Resource</TableHead>
-          <TableHead>Unit</TableHead>
-          <TableHead className="text-right">Price</TableHead>
+          <TableHead className="h-14">Name</TableHead>
+          <TableHead className="h-14">Unit</TableHead>
+          <TableHead className="h-14">
+            Price ({billingCurrencySymbol(currency)})
+          </TableHead>
         </TableLayoutHeadRow>
         <TableLayoutBody>
-          {rows.length === 0 ? (
+          {sections.length === 0 ? (
             <TableRow>
               <TableCell
                 className="h-28 text-center text-muted-foreground"
@@ -317,38 +328,222 @@ export function BillingPriceTable({
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((price) => {
-              const Icon = PRICE_ICONS[price.type];
-              return (
-                <TableRow key={price.sourceName}>
-                  <TableCell className="h-14">
-                    <div className="flex items-center gap-2.5">
-                      <Icon
-                        aria-hidden
-                        className="size-4 text-muted-foreground"
-                        strokeWidth={1.75}
-                      />
-                      <span className="font-medium">{price.label}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {price.billingBasis === "quantity"
-                      ? `per ${price.unit}`
-                      : `per ${price.unit} / ${cycle.label.toLowerCase()}`}
-                  </TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">
-                    {formatPreciseBillingAmount(
-                      cyclePrice(price, cycleIndex),
-                      currency
-                    )}
+            sections.map((section) => (
+              <Fragment key={section.title}>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableCell className="h-12 font-medium" colSpan={3}>
+                    {section.title}
                   </TableCell>
                 </TableRow>
-              );
-            })
+                {section.rows.map((price) => {
+                  const Icon = PRICE_ICONS[price.type];
+                  return (
+                    <TableRow key={price.sourceName}>
+                      <TableCell className="h-14">
+                        <div className="flex items-center gap-2.5">
+                          <Icon
+                            aria-hidden
+                            className="size-4 text-muted-foreground"
+                            strokeWidth={1.75}
+                          />
+                          <span>{price.label}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {price.billingBasis === "quantity"
+                          ? `/${price.unit}`
+                          : `${price.unit} / ${cycle.label}`}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        {formatPreciseBillingNumber(
+                          cyclePrice(price, cycleIndex)
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </Fragment>
+            ))
           )}
         </TableLayoutBody>
       </TableLayoutContent>
     </TableLayout>
+  );
+}
+
+const CALCULATOR_SLIDER_STOPS: Partial<
+  Record<BillingPriceType, readonly number[]>
+> = {
+  cpu: [1, 8, 16, 24, 32],
+  memory: [1, 16, 32, 64, 128],
+};
+
+function sliderStopIndex(value: number, stops: readonly number[]): number {
+  let stopIndex = 0;
+  for (let index = 0; index < stops.length; index += 1) {
+    if ((stops[index] ?? 0) <= value) {
+      stopIndex = index;
+    }
+  }
+  return stopIndex;
+}
+
+function sliderMarkAlignment(index: number, lastIndex: number): string {
+  if (index === 0) {
+    return "translate-x-0";
+  }
+  if (index === lastIndex) {
+    return "-translate-x-full";
+  }
+  return "-translate-x-1/2";
+}
+
+function CalculatorStopsSlider({
+  ariaLabel,
+  onValueChange,
+  stops,
+  unit,
+  value,
+}: {
+  ariaLabel: string;
+  onValueChange: (value: number) => void;
+  stops: readonly number[];
+  unit: string;
+  value: number;
+}) {
+  const lastIndex = stops.length - 1;
+  return (
+    <SettingsSlider.Root
+      max={lastIndex}
+      min={0}
+      onValueChange={(index) => onValueChange(stops[index] ?? stops[0] ?? 0)}
+      step={1}
+      value={sliderStopIndex(value, stops)}
+    >
+      <div className="w-56 min-w-0 max-w-full lg:w-96">
+        <SettingsSlider.Control aria-label={ariaLabel}>
+          <SettingsSlider.Track>
+            <SettingsSlider.Range />
+          </SettingsSlider.Track>
+          <SettingsSlider.Thumb />
+        </SettingsSlider.Control>
+        <div className="relative mt-1.5 h-4 text-muted-foreground text-xs">
+          {stops.map((stop, index) => (
+            <span
+              className={cn(
+                "absolute top-0 whitespace-nowrap",
+                sliderMarkAlignment(index, lastIndex)
+              )}
+              key={stop}
+              style={{ left: `${(index / lastIndex) * 100}%` }}
+            >
+              {stop}
+              {index === lastIndex ? ` ${unit}` : ""}
+            </span>
+          ))}
+        </div>
+      </div>
+    </SettingsSlider.Root>
+  );
+}
+
+function CalculatorNumberInput({
+  ariaLabel,
+  max = Number.MAX_SAFE_INTEGER,
+  onValueChange,
+  unit,
+  value,
+}: {
+  ariaLabel: string;
+  max?: number;
+  onValueChange: (value: number) => void;
+  unit?: string;
+  value: number;
+}) {
+  const clamp = (next: number) => Math.min(max, Math.max(0, next));
+  return (
+    <div className="flex shrink-0 items-center gap-3">
+      <div className="relative w-44">
+        <Button
+          aria-label={`Decrease ${ariaLabel}`}
+          className="absolute inset-y-px left-px z-10 h-auto w-9 rounded-r-none border-border border-r"
+          disabled={value <= 0}
+          onClick={() => onValueChange(clamp(value - 1))}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Minus aria-hidden className="size-4" />
+        </Button>
+        <Input
+          aria-label={ariaLabel}
+          className="px-10 text-center tabular-nums"
+          max={max}
+          min={0}
+          onChange={(event) =>
+            onValueChange(clamp(Number(event.target.value) || 0))
+          }
+          step="any"
+          type="number"
+          value={value}
+        />
+        <Button
+          aria-label={`Increase ${ariaLabel}`}
+          className="absolute inset-y-px right-px z-10 h-auto w-9 rounded-l-none border-border border-l"
+          disabled={value >= max}
+          onClick={() => onValueChange(clamp(value + 1))}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Plus aria-hidden className="size-4" />
+        </Button>
+      </div>
+      {unit ? (
+        <span className="text-muted-foreground text-sm">{unit}</span>
+      ) : null}
+    </div>
+  );
+}
+
+function CalculatorRow({
+  children,
+  className,
+  icon: Icon,
+  label,
+}: {
+  children: ReactNode;
+  className?: string;
+  icon: LucideIcon;
+  label: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-y-3">
+      <span className="flex w-44 shrink-0 items-center gap-2 text-foreground text-sm">
+        <Icon
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground"
+          strokeWidth={1.75}
+        />
+        {label}
+      </span>
+      <div
+        className={cn(
+          "flex min-w-0 flex-wrap items-center gap-5 gap-y-3",
+          className
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function CalculatorSectionBar({ title }: { title: string }) {
+  return (
+    <h3 className="border-border border-y bg-muted/40 px-5 py-3.5 font-medium text-foreground text-sm">
+      {title}
+    </h3>
   );
 }
 
@@ -361,15 +556,14 @@ export function BillingCalculator({
   gpuEnabled: boolean;
   prices: BillingMeteredPrice[];
 }) {
-  const idPrefix = useId();
   const gpuPrices = prices.filter((price) => price.type === "gpu");
   const [selectedGpu, setSelectedGpu] = useState(
     gpuPrices[0]?.sourceName ?? ""
   );
   const [duration, setDuration] = useState(1);
   const [durationUnit, setDurationUnit] = useState(0);
-  const [workloads, setWorkloads] = useState(1);
-  const [quantities, setQuantities] = useState<
+  const [quantity, setQuantity] = useState(1);
+  const [resourceQuantities, setResourceQuantities] = useState<
     Record<BillingPriceType, number>
   >({
     cpu: 1,
@@ -394,7 +588,7 @@ export function BillingCalculator({
   let timedMicroUnits = 0;
   let meteredMicroUnits = 0;
   for (const price of visiblePrices) {
-    const amount = price.hourlyPriceMicroUnits * quantities[price.type];
+    const amount = price.hourlyPriceMicroUnits * resourceQuantities[price.type];
     if (price.billingBasis === "quantity") {
       meteredMicroUnits += amount;
     } else {
@@ -405,176 +599,125 @@ export function BillingCalculator({
     const gpuPrice = gpuPrices.find(
       (price) => price.sourceName === selectedGpu
     );
-    timedMicroUnits += (gpuPrice?.hourlyPriceMicroUnits ?? 0) * quantities.gpu;
+    timedMicroUnits +=
+      (gpuPrice?.hourlyPriceMicroUnits ?? 0) * resourceQuantities.gpu;
   }
   const estimatedMicroUnits =
-    timedMicroUnits * workloads * duration * cycle.hours + meteredMicroUnits;
+    timedMicroUnits * quantity * duration * cycle.hours + meteredMicroUnits;
 
-  const updateQuantity = (type: BillingPriceType, value: number) => {
-    setQuantities((current) => ({ ...current, [type]: value }));
+  const updateResourceQuantity = (type: BillingPriceType, value: number) => {
+    setResourceQuantities((current) => ({ ...current, [type]: value }));
   };
+
+  const rowEntries: (BillingMeteredPrice | "gpu")[] = [...visiblePrices];
+  if (gpuEnabled && gpuPrices.length > 0) {
+    const nodeportIndex = rowEntries.findIndex(
+      (entry) => entry !== "gpu" && entry.type === "nodeport"
+    );
+    rowEntries.splice(
+      nodeportIndex === -1 ? rowEntries.length : nodeportIndex,
+      0,
+      "gpu"
+    );
+  }
 
   return (
     <section
-      className="rounded-md border border-border bg-card"
+      className="overflow-hidden rounded-xl border border-border bg-card shadow-xs"
       data-slot="billing-price-calculator"
     >
-      <div className="flex flex-col gap-1 border-border border-b bg-muted/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="font-medium text-foreground">Price estimate</h2>
-          <p className="text-muted-foreground text-sm">
-            Usage-based workspace estimate
-          </p>
-        </div>
-        <div className="text-left sm:text-right">
-          <p className="text-muted-foreground text-xs">Estimated total</p>
-          <p className="font-semibold text-2xl text-foreground tabular-nums">
-            {formatPreciseBillingAmount(estimatedMicroUnits, currency)}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 bg-primary/5 px-5 py-4">
+        <h2 className="font-semibold text-foreground text-xl">Total Amount:</h2>
+        <p className="font-semibold text-primary text-xl tabular-nums">
+          {formatPreciseBillingAmount(estimatedMicroUnits, currency)}
+        </p>
       </div>
 
-      <div className="grid lg:grid-cols-2">
-        <div className="border-border p-5 lg:border-r">
-          <h3 className="mb-4 font-medium text-foreground text-sm">
-            Resources
-          </h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {visiblePrices.map((price) => {
-              const Icon = PRICE_ICONS[price.type];
-              const inputId = `${idPrefix}-${price.sourceName}`;
-              return (
-                <label
-                  className="flex min-w-0 flex-col gap-1.5"
-                  htmlFor={inputId}
-                  key={price.sourceName}
-                >
-                  <span className="flex items-center gap-2 text-foreground text-sm">
-                    <Icon
-                      aria-hidden
-                      className="size-4 text-muted-foreground"
-                      strokeWidth={1.75}
-                    />
-                    {price.label}
-                  </span>
-                  <div className="relative">
-                    <Input
-                      aria-label={price.label}
-                      className="pr-16 tabular-nums"
-                      id={inputId}
-                      min={0}
-                      onChange={(event) =>
-                        updateQuantity(
-                          price.type,
-                          Math.max(0, Number(event.target.value) || 0)
-                        )
-                      }
-                      step="any"
-                      type="number"
-                      value={quantities[price.type]}
-                    />
-                    <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-muted-foreground text-xs">
-                      {price.unit}
-                    </span>
-                  </div>
-                </label>
-              );
-            })}
-
-            {gpuEnabled && gpuPrices.length > 0 ? (
-              <div className="flex min-w-0 flex-col gap-1.5 sm:col-span-2">
-                <span className="flex items-center gap-2 text-foreground text-sm">
-                  <CircuitBoard
-                    aria-hidden
-                    className="size-4 text-muted-foreground"
-                    strokeWidth={1.75}
-                  />
-                  GPU
-                </span>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <AppSelect
-                    aria-label="GPU model"
-                    onValueChange={setSelectedGpu}
-                    options={gpuPrices.map((price) => ({
-                      label: price.label,
-                      value: price.sourceName,
-                    }))}
-                    value={selectedGpu}
-                  />
-                  <div className="relative">
-                    <Input
-                      aria-label="GPU count"
-                      className="pr-14 tabular-nums"
-                      min={0}
-                      onChange={(event) =>
-                        updateQuantity(
-                          "gpu",
-                          Math.max(0, Number(event.target.value) || 0)
-                        )
-                      }
-                      step={1}
-                      type="number"
-                      value={quantities.gpu}
-                    />
-                    <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-muted-foreground text-xs">
-                      GPU
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="border-border border-t p-5 lg:border-t-0">
-          <h3 className="mb-4 font-medium text-foreground text-sm">Usage</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label
-              className="flex flex-col gap-1.5"
-              htmlFor={`${idPrefix}-workloads`}
+      <CalculatorSectionBar title="Resources" />
+      <div className="flex flex-col gap-8 px-6 py-6">
+        {rowEntries.map((entry) => {
+          if (entry === "gpu") {
+            return (
+              <CalculatorRow icon={CircuitBoard} key="gpu" label="GPU">
+                <AppSelect
+                  aria-label="GPU model"
+                  className="w-56"
+                  onValueChange={setSelectedGpu}
+                  options={gpuPrices.map((price) => ({
+                    label: price.label,
+                    value: price.sourceName,
+                  }))}
+                  value={selectedGpu}
+                />
+                <CalculatorNumberInput
+                  ariaLabel="GPU count"
+                  onValueChange={(value) =>
+                    updateResourceQuantity("gpu", value)
+                  }
+                  unit="GPU"
+                  value={resourceQuantities.gpu}
+                />
+              </CalculatorRow>
+            );
+          }
+          const Icon = PRICE_ICONS[entry.type];
+          const sliderStops = CALCULATOR_SLIDER_STOPS[entry.type];
+          return (
+            <CalculatorRow
+              className="gap-10"
+              icon={Icon}
+              key={entry.sourceName}
+              label={entry.label}
             >
-              <span className="text-foreground text-sm">Workloads</span>
-              <Input
-                id={`${idPrefix}-workloads`}
-                min={0}
-                onChange={(event) =>
-                  setWorkloads(Math.max(0, Number(event.target.value) || 0))
+              {sliderStops ? (
+                <CalculatorStopsSlider
+                  ariaLabel={`${entry.label} slider`}
+                  onValueChange={(value) =>
+                    updateResourceQuantity(entry.type, value)
+                  }
+                  stops={sliderStops}
+                  unit={entry.unit}
+                  value={resourceQuantities[entry.type]}
+                />
+              ) : null}
+              <CalculatorNumberInput
+                ariaLabel={entry.label}
+                onValueChange={(value) =>
+                  updateResourceQuantity(entry.type, value)
                 }
-                step={1}
-                type="number"
-                value={workloads}
+                unit={entry.unit}
+                value={resourceQuantities[entry.type]}
               />
-            </label>
-            <label
-              className="flex flex-col gap-1.5"
-              htmlFor={`${idPrefix}-duration`}
-            >
-              <span className="text-foreground text-sm">Duration</span>
-              <Input
-                id={`${idPrefix}-duration`}
-                min={0}
-                onChange={(event) =>
-                  setDuration(Math.max(0, Number(event.target.value) || 0))
-                }
-                step="any"
-                type="number"
-                value={duration}
-              />
-            </label>
-            <div className="flex flex-col gap-1.5 sm:col-span-2">
-              <span className="text-foreground text-sm">Duration unit</span>
-              <AppSelect
-                aria-label="Duration unit"
-                onValueChange={(value) => setDurationUnit(Number(value))}
-                options={PRICING_CYCLES.map((item, index) => ({
-                  label: item.label,
-                  value: String(index),
-                }))}
-                value={String(durationUnit)}
-              />
-            </div>
-          </div>
-        </div>
+            </CalculatorRow>
+          );
+        })}
+      </div>
+
+      <CalculatorSectionBar title="Usage" />
+      <div className="flex flex-col gap-8 px-6 py-6">
+        <CalculatorRow icon={Boxes} label="Quantity">
+          <CalculatorNumberInput
+            ariaLabel="Quantity"
+            max={1000}
+            onValueChange={setQuantity}
+            value={quantity}
+          />
+        </CalculatorRow>
+        <CalculatorRow icon={Clock3} label="Duration">
+          <CalculatorNumberInput
+            ariaLabel="Duration"
+            max={1_000_000}
+            onValueChange={setDuration}
+            value={duration}
+          />
+          <AppSelect
+            aria-label="Duration unit"
+            className="w-28"
+            onValueChange={(value) => setDurationUnit(Number(value))}
+            options={PRICING_CYCLE_OPTIONS}
+            value={String(durationUnit)}
+          />
+        </CalculatorRow>
       </div>
     </section>
   );
@@ -596,6 +739,7 @@ export function BillingPricingSurface({
   snapshot,
 }: BillingPricingSurfaceProps) {
   const [cycleIndex, setCycleIndex] = useState(0);
+  const [view, setView] = useState("plans");
 
   if (isLoading || snapshot == null) {
     return error == null ? (
@@ -618,7 +762,7 @@ export function BillingPricingSurface({
   }
 
   return (
-    <Tabs className="flex flex-col gap-5" defaultValue="plans">
+    <Tabs className="flex flex-col gap-5" onValueChange={setView} value={view}>
       <TabsList aria-label="Pricing views">
         <TabsTrigger className="min-h-11" value="plans">
           Subscription plans
@@ -632,6 +776,17 @@ export function BillingPricingSurface({
               Price calculator
             </TabsTrigger>
           </>
+        ) : null}
+        {snapshot.isPayg && view === "table" ? (
+          <div className="ml-auto pb-1 pl-3">
+            <AppSelect
+              aria-label="Billing cycle"
+              className="w-28"
+              onValueChange={(value) => setCycleIndex(Number(value))}
+              options={PRICING_CYCLE_OPTIONS}
+              value={String(cycleIndex)}
+            />
+          </div>
         ) : null}
       </TabsList>
 
@@ -657,7 +812,6 @@ export function BillingPricingSurface({
               currency={currency}
               cycleIndex={cycleIndex}
               gpuEnabled={gpuEnabled}
-              onCycleChange={setCycleIndex}
               prices={snapshot.prices}
             />
           </TabsContent>
