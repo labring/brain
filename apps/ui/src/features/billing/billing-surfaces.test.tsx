@@ -408,11 +408,21 @@ test("Costs preserves Cost Center's detail and trend information layers", () => 
   const html = renderToStaticMarkup(<BillingCostsSurface />);
 
   assertTextOrder(html, ["Cost details", "Cost and payment trends"]);
+  assertTextOrder(html, [
+    "Select a card to view cost details",
+    'data-slot="billing-cost-scope-banner"',
+    "PAYG",
+  ]);
   for (const label of [
-    "Date range",
-    "Cost scope",
-    "Subscription costs",
-    "Metered consumption",
+    'data-slot="billing-cost-scope-card"',
+    "Total Cost",
+    "Time",
+    "Plan",
+    "Item",
+    "Type",
+    "Action",
+    "Total:",
+    "/ Page",
   ]) {
     assertIncludes(html, label);
   }

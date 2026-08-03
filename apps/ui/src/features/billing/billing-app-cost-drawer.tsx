@@ -1,6 +1,8 @@
 "use client";
 
+import { Quantity } from "@workspace/shared";
 import { Badge } from "@workspace/ui/components/badge";
+import { DateRangePicker } from "@workspace/ui/components/date-range-picker";
 import { Pagination } from "@workspace/ui/components/pagination";
 import {
   Sheet,
@@ -19,10 +21,12 @@ import {
   TableLayoutFooter,
   TableLayoutHeadRow,
 } from "@workspace/ui/components/table-layout";
-import { useState } from "react";
+import { cn } from "@workspace/ui/lib/utils";
+import { Boxes } from "lucide-react";
+import { Fragment, useState } from "react";
 import useSWR from "swr";
 
-import { formatBillingAmount } from "@/features/billing/billing-amount";
+import { formatPreciseBillingAmount } from "@/features/billing/billing-amount";
 import {
   type BillingAppCost,
   type BillingAppOverview,
@@ -32,24 +36,31 @@ import {
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
 const PAGE_SIZE = 10;
-const SKELETON_ROW_KEYS = ["time", "workload", "cpu", "memory", "storage"];
+const SKELETON_ROW_KEYS = [
+  "row-1",
+  "row-2",
+  "row-3",
+  "row-4",
+  "row-5",
+  "row-6",
+  "row-7",
+  "row-8",
+  "row-9",
+  "row-10",
+];
 
+// The old drawer resource pairs: usage column + Amount column per resource.
+// `used` / `used_amount` are keyed by resource index in the account API.
 const RESOURCE_COLUMNS = [
-  { index: "0", label: "CPU", unit: "m" },
-  { index: "1", label: "Memory", unit: " MiB" },
-  { index: "2", label: "Storage", unit: " MiB" },
-  { index: "3", label: "Network", unit: " MB" },
+  { index: "0", label: "CPU", suffix: "m" },
+  { index: "1", label: "Memory", suffix: "Mi" },
+  { index: "2", label: "Storage", suffix: "Mi" },
+  { index: "3", label: "Network", suffix: "" },
+  { index: "4", label: "Port", suffix: "" },
+  { index: "5", label: "GPU", suffix: "" },
 ] as const;
+const COLUMN_COUNT = RESOURCE_COLUMNS.length * 2 + 2;
 
 interface AppCostRow {
   amount: number;
@@ -57,11 +68,15 @@ interface AppCostRow {
   time: string;
   used: Record<string, number>;
   usedAmount: Record<string, number>;
-  workload: string;
 }
+
+type DrawerTableRow =
+  | { day: string; type: "separator" }
+  | { row: AppCostRow; type: "data" };
 
 export interface SelectedBillingApp extends BillingAppOverview {
   queryAppType: string;
+  regionName: string;
   typeName: string;
   workspaceName: string;
 }
@@ -72,6 +87,28 @@ interface BillingAppCostDrawerProps extends BillingCredentials {
   onOpenChange: (open: boolean) => void;
   open: boolean;
   selectedApp: SelectedBillingApp | null;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function dayLabel(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
+    date.getDate()
+  )}`;
+}
+
+function hourLabel(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function formatResourceQuantity(value: number, suffix: string): string {
+  try {
+    return Quantity.parse(`${value}${suffix}`).toString();
+  } catch {
+    return `${value}${suffix}`;
+  }
 }
 
 function rowsFromCosts(costs: BillingAppCost[]): AppCostRow[] {
@@ -94,36 +131,63 @@ function rowsFromCosts(costs: BillingAppCost[]): AppCostRow[] {
       time: cost.time,
       used: resource.used,
       usedAmount: resource.used_amount,
-      workload: resource.app_name || cost.app_name || "-",
     }));
   });
 }
 
-function ResourceAmount({
-  currency,
-  index,
-  row,
-  unit,
-}: {
-  currency: BillingCurrency;
-  index: string;
-  row: AppCostRow;
-  unit: string;
-}) {
-  const usage = row.used[index];
-  if (usage == null) {
-    return <span className="text-muted-foreground">-</span>;
+/** Interleave the old per-day separator rows into the hourly rows. */
+function groupRowsByDay(rows: AppCostRow[]): DrawerTableRow[] {
+  const grouped: DrawerTableRow[] = [];
+  let currentDay: string | null = null;
+  for (const row of rows) {
+    const day = dayLabel(new Date(row.time));
+    if (day !== currentDay) {
+      grouped.push({ day, type: "separator" });
+      currentDay = day;
+    }
+    grouped.push({ row, type: "data" });
   }
+  return grouped;
+}
+
+// Old pair styling: usage columns open the pair with a left border, Amount
+// columns close it with a right border.
+function pairCellClass(isUsageColumn: boolean): string {
+  return isUsageColumn
+    ? "border-border border-l pr-2 pl-4 text-center"
+    : "border-border border-r pr-4 pl-2 text-center";
+}
+
+function NegativeAmount({
+  amountMicroUnits,
+  currency,
+}: {
+  amountMicroUnits: number;
+  currency: BillingCurrency;
+}) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-foreground tabular-nums">
-        {usage}
-        {unit}
-      </span>
-      <span className="text-muted-foreground text-xs tabular-nums">
-        {formatBillingAmount(row.usedAmount[index] ?? 0, currency)}
-      </span>
-    </div>
+    <span className="whitespace-nowrap tabular-nums">
+      -{formatPreciseBillingAmount(amountMicroUnits, currency)}
+    </span>
+  );
+}
+
+function MessageRow({
+  children,
+  className,
+}: {
+  children: string;
+  className?: string;
+}) {
+  return (
+    <TableRow>
+      <TableCell
+        className={cn("h-24 text-center text-muted-foreground", className)}
+        colSpan={COLUMN_COUNT}
+      >
+        {children}
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -137,6 +201,9 @@ export function BillingAppCostDrawer({
   selectedApp,
 }: BillingAppCostDrawerProps) {
   const [page, setPage] = useState(1);
+  // The drawer keeps its own range like the old Billing & Usage drawer; the
+  // parent remounts this component when the page-level range changes.
+  const [drawerRange, setDrawerRange] = useState<BillingDateRange>(dateRange);
   const credentialsReady = appToken.trim() !== "" && kubeconfig.trim() !== "";
   const canLoad =
     open &&
@@ -150,8 +217,8 @@ export function BillingAppCostDrawer({
           selectedApp.appName,
           selectedApp.queryAppType,
           selectedApp.namespace,
-          dateRange.startTime,
-          dateRange.endTime,
+          drawerRange.startTime,
+          drawerRange.endTime,
           page,
           appToken,
           kubeconfig,
@@ -162,7 +229,7 @@ export function BillingAppCostDrawer({
         appName: selectedApp?.appName ?? "",
         appToken,
         appType: selectedApp?.queryAppType ?? "",
-        dateRange,
+        dateRange: drawerRange,
         kubeconfig,
         namespace: selectedApp?.namespace ?? "",
         page,
@@ -170,107 +237,177 @@ export function BillingAppCostDrawer({
       }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
-  const rows = rowsFromCosts(data?.costs ?? []);
+  const tableRows = groupRowsByDay(rowsFromCosts(data?.costs ?? []));
+  const showSkeleton = isLoading || !credentialsReady;
+
+  const applyDrawerRange = (range: { from: Date; to: Date }) => {
+    setDrawerRange({
+      endTime: range.to.toISOString(),
+      startTime: range.from.toISOString(),
+    });
+    setPage(1);
+  };
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetContent className="w-full sm:max-w-5xl">
+      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-7xl">
         <SheetHeader className="border-border border-b pr-14">
-          <div className="flex flex-wrap items-center gap-2">
-            <SheetTitle>{selectedApp?.appName || "App consumption"}</SheetTitle>
+          <SheetTitle className="flex flex-wrap items-center gap-2">
+            <Boxes aria-hidden className="size-5 text-brand-primary" />
+            <span className="text-nowrap">
+              {selectedApp?.appName || selectedApp?.typeName || "App"}
+            </span>
+            <Badge variant="secondary">
+              {`${selectedApp?.regionName ?? "Region"} / ${
+                selectedApp?.workspaceName ?? "Workspace"
+              }`}
+            </Badge>
             {selectedApp?.typeName ? (
               <Badge variant="secondary">{selectedApp.typeName}</Badge>
             ) : null}
-          </div>
-          <SheetDescription>
-            {selectedApp?.workspaceName ?? "Workspace"} /{" "}
-            {DATE_FORMATTER.format(new Date(dateRange.startTime))} -{" "}
-            {DATE_FORMATTER.format(new Date(dateRange.endTime))}
+          </SheetTitle>
+          <SheetDescription className="sr-only">
+            Hourly billing and usage for the selected app.
           </SheetDescription>
         </SheetHeader>
 
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-5">
           <TableLayout>
-            <TableLayoutCaption>
-              <span className="font-medium">Consumption Cost</span>
-              <Badge variant="outline">Hourly</Badge>
+            <TableLayoutCaption className="text-base">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Billing & Usage</span>
+                <Badge variant="secondary">Hourly</Badge>
+              </div>
+              <DateRangePicker
+                onChange={applyDrawerRange}
+                value={{
+                  from: new Date(drawerRange.startTime),
+                  to: new Date(drawerRange.endTime),
+                }}
+              />
             </TableLayoutCaption>
             <TableLayoutContent>
               <TableLayoutHeadRow>
                 <TableHead>Time</TableHead>
-                <TableHead>Workload</TableHead>
                 {RESOURCE_COLUMNS.map((resource) => (
-                  <TableHead key={resource.index}>{resource.label}</TableHead>
+                  <Fragment key={resource.index}>
+                    <TableHead className={pairCellClass(true)}>
+                      {resource.label}
+                    </TableHead>
+                    <TableHead className={pairCellClass(false)}>
+                      Amount
+                    </TableHead>
+                  </Fragment>
                 ))}
-                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Total Amount</TableHead>
               </TableLayoutHeadRow>
               <TableLayoutBody>
-                {isLoading || !credentialsReady
+                {showSkeleton
                   ? SKELETON_ROW_KEYS.map((key) => (
-                      <TableRow key={`app-cost-skeleton-${key}`}>
-                        <TableCell colSpan={7}>
-                          <Skeleton className="h-8 w-full" />
+                      <TableRow className="h-14" key={`app-cost-${key}`}>
+                        <TableCell colSpan={COLUMN_COUNT}>
+                          <Skeleton className="h-6 w-full" />
                         </TableCell>
                       </TableRow>
                     ))
                   : null}
                 {error == null ? null : (
-                  <TableRow>
-                    <TableCell
-                      className="h-24 text-center text-destructive"
-                      colSpan={7}
-                    >
-                      App consumption is unavailable.
-                    </TableCell>
-                  </TableRow>
+                  <MessageRow className="text-destructive">
+                    App consumption is unavailable.
+                  </MessageRow>
                 )}
-                {!isLoading && error == null && rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      className="h-24 text-center text-muted-foreground"
-                      colSpan={7}
-                    >
-                      No Consumption Cost in this period.
-                    </TableCell>
-                  </TableRow>
+                {!showSkeleton && error == null && tableRows.length === 0 ? (
+                  <MessageRow>No Data Available</MessageRow>
                 ) : null}
-                {!isLoading && error == null
-                  ? rows.map((row) => (
-                      <TableRow key={row.id}>
-                        <TableCell className="whitespace-nowrap text-muted-foreground text-xs">
-                          {DATE_TIME_FORMATTER.format(new Date(row.time))}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {row.workload}
-                        </TableCell>
-                        {RESOURCE_COLUMNS.map((resource) => (
-                          <TableCell key={resource.index}>
-                            <ResourceAmount
+                {showSkeleton || error != null
+                  ? null
+                  : tableRows.map((tableRow) =>
+                      tableRow.type === "separator" ? (
+                        <TableRow
+                          className="hover:bg-transparent"
+                          key={`day-${tableRow.day}`}
+                        >
+                          <TableCell
+                            className="bg-muted/40 font-normal text-foreground"
+                            colSpan={COLUMN_COUNT}
+                          >
+                            {tableRow.day}
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <TableRow className="h-14" key={tableRow.row.id}>
+                          <TableCell className="whitespace-nowrap tabular-nums">
+                            {hourLabel(new Date(tableRow.row.time))}
+                          </TableCell>
+                          {RESOURCE_COLUMNS.map((resource) => {
+                            const usage = tableRow.row.used[resource.index];
+                            return (
+                              <Fragment key={resource.index}>
+                                <TableCell className={pairCellClass(true)}>
+                                  {usage == null ? (
+                                    <span className="text-muted-foreground">
+                                      -
+                                    </span>
+                                  ) : (
+                                    <span className="tabular-nums">
+                                      {formatResourceQuantity(
+                                        usage,
+                                        resource.suffix
+                                      )}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell className={pairCellClass(false)}>
+                                  {usage == null ? (
+                                    <span className="text-muted-foreground">
+                                      -
+                                    </span>
+                                  ) : (
+                                    <NegativeAmount
+                                      amountMicroUnits={
+                                        tableRow.row.usedAmount[
+                                          resource.index
+                                        ] ?? 0
+                                      }
+                                      currency={currency}
+                                    />
+                                  )}
+                                </TableCell>
+                              </Fragment>
+                            );
+                          })}
+                          <TableCell className="text-right font-medium">
+                            <NegativeAmount
+                              amountMicroUnits={tableRow.row.amount}
                               currency={currency}
-                              index={resource.index}
-                              row={row}
-                              unit={resource.unit}
                             />
                           </TableCell>
-                        ))}
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {formatBillingAmount(row.amount, currency)}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  : null}
+                        </TableRow>
+                      )
+                    )}
               </TableLayoutBody>
             </TableLayoutContent>
             <TableLayoutFooter>
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <span className="text-muted-foreground text-sm">
-                  {data?.totalRecords ?? 0} records
-                </span>
-                <Pagination
-                  currentPage={page}
-                  onPageChange={setPage}
-                  totalPages={data?.totalPages ?? 1}
-                />
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  Total:{" "}
+                  {showSkeleton ? (
+                    <Skeleton className="h-4 w-8" />
+                  ) : (
+                    (data?.totalRecords ?? 0)
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <Pagination
+                    currentPage={page}
+                    onPageChange={setPage}
+                    totalPages={data?.totalPages ?? 1}
+                  />
+                  <span>
+                    {PAGE_SIZE}
+                    <span className="text-muted-foreground"> / Page</span>
+                  </span>
+                </div>
               </div>
             </TableLayoutFooter>
           </TableLayout>

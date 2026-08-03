@@ -1,10 +1,8 @@
 "use client";
 
-import { AppButton } from "@workspace/ui/components/app-button";
-import { Input } from "@workspace/ui/components/input";
+import { DateRangePicker } from "@workspace/ui/components/date-range-picker";
 import { useAtomValue } from "jotai";
-import { CalendarRange } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 
 import {
@@ -12,6 +10,7 @@ import {
   type SelectedBillingApp,
 } from "@/features/billing/billing-app-cost-drawer";
 import {
+  type BillingCostScope,
   type BillingDateRange,
   calendarBillingDateRange,
   loadBillingCosts,
@@ -26,6 +25,7 @@ export function BillingCostsSurface() {
   return (
     <BillingCostsSurfaceView
       appPage={1}
+      appTypeFilter={null}
       currency="usd"
       dateFilter={
         <span className="text-muted-foreground text-sm">Last 30 days</span>
@@ -36,14 +36,9 @@ export function BillingCostsSurface() {
       }}
       error={null}
       isLoading={false}
-      selectedWorkspace={null}
+      scope={{ kind: "total" }}
     />
   );
-}
-
-interface DateInputs {
-  end: string;
-  start: string;
 }
 
 function dateInputValue(date: Date): string {
@@ -53,11 +48,18 @@ function dateInputValue(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function defaultDateInputs(): DateInputs {
+function defaultDateRange(): BillingDateRange {
   const end = new Date();
   const start = new Date(end);
   start.setDate(start.getDate() - 29);
-  return { end: dateInputValue(end), start: dateInputValue(start) };
+  const range = calendarBillingDateRange({
+    end: dateInputValue(end),
+    start: dateInputValue(start),
+  });
+  if (range == null) {
+    throw new Error("Default billing date range is invalid.");
+  }
+  return range;
 }
 
 export default function BillingCosts({
@@ -67,23 +69,16 @@ export default function BillingCosts({
 }) {
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
-  const [draftDates, setDraftDates] = useState(defaultDateInputs);
-  const [dateRange, setDateRange] = useState<BillingDateRange>(() => {
-    const range = calendarBillingDateRange(defaultDateInputs());
-    if (range == null) {
-      throw new Error("Default billing date range is invalid.");
-    }
-    return range;
-  });
-  const [dateError, setDateError] = useState<string | null>(null);
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
-    null
-  );
+  const [dateRange, setDateRange] =
+    useState<BillingDateRange>(defaultDateRange);
+  const [scope, setScope] = useState<BillingCostScope>({ kind: "region" });
+  const [appTypeFilter, setAppTypeFilter] = useState<string | null>(null);
   const [appPage, setAppPage] = useState(1);
   const [selectedApp, setSelectedApp] = useState<SelectedBillingApp | null>(
     null
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const selectedWorkspace = scope.kind === "workspace" ? scope.workspace : null;
   const credentialsReady = appToken.trim() !== "" && kubeconfig.trim() !== "";
   const { data, error, isLoading } = useSWR(
     credentialsReady
@@ -92,6 +87,7 @@ export default function BillingCosts({
           dateRange.startTime,
           dateRange.endTime,
           selectedWorkspace,
+          appTypeFilter,
           appPage,
           appToken,
           kubeconfig,
@@ -100,6 +96,7 @@ export default function BillingCosts({
     () =>
       loadBillingCosts({
         appToken,
+        appType: appTypeFilter,
         dateRange,
         kubeconfig,
         page: appPage,
@@ -109,25 +106,30 @@ export default function BillingCosts({
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
-  const applyDateRange = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const range = calendarBillingDateRange(draftDates);
-    if (range == null) {
-      setDateError("Choose a valid start and end date.");
-      return;
-    }
-    setDateError(null);
-    setDateRange(range);
-    setAppPage(1);
+  const closeAppDrawer = () => {
     setSelectedApp(null);
     setDrawerOpen(false);
   };
 
-  const selectWorkspace = (workspace: string | null) => {
-    setSelectedWorkspace(workspace);
+  const applyDateRange = (range: { from: Date; to: Date }) => {
+    setDateRange({
+      endTime: range.to.toISOString(),
+      startTime: range.from.toISOString(),
+    });
     setAppPage(1);
-    setSelectedApp(null);
-    setDrawerOpen(false);
+    closeAppDrawer();
+  };
+
+  const selectScope = (nextScope: BillingCostScope) => {
+    setScope(nextScope);
+    setAppPage(1);
+    closeAppDrawer();
+  };
+
+  const selectAppTypeFilter = (appType: string | null) => {
+    setAppTypeFilter(appType);
+    setAppPage(1);
+    closeAppDrawer();
   };
 
   const selectApp = (app: SelectedBillingApp) => {
@@ -136,49 +138,13 @@ export default function BillingCosts({
   };
 
   const dateFilter = (
-    <form className="flex flex-wrap items-end gap-2" onSubmit={applyDateRange}>
-      <label className="flex flex-col gap-1" htmlFor="billing-costs-start">
-        <span className="text-muted-foreground text-xs">From</span>
-        <Input
-          aria-invalid={dateError != null}
-          className="w-36"
-          id="billing-costs-start"
-          onChange={(event) =>
-            setDraftDates((current) => ({
-              ...current,
-              start: event.target.value,
-            }))
-          }
-          type="date"
-          value={draftDates.start}
-        />
-      </label>
-      <label className="flex flex-col gap-1" htmlFor="billing-costs-end">
-        <span className="text-muted-foreground text-xs">To</span>
-        <Input
-          aria-invalid={dateError != null}
-          className="w-36"
-          id="billing-costs-end"
-          onChange={(event) =>
-            setDraftDates((current) => ({
-              ...current,
-              end: event.target.value,
-            }))
-          }
-          type="date"
-          value={draftDates.end}
-        />
-      </label>
-      <AppButton type="submit" variant="secondary">
-        <CalendarRange aria-hidden data-icon="inline-start" />
-        Apply
-      </AppButton>
-      {dateError == null ? null : (
-        <span className="w-full text-destructive text-xs" role="alert">
-          {dateError}
-        </span>
-      )}
-    </form>
+    <DateRangePicker
+      onChange={applyDateRange}
+      value={{
+        from: new Date(dateRange.startTime),
+        to: new Date(dateRange.endTime),
+      }}
+    />
   );
   const drawerKey = selectedApp
     ? `${selectedApp.namespace}-${selectedApp.appType}-${selectedApp.appName}-${dateRange.startTime}-${dateRange.endTime}`
@@ -188,15 +154,17 @@ export default function BillingCosts({
     <>
       <BillingCostsSurfaceView
         appPage={appPage}
+        appTypeFilter={appTypeFilter}
         currency={currency}
         dateFilter={dateFilter}
         dateRange={dateRange}
         error={error}
         isLoading={!credentialsReady || isLoading}
         onAppPageChange={setAppPage}
+        onAppTypeFilterChange={selectAppTypeFilter}
+        onScopeChange={selectScope}
         onSelectApp={selectApp}
-        onSelectWorkspace={selectWorkspace}
-        selectedWorkspace={selectedWorkspace}
+        scope={scope}
         snapshot={data}
       />
       <BillingAppCostDrawer

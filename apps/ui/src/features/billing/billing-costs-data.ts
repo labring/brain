@@ -87,6 +87,12 @@ export interface BillingDateRange {
   startTime: string;
 }
 
+/** Which node of the old /billing cost tree is selected. */
+export type BillingCostScope =
+  | { kind: "region" }
+  | { kind: "total" }
+  | { kind: "workspace"; workspace: string };
+
 export function calendarBillingDateRange(input: {
   end: string;
   start: string;
@@ -106,6 +112,7 @@ export function calendarBillingDateRange(input: {
 }
 
 export interface LoadBillingCostsInput extends BillingCredentials {
+  appType?: string | null;
   dateRange: BillingDateRange;
   page: number;
   pageSize: number;
@@ -495,7 +502,7 @@ export async function loadBillingCosts(
       {
         ...range,
         appName: "",
-        appType: "",
+        appType: input.appType ?? "",
         namespace: input.workspace ?? "",
         page: input.page,
         pageSize: input.pageSize,
