@@ -806,7 +806,7 @@ TemplateDeployerSubmit.displayName = "TemplateDeployer.Submit";
 /**
  * Compound template deployment form. The assembled component keeps the inline
  * submit for hosts without pane chrome; pane hosts compose `Root` + `Fields`
- * and place `Submit` in the Side Pane Footer (ADR 0060).
+ * and place `Submit` in the Side Pane Footer.
  */
 export const TemplateDeployer = Object.assign(TemplateDeployerForm, {
   Fields: TemplateDeployerFields,

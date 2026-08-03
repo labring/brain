@@ -19,6 +19,6 @@ The DB Connection Template remains the API-level contract exactly as ADR-0053 de
 ## Consequences
 
 - Revises the display-layer half of ADR-0053's "masking the whole connection string" rejection; the data-layer half (API keeps serving the template) stands.
-- Canvas node footprints are unaffected: reveal swaps text in place and the tooltip overlays, so node size never changes (ADR-0040 measured footprints).
+- Canvas node footprints are unaffected: reveal swaps text in place and the tooltip overlays, so node size never changes, and placement keeps measuring footprints from the render.
 - The node and settings connection rows should share one row component/behavior rather than two parallel implementations; the AP Environment editor itself is untouched.
 - Each surface owns its own mask constant — `DATABASE_CONNECTION_MASK` for DB connection rows, a local one in the AP Environment editor. Only the reveal interaction is shared, so neither mask can be re-tuned by a change aimed at the other.

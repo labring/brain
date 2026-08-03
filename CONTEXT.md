@@ -570,7 +570,7 @@ Route restoration may create a current-session launch source for the restored en
 
 The single module that orchestrates the Project Canvas page. It takes three identifiers (kubeconfig, namespace, project) and returns three semantic groups: actions, canvas, and surfaces. It privately instantiates Project Runtime observation and Canvas Layout persistence, and it coordinates Project Surfaces, canvas selection and route sync, Settings Launch Context, leave guards, the Deployment Task Dock and Timeline, Resource Actions, and viewport directives.
 
-Its orchestration decisions are pure transitions in a plain TypeScript core; the React hook only reads facts, submits events, and executes the returned effect plans (ADR 0051). The workbench interface is the test surface for all of the behavior above.
+Its orchestration decisions are pure transitions in a plain TypeScript core; the React hook only reads facts, submits events, and executes the returned effect plans. The workbench interface is the test surface for all of the behavior above.
 
 ### Container Node
 

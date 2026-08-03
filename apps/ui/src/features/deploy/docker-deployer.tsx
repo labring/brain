@@ -819,7 +819,7 @@ DockerDeployerSubmit.displayName = "DockerDeployer.Submit";
 /**
  * Compound Docker deployment form. The assembled component keeps the inline
  * submit for hosts without pane chrome; pane hosts compose `Root` + `Fields`
- * and place `Submit` in the Side Pane Footer (ADR 0060).
+ * and place `Submit` in the Side Pane Footer.
  */
 export const DockerDeployer = Object.assign(DockerDeployerForm, {
   Fields: DockerDeployerFields,

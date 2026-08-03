@@ -437,7 +437,12 @@
   /* Side Pane Footer lift: a soft cast shadow instead of a separator line,
      painted only while content still sits below the fold (SidePane sets
      data-lifted from scroll position). The transition is box-shadow-only —
-     no width/max-width may enter a transition-property here (ADR 0048). */
+     width/max-width must never enter a transition-property on pane surfaces
+     or their reserves. Pane widths snap in one layout pass; motion runs on
+     transform/opacity overlays only. A width transition reintroduces
+     per-frame reflow (canvas ResizeObserver storms, container-query
+     re-evaluation) that looks correct in review and only shows up in
+     traces. */
   .side-pane-footer-lift {
     box-shadow: none;
     transition: box-shadow 200ms ease;

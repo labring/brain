@@ -151,6 +151,13 @@ function upsertNormalizedNode(
   nodesByRef.set(key, normalized);
 }
 
+/**
+ * First placement is insert-only: an owner that already has a saved position
+ * keeps it, and the write is a no-op. Concurrent clients can discover the same
+ * missing node from different snapshots, so the persisted position wins and
+ * the proposing client reconciles to the returned layout — a first-placement
+ * patch must never rewrite user-arranged positions.
+ */
 function insertFirstPlacementNode(
   nodesByRef: Map<string, CanvasLayoutNode>,
   order: string[],

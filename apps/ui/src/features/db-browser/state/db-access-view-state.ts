@@ -2,7 +2,7 @@ import { atom, type PrimitiveAtom, useStore, type WritableAtom } from "jotai";
 import { createContext, useCallback, useContext } from "react";
 
 /**
- * DB Access state ownership (docs/adr/0049-scope-db-access-view-state-to-each-session.md):
+ * DB Access state ownership:
  * - this registry owns cross-component interaction state for one session;
  * - query results stay in query hooks;
  * - component-private controls stay local;
