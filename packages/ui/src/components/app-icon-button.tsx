@@ -11,10 +11,10 @@ const appIconButtonVariants = cva(
         primary:
           "bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover data-popup-open:bg-brand-primary-hover",
         secondary:
-          "bg-input/30 text-brand-primary-foreground hover:bg-input aria-[current=page]:bg-input aria-[current=page]:text-blue-400 data-[active=true]:bg-input data-popup-open:bg-input data-[active=true]:text-blue-400 data-popup-open:text-blue-400",
+          "bg-input/30 text-brand-primary-foreground hover:bg-input hover:text-blue-400 aria-[current=page]:bg-input aria-[current=page]:text-blue-400 data-[active=true]:bg-input data-popup-open:bg-input data-[active=true]:text-blue-400 data-popup-open:text-blue-400",
         quiet:
-          "bg-transparent text-brand-primary-foreground hover:bg-input/30 aria-[current=page]:bg-input aria-[current=page]:text-blue-400 data-[active=true]:bg-input data-popup-open:bg-input/30 data-[active=true]:text-blue-400 data-popup-open:text-blue-400",
-        node: "bg-zinc-950/20 text-brand-primary-foreground hover:bg-input data-popup-open:bg-input data-popup-open:text-blue-400",
+          "bg-transparent text-brand-primary-foreground hover:bg-input/30 hover:text-blue-400 aria-[current=page]:bg-input aria-[current=page]:text-blue-400 data-[active=true]:bg-input data-popup-open:bg-input/30 data-[active=true]:text-blue-400 data-popup-open:text-blue-400",
+        node: "bg-zinc-950/20 text-brand-primary-foreground hover:bg-input hover:text-blue-400 data-popup-open:bg-input data-popup-open:text-blue-400",
         danger:
           "bg-input/30 text-foreground hover:bg-input hover:text-red-500 focus-visible:border-destructive/40 focus-visible:ring-destructive/25 data-popup-open:bg-input data-popup-open:text-red-500",
       },

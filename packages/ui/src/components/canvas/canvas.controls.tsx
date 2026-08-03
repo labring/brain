@@ -200,7 +200,7 @@ function CanvasControlButton({
             aria-label={label}
             aria-pressed={active || undefined}
             className={cn(
-              "text-muted-foreground hover:bg-input/30 hover:text-foreground data-[active=true]:bg-input data-[active=true]:text-brand-primary-foreground"
+              "text-muted-foreground hover:bg-input/30 data-[active=true]:bg-input data-[active=true]:text-brand-primary-foreground"
             )}
             data-active={active || undefined}
             onClick={onClick}
