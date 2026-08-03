@@ -51,7 +51,7 @@ const PRECISE_CNY_FORMATTER = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 6,
   style: "currency",
 });
-const PRECISE_SHELL_COIN_FORMATTER = new Intl.NumberFormat("en-US", {
+const PRECISE_NUMBER_FORMATTER = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 6,
   minimumFractionDigits: 6,
 });
@@ -70,9 +70,19 @@ const COMPACT_CURRENCY_FORMATTERS = {
 const PRECISE_CURRENCY_FORMATTERS = {
   cny: (amount: number) => PRECISE_CNY_FORMATTER.format(amount),
   shellCoin: (amount: number) =>
-    `${PRECISE_SHELL_COIN_FORMATTER.format(amount)} ShellCoin`,
+    `${PRECISE_NUMBER_FORMATTER.format(amount)} ShellCoin`,
   usd: (amount: number) => PRECISE_USD_FORMATTER.format(amount),
 } satisfies Record<BillingCurrency, (amount: number) => string>;
+
+const CURRENCY_SYMBOLS = {
+  cny: "¥",
+  shellCoin: "ShellCoin",
+  usd: "$",
+} satisfies Record<BillingCurrency, string>;
+
+export function billingCurrencySymbol(currency: BillingCurrency): string {
+  return CURRENCY_SYMBOLS[currency];
+}
 
 export function formatBillingAmount(
   microUnits: number,
@@ -97,6 +107,13 @@ export function formatPreciseBillingAmount(
   currency: BillingCurrency
 ): string {
   return PRECISE_CURRENCY_FORMATTERS[currency](
+    microUnits / MICRO_UNITS_PER_CURRENCY_UNIT
+  );
+}
+
+/** Bare 6-decimal amount for tables that carry the currency in their header. */
+export function formatPreciseBillingNumber(microUnits: number): string {
+  return PRECISE_NUMBER_FORMATTER.format(
     microUnits / MICRO_UNITS_PER_CURRENCY_UNIT
   );
 }

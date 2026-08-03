@@ -516,9 +516,11 @@ test("Pricing renders cluster currency and filters GPU catalog and price rows", 
 
   assertIncludes(withoutGpu, "Starter");
   assertIncludes(withoutGpu, "¥5.00");
-  assertIncludes(withoutGpu, "¥0.010000");
+  assertIncludes(withoutGpu, "Price (¥)");
+  assertIncludes(withoutGpu, "0.010000");
   assert.equal(withoutGpu.includes("NVIDIA A100"), false);
   assert.equal(withoutGpu.includes(">GPU<"), false);
+  assert.equal(withoutGpu.includes("GPU Price Table"), false);
 
   const withGpu = renderToStaticMarkup(
     <>
@@ -537,6 +539,7 @@ test("Pricing renders cluster currency and filters GPU catalog and price rows", 
   );
   assertIncludes(withGpu, "1 GPU");
   assertIncludes(withGpu, "NVIDIA A100");
+  assertTextOrder(withGpu, ["Basic Pricing", "GPU Price Table", "NVIDIA A100"]);
 });
 
 test("Pricing preserves main and additional subscription plan catalog behavior", () => {
