@@ -30,6 +30,8 @@ const FAILURE_MESSAGES = {
   "gateway-timeout": "Repository analysis timed out. Redeploy to try again.",
   "deployment-output-missing":
     "Repository analysis finished without a deployable result. Redeploy; if the problem continues, contact support.",
+  "template-output-invalid":
+    "Repository analysis generated an invalid deployment template. Redeploy to generate a new template.",
   "apply-failed":
     "Generated resources could not be applied. Review the error details, then redeploy.",
   "quota-exceeded":
@@ -74,6 +76,13 @@ export function aiFailureReason(
   }
   if (message.includes("Codex gateway completed without deployment output")) {
     return "deployment-output-missing";
+  }
+  if (
+    message.includes("Sealos template header is not valid YAML.") ||
+    message.includes("Rendered Sealos template is not valid YAML.") ||
+    message.includes("Generated Sealos template declaration is invalid")
+  ) {
+    return "template-output-invalid";
   }
   return null;
 }

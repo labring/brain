@@ -1,8 +1,7 @@
 /**
- * The one sensitivity predicate for deployment inputs (ADR 0037 row-level
- * secrets contract). Persist-side stripping (runner), public-DTO redaction,
- * and blocking-form generation must agree on what counts as sensitive, so
- * all of them import it from here. Pure module: safe in client bundles.
+ * Shared sensitivity predicate for deterministic direct/template deployment
+ * paths and UI masking. AI-generated Template content has its own contract:
+ * it is persisted without calling these value-scrubbing helpers.
  */
 export interface SensitiveDeploymentInputShape {
   key: string;
@@ -39,9 +38,10 @@ export function sensitiveDeploymentInputKeys(
 }
 
 /**
- * Args safe to persist: drops keys declared sensitive by the given inputs
- * plus any key the name heuristic flags (covers args for inputs hidden by
- * template conditions or absent declarations).
+ * Args safe to persist: drops explicitly declared fields plus name-heuristic
+ * matches. Callers that handle AI-generated Template DSL must not use this
+ * helper: generated output is public deployment configuration and is retained
+ * unchanged.
  */
 export function withoutSensitiveArgs(
   args: Record<string, string> | undefined,

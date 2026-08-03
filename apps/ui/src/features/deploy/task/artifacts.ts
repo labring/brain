@@ -6,7 +6,9 @@ import {
   evaluateTemplateCondition,
   type RenderedTemplateDeployment,
   renderTemplateDeploymentFromYaml,
+  resolveTemplateDeclarationState,
   type TemplateEvaluationContext,
+  templateHeaderFromInlineYaml,
   templateSourceFromInlineYaml,
 } from "@/features/deploy/template-renderer";
 
@@ -16,12 +18,6 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
 } from "./schema";
-import {
-  isSensitiveDeploymentInput,
-  MIN_SENSITIVE_INPUT_LENGTH,
-  type SensitiveDeploymentInputShape,
-  withoutSensitiveArgs,
-} from "./sensitive-inputs";
 
 const SUPPORTED_API_VERSION = "brain.io/direct";
 const SUPPORTED_KINDS = new Set(["AP", "DB"]);
@@ -160,146 +156,41 @@ function stringRecordValue(value: unknown): Record<string, string> {
 }
 
 function templateNameFromYaml(templateYaml: string): string | null {
-  const templateDoc = YAML.parseAllDocuments(templateYaml)[0]?.toJS() as
-    | { metadata?: { name?: string } }
-    | null
-    | undefined;
+  const templateDoc = YAML.parseDocument(
+    templateHeaderFromInlineYaml(templateYaml).headerYaml
+  ).toJS() as { metadata?: { name?: string } } | null | undefined;
   return templateDoc?.metadata?.name?.trim() || null;
 }
 
-function templateYamlSensitiveShape(
-  key: string,
-  value: unknown
-): SensitiveDeploymentInputShape {
-  const record = objectValue(value);
-  return {
-    key,
-    sensitive: record?.sensitive === true,
-    type: typeof record?.type === "string" ? record.type : undefined,
-  };
-}
-
-function sensitiveScalarValue(value: unknown): string | null {
-  if (
-    typeof value !== "string" &&
-    typeof value !== "number" &&
-    typeof value !== "boolean"
-  ) {
-    return null;
-  }
-  const normalized = String(value);
-  return normalized.length > 0 ? normalized : null;
-}
-
-function stripSensitiveTemplateYamlInputs(input: {
-  document: ReturnType<typeof YAML.parseAllDocuments>[number];
-  inputs: unknown;
-}): {
-  sensitiveInputs: SensitiveDeploymentInputShape[];
-  sensitiveValues: string[];
-} {
-  const entries = Array.isArray(input.inputs)
-    ? input.inputs.flatMap((value, index) => {
-        const key = stringValue(objectValue(value)?.key);
-        return key == null ? [] : [{ key, pathKey: index, value }];
-      })
-    : Object.entries(objectValue(input.inputs) ?? {}).map(([key, value]) => ({
-        key,
-        pathKey: key,
-        value,
-      }));
-  const sensitiveInputs: SensitiveDeploymentInputShape[] = [];
-  const sensitiveValues: string[] = [];
-  for (const entry of entries) {
-    const shape = templateYamlSensitiveShape(entry.key, entry.value);
-    if (!isSensitiveDeploymentInput(shape)) {
-      continue;
-    }
-    sensitiveInputs.push({ ...shape, sensitive: true });
-    const record = objectValue(entry.value);
-    const defaultValue = sensitiveScalarValue(record?.default);
-    if (defaultValue != null) {
-      sensitiveValues.push(defaultValue);
-    }
-    for (const option of Array.isArray(record?.options) ? record.options : []) {
-      const optionValue = sensitiveScalarValue(option);
-      if (optionValue != null) {
-        sensitiveValues.push(optionValue);
-      }
-    }
-    input.document.deleteIn(["spec", "inputs", entry.pathKey, "default"]);
-    input.document.deleteIn(["spec", "inputs", entry.pathKey, "options"]);
-  }
-  return { sensitiveInputs, sensitiveValues };
-}
-
-function stripSensitiveTemplateYamlDefaults(input: {
-  defaults: unknown;
-  document: ReturnType<typeof YAML.parseAllDocuments>[number];
-}): string[] {
-  const sensitiveValues: string[] = [];
-  for (const [key, value] of Object.entries(
-    objectValue(input.defaults) ?? {}
-  )) {
-    if (!isSensitiveDeploymentInput(templateYamlSensitiveShape(key, value))) {
-      continue;
-    }
-    const record = objectValue(value);
-    const sensitiveValue = sensitiveScalarValue(
-      record != null && "value" in record ? record.value : value
-    );
-    if (sensitiveValue != null) {
-      sensitiveValues.push(sensitiveValue);
-    }
-    input.document.deleteIn(["spec", "defaults", key]);
-  }
-  return sensitiveValues;
-}
-
+/**
+ * Validates only the standard-YAML Template header. The remainder is Sealos
+ * DSL, not generic YAML, and must be retained byte-for-byte for later render.
+ */
 export function persistableSealosTemplate(templateYaml: string): {
-  sensitiveInputs: SensitiveDeploymentInputShape[];
-  sensitiveValues: string[];
   templateYaml: string;
 } {
-  const documents = YAML.parseAllDocuments(templateYaml);
-  const templateDocument = documents[0];
+  const templateDocument = YAML.parseDocument(
+    templateHeaderFromInlineYaml(templateYaml).headerYaml
+  );
+  if (templateDocument.errors.length) {
+    throw new Error("Sealos template header is not valid YAML.");
+  }
   const template = objectValue(templateDocument?.toJS());
   if (
     templateDocument == null ||
     template?.apiVersion !== "app.sealos.io/v1" ||
     template.kind !== "Template"
   ) {
-    return { sensitiveInputs: [], sensitiveValues: [], templateYaml };
+    return { templateYaml };
   }
-
-  const spec = objectValue(template.spec);
-  const inputSecrets = stripSensitiveTemplateYamlInputs({
-    document: templateDocument,
-    inputs: spec?.inputs,
-  });
-  const sensitiveValues = [
-    ...inputSecrets.sensitiveValues,
-    ...stripSensitiveTemplateYamlDefaults({
-      defaults: spec?.defaults,
-      document: templateDocument,
-    }),
-  ];
-
-  return {
-    sensitiveInputs: inputSecrets.sensitiveInputs,
-    sensitiveValues: [...new Set(sensitiveValues)],
-    templateYaml: documents
-      .map((document) => document.toString())
-      .join("")
-      .trimEnd(),
-  };
+  return { templateYaml };
 }
 
 export function persistableSealosTemplateYaml(templateYaml: string): string {
   return persistableSealosTemplate(templateYaml).templateYaml;
 }
 
-function templateInstanceName(input: {
+export function sealosTemplateInstanceName(input: {
   deliveryManifest: Record<string, unknown>;
   projectName: string;
   templateName: string;
@@ -698,16 +589,11 @@ function templateInputDefaults(
 
 function visibleTemplatePlanInputs(input: {
   args: Record<string, string>;
-  defaults?: DeploymentTaskDeploymentPlan["defaults"];
+  defaults: Record<string, string>;
   inputs: DeploymentTaskDeploymentPlanInput[];
 }): DeploymentTaskDeploymentPlanInput[] {
   const context: TemplateEvaluationContext = {
-    defaults: Object.fromEntries(
-      Object.entries(input.defaults ?? {}).map(([key, value]) => [
-        key,
-        value.value,
-      ])
-    ),
+    defaults: input.defaults,
     inputs: templateInputDefaults(input.inputs, input.args),
   };
   return input.inputs.filter((item) => {
@@ -726,10 +612,10 @@ function templateInputLabel(input: { key: string; label?: string }) {
 function templateInputBlockingType(
   input: DeploymentTaskDeploymentPlanInput
 ): DeployTaskBlockingInput["type"] {
-  if (input.sensitive) {
+  const type = input.type?.trim().toLowerCase();
+  if (type === "secret" || type === "password") {
     return "secret";
   }
-  const type = input.type?.trim().toLowerCase();
   if (type === "env" || input.key === input.key.toUpperCase()) {
     return "env";
   }
@@ -737,35 +623,41 @@ function templateInputBlockingType(
 }
 
 export function createSealosTemplateDeploymentPlan(input: {
+  declarationContext?: {
+    certSecretName?: string;
+    instanceName: string;
+    namespace: string;
+    platformValues?: Record<string, string>;
+    routingDomain?: string;
+  };
   deliveryManifest: Record<string, unknown>;
-  /** AI-authored secret values must be re-collected from a user submission. */
-  requireFreshSensitiveValues?: boolean;
   templateYaml: string;
 }): DeploymentTaskDeploymentPlan {
   const parsed = templateSourceFromInlineYaml(input.templateYaml);
   const args = stringRecordValue(input.deliveryManifest.args);
-  const inputs = (parsed.source.source.inputs ?? []).map((item) => ({
-    ...item,
-    sensitive: isSensitiveDeploymentInput(item),
-  }));
+  const renderState =
+    input.declarationContext == null
+      ? null
+      : resolveTemplateDeclarationState({
+          ...input.declarationContext,
+          source: parsed.source,
+          validateDefaults: true,
+        });
+  const inputs = (renderState?.inputs ?? parsed.source.source.inputs ?? []).map(
+    (item) => ({ ...item })
+  );
   const visibleInputs = visibleTemplatePlanInputs({
     args,
-    defaults: parsed.source.source.defaults,
+    defaults:
+      renderState?.defaults ??
+      Object.fromEntries(
+        Object.entries(parsed.source.source.defaults ?? {}).map(
+          ([key, value]) => [key, value.value]
+        )
+      ),
     inputs,
   });
   const missingInputKeys = visibleInputs.flatMap((item) => {
-    if (item.sensitive) {
-      const provided = args[item.key];
-      // Gateway-authored args/defaults are not user proof for a secret. The AI
-      // path explicitly requires a fresh submission; the template runner may
-      // trust a value already supplied by its credentialed request.
-      return input.requireFreshSensitiveValues === true ||
-        provided === undefined ||
-        provided === "" ||
-        provided.length < MIN_SENSITIVE_INPUT_LENGTH
-        ? [item.key]
-        : [];
-    }
     const provided = args[item.key];
     if (provided !== undefined && provided !== "") {
       return [];
@@ -778,48 +670,40 @@ export function createSealosTemplateDeploymentPlan(input: {
     }
     return [];
   });
-  const persistableInputs = visibleInputs.map((item) => {
-    if (!item.sensitive) {
-      return item;
-    }
-    const { default: _default, options: _options, ...persistable } = item;
-    return persistable;
-  });
   return {
-    args: withoutSensitiveArgs(args, inputs),
-    inputs: persistableInputs,
+    args,
+    ...(input.declarationContext == null
+      ? {}
+      : { instanceName: input.declarationContext.instanceName }),
+    inputs: visibleInputs,
     kind: "sealos-template",
     ...(missingInputKeys.length === 0 ? {} : { missingInputKeys }),
+    ...(renderState == null ? {} : { renderState }),
     templateName: parsed.templateName,
   };
 }
 
 /**
- * Inputs the blocking form must (re)collect to resume: missing values, plus
- * every sensitive input — sensitive values are never persisted (ADR 0037),
- * so a resume can only get them from a fresh submission (US15).
+ * Inputs the blocking form must collect to resume. `secret` and `password`
+ * affect only the UI control; Template declarations/defaults remain generated
+ * deployment configuration.
  */
 export function blockingInputsFromDeploymentPlan(
   plan: DeploymentTaskDeploymentPlan
 ): DeployTaskBlockingInput[] {
   const missing = new Set(plan.missingInputKeys ?? []);
   return plan.inputs
-    .filter((input) => missing.has(input.key) || input.sensitive === true)
+    .filter((input) => missing.has(input.key))
     .map((input) => ({
-      ...(input.default === undefined || input.sensitive === true
-        ? {}
-        : { defaultValue: input.default }),
+      ...(input.default === undefined ? {} : { defaultValue: input.default }),
       ...(input.description === undefined
         ? {}
         : { description: input.description }),
       id: input.key,
       key: input.key,
       label: templateInputLabel(input),
-      ...(input.options === undefined || input.sensitive === true
-        ? {}
-        : { options: input.options }),
+      ...(input.options === undefined ? {} : { options: input.options }),
       required: missing.has(input.key) || input.required === true,
-      sensitive: input.sensitive,
       type: templateInputBlockingType(input),
       valueType: input.type,
     }));
@@ -829,9 +713,12 @@ export function prepareSealosTemplateArtifact(input: {
   args?: Record<string, string>;
   buildResult: Record<string, unknown>;
   certSecretName?: string;
+  declarationState?: DeploymentTaskDeploymentPlan["renderState"];
   deliveryManifest: Record<string, unknown>;
+  identityInputKeys?: ReadonlySet<string>;
   /** Recorded result identity to converge on (redeploy, ADR 0038). */
   instanceName?: string;
+  platformValues?: Record<string, string>;
   routingDomain?: string;
   task: DeployTaskArtifactContext;
   templateYaml: string;
@@ -847,7 +734,7 @@ export function prepareSealosTemplateArtifact(input: {
   const templateName = templateNameFromYaml(input.templateYaml) ?? projectName;
   const instanceName =
     input.instanceName?.trim() ||
-    templateInstanceName({
+    sealosTemplateInstanceName({
       deliveryManifest: input.deliveryManifest,
       projectName,
       templateName,
@@ -859,8 +746,13 @@ export function prepareSealosTemplateArtifact(input: {
       ...(input.args ?? {}),
     },
     certSecretName: input.certSecretName,
+    ...(input.declarationState == null
+      ? {}
+      : { declarationState: input.declarationState }),
+    identityInputKeys: input.identityInputKeys,
     instanceName,
     namespace: input.task.namespace,
+    platformValues: input.platformValues,
     projectId: input.task.projectId ?? projectName,
     projectName,
     routingDomain: input.routingDomain,
@@ -880,6 +772,7 @@ export function prepareSealosTemplateArtifact(input: {
 export function sealosTemplateArtifactSummary(input: {
   appliedResources?: { name: string; resourceType: string; uid: string }[];
   artifact: DeploymentSealosTemplateArtifact;
+  includeRenderedYaml?: boolean;
   notes?: string;
 }): DeployTaskArtifactSummary {
   const renderedYaml = joinKubeYamlDocuments([
@@ -906,6 +799,8 @@ export function sealosTemplateArtifactSummary(input: {
     ...(input.notes === undefined ? {} : { notes: input.notes }),
     buildResult: input.artifact.build,
     resources,
-    resourceYamls: [renderedYaml],
+    ...(input.includeRenderedYaml === false
+      ? {}
+      : { resourceYamls: [renderedYaml] }),
   };
 }

@@ -747,14 +747,14 @@ function blockingPlanInputs({
 
 function deploymentInputControlType(input: DeploymentTaskDeploymentPlanInput) {
   const type = input.type?.trim().toLowerCase();
+  if (input.sensitive || type === "secret" || type === "password") {
+    return "password";
+  }
   if ((input.options?.length ?? 0) > 0 || type === "choice") {
     return "choice";
   }
   if (type === "boolean") {
     return "boolean";
-  }
-  if (input.sensitive) {
-    return "password";
   }
   if (type === "number") {
     return "number";

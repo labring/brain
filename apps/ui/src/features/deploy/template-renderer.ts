@@ -34,6 +34,7 @@ const BASE64_CALL_RE = /^base64\(([\s\S]*)\)$/;
 const TERNARY_RE = /^(.+?)\?(.+?):(.+)$/;
 const COMPARISON_RE = /^(.*?)\s*(===|!==|==|!=)\s*(.*?)$/;
 const BOOLEAN_VALUE_RE = /^(true|false)$/i;
+const NAMESPACE_PREFIX_RE = /^ns-/;
 const RANDOM_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
 const NGINX_SSL_REDIRECT_ANNOTATION =
   "nginx.ingress.kubernetes.io/ssl-redirect";
@@ -57,8 +58,11 @@ const CLUSTER_SCOPED_KINDS = new Set([
 export interface RenderTemplateDeploymentInput {
   args?: Record<string, string>;
   certSecretName?: string;
+  declarationState?: TemplateDeclarationState;
+  identityInputKeys?: ReadonlySet<string>;
   instanceName: string;
   namespace: string;
+  platformValues?: Record<string, string>;
   projectId: string;
   projectName: string;
   routingDomain?: string;
@@ -71,6 +75,34 @@ export interface RenderedTemplateDeployment {
   instanceName: string;
   instanceYaml: string;
   resources: TemplateK8sObject[];
+  submittedIdentityInputKeys?: string[];
+}
+
+/**
+ * Public values resolved from the Template header before a blocking input
+ * form is shown. The raw Template remains the executable source; this state
+ * only keeps random/default expansion stable across the blocked resume.
+ */
+export interface TemplateDeclarationState {
+  defaults: Record<string, string>;
+  inputs: TemplateSourceInput[];
+}
+
+export class TemplateDeclarationError extends Error {
+  readonly code: TemplateInputValidationErrorCode;
+  readonly inputKey: string;
+
+  constructor(input: {
+    code: TemplateInputValidationErrorCode;
+    inputKey: string;
+  }) {
+    super(
+      `Generated Sealos template declaration is invalid for input "${input.inputKey}".`
+    );
+    this.name = "TemplateDeclarationError";
+    this.code = input.code;
+    this.inputKey = input.inputKey;
+  }
 }
 
 export interface TemplateK8sObject {
@@ -217,80 +249,226 @@ function unquote(value: string): string | null {
   return trimmed.slice(1, -1);
 }
 
-function expressionValue(
+interface TemplateExpressionEvaluation {
+  inputKeys: Set<string>;
+  value: unknown;
+}
+
+const NO_TEMPLATE_INPUT_KEYS = new Set<string>();
+
+function expressionEvaluation(input: {
+  inputKeys?: Iterable<string>;
+  value: unknown;
+}): TemplateExpressionEvaluation {
+  return { inputKeys: new Set(input.inputKeys), value: input.value };
+}
+
+function inputKeyForPath(
+  path: string,
+  trackedInputKeys: ReadonlySet<string>
+): string | null {
+  const parts = splitPath(path);
+  const key = parts[0] === "inputs" ? parts[1] : undefined;
+  return key != null && trackedInputKeys.has(key) ? key : null;
+}
+
+function expressionValueWithInputKeys(
   expression: string,
-  context: EvaluationContext
-): unknown {
+  context: EvaluationContext,
+  trackedInputKeys: ReadonlySet<string>
+): TemplateExpressionEvaluation {
   const trimmed = expression.trim();
   const quoted = unquote(trimmed);
   if (quoted != null) {
-    return quoted;
+    return expressionEvaluation({ value: quoted });
   }
   if (NUMERIC_RE.test(trimmed)) {
-    return Number(trimmed);
+    return expressionEvaluation({ value: Number(trimmed) });
   }
   const randomMatch = trimmed.match(RANDOM_CALL_RE);
   if (randomMatch) {
-    return randomLowercase(Number(randomMatch[1]));
+    return expressionEvaluation({
+      value: randomLowercase(Number(randomMatch[1])),
+    });
   }
   const base64Match = trimmed.match(BASE64_CALL_RE);
   if (base64Match) {
-    return Buffer.from(
-      String(evaluateExpression(base64Match[1] ?? "", context) ?? "")
-    ).toString("base64");
+    const nested = evaluateExpressionWithInputKeys(
+      base64Match[1] ?? "",
+      context,
+      trackedInputKeys
+    );
+    return expressionEvaluation({
+      inputKeys: nested.inputKeys,
+      value: Buffer.from(String(nested.value ?? "")).toString("base64"),
+    });
   }
-  return readPath(context, trimmed);
+  const inputKey = inputKeyForPath(trimmed, trackedInputKeys);
+  return expressionEvaluation({
+    ...(inputKey == null ? {} : { inputKeys: [inputKey] }),
+    value: readPath(context, trimmed),
+  });
+}
+
+function evaluateExpressionWithInputKeys(
+  expression: string,
+  context: EvaluationContext,
+  trackedInputKeys: ReadonlySet<string>
+): TemplateExpressionEvaluation {
+  const ternary = expression.match(TERNARY_RE);
+  if (ternary) {
+    const condition = evaluateTemplateConditionWithInputKeys(
+      ternary[1] ?? "",
+      context,
+      trackedInputKeys
+    );
+    const branch = evaluateExpressionWithInputKeys(
+      condition.value ? (ternary[2] ?? "") : (ternary[3] ?? ""),
+      context,
+      trackedInputKeys
+    );
+    return expressionEvaluation({
+      inputKeys: [...condition.inputKeys, ...branch.inputKeys],
+      value: branch.value,
+    });
+  }
+  const orParts = splitTopLevelOperator(expression, "||");
+  if (orParts.length > 1) {
+    const inputKeys = new Set<string>();
+    for (const part of orParts) {
+      const evaluated = evaluateExpressionWithInputKeys(
+        part,
+        context,
+        trackedInputKeys
+      );
+      for (const key of evaluated.inputKeys) {
+        inputKeys.add(key);
+      }
+      if (evaluated.value) {
+        return expressionEvaluation({ inputKeys, value: evaluated.value });
+      }
+    }
+    return expressionEvaluation({ inputKeys, value: "" });
+  }
+  const concatParts = splitTopLevelOperator(expression, "+");
+  if (concatParts.length > 1) {
+    const inputKeys = new Set<string>();
+    const value = concatParts
+      .map((part) => {
+        const evaluated = evaluateExpressionWithInputKeys(
+          part,
+          context,
+          trackedInputKeys
+        );
+        for (const key of evaluated.inputKeys) {
+          inputKeys.add(key);
+        }
+        return String(evaluated.value ?? "");
+      })
+      .join("");
+    return expressionEvaluation({ inputKeys, value });
+  }
+  return expressionValueWithInputKeys(expression, context, trackedInputKeys);
 }
 
 function evaluateExpression(
   expression: string,
   context: EvaluationContext
 ): unknown {
-  const ternary = expression.match(TERNARY_RE);
-  if (ternary) {
-    return evaluateCondition(ternary[1] ?? "", context)
-      ? evaluateExpression(ternary[2] ?? "", context)
-      : evaluateExpression(ternary[3] ?? "", context);
-  }
-  const orParts = splitTopLevelOperator(expression, "||");
+  return evaluateExpressionWithInputKeys(
+    expression,
+    context,
+    NO_TEMPLATE_INPUT_KEYS
+  ).value;
+}
+
+function evaluateTemplateConditionWithInputKeys(
+  expression: string,
+  context: EvaluationContext,
+  trackedInputKeys: ReadonlySet<string>
+): TemplateExpressionEvaluation {
+  const inputKeys = new Set<string>();
+  const merge = (evaluated: TemplateExpressionEvaluation) => {
+    for (const key of evaluated.inputKeys) {
+      inputKeys.add(key);
+    }
+    return evaluated.value;
+  };
+  const trimmed = expression.trim();
+  const orParts = splitTopLevelOperator(trimmed, "||");
   if (orParts.length > 1) {
     for (const part of orParts) {
-      const value = evaluateExpression(part, context);
-      if (value) {
-        return value;
+      if (
+        merge(
+          evaluateTemplateConditionWithInputKeys(
+            part,
+            context,
+            trackedInputKeys
+          )
+        )
+      ) {
+        return expressionEvaluation({ inputKeys, value: true });
       }
     }
-    return "";
+    return expressionEvaluation({ inputKeys, value: false });
   }
-  const concatParts = splitTopLevelOperator(expression, "+");
-  if (concatParts.length > 1) {
-    return concatParts
-      .map((part) => String(evaluateExpression(part, context) ?? ""))
-      .join("");
+  const andParts = splitTopLevelOperator(trimmed, "&&");
+  if (andParts.length > 1) {
+    for (const part of andParts) {
+      if (
+        !merge(
+          evaluateTemplateConditionWithInputKeys(
+            part,
+            context,
+            trackedInputKeys
+          )
+        )
+      ) {
+        return expressionEvaluation({ inputKeys, value: false });
+      }
+    }
+    return expressionEvaluation({ inputKeys, value: true });
   }
-  return expressionValue(expression, context);
+  const comparison = trimmed.match(COMPARISON_RE);
+  if (comparison) {
+    const left = merge(
+      evaluateExpressionWithInputKeys(
+        comparison[1] ?? "",
+        context,
+        trackedInputKeys
+      )
+    );
+    const right = merge(
+      evaluateExpressionWithInputKeys(
+        comparison[3] ?? "",
+        context,
+        trackedInputKeys
+      )
+    );
+    return expressionEvaluation({
+      inputKeys,
+      value: comparison[2]?.includes("!") ? left !== right : left === right,
+    });
+  }
+  return expressionEvaluation({
+    inputKeys,
+    value: Boolean(
+      merge(evaluateExpressionWithInputKeys(trimmed, context, trackedInputKeys))
+    ),
+  });
 }
 
 export function evaluateTemplateCondition(
   expression: string,
   context: EvaluationContext
 ): boolean {
-  const trimmed = expression.trim();
-  const orParts = splitTopLevelOperator(trimmed, "||");
-  if (orParts.length > 1) {
-    return orParts.some((part) => evaluateTemplateCondition(part, context));
-  }
-  const andParts = splitTopLevelOperator(trimmed, "&&");
-  if (andParts.length > 1) {
-    return andParts.every((part) => evaluateTemplateCondition(part, context));
-  }
-  const comparison = trimmed.match(COMPARISON_RE);
-  if (comparison) {
-    const left = evaluateExpression(comparison[1] ?? "", context);
-    const right = evaluateExpression(comparison[3] ?? "", context);
-    return comparison[2]?.includes("!") ? left !== right : left === right;
-  }
-  return Boolean(evaluateExpression(trimmed, context));
+  return Boolean(
+    evaluateTemplateConditionWithInputKeys(
+      expression,
+      context,
+      NO_TEMPLATE_INPUT_KEYS
+    ).value
+  );
 }
 
 const evaluateCondition = evaluateTemplateCondition;
@@ -415,6 +593,58 @@ function renderTemplateExpressions(
   return rendered;
 }
 
+function templateIdentityInputKeys(input: {
+  context: EvaluationContext;
+  source: string;
+  submittedInputKeys: ReadonlySet<string>;
+}): string[] {
+  const expressionKeys = new Map<string, Set<string>>();
+  let markerPrefix = "";
+  do {
+    markerPrefix = `brain-input-marker-${randomLowercase(16)}-`;
+  } while (input.source.includes(markerPrefix));
+
+  let cursor = 0;
+  let markerIndex = 0;
+  let parsedSource = "";
+  while (cursor < input.source.length) {
+    const expression = nextTemplateExpression(input.source, cursor);
+    if (expression == null) {
+      parsedSource += input.source.slice(cursor);
+      break;
+    }
+    const marker = `${markerPrefix}${markerIndex}`;
+    markerIndex += 1;
+    expressionKeys.set(
+      marker,
+      evaluateExpressionWithInputKeys(
+        expression.expression,
+        input.context,
+        input.submittedInputKeys
+      ).inputKeys
+    );
+    parsedSource += input.source.slice(cursor, expression.start) + marker;
+    cursor = expression.end;
+  }
+
+  const keys = new Set<string>();
+  for (const resource of parseRenderedObjects(parsedSource)) {
+    for (const value of [
+      resource.metadata?.name,
+      resource.metadata?.namespace,
+    ]) {
+      for (const [marker, referencedKeys] of expressionKeys) {
+        if (value?.includes(marker)) {
+          for (const key of referencedKeys) {
+            keys.add(key);
+          }
+        }
+      }
+    }
+  }
+  return [...keys].sort();
+}
+
 // Sealos template condition blocks support nested if/elif/else/endif markers.
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: mirrors the provider parser to preserve template semantics.
 function parseYamlIfEndif(source: string, context: EvaluationContext): string {
@@ -505,6 +735,83 @@ function flattenDefaults(
     });
   }
   return out;
+}
+
+function templatePlatformContext(input: {
+  certSecretName?: string;
+  namespace: string;
+  platformValues?: Record<string, string>;
+  routingDomain?: string;
+}): EvaluationContext {
+  const routingDomain = input.routingDomain?.trim();
+  const certSecretName = input.certSecretName?.trim();
+  return {
+    ...(input.platformValues ?? {}),
+    ...(routingDomain ? { SEALOS_CLOUD_DOMAIN: routingDomain } : {}),
+    ...(certSecretName ? { SEALOS_CERT_SECRET_NAME: certSecretName } : {}),
+    SEALOS_NAMESPACE: input.namespace,
+    SEALOS_SERVICE_ACCOUNT: input.namespace.replace(NAMESPACE_PREFIX_RE, ""),
+    defaults: {},
+    inputs: {},
+  };
+}
+
+/**
+ * Mirrors the provider's header-only declaration pass. Resource documents
+ * deliberately stay untouched until every user value is available.
+ */
+export function resolveTemplateDeclarationState(input: {
+  certSecretName?: string;
+  instanceName: string;
+  namespace: string;
+  platformValues?: Record<string, string>;
+  routingDomain?: string;
+  source: TemplateSourcePayload;
+  validateDefaults?: boolean;
+}): TemplateDeclarationState {
+  const baseContext = templatePlatformContext(input);
+  const defaults = {
+    ...flattenDefaults(input.source.source.defaults, baseContext),
+    app_name: input.instanceName,
+  };
+  const declarationContext: EvaluationContext = {
+    ...baseContext,
+    defaults,
+  };
+  const validateDefaults = input.validateDefaults === true;
+  const inputs = (input.source.source.inputs ?? []).map((input) => {
+    const normalized = {
+      ...input,
+      ...(input.description === undefined
+        ? {}
+        : {
+            description: renderTemplateString(
+              input.description,
+              declarationContext
+            ),
+          }),
+      ...(input.default === undefined
+        ? {}
+        : {
+            default: renderTemplateString(input.default, declarationContext),
+          }),
+    };
+    if (validateDefaults && normalized.default !== undefined) {
+      try {
+        validateTemplateInputValue(normalized, normalized.default, "default");
+      } catch (error) {
+        if (error instanceof TemplateInputValidationError) {
+          throw new TemplateDeclarationError({
+            code: error.code,
+            inputKey: error.inputKey,
+          });
+        }
+        throw error;
+      }
+    }
+    return normalized;
+  });
+  return { defaults, inputs };
 }
 
 function resolveTemplateInputValue(
@@ -1231,7 +1538,11 @@ function applyResourceLabels(
 }
 
 function parseRenderedObjects(yaml: string): TemplateK8sObject[] {
-  return YAML.parseAllDocuments(yaml)
+  const documents = YAML.parseAllDocuments(yaml);
+  if (documents.some((document) => document.errors.length > 0)) {
+    throw new Error("Rendered Sealos template is not valid YAML.");
+  }
+  return documents
     .map((doc) => doc.toJS())
     .filter((doc) => doc != null)
     .map((doc) => doc as TemplateK8sObject);
@@ -1309,12 +1620,47 @@ function normalizeTemplateInputs(value: unknown): TemplateSourceInput[] {
   );
 }
 
+export function templateHeaderFromInlineYaml(yaml: string): {
+  headerYaml: string;
+  resourceSourceOffset: number;
+} {
+  const marker = /^---[\t ]*(?:#.*)?\r?$/gm;
+  const firstMarker = marker.exec(yaml);
+  if (firstMarker == null) {
+    return { headerYaml: yaml, resourceSourceOffset: yaml.length };
+  }
+  const resourceMarker =
+    yaml.slice(0, firstMarker.index).trim() === ""
+      ? marker.exec(yaml)
+      : firstMarker;
+  if (resourceMarker == null) {
+    return { headerYaml: yaml, resourceSourceOffset: yaml.length };
+  }
+  const resourceSourceOffset =
+    resourceMarker.index +
+    resourceMarker[0].length +
+    (yaml[resourceMarker.index + resourceMarker[0].length] === "\n" ? 1 : 0);
+  return {
+    headerYaml: yaml.slice(0, resourceMarker.index),
+    resourceSourceOffset,
+  };
+}
+
 export function templateSourceFromInlineYaml(yaml: string): {
   source: TemplateSourcePayload;
   templateName: string;
 } {
-  const docs = parseRenderedObjects(yaml);
-  const [template, ...resources] = docs;
+  // A Sealos inline template is a DSL, not standalone YAML: resource
+  // documents may contain top-level if/endif directives. Only the leading
+  // Template document is YAML before expression rendering; preserve the
+  // remaining source byte-for-byte for renderTemplateString().
+  const { headerYaml, resourceSourceOffset } =
+    templateHeaderFromInlineYaml(yaml);
+  const templateDocument = YAML.parseDocument(headerYaml);
+  if (templateDocument.errors.length) {
+    throw new Error("Sealos template header is not valid YAML.");
+  }
+  const template = templateDocument.toJS() as TemplateK8sObject | undefined;
   if (template == null) {
     throw new Error("Sealos template artifact is empty.");
   }
@@ -1326,7 +1672,9 @@ export function templateSourceFromInlineYaml(yaml: string): {
       "Sealos template artifact must start with app.sealos.io/v1 Template."
     );
   }
-  if (resources.length === 0) {
+  const appYaml =
+    resourceSourceOffset < yaml.length ? yaml.slice(resourceSourceOffset) : "";
+  if (appYaml.trim() === "") {
     throw new Error(
       "Sealos template artifact must include workload resources."
     );
@@ -1339,7 +1687,7 @@ export function templateSourceFromInlineYaml(yaml: string): {
   const spec = asRecord(template.spec) ?? {};
   return {
     source: {
-      appYaml: resources.map(dumpObject).join("\n---\n"),
+      appYaml,
       source: {
         ...spec,
         defaults: normalizeTemplateDefaults(spec.defaults),
@@ -1400,46 +1748,41 @@ export function renderTemplateDeployment(
   if (!DNS_NAME_RE.test(input.instanceName) || input.instanceName.length > 63) {
     throw new Error("Template instance name must be a valid DNS name.");
   }
-  const baseContext: EvaluationContext = {
-    defaults: {},
-    inputs: {},
-    SEALOS_NAMESPACE: input.namespace,
-  };
-  const defaults = {
-    ...flattenDefaults(input.source.source.defaults, baseContext),
-    app_name: input.instanceName,
-  };
-  const inputs = resolvedInputs(
-    input.source.source.inputs,
-    input.args,
-    defaults
-  );
-  const routingDomain = input.routingDomain?.trim();
+  const declarationState =
+    input.declarationState ??
+    resolveTemplateDeclarationState({ ...input, validateDefaults: false });
+  const defaults = declarationState.defaults;
+  const inputs = resolvedInputs(declarationState.inputs, input.args, defaults);
   const context: EvaluationContext = {
     ...input.source.source,
+    ...templatePlatformContext(input),
     defaults,
     inputs,
-    ...(routingDomain ? { SEALOS_CLOUD_DOMAIN: routingDomain } : {}),
-    ...(input.certSecretName?.trim()
-      ? { SEALOS_CERT_SECRET_NAME: input.certSecretName.trim() }
-      : {}),
-    SEALOS_NAMESPACE: input.namespace,
   };
   const instance = templateInstanceObject(input.source, input.instanceName);
-  const sourceResources = parseRenderedObjects(input.source.appYaml);
+  const activeSource = parseYamlIfEndif(input.source.appYaml, context);
+  const renderedSource = renderTemplateExpressions(activeSource, context);
+  const sourceResources = parseRenderedObjects(renderedSource);
   const sourceHasInstance = sourceResources.some(
     (resource) =>
       resource.kind === TEMPLATE_INSTANCE_KIND &&
       resource.apiVersion === TEMPLATE_INSTANCE_API_VERSION
   );
-  const fullYaml = sourceHasInstance
-    ? input.source.appYaml
-    : `${dumpObject(instance)}\n---\n${input.source.appYaml}`;
-  const rendered = renderTemplateString(fullYaml, context);
-  const resources = parseRenderedObjects(rendered);
-  if (resources.length === 0) {
-    throw new Error("Template rendered no Kubernetes resources.");
+  if (
+    !sourceResources.some(
+      (resource) =>
+        resource.kind !== TEMPLATE_INSTANCE_KIND ||
+        resource.apiVersion !== TEMPLATE_INSTANCE_API_VERSION
+    )
+  ) {
+    throw new Error("Template rendered no deployable Kubernetes resources.");
   }
+  const fullYaml = sourceHasInstance
+    ? renderedSource
+    : `${renderTemplateString(dumpObject(instance), context)}\n---\n${renderedSource}`;
+  const resources = sourceHasInstance
+    ? sourceResources
+    : parseRenderedObjects(fullYaml);
   const classifications = templateResourceClassifications(resources);
   for (const resource of resources) {
     applyResourceLabels(
@@ -1469,6 +1812,15 @@ export function renderTemplateDeployment(
     instanceName: input.instanceName,
     instanceYaml: dumpObject(instanceResource),
     resources,
+    ...(input.identityInputKeys == null
+      ? {}
+      : {
+          submittedIdentityInputKeys: templateIdentityInputKeys({
+            context,
+            source: activeSource,
+            submittedInputKeys: input.identityInputKeys,
+          }),
+        }),
   };
 }
 

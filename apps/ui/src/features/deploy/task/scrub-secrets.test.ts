@@ -90,7 +90,7 @@ test("scrubSensitiveJsonValue never rewrites JSON primitive structure", () => {
   );
 });
 
-test("withoutSensitiveArgs drops declared and name-heuristic keys", () => {
+test("withoutSensitiveArgs drops declared and name-heuristic fields", () => {
   assert.deepEqual(
     withoutSensitiveArgs(
       {
@@ -112,7 +112,7 @@ test("sensitiveArgValues collects sensitive values, skipping short ones", () => 
   );
 });
 
-test("isSensitiveDeploymentInput matches declared flags, types, and names", () => {
+test("isSensitiveDeploymentInput matches declarations, types, and names", () => {
   assert.ok(isSensitiveDeploymentInput({ key: "anything", sensitive: true }));
   assert.ok(isSensitiveDeploymentInput({ key: "value", type: "password" }));
   assert.ok(isSensitiveDeploymentInput({ key: "value", type: "secret" }));
