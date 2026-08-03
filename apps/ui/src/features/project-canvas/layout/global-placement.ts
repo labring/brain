@@ -185,8 +185,8 @@ function regenerationShelfYs(occupancy: PlacementOccupancy): number[] {
  * Whole-canvas regeneration placement: shelf-major first-open scan from the
  * grid origin bounded by the column cap, so gaps in earlier shelves are
  * backfilled instead of abandoned. Incremental Canvas Placement must NOT use
- * this — ADR 0022 keeps new nodes append-only so they never fill holes in a
- * user-arranged canvas.
+ * this: gaps in a user-arranged canvas can be deliberate, so a newly
+ * discovered node may never drop into one.
  */
 export function firstOpenRegenerationPosition(
   occupancy: PlacementOccupancy,
@@ -217,6 +217,13 @@ export function firstOpenRegenerationPosition(
   }
 }
 
+/**
+ * Incremental Canvas Placement's global fallback: append-only in reading
+ * order, biased by the shape penalty toward a soft 2:1 canvas rather than an
+ * endless horizontal strip. Candidates only ever extend the last row or open
+ * rows below it — never backfill (see `firstOpenRegenerationPosition`), and
+ * never move an existing saved position.
+ */
 export function firstOpenGlobalPosition(
   occupancy: PlacementOccupancy,
   footprint: PlacementFootprint

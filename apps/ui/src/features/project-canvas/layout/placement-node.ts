@@ -59,7 +59,12 @@ export function layoutNodeFootprintHeight(node: CanvasLayoutNode): number {
 /**
  * Card heights are content-driven, so the measured render is the footprint
  * truth; the expansion-state constants only cover nodes that have not been
- * measured yet (first layout before render).
+ * measured yet (first layout before render), and are sized conservatively
+ * above the tallest known card so fallback placement spreads out rather than
+ * overlaps. Measured heights are never persisted: the Canvas Layout document
+ * stores intent (position and expansion) while height stays a read-side fact
+ * of the current render, so a per-node-type height constant is not a fix — it
+ * drifts the next time any card gains a row.
  */
 export function nodeFootprintHeight(node: Node): number {
   const measured = node.measured?.height;

@@ -158,7 +158,7 @@ function VirtualizedListClient({
     }
     // Only the user scrolls upward: content growth never lowers scrollTop and
     // the pin effect only raises it. Scrolling away from the tail is a pause
-    // gesture (ADR 0034).
+    // gesture.
     const atBottom =
       el.scrollTop + el.clientHeight >= el.scrollHeight - AT_BOTTOM_EPSILON_PX;
     if (el.scrollTop < previousTop - 1 && !atBottom) {

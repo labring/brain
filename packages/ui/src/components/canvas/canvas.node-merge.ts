@@ -69,6 +69,17 @@ function mergeNodeData(existing: Node, incoming: Node): Node["data"] {
   };
 }
 
+/**
+ * Structural comparison, deliberately not reference equality. The shell
+ * builder upstream is a stateless projection that allocates a fresh `data`
+ * literal on every reconcile, so `===` can never hold for an unchanged node:
+ * reference comparison here swaps every node's identity every tick and
+ * re-renders the whole canvas, with types and typecheck still green. Value
+ * comparison is safe because `data` carries presentation values only (no
+ * callbacks, resource facts, or metrics) — value-equal renders identically,
+ * and `observedUid` lives inside `data` so a recreated resource still forces
+ * a new identity.
+ */
 function nodeDataEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) {
     return true;

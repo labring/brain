@@ -5,43 +5,25 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0001 — Persist Project Canvas Layouts in App Postgres](0001-persist-project-canvas-layouts-in-app-postgres.md)
 - [0002 — Model Project DB References as AP Environment Variables](0002-model-project-db-references-as-ap-environment-variables.md) *(editor model revised by ADR-0018)*
 - [0003 — Derive Canvas Connections from Resource State](0003-derive-canvas-connections-from-resource-state.md)
-- [0008 — Model AP Elastic Scaling as a replica strategy](0008-model-ap-elastic-scaling-as-replica-strategy.md)
 - [0009 — Promote Platform Addresses as Custom Domain CNAME targets](0009-promote-platform-addresses-as-custom-domain-cname-targets.md)
 - [0013 — DB Terminal runs the native engine client via pod-exec with server-side credential injection](0013-db-terminal-pod-exec-native-client-server-side-credentials.md)
-- [0014 — Orchestrate Project Surfaces Separately from Canvas Selection](0014-orchestrate-project-surfaces-separately-from-canvas-selection.md)
 - [0015 — Remove Public Project Preview Sharing](0015-remove-public-project-preview-sharing.md)
-- [0016 — Model App Listening Ports as Private Addresses](0016-model-app-listening-ports-as-private-addresses.md)
 - [0018 — Model AP Environment as Raw Source and Compiled Runtime Env](0018-model-ap-environment-as-raw-source-and-compiled-runtime-env.md)
 - [0019 — Model Project Settings as Provider-Defined Side Pane Views](0019-model-project-settings-as-provider-defined-side-pane-views.md)
-- [0020 — Keep Shared UI Free of Product Workflows](0020-keep-shared-ui-free-of-product-workflows.md)
-- [0022 — Use Row-Major Global Placement and Persist First Canvas Placements](0022-row-major-global-placement-and-persisted-first-placement.md) *(absorbs ADR-0021)*
 - [0023 — Model All Deployments as Deployment Tasks](0023-model-all-deployments-as-deployment-tasks.md)
 - [0024 — Model Canvas Placement Owners for Deployment Projections](0024-model-canvas-placement-owners-for-deployment-projections.md)
-- [0025 — Stream Project Deployment Task Projections](0025-stream-project-deployment-task-projections.md)
-- [0026 — Detect Settings Draft Conflicts at Submit Time](0026-detect-settings-draft-conflicts-at-submit-time.md)
 - [0027 — Use Sealos Native Product Labels for Template Instances](0027-use-sealos-native-product-labels-for-template-instances.md) *(replaces the earlier deployment-scoped Brain label model)*
 - [0028 — Model Deployment Progress as Task-Owned Timelines](0028-model-deployment-progress-as-task-owned-timelines.md)
-- [0029 — Let Project Runtime Own Resource Read-Side Facts](0029-let-project-runtime-own-resource-read-side-facts.md)
 - [0030 — Store Pending Settings Updates Browser-Locally](0030-store-pending-settings-updates-browser-locally.md)
-- [0031 — Own Settings Submissions at the Settings Layer](0031-own-settings-submissions-at-the-settings-layer.md)
-- [0032 — Vendor a Kubernetes quantity port for client-side storage sizing](0032-vendor-kubernetes-quantity-for-client-storage-sizing.md)
 - [0033 — Surface assistant billing as a free-allowance counter plus a one-time crossing notice](0033-surface-assistant-billing-as-free-allowance-only.md)
-- [0034 — Anchor Log Windows as Live or Frozen](0034-anchor-log-windows-as-live-or-frozen.md)
 - [0035 — Render Project Canvas from Canvas Runtime Stores and Stable Commands](0035-render-project-canvas-from-canvas-runtime-stores.md)
 - [0036 — Bind GitHub Integrations as User OAuth Connections](0036-bind-github-integrations-as-user-oauth-connections.md) *(owner identity and task credential binding revised by ADR-0056; owner key revised by ADR-0059)*
 - [0037 — Execute Deployment Tasks Under Leases and Guarded Transitions](0037-execute-deployment-tasks-under-leases-and-guarded-transitions.md)
 - [0038 — Model Deployment Task Lifecycle Actions as Cancel, Redeploy, and Retention](0038-model-deployment-lifecycle-actions-as-cancel-redeploy-retention.md) *(redeploy credential resolution supplemented by ADR-0056)*
-- [0039 — Regenerate Whole-Canvas Auto Layout as a Clustered Row-Major Grid](0039-regenerate-auto-layout-as-clustered-row-major-grid.md) *(generalizes ADR-0022's placement group to clusters; 0022 stays authoritative for incremental placement)*
-- [0040 — Size Canvas Placement Footprints from the Measured Render](0040-size-placement-footprints-from-measured-render.md)
-- [0041 — Preserve Canvas Node Identity by Comparing Node Data by Value](0041-preserve-canvas-node-identity-by-value.md)
 - [0042 — Surface Deployment Failure Reasons Behind a Per-Runner Scrub Gate](0042-surface-scrubbed-deployment-failure-reasons.md)
-- [0043 — Coalesce Deployment Stream Updates into Throttled React Commits](0043-coalesce-deployment-stream-updates.md)
 - [0044 — Pin Chat Context to Each User Message](0044-pin-chat-context-to-each-user-message.md)
 - [0047 — Enforce Assistant Conversation Ownership per Workspace Actor](0047-partition-assistant-conversations-per-user-as-a-view.md) *(authorization boundary revised by ADR-0056; owner key revised by ADR-0059)*
-- [0048 — Side Panes Animate as Overlays; Layout Width Snaps Once](0048-side-panes-animate-as-overlays-layout-width-snaps-once.md)
-- [0049 — Scope DB Access View State to Each Session](0049-scope-db-access-view-state-to-each-session.md)
 - [0050 — Snapshot Glass: Replace the Live Backdrop-Filter Sheet with a Pre-Blurred Texture](0050-snapshot-glass-pre-blurred-backdrop-texture.md)
-- [0051 — Express Workbench Orchestration as Pure Transitions](0051-express-workbench-orchestration-as-pure-transitions.md)
 - [0052 — Use In-Cluster Kubernetes Transport in Pods and Kubeconfig Transport Off-Cluster](0052-use-kubeconfig-transport-off-cluster.md)
 - [0053 — Serve DB connection strings as credential-free templates with explicit reveal](0053-serve-db-connection-strings-as-credential-free-templates.md)
 - [0054 — Reveal DB Access System Objects Only on Request](0054-reveal-db-access-system-objects-only-on-request.md)
@@ -50,10 +32,10 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0057 — Forget GitHub Connections Locally on Disconnect](0057-forget-github-connections-locally-on-disconnect.md)
 - [0058 — Derive Project Display Names from Deployment Sources at Creation](0058-derive-project-display-names-from-deployment-sources.md)
 - [0059 — Key Personal Resources by the Global User UID](0059-key-personal-resources-by-global-user-uid.md) *(revises ADR-0036, ADR-0047, and ADR-0056)*
-- [0060 — Pin Pane-Level Actions in the Side Pane Footer; Hosts Place Compound Deployer Parts](0060-pin-pane-level-actions-in-side-pane-footer-hosts-place-compound-deployer-parts.md)
 
 ## Conventions
 
 - An ADR without a `Status` section is accepted as written.
 - When a later ADR revises or replaces part of an earlier one, give the earlier ADR a `Status` section naming the reviser (see ADR 0002), and trim the superseded text instead of leaving it to mislead.
-- Gaps in the sequence (0004–0007, 0010–0012, 0017, 0021, 0045–0046) are ADRs deleted because their decisions were superseded, merged, or withdrawn before release. 0017's decision (DB Service Restore creates a new DB Service) lives on as the CONTEXT.md definition; 0021's persistence rule lives on inside ADR-0022.
+- Gaps in the sequence (0004–0008, 0010–0012, 0014, 0016–0017, 0020–0022, 0025–0026, 0029, 0031–0032, 0034, 0039–0041, 0043, 0045–0046, 0048–0049, 0051, 0060) are deleted ADRs — decisions superseded, merged, withdrawn, or absorbed into CONTEXT.md, code comments, and tests. 0017's decision (DB Service Restore creates a new DB Service) lives on as the CONTEXT.md definition; 0008's, 0016's, and 0034's modeling lives on in CONTEXT.md entries; 0048's snap-only width rule lives on as the pane-motion comment in `packages/ui/src/styles/globals.css`; 0020's shared-UI boundary and 0049's DB Access state ownership were retired with their records.
+- Rules that outlived their record live as comments at the gate that enforces them: 0021's and 0022's placement persistence in `layout/patch.ts` and `layout/global-placement.ts`, 0040's measured footprints in `layout/placement-node.ts`, 0041's node-identity comparison in `canvas/canvas.node-merge.ts`, and 0031's submission ownership in `resource-settings/settings-submissions.ts`.
