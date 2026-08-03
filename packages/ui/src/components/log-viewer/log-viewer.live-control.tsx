@@ -1,11 +1,11 @@
 "use client";
 
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
-import { cn } from "@workspace/ui/lib/utils";
 import { Pause, Play } from "lucide-react";
 import { useLogViewerContext } from "./log-viewer.context";
 
@@ -21,19 +21,24 @@ export function LogViewerLiveControl() {
   return (
     <Tooltip>
       <TooltipTrigger
-        aria-label={isLive ? "Pause live logs" : "Start live logs"}
-        aria-pressed={isLive}
-        className={cn(
-          "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-transparent shadow-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30",
-          isLive
-            ? "bg-input text-blue-400 hover:bg-input/80"
-            : "bg-input/30 text-brand-primary-foreground hover:bg-input"
-        )}
-        onClick={isLive ? freeze : resumeLive}
-        type="button"
-      >
-        {isLive ? <Pause className="size-4" /> : <Play className="size-4" />}
-      </TooltipTrigger>
+        render={
+          <AppIconButton
+            aria-label={isLive ? "Pause live logs" : "Start live logs"}
+            aria-pressed={isLive}
+            data-active={isLive || undefined}
+            onClick={isLive ? freeze : resumeLive}
+            size="lg"
+            type="button"
+            variant="secondary"
+          >
+            {isLive ? (
+              <Pause className="size-4" />
+            ) : (
+              <Play className="size-4" />
+            )}
+          </AppIconButton>
+        }
+      />
       <TooltipContent side="bottom">
         {isLive ? "Pause live logs" : "Start live logs"}
       </TooltipContent>
