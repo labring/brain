@@ -92,7 +92,10 @@ export function CanvasNodeActionButton({
       className={cn(
         RF_CONTROL_CLASS,
         "canvas-node-action-button shrink-0 cursor-pointer border-0",
-        disabledReason && "cursor-not-allowed opacity-50",
+        // Reason-disabled buttons stay interactive for their tooltip; keep the
+        // hover/open accent off them so blue keeps meaning "will act".
+        disabledReason &&
+          "cursor-not-allowed opacity-50 hover:text-brand-primary-foreground data-popup-open:text-brand-primary-foreground",
         className
       )}
       disabled={disabled && disabledReason == null}

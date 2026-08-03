@@ -344,10 +344,6 @@
   background: color-mix(in oklab, var(--color-white) 4.5%, transparent);
 }
 
-.canvas-node-action-button:is([data-state="open"], [data-popup-open]) {
-  color: var(--sealai-brand-primary-foreground);
-}
-
 .canvas-node-action-button:is([data-state="open"], [data-popup-open]):not(
     :hover,
     :focus-visible
