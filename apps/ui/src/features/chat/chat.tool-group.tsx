@@ -304,41 +304,18 @@ function collectPendingApprovals(parts: ChatToolPart[]): PendingApproval[] {
 }
 
 export function projectDeletionApprovalInput(input: unknown): {
-  displayName: string;
   projectId: string;
-  resources: [string, string[]][];
 } | null {
   if (input == null || typeof input !== "object") {
     return null;
   }
   const value = input as {
-    projectDisplayName?: unknown;
     projectId?: unknown;
-    resourceSummary?: unknown;
   };
-  if (
-    typeof value.projectDisplayName !== "string" ||
-    typeof value.projectId !== "string" ||
-    value.resourceSummary == null ||
-    typeof value.resourceSummary !== "object" ||
-    Array.isArray(value.resourceSummary)
-  ) {
+  if (typeof value.projectId !== "string" || value.projectId.trim() === "") {
     return null;
   }
-  const resources: [string, string[]][] = [];
-  for (const [kind, names] of Object.entries(value.resourceSummary)) {
-    if (
-      !(Array.isArray(names) && names.every((name) => typeof name === "string"))
-    ) {
-      return null;
-    }
-    resources.push([kind, names]);
-  }
-  return {
-    displayName: value.projectDisplayName,
-    projectId: value.projectId,
-    resources,
-  };
+  return { projectId: value.projectId };
 }
 
 function ProjectDeletionApprovalCard({
@@ -351,10 +328,7 @@ function ProjectDeletionApprovalCard({
   onRespond?: ChatAddToolApproveResponseFunction;
 }) {
   const [confirmation, setConfirmation] = useState("");
-  const confirmed = confirmation.trim() === input.displayName;
-  const nonEmptyResources = input.resources.filter(
-    ([, names]) => names.length > 0
-  );
+  const confirmed = confirmation.trim() === input.projectId;
 
   return (
     <div
@@ -363,49 +337,25 @@ function ProjectDeletionApprovalCard({
     >
       <div className="flex min-w-0 flex-col gap-1">
         <p className="text-foreground text-sm">Delete project permanently?</p>
-        <p className="text-muted-foreground text-xs">{input.displayName}</p>
         <p className="break-all font-mono text-muted-foreground text-xs">
           {input.projectId}
         </p>
       </div>
-      <div className="max-h-40 overflow-y-auto rounded-md border border-border/60 bg-input/15 p-2 text-xs">
-        {nonEmptyResources.length === 0 ? (
-          <p className="text-muted-foreground">No managed resources found.</p>
-        ) : (
-          <ul className="space-y-1 text-muted-foreground">
-            {nonEmptyResources.map(([kind, names]) => (
-              <li key={kind}>
-                <span className="text-foreground">{kind}</span>:{" "}
-                {names.join(", ")}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
       <label
         className="flex flex-col gap-1.5 text-muted-foreground text-xs"
-        htmlFor={`${approval.id}-project-name`}
+        htmlFor={`${approval.id}-project-id`}
       >
         Type{" "}
-        <span className="font-medium text-foreground">{input.displayName}</span>{" "}
+        <span className="font-medium text-foreground">{input.projectId}</span>{" "}
         to confirm
         <AppInput
-          aria-label="Project name confirmation"
-          id={`${approval.id}-project-name`}
+          aria-label="Project ID confirmation"
+          id={`${approval.id}-project-id`}
           onChange={(event) => setConfirmation(event.target.value)}
           value={confirmation}
         />
       </label>
       <div className="flex flex-wrap gap-2">
-        <AppButton
-          disabled={!confirmed}
-          onClick={() => onRespond?.({ approved: true, id: approval.id })}
-          size="sm"
-          type="button"
-          variant="danger"
-        >
-          Delete project
-        </AppButton>
         <AppButton
           onClick={() =>
             onRespond?.({
@@ -419,6 +369,15 @@ function ProjectDeletionApprovalCard({
           variant="quiet"
         >
           Cancel
+        </AppButton>
+        <AppButton
+          disabled={!confirmed}
+          onClick={() => onRespond?.({ approved: true, id: approval.id })}
+          size="sm"
+          type="button"
+          variant="danger"
+        >
+          Delete project
         </AppButton>
       </div>
     </div>

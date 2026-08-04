@@ -1,6 +1,5 @@
 import { tool } from "ai";
 import { z } from "zod";
-import type { ProjectChildResourceSummary } from "@/lib/project-persistence/delete-guard";
 import {
   deleteManagedProject,
   getManagedProject,
@@ -14,27 +13,6 @@ import {
 } from "./chat-tool-intention";
 
 const projectIdSchema = z.string().trim().min(1).max(256);
-const resourceNamesSchema = z.array(z.string().min(1).max(253)).max(10_000);
-const resourceSummarySchema = z
-  .object({
-    ap: resourceNamesSchema,
-    db: resourceNamesSchema,
-    template: resourceNamesSchema,
-    templateCertificates: resourceNamesSchema,
-    templateClusters: resourceNamesSchema,
-    templateConfigMaps: resourceNamesSchema,
-    templateDeployments: resourceNamesSchema,
-    templateIngresses: resourceNamesSchema,
-    templateIssuers: resourceNamesSchema,
-    templateJobs: resourceNamesSchema,
-    templateOpsRequests: resourceNamesSchema,
-    templatePersistentVolumeClaims: resourceNamesSchema,
-    templatePods: resourceNamesSchema,
-    templateSecrets: resourceNamesSchema,
-    templateServices: resourceNamesSchema,
-    templateStatefulSets: resourceNamesSchema,
-  })
-  .strict();
 
 const listProjectsInputSchema = z.object({
   intention: chatToolIntentionField,
@@ -53,9 +31,7 @@ const previewProjectDeletionInputSchema = z.object({
 export const deleteProjectInputSchema = z.object({
   intention: chatToolIntentionField,
   previewId: projectIdSchema,
-  projectDisplayName: z.string().trim().min(1).max(256),
   projectId: projectIdSchema,
-  resourceSummary: resourceSummarySchema,
 });
 
 export function createChatProjectTools(options: {
@@ -125,7 +101,7 @@ export function createChatProjectTools(options: {
     description: [
       "Delete exactly the Project represented by a current deletion preview.",
       "Call only after previewProjectDeletion and after the user has requested deletion of that exact Project.",
-      "Copy previewId, projectId, projectDisplayName, and resourceSummary verbatim from the preview output.",
+      "Copy previewId and projectId from the preview output; the server owns the display name and resource summary.",
       "Execution requires a final browser approval and rechecks the Project and resource summary before any deletion.",
     ].join(" "),
     inputSchema: deleteProjectInputSchema,
@@ -134,9 +110,6 @@ export function createChatProjectTools(options: {
       logChatToolIntention("deleteProject", input.intention);
       const result = await deleteManagedProject({
         actor,
-        expectedDisplayName: input.projectDisplayName,
-        expectedResourceSummary:
-          input.resourceSummary as unknown as ProjectChildResourceSummary,
         previewId: input.previewId,
         projectId: input.projectId,
       });

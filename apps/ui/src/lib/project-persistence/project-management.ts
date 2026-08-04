@@ -67,15 +67,36 @@ export type DeleteManagedProjectResult =
       ok: false;
     };
 
+const RESOURCE_SUMMARY_KEYS = [
+  "ap",
+  "db",
+  "template",
+  "templateCertificates",
+  "templateClusters",
+  "templateConfigMaps",
+  "templateDeployments",
+  "templateIngresses",
+  "templateIssuers",
+  "templateJobs",
+  "templateOpsRequests",
+  "templatePersistentVolumeClaims",
+  "templatePods",
+  "templateSecrets",
+  "templateServices",
+  "templateStatefulSets",
+] as const satisfies readonly (keyof ProjectChildResourceSummary)[];
+
 function sortedSummary(
   resources: ProjectChildResourceSummary
 ): ProjectChildResourceSummary {
   return Object.fromEntries(
-    Object.entries(resources).map(([key, names]) => [key, [...names].sort()])
+    RESOURCE_SUMMARY_KEYS.map((key) => [key, [...resources[key]].sort()])
   ) as unknown as ProjectChildResourceSummary;
 }
 
-function summaryFingerprint(resources: ProjectChildResourceSummary): string {
+export function resourceSummaryFingerprint(
+  resources: ProjectChildResourceSummary
+): string {
   return createHash("sha256")
     .update(JSON.stringify(sortedSummary(resources)))
     .digest("hex");
@@ -282,7 +303,7 @@ export async function previewManagedProjectDeletion(
       createdAt: now,
       displayName: project.displayName,
       expiresAt,
-      fingerprint: summaryFingerprint(resourceSummary),
+      fingerprint: resourceSummaryFingerprint(resourceSummary),
       id: previewId,
       namespace: actor.namespace,
       projectId,
@@ -297,7 +318,7 @@ export async function previewManagedProjectDeletion(
   });
   return {
     expiresAt: expiresAt.toISOString(),
-    fingerprint: summaryFingerprint(resourceSummary),
+    fingerprint: resourceSummaryFingerprint(resourceSummary),
     previewId,
     project,
     resourceSummary,
@@ -353,8 +374,6 @@ async function releaseDeletionOperation(
 
 export async function deleteManagedProject(input: {
   actor: ProjectManagementActor;
-  expectedDisplayName: string;
-  expectedResourceSummary: ProjectChildResourceSummary;
   previewId: string;
   projectId: string;
 }): Promise<DeleteManagedProjectResult> {
@@ -375,12 +394,6 @@ export async function deleteManagedProject(input: {
     )
     .limit(1);
   if (preview === undefined) {
-    return { code: "invalid_preview", ok: false };
-  }
-  if (
-    preview.displayName !== input.expectedDisplayName ||
-    preview.fingerprint !== summaryFingerprint(input.expectedResourceSummary)
-  ) {
     return { code: "invalid_preview", ok: false };
   }
   const [consumedPreview] = await getProjectDb()
@@ -422,7 +435,8 @@ export async function deleteManagedProject(input: {
   );
   if (
     project.displayName !== preview.displayName ||
-    summaryFingerprint(currentSummary) !== preview.fingerprint
+    resourceSummaryFingerprint(currentSummary) !==
+      resourceSummaryFingerprint(preview.resourceSummary)
   ) {
     await auditEvent({
       actor: input.actor,

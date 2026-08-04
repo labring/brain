@@ -8,25 +8,6 @@ const { createChatProjectTools, deleteProjectInputSchema } = await import(
   "./chat-project-tools"
 );
 
-const COMPLETE_RESOURCE_SUMMARY = {
-  ap: ["api"],
-  db: [],
-  template: [],
-  templateCertificates: [],
-  templateClusters: [],
-  templateConfigMaps: [],
-  templateDeployments: [],
-  templateIngresses: [],
-  templateIssuers: [],
-  templateJobs: [],
-  templateOpsRequests: [],
-  templatePersistentVolumeClaims: [],
-  templatePods: [],
-  templateSecrets: [],
-  templateServices: [],
-  templateStatefulSets: [],
-} as const;
-
 test("Project delete tool requires AI SDK approval", () => {
   const tools = createChatProjectTools({
     chatId: "chat-1",
@@ -41,14 +22,12 @@ test("Project delete tool requires AI SDK approval", () => {
   assert.ok("previewProjectDeletion" in tools);
 });
 
-test("Project deletion input binds the server preview summary to the approval", () => {
+test("Project deletion input uses the opaque preview and Project IDs", () => {
   assert.equal(
     deleteProjectInputSchema.safeParse({
       intention: "delete the selected Project after review",
       previewId: "preview-1",
-      projectDisplayName: "Payments",
       projectId: "project-1",
-      resourceSummary: COMPLETE_RESOURCE_SUMMARY,
     }).success,
     true
   );
@@ -56,9 +35,14 @@ test("Project deletion input binds the server preview summary to the approval", 
     deleteProjectInputSchema.safeParse({
       intention: "delete the selected Project after review",
       previewId: "preview-1",
-      projectDisplayName: "Payments",
       projectId: "project-1",
-      resourceSummary: { ap: ["api"] },
+    }).success,
+    true
+  );
+  assert.equal(
+    deleteProjectInputSchema.safeParse({
+      intention: "delete the selected Project after review",
+      projectId: "project-1",
     }).success,
     false
   );
