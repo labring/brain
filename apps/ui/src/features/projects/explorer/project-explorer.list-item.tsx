@@ -95,7 +95,6 @@ function ProjectExplorerPinAction({
           <AppIconButton
             aria-label={projectPinActionLabel(projectName, pinned)}
             aria-pressed={pinned}
-            className="text-muted-foreground hover:text-foreground"
             disabled={limitReached}
             onClick={(event) => {
               event.stopPropagation();
