@@ -4,46 +4,55 @@ All notable changes to Brain are documented in this file.
 
 ## [2.0.4] - 2026-08-04
 
-### 新增
+### Added
 
-- Assistant 新增受保护的 Project 管理能力，支持列出、查看、预览删除和删除
-  Project；删除前需要用户确认，并记录操作审计信息。
-- 新增 Brain GTM 埋点，覆盖模块浏览、部署创建、部署开始、部署删除和资源卡片
-  操作；通过 `GTM_ID` 可选开启。
-- 部署任务 Dock 移入顶部栏，并根据可用宽度自动折叠到溢出菜单。
-- Side Pane 新增固定底部操作区，部署提交、设置保存和部署任务生命周期操作可
-  保持在可见位置。
+- Added guarded Project management tools to Assistant for listing, reading, previewing
+  deletion, and deleting Projects. Deletion requires user approval and records an audit
+  event.
+- Added Brain GTM tracking for module views, deployment creation and start, deployment
+  deletion, and resource-card actions. Tracking can be enabled with `GTM_ID`.
+- Moved the deployment task Dock into the top bar and folded it into an overflow menu
+  based on the available width.
+- Added a pinned Side Pane footer so deployment submission, settings saves, and deployment
+  task lifecycle actions remain visible.
 
-### 改进
+### Changed
 
-- 个人资源现在使用全局 `userUid` 作为身份归属，覆盖 GitHub 连接和 Assistant
-  会话；历史数据会在用户首次访问时自动迁移，并支持身份指纹和账号合并处理。
-- 部署任务新增超时策略，超时后提供明确且可恢复的失败状态。
-- 模板部署支持更完整的参数控件和选项，并在模板目录刷新后保留已填写的参数、
-  原始模板 YAML 及 Sealos 模板 DSL。
-- 可通过 `DEPLOY_SKILL_SOURCE` 配置部署 Skill 的分支或来源。
-- 弹性伸缩设置重新整理目标指标和切换控件，统一交互反馈和视觉层级。
-- 优化项目创建、项目列表、日志查看器和资源设置等界面的操作反馈与控件样式。
+- Personal resources now use the global `userUid` as their ownership key across GitHub
+  Connections and Assistant Conversations. Existing data is adopted on first access, with
+  identity fingerprints and account-merge handling.
+- Added a timeout policy for deployment tasks, producing explicit and recoverable failure
+  states when a task exceeds its limit.
+- Template deployment now supports richer parameter controls and choices while preserving
+  entered parameters after catalog refreshes, the original template YAML, and Sealos
+  Template DSL.
+- Added `DEPLOY_SKILL_SOURCE` configuration for selecting the deployment Skill branch or
+  source.
+- Reworked elastic-scaling controls around target metrics and toggle interactions, and
+  improved feedback and visual hierarchy across project creation, project list, log viewer,
+  and resource settings surfaces.
 
-### 修复
+### Fixed
 
-- 修复 Project 删除确认流程，确保删除预览完整、目标一致，并拒绝过期或篡改的
-  删除请求。
-- 修复模板恢复部署中的敏感字段处理、模板声明状态和资源身份一致性问题。
-- 修复 Side Pane 和顶部栏在 React Compiler 检查下的兼容性问题。
-- 修复图标按钮悬停时颜色被 Tooltip 状态错误触发的问题，并统一日志实时控制的
-  图标尺寸和项目列表固定按钮的悬停样式。
+- Restored the Project deletion confirmation flow with complete previews, target checks, and
+  rejection of expired or tampered deletion requests.
+- Fixed sensitive-field handling, Template declaration state, and resource identity
+  consistency during resumable template deployments.
+- Fixed React Compiler compatibility issues in the Side Pane and top-bar slots.
+- Fixed icon-button hover colors being triggered by Tooltip state, and aligned the log live
+  control size and project-list pin-button hover styling.
 
-### 升级说明
+### Upgrade Notes
 
-- 必须执行 UI 数据库迁移 `0008`、`0009` 和 `0010`。
-- 生产环境 UI 必须配置 `JWT_INTERNAL`，其值应与 Sealos Desktop 使用的集群共享
-  应用令牌密钥一致；未配置时服务会拒绝启动。
-- 确认 Sealos Desktop 会为请求提供应用令牌。缺少、无效或已因账号合并失效的
-  令牌，将无法访问 Assistant、GitHub 连接及 GitHub 来源的部署操作。
-- `GTM_ID` 为可选配置；未配置时不发送 GTM 事件。
-- 旧版 GitHub 连接和 Assistant 会话会在用户首次访问时自动迁移，无需人工迁移
-  数据。
+- Run UI database migrations `0008`, `0009`, and `0010`.
+- Production UI deployments must configure `JWT_INTERNAL` to the cluster-shared app-token
+  signing secret used by Sealos Desktop. The service refuses to start when it is missing.
+- Ensure Sealos Desktop provides an app token for requests. Missing, invalid, or
+  account-merge-superseded tokens cannot access Assistant, GitHub Connections, or GitHub-
+  source deployment operations.
+- `GTM_ID` is optional. No GTM events are sent when it is unset.
+- Existing GitHub Connections and Assistant Conversations are adopted automatically on first
+  access; no manual data migration is required.
 
 ## [2.0.3] - 2026-07-29
 
