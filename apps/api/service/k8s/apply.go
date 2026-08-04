@@ -12,11 +12,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/restmapper"
 	"sigs.k8s.io/yaml"
 )
 
@@ -192,8 +190,10 @@ func ApplyUnstructured(config *rest.Config, objects []*unstructured.Unstructured
 	if err != nil {
 		return err
 	}
-	discoveryClient := memory.NewMemCacheClient(clientset.Discovery())
-	mapper := restmapper.NewDeferredDiscoveryRESTMapper(discoveryClient)
+	mapper, err := sharedDiscovery.restMapper(config.Host, clientset.Discovery())
+	if err != nil {
+		return err
+	}
 
 	ctx := context.Background()
 
@@ -206,6 +206,14 @@ func ApplyUnstructured(config *rest.Config, objects []*unstructured.Unstructured
 			continue
 		}
 		restMapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if meta.IsNoMatchError(err) {
+			// The manifest may carry a kind newer than the shared cache
+			// (e.g. a CRD applied moments ago); refresh and retry once.
+			if refreshed, refreshErr := sharedDiscovery.refreshedRESTMapper(config.Host, clientset.Discovery()); refreshErr == nil {
+				mapper = refreshed
+				restMapping, err = mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+			}
+		}
 		if err != nil {
 			return err
 		}

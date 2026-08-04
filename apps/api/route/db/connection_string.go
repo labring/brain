@@ -9,7 +9,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"sealos/api/middleware"
 	k8ssvc "sealos/api/service/k8s"
@@ -51,6 +50,27 @@ func registerConnectionString(grp huma.API) {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
 
+		// Prefetch concurrently with the cluster read: both lookups depend
+		// only on name and resolved.Namespace — the same namespace the
+		// cluster read itself uses — and their results are consumed only
+		// after the cluster passes validation below.
+		secretCh := make(chan *unstructured.Unstructured, 1)
+		go func() {
+			secretCh <- dbConnectionSecret(cfg, name, resolved.Namespace)
+		}()
+		var exportCh chan exportServiceResult
+		if input.Kind == "public" {
+			exportCh = make(chan exportServiceResult, 1)
+			go func() {
+				body, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+					Name:      name + "-export",
+					Namespace: resolved.Namespace,
+					Resource:  "services",
+				})
+				exportCh <- exportServiceResult{body: body, err: err}
+			}()
+		}
+
 		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
 			LabelSelector: dbClusterLabelSelector(""),
 			Resource:      "clusters",
@@ -74,7 +94,12 @@ func registerConnectionString(grp huma.API) {
 		if namespace == "" {
 			namespace = resolved.Namespace
 		}
-		value, err := dbRevealedConnectionString(cfg, orchestration.DBObjectFromCluster(&cluster), input.Kind, name, namespace)
+		value, err := dbRevealedConnectionString(
+			orchestration.DBObjectFromCluster(&cluster),
+			input.Kind, name, namespace,
+			dbConnectionCredentialsFromSecret(<-secretCh),
+			exportCh,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -101,11 +126,16 @@ func connectionStringRevealOutput(value string) *connectionStringOutput {
 	return output
 }
 
-// dbRevealedConnectionString composes the complete DB Connection DSN with the
-// decoded credential Secret, reusing the same engine-profile composition the
-// read paths used before they switched to templates.
-func dbRevealedConnectionString(cfg *clientcmdapi.Config, db map[string]interface{}, kind string, name string, namespace string) (string, error) {
-	credentials := dbConnectionCredentialsFromSecret(dbConnectionSecret(cfg, name, namespace))
+type exportServiceResult struct {
+	body []byte
+	err  error
+}
+
+// dbRevealedConnectionString composes the complete DB Connection DSN from the
+// prefetched credential Secret (and, for kind=public, the prefetched export
+// Service), reusing the same engine-profile composition the read paths used
+// before they switched to templates.
+func dbRevealedConnectionString(db map[string]interface{}, kind string, name string, namespace string, credentials dbConnectionCredentials, export <-chan exportServiceResult) (string, error) {
 	switch kind {
 	case "private":
 		dsn := dbConnectionString(db, dbPrivateConnectionAddress(db, name, namespace), credentials)
@@ -114,19 +144,18 @@ func dbRevealedConnectionString(cfg *clientcmdapi.Config, db map[string]interfac
 		}
 		return dsn, nil
 	case "public":
-		export, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			Name:      name + "-export",
-			Namespace: namespace,
-			Resource:  "services",
-		})
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return "", huma.Error404NotFound("public connection is not enabled", err)
+		if export == nil {
+			return "", huma.Error500InternalServerError("export service was not prefetched", nil)
+		}
+		result := <-export
+		if result.err != nil {
+			if apierrors.IsNotFound(result.err) {
+				return "", huma.Error404NotFound("public connection is not enabled", result.err)
 			}
-			return "", huma.Error500InternalServerError("failed to get DB public access service", err)
+			return "", huma.Error500InternalServerError("failed to get DB public access service", result.err)
 		}
 		var service map[string]interface{}
-		if err := json.Unmarshal(export, &service); err != nil {
+		if err := json.Unmarshal(result.body, &service); err != nil {
 			return "", huma.Error500InternalServerError("failed to parse DB public access service", err)
 		}
 		nodePort := firstServiceNodePort(service)

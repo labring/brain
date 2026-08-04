@@ -1002,7 +1002,7 @@ func TestDBRevealedConnectionStringComposesPrivateKind(t *testing.T) {
 		"spec": map[string]interface{}{"engine": "postgresql"},
 	}
 
-	got, err := dbRevealedConnectionString(nil, db, "private", "db-main", "ns-a")
+	got, err := dbRevealedConnectionString(db, "private", "db-main", "ns-a", dbConnectionCredentials{}, nil)
 	if err != nil {
 		t.Fatalf("dbRevealedConnectionString returned error: %v", err)
 	}
@@ -1012,7 +1012,7 @@ func TestDBRevealedConnectionStringComposesPrivateKind(t *testing.T) {
 }
 
 func TestDBRevealedConnectionStringRejectsUnknownKind(t *testing.T) {
-	_, err := dbRevealedConnectionString(nil, map[string]interface{}{}, "internal", "db-main", "ns-a")
+	_, err := dbRevealedConnectionString(map[string]interface{}{}, "internal", "db-main", "ns-a", dbConnectionCredentials{}, nil)
 	statusErr, ok := err.(huma.StatusError)
 	if !ok {
 		t.Fatalf("expected Huma status error, got %T", err)
