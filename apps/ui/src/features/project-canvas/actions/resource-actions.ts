@@ -24,7 +24,9 @@ export interface ProjectResourceActionCopy {
 
 export type ProjectDbConnectionCopyHandler = (
   connection: DatabaseNodeConnection,
-  workload: DbLifecycleWorkloadRef | null
+  workload: DbLifecycleWorkloadRef | null,
+  /** The row's on-screen value while its reveal is active — copied verbatim, no fetch (ADR-0055). */
+  activeRevealValue?: string
 ) => Promise<void>;
 
 export type ProjectDbConnectionResolveHandler = (
@@ -148,11 +150,13 @@ export function useProjectResourceActions({
     });
 
   const copyDatabaseConnection = useCallback<ProjectDbConnectionCopyHandler>(
-    (connection, workload) =>
+    (connection, workload, activeRevealValue) =>
       // Connection rows carry credential-free DB Connection Templates; copy
-      // fetches the complete DB Connection DSN on demand (ADR-0053). The
+      // reuses the row's active reveal when there is one and otherwise
+      // fetches the complete DB Connection DSN on demand (ADR-0055). The
       // template is copied only when no resolver backs the canvas at all.
       copyDbConnectionValue({
+        activeRevealValue,
         placeholderValue: connection.value ?? "",
         resolveAvailable: workload != null && revealReady,
         resolveValue: () =>

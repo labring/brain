@@ -20,22 +20,33 @@ export async function writeTextToClipboard(value: string): Promise<void> {
 
 /**
  * Copies a secret-bearing value that page state only holds as a credential-free
- * placeholder (e.g. a DB Connection Template, ADR-0053): when a resolver is
- * available the complete value is fetched on demand and copied; without one the
- * placeholder is copied instead — the most useful value a resolver-less surface
- * can offer, even though the row itself renders a mask (ADR-0055). A failed
- * resolve rejects so callers surface the error rather than silently copying a
- * value that will not work.
+ * placeholder (e.g. a DB Connection Template, ADR-0053): while the row's
+ * reveal is active the on-screen value is copied as-is — copy reproduces what
+ * the user sees, and no new fetch happens (ADR-0055). Otherwise, when a
+ * resolver is available the complete value is fetched on demand and copied;
+ * without one the placeholder is copied instead — the most useful value a
+ * resolver-less surface can offer, even though the row itself renders a mask.
+ * A failed resolve rejects so callers surface the error rather than silently
+ * copying a value that will not work.
  */
 export async function copyResolvedSecretValue({
+  activeRevealValue,
   placeholderValue,
   resolveAvailable,
   resolveValue,
 }: {
+  /** The row's on-screen value while its reveal is active; copied verbatim. */
+  activeRevealValue?: string;
   placeholderValue: string;
   resolveAvailable: boolean;
   resolveValue: () => Promise<string>;
 }): Promise<void> {
+  if (activeRevealValue !== undefined) {
+    if (activeRevealValue !== "") {
+      await writeTextToClipboard(activeRevealValue);
+    }
+    return;
+  }
   if (!resolveAvailable) {
     if (placeholderValue !== "") {
       await writeTextToClipboard(placeholderValue);
@@ -55,6 +66,7 @@ export async function copyResolvedSecretValue({
  * copied feedback never fires on a value that was never copied.
  */
 export async function copyDbConnectionValue(options: {
+  activeRevealValue?: string;
   placeholderValue: string;
   resolveAvailable: boolean;
   resolveValue: () => Promise<string>;

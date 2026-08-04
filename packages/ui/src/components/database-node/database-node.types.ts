@@ -97,7 +97,9 @@ export type DatabaseNodeConnectionKey = string;
 
 export type DatabaseNodeCopyConnectionHandler = (
   connection: DatabaseNodeConnection,
-  index: number
+  index: number,
+  /** The row's on-screen value while its reveal is active — copy reuses it instead of fetching (ADR-0055). */
+  activeRevealValue?: string
 ) => Promise<void> | void;
 
 export type DatabaseNodeRevealConnectionHandler = (

@@ -263,7 +263,7 @@ export function DatabaseNodeConnectionRow({
       connection={connection}
       onCopy={
         actions.copyConnection
-          ? () => actions.copyConnection?.(connection, index)
+          ? () => actions.copyConnection?.(connection, index, revealedValue)
           : undefined
       }
       onToggleReveal={

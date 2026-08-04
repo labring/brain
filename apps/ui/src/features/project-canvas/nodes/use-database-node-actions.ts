@@ -223,10 +223,15 @@ export function useCanvasDatabaseNodeActions({
 
     const actions: DatabaseNodeActions = {
       ...base,
-      // Copy fetches the complete DB Connection DSN on demand (ADR-0053);
-      // the node's connection rows only ever hold the template.
-      copyConnection: (connection) =>
-        commands.copyDatabaseConnection(connection, workload),
+      // Copy reuses the row's on-screen value while its reveal is active and
+      // otherwise fetches the complete DB Connection DSN on demand
+      // (ADR-0055); the node's connection rows only ever hold the template.
+      copyConnection: (connection, _index, activeRevealValue) =>
+        commands.copyDatabaseConnection(
+          connection,
+          workload,
+          activeRevealValue
+        ),
       ...databaseNodeRevealActions({
         commands,
         revealAvailable: activity.authReady && !readOnly,
