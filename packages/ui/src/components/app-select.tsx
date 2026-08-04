@@ -78,7 +78,7 @@ function SelectPopup({
     <Combobox.Portal>
       <Combobox.Positioner
         align="start"
-        className="isolate z-50"
+        className="isolate z-[52]"
         sideOffset={6}
       >
         {/*

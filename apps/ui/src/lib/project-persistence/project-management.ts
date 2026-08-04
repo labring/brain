@@ -360,6 +360,30 @@ export async function deleteManagedProject(input: {
 }): Promise<DeleteManagedProjectResult> {
   const now = new Date();
   const [preview] = await getProjectDb()
+    .select()
+    .from(projectDeletePreviews)
+    .where(
+      and(
+        eq(projectDeletePreviews.id, input.previewId),
+        eq(projectDeletePreviews.actorUid, input.actor.actorUid),
+        eq(projectDeletePreviews.chatId, input.actor.chatId),
+        eq(projectDeletePreviews.namespace, input.actor.namespace),
+        eq(projectDeletePreviews.projectId, input.projectId),
+        gt(projectDeletePreviews.expiresAt, now),
+        isNull(projectDeletePreviews.consumedAt)
+      )
+    )
+    .limit(1);
+  if (preview === undefined) {
+    return { code: "invalid_preview", ok: false };
+  }
+  if (
+    preview.displayName !== input.expectedDisplayName ||
+    preview.fingerprint !== summaryFingerprint(input.expectedResourceSummary)
+  ) {
+    return { code: "invalid_preview", ok: false };
+  }
+  const [consumedPreview] = await getProjectDb()
     .update(projectDeletePreviews)
     .set({ consumedAt: now })
     .where(
@@ -373,14 +397,8 @@ export async function deleteManagedProject(input: {
         isNull(projectDeletePreviews.consumedAt)
       )
     )
-    .returning();
-  if (preview === undefined) {
-    return { code: "invalid_preview", ok: false };
-  }
-  if (
-    preview.displayName !== input.expectedDisplayName ||
-    preview.fingerprint !== summaryFingerprint(input.expectedResourceSummary)
-  ) {
+    .returning({ id: projectDeletePreviews.id });
+  if (consumedPreview === undefined) {
     return { code: "invalid_preview", ok: false };
   }
   const project = await getProject(input.actor.namespace, input.projectId);

@@ -47,8 +47,13 @@ const NO_CONTAINERS_RE = /No containers/;
 const NON_SEARCHABLE_FILTER_RE =
   /const filter = searchable \? undefined : null;/g;
 const COMBOBOX_FILTER_PROP_RE = /filter=\{filter\}/g;
+const APP_SELECT_POPUP_Z_INDEX_RE = /className="isolate z-\[(\d+)\]"/;
+const DIALOG_Z_INDEX_RE = /z-\[(\d+)\] grid w-full/;
 const SOURCE = readFileSync(
   fileURLToPath(new URL("./app-select.tsx", import.meta.url))
+).toString();
+const DIALOG_SOURCE = readFileSync(
+  fileURLToPath(new URL("./dialog.tsx", import.meta.url))
 ).toString();
 
 test("AppSelect renders the selected option in the trigger", () => {
@@ -113,5 +118,17 @@ test("AppSelect disables combobox filtering when search is hidden", () => {
     [...SOURCE.matchAll(COMBOBOX_FILTER_PROP_RE)].length,
     2,
     "single and multi select should pass the resolved filter to Base UI"
+  );
+});
+
+test("AppSelect popup renders above dialog content", () => {
+  const popupZIndex = SOURCE.match(APP_SELECT_POPUP_Z_INDEX_RE)?.[1];
+  const dialogZIndex = DIALOG_SOURCE.match(DIALOG_Z_INDEX_RE)?.[1];
+
+  assert.ok(popupZIndex, "AppSelect popup should define an explicit z-index");
+  assert.ok(dialogZIndex, "Dialog content should define an explicit z-index");
+  assert.ok(
+    Number(popupZIndex) > Number(dialogZIndex),
+    "AppSelect popup should stack above dialog content"
   );
 });
