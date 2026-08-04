@@ -2,6 +2,49 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.4] - 2026-08-04
+
+### 新增
+
+- Assistant 新增受保护的 Project 管理能力，支持列出、查看、预览删除和删除
+  Project；删除前需要用户确认，并记录操作审计信息。
+- 新增 Brain GTM 埋点，覆盖模块浏览、部署创建、部署开始、部署删除和资源卡片
+  操作；通过 `GTM_ID` 可选开启。
+- 部署任务 Dock 移入顶部栏，并根据可用宽度自动折叠到溢出菜单。
+- Side Pane 新增固定底部操作区，部署提交、设置保存和部署任务生命周期操作可
+  保持在可见位置。
+
+### 改进
+
+- 个人资源现在使用全局 `userUid` 作为身份归属，覆盖 GitHub 连接和 Assistant
+  会话；历史数据会在用户首次访问时自动迁移，并支持身份指纹和账号合并处理。
+- 部署任务新增超时策略，超时后提供明确且可恢复的失败状态。
+- 模板部署支持更完整的参数控件和选项，并在模板目录刷新后保留已填写的参数、
+  原始模板 YAML 及 Sealos 模板 DSL。
+- 可通过 `DEPLOY_SKILL_SOURCE` 配置部署 Skill 的分支或来源。
+- 弹性伸缩设置重新整理目标指标和切换控件，统一交互反馈和视觉层级。
+- 优化项目创建、项目列表、日志查看器和资源设置等界面的操作反馈与控件样式。
+
+### 修复
+
+- 修复 Project 删除确认流程，确保删除预览完整、目标一致，并拒绝过期或篡改的
+  删除请求。
+- 修复模板恢复部署中的敏感字段处理、模板声明状态和资源身份一致性问题。
+- 修复 Side Pane 和顶部栏在 React Compiler 检查下的兼容性问题。
+- 修复图标按钮悬停时颜色被 Tooltip 状态错误触发的问题，并统一日志实时控制的
+  图标尺寸和项目列表固定按钮的悬停样式。
+
+### 升级说明
+
+- 必须执行 UI 数据库迁移 `0008`、`0009` 和 `0010`。
+- 生产环境 UI 必须配置 `JWT_INTERNAL`，其值应与 Sealos Desktop 使用的集群共享
+  应用令牌密钥一致；未配置时服务会拒绝启动。
+- 确认 Sealos Desktop 会为请求提供应用令牌。缺少、无效或已因账号合并失效的
+  令牌，将无法访问 Assistant、GitHub 连接及 GitHub 来源的部署操作。
+- `GTM_ID` 为可选配置；未配置时不发送 GTM 事件。
+- 旧版 GitHub 连接和 Assistant 会话会在用户首次访问时自动迁移，无需人工迁移
+  数据。
+
 ## [2.0.3] - 2026-07-29
 
 ### Added
@@ -175,6 +218,7 @@ databases, and day-to-day operations into one Project workspace.
   starting supported operations.
 
 [2.0.3]: https://github.com/labring/brain/compare/v2.0.2...v2.0.3
+[2.0.4]: https://github.com/labring/brain/compare/v2.0.3...v2.0.4
 [2.0.2]: https://github.com/labring/brain/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/labring/brain/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/labring/brain/releases/tag/v2.0.0
