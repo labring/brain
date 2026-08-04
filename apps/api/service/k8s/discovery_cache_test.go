@@ -16,16 +16,26 @@ import (
 // takes the legacy ServerGroups path, letting the test count real fetches.
 type countingDiscovery struct {
 	discovery.DiscoveryInterface
-	fetches int
-	fail    bool
+	fetches            int
+	attempts           int
+	fail               bool
+	brokenGroupVersion string
 }
 
 func (c *countingDiscovery) ServerGroups() (*metav1.APIGroupList, error) {
+	c.attempts++
 	if c.fail {
 		return nil, errors.New("cluster unreachable")
 	}
 	c.fetches++
 	return c.DiscoveryInterface.ServerGroups()
+}
+
+func (c *countingDiscovery) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	if c.brokenGroupVersion != "" && groupVersion == c.brokenGroupVersion {
+		return nil, errors.New("forbidden")
+	}
+	return c.DiscoveryInterface.ServerResourcesForGroupVersion(groupVersion)
 }
 
 func newDiscoveryFixture(t *testing.T) (*discoveryCache, *countingDiscovery, *fakediscovery.FakeDiscovery, *time.Time) {
@@ -99,31 +109,51 @@ func TestDiscoveryCacheRefreshesAfterTTL(t *testing.T) {
 	}
 }
 
-func TestDiscoveryCacheMissRefreshRespectsCooldown(t *testing.T) {
+func TestDiscoveryCacheFirstMissRefreshesImmediatelyThenThrottles(t *testing.T) {
 	cache, counting, fake, current := newDiscoveryFixture(t)
 
-	_, _, err := cache.resolveResource("host-a", counting, "widgets")
-	if !IsUnknownResourceError(err, "widgets") {
-		t.Fatalf("expected unknown resource error, got %v", err)
+	if _, _, err := cache.resolveResource("host-a", counting, "pods"); err != nil {
+		t.Fatalf("resolve: %v", err)
 	}
 	if counting.fetches != 1 {
-		t.Fatalf("miss inside cooldown must not refetch, got %d fetches", counting.fetches)
+		t.Fatalf("expected initial fill, got %d fetches", counting.fetches)
 	}
 
+	// A CRD installed right after the fill must resolve on the first try:
+	// the first miss refreshes immediately, fresh cache or not.
 	fake.Resources = append(fake.Resources, &metav1.APIResourceList{
 		GroupVersion: "example.io/v1",
 		APIResources: []metav1.APIResource{{Name: "widgets", Namespaced: true, Kind: "Widget"}},
 	})
-	*current = current.Add(discoveryMissRefreshCooldown + time.Second)
 	gvr, _, err := cache.resolveResource("host-a", counting, "widgets")
 	if err != nil {
-		t.Fatalf("resolve after CRD install: %v", err)
+		t.Fatalf("resolve just-installed CRD: %v", err)
 	}
 	if gvr.Group != "example.io" {
 		t.Fatalf("unexpected gvr %v", gvr)
 	}
 	if counting.fetches != 2 {
-		t.Fatalf("expected exactly one miss-triggered refetch, got %d", counting.fetches)
+		t.Fatalf("expected one miss-triggered refetch, got %d", counting.fetches)
+	}
+
+	// Further misses inside the cooldown ride the throttle: no refetch.
+	if _, _, err := cache.resolveResource("host-a", counting, "bogus"); !IsUnknownResourceError(err, "bogus") {
+		t.Fatalf("expected unknown resource error, got %v", err)
+	}
+	if _, _, err := cache.resolveResource("host-a", counting, "bogus"); !IsUnknownResourceError(err, "bogus") {
+		t.Fatalf("expected unknown resource error, got %v", err)
+	}
+	if counting.fetches != 2 {
+		t.Fatalf("expected misses inside cooldown to be throttled, got %d fetches", counting.fetches)
+	}
+
+	// After the cooldown a miss may refresh again.
+	*current = current.Add(discoveryMissRefreshCooldown + time.Second)
+	if _, _, err := cache.resolveResource("host-a", counting, "bogus"); !IsUnknownResourceError(err, "bogus") {
+		t.Fatalf("expected unknown resource error, got %v", err)
+	}
+	if counting.fetches != 3 {
+		t.Fatalf("expected miss after cooldown to refetch, got %d", counting.fetches)
 	}
 }
 
@@ -141,7 +171,7 @@ func TestDiscoveryCacheServesStaleOnRefreshFailure(t *testing.T) {
 }
 
 func TestDiscoveryCacheRESTMapperRefreshFindsNewKind(t *testing.T) {
-	cache, counting, fake, current := newDiscoveryFixture(t)
+	cache, counting, fake, _ := newDiscoveryFixture(t)
 
 	mapper, err := cache.restMapper("host-a", counting)
 	if err != nil {
@@ -158,11 +188,13 @@ func TestDiscoveryCacheRESTMapperRefreshFindsNewKind(t *testing.T) {
 		t.Fatal("expected no-match for unknown kind")
 	}
 
+	// The retry must work immediately after the cache was filled — the
+	// CRD-then-CR-in-one-manifest scenario leaves no time to wait out a
+	// cooldown.
 	fake.Resources = append(fake.Resources, &metav1.APIResourceList{
 		GroupVersion: "example.io/v1",
 		APIResources: []metav1.APIResource{{Name: "widgets", Namespaced: true, Kind: "Widget"}},
 	})
-	*current = current.Add(discoveryMissRefreshCooldown + time.Second)
 	refreshed, err := cache.refreshedRESTMapper("host-a", counting)
 	if err != nil {
 		t.Fatalf("refreshedRESTMapper: %v", err)
@@ -183,5 +215,73 @@ func TestDiscoveryCacheIsolatesHosts(t *testing.T) {
 	}
 	if counting.fetches != 2 {
 		t.Fatalf("expected one fetch per host, got %d", counting.fetches)
+	}
+}
+
+func TestDiscoveryCacheBacksOffAfterFailedRefresh(t *testing.T) {
+	cache, counting, _, current := newDiscoveryFixture(t)
+
+	if _, _, err := cache.resolveResource("host-a", counting, "pods"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	baseline := counting.attempts
+
+	counting.fail = true
+	*current = current.Add(discoveryCacheTTL + time.Second)
+	if _, _, err := cache.resolveResource("host-a", counting, "pods"); err != nil {
+		t.Fatalf("expected stale data during outage, got %v", err)
+	}
+	if counting.attempts != baseline+1 {
+		t.Fatalf("expected one refresh attempt after TTL, got %d", counting.attempts-baseline)
+	}
+
+	// Inside the backoff window the stale snapshot is served without
+	// re-attempting, so an outage is not amplified per request.
+	if _, _, err := cache.resolveResource("host-a", counting, "pods"); err != nil {
+		t.Fatalf("expected stale data during backoff, got %v", err)
+	}
+	if counting.attempts != baseline+1 {
+		t.Fatalf("expected no attempt inside backoff, got %d", counting.attempts-baseline)
+	}
+
+	// After the backoff window a recovered apiserver refills the cache.
+	counting.fail = false
+	*current = current.Add(discoveryRefreshFailureBackoff + time.Second)
+	if _, _, err := cache.resolveResource("host-a", counting, "pods"); err != nil {
+		t.Fatalf("resolve after recovery: %v", err)
+	}
+	if counting.attempts != baseline+2 {
+		t.Fatalf("expected one attempt after backoff, got %d", counting.attempts-baseline)
+	}
+}
+
+func TestDiscoveryCachePartialSnapshotRetriesMissesSooner(t *testing.T) {
+	cache, counting, fake, current := newDiscoveryFixture(t)
+	fake.Resources = append(fake.Resources, &metav1.APIResourceList{
+		GroupVersion: "broken.io/v1",
+		APIResources: []metav1.APIResource{{Name: "gadgets", Namespaced: true, Kind: "Gadget"}},
+	})
+	counting.brokenGroupVersion = "broken.io/v1"
+
+	// The fill succeeds but marks the snapshot partial: broken.io failed.
+	if _, _, err := cache.resolveResource("host-a", counting, "pods"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	// First miss refreshes immediately, and the group is still failing.
+	if _, _, err := cache.resolveResource("host-a", counting, "gadgets"); !IsUnknownResourceError(err, "gadgets") {
+		t.Fatalf("expected unknown resource while group is failing, got %v", err)
+	}
+
+	// Once the group recovers (e.g. a properly-privileged identity or a
+	// healed aggregated API), the partial snapshot retries misses on the
+	// shorter failure-backoff window instead of the full cooldown.
+	counting.brokenGroupVersion = ""
+	*current = current.Add(discoveryRefreshFailureBackoff + time.Second)
+	gvr, _, err := cache.resolveResource("host-a", counting, "gadgets")
+	if err != nil {
+		t.Fatalf("resolve after group recovery: %v", err)
+	}
+	if gvr.Group != "broken.io" {
+		t.Fatalf("unexpected gvr %v", gvr)
 	}
 }
