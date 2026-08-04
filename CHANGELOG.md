@@ -2,6 +2,58 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.4] - 2026-08-04
+
+### Added
+
+- Added guarded Project management tools to Assistant for listing, reading, previewing
+  deletion, and deleting Projects. Deletion requires user approval and records an audit
+  event.
+- Added Brain GTM tracking for module views, deployment creation and start, deployment
+  deletion, and resource-card actions. Tracking can be enabled with `GTM_ID`.
+- Moved the deployment task Dock into the top bar and folded it into an overflow menu
+  based on the available width.
+- Added a pinned Side Pane footer so deployment submission, settings saves, and deployment
+  task lifecycle actions remain visible.
+
+### Changed
+
+- Personal resources now use the global `userUid` as their ownership key across GitHub
+  Connections and Assistant Conversations. Existing data is adopted on first access, with
+  identity fingerprints and account-merge handling.
+- Added a timeout policy for deployment tasks, producing explicit and recoverable failure
+  states when a task exceeds its limit.
+- Template deployment now supports richer parameter controls and choices while preserving
+  entered parameters after catalog refreshes, the original template YAML, and Sealos
+  Template DSL.
+- Added `DEPLOY_SKILL_SOURCE` configuration for selecting the deployment Skill branch or
+  source.
+- Reworked elastic-scaling controls around target metrics and toggle interactions, and
+  improved feedback and visual hierarchy across project creation, project list, log viewer,
+  and resource settings surfaces.
+
+### Fixed
+
+- Restored the Project deletion confirmation flow with complete previews, target checks, and
+  rejection of expired or tampered deletion requests.
+- Fixed sensitive-field handling, Template declaration state, and resource identity
+  consistency during resumable template deployments.
+- Fixed React Compiler compatibility issues in the Side Pane and top-bar slots.
+- Fixed icon-button hover colors being triggered by Tooltip state, and aligned the log live
+  control size and project-list pin-button hover styling.
+
+### Upgrade Notes
+
+- Run UI database migrations `0008`, `0009`, and `0010`.
+- Production UI deployments must configure `JWT_INTERNAL` to the cluster-shared app-token
+  signing secret used by Sealos Desktop. The service refuses to start when it is missing.
+- Ensure Sealos Desktop provides an app token for requests. Missing, invalid, or
+  account-merge-superseded tokens cannot access Assistant, GitHub Connections, or GitHub-
+  source deployment operations.
+- `GTM_ID` is optional. No GTM events are sent when it is unset.
+- Existing GitHub Connections and Assistant Conversations are adopted automatically on first
+  access; no manual data migration is required.
+
 ## [2.0.3] - 2026-07-29
 
 ### Added
@@ -175,6 +227,7 @@ databases, and day-to-day operations into one Project workspace.
   starting supported operations.
 
 [2.0.3]: https://github.com/labring/brain/compare/v2.0.2...v2.0.3
+[2.0.4]: https://github.com/labring/brain/compare/v2.0.3...v2.0.4
 [2.0.2]: https://github.com/labring/brain/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/labring/brain/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/labring/brain/releases/tag/v2.0.0
