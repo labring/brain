@@ -13,6 +13,7 @@ import {
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
 import type { SlidingToggleOption } from "@workspace/ui/components/sliding-toggle";
+import { useBusyAction } from "@workspace/ui/hooks/use-busy-action";
 import { fieldInvalidRingClass } from "@workspace/ui/lib/field-state";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -494,11 +495,11 @@ interface EditableEnvRowsProps {
   expandedKeys: readonly string[];
   mode: EnvEditorMode;
   onCancelRow: (index: number) => void;
-  onCopyResolvedValue: (index: number) => void;
+  onCopyResolvedValue: (index: number) => Promise<void> | void;
   onDeleteRow: (index: number) => void;
   onEditRow: (index: number) => void;
   onRawSourceChange: (source: string) => void;
-  onRevealResolvedValue: (index: number) => void;
+  onRevealResolvedValue: (index: number) => Promise<void> | void;
   onSaveRow: (index: number) => void;
   onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
   resolvedValuesAvailable: boolean;
@@ -533,8 +534,8 @@ interface EditableEnvValueControlProps {
 interface SavedEnvValueControlProps {
   copied?: boolean;
   index: number;
-  onCopyResolvedValue: (index: number) => void;
-  onRevealResolvedValue: (index: number) => void;
+  onCopyResolvedValue: (index: number) => Promise<void> | void;
+  onRevealResolvedValue: (index: number) => Promise<void> | void;
   resolvedValuesAvailable: boolean;
   revealedValue?: string;
   row: ApEnvVar;
@@ -929,6 +930,12 @@ function SavedEnvValueControl({
     ? (revealedValue ?? MASKED_ENV_VALUE)
     : envRowDisplayValue(row);
   const revealed = resolvedValuesAvailable && revealedValue !== undefined;
+  const { busy: revealBusy, trigger: handleRevealClick } = useBusyAction(() =>
+    onRevealResolvedValue(index)
+  );
+  const { busy: copyBusy, trigger: handleCopyClick } = useBusyAction(() =>
+    onCopyResolvedValue(index)
+  );
   const revealIcon = revealed ? (
     <EyeClosed aria-hidden className="size-4" />
   ) : (
@@ -949,8 +956,9 @@ function SavedEnvValueControl({
           <AppIconButton
             aria-label={`${revealed ? "Hide" : "Reveal"} environment variable ${row.name}`}
             aria-pressed={revealed}
+            busy={revealBusy}
             className="text-muted-foreground hover:text-foreground"
-            onClick={() => onRevealResolvedValue(index)}
+            onClick={handleRevealClick}
             size="sm"
             type="button"
             variant="quiet"
@@ -959,11 +967,12 @@ function SavedEnvValueControl({
           </AppIconButton>
           <AppIconButton
             aria-label={`${copied ? "Copied" : "Copy"} environment variable ${row.name}`}
+            busy={copyBusy}
             className={cn(
               "text-muted-foreground hover:text-foreground",
               copied && "text-foreground"
             )}
-            onClick={() => onCopyResolvedValue(index)}
+            onClick={handleCopyClick}
             size="sm"
             type="button"
             variant="quiet"
@@ -1276,10 +1285,10 @@ interface DraftEnvRowProps {
   expanded: boolean;
   index: number;
   onCancelRow: (index: number) => void;
-  onCopyResolvedValue: (index: number) => void;
+  onCopyResolvedValue: (index: number) => Promise<void> | void;
   onDeleteRow: (index: number) => void;
   onEditRow: (index: number) => void;
-  onRevealResolvedValue: (index: number) => void;
+  onRevealResolvedValue: (index: number) => Promise<void> | void;
   onSaveRow: (index: number) => void;
   onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
   resolvedValuesAvailable: boolean;
@@ -1333,8 +1342,8 @@ function CollapsedEnvValueControl({
   dbDsnReferenceSources: ApEnvDbDsnSource[];
   index: number;
   managed: boolean;
-  onCopyResolvedValue: (index: number) => void;
-  onRevealResolvedValue: (index: number) => void;
+  onCopyResolvedValue: (index: number) => Promise<void> | void;
+  onRevealResolvedValue: (index: number) => Promise<void> | void;
   onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
   resolvedValuesAvailable: boolean;
   revealedValue?: string;

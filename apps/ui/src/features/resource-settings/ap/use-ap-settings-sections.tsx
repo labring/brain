@@ -1293,6 +1293,10 @@ export function useApSettingsSections({
       try {
         value = await resolveSavedEnvValue(index);
       } catch {
+        toastErrorDetail(
+          "Reveal failed.",
+          "The environment value could not be resolved."
+        );
         return;
       }
       if (value === undefined) {
@@ -1327,6 +1331,10 @@ export function useApSettingsSections({
       try {
         value = await resolveSavedEnvValue(index);
       } catch {
+        toastErrorDetail(
+          "Copy failed.",
+          "The environment value could not be resolved."
+        );
         return;
       }
       if (value === undefined) {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { REVEAL_DURATION_MS } from "./secret-reveal";
+import { toastErrorDetail } from "./toast-utils";
 
 export interface RevealedRow {
   key: string;
@@ -13,8 +14,9 @@ export interface RevealedRow {
  * One revealed secret row at a time (ADR-0055): revealing a row replaces any
  * previously revealed one, the reveal auto-hides after
  * REVEAL_DURATION_MS, and toggling the revealed row hides it early.
- * Resolve failures and empty values leave the mask in place — reveal failure
- * stays silent, matching the AP Environment editor.
+ * A failed resolve surfaces a toast — matching the copy pipeline and the AP
+ * Environment editor — while an empty value leaves the mask in place
+ * silently, since nothing failed and there is nothing to show.
  */
 export function useRevealedRow(): {
   revealedRow: RevealedRow | null;
@@ -52,6 +54,10 @@ export function useRevealedRow(): {
       try {
         value = await resolveValue();
       } catch {
+        toastErrorDetail(
+          "Reveal failed.",
+          "The connection string could not be fetched."
+        );
         return;
       }
       if (value === "") {
