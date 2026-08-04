@@ -8,7 +8,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/kubernetes"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
@@ -49,9 +48,8 @@ func Scale(cfg *clientcmdapi.Config, opts ScaleOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	discoveryClient := memory.NewMemCacheClient(clientset.Discovery())
-
-	_, namespaced, err := resolveResource(discoveryClient, opts.Resource)
+	_, namespaced, err := sharedDiscovery.resolveResource(
+		resolvedCtx.RestConfig.Host, clientset.Discovery(), opts.Resource)
 	if err != nil {
 		return nil, err
 	}

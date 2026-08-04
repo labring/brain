@@ -12,8 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -79,9 +77,8 @@ func Get(cfg *clientcmdapi.Config, opts GetOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	discoveryClient := memory.NewMemCacheClient(clientset.Discovery())
-
-	gvr, namespaced, err := resolveResource(discoveryClient, opts.Resource)
+	gvr, namespaced, err := sharedDiscovery.resolveResource(
+		resolvedCtx.RestConfig.Host, clientset.Discovery(), opts.Resource)
 	if err != nil {
 		return nil, err
 	}
@@ -320,36 +317,4 @@ func listServicesByComposite(restConfig *rest.Config, ap map[string]interface{})
 		items = append(items, list.Items[i].Object)
 	}
 	return items, nil
-}
-
-func resolveResource(d discovery.DiscoveryInterface, resource string) (schema.GroupVersionResource, bool, error) {
-	resource = strings.ToLower(strings.TrimSpace(resource))
-	if resource == "" {
-		return schema.GroupVersionResource{}, false, fmt.Errorf("resource cannot be empty")
-	}
-	lists, err := discovery.ServerPreferredResources(d)
-	if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
-		return schema.GroupVersionResource{}, false, err
-	}
-	// Partial discovery is OK (e.g. stale metrics.k8s.io); preferred lists still include CRDs like aps.
-	if len(lists) == 0 {
-		return schema.GroupVersionResource{}, false, err
-	}
-	for _, list := range lists {
-		gv, err := schema.ParseGroupVersion(list.GroupVersion)
-		if err != nil {
-			continue
-		}
-		for _, r := range list.APIResources {
-			if r.Name == resource || r.SingularName == resource {
-				return gv.WithResource(r.Name), r.Namespaced, nil
-			}
-			for _, short := range r.ShortNames {
-				if short == resource {
-					return gv.WithResource(r.Name), r.Namespaced, nil
-				}
-			}
-		}
-	}
-	return schema.GroupVersionResource{}, false, UnknownResourceError{Resource: resource}
 }
