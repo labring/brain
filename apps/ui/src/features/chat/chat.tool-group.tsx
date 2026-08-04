@@ -357,15 +357,6 @@ function ProjectDeletionApprovalCard({
       </label>
       <div className="flex flex-wrap gap-2">
         <AppButton
-          disabled={!confirmed}
-          onClick={() => onRespond?.({ approved: true, id: approval.id })}
-          size="sm"
-          type="button"
-          variant="danger"
-        >
-          Delete project
-        </AppButton>
-        <AppButton
           onClick={() =>
             onRespond?.({
               approved: false,
@@ -378,6 +369,15 @@ function ProjectDeletionApprovalCard({
           variant="quiet"
         >
           Cancel
+        </AppButton>
+        <AppButton
+          disabled={!confirmed}
+          onClick={() => onRespond?.({ approved: true, id: approval.id })}
+          size="sm"
+          type="button"
+          variant="danger"
+        >
+          Delete project
         </AppButton>
       </div>
     </div>
