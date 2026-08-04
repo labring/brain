@@ -65,6 +65,45 @@ test("copy falls back to the displayed placeholder only when no resolver backs t
   ]);
 });
 
+test("copy reuses the on-screen value while the row's reveal is active instead of fetching again", async () => {
+  const written = withClipboard();
+
+  await copyResolvedSecretValue({
+    activeRevealValue: "postgresql://alice:s3cr3t@db.svc:5432/app",
+    placeholderValue: "postgresql://<username>:<password>@db.svc:5432/app",
+    resolveAvailable: true,
+    resolveValue: () => Promise.reject(new Error("must not be called")),
+  });
+
+  assert.deepEqual(written, ["postgresql://alice:s3cr3t@db.svc:5432/app"]);
+});
+
+test("an active reveal wins over the placeholder fallback too", async () => {
+  const written = withClipboard();
+
+  await copyResolvedSecretValue({
+    activeRevealValue: "postgresql://alice:s3cr3t@db.svc:5432/app",
+    placeholderValue: "postgresql://<username>:<password>@db.svc:5432/app",
+    resolveAvailable: false,
+    resolveValue: () => Promise.reject(new Error("must not be called")),
+  });
+
+  assert.deepEqual(written, ["postgresql://alice:s3cr3t@db.svc:5432/app"]);
+});
+
+test("an active reveal showing an empty value copies nothing and never fetches", async () => {
+  const written = withClipboard();
+
+  await copyResolvedSecretValue({
+    activeRevealValue: "",
+    placeholderValue: "postgresql://<username>:<password>@db.svc:5432/app",
+    resolveAvailable: true,
+    resolveValue: () => Promise.reject(new Error("must not be called")),
+  });
+
+  assert.deepEqual(written, []);
+});
+
 test("copy rejects when the on-demand fetch fails rather than copying a non-working value", async () => {
   const written = withClipboard();
 

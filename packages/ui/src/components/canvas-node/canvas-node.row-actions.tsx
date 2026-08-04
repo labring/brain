@@ -24,7 +24,7 @@ export function CanvasNodeCopyableRowActions({
   className,
   label,
 }: CanvasNodeCopyableRowActionsProps) {
-  const { copied, copyable, copyRow } = useCanvasNodeCopyableRow();
+  const { busy, copied, copyable, copyRow } = useCanvasNodeCopyableRow();
 
   if (!copyable) {
     return null;
@@ -34,7 +34,7 @@ export function CanvasNodeCopyableRowActions({
     <CanvasNodeCopyableRowControl
       className={cn(
         "pointer-events-auto relative z-20 -mr-1.5 flex shrink-0 items-center gap-0.5 transition-opacity",
-        copied
+        copied || busy
           ? "opacity-100"
           : "opacity-0 group-focus-within/copyable-row:opacity-100 group-hover/copyable-row:opacity-100",
         className
@@ -43,6 +43,7 @@ export function CanvasNodeCopyableRowActions({
     >
       <AppIconButton
         aria-label={`${copied ? "Copied" : "Copy"} ${label}`}
+        busy={busy}
         className={cn(
           "text-muted-foreground hover:text-foreground",
           copied && "text-foreground"

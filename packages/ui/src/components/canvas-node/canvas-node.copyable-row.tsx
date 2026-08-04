@@ -1,5 +1,7 @@
 "use client";
 
+import { Spinner } from "@workspace/ui/components/spinner";
+import { useDelayedFlag } from "@workspace/ui/hooks/use-delayed-flag";
 import { cn } from "@workspace/ui/lib/utils";
 import { Check, Copy } from "lucide-react";
 import {
@@ -36,6 +38,12 @@ export interface CanvasNodeCopyFeedbackScopeProps {
 }
 
 export interface CanvasNodeCopyableRowState {
+  /**
+   * True while the row's copy action is in flight — meaningful when onCopy
+   * fetches the real value on demand. copyRow ignores re-entry while busy,
+   * so a double-click cannot fetch or copy twice.
+   */
+  busy: boolean;
   copied: boolean;
   copyable: boolean;
   /**
@@ -217,29 +225,39 @@ export function CanvasNodeCopyableRow({
   const { copiedKey, showCopiedFeedback } = useCanvasNodeCopyFeedback();
   const hasCopyValue = typeof copyValue === "string" && copyValue.length > 0;
   const resolvedCopyable = (copyable ?? hasCopyValue) && hasCopyValue;
+  const [copyBusy, setCopyBusy] = useState(false);
+  const copyBusyRef = useRef(false);
 
   const copyRow = useCallback(async () => {
-    if (!(resolvedCopyable && copyValue)) {
+    if (!(resolvedCopyable && copyValue) || copyBusyRef.current) {
       return;
     }
 
-    // Feedback follows the copy: an onCopy handler may fetch the real value
-    // on demand, and a rejected copy must not read as "copied".
-    if (onCopy) {
-      await onCopy(copyValue, rowKey);
-    } else {
-      await copyTextToClipboard(copyValue);
+    copyBusyRef.current = true;
+    setCopyBusy(true);
+    try {
+      // Feedback follows the copy: an onCopy handler may fetch the real value
+      // on demand, and a rejected copy must not read as "copied".
+      if (onCopy) {
+        await onCopy(copyValue, rowKey);
+      } else {
+        await copyTextToClipboard(copyValue);
+      }
+      showCopiedFeedback(rowKey);
+    } finally {
+      copyBusyRef.current = false;
+      setCopyBusy(false);
     }
-    showCopiedFeedback(rowKey);
   }, [copyValue, onCopy, resolvedCopyable, rowKey, showCopiedFeedback]);
 
   const state = useMemo(
     (): CanvasNodeCopyableRowState => ({
+      busy: copyBusy,
       copied: copiedKey === rowKey,
       copyable: resolvedCopyable,
       copyRow,
     }),
-    [copiedKey, copyRow, resolvedCopyable, rowKey]
+    [copiedKey, copyBusy, copyRow, resolvedCopyable, rowKey]
   );
 
   return (
@@ -250,6 +268,7 @@ export function CanvasNodeCopyableRow({
           !resolvedCopyable && "canvas-node-copyable-row-static",
           className
         )}
+        data-busy={copyBusy || undefined}
         data-copied={state.copied ? "true" : undefined}
         data-copyable={resolvedCopyable || undefined}
         data-slot="canvas-node-copyable-row"
@@ -306,10 +325,19 @@ export function CanvasNodeCopyableRowIndicator({
   className,
   ...props
 }: CanvasNodeCopyableRowIndicatorProps) {
-  const { copied, copyable } = useCanvasNodeCopyableRow();
+  const { busy, copied, copyable } = useCanvasNodeCopyableRow();
+  const showBusyIndicator = useDelayedFlag(busy);
 
   if (!copyable) {
     return null;
+  }
+
+  if (showBusyIndicator && !copied) {
+    return (
+      <span className={cn("size-4 shrink-0", className)} key="busy" {...props}>
+        <Spinner className="size-4" />
+      </span>
+    );
   }
 
   if (copied) {

@@ -26,7 +26,10 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { REVEAL_DURATION_MS, writeTextToClipboard } from "@/lib/secret-reveal";
+import {
+  copyResolvedSecretValue,
+  REVEAL_DURATION_MS,
+} from "@/lib/secret-reveal";
 import { isStorageShrink } from "@/lib/storage-size";
 import { toastErrorDetail } from "@/lib/toast-utils";
 import {
@@ -1293,6 +1296,10 @@ export function useApSettingsSections({
       try {
         value = await resolveSavedEnvValue(index);
       } catch {
+        toastErrorDetail(
+          "Reveal failed.",
+          "The environment value could not be resolved."
+        );
         return;
       }
       if (value === undefined) {
@@ -1323,19 +1330,34 @@ export function useApSettingsSections({
   );
   const copyResolvedEnvValue = useCallback(
     async (index: number) => {
-      let value: string | undefined;
+      // Copy reuses the row's active reveal when there is one and otherwise
+      // resolves on demand (ADR-0055); a dirty or resolver-less row has no
+      // legitimately copyable saved value, so copy stays silent.
+      const activeRevealValue = revealedEnvValues.get(index);
+      const pendingValue =
+        activeRevealValue === undefined
+          ? resolveSavedEnvValue(index)
+          : undefined;
+      if (activeRevealValue === undefined && pendingValue === undefined) {
+        return;
+      }
       try {
-        value = await resolveSavedEnvValue(index);
+        await copyResolvedSecretValue({
+          activeRevealValue,
+          placeholderValue: "",
+          resolveAvailable: pendingValue !== undefined,
+          resolveValue: () => pendingValue ?? Promise.resolve(""),
+        });
       } catch {
+        toastErrorDetail(
+          "Copy failed.",
+          "The environment value could not be resolved."
+        );
         return;
       }
-      if (value === undefined) {
-        return;
-      }
-      await writeTextToClipboard(value);
       showCopiedEnvValueFeedback(index);
     },
-    [resolveSavedEnvValue, showCopiedEnvValueFeedback]
+    [resolveSavedEnvValue, revealedEnvValues, showCopiedEnvValueFeedback]
   );
   const editEnvRow = (index: number) => {
     const key = envDraftKeys[index];

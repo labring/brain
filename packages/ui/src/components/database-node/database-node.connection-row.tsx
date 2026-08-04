@@ -11,6 +11,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { useBusyAction } from "@workspace/ui/hooks/use-busy-action";
 import { cn } from "@workspace/ui/lib/utils";
 import { Check, Copy, Eye, EyeClosed } from "lucide-react";
 import type { ReactNode } from "react";
@@ -200,7 +201,10 @@ function DatabaseConnectionRowValueLine({
   valueKind: NonNullable<DatabaseConnectionRowValueKind>;
 }) {
   const revealed = revealedValue !== undefined;
-  const { copyRow } = useCanvasNodeCopyableRow();
+  const { busy: copyBusy, copyRow } = useCanvasNodeCopyableRow();
+  const { busy: revealBusy, trigger: handleRevealClick } = useBusyAction(() =>
+    onToggleReveal?.()
+  );
   const handleCopyClick = () => {
     copyRow().catch(() => undefined);
   };
@@ -229,8 +233,9 @@ function DatabaseConnectionRowValueLine({
               "pointer-events-auto relative z-20 -mr-1.5 flex shrink-0 items-center gap-0.5 transition-opacity",
               // Progressive disclosure: controls surface on row hover/focus.
               // Pinned while revealed (the closed eye is the only early-hide
-              // affordance for the on-screen DSN) and during copy feedback.
-              revealed || copied
+              // affordance for the on-screen DSN), during copy feedback, and
+              // while either control's on-demand fetch is in flight.
+              revealed || copied || revealBusy || copyBusy
                 ? "opacity-100"
                 : "opacity-0 group-focus-within/copyable-row:opacity-100 group-hover/copyable-row:opacity-100"
             )}
@@ -239,11 +244,10 @@ function DatabaseConnectionRowValueLine({
               <AppIconButton
                 aria-label={`${revealed ? "Hide" : "Reveal"} ${label}`}
                 aria-pressed={revealed}
+                busy={revealBusy}
                 className="text-muted-foreground hover:text-foreground"
                 data-slot="database-connection-reveal-button"
-                onClick={() => {
-                  Promise.resolve(onToggleReveal()).catch(() => undefined);
-                }}
+                onClick={handleRevealClick}
                 size="sm"
                 type="button"
                 variant="quiet"
@@ -257,6 +261,7 @@ function DatabaseConnectionRowValueLine({
             ) : null}
             <AppIconButton
               aria-label={`${copied ? "Copied" : "Copy"} ${label}`}
+              busy={copyBusy}
               className={cn(
                 "text-muted-foreground hover:text-foreground",
                 copied && "text-foreground"
