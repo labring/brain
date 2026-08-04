@@ -3,32 +3,18 @@ import { test } from "node:test";
 
 import { projectDeletionApprovalInput } from "./chat.tool-group";
 
-test("Project deletion approval exposes the exact preview target and resources", () => {
+test("Project deletion approval exposes the exact preview target", () => {
   assert.deepEqual(
     projectDeletionApprovalInput({
       projectDisplayName: "Payments",
       projectId: "project-1",
       resourceSummary: { ap: ["api"], db: ["postgres"] },
     }),
-    {
-      displayName: "Payments",
-      projectId: "project-1",
-      resources: [
-        ["ap", ["api"]],
-        ["db", ["postgres"]],
-      ],
-    }
+    { projectId: "project-1" }
   );
 });
 
 test("Project deletion approval rejects malformed tool input", () => {
-  assert.equal(projectDeletionApprovalInput({ projectId: "project-1" }), null);
-  assert.equal(
-    projectDeletionApprovalInput({
-      projectDisplayName: "Payments",
-      projectId: "project-1",
-      resourceSummary: { ap: [1] },
-    }),
-    null
-  );
+  assert.equal(projectDeletionApprovalInput({}), null);
+  assert.equal(projectDeletionApprovalInput({ projectId: "" }), null);
 });

@@ -24,9 +24,11 @@ mock.module(fileURLToPath(new URL("./db.ts", import.meta.url)), () => ({
   },
 }));
 
-const { deleteManagedProject, previewManagedProjectDeletion } = await import(
-  "./project-management"
-);
+const {
+  deleteManagedProject,
+  previewManagedProjectDeletion,
+  resourceSummaryFingerprint,
+} = await import("./project-management");
 
 before(async () => {
   harness = await createDeployTaskTestHarness();
@@ -37,7 +39,35 @@ after(async () => {
   await harness.close();
 });
 
-test("invalid deletion input does not consume a valid preview", async () => {
+test("resource summary fingerprints ignore object key order", () => {
+  const summary = {
+    ap: ["api"],
+    db: [],
+    template: ["template"],
+    templateCertificates: [],
+    templateClusters: [],
+    templateConfigMaps: [],
+    templateDeployments: [],
+    templateIngresses: [],
+    templateIssuers: [],
+    templateJobs: [],
+    templateOpsRequests: [],
+    templatePersistentVolumeClaims: [],
+    templatePods: [],
+    templateSecrets: [],
+    templateServices: [],
+    templateStatefulSets: [],
+  };
+  const reordered = Object.fromEntries(
+    Object.entries(summary).reverse()
+  ) as typeof summary;
+  assert.equal(
+    resourceSummaryFingerprint(summary),
+    resourceSummaryFingerprint(reordered)
+  );
+});
+
+test("valid preview deletes without model-provided resource details", async () => {
   assert.ok(projectDb);
   const namespace = "ns-preview";
   const projectId = "project-preview";
@@ -70,9 +100,7 @@ test("invalid deletion input does not consume a valid preview", async () => {
     assert.ok(preview);
 
     const invalid = await deleteManagedProject({
-      actor,
-      expectedDisplayName: preview.project.displayName,
-      expectedResourceSummary: {} as typeof preview.resourceSummary,
+      actor: { ...actor, chatId: "other-chat" },
       previewId: preview.previewId,
       projectId,
     });
@@ -86,8 +114,6 @@ test("invalid deletion input does not consume a valid preview", async () => {
 
     const deleted = await deleteManagedProject({
       actor,
-      expectedDisplayName: preview.project.displayName,
-      expectedResourceSummary: preview.resourceSummary,
       previewId: preview.previewId,
       projectId,
     });
