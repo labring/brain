@@ -227,7 +227,7 @@ test("Billing Area keeps Cost Center's vertical navigation hierarchy", () => {
     html.slice(activeLinkStart, activeLinkEnd),
     'href="/billing/usage"'
   );
-  assertTextOrder(html, ["Billing", "Current page"]);
+  assert.equal(html.includes("<h1"), false);
 });
 
 test("Plan keeps Cost Center's section order around the live balance", () => {
@@ -407,7 +407,9 @@ test("Plan keeps cancellation available while an upgrade is pending", () => {
 test("Costs preserves Cost Center's detail and trend information layers", () => {
   const html = renderToStaticMarkup(<BillingCostsSurface />);
 
-  assertTextOrder(html, ["Cost details", "Cost and payment trends"]);
+  assertTextOrder(html, ["Billing", "Cost &amp; Top-up Trends"]);
+  assert.equal(html.includes("Subscription Payments"), false);
+  assert.equal(html.includes("Total cost"), false);
   assertTextOrder(html, [
     "Select a card to view cost details",
     'data-slot="billing-cost-scope-banner"',

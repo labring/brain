@@ -47,9 +47,6 @@ export function BillingNavigationFrame({
       <div className="mx-auto flex min-h-full w-full max-w-screen-2xl flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row lg:gap-8 lg:px-10 lg:py-10">
         <aside className="shrink-0 lg:w-48">
           <div className="lg:sticky lg:top-10">
-            <h1 className="mb-4 px-3 font-semibold text-foreground text-lg">
-              Billing
-            </h1>
             <nav
               aria-label="Billing sections"
               className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible"

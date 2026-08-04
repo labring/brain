@@ -45,16 +45,10 @@ import {
   isPaidSubscriptionPayment,
   resolveBillingAppType,
   type SubscriptionPayment,
-  subscriptionPaymentDescription,
 } from "@/features/billing/billing-costs-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
 const APP_PAGE_SIZE = 10;
-const PAYMENT_PAGE_SIZE = 10;
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 // The old Cost Center rendered subscription rows as "2026/07/01 10:14".
 const SUBSCRIPTION_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   day: "2-digit",
@@ -542,7 +536,6 @@ export function BillingCostsSurface({
   scope,
   snapshot = EMPTY_SNAPSHOT,
 }: BillingCostsSurfaceProps) {
-  const [paymentPage, setPaymentPage] = useState(1);
   const workspaceNames = new Map(snapshot.workspaces);
   const workspaceCosts = buildWorkspaceCostBreakdown(snapshot);
   const selectedWorkspace = scope.kind === "workspace" ? scope.workspace : null;
@@ -557,18 +550,6 @@ export function BillingCostsSurface({
   const subscriptionPayments = scopedPayments.filter(
     (payment) => payment.Type.toUpperCase() === "SUBSCRIPTION"
   );
-  const subscriptionMicroUnits = subscriptionPayments.reduce(
-    (sum, payment) => sum + payment.Amount,
-    0
-  );
-  const consumptionMicroUnits =
-    selectedCost?.consumptionMicroUnits ??
-    (selectedWorkspace == null ? snapshot.totalConsumptionMicroUnits : 0);
-  const totalMicroUnits = subscriptionMicroUnits + consumptionMicroUnits;
-  const paymentMicroUnits = scopedPayments.reduce(
-    (sum, payment) => sum + payment.Amount,
-    0
-  );
   const monthlyTrend = buildMonthlyBillingTrend({
     costPoints: snapshot.costPoints,
     dateRange,
@@ -580,15 +561,6 @@ export function BillingCostsSurface({
     dateRange,
     regions: [{ costPoints: snapshot.costPoints, label: regionLabel }],
   });
-  const totalPaymentPages = Math.max(
-    1,
-    Math.ceil(scopedPayments.length / PAYMENT_PAGE_SIZE)
-  );
-  const visiblePaymentPage = Math.min(paymentPage, totalPaymentPages);
-  const visiblePayments = scopedPayments.slice(
-    (visiblePaymentPage - 1) * PAYMENT_PAGE_SIZE,
-    visiblePaymentPage * PAYMENT_PAGE_SIZE
-  );
   const consumptionRows = snapshot.appOverviews.map((app) => {
     const { queryAppType, typeName } = resolveBillingAppType(
       app.appType,
@@ -646,11 +618,6 @@ export function BillingCostsSurface({
       className="flex flex-col gap-6 pb-16"
       data-slot="billing-costs-surface"
     >
-      <div className="flex flex-col gap-1 border-border border-b pb-5">
-        <h1 className="font-semibold text-2xl text-foreground">Costs</h1>
-        <span className="text-muted-foreground text-sm">{bannerTitle}</span>
-      </div>
-
       {error == null ? null : (
         <Alert variant="destructive">
           <AlertCircle aria-hidden />
@@ -661,36 +628,13 @@ export function BillingCostsSurface({
         </Alert>
       )}
 
-      <dl className="grid divide-y divide-border border-border border-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-        {[
-          ["Total cost", totalMicroUnits],
-          ["Subscription", subscriptionMicroUnits],
-          ["Consumption Cost", consumptionMicroUnits],
-          ["Payments", paymentMicroUnits],
-        ].map(([label, amount]) => (
-          <div className="flex flex-col gap-1 px-4 py-4" key={label}>
-            <dt className="text-muted-foreground text-xs">{label}</dt>
-            <dd className="font-semibold text-foreground text-xl tabular-nums">
-              {isLoading ? (
-                <Skeleton className="h-7 w-24" />
-              ) : (
-                formatBillingAmount(amount as number, currency)
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
       <Tabs defaultValue="details">
         <TabsList aria-label="Cost views">
           <TabsTrigger className="min-h-11" value="details">
-            Cost details
+            Billing
           </TabsTrigger>
           <TabsTrigger className="min-h-11" value="trends">
-            Cost and payment trends
-          </TabsTrigger>
-          <TabsTrigger className="min-h-11" value="payments">
-            Subscription Payments
+            Cost &amp; Top-up Trends
           </TabsTrigger>
         </TabsList>
 
@@ -806,74 +750,6 @@ export function BillingCostsSurface({
             daily={dailyTrend}
             monthly={monthlyTrend}
           />
-        </TabsContent>
-
-        <TabsContent className="py-6" value="payments">
-          <TableLayout>
-            <TableLayoutCaption>
-              <span className="font-medium">Subscription Payments</span>
-              <Badge variant="secondary">Paid</Badge>
-            </TableLayoutCaption>
-            <TableLayoutContent>
-              <TableLayoutHeadRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Payment ID</TableHead>
-                <TableHead>Workspace</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableLayoutHeadRow>
-              <TableLayoutBody>
-                {isLoading ? <LoadingTableRow columns={6} /> : null}
-                {!isLoading && visiblePayments.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      className="h-24 text-center text-muted-foreground"
-                      colSpan={6}
-                    >
-                      No Subscription Payments in this period.
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-                {isLoading
-                  ? null
-                  : visiblePayments.map((payment) => (
-                      <TableRow key={payment.ID}>
-                        <TableCell className="whitespace-nowrap text-muted-foreground text-xs">
-                          {DATE_TIME_FORMATTER.format(new Date(payment.Time))}
-                        </TableCell>
-                        <TableCell className="max-w-48 break-all font-mono text-xs">
-                          {payment.ID}
-                        </TableCell>
-                        <TableCell>
-                          {workspaceName(workspaceNames, payment.Workspace)}
-                        </TableCell>
-                        <TableCell className="capitalize">
-                          {subscriptionPaymentDescription(payment)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">Paid</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {formatBillingAmount(payment.Amount, currency)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-              </TableLayoutBody>
-            </TableLayoutContent>
-            <TableLayoutFooter>
-              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <span className="text-muted-foreground text-sm">
-                  {scopedPayments.length} payments
-                </span>
-                <Pagination
-                  currentPage={visiblePaymentPage}
-                  onPageChange={setPaymentPage}
-                  totalPages={totalPaymentPages}
-                />
-              </div>
-            </TableLayoutFooter>
-          </TableLayout>
         </TabsContent>
       </Tabs>
     </div>
