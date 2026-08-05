@@ -58,6 +58,28 @@ export function answerOnboardingStep(
 }
 
 /**
+ * Fire-and-forget terminal complete: Submit & Enter Console never waits on
+ * it, and the write is terminal-wins idempotent server-side, so a failure at
+ * worst re-shows the dialog on the next entry.
+ */
+export function completeOnboardingProfile(
+  credentials: OnboardingFetcherCredentials,
+  openGoalText: string | null
+): void {
+  fetch(
+    `/api/onboarding-profile/complete?namespace=${encodeURIComponent(credentials.namespace)}`,
+    {
+      body: JSON.stringify({ openGoalText }),
+      headers: {
+        "content-type": "application/json",
+        ...personalResourceAuthHeaders(credentials),
+      },
+      method: "POST",
+    }
+  ).catch(() => undefined);
+}
+
+/**
  * Fire-and-forget terminal dismiss: Skip never waits on it, and the write is
  * terminal-wins idempotent server-side, so a failure at worst re-shows the
  * dialog on the next entry.

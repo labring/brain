@@ -8,15 +8,20 @@ import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 import {
   answerOnboardingStep,
+  completeOnboardingProfile,
   dismissOnboardingProfile,
   fetchOnboardingSamplingVerdict,
+  type OnboardingFetcherCredentials,
 } from "./client";
 import { OnboardingDialog } from "./onboarding-dialog";
 import {
   judgeOnboardingSampling,
   onboardingCredentialsReady,
 } from "./onboarding-gate-core";
-import type { AnswerOnboardingStepRequest } from "./types";
+import type {
+  AnswerOnboardingStepRequest,
+  CompleteOnboardingProfileRequest,
+} from "./types";
 
 const ONBOARDING_TWEAKS = {
   note: "Opens the dialog unconditionally; Skip is inert while forced, so sampling state stays untouched.",
@@ -87,42 +92,53 @@ export function OnboardingGate() {
     };
   }, [appToken, kubeconfig, namespace]);
 
-  const handleAnswerStep = (payload: AnswerOnboardingStepRequest) => {
-    // Stepwise writes are fire-and-forget: the dialog advances on its own
-    // and a silent failure just leaves the person Unsampled for next entry.
+  // The shared tail of every dialog write, all fire-and-forget: the
+  // forced-open preview knob must never mutate the developer's real sampling
+  // state, and missing credentials fail silently (terminal-wins keeps
+  // retries harmless server-side).
+  const fireWrite = (
+    write: (credentials: OnboardingFetcherCredentials) => void
+  ) => {
     if (forceOpen) {
-      // Forced-open preview: the knob must never mutate real sampling state.
       return;
     }
     if (onboardingCredentialsReady({ appToken, kubeconfig, namespace })) {
-      answerOnboardingStep(
-        { appToken: appToken.trim(), kubeconfig, namespace: namespace.trim() },
-        payload
-      );
+      write({
+        appToken: appToken.trim(),
+        kubeconfig,
+        namespace: namespace.trim(),
+      });
     }
   };
 
-  const handleSkip = (payload: { dismissedAtStep: number }) => {
-    // Skip drops the person into the console immediately; the terminal write
-    // is fire-and-forget and never blocks the exit (terminal-wins keeps
-    // retries harmless server-side).
+  const handleAnswerStep = (payload: AnswerOnboardingStepRequest) => {
+    // Stepwise writes never block Next: the dialog advances on its own and
+    // a silent failure just leaves the person Unsampled for next entry.
+    fireWrite((credentials) => answerOnboardingStep(credentials, payload));
+  };
+
+  const handleComplete = (payload: CompleteOnboardingProfileRequest) => {
+    // Submit & Enter Console drops the person into the console immediately;
+    // the terminal write never blocks the exit.
     setOpen(false);
-    if (forceOpen) {
-      // Forced-open preview: the knob keeps the dialog up and must never
-      // mutate the developer's real sampling state.
-      return;
-    }
-    if (onboardingCredentialsReady({ appToken, kubeconfig, namespace })) {
-      dismissOnboardingProfile(
-        { appToken: appToken.trim(), kubeconfig, namespace: namespace.trim() },
-        payload.dismissedAtStep
-      );
-    }
+    fireWrite((credentials) =>
+      completeOnboardingProfile(credentials, payload.openGoalText)
+    );
+  };
+
+  const handleSkip = (payload: { dismissedAtStep: number }) => {
+    // Skip drops the person into the console immediately; the terminal
+    // write never blocks the exit.
+    setOpen(false);
+    fireWrite((credentials) =>
+      dismissOnboardingProfile(credentials, payload.dismissedAtStep)
+    );
   };
 
   return (
     <OnboardingDialog
       onAnswerStep={handleAnswerStep}
+      onComplete={handleComplete}
       onSkip={handleSkip}
       open={open || forceOpen}
     />

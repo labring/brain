@@ -23,6 +23,7 @@ import type {
 import {
   type AnswerOnboardingStepRequest,
   answerOnboardingStepRequestSchema,
+  completeOnboardingProfileRequestSchema,
   dismissOnboardingProfileRequestSchema,
 } from "./types";
 
@@ -30,6 +31,7 @@ export interface OnboardingProfileHandlerDependencies {
   answerStep: OnboardingProfileStore["answerStep"];
   /** Test seam; defaults to `JWT_INTERNAL` from the env. */
   appTokenConfig?: AppTokenVerificationConfig | null;
+  complete: OnboardingProfileStore["complete"];
   dismiss: OnboardingProfileStore["dismiss"];
   isSampled: OnboardingProfileStore["isSampled"];
   /** Test seam; defaults to the region-local Identity Fingerprint store. */
@@ -48,14 +50,30 @@ function jsonError(input: {
   );
 }
 
-/** Maps one step's request onto the columns it owns (Step 1 only, today). */
+/** Maps one step's request onto the columns it owns. */
 function stepAnswerColumns(
   request: AnswerOnboardingStepRequest
 ): OnboardingStepAnswerColumns {
-  return {
-    roleOtherText: request.roleOtherText,
-    roleType: request.roleType,
-  };
+  switch (request.step) {
+    case 1:
+      return {
+        roleOtherText: request.roleOtherText,
+        roleType: request.roleType,
+      };
+    case 2:
+      return {
+        usageContext: request.usageContext,
+        usageOtherText: request.usageOtherText,
+      };
+    case 3:
+      return {
+        priorityDisplayOrder: request.priorityDisplayOrder,
+        priorityOtherText: request.priorityOtherText,
+        priorityTags: request.priorityTags,
+      };
+    default:
+      return request satisfies never;
+  }
 }
 
 /** The write found the binding superseded by a concurrent merge (ADR-0059). */
@@ -136,6 +154,44 @@ export function createOnboardingProfileHandlers(
           return superseded;
         }
         console.error("[api/onboarding-profile/step] persistence unavailable");
+        return jsonError({
+          code: "onboarding_profile_unavailable",
+          message: "Onboarding profile persistence is unavailable.",
+          status: 503,
+        });
+      }
+    },
+    complete: async (request: Request): Promise<Response> => {
+      const authorization = await authorize(request);
+      if (!authorization.ok) {
+        return authorization.response;
+      }
+      const body = await request.json().catch(() => null);
+      const parsed = completeOnboardingProfileRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return jsonError({
+          code: "invalid_request",
+          message: "Invalid onboarding complete request.",
+          status: 400,
+        });
+      }
+      try {
+        const state = await dependencies.complete({
+          actor: {
+            legacyWorkspaceActor: authorization.actor.legacyWorkspaceActor,
+            userUid: authorization.actor.owner.userUid,
+          },
+          openGoalText: parsed.data.openGoalText,
+        });
+        return Response.json(state);
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
+        console.error(
+          "[api/onboarding-profile/complete] persistence unavailable"
+        );
         return jsonError({
           code: "onboarding_profile_unavailable",
           message: "Onboarding profile persistence is unavailable.",
