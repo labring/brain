@@ -7,6 +7,8 @@ import { onboardingProfiles } from "./schema";
 import type {
   OnboardingProfileStatus,
   OnboardingProfileTerminalState,
+  OnboardingProfileWriteState,
+  OnboardingRoleType,
 } from "./types";
 
 /** The Sampled statuses (ADR-0061): the dialog never shows again. */
@@ -25,7 +27,27 @@ export interface OnboardingProfileActor {
   userUid: string;
 }
 
+/**
+ * The answer columns one stepwise write may touch (Step 1 today; later steps
+ * extend this). A step always writes its full column pair, so a re-answer
+ * can never leave stale Other text behind.
+ */
+export interface OnboardingStepAnswerColumns {
+  roleOtherText?: string | null;
+  roleType?: OnboardingRoleType;
+}
+
 export interface OnboardingProfileStore {
+  /**
+   * Stepwise answer upsert: creates or updates the row with
+   * `status: in_progress`. Terminal wins — against a `completed` or
+   * `dismissed` row nothing is written and the terminal status is reported,
+   * so fire-and-forget retries can never corrupt a terminal row.
+   */
+  answerStep(input: {
+    actor: OnboardingProfileActor;
+    answers: OnboardingStepAnswerColumns;
+  }): Promise<OnboardingProfileWriteState>;
   /**
    * Terminal dismiss (Skip). Terminal wins: when the row is already
    * `completed` or `dismissed`, nothing is written and the pre-existing state
@@ -52,6 +74,39 @@ export function createOnboardingProfileStore(
   getDb: () => AssistantPgDatabase
 ): OnboardingProfileStore {
   return {
+    answerStep: (input) =>
+      getDb().transaction(async (tx) => {
+        // Same discipline as dismiss: the write lands on a uid-keyed row, so
+        // re-check the fingerprint in the same transaction (ADR-0059).
+        await requireCurrentIdentityBinding(tx, {
+          crName: input.actor.legacyWorkspaceActor,
+          userUid: input.actor.userUid,
+        });
+        await tx
+          .insert(onboardingProfiles)
+          .values({
+            ...input.answers,
+            status: "in_progress",
+            userUid: input.actor.userUid,
+          })
+          .onConflictDoUpdate({
+            // A live row keeps its `in_progress` status; only the step's own
+            // answer columns move, so earlier steps' answers accumulate.
+            set: { ...input.answers, updatedAt: new Date() },
+            setWhere: notInArray(onboardingProfiles.status, [
+              ...TERMINAL_ONBOARDING_PROFILE_STATUSES,
+            ]),
+            target: onboardingProfiles.userUid,
+          });
+        const [row] = await tx
+          .select({ status: onboardingProfiles.status })
+          .from(onboardingProfiles)
+          .where(eq(onboardingProfiles.userUid, input.actor.userUid));
+        if (row == null) {
+          throw new Error("Onboarding step answer failed to persist.");
+        }
+        return { status: row.status };
+      }),
     dismiss: (input) =>
       getDb().transaction(async (tx) => {
         // The dismiss creates or finalizes a uid-keyed row; re-check the

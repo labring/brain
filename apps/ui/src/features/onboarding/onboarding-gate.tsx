@@ -7,6 +7,7 @@ import { useDevTweaks } from "@/features/dev-tweaks/use-dev-tweaks";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 import {
+  answerOnboardingStep,
   dismissOnboardingProfile,
   fetchOnboardingSamplingVerdict,
 } from "./client";
@@ -15,6 +16,7 @@ import {
   judgeOnboardingSampling,
   onboardingCredentialsReady,
 } from "./onboarding-gate-core";
+import type { AnswerOnboardingStepRequest } from "./types";
 
 const ONBOARDING_TWEAKS = {
   note: "Opens the dialog unconditionally; Skip is inert while forced, so sampling state stays untouched.",
@@ -85,6 +87,21 @@ export function OnboardingGate() {
     };
   }, [appToken, kubeconfig, namespace]);
 
+  const handleAnswerStep = (payload: AnswerOnboardingStepRequest) => {
+    // Stepwise writes are fire-and-forget: the dialog advances on its own
+    // and a silent failure just leaves the person Unsampled for next entry.
+    if (forceOpen) {
+      // Forced-open preview: the knob must never mutate real sampling state.
+      return;
+    }
+    if (onboardingCredentialsReady({ appToken, kubeconfig, namespace })) {
+      answerOnboardingStep(
+        { appToken: appToken.trim(), kubeconfig, namespace: namespace.trim() },
+        payload
+      );
+    }
+  };
+
   const handleSkip = (payload: { dismissedAtStep: number }) => {
     // Skip drops the person into the console immediately; the terminal write
     // is fire-and-forget and never blocks the exit (terminal-wins keeps
@@ -103,5 +120,11 @@ export function OnboardingGate() {
     }
   };
 
-  return <OnboardingDialog onSkip={handleSkip} open={open || forceOpen} />;
+  return (
+    <OnboardingDialog
+      onAnswerStep={handleAnswerStep}
+      onSkip={handleSkip}
+      open={open || forceOpen}
+    />
+  );
 }
