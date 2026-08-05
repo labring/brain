@@ -243,7 +243,6 @@ async function resolveCreateInputs(
   }
   const create: CreateDeployTaskInput = {
     agentContractVersion: input.create.agentContractVersion,
-    agentSkillRevision: input.create.agentSkillRevision,
     createdFrom: input.create.createdFrom,
     creatingActor: input.create.creatingActor,
     credentialBinding: input.create.credentialBinding,
@@ -381,7 +380,6 @@ async function insertCreatedDeployTask(
         credentialBinding: create.credentialBinding ?? null,
         executionMode: create.executionMode ?? "brain",
         agentContractVersion: create.agentContractVersion ?? 0,
-        agentSkillRevision: create.agentSkillRevision ?? null,
         githubConnectionId: null,
         namespace: create.namespace.trim(),
         phase: "queued",

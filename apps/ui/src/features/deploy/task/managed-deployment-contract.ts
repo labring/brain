@@ -12,7 +12,6 @@ export const MANAGED_INPUT_VALUES_MAX_BYTES = 64 * 1024;
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DNS_LABEL_PATTERN = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/;
 const DNS_SUBDOMAIN_PATTERN = /^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$/;
-const GIT_REVISION_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const FIELD_MANAGER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SENSITIVE_INPUT_KEY_PATTERN =
   /(?:^|[_-])(?:ACCESS_KEY|API_KEY|CLIENT_SECRET|PASSWORD|PASSWD|PRIVATE_KEY|SECRET|TOKEN)(?:$|[_-])/i;
@@ -89,7 +88,6 @@ export const managedDeploymentControlSchema = envelopeSchema
       "repair",
       "brain-review-rejected",
     ]),
-    skillRevision: z.string().regex(GIT_REVISION_PATTERN),
   })
   .strict()
   .superRefine((control, context) => {

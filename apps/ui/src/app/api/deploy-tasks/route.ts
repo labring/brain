@@ -16,10 +16,7 @@ import {
   resolveDeployTaskTargetForCreate,
   runDeployTask,
 } from "@/features/deploy/task/runner";
-import {
-  getAiDeployExecutionModeFromEnv,
-  getDeploySkillRevisionFromEnv,
-} from "@/features/deploy/task/runtime-config";
+import { getAiDeployExecutionModeFromEnv } from "@/features/deploy/task/runtime-config";
 import {
   CURRENT_DEPLOY_TASK_AGENT_CONTRACT_VERSION,
   CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
@@ -243,10 +240,6 @@ export async function POST(request: Request) {
   const executionMode = supportsAgentExecution
     ? getAiDeployExecutionModeFromEnv(process.env)
     : "brain";
-  const agentSkillRevision =
-    executionMode === "agent"
-      ? getDeploySkillRevisionFromEnv(process.env)
-      : null;
   const result = await createDeployTaskAction(getDeployTaskEngineContext(), {
     create: {
       ...taskInput,
@@ -254,7 +247,6 @@ export async function POST(request: Request) {
         executionMode === "agent"
           ? CURRENT_DEPLOY_TASK_AGENT_CONTRACT_VERSION
           : 0,
-      agentSkillRevision,
       createdFrom: "ui",
       executionMode,
       ...(creatingActor == null ? {} : { creatingActor }),

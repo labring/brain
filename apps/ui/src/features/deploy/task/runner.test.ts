@@ -4,14 +4,12 @@ import { buildRuntimeContract } from "./build-runtime-contract";
 import { deployTaskFailureSummary } from "./failure-summary";
 import { deployOutputProgressSummary } from "./output-progress";
 import {
-  AGENT_DEPLOY_SKILL_SOURCE,
   DEFAULT_AI_DEPLOY_EXECUTION_MODE,
   DEFAULT_DEPLOY_DEVBOX_STORAGE_LIMIT,
   DEFAULT_DEPLOY_SKILL_SOURCE,
   DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
   getAiDeployExecutionModeFromEnv,
   getDeployDevboxStorageLimitFromEnv,
-  getDeploySkillRevisionFromEnv,
   getDeploySkillSourceFromEnv,
 } from "./runtime-config";
 
@@ -174,39 +172,21 @@ describe("deploy task runtime config", () => {
     );
   });
 
-  it("pins the code-owned Agent skill source to a full commit revision", () => {
-    const revision = "0123456789abcdef0123456789abcdef01234567";
-    const env = {
-      DEPLOY_SKILL_REVISION: revision.toUpperCase(),
-      DEPLOY_SKILL_SOURCE: "https://github.com/example/untrusted-skills",
-      SEALAI_AI_DEPLOY_EXECUTION_MODE: "agent",
-    };
-
-    expect(getDeploySkillRevisionFromEnv(env)).toBe(revision);
-    expect(getDeploySkillSourceFromEnv(env)).toBe(
-      `https://github.com/labring/sealos-skills/tree/${revision}`
-    );
-  });
-
-  it("uses a code-owned repository for agent execution", () => {
-    expect(AGENT_DEPLOY_SKILL_SOURCE).toBe(
-      "https://github.com/labring/sealos-skills"
-    );
+  it("uses the configured branch source for agent execution", () => {
     expect(
       getDeploySkillSourceFromEnv({
-        DEPLOY_SKILL_REVISION: "0123456789abcdef0123456789abcdef01234567",
-        DEPLOY_SKILL_SOURCE: AGENT_DEPLOY_SKILL_SOURCE,
+        DEPLOY_SKILL_SOURCE:
+          "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy",
         SEALAI_AI_DEPLOY_EXECUTION_MODE: "agent",
       })
     ).toBe(
-      "https://github.com/labring/sealos-skills/tree/0123456789abcdef0123456789abcdef01234567"
+      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
     );
   });
 
-  it("keeps the legacy skill source unchanged when Agent mode is disabled", () => {
+  it("keeps the configured skill source unchanged when Agent mode is disabled", () => {
     expect(
       getDeploySkillSourceFromEnv({
-        DEPLOY_SKILL_REVISION: "0123456789abcdef0123456789abcdef01234567",
         DEPLOY_SKILL_SOURCE:
           "https://github.com/labring/sealos-skills/tree/brain-deploy-preview",
         SEALAI_AI_DEPLOY_EXECUTION_MODE: "brain",
@@ -214,23 +194,6 @@ describe("deploy task runtime config", () => {
     ).toBe(
       "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
     );
-  });
-
-  it("requires a full commit revision in agent execution mode", () => {
-    expect(() =>
-      getDeploySkillSourceFromEnv({
-        DEPLOY_SKILL_SOURCE:
-          "https://github.com/labring/sealos-skills/tree/main",
-        SEALAI_AI_DEPLOY_EXECUTION_MODE: "agent",
-      })
-    ).toThrow(
-      "DEPLOY_SKILL_REVISION must be a full Git commit SHA in agent execution mode."
-    );
-    expect(() =>
-      getDeploySkillRevisionFromEnv({
-        DEPLOY_SKILL_REVISION: "0123456",
-      })
-    ).toThrow("DEPLOY_SKILL_REVISION must be a full Git commit SHA.");
   });
 });
 

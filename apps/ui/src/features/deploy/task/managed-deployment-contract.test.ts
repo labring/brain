@@ -22,7 +22,6 @@ import {
 } from "./managed-deployment-contract";
 
 const TASK_ID = "0a0ed7c8-daa9-487e-8d08-0fb506658881";
-const SHA = "a".repeat(40);
 
 function control(overrides: Record<string, unknown> = {}) {
   return {
@@ -42,7 +41,6 @@ function control(overrides: Record<string, unknown> = {}) {
     repairTurn: 0,
     resumeMode: "initial",
     schemaVersion: 1,
-    skillRevision: SHA,
     taskId: TASK_ID,
     turnId: 0,
     ...overrides,

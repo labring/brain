@@ -149,7 +149,6 @@ import {
   updateDeployTaskTimeline,
 } from "./runner-writes";
 import {
-  AGENT_DEPLOY_SKILL_SOURCE,
   DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
   getDeployDevboxStorageLimitFromEnv,
   getDeploySkillSourceFromEnv,
@@ -4112,10 +4111,6 @@ async function runManagedDeploymentTurn(input: {
   task: DeployTaskRow;
   turnCount: number;
 }): Promise<ManagedTurnResult> {
-  const skillRevision = input.task.agentSkillRevision?.trim();
-  if (!skillRevision) {
-    throw new Error("Managed deployment task has no pinned skill revision.");
-  }
   const turnId = input.turnCount + 1;
   const control: ManagedDeploymentControl = {
     ...(input.brainReviewPath === undefined
@@ -4142,7 +4137,6 @@ async function runManagedDeploymentTurn(input: {
     repairTurn: input.repairCount,
     resumeMode: input.resumeMode,
     schemaVersion: 1,
-    skillRevision,
     taskId: input.task.id,
     turnId,
   };
@@ -4811,16 +4805,7 @@ async function runAiDeploymentTask(input: {
     try {
       await execOrThrow({
         command: buildDeploySkillInstallCommand(
-          getDeploySkillSourceFromEnv({
-            ...process.env,
-            ...(input.task.executionMode === "agent"
-              ? {
-                  DEPLOY_SKILL_REVISION: input.task.agentSkillRevision ?? "",
-                  DEPLOY_SKILL_SOURCE: AGENT_DEPLOY_SKILL_SOURCE,
-                  SEALAI_AI_DEPLOY_EXECUTION_MODE: "agent",
-                }
-              : {}),
-          })
+          getDeploySkillSourceFromEnv(process.env)
         ),
         deadlineAtMs: prepareDeadlineAtMs,
         namespace: input.task.namespace,
