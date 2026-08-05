@@ -137,7 +137,9 @@ test("plan picker continues into the selected upgrade workflow", async () => {
       });
 
       const text = rendered?.baseElement.textContent ?? "";
-      assert.ok(text.includes("Upgrade to Team"));
+      assert.ok(text.includes("Change Plan"));
+      assert.ok(text.includes("Order summary"));
+      assert.ok(text.includes("Team"));
       assert.ok(text.includes("Due today"));
       assert.ok(text.includes("$9.00"));
     } finally {
@@ -212,7 +214,7 @@ test("upgrade confirmation shows the quote before reserving checkout at click ti
 
       await act(() => {
         const confirm = rendered?.getByRole("button", {
-          name: "Confirm and pay",
+          name: "Subscribe & Pay",
         });
         if (confirm != null) {
           fireEvent.click(confirm);
@@ -550,7 +552,7 @@ test("upgrade waiting ignores other payments, polls, times out, reopens, and can
       });
       await act(() => {
         const confirm = rendered?.getByRole("button", {
-          name: "Confirm and pay",
+          name: "Subscribe & Pay",
         });
         if (confirm != null) {
           fireEvent.click(confirm);
