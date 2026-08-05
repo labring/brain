@@ -378,15 +378,10 @@ test("a merge re-keys pending current-generation authorization sessions and leav
   ]);
 });
 
+// Full rows, so any field-level answer merging shows up in the deepEqual.
 function selectProfiles(userUids: string[]) {
   return db
-    .select({
-      dismissedAtStep: onboardingProfiles.dismissedAtStep,
-      roleType: onboardingProfiles.roleType,
-      status: onboardingProfiles.status,
-      updatedAt: onboardingProfiles.updatedAt,
-      userUid: onboardingProfiles.userUid,
-    })
+    .select()
     .from(onboardingProfiles)
     .where(inArray(onboardingProfiles.userUid, userUids))
     .orderBy(onboardingProfiles.userUid);
@@ -420,7 +415,9 @@ test("a merge re-keys the tombstone's onboarding profile when the survivor holds
     mintedAt: 7000,
     userUid: "profile-tombstone-uid",
   });
+  const tombstoneCreatedAt = new Date("2026-06-20T07:00:00Z");
   await db.insert(onboardingProfiles).values({
+    createdAt: tombstoneCreatedAt,
     dismissedAtStep: 2,
     roleType: "founder",
     status: "dismissed",
@@ -434,14 +431,23 @@ test("a merge re-keys the tombstone's onboarding profile when the survivor holds
     userUid: "profile-survivor-uid",
   });
 
+  // Only the key moved: every other column, answered or not, is verbatim.
   assert.deepEqual(
     await selectProfiles(["profile-tombstone-uid", "profile-survivor-uid"]),
     [
       {
+        createdAt: tombstoneCreatedAt,
         dismissedAtStep: 2,
+        openGoalText: null,
+        priorityDisplayOrder: null,
+        priorityOtherText: null,
+        priorityTags: null,
+        roleOtherText: null,
         roleType: "founder",
         status: "dismissed",
         updatedAt: terminalUpdatedAt,
+        usageContext: null,
+        usageOtherText: null,
         userUid: "profile-survivor-uid",
       },
     ]
@@ -456,12 +462,27 @@ test("where both merged accounts hold a profile, the survivor's row wins and the
     mintedAt: 9000,
     userUid: "both-tombstone-uid",
   });
+  // The tombstone answered everything; the survivor answered nothing. Any
+  // field-level merging would surface as a non-null answer column below.
+  const survivorTouchedAt = new Date("2026-06-21T09:00:00Z");
   await db.insert(onboardingProfiles).values([
-    { status: "completed", userUid: "both-tombstone-uid" },
     {
+      openGoalText: "migrate the studio's client apps",
+      priorityDisplayOrder: ["low_cost", "stability", "other"],
+      priorityOtherText: "compliance",
+      priorityTags: ["stability", "other"],
+      roleOtherText: "agency owner",
+      roleType: "other",
+      status: "completed",
+      usageContext: "team_or_client",
+      usageOtherText: "client work",
+      userUid: "both-tombstone-uid",
+    },
+    {
+      createdAt: survivorTouchedAt,
       dismissedAtStep: 1,
       status: "dismissed",
-      updatedAt: new Date("2026-06-21T09:00:00Z"),
+      updatedAt: survivorTouchedAt,
       userUid: "both-survivor-uid",
     },
   ]);
@@ -476,10 +497,18 @@ test("where both merged accounts hold a profile, the survivor's row wins and the
     await selectProfiles(["both-tombstone-uid", "both-survivor-uid"]),
     [
       {
+        createdAt: survivorTouchedAt,
         dismissedAtStep: 1,
+        openGoalText: null,
+        priorityDisplayOrder: null,
+        priorityOtherText: null,
+        priorityTags: null,
+        roleOtherText: null,
         roleType: null,
         status: "dismissed",
-        updatedAt: new Date("2026-06-21T09:00:00Z"),
+        updatedAt: survivorTouchedAt,
+        usageContext: null,
+        usageOtherText: null,
         userUid: "both-survivor-uid",
       },
     ]
