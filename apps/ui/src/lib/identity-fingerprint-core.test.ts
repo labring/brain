@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PGlite } from "@electric-sql/pglite";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
@@ -17,6 +17,7 @@ import {
   githubOauthConnections,
   identityFingerprints,
 } from "@/features/chat/persistence/schema";
+import { onboardingProfiles } from "@/features/onboarding/schema";
 
 import {
   createIdentityFingerprintStore,
@@ -375,6 +376,116 @@ test("a merge re-keys pending current-generation authorization sessions and leav
       workspaceActor: "session-cr",
     },
   ]);
+});
+
+function selectProfiles(userUids: string[]) {
+  return db
+    .select({
+      dismissedAtStep: onboardingProfiles.dismissedAtStep,
+      roleType: onboardingProfiles.roleType,
+      status: onboardingProfiles.status,
+      updatedAt: onboardingProfiles.updatedAt,
+      userUid: onboardingProfiles.userUid,
+    })
+    .from(onboardingProfiles)
+    .where(inArray(onboardingProfiles.userUid, userUids))
+    .orderBy(onboardingProfiles.userUid);
+}
+
+async function observeCapturingTelemetry(
+  binding: Parameters<typeof observe>[0]
+): Promise<Record<string, unknown> | undefined> {
+  const infoCalls: unknown[][] = [];
+  const originalInfo = console.info;
+  console.info = (...args: unknown[]) => {
+    infoCalls.push(args);
+  };
+  try {
+    assert.deepEqual(await observe(binding), { outcome: "merge" });
+  } finally {
+    console.info = originalInfo;
+  }
+  return infoCalls.find(
+    (args) =>
+      args[0] === "[telemetry] account merge re-keyed personal resources"
+  )?.[1] as Record<string, unknown> | undefined;
+}
+
+test("a merge re-keys the tombstone's onboarding profile when the survivor holds none", async () => {
+  // ADR-0061: the profile is keyed by the bare uid, and updatedAt doubles as
+  // the terminal timestamp — a re-key must not touch it.
+  const terminalUpdatedAt = new Date("2026-06-20T08:00:00Z");
+  await observe({
+    crName: "profile-cr",
+    mintedAt: 7000,
+    userUid: "profile-tombstone-uid",
+  });
+  await db.insert(onboardingProfiles).values({
+    dismissedAtStep: 2,
+    roleType: "founder",
+    status: "dismissed",
+    updatedAt: terminalUpdatedAt,
+    userUid: "profile-tombstone-uid",
+  });
+
+  const telemetry = await observeCapturingTelemetry({
+    crName: "profile-cr",
+    mintedAt: 8000,
+    userUid: "profile-survivor-uid",
+  });
+
+  assert.deepEqual(
+    await selectProfiles(["profile-tombstone-uid", "profile-survivor-uid"]),
+    [
+      {
+        dismissedAtStep: 2,
+        roleType: "founder",
+        status: "dismissed",
+        updatedAt: terminalUpdatedAt,
+        userUid: "profile-survivor-uid",
+      },
+    ]
+  );
+  assert.equal(telemetry?.profilesRekeyed, 1);
+  assert.equal(telemetry?.profilesReleased, 0);
+});
+
+test("where both merged accounts hold a profile, the survivor's row wins and the tombstone's is deleted", async () => {
+  await observe({
+    crName: "profile-both-cr",
+    mintedAt: 9000,
+    userUid: "both-tombstone-uid",
+  });
+  await db.insert(onboardingProfiles).values([
+    { status: "completed", userUid: "both-tombstone-uid" },
+    {
+      dismissedAtStep: 1,
+      status: "dismissed",
+      updatedAt: new Date("2026-06-21T09:00:00Z"),
+      userUid: "both-survivor-uid",
+    },
+  ]);
+
+  const telemetry = await observeCapturingTelemetry({
+    crName: "profile-both-cr",
+    mintedAt: 9500,
+    userUid: "both-survivor-uid",
+  });
+
+  assert.deepEqual(
+    await selectProfiles(["both-tombstone-uid", "both-survivor-uid"]),
+    [
+      {
+        dismissedAtStep: 1,
+        roleType: null,
+        status: "dismissed",
+        updatedAt: new Date("2026-06-21T09:00:00Z"),
+        userUid: "both-survivor-uid",
+      },
+    ]
+  );
+  assert.equal(telemetry?.profilesRekeyed, 0);
+  assert.equal(telemetry?.profilesReleased, 1);
 });
 
 test("a write-transaction re-check passes only while the binding is current", async () => {
