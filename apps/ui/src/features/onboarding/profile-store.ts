@@ -5,10 +5,12 @@ import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
 
 import { onboardingProfiles } from "./schema";
 import type {
+  OnboardingPriorityTag,
   OnboardingProfileStatus,
   OnboardingProfileTerminalState,
   OnboardingProfileWriteState,
   OnboardingRoleType,
+  OnboardingUsageContext,
 } from "./types";
 
 /** The Sampled statuses (ADR-0061): the dialog never shows again. */
@@ -28,13 +30,17 @@ export interface OnboardingProfileActor {
 }
 
 /**
- * The answer columns one stepwise write may touch (Step 1 today; later steps
- * extend this). A step always writes its full column pair, so a re-answer
- * can never leave stale Other text behind.
+ * The answer columns one stepwise write may touch. A step always writes its
+ * full column set, so a re-answer can never leave stale Other text behind.
  */
 export interface OnboardingStepAnswerColumns {
+  priorityDisplayOrder?: OnboardingPriorityTag[];
+  priorityOtherText?: string | null;
+  priorityTags?: OnboardingPriorityTag[];
   roleOtherText?: string | null;
   roleType?: OnboardingRoleType;
+  usageContext?: OnboardingUsageContext;
+  usageOtherText?: string | null;
 }
 
 export interface OnboardingProfileStore {
@@ -48,6 +54,16 @@ export interface OnboardingProfileStore {
     actor: OnboardingProfileActor;
     answers: OnboardingStepAnswerColumns;
   }): Promise<OnboardingProfileWriteState>;
+  /**
+   * Terminal complete (Submit & Enter Console): finalizes the row with
+   * `status: completed` and the optional Step 4 open goal. Terminal wins —
+   * against a row already `completed` or `dismissed`, nothing is written and
+   * the pre-existing state is returned.
+   */
+  complete(input: {
+    actor: OnboardingProfileActor;
+    openGoalText: string | null;
+  }): Promise<OnboardingProfileTerminalState>;
   /**
    * Terminal dismiss (Skip). Terminal wins: when the row is already
    * `completed` or `dismissed`, nothing is written and the pre-existing state
@@ -106,6 +122,46 @@ export function createOnboardingProfileStore(
           throw new Error("Onboarding step answer failed to persist.");
         }
         return { status: row.status };
+      }),
+    complete: (input) =>
+      getDb().transaction(async (tx) => {
+        // Same discipline as dismiss: the terminal write lands on a uid-keyed
+        // row, so re-check the fingerprint in the same transaction (ADR-0059).
+        await requireCurrentIdentityBinding(tx, {
+          crName: input.actor.legacyWorkspaceActor,
+          userUid: input.actor.userUid,
+        });
+        await tx
+          .insert(onboardingProfiles)
+          .values({
+            openGoalText: input.openGoalText,
+            status: "completed",
+            userUid: input.actor.userUid,
+          })
+          .onConflictDoUpdate({
+            // Answers already given stay persisted: completing touches only
+            // its own columns, never the per-step answer columns.
+            set: {
+              openGoalText: input.openGoalText,
+              status: "completed",
+              updatedAt: new Date(),
+            },
+            setWhere: notInArray(onboardingProfiles.status, [
+              ...TERMINAL_ONBOARDING_PROFILE_STATUSES,
+            ]),
+            target: onboardingProfiles.userUid,
+          });
+        const [row] = await tx
+          .select({
+            dismissedAtStep: onboardingProfiles.dismissedAtStep,
+            status: onboardingProfiles.status,
+          })
+          .from(onboardingProfiles)
+          .where(eq(onboardingProfiles.userUid, input.actor.userUid));
+        if (row == null || row.status === "in_progress") {
+          throw new Error("Onboarding complete failed to settle terminally.");
+        }
+        return { dismissedAtStep: row.dismissedAtStep, status: row.status };
       }),
     dismiss: (input) =>
       getDb().transaction(async (tx) => {

@@ -166,12 +166,38 @@ async function stepRequest(
   );
 }
 
+async function completeRequest(
+  workspaceActor: string,
+  body: unknown,
+  options: { appToken?: string | null; namespace?: string } = {}
+): Promise<Request> {
+  const namespace = options.namespace ?? "shared";
+  return new Request(
+    `https://brain.test/api/onboarding-profile/complete?namespace=${namespace}`,
+    {
+      body: JSON.stringify(body),
+      headers: {
+        Authorization: `Bearer ${encodedKubeconfig("shared", workspaceActor)}`,
+        "content-type": "application/json",
+        ...(options.appToken === null
+          ? {}
+          : {
+              "X-Sealos-App-Token":
+                options.appToken ?? (await mintAppToken(workspaceActor)),
+            }),
+      },
+      method: "POST",
+    }
+  );
+}
+
 function handlers(
   overrides: Partial<OnboardingProfileHandlerDependencies> = {}
 ) {
   return createOnboardingProfileHandlers({
     answerStep: store.answerStep,
     appTokenConfig: APP_TOKEN_CONFIG,
+    complete: store.complete,
     dismiss: store.dismiss,
     isSampled: store.isSampled,
     observeFingerprint,
@@ -242,6 +268,65 @@ test("answering Step 1 upserts an in_progress row that still counts as Unsampled
   // Abandoning the tab here leaves exactly this row — the person is still
   // Unsampled, so the dialog shows again on the next entry.
   const verdict = await sampling(await samplingRequest("step1-cr"));
+  assert.deepEqual(await verdict.json(), { sampled: false });
+});
+
+test("Steps 1-3 accumulate answers on the person's single row", async () => {
+  const { answerStep, sampling } = handlers();
+
+  await answerStep(
+    await stepRequest("accumulate-cr", {
+      roleOtherText: null,
+      roleType: "founder",
+      step: 1,
+    })
+  );
+  await answerStep(
+    await stepRequest("accumulate-cr", {
+      step: 2,
+      usageContext: "real_business",
+      usageOtherText: null,
+    })
+  );
+  const response = await answerStep(
+    await stepRequest("accumulate-cr", {
+      priorityDisplayOrder: [
+        "stability",
+        "low_cost",
+        "ease_of_use",
+        "performance",
+        "fast_launch",
+        "scalability",
+        "other",
+      ],
+      priorityOtherText: null,
+      priorityTags: ["low_cost", "stability"],
+      step: 3,
+    })
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: "in_progress" });
+  const row = await profileRow("accumulate-cr-uid");
+  // Every step's answer is on the one row; no step write clobbers another.
+  assert.equal(row?.roleType, "founder");
+  assert.equal(row?.usageContext, "real_business");
+  assert.equal(row?.usageOtherText, null);
+  // Array order = click order, distinct from the displayed order.
+  assert.deepEqual(row?.priorityTags, ["low_cost", "stability"]);
+  assert.deepEqual(row?.priorityDisplayOrder, [
+    "stability",
+    "low_cost",
+    "ease_of_use",
+    "performance",
+    "fast_launch",
+    "scalability",
+    "other",
+  ]);
+  assert.equal(row?.status, "in_progress");
+
+  // Short of terminal, three answered steps still mean Unsampled.
+  const verdict = await sampling(await samplingRequest("accumulate-cr"));
   assert.deepEqual(await verdict.json(), { sampled: false });
 });
 
@@ -349,6 +434,100 @@ test("dismiss finalizes an abandoned in_progress row without clobbering answers"
   assert.equal(row?.roleType, "founder");
 });
 
+test("Submit & Enter Console completes the accumulated row terminally", async () => {
+  const { answerStep, complete, sampling } = handlers();
+
+  await answerStep(
+    await stepRequest("finish-cr", {
+      roleOtherText: null,
+      roleType: "individual_developer",
+      step: 1,
+    })
+  );
+  await answerStep(
+    await stepRequest("finish-cr", {
+      step: 2,
+      usageContext: "side_project",
+      usageOtherText: null,
+    })
+  );
+  const response = await complete(
+    await completeRequest("finish-cr", {
+      openGoalText: "deploy an AI agent",
+    })
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    dismissedAtStep: null,
+    status: "completed",
+  });
+  const row = await profileRow("finish-cr-uid");
+  assert.equal(row?.status, "completed");
+  assert.equal(row?.openGoalText, "deploy an AI agent");
+  // Completing finalizes the row; every answered step stays on it.
+  assert.equal(row?.roleType, "individual_developer");
+  assert.equal(row?.usageContext, "side_project");
+  assert.equal(row?.dismissedAtStep, null);
+
+  // Completed is terminal: the person is Sampled and the dialog never
+  // shows again.
+  const verdict = await sampling(await samplingRequest("finish-cr"));
+  assert.deepEqual(await verdict.json(), { sampled: true });
+});
+
+test("the Step 4 text is optional: an empty submit completes cleanly", async () => {
+  const { complete, sampling } = handlers();
+
+  const response = await complete(
+    await completeRequest("finish-empty-cr", { openGoalText: null })
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    dismissedAtStep: null,
+    status: "completed",
+  });
+  const row = await profileRow("finish-empty-cr-uid");
+  assert.equal(row?.status, "completed");
+  assert.equal(row?.openGoalText, null);
+
+  const verdict = await sampling(await samplingRequest("finish-empty-cr"));
+  assert.deepEqual(await verdict.json(), { sampled: true });
+});
+
+test("terminal wins: complete against a terminal row is a no-op returning the current state", async () => {
+  const { complete, dismiss } = handlers();
+
+  // Against a dismissed row: the dismissal stands untouched.
+  await dismiss(await dismissRequest("late-finish-cr", { dismissedAtStep: 2 }));
+  const dismissedBefore = await profileRow("late-finish-cr-uid");
+  const ontoDismissed = await complete(
+    await completeRequest("late-finish-cr", { openGoalText: "too late" })
+  );
+  assert.equal(ontoDismissed.status, 200);
+  assert.deepEqual(await ontoDismissed.json(), {
+    dismissedAtStep: 2,
+    status: "dismissed",
+  });
+  assert.deepEqual(await profileRow("late-finish-cr-uid"), dismissedBefore);
+
+  // Against a completed row: a fire-and-forget retry changes nothing.
+  await complete(
+    await completeRequest("twice-finish-cr", { openGoalText: "first goal" })
+  );
+  const completedBefore = await profileRow("twice-finish-cr-uid");
+  const again = await complete(
+    await completeRequest("twice-finish-cr", { openGoalText: "second goal" })
+  );
+  assert.equal(again.status, 200);
+  assert.deepEqual(await again.json(), {
+    dismissedAtStep: null,
+    status: "completed",
+  });
+  assert.deepEqual(await profileRow("twice-finish-cr-uid"), completedBefore);
+});
+
 test("terminal wins: a later dismiss is a no-op returning the current state", async () => {
   const { dismiss } = handlers();
 
@@ -450,8 +629,12 @@ test("a malformed step answer is refused before any write", async () => {
     { roleOtherText: "   ", roleType: "other", step: 1 },
     // Over the length bound.
     { roleOtherText: "x".repeat(501), roleType: "other", step: 1 },
-    // A step that does not exist on this surface yet.
+    // Step 2 without its full column pair.
     { step: 2, usageContext: "exploring" },
+    // Step 2 loose text: Other text without the `other` tag.
+    { step: 2, usageContext: "exploring", usageOtherText: "just looking" },
+    // Step 4 has no stepwise member — its answer travels on complete.
+    { openGoalText: "ship it", step: 4 },
     { roleType: "founder" },
     {},
     null,
@@ -461,6 +644,94 @@ test("a malformed step answer is refused before any write", async () => {
   }
 
   assert.equal(await profileRow("bad-step-cr-uid"), undefined);
+});
+
+const FULL_DISPLAY_ORDER = [
+  "ease_of_use",
+  "stability",
+  "low_cost",
+  "performance",
+  "scalability",
+  "fast_launch",
+  "other",
+] as const;
+
+test("a malformed Step 3 answer is refused before any write", async () => {
+  const { answerStep } = handlers();
+
+  const valid = {
+    priorityDisplayOrder: [...FULL_DISPLAY_ORDER],
+    priorityOtherText: null,
+    priorityTags: ["ease_of_use"],
+    step: 3,
+  };
+  for (const body of [
+    // A fourth tag is over the cap.
+    {
+      ...valid,
+      priorityTags: ["ease_of_use", "stability", "low_cost", "performance"],
+    },
+    // Zero tags: Next is gated on at least one.
+    { ...valid, priorityTags: [] },
+    // Duplicate tags are not distinct picks.
+    { ...valid, priorityTags: ["stability", "stability"] },
+    // Loose text: Other text without the `other` tag among the picks.
+    { ...valid, priorityOtherText: "fair pricing" },
+    // The display order must be the full vocabulary…
+    { ...valid, priorityDisplayOrder: FULL_DISPLAY_ORDER.slice(0, 6) },
+    // …with every tag exactly once…
+    {
+      ...valid,
+      priorityDisplayOrder: [
+        ...FULL_DISPLAY_ORDER.slice(0, 5),
+        "other",
+        "other",
+      ],
+    },
+    // …and Other pinned last.
+    { ...valid, priorityDisplayOrder: [...FULL_DISPLAY_ORDER].reverse() },
+  ]) {
+    const response = await answerStep(await stepRequest("bad-three-cr", body));
+    assert.equal(response.status, 400);
+  }
+
+  assert.equal(await profileRow("bad-three-cr-uid"), undefined);
+});
+
+test("a malformed complete body is refused before any write", async () => {
+  const { complete } = handlers();
+
+  for (const body of [
+    // The key is required even though the text is optional.
+    {},
+    // Blank text must be normalized to null by the client, not stored.
+    { openGoalText: "   " },
+    // Over the length bound.
+    { openGoalText: "x".repeat(2001) },
+    null,
+  ]) {
+    const response = await complete(
+      await completeRequest("bad-finish-cr", body)
+    );
+    assert.equal(response.status, 400);
+  }
+
+  assert.equal(await profileRow("bad-finish-cr-uid"), undefined);
+});
+
+test("complete fails closed without the app token", async () => {
+  const { complete } = handlers();
+
+  const response = await complete(
+    await completeRequest(
+      "closed-finish-cr",
+      { openGoalText: null },
+      { appToken: null }
+    )
+  );
+
+  assert.equal(response.status, 401);
+  assert.equal(await profileRow("closed-finish-cr-uid"), undefined);
 });
 
 test("the step answer fails closed without the app token", async () => {
