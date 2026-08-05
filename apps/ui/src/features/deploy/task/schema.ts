@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  check,
   index,
   jsonb,
   pgSchema,
@@ -42,6 +43,14 @@ export type DeployTaskPhase =
   | "completed";
 
 export type DeploymentTaskCreatedFrom = "api" | "automation" | "chat" | "ui";
+
+/**
+ * Which control plane owns deployment mutations for this task. Existing rows
+ * remain on the legacy Brain-owned path until a runner explicitly opts in.
+ */
+export type DeployTaskExecutionMode = "agent" | "brain";
+
+export const CURRENT_DEPLOY_TASK_AGENT_CONTRACT_VERSION = 1;
 
 export const CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION = 1;
 export const CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION = 1;
@@ -322,6 +331,23 @@ export const deployTasks = ns.table(
     gatewayStateSnapshot: jsonb(
       "gateway_state_snapshot"
     ).$type<DeployTaskGatewayStateSnapshot | null>(),
+    executionMode: text("execution_mode")
+      .notNull()
+      .$type<DeployTaskExecutionMode>()
+      .default("brain"),
+    agentContractVersion: bigint("agent_contract_version", {
+      mode: "number",
+    })
+      .notNull()
+      .default(0),
+    agentSkillRevision: text("agent_skill_revision"),
+    agentTurnCount: bigint("agent_turn_count", { mode: "number" })
+      .notNull()
+      .default(0),
+    agentRepairCount: bigint("agent_repair_count", { mode: "number" })
+      .notNull()
+      .default(0),
+    agentLastReportDigest: text("agent_last_report_digest"),
     failureDetails: jsonb(
       "failure_details"
     ).$type<DeployTaskFailureDetails | null>(),
@@ -371,6 +397,18 @@ export const deployTasks = ns.table(
       .notNull(),
   },
   (table) => [
+    check(
+      "deploy_tasks_agent_contract_version_nonnegative",
+      sql`${table.agentContractVersion} >= 0`
+    ),
+    check(
+      "deploy_tasks_agent_turn_count_nonnegative",
+      sql`${table.agentTurnCount} >= 0`
+    ),
+    check(
+      "deploy_tasks_agent_repair_count_nonnegative",
+      sql`${table.agentRepairCount} >= 0`
+    ),
     index("deploy_tasks_namespace_updated_at_idx").on(
       table.namespace,
       table.updatedAt

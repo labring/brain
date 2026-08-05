@@ -1,5 +1,11 @@
 import type { DeployTaskRow } from "./schema";
 
+export type ManagedDeployResumeMode =
+  | "brain-review-rejected"
+  | "initial"
+  | "input-submitted"
+  | "repair";
+
 const SEALOS_TEMPLATE_PROJECT_OWNERSHIP_PROMPT_LINES = [
   "Do not add projectId under spec for Kubernetes native resources such as Deployment, Service, Ingress, StatefulSet, ConfigMap, Secret, or Job.",
   "Project ownership is applied later by Brain as metadata.labels.brain.io/project-id; the Devbox agent does not need to encode the project id in generated YAML.",
@@ -85,6 +91,38 @@ export function buildGatewayRepairPrompt(task: DeployTaskRow): string {
       : null,
     task.prompt ? `User request: ${task.prompt}` : null,
     "Before ending, verify with: test -s /home/devbox/project/.sealos/delivery-manifest.json && test -s /home/devbox/project/.sealos/build-result.json && test -s /home/devbox/project/.sealos/template/index.yaml",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildManagedGatewayPrompt(input: {
+  resumeMode: ManagedDeployResumeMode;
+  task: DeployTaskRow;
+}): string {
+  return [
+    "You are running a Brain-managed SealAI deployment turn.",
+    "Work in /home/devbox/project and run the sealos-deploy skill in managed mode.",
+    `Resume mode: ${input.resumeMode}`,
+    "",
+    "Before taking action, read all managed deployment state:",
+    "- /home/devbox/project/.sealos/brain/control.json",
+    "- existing files under /home/devbox/project/.sealos, including prior delivery and build artifacts",
+    "- the input file referenced by SEALAI_INPUTS_PATH when that environment variable is set",
+    "",
+    "Treat control.json as authoritative for task identity, turn identity, namespace, allocated resource identity, and deadline.",
+    input.resumeMode === "initial"
+      ? "Begin the managed deployment from the source while preserving the allocated identity from control.json."
+      : "Preserve completed phases and existing deployment conclusions. Do not restart source analysis, allocate a different identity, or discard existing artifacts unless the managed skill determines they are invalid.",
+    input.resumeMode === "initial"
+      ? "Run /sealos-deploy to completion for this initial managed turn."
+      : "Run /sealos-deploy managed resume to completion for this managed continuation turn.",
+    "Do not replace the skill workflow with ad-hoc deployment commands or ask for input in the conversation.",
+    "Write the managed turn result through the .sealos/brain contract before ending.",
+    "",
+    ...gatewaySourcePromptLines(input.task),
+    `Namespace: ${input.task.namespace}`,
+    input.task.prompt ? `User request: ${input.task.prompt}` : null,
   ]
     .filter(Boolean)
     .join("\n");

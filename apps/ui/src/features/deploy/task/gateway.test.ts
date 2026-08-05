@@ -23,6 +23,8 @@ const realRunnerWrites = requireModule("./runner-writes");
 mock.module("./gateway-prompt", () => ({
   buildGatewayPrompt: () => "deploy",
   buildGatewayRepairPrompt: () => "repair",
+  buildManagedGatewayPrompt: (input: { resumeMode: string }) =>
+    `managed:${input.resumeMode}`,
 }));
 mock.module("./runner-writes", () => ({
   deployTaskRunSignal: () => runController.signal,
@@ -34,9 +36,8 @@ mock.module("./runner-writes", () => ({
   updateDeployTaskState: () => updateDeployTaskStateImpl(),
 }));
 
-const { CodexGatewayTimeoutError, runDeployTaskGateway } = requireModule(
-  "./gateway"
-) as typeof import("./gateway");
+const { CodexGatewayApiError, CodexGatewayTimeoutError, runDeployTaskGateway } =
+  requireModule("./gateway") as typeof import("./gateway");
 
 function gatewayState(activeTurn: boolean) {
   return {
@@ -48,16 +49,20 @@ function gatewayState(activeTurn: boolean) {
   };
 }
 
-function sessionResponse(activeTurn: boolean): Response {
+function sessionResponse(
+  activeTurn: boolean,
+  sessionId = "session-test-1"
+): Response {
   return Response.json({
     ok: true,
-    sessionId: "session-test-1",
+    sessionId,
     state: gatewayState(activeTurn),
   });
 }
 
-function task(): DeployTaskRow {
+function task(gatewaySessionId: string | null = null): DeployTaskRow {
   return {
+    gatewaySessionId,
     id: "task-gateway-test",
     namespace: "ns-test",
     runner: { kind: "ai" },
@@ -67,11 +72,14 @@ function task(): DeployTaskRow {
 }
 
 function installGatewayFetch(input: {
+  createdSessionId?: string;
   interruptStatus?: number;
   interruptStatuses?: number[];
   onState?: () => void;
+  prompts?: string[];
   stateActiveSequence?: boolean[];
   stateActive: boolean;
+  stateStatuses?: number[];
   turnError?: Error;
 }): string[] {
   const paths: string[] = [];
@@ -92,18 +100,29 @@ function installGatewayFetch(input: {
       return Response.json({ ok: true });
     }
     if (url.pathname === "/api/sessions" && request.method === "POST") {
-      return sessionResponse(false);
+      return sessionResponse(false, input.createdSessionId);
     }
     if (url.pathname.endsWith("/turn") && request.method === "POST") {
       if (input.turnError != null) {
         throw input.turnError;
       }
+      if (input.prompts != null) {
+        const body = JSON.parse(String(init?.body)) as { prompt?: unknown };
+        if (typeof body.prompt === "string") {
+          input.prompts.push(body.prompt);
+        }
+      }
       return sessionResponse(true);
     }
     if (url.pathname.endsWith("/state")) {
       input.onState?.();
+      const readIndex = stateRead++;
+      const status = input.stateStatuses?.[readIndex] ?? 200;
+      if (status !== 200) {
+        return Response.json({ error: "state unavailable" }, { status });
+      }
       return sessionResponse(
-        input.stateActiveSequence?.[stateRead++] ?? input.stateActive
+        input.stateActiveSequence?.[readIndex] ?? input.stateActive
       );
     }
     if (url.pathname.endsWith("/turn/interrupt")) {
@@ -152,6 +171,151 @@ describe("deployment Codex gateway interruption", () => {
     expect(
       recordedEvents.some((event) => event.kind.includes("interrupted"))
     ).toBe(false);
+  });
+
+  it("reuses the Task gateway session and returns its identifier", async () => {
+    const paths = installGatewayFetch({ stateActive: false });
+
+    const sessionId = await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: task("session-existing-1"),
+    });
+
+    expect(sessionId).toBe("session-existing-1");
+    expect(paths).toContain("GET /api/sessions/session-existing-1/state");
+    expect(paths).toContain("POST /api/sessions/session-existing-1/turn");
+    expect(paths).not.toContain("POST /api/sessions");
+    expect(
+      recordedEvents.some(
+        (event) => event.kind === "deploy_task.gateway_session_resumed"
+      )
+    ).toBe(true);
+  });
+
+  it("waits for an active resumed turn instead of submitting a concurrent turn", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateActiveSequence: [true, false],
+    });
+
+    const sessionId = await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 5000,
+      task: task("session-active-1"),
+    });
+
+    expect(sessionId).toBe("session-active-1");
+    expect(paths).not.toContain("POST /api/sessions/session-active-1/turn");
+    expect(
+      recordedEvents.some(
+        (event) => event.kind === "deploy_task.gateway_turn_completed"
+      )
+    ).toBe(true);
+  });
+
+  it("prefers an explicit existing session over the Task session", async () => {
+    const paths = installGatewayFetch({ stateActive: false });
+
+    const sessionId = await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      existingSessionId: "session-explicit-1",
+      task: task("session-task-1"),
+    });
+
+    expect(sessionId).toBe("session-explicit-1");
+    expect(paths).toContain("GET /api/sessions/session-explicit-1/state");
+    expect(paths).not.toContain("GET /api/sessions/session-task-1/state");
+  });
+
+  for (const missingStatus of [404, 410]) {
+    it(`creates a replacement session when state returns ${missingStatus}`, async () => {
+      const paths = installGatewayFetch({
+        createdSessionId: "session-replacement-1",
+        stateActive: false,
+        stateStatuses: [missingStatus, 200],
+      });
+
+      const sessionId = await runDeployTaskGateway({
+        context: { authToken: "gateway-token", url: "https://gateway.test" },
+        deadlineAtMs: Date.now() + 1000,
+        task: task("session-missing-1"),
+      });
+
+      expect(sessionId).toBe("session-replacement-1");
+      expect(paths).toContain("POST /api/sessions");
+      expect(paths).toContain("POST /api/sessions/session-replacement-1/turn");
+    });
+  }
+
+  it("does not replace a session on non-missing state errors", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateStatuses: [503],
+    });
+
+    let thrown: unknown;
+    try {
+      await runDeployTaskGateway({
+        context: { authToken: "gateway-token", url: "https://gateway.test" },
+        deadlineAtMs: Date.now() + 1000,
+        task: task("session-unavailable-1"),
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(CodexGatewayApiError);
+    expect((thrown as InstanceType<typeof CodexGatewayApiError>).status).toBe(
+      503
+    );
+    expect(paths).not.toContain("POST /api/sessions");
+  });
+
+  it("uses the same managed turn prompt for created and resumed sessions", async () => {
+    const createdPrompts: string[] = [];
+    const resumedPrompts: string[] = [];
+    installGatewayFetch({ prompts: createdPrompts, stateActive: false });
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      resumeMode: "input-submitted",
+      task: task(),
+    });
+
+    installGatewayFetch({ prompts: resumedPrompts, stateActive: false });
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      resumeMode: "input-submitted",
+      task: task("session-existing-1"),
+    });
+
+    expect(createdPrompts).toEqual(["managed:input-submitted"]);
+    expect(resumedPrompts).toEqual(createdPrompts);
+  });
+
+  it("keeps legacy deployment and output repair prompts unchanged", async () => {
+    const deployPrompts: string[] = [];
+    const repairPrompts: string[] = [];
+    installGatewayFetch({ prompts: deployPrompts, stateActive: false });
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: task(),
+    });
+
+    installGatewayFetch({ prompts: repairPrompts, stateActive: false });
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      repairOutput: true,
+      task: task(),
+    });
+
+    expect(deployPrompts).toEqual(["deploy"]);
+    expect(repairPrompts).toEqual(["repair"]);
   });
 
   it("interrupts once on turn timeout and preserves the timeout error", async () => {

@@ -41,6 +41,9 @@ export type DeployTaskRunOutcome =
   | "failed";
 
 export interface DeployTaskHandleStateFields {
+  agentLastReportDigest?: DeployTaskRow["agentLastReportDigest"];
+  agentRepairCount?: DeployTaskRow["agentRepairCount"];
+  agentTurnCount?: DeployTaskRow["agentTurnCount"];
   artifactSummary?: DeployTaskArtifactSummary;
   blockingInputs?: DeployTaskBlockingInput[];
   canvasProjection?: DeploymentTaskCanvasProjection;
@@ -248,6 +251,7 @@ export function createDeployTaskHandle(
     async complete(completion) {
       assertLive();
       const row = await transitionDeployTask(ctx, {
+        cancelRequest: "absent",
         event: completion?.event ?? {
           kind: "deployment_task.completed",
           message: "Deployment task completed.",

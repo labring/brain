@@ -17,6 +17,11 @@ import {
   runDeployTask,
 } from "@/features/deploy/task/runner";
 import {
+  getAiDeployExecutionModeFromEnv,
+  getDeploySkillRevisionFromEnv,
+} from "@/features/deploy/task/runtime-config";
+import {
+  CURRENT_DEPLOY_TASK_AGENT_CONTRACT_VERSION,
   CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
   type DeploymentCredentialBinding,
   type DeploymentTaskSource,
@@ -51,7 +56,9 @@ const requestSchema = createDeployTaskInputSchema
     (value) =>
       value.predecessorTaskId != null ||
       (value.runner != null && value.source != null && value.target != null),
-    { message: "source, target, and runner are required without a predecessor" }
+    {
+      message: "source, target, and runner are required without a predecessor",
+    }
   );
 
 function jsonError(message: string, status: number, code?: string) {
@@ -217,6 +224,7 @@ export async function POST(request: Request) {
     }
   }
   const effectiveSource = parsed.data.source ?? predecessor?.source;
+  const effectiveRunner = parsed.data.runner ?? predecessor?.runner;
   const creatingActor = namespaceResolved.workspaceActor;
   const bindingResolution = await resolveCredentialBinding({
     appToken: appTokenFromRequest(request),
@@ -230,10 +238,25 @@ export async function POST(request: Request) {
   const { credentialBinding } = bindingResolution;
 
   const { encodedKubeconfig, predecessorTaskId, ...taskInput } = parsed.data;
+  const supportsAgentExecution =
+    effectiveSource?.kind === "github" && effectiveRunner?.kind === "ai";
+  const executionMode = supportsAgentExecution
+    ? getAiDeployExecutionModeFromEnv(process.env)
+    : "brain";
+  const agentSkillRevision =
+    executionMode === "agent"
+      ? getDeploySkillRevisionFromEnv(process.env)
+      : null;
   const result = await createDeployTaskAction(getDeployTaskEngineContext(), {
     create: {
       ...taskInput,
+      agentContractVersion:
+        executionMode === "agent"
+          ? CURRENT_DEPLOY_TASK_AGENT_CONTRACT_VERSION
+          : 0,
+      agentSkillRevision,
       createdFrom: "ui",
+      executionMode,
       ...(creatingActor == null ? {} : { creatingActor }),
       ...(credentialBinding == null ? {} : { credentialBinding }),
       namespace: taskNamespace,

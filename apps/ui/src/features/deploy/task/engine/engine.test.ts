@@ -25,8 +25,10 @@ import type {
 } from "./context";
 import {
   DeployTaskRunCancelledError,
+  DeployTaskRunSupersededError,
   DeployTaskRunTimeoutError,
 } from "./errors";
+import { createDeployTaskHandle } from "./handle";
 import { runDeployTaskReaperSweep } from "./reaper";
 import {
   getActiveDeployTaskHandle,
@@ -227,6 +229,55 @@ test("stale lease epoch fences writes to no-ops", async () => {
   assert.equal(fencedEvent, null);
   assert.equal((await eventsFor(row.id)).length, 0);
   assert.equal((await taskById(row.id)).status, "running");
+});
+
+test("agent execution counters default safely and use fenced state writes", async () => {
+  const ctx = testCtx();
+  const row = await insertTaskRow(harness.db, {
+    leaseEpoch: 2,
+    leaseOwner: "test-proc",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "running",
+  });
+
+  assert.equal(row.executionMode, "brain");
+  assert.equal(row.agentContractVersion, 0);
+  assert.equal(row.agentSkillRevision, null);
+  assert.equal(row.agentTurnCount, 0);
+  assert.equal(row.agentRepairCount, 0);
+  assert.equal(row.agentLastReportDigest, null);
+
+  const active = createDeployTaskHandle(ctx, {
+    controller: new AbortController(),
+    leaseEpoch: 2,
+    namespace: row.namespace,
+    taskId: row.id,
+  });
+  await active.setState({
+    agentLastReportDigest: "sha256:report-1",
+    agentRepairCount: 1,
+    agentTurnCount: 2,
+  });
+
+  const stored = await taskById(row.id);
+  assert.equal(stored.executionMode, "brain");
+  assert.equal(stored.agentContractVersion, 0);
+  assert.equal(stored.agentSkillRevision, null);
+  assert.equal(stored.agentTurnCount, 2);
+  assert.equal(stored.agentRepairCount, 1);
+  assert.equal(stored.agentLastReportDigest, "sha256:report-1");
+
+  const stale = createDeployTaskHandle(ctx, {
+    controller: new AbortController(),
+    leaseEpoch: 1,
+    namespace: row.namespace,
+    taskId: row.id,
+  });
+  await assert.rejects(
+    stale.setState({ agentTurnCount: 3 }),
+    DeployTaskRunSupersededError
+  );
+  assert.equal((await taskById(row.id)).agentTurnCount, 2);
 });
 
 test("lease renewal is fenced by epoch, owner, and status", async () => {
@@ -1770,6 +1821,30 @@ test("deadline transition CAS defines cancel-versus-timeout boundary priority", 
     );
     assert.equal((await taskById(boundary.id)).status, "cancelled");
   }
+});
+
+test("persisted cancel intent wins over completion", async () => {
+  const ctx = testCtx();
+  const row = await insertTaskRow(harness.db, {
+    leaseClaimedAt: new Date(),
+    leaseEpoch: 6,
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+    leaseOwner: ctx.processId,
+    status: "applying",
+  });
+  const handle = createDeployTaskHandle(ctx, {
+    controller: new AbortController(),
+    leaseEpoch: 6,
+    namespace: row.namespace,
+    taskId: row.id,
+  });
+
+  assert.ok(await recordDeployTaskCancelRequest(ctx, { taskId: row.id }));
+  await assert.rejects(handle.complete(), DeployTaskRunSupersededError);
+  assert.equal((await taskById(row.id)).status, "applying");
+
+  await handle.acknowledgeCancel();
+  assert.equal((await taskById(row.id)).status, "cancelled");
 });
 
 test("reaper pauses terminal-task devboxes and deletes only runtimes after retention", async () => {

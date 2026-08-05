@@ -321,6 +321,9 @@ test("POST binds GitHub creation to the initiator's uid-keyed active connection"
       credentialOwner: "uid-alice",
       version: 1,
     });
+    assert.equal(stored?.executionMode, "brain");
+    assert.equal(stored?.agentContractVersion, 0);
+    assert.equal(stored?.agentSkillRevision, null);
     const events = await harness.db
       .select()
       .from(deployTaskEvents)
@@ -337,6 +340,48 @@ test("POST binds GitHub creation to the initiator's uid-keyed active connection"
   } finally {
     // A red assertion may fire while an unexpectedly created task is still
     // mid-transition; closing PGlite with a query in flight hangs the run.
+    await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
+test("POST freezes agent execution metadata on a new GitHub AI task", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  activeGithubConnection = githubConnection("connection-alice", "alice");
+  const previousMode = process.env.SEALAI_AI_DEPLOY_EXECUTION_MODE;
+  const previousRevision = process.env.DEPLOY_SKILL_REVISION;
+  const revision = "0123456789abcdef0123456789abcdef01234567";
+  process.env.SEALAI_AI_DEPLOY_EXECUTION_MODE = "agent";
+  process.env.DEPLOY_SKILL_REVISION = revision;
+  try {
+    const { POST } = await import("./route");
+    const response = await POST(
+      deployTaskRequest(githubCreateBody(), "app-token-alice")
+    );
+    const body = (await response.json()) as { task: { id: string } };
+
+    assert.equal(response.status, 201);
+    const [stored] = await harness.db
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, body.task.id));
+    assert.equal(stored?.executionMode, "agent");
+    assert.equal(stored?.agentContractVersion, 1);
+    assert.equal(stored?.agentSkillRevision, revision);
+    await runDone;
+  } finally {
+    if (previousMode === undefined) {
+      delete process.env.SEALAI_AI_DEPLOY_EXECUTION_MODE;
+    } else {
+      process.env.SEALAI_AI_DEPLOY_EXECUTION_MODE = previousMode;
+    }
+    if (previousRevision === undefined) {
+      delete process.env.DEPLOY_SKILL_REVISION;
+    } else {
+      process.env.DEPLOY_SKILL_REVISION = previousRevision;
+    }
     await runDone?.catch(() => undefined);
     clearHarness();
     await harness.close();

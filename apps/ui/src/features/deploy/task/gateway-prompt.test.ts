@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildGatewayPrompt, buildGatewayRepairPrompt } from "./gateway-prompt";
+import {
+  buildGatewayPrompt,
+  buildGatewayRepairPrompt,
+  buildManagedGatewayPrompt,
+  type ManagedDeployResumeMode,
+} from "./gateway-prompt";
 import type { DeployTaskRow } from "./schema";
 
 const PROJECT_ID = "project-uid";
@@ -36,5 +41,32 @@ test("deployment gateway prompts keep Brain project ownership out of generated s
     assert.doesNotMatch(prompt, new RegExp(`Project: ${PROJECT_ID}`));
     assert.match(prompt, PROJECT_LABEL_RE);
     assert.match(prompt, NATIVE_KIND_RE);
+  }
+});
+
+test("managed gateway turns use one hydration contract for every resume mode", () => {
+  const resumeModes: ManagedDeployResumeMode[] = [
+    "initial",
+    "input-submitted",
+    "repair",
+    "brain-review-rejected",
+  ];
+
+  for (const resumeMode of resumeModes) {
+    const prompt = buildManagedGatewayPrompt({
+      resumeMode,
+      task: githubTask(),
+    });
+    assert.ok(prompt.includes(`Resume mode: ${resumeMode}`));
+    assert.ok(prompt.includes(".sealos/brain/control.json"));
+    assert.ok(
+      prompt.includes("existing files under /home/devbox/project/.sealos")
+    );
+    assert.ok(prompt.includes("SEALAI_INPUTS_PATH"));
+    assert.ok(prompt.includes("allocated resource identity"));
+    assert.ok(prompt.includes("Run /sealos-deploy"));
+    if (resumeMode !== "initial") {
+      assert.ok(prompt.includes("/sealos-deploy managed resume"));
+    }
   }
 });

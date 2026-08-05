@@ -242,9 +242,12 @@ async function resolveCreateInputs(
     };
   }
   const create: CreateDeployTaskInput = {
+    agentContractVersion: input.create.agentContractVersion,
+    agentSkillRevision: input.create.agentSkillRevision,
     createdFrom: input.create.createdFrom,
     creatingActor: input.create.creatingActor,
     credentialBinding: input.create.credentialBinding,
+    executionMode: input.create.executionMode,
     namespace: input.create.namespace,
     prompt: input.create.prompt,
     runner,
@@ -376,6 +379,9 @@ async function insertCreatedDeployTask(
         createdFrom: create.createdFrom ?? "api",
         creatingActor: create.creatingActor?.trim() || null,
         credentialBinding: create.credentialBinding ?? null,
+        executionMode: create.executionMode ?? "brain",
+        agentContractVersion: create.agentContractVersion ?? 0,
+        agentSkillRevision: create.agentSkillRevision ?? null,
         githubConnectionId: null,
         namespace: create.namespace.trim(),
         phase: "queued",
