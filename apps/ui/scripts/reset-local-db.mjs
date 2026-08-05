@@ -28,6 +28,7 @@ try {
     DROP SCHEMA IF EXISTS
       sealai_assistant,
       sealai_deployment,
+      sealai_onboarding,
       sealai_project,
       drizzle
     CASCADE;

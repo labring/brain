@@ -6,6 +6,9 @@ import { isValidElement, type ReactNode } from "react";
 // layout reaches it through the Devbox warmup server action.
 mock.module("server-only", () => ({}));
 
+const { OnboardingGate } = await import(
+  "@/features/onboarding/onboarding-gate"
+);
 const { DevboxBootstrap, SealosSdkBootstrap } = await import(
   "@/features/shell/auth-bootstrap"
 );
@@ -43,4 +46,12 @@ test("project layout mounts the Devbox warmup", () => {
 
   assert.ok(mounted.has(DevboxBootstrap), "DevboxBootstrap is mounted");
   assert.ok(mounted.has(SealosSdkBootstrap), "SealosSdkBootstrap is mounted");
+});
+
+// The Onboarding Gate covers the whole console surface from this layout
+// (ADR-0061); an unmounted gate silently stops all sampling.
+test("project layout mounts the Onboarding Gate", () => {
+  const mounted = mountedComponents(ProjectLayout({ children: null }));
+
+  assert.ok(mounted.has(OnboardingGate), "OnboardingGate is mounted");
 });

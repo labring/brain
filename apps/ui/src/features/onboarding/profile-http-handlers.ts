@@ -1,0 +1,152 @@
+import {
+  type AppTokenVerificationConfig,
+  appTokenFromRequest,
+} from "@/lib/app-token";
+import {
+  IdentityBindingSupersededError,
+  type ObserveIdentityFingerprint,
+} from "@/lib/identity-fingerprint-core";
+import {
+  authorizeWorkspaceActor,
+  encodedKubeconfigFromRequest,
+  type VerifyKubeconfigNamespace,
+} from "@/lib/request-kubeconfig-auth";
+import {
+  type VerifiedPersonalResourceActor,
+  verifiedPersonalResourceActor,
+} from "@/lib/verified-personal-actor";
+
+import type { OnboardingProfileStore } from "./profile-store";
+import { dismissOnboardingProfileRequestSchema } from "./types";
+
+export interface OnboardingProfileHandlerDependencies {
+  /** Test seam; defaults to `JWT_INTERNAL` from the env. */
+  appTokenConfig?: AppTokenVerificationConfig | null;
+  dismiss: OnboardingProfileStore["dismiss"];
+  isSampled: OnboardingProfileStore["isSampled"];
+  /** Test seam; defaults to the region-local Identity Fingerprint store. */
+  observeFingerprint?: ObserveIdentityFingerprint;
+  verify?: VerifyKubeconfigNamespace;
+}
+
+function jsonError(input: {
+  code: string;
+  message: string;
+  status: number;
+}): Response {
+  return Response.json(
+    { code: input.code, error: input.message },
+    { status: input.status }
+  );
+}
+
+/** The write found the binding superseded by a concurrent merge (ADR-0059). */
+function supersededBindingResponse(error: unknown): Response | null {
+  return error instanceof IdentityBindingSupersededError
+    ? jsonError({
+        code: "app_token_superseded",
+        message: "Authentication is required.",
+        status: 401,
+      })
+    : null;
+}
+
+/**
+ * The Onboarding Profile's HTTP surface (ADR-0061). Both handlers travel the
+ * verified-personal-actor choke point unchanged — no lighter uid-only path,
+ * no dev bypass — and fail closed: an unauthorized or failing request yields
+ * an error the Onboarding Gate silently treats as "no dialog".
+ */
+export function createOnboardingProfileHandlers(
+  dependencies: OnboardingProfileHandlerDependencies
+) {
+  const authorize = async (
+    request: Request
+  ): Promise<
+    | { ok: true; actor: VerifiedPersonalResourceActor }
+    | { ok: false; response: Response }
+  > => {
+    const clientNamespace = new URL(request.url).searchParams.get("namespace");
+    const authorization = await authorizeWorkspaceActor({
+      appToken: appTokenFromRequest(request),
+      appTokenConfig: dependencies.appTokenConfig,
+      encodedKubeconfig: encodedKubeconfigFromRequest(request),
+      expectedNamespace: clientNamespace?.trim() || undefined,
+      observeFingerprint: dependencies.observeFingerprint,
+      verify: dependencies.verify,
+    });
+    if (!authorization.ok) {
+      return {
+        ok: false,
+        response: jsonError({
+          code: authorization.code,
+          message: authorization.message,
+          status: authorization.status,
+        }),
+      };
+    }
+    return { actor: verifiedPersonalResourceActor(authorization), ok: true };
+  };
+
+  return {
+    dismiss: async (request: Request): Promise<Response> => {
+      const authorization = await authorize(request);
+      if (!authorization.ok) {
+        return authorization.response;
+      }
+      const body = await request.json().catch(() => null);
+      const parsed = dismissOnboardingProfileRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return jsonError({
+          code: "invalid_request",
+          message: "Invalid onboarding dismiss request.",
+          status: 400,
+        });
+      }
+      try {
+        const state = await dependencies.dismiss({
+          actor: {
+            legacyWorkspaceActor: authorization.actor.legacyWorkspaceActor,
+            userUid: authorization.actor.owner.userUid,
+          },
+          dismissedAtStep: parsed.data.dismissedAtStep,
+        });
+        return Response.json(state);
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
+        console.error(
+          "[api/onboarding-profile/dismiss] persistence unavailable"
+        );
+        return jsonError({
+          code: "onboarding_profile_unavailable",
+          message: "Onboarding profile persistence is unavailable.",
+          status: 503,
+        });
+      }
+    },
+    sampling: async (request: Request): Promise<Response> => {
+      const authorization = await authorize(request);
+      if (!authorization.ok) {
+        return authorization.response;
+      }
+      try {
+        const sampled = await dependencies.isSampled(
+          authorization.actor.owner.userUid
+        );
+        return Response.json({ sampled });
+      } catch {
+        console.error(
+          "[api/onboarding-profile/sampling] persistence unavailable"
+        );
+        return jsonError({
+          code: "onboarding_profile_unavailable",
+          message: "Onboarding sampling is unavailable.",
+          status: 503,
+        });
+      }
+    },
+  };
+}

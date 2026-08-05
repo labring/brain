@@ -1,3 +1,4 @@
+import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
 import {
   AppShellChrome,
   AppShellSidebar,
@@ -22,6 +23,7 @@ export default function ProjectLayout({
       <AuthBootstrap serverEncodedKubeconfig="" serverNamespace="" />
       <SealosSdkBootstrap />
       <DevboxBootstrap />
+      <OnboardingGate />
       <AppShellSidebar />
       <AppShellView className="min-w-0 flex-1 basis-0">
         <ProjectWorkspaceLayout>{children}</ProjectWorkspaceLayout>

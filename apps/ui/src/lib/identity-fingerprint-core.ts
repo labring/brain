@@ -12,6 +12,7 @@ import {
   identityFingerprints,
 } from "@/features/chat/persistence/schema";
 import { CURRENT_GITHUB_OWNER_IDENTITY_VERSION } from "@/features/deploy/github/owner-identity";
+import { onboardingProfiles } from "@/features/onboarding/schema";
 
 /**
  * Identity Fingerprints (ADR-0059): the authorization layer's region-local
@@ -216,6 +217,8 @@ async function rekeyPersonalResources(
   connectionsRekeyed: number;
   conversations: number;
   installSessionsRekeyed: number;
+  profilesReleased: number;
+  profilesRekeyed: number;
 }> {
   // Pending authorization sessions are swept BEFORE connections: the OAuth
   // callback consumes its session row under a row lock and writes the
@@ -289,10 +292,38 @@ async function rekeyPersonalResources(
     .where(tombstoneConnectionWhere)
     .returning({ id: githubOauthConnections.id });
 
+  // The Onboarding Profile is keyed by the bare uid alone (ADR-0061): the
+  // tombstone's row follows the survivor only where the survivor holds none;
+  // otherwise the survivor's row is authoritative and the tombstone's is
+  // deleted — one row per person, no answer-level merging. `updatedAt`
+  // doubles as the terminal timestamp, so a re-key never touches it.
+  const survivorProfiles = alias(onboardingProfiles, "survivor_profiles");
+  const rekeyedProfiles = await tx
+    .update(onboardingProfiles)
+    .set({ userUid: input.survivorUserUid })
+    .where(
+      and(
+        eq(onboardingProfiles.userUid, input.tombstoneUserUid),
+        notExists(
+          tx
+            .select({ userUid: survivorProfiles.userUid })
+            .from(survivorProfiles)
+            .where(eq(survivorProfiles.userUid, input.survivorUserUid))
+        )
+      )
+    )
+    .returning({ userUid: onboardingProfiles.userUid });
+  const releasedProfiles = await tx
+    .delete(onboardingProfiles)
+    .where(eq(onboardingProfiles.userUid, input.tombstoneUserUid))
+    .returning({ userUid: onboardingProfiles.userUid });
+
   return {
     connectionsReleased: releasedConnections.length,
     connectionsRekeyed: rekeyedConnections.length,
     conversations: conversations.length,
     installSessionsRekeyed: rekeyedInstallSessions.length,
+    profilesReleased: releasedProfiles.length,
+    profilesRekeyed: rekeyedProfiles.length,
   };
 }
