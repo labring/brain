@@ -16,9 +16,7 @@ import {
   resolveDeployTaskTargetForCreate,
   runDeployTask,
 } from "@/features/deploy/task/runner";
-import { getAiDeployExecutionModeFromEnv } from "@/features/deploy/task/runtime-config";
 import {
-  CURRENT_DEPLOY_TASK_AGENT_CONTRACT_VERSION,
   CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
   type DeploymentCredentialBinding,
   type DeploymentTaskSource,
@@ -221,7 +219,6 @@ export async function POST(request: Request) {
     }
   }
   const effectiveSource = parsed.data.source ?? predecessor?.source;
-  const effectiveRunner = parsed.data.runner ?? predecessor?.runner;
   const creatingActor = namespaceResolved.workspaceActor;
   const bindingResolution = await resolveCredentialBinding({
     appToken: appTokenFromRequest(request),
@@ -235,20 +232,10 @@ export async function POST(request: Request) {
   const { credentialBinding } = bindingResolution;
 
   const { encodedKubeconfig, predecessorTaskId, ...taskInput } = parsed.data;
-  const supportsAgentExecution =
-    effectiveSource?.kind === "github" && effectiveRunner?.kind === "ai";
-  const executionMode = supportsAgentExecution
-    ? getAiDeployExecutionModeFromEnv(process.env)
-    : "brain";
   const result = await createDeployTaskAction(getDeployTaskEngineContext(), {
     create: {
       ...taskInput,
-      agentContractVersion:
-        executionMode === "agent"
-          ? CURRENT_DEPLOY_TASK_AGENT_CONTRACT_VERSION
-          : 0,
       createdFrom: "ui",
-      executionMode,
       ...(creatingActor == null ? {} : { creatingActor }),
       ...(credentialBinding == null ? {} : { credentialBinding }),
       namespace: taskNamespace,

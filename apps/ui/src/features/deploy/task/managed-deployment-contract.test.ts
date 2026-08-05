@@ -27,18 +27,13 @@ const TASK_ID = "0a0ed7c8-daa9-487e-8d08-0fb506658881";
 function control(overrides: Record<string, unknown> = {}) {
   return {
     deadlineAt: "2026-08-04T09:00:00.000Z",
-    fieldManager: "sealai-test",
     identity: {
       instanceName: "brain-app-123",
       namespace: "ns-123",
       projectId: "project-123",
     },
-    maxMutatedResourcesPerTurn: 128,
     maxRepairTurns: 2,
-    mode: "brain-managed",
-    mutationAuthorizationPath: ".sealos/brain/mutation-authorized.json",
-    mutationAuthorizationRequired: true,
-    mutationIntentPath: ".sealos/brain/mutation-intent.json",
+    mode: "agent-managed",
     repairTurn: 0,
     resumeMode: "initial",
     schemaVersion: 1,
@@ -52,7 +47,7 @@ describe("managed deployment contracts", () => {
   it("parses a strict control envelope", () => {
     const parsed = parseManagedDeploymentControl(JSON.stringify(control()));
     expect(parsed.taskId).toBe(TASK_ID);
-    expect(parsed.mode).toBe("brain-managed");
+    expect(parsed.mode).toBe("agent-managed");
     expect(() =>
       parseManagedDeploymentControl(
         JSON.stringify(control({ unexpected: "fail closed" }))
@@ -154,10 +149,9 @@ describe("managed deployment contracts", () => {
     ).toThrow();
   });
 
-  it("requires report paths for blocking and verified outcomes", () => {
+  it("requires report paths and rejects legacy mutation fields", () => {
     const base = {
       diagnostics: [],
-      mutations: [],
       schemaVersion: 1,
       summary: "Turn complete.",
       taskId: TASK_ID,
@@ -201,34 +195,13 @@ describe("managed deployment contracts", () => {
     ).toBe("verified");
   });
 
-  it("requires delete preconditions and consistent passed verification", () => {
+  it("requires consistent passed verification", () => {
     const resource = {
       apiVersion: "apps/v1",
       kind: "Deployment",
       name: "app",
       namespace: "ns-123",
     };
-    expect(() =>
-      parseManagedTurnReport(
-        JSON.stringify({
-          diagnostics: [],
-          mutations: [
-            {
-              fieldManager: "sealai-test",
-              operation: "delete",
-              preconditionUid: null,
-              resource,
-            },
-          ],
-          outcome: "fatal",
-          schemaVersion: 1,
-          summary: "Unsafe delete was refused.",
-          taskId: TASK_ID,
-          turnId: 1,
-        })
-      )
-    ).toThrow();
-
     const report = {
       artifacts: [],
       checks: [
@@ -271,25 +244,19 @@ describe("managed deployment contracts", () => {
     ).toBe("passed");
   });
 
-  it("uses only the authoritative task and turn envelope for v1 turn reports", () => {
+  it("uses the authoritative envelope and constrains verification to its namespace", () => {
     const parsedControl = parseManagedDeploymentControl(
-      JSON.stringify(control({ maxMutatedResourcesPerTurn: 1 }))
+      JSON.stringify(control())
     );
-    const mutation = {
-      fieldManager: "sealai-test",
-      operation: "apply" as const,
-      preconditionUid: null,
-      resource: {
-        apiVersion: "apps/v1",
-        kind: "Deployment",
-        name: "app",
-        namespace: "ns-123",
-      },
+    const resource = {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      name: "app",
+      namespace: "ns-123",
     };
     const turnReport = parseManagedTurnReport(
       JSON.stringify({
         diagnostics: [],
-        mutations: [mutation],
         outcome: "applied",
         schemaVersion: 1,
         summary: "Applied once.",
@@ -300,22 +267,6 @@ describe("managed deployment contracts", () => {
     expect(() =>
       assertManagedTurnReportForControl(turnReport, parsedControl)
     ).not.toThrow();
-    expect(() =>
-      assertManagedTurnReportForControl(
-        {
-          ...turnReport,
-          mutations: [
-            mutation,
-            {
-              ...mutation,
-              fieldManager: "another-manager",
-              resource: { ...mutation.resource, namespace: "other-ns" },
-            },
-          ],
-        },
-        parsedControl
-      )
-    ).not.toThrow();
 
     const verifyReport = parseManagedVerifyReport(
       JSON.stringify({
@@ -323,7 +274,7 @@ describe("managed deployment contracts", () => {
         checks: [
           {
             kind: "workload",
-            resource: { ...mutation.resource, namespace: "other-ns" },
+            resource: { ...resource, namespace: "other-ns" },
             status: "failed",
             summary: "Out of bounds.",
           },

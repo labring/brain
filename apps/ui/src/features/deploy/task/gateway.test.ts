@@ -21,8 +21,6 @@ let updateDeployTaskStateImpl: () => Promise<void> = () => Promise.resolve();
 mock.module("server-only", () => ({}));
 const realRunnerWrites = requireModule("./runner-writes");
 mock.module("./gateway-prompt", () => ({
-  buildGatewayPrompt: () => "deploy",
-  buildGatewayRepairPrompt: () => "repair",
   buildManagedGatewayPrompt: (input: { resumeMode: string }) =>
     `managed:${input.resumeMode}`,
 }));
@@ -36,8 +34,22 @@ mock.module("./runner-writes", () => ({
   updateDeployTaskState: () => updateDeployTaskStateImpl(),
 }));
 
-const { CodexGatewayApiError, CodexGatewayTimeoutError, runDeployTaskGateway } =
-  requireModule("./gateway") as typeof import("./gateway");
+const {
+  CodexGatewayApiError,
+  CodexGatewayTimeoutError,
+  runDeployTaskGateway: runDeployTaskGatewayRaw,
+} = requireModule("./gateway") as typeof import("./gateway");
+
+function runDeployTaskGateway(
+  input: Omit<Parameters<typeof runDeployTaskGatewayRaw>[0], "resumeMode"> & {
+    resumeMode?: Parameters<typeof runDeployTaskGatewayRaw>[0]["resumeMode"];
+  }
+) {
+  return runDeployTaskGatewayRaw({
+    ...input,
+    resumeMode: input.resumeMode ?? "initial",
+  });
+}
 
 function gatewayState(activeTurn: boolean) {
   return {
@@ -294,28 +306,6 @@ describe("deployment Codex gateway interruption", () => {
 
     expect(createdPrompts).toEqual(["managed:input-submitted"]);
     expect(resumedPrompts).toEqual(createdPrompts);
-  });
-
-  it("keeps legacy deployment and output repair prompts unchanged", async () => {
-    const deployPrompts: string[] = [];
-    const repairPrompts: string[] = [];
-    installGatewayFetch({ prompts: deployPrompts, stateActive: false });
-    await runDeployTaskGateway({
-      context: { authToken: "gateway-token", url: "https://gateway.test" },
-      deadlineAtMs: Date.now() + 1000,
-      task: task(),
-    });
-
-    installGatewayFetch({ prompts: repairPrompts, stateActive: false });
-    await runDeployTaskGateway({
-      context: { authToken: "gateway-token", url: "https://gateway.test" },
-      deadlineAtMs: Date.now() + 1000,
-      repairOutput: true,
-      task: task(),
-    });
-
-    expect(deployPrompts).toEqual(["deploy"]);
-    expect(repairPrompts).toEqual(["repair"]);
   });
 
   it("interrupts once on turn timeout and preserves the timeout error", async () => {

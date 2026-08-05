@@ -2,8 +2,6 @@ import "server-only";
 
 import type { DevboxInfo } from "@/lib/devbox/types";
 import {
-  buildGatewayPrompt,
-  buildGatewayRepairPrompt,
   buildManagedGatewayPrompt,
   type ManagedDeployResumeMode,
 } from "./gateway-prompt";
@@ -774,8 +772,7 @@ export async function runDeployTaskGateway(input: {
   context: GatewayContext;
   deadlineAtMs: number;
   existingSessionId?: string | null;
-  repairOutput?: boolean;
-  resumeMode?: ManagedDeployResumeMode;
+  resumeMode: ManagedDeployResumeMode;
   task: DeployTaskRow;
 }): Promise<string> {
   let managedPhase: "apply" | "plan" | "verify" = "plan";
@@ -836,7 +833,7 @@ export async function runDeployTaskGateway(input: {
       kind: "deploy_task.gateway_turn_completed",
       message: "Recovered Codex gateway turn completed.",
       payload: {},
-      phase: input.resumeMode == null ? "generate-artifacts" : managedPhase,
+      phase: managedPhase,
     });
     return sessionId;
   }
@@ -878,17 +875,10 @@ export async function runDeployTaskGateway(input: {
     if (turnBoundarySignal.aborted) {
       interruptOnBoundary();
     }
-    let prompt: string;
-    if (input.resumeMode != null) {
-      prompt = buildManagedGatewayPrompt({
-        resumeMode: input.resumeMode,
-        task: input.task,
-      });
-    } else if (input.repairOutput) {
-      prompt = buildGatewayRepairPrompt(input.task);
-    } else {
-      prompt = buildGatewayPrompt(input.task);
-    }
+    const prompt = buildManagedGatewayPrompt({
+      resumeMode: input.resumeMode,
+      task: input.task,
+    });
     const turn = await sendGatewayTurn(
       input.context,
       sessionId,
@@ -927,7 +917,7 @@ export async function runDeployTaskGateway(input: {
     kind: "deploy_task.gateway_turn_completed",
     message: "Codex gateway turn completed.",
     payload: {},
-    phase: input.resumeMode == null ? "generate-artifacts" : managedPhase,
+    phase: managedPhase,
   });
   return sessionId;
 }

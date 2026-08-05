@@ -4,11 +4,9 @@ import { buildRuntimeContract } from "./build-runtime-contract";
 import { deployTaskFailureSummary } from "./failure-summary";
 import { deployOutputProgressSummary } from "./output-progress";
 import {
-  DEFAULT_AI_DEPLOY_EXECUTION_MODE,
   DEFAULT_DEPLOY_DEVBOX_STORAGE_LIMIT,
   DEFAULT_DEPLOY_SKILL_SOURCE,
   DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
-  getAiDeployExecutionModeFromEnv,
   getDeployDevboxStorageLimitFromEnv,
   getDeploySkillSourceFromEnv,
 } from "./runtime-config";
@@ -144,55 +142,14 @@ describe("deploy task runtime config", () => {
     );
   });
 
-  it("defaults AI deployment execution to Brain-owned apply", () => {
-    expect(DEFAULT_AI_DEPLOY_EXECUTION_MODE).toBe("brain");
-    expect(getAiDeployExecutionModeFromEnv({})).toBe("brain");
-    expect(
-      getAiDeployExecutionModeFromEnv({
-        SEALAI_AI_DEPLOY_EXECUTION_MODE: "   ",
-      })
-    ).toBe("brain");
-  });
-
-  it("enables agent-owned deployment explicitly", () => {
-    expect(
-      getAiDeployExecutionModeFromEnv({
-        SEALAI_AI_DEPLOY_EXECUTION_MODE: "agent",
-      })
-    ).toBe("agent");
-  });
-
-  it("rejects an unknown AI deployment execution mode", () => {
-    expect(() =>
-      getAiDeployExecutionModeFromEnv({
-        SEALAI_AI_DEPLOY_EXECUTION_MODE: "hybrid",
-      })
-    ).toThrow(
-      "SEALAI_AI_DEPLOY_EXECUTION_MODE must be either 'brain' or 'agent'."
-    );
-  });
-
-  it("uses the configured branch source for agent execution", () => {
+  it("uses the configured branch source", () => {
     expect(
       getDeploySkillSourceFromEnv({
         DEPLOY_SKILL_SOURCE:
           "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy",
-        SEALAI_AI_DEPLOY_EXECUTION_MODE: "agent",
       })
     ).toBe(
       "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
-    );
-  });
-
-  it("keeps the configured skill source unchanged when Agent mode is disabled", () => {
-    expect(
-      getDeploySkillSourceFromEnv({
-        DEPLOY_SKILL_SOURCE:
-          "https://github.com/labring/sealos-skills/tree/brain-deploy-preview",
-        SEALAI_AI_DEPLOY_EXECUTION_MODE: "brain",
-      })
-    ).toBe(
-      "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
     );
   });
 });

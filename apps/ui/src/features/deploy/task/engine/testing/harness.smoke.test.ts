@@ -24,12 +24,29 @@ after(async () => {
   await harness.close();
 });
 
-test("migrations apply on PGlite and the engine columns exist", async () => {
+test("migrations apply with only Agent supervision columns", async () => {
   const row = await insertTaskRow(harness.db, { status: "queued" });
   assert.equal(row.leaseEpoch, 0);
   assert.equal(row.leaseOwner, null);
   assert.equal(row.cancelRequestedAt, null);
   assert.equal(row.retriedFromTaskId, null);
+  assert.equal(row.agentTurnCount, 0);
+  assert.equal(row.agentRepairCount, 0);
+  assert.equal(row.agentLastReportDigest, null);
+
+  const columns = await harness.pglite.query<{ column_name: string }>(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'sealai_deployment'
+      AND table_name = 'deploy_tasks'
+  `);
+  const names = new Set(columns.rows.map((column) => column.column_name));
+  assert.equal(names.has("execution_mode"), false);
+  assert.equal(names.has("agent_contract_version"), false);
+  assert.equal(names.has("agent_skill_revision"), false);
+  assert.equal(names.has("agent_turn_count"), true);
+  assert.equal(names.has("agent_repair_count"), true);
+  assert.equal(names.has("agent_last_report_digest"), true);
 });
 
 test("single-statement conditional updates guard on source status", async () => {

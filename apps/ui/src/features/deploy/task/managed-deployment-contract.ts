@@ -12,7 +12,6 @@ export const MANAGED_INPUT_VALUES_MAX_BYTES = 64 * 1024;
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DNS_LABEL_PATTERN = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/;
 const DNS_SUBDOMAIN_PATTERN = /^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$/;
-const FIELD_MANAGER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SENSITIVE_INPUT_KEY_PATTERN =
   /(?:^|[_-])(?:ACCESS_KEY|API_KEY|CLIENT_SECRET|PASSWORD|PASSWD|PRIVATE_KEY|SECRET|TOKEN)(?:$|[_-])/i;
 const CONTRACT_RELATIVE_PATH_PATTERN =
@@ -65,7 +64,6 @@ export const managedDeploymentControlSchema = envelopeSchema
   .extend({
     brainReviewPath: contractRelativePathSchema.optional(),
     deadlineAt: z.string().datetime({ offset: true }),
-    fieldManager: z.string().min(1).max(128).regex(FIELD_MANAGER_PATTERN),
     identity: z
       .object({
         instanceName: resourceNameSchema,
@@ -74,12 +72,8 @@ export const managedDeploymentControlSchema = envelopeSchema
       })
       .strict(),
     inputsPath: normalizedAbsolutePathSchema.optional(),
-    maxMutatedResourcesPerTurn: z.number().int().min(1).max(512),
     maxRepairTurns: z.number().int().nonnegative().max(10),
-    mode: z.literal("brain-managed"),
-    mutationAuthorizationPath: contractRelativePathSchema,
-    mutationAuthorizationRequired: z.boolean(),
-    mutationIntentPath: contractRelativePathSchema,
+    mode: z.literal("agent-managed"),
     previousTurnId: turnIdSchema.optional(),
     repairTurn: z.number().int().nonnegative().max(10),
     resumeMode: z.enum([
@@ -195,56 +189,6 @@ export const managedInputsRequiredSchema = envelopeSchema
     });
   });
 
-const managedMutationSchema = z
-  .object({
-    fieldManager: z
-      .string()
-      .trim()
-      .min(1)
-      .max(128)
-      .regex(FIELD_MANAGER_PATTERN)
-      .optional(),
-    operation: z.enum([
-      "apply",
-      "create",
-      "delete",
-      "exec",
-      "patch",
-      "replace",
-      "rollout",
-    ]),
-    preconditionUid: z.string().trim().min(1).max(256).nullable(),
-    resource: managedResourceRefSchema,
-  })
-  .strict()
-  .superRefine((mutation, context) => {
-    if (mutation.operation !== "exec" && mutation.fieldManager === undefined) {
-      context.addIssue({
-        code: "custom",
-        message: "Kubernetes mutation requires fieldManager",
-        path: ["fieldManager"],
-      });
-    }
-    if (mutation.operation === "delete" && mutation.preconditionUid == null) {
-      context.addIssue({
-        code: "custom",
-        message: "delete mutation requires preconditionUid",
-        path: ["preconditionUid"],
-      });
-    }
-    if (
-      mutation.resource.uid !== undefined &&
-      mutation.preconditionUid !== null &&
-      mutation.resource.uid !== mutation.preconditionUid
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "preconditionUid must match the resource uid",
-        path: ["preconditionUid"],
-      });
-    }
-  });
-
 const managedDiagnosticSchema = z
   .object({
     evidencePath: contractRelativePathSchema.optional(),
@@ -258,7 +202,6 @@ export const managedTurnReportSchema = envelopeSchema
   .extend({
     diagnostics: z.array(managedDiagnosticSchema).max(64).default([]),
     inputsRequiredPath: contractRelativePathSchema.optional(),
-    mutations: z.array(managedMutationSchema).max(512),
     outcome: z.enum([
       "inputs-required",
       "applied",
@@ -281,13 +224,6 @@ export const managedTurnReportSchema = envelopeSchema
         path: ["inputsRequiredPath"],
       });
     }
-    if (report.outcome === "inputs-required" && report.mutations.length > 0) {
-      context.addIssue({
-        code: "custom",
-        message: "inputs-required outcome must precede all mutations",
-        path: ["mutations"],
-      });
-    }
     if (
       report.outcome === "verified" &&
       report.verifyReportPath === undefined
@@ -299,8 +235,6 @@ export const managedTurnReportSchema = envelopeSchema
       });
     }
   });
-
-export const managedMutationIntentSchema = envelopeSchema.strict();
 
 const managedVerificationCheckSchema = z
   .object({
@@ -382,7 +316,6 @@ export type ManagedInputsRequired = z.infer<typeof managedInputsRequiredSchema>;
 export type ManagedTurnReport = z.infer<typeof managedTurnReportSchema>;
 export type ManagedVerifyReport = z.infer<typeof managedVerifyReportSchema>;
 export type ManagedResourceRef = z.infer<typeof managedResourceRefSchema>;
-export type ManagedMutationIntent = z.infer<typeof managedMutationIntentSchema>;
 
 export class ManagedDeploymentContractError extends Error {
   readonly code:
@@ -463,17 +396,6 @@ export function parseManagedTurnReport(contents: string): ManagedTurnReport {
     label: "turn-report.json",
     maxBytes: MANAGED_TURN_REPORT_MAX_BYTES,
     schema: managedTurnReportSchema,
-  });
-}
-
-export function parseManagedMutationIntent(
-  contents: string
-): ManagedMutationIntent {
-  return parseContract({
-    contents,
-    label: "mutation-intent.json",
-    maxBytes: MANAGED_CONTROL_MAX_BYTES,
-    schema: managedMutationIntentSchema,
   });
 }
 

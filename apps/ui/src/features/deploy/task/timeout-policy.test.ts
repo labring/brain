@@ -12,19 +12,13 @@ import {
 const MINUTE_MS = 60_000;
 
 describe("deployment timeout policy", () => {
-  it("preserves the legacy Brain-owned 70 minute execution budget", () => {
-    expect(
-      DEPLOY_TIMEOUT_POLICY.prepareMs +
-        DEPLOY_TIMEOUT_POLICY.generateMs +
-        DEPLOY_TIMEOUT_POLICY.applyMs +
-        DEPLOY_TIMEOUT_POLICY.readinessMs +
-        DEPLOY_TIMEOUT_POLICY.finalizeMs
-    ).toBe(70 * MINUTE_MS);
+  it("keeps shared task and direct apply budgets stable", () => {
     expect(DEPLOY_TIMEOUT_POLICY.overallMs).toBe(70 * MINUTE_MS);
     expect(DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs).toBe(5000);
-    expect(DEPLOY_TIMEOUT_POLICY.generateMs).toBe(45 * MINUTE_MS);
-    expect(DEPLOY_TIMEOUT_POLICY.gatewayInitialTurnMs).toBe(35 * MINUTE_MS);
-    expect(DEPLOY_TIMEOUT_POLICY.gatewayRepairTurnMs).toBe(10 * MINUTE_MS);
+    expect(DEPLOY_TIMEOUT_POLICY.prepareMs).toBe(8 * MINUTE_MS);
+    expect(DEPLOY_TIMEOUT_POLICY.applyMs).toBe(5 * MINUTE_MS);
+    expect(DEPLOY_TIMEOUT_POLICY.readinessMs).toBe(10 * MINUTE_MS);
+    expect(DEPLOY_TIMEOUT_POLICY.finalizeMs).toBe(2 * MINUTE_MS);
   });
 
   it("keeps Agent generation, repair, verification, and slack separate", () => {

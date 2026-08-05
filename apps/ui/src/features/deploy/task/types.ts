@@ -10,7 +10,6 @@ import type {
   DeployTaskArtifactSummary,
   DeployTaskBlockingInput,
   DeployTaskEventPayload,
-  DeployTaskExecutionMode,
   DeployTaskFailureDetails,
   DeployTaskGatewayStateSnapshot,
   DeployTaskMessageRow,
@@ -150,10 +149,6 @@ export type DeployTaskTargetResolution =
 export type CreateDeployTaskInput = z.infer<
   typeof createDeployTaskInputSchema
 > & {
-  /** Server-resolved execution mode; never accepted from the request body. */
-  executionMode?: DeployTaskExecutionMode;
-  /** Server-resolved managed deployment contract version. */
-  agentContractVersion?: number;
   /** Server-resolved Workspace Actor; never accepted from the request body. */
   creatingActor?: string;
   /** Server-resolved immutable GitHub credential selection. */

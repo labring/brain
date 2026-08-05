@@ -35,9 +35,9 @@ mock.module("server-only", () => ({}));
 
 const {
   buildCodexGatewayEnv,
-  ensureAiDeploymentDevbox,
   buildDeploySkillInstallCommand,
-  resolveGithubCodexGatewayCredentials,
+  ensureAiDeploymentDevbox,
+  resolveCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
 const { getDeploySkillSourceFromEnv } = requireModule(
   "./runtime-config"
@@ -164,6 +164,13 @@ function githubTask(runtimeName: string | null): DeployTaskRow {
   } as unknown as DeployTaskRow;
 }
 
+function promptTask(runtimeName: string | null): DeployTaskRow {
+  return {
+    ...githubTask(runtimeName),
+    source: { kind: "prompt", text: "Deploy a small web application" },
+  } as DeployTaskRow;
+}
+
 function setPlatformCredentials() {
   process.env.CODEX_GATEWAY_OPENAI_API_KEY = "gateway-platform-key";
   process.env.CODEX_GATEWAY_OPENAI_BASE_URL =
@@ -174,7 +181,7 @@ function setPlatformCredentials() {
   process.env.SYSTEM_OPENAI_API_BASE_URL = "https://system-platform.example/v1";
 }
 
-describe("GitHub deployment AI Proxy credentials", () => {
+describe("deployment AI Proxy credentials", () => {
   beforeEach(() => {
     setPlatformCredentials();
     process.env.AI_PROXY_TOKEN_NAME = "github-deploy-token";
@@ -212,7 +219,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
       status: 200,
     });
 
-    const credentials = await resolveGithubCodexGatewayCredentials({
+    const credentials = await resolveCodexGatewayCredentials({
       encodedKubeconfig,
       kubeconfig: kubeconfigText,
     });
@@ -238,14 +245,14 @@ describe("GitHub deployment AI Proxy credentials", () => {
     });
   });
 
-  it("never falls back to platform credentials for a GitHub deployment", async () => {
+  it("never falls back to platform credentials for an AI deployment", async () => {
     const kubeconfigText = kubeconfig();
     installFetchResponse({
       body: JSON.stringify({ key: "user-only-key" }),
       status: 200,
     });
 
-    const credentials = await resolveGithubCodexGatewayCredentials({
+    const credentials = await resolveCodexGatewayCredentials({
       encodedKubeconfig: encodeURIComponent(kubeconfigText),
       kubeconfig: kubeconfigText,
     });
@@ -267,13 +274,13 @@ describe("GitHub deployment AI Proxy credentials", () => {
       status: 503,
     });
 
-    const result = resolveGithubCodexGatewayCredentials({
+    const result = resolveCodexGatewayCredentials({
       encodedKubeconfig: encodeURIComponent(kubeconfigText),
       kubeconfig: kubeconfigText,
     });
 
     await expect(result).rejects.toThrow(
-      "Could not obtain the user's AI Proxy key for GitHub deployment (HTTP 503)."
+      "Could not obtain the user's AI Proxy key for deployment (HTTP 503)."
     );
     await expect(result).rejects.not.toThrow("upstream-secret-response");
   });
@@ -288,7 +295,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
       status: 200,
     });
 
-    const result = resolveGithubCodexGatewayCredentials({
+    const result = resolveCodexGatewayCredentials({
       encodedKubeconfig: "invalid-kubeconfig",
       kubeconfig: "not: [valid",
     });
@@ -331,6 +338,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
     const runtime = await ensureAiDeploymentDevbox({
       encodedKubeconfig: "invalid-when-unused",
       kubeconfig: "invalid-when-unused",
+      managedInstanceName: "agent-instance",
       task: githubTask("existing-devbox"),
     });
 
@@ -367,6 +375,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
       deadlineAtMs: Date.now() + 60_000,
       encodedKubeconfig: "invalid-when-unused",
       kubeconfig: "invalid-when-unused",
+      managedInstanceName: "agent-instance",
       signal: controller.signal,
       task: githubTask("existing-devbox"),
     });
@@ -408,6 +417,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
       deadlineAtMs: Date.now() + 60_000,
       encodedKubeconfig: encodeURIComponent(kubeconfig()),
       kubeconfig: kubeconfig(),
+      managedInstanceName: "agent-instance",
       signal: controller.signal,
       task: githubTask(null),
     });
@@ -438,6 +448,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
     const runtime = await ensureAiDeploymentDevbox({
       encodedKubeconfig: "invalid-when-unused",
       kubeconfig: "invalid-when-unused",
+      managedInstanceName: "agent-instance",
       task: githubTask(null),
     });
 
@@ -449,7 +460,7 @@ describe("GitHub deployment AI Proxy credentials", () => {
     ]);
   });
 
-  it("requests AI Proxy credentials only when creating a Devbox", async () => {
+  it("creates prompt deployment Devboxes with Agent and user AI Proxy env", async () => {
     const requests: Request[] = [];
     let createdEnv: Record<string, string> | undefined;
     let createdStorageLimit: string | undefined;
@@ -486,7 +497,8 @@ describe("GitHub deployment AI Proxy credentials", () => {
     const runtime = await ensureAiDeploymentDevbox({
       encodedKubeconfig: encodeURIComponent(kubeconfig()),
       kubeconfig: kubeconfig(),
-      task: githubTask(null),
+      managedInstanceName: "agent-instance",
+      task: promptTask(null),
     });
 
     expect(runtime.name).toStartWith("sealai-deploy-");
@@ -499,6 +511,8 @@ describe("GitHub deployment AI Proxy credentials", () => {
     expect(createdEnv).toMatchObject({
       CODEX_GATEWAY_OPENAI_API_KEY: "new-user-key",
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
+      SEALAI_DEPLOY_INSTANCE_NAME: "agent-instance",
+      SEALAI_DEPLOY_MODE: "agent-managed",
     });
     expect(createdStorageLimit).toBe("10Gi");
   });

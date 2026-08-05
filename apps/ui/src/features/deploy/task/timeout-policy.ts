@@ -17,16 +17,10 @@ const COMMON_DEPLOY_TIMEOUT_POLICY = {
   skillInstallMs: 3 * MINUTE_MS,
 } as const;
 
-/**
- * Legacy Brain-owned execution policy. Keep these budgets stable while agent
- * execution is feature-gated so disabling the flag restores existing behavior.
- */
+/** Shared task infrastructure plus direct/template apply and readiness limits. */
 export const DEPLOY_TIMEOUT_POLICY = {
   ...COMMON_DEPLOY_TIMEOUT_POLICY,
   applyMs: 5 * MINUTE_MS,
-  gatewayInitialTurnMs: 35 * MINUTE_MS,
-  gatewayRepairTurnMs: 10 * MINUTE_MS,
-  generateMs: 45 * MINUTE_MS,
   readinessMs: 10 * MINUTE_MS,
 } as const;
 
@@ -43,25 +37,6 @@ export const AGENT_DEPLOY_TIMEOUT_POLICY = {
 } as const;
 
 function assertTimeoutPolicy(): void {
-  const legacy = DEPLOY_TIMEOUT_POLICY;
-  const legacyPhaseTotalMs =
-    legacy.prepareMs +
-    legacy.generateMs +
-    legacy.applyMs +
-    legacy.readinessMs +
-    legacy.finalizeMs;
-  if (legacyPhaseTotalMs !== legacy.overallMs) {
-    throw new Error(
-      "Legacy deployment phase budgets must equal the overall timeout."
-    );
-  }
-  if (
-    legacy.gatewayInitialTurnMs + legacy.gatewayRepairTurnMs >
-    legacy.generateMs
-  ) {
-    throw new Error("Legacy Gateway turns exceed the generation budget.");
-  }
-
   const agent = AGENT_DEPLOY_TIMEOUT_POLICY;
   const agentPhaseTotalMs =
     agent.prepareMs +
@@ -83,13 +58,13 @@ function assertTimeoutPolicy(): void {
   if (agent.repairTurnMs * agent.maxRepairTurns > agent.repairMs) {
     throw new Error("Gateway repair turns exceed the repair budget.");
   }
-  if (legacy.gatewayCleanupMs > legacy.gatewayRequestMs) {
+  if (
+    DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs >
+    DEPLOY_TIMEOUT_POLICY.gatewayRequestMs
+  ) {
     throw new Error("Gateway cleanup timeout exceeds the request timeout.");
   }
-  if (
-    legacy.imageBuildSeconds * SECOND_MS > legacy.generateMs ||
-    agent.imageBuildSeconds * SECOND_MS > agent.generateMs
-  ) {
+  if (agent.imageBuildSeconds * SECOND_MS > agent.generateMs) {
     throw new Error("Image build timeout exceeds the generation budget.");
   }
 }

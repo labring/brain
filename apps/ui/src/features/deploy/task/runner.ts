@@ -23,10 +23,6 @@ import {
   getTemplateSource,
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
-import {
-  TemplateInputValidationError,
-  templateSourceFromInlineYaml,
-} from "@/features/deploy/template-renderer";
 import { deriveProjectDisplayName } from "@/features/projects/derived-project-display-name";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
@@ -61,13 +57,8 @@ import {
   createSealosTemplateDeploymentPlan,
   type DeploymentArtifact,
   type DeploymentTemplateInstanceArtifact,
-  deployTaskStringRecordValue,
-  normalizeBuildResultStatus,
-  persistableSealosTemplate,
   prepareBrainManifestArtifact,
-  prepareSealosTemplateArtifact,
   sealosTemplateArtifactSummary,
-  sealosTemplateInstanceName,
 } from "./artifacts";
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
@@ -223,10 +214,6 @@ const MANAGED_DEPLOYMENT_BRAIN_REVIEW_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}
 const MANAGED_DEPLOYMENT_BRAIN_REVIEW_RELATIVE_PATH =
   ".sealos/brain/brain-review.json";
 const MANAGED_DEPLOYMENT_INPUT_REF_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/input-ref.json`;
-const MANAGED_DEPLOYMENT_MUTATION_INTENT_RELATIVE_PATH =
-  ".sealos/brain/mutation-intent.json";
-const MANAGED_DEPLOYMENT_MUTATION_AUTHORIZATION_RELATIVE_PATH =
-  ".sealos/brain/mutation-authorized.json";
 const MANAGED_DEPLOYMENT_INPUT_ROOT = "/dev/shm/sealai";
 const MANAGED_DEPLOYMENT_KUBECONFIG_PATH = "/home/devbox/.kube/config";
 const MANAGED_VERIFICATION_QUERY_BATCH_MS = 60_000;
@@ -485,37 +472,6 @@ function nestedStringValue(
     current = record[key];
   }
   return stringValue(current);
-}
-
-function requiredObjectValue(
-  output: Record<string, unknown>,
-  key: string
-): Record<string, unknown> {
-  const value = objectValue(output[key]);
-  if (value == null) {
-    throw new Error(`Deploy output did not include ${key}.`);
-  }
-  return value;
-}
-
-function requiredStringValue(
-  output: Record<string, unknown>,
-  key: string
-): string {
-  const value = stringValue(output[key]);
-  if (value == null) {
-    throw new Error(`Deploy output did not include ${key}.`);
-  }
-  return value;
-}
-
-function sealosCertSecretName(): string | undefined {
-  return (
-    compactEnvValue(process.env.AP_USER_DOMAIN_TLS_SECRET_NAME) ??
-    compactEnvValue(process.env.SEALOS_CERT_SECRET_NAME) ??
-    compactEnvValue(process.env.SEALOS_CERT_SECRET) ??
-    undefined
-  );
 }
 
 function apUserDomain(kubeconfig: string): string {
@@ -1123,7 +1079,7 @@ export function buildCodexGatewayEnv(
   return env;
 }
 
-export async function resolveGithubCodexGatewayCredentials(input: {
+export async function resolveCodexGatewayCredentials(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
   signal?: AbortSignal;
@@ -1136,16 +1092,16 @@ export async function resolveGithubCodexGatewayCredentials(input: {
   if (!resolved.ok) {
     if (resolved.reason === "missing-kubeconfig") {
       throw new Error(
-        "GitHub deployment requires a kubeconfig credential for AI Proxy."
+        "AI deployment requires a kubeconfig credential for AI Proxy."
       );
     }
     if (resolved.reason === "invalid-kubeconfig") {
       throw new Error(
-        "Could not read the Kubernetes API server hostname required for GitHub deployment AI Proxy."
+        "Could not read the Kubernetes API server hostname required for deployment AI Proxy."
       );
     }
     throw new Error(
-      `Could not obtain the user's AI Proxy key for GitHub deployment (HTTP ${resolved.status}).`
+      `Could not obtain the user's AI Proxy key for deployment (HTTP ${resolved.status}).`
     );
   }
 
@@ -2108,10 +2064,6 @@ function managedBlockingInputs(
   }));
 }
 
-function managedDeploymentFieldManager(taskId: string): string {
-  return `sealai-${createHash("sha256").update(taskId).digest("hex").slice(0, 24)}`;
-}
-
 async function writeManagedTurnControl(input: {
   control: ManagedDeploymentControl;
   deadlineAtMs: number;
@@ -2395,32 +2347,6 @@ async function recordDeployOutputProgress(input: {
   return signature;
 }
 
-async function recordDeployOutputProgressIfPresent(input: {
-  output: Record<string, unknown> | null;
-  seenSignatures?: Set<string>;
-  taskId: string;
-}): Promise<void> {
-  const summary = deployOutputProgressSummary(input.output);
-  if (summary == null) {
-    return;
-  }
-  const signature = JSON.stringify(summary);
-  if (input.seenSignatures?.has(signature)) {
-    return;
-  }
-  input.seenSignatures?.add(signature);
-  await recordDeployOutputProgress({
-    summary,
-    taskId: input.taskId,
-  });
-}
-
-function completeAiDeploymentOutput(
-  output: Record<string, unknown> | null
-): Record<string, unknown> | null {
-  return deployOutputProgressSummary(output)?.complete === true ? output : null;
-}
-
 async function monitorDeployOutputProgress(input: {
   deadlineAtMs: number;
   namespace: string;
@@ -2495,8 +2421,7 @@ async function runDeployTaskGatewayWithOutputProgress(input: {
   existingSessionId?: string | null;
   namespace: string;
   pauseOnError?: boolean;
-  repairOutput?: boolean;
-  resumeMode?: ManagedDeployResumeMode;
+  resumeMode: ManagedDeployResumeMode;
   runtimeName: string;
   seenSignatures: Set<string>;
   task: DeployTaskRow;
@@ -2526,7 +2451,6 @@ async function runDeployTaskGatewayWithOutputProgress(input: {
       context: input.context,
       deadlineAtMs: input.deadlineAtMs,
       existingSessionId: input.existingSessionId,
-      repairOutput: input.repairOutput,
       resumeMode: input.resumeMode,
       task: input.task,
     });
@@ -2553,23 +2477,6 @@ async function runDeployTaskGatewayWithOutputProgress(input: {
     monitorController.abort();
     await monitor;
   }
-}
-
-async function markDeploymentGenerationStartedIfNeeded(input: {
-  seenOutputProgress: Set<string>;
-  taskId: string;
-}) {
-  if (input.seenOutputProgress.size > 0) {
-    return;
-  }
-  await markTimelineStepWithEvent({
-    eventKind: "deployment_task.deployment_generation_started",
-    eventMessage: "Generating deployment artifacts.",
-    phase: "generate-artifacts",
-    status: "running",
-    stepId: "generate-deployment",
-    taskId: input.taskId,
-  });
 }
 
 function artifactOperationalIdentifiers(
@@ -2614,19 +2521,6 @@ function assertArtifactOperationalIdentifiers(
   ) {
     throw new Error(
       "Deployment resource identity cannot contain a sensitive input value."
-    );
-  }
-}
-
-function assertAiArtifactHasNoSubmittedIdentityInputs(
-  artifact: DeploymentArtifact
-): void {
-  if (
-    artifact.kind === "sealos-template" &&
-    (artifact.rendered.submittedIdentityInputKeys?.length ?? 0) > 0
-  ) {
-    throw new Error(
-      "Deployment resource identity cannot depend on a submitted input value."
     );
   }
 }
@@ -2832,28 +2726,6 @@ function submittedInputStringValues(
   );
 }
 
-function deploymentPlanArgsFromTask(
-  task: DeployTaskRow
-): Record<string, string> {
-  const args = task.artifactSummary.deploymentPlan?.args;
-  return args == null ? {} : { ...args };
-}
-
-export function resolveAiTemplateInstanceName(input: {
-  deliveryManifest: Record<string, unknown>;
-  task: DeployTaskRow;
-  templateName: string;
-}): string {
-  return (
-    recordedTemplateInstanceName(input.task) ||
-    sealosTemplateInstanceName({
-      deliveryManifest: input.deliveryManifest,
-      projectName: input.task.projectName ?? input.templateName,
-      templateName: input.templateName,
-    })
-  );
-}
-
 /**
  * Direct/template runner secret contract (ADR 0037): submitted sensitive
  * values must never be persisted anywhere on the task row. The full args live
@@ -2867,364 +2739,6 @@ function assertPersistableSensitiveValues(values: readonly string[]): void {
       "Generated deployment contains a sensitive value shorter than four characters."
     );
   }
-}
-
-/**
- * AI deployment output is public configuration by contract. Validate the
- * Template header, then retain the raw Sealos DSL and generated manifest
- * unchanged. Submitted form values never enter this object.
- */
-export function persistableAiDeployOutput(input: {
-  deliveryManifest: Record<string, unknown>;
-  output: Record<string, unknown>;
-}): {
-  deliveryManifest: Record<string, unknown>;
-  outputJson: Record<string, unknown>;
-} {
-  const templateYaml = input.output.templateYaml;
-  const persistableTemplate =
-    typeof templateYaml === "string"
-      ? persistableSealosTemplate(templateYaml)
-      : null;
-  const deliveryManifest = input.deliveryManifest;
-  const outputJson = {
-    ...input.output,
-    deliveryManifest,
-    ...(persistableTemplate == null
-      ? {}
-      : { templateYaml: persistableTemplate.templateYaml }),
-  };
-  return {
-    deliveryManifest,
-    outputJson,
-  };
-}
-
-function outputJsonFromArtifactSummary(
-  task: DeployTaskRow
-): Record<string, unknown> | null {
-  const output = task.artifactSummary.outputJson;
-  return output != null && typeof output === "object" && !Array.isArray(output)
-    ? (output as Record<string, unknown>)
-    : null;
-}
-
-async function blockForDeploymentInputs(input: {
-  deploymentPlan: ReturnType<typeof createSealosTemplateDeploymentPlan>;
-  summary: DeployTaskArtifactSummary;
-  task: DeployTaskRow;
-}) {
-  const blockingInputs = blockingInputsFromDeploymentPlan(input.deploymentPlan);
-  await markTimelineStepWithEvent({
-    eventKind: "deployment_task.input_required",
-    eventMessage: `Deployment requires ${blockingInputs.length} configuration value${blockingInputs.length === 1 ? "" : "s"}.`,
-    eventPayload: {
-      inputKeys: blockingInputs.map((item) => item.key ?? item.id),
-    },
-    eventSeverity: "warning",
-    phase: "configure",
-    status: "blocked",
-    stepId: "generate-deployment",
-    taskId: input.task.id,
-    timelineStatus: "blocked",
-  });
-  // The blocked transition releases the lease and ends this run — it must be
-  // the run's final write.
-  await deployTaskRequestInputs(input.task.id, {
-    blockingInputs,
-    phase: "configure",
-    state: { artifactSummary: input.summary },
-  });
-}
-
-async function reblockRejectedSubmittedAiInput(input: {
-  currentBlockingInputs?: readonly DeployTaskBlockingInput[];
-  error: unknown;
-  submittedInputKeys?: ReadonlySet<string>;
-  task: DeployTaskRow;
-}): Promise<boolean> {
-  if (!(input.error instanceof TemplateInputValidationError)) {
-    return false;
-  }
-  const validationError = input.error;
-  if (validationError.valueSource !== "provided") {
-    return false;
-  }
-  const currentBlockingInputs = input.currentBlockingInputs ?? [];
-  const authoritativeBlockingInputKeys = new Set(
-    currentBlockingInputs.map((item) => item.key ?? item.id)
-  );
-  if (
-    input.submittedInputKeys?.has(validationError.inputKey) !== true ||
-    !authoritativeBlockingInputKeys.has(validationError.inputKey)
-  ) {
-    return false;
-  }
-  const rejectedInputIndex = currentBlockingInputs.findIndex(
-    (item) => (item.key ?? item.id) === validationError.inputKey
-  );
-  const rejectedInput = currentBlockingInputs[rejectedInputIndex];
-  if (rejectedInput == null) {
-    return false;
-  }
-  const eventInputKey = rejectedInput.key ?? rejectedInput.id;
-  await recordDeployTaskEvent(input.task.id, {
-    kind: "deployment_task.input_rejected",
-    message: "A deployment configuration value was rejected.",
-    payload: { code: validationError.code, inputKey: eventInputKey },
-    phase: "configure",
-  });
-  await deployTaskRequestInputs(input.task.id, {
-    blockingInputs: [...currentBlockingInputs],
-    phase: "configure",
-  });
-  return true;
-}
-
-function aiPublicProjectionIsTrusted(input: {
-  generatedByCurrentRunner?: boolean;
-  task: DeployTaskRow;
-}): boolean {
-  return (
-    input.generatedByCurrentRunner === true ||
-    input.task.artifactSummary.publicProjectionVersion ===
-      CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION
-  );
-}
-
-function aiPublicProjectionStamp(
-  trusted: boolean
-): Pick<DeployTaskArtifactSummary, "publicProjectionVersion"> {
-  return trusted
-    ? {
-        publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
-      }
-    : {};
-}
-
-function aiArtifactSummaryExtras(input: {
-  deploymentPlan: DeploymentTaskDeploymentPlan | undefined;
-  trustedPublicProjection: boolean;
-}): Partial<DeployTaskArtifactSummary> {
-  return {
-    ...(input.deploymentPlan == null
-      ? {}
-      : { deploymentPlan: input.deploymentPlan }),
-    ...aiPublicProjectionStamp(input.trustedPublicProjection),
-  };
-}
-
-async function applyAiDeploymentFromPreparedOutput(input: {
-  args: Record<string, string>;
-  deploymentPlan?: DeploymentTaskDeploymentPlan;
-  encodedKubeconfig: string;
-  githubToken?: string;
-  kubeconfig: string;
-  outputJson: Record<string, unknown>;
-  currentBlockingInputs?: readonly DeployTaskBlockingInput[];
-  submittedInputKeys?: ReadonlySet<string>;
-  task: DeployTaskRow;
-  templateYaml: string;
-  trustedPublicProjection?: boolean;
-}) {
-  const trustedPublicProjection = aiPublicProjectionIsTrusted({
-    generatedByCurrentRunner: input.trustedPublicProjection,
-    task: input.task,
-  });
-  // A recorded identity predates this run (clone copy per ADR 0038, or an
-  // earlier run's fenced allocation), so the cleanup label selector may match
-  // preserved resources this run never created.
-  const identityFreshlyAllocated =
-    recordedTemplateInstanceName(input.task) === "";
-  const deploymentPlan =
-    input.deploymentPlan ?? input.task.artifactSummary.deploymentPlan;
-  let artifact: DeploymentArtifact;
-  try {
-    artifact = prepareSealosTemplateArtifact({
-      args: input.args,
-      buildResult: requiredObjectValue(input.outputJson, "buildResult"),
-      certSecretName: sealosCertSecretName(),
-      deliveryManifest: requiredObjectValue(
-        input.outputJson,
-        "deliveryManifest"
-      ),
-      instanceName:
-        input.task.artifactSummary.resultIdentities?.templateInstanceName ??
-        deploymentPlan?.instanceName,
-      identityInputKeys: input.submittedInputKeys,
-      routingDomain: apUserDomain(input.kubeconfig),
-      task: input.task,
-      templateYaml: input.templateYaml,
-      declarationState: deploymentPlan?.renderState,
-    });
-  } catch (error) {
-    if (isDeployTaskAbortError(error)) {
-      throw error;
-    }
-    if (
-      await reblockRejectedSubmittedAiInput({
-        currentBlockingInputs: input.currentBlockingInputs,
-        error,
-        submittedInputKeys: input.submittedInputKeys,
-        task: input.task,
-      })
-    ) {
-      return;
-    }
-    const buildResult = objectValue(input.outputJson.buildResult);
-    const buildStatus = normalizeBuildResultStatus(
-      stringValue(buildResult?.status)
-    );
-    if (buildStatus === "failed" || buildStatus === "running") {
-      throw withDeployFailureDetails(error, {
-        reason: "image-build-failed",
-      });
-    }
-    throw error;
-  }
-  // Every user-submitted value is request-memory-only. Resource identities
-  // are persisted, so reject a render that would copy a submitted value there.
-  assertAiArtifactHasNoSubmittedIdentityInputs(artifact);
-  const summary = {
-    ...sealosTemplateArtifactSummary({ artifact, includeRenderedYaml: false }),
-    ...(deploymentPlan == null ? {} : { deploymentPlan }),
-    outputJson: input.outputJson,
-    ...aiPublicProjectionStamp(trustedPublicProjection),
-    resultIdentities: {
-      ...input.task.artifactSummary.resultIdentities,
-      ...(artifact.kind === "sealos-template"
-        ? { templateInstanceName: artifact.instanceName }
-        : {}),
-    },
-  };
-  await updateDeployTaskState(input.task.id, {
-    artifactSummary: summary,
-    phase: "configure",
-  });
-  await markTimelineStepWithEvent({
-    eventKind: "deployment_task.input_ready",
-    eventMessage: "Deployment configuration is ready.",
-    eventSeverity: "success",
-    phase: "configure",
-    status: "completed",
-    stepId: "generate-deployment",
-    taskId: input.task.id,
-    timelineStatus: "running",
-  });
-  const artifactSummaryExtras = aiArtifactSummaryExtras({
-    deploymentPlan,
-    trustedPublicProjection,
-  });
-
-  try {
-    await completeTaskWithArtifact({
-      artifact,
-      artifactSummaryExtras,
-      githubToken: input.githubToken,
-      kubeconfig: input.kubeconfig,
-      omitRenderedYaml: true,
-      outputJson: input.outputJson,
-      task: input.task,
-    });
-  } catch (error) {
-    // An abort is a typed cancellation outcome, never a failure: it must not
-    // reach failure cleanup, which deletes partial resources (ADR 0038).
-    if (isDeployTaskAbortError(error)) {
-      throw error;
-    }
-    // Readiness timeouts and every other non-apply failure preserve the
-    // created resources (ADR 0037); see templateCleanupAllowed.
-    if (templateCleanupAllowed(error, { identityFreshlyAllocated })) {
-      await cleanupFailedTemplateDeployment({
-        encodedKubeconfig: input.encodedKubeconfig,
-        instanceName: artifact.instanceName,
-        projectId: input.task.projectId ?? artifact.instanceName,
-        task: input.task,
-      });
-    }
-    throw error;
-  }
-}
-
-async function applyGeneratedAiDeployOutput(input: {
-  encodedKubeconfig: string;
-  githubToken?: string;
-  kubeconfig: string;
-  output: Record<string, unknown>;
-  task: DeployTaskRow;
-}) {
-  const deliveryManifest = requiredObjectValue(
-    input.output,
-    "deliveryManifest"
-  );
-  const templateYaml = requiredStringValue(input.output, "templateYaml");
-  const templateName = templateSourceFromInlineYaml(templateYaml).templateName;
-  const plannedInstanceName = resolveAiTemplateInstanceName({
-    deliveryManifest,
-    task: input.task,
-    templateName,
-  });
-  const deploymentPlan = createSealosTemplateDeploymentPlan({
-    declarationContext: {
-      certSecretName: sealosCertSecretName(),
-      instanceName: plannedInstanceName,
-      namespace: input.task.namespace,
-      routingDomain: apUserDomain(input.kubeconfig),
-    },
-    deliveryManifest,
-    templateYaml,
-  });
-  const persistable = persistableAiDeployOutput({
-    deliveryManifest,
-    output: input.output,
-  });
-  const baseSummary: DeployTaskArtifactSummary = {
-    buildResult: requiredObjectValue(persistable.outputJson, "buildResult"),
-    deliveryManifest: persistable.deliveryManifest,
-    deploymentPlan,
-    outputJson: persistable.outputJson,
-    publicProjectionVersion: CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
-  };
-  if ((deploymentPlan.missingInputKeys?.length ?? 0) > 0) {
-    await updateDeployTaskState(input.task.id, {
-      artifactSummary: baseSummary,
-      phase: "generate-artifacts",
-    });
-    await recordDeployTaskEvent(input.task.id, {
-      kind: "deployment_task.artifacts_generated",
-      message: "Generated Sealos template deployment artifact.",
-      payload: {
-        requiredInputs: deploymentPlan.missingInputKeys ?? [],
-      },
-      phase: "generate-artifacts",
-    });
-    await markTimelineStepWithEvent({
-      eventKind: "deployment_task.artifacts_generated",
-      eventMessage: "Generated Sealos template deployment artifact.",
-      phase: "generate-artifacts",
-      status: "completed",
-      stepId: "generate-deployment",
-      taskId: input.task.id,
-    });
-    await blockForDeploymentInputs({
-      deploymentPlan,
-      summary: baseSummary,
-      task: input.task,
-    });
-    return;
-  }
-
-  await applyAiDeploymentFromPreparedOutput({
-    args: deployTaskStringRecordValue(deliveryManifest.args),
-    deploymentPlan,
-    encodedKubeconfig: input.encodedKubeconfig,
-    githubToken: input.githubToken ?? undefined,
-    kubeconfig: input.kubeconfig,
-    outputJson: persistable.outputJson,
-    task: input.task,
-    templateYaml,
-    trustedPublicProjection: true,
-  });
 }
 
 /**
@@ -3654,12 +3168,6 @@ function aiAnalyzeSourceMessage(task: DeployTaskRow): string {
     : "Analyzing deployment request.";
 }
 
-function aiAnalyzeSourceCompletedMessage(task: DeployTaskRow): string {
-  return task.source.kind === "github"
-    ? "Repository analysis is complete."
-    : "Deployment request analysis is complete.";
-}
-
 async function githubTokenForTask(task: DeployTaskRow): Promise<string | null> {
   if (task.source.kind !== "github") {
     return null;
@@ -3680,7 +3188,7 @@ export async function ensureAiDeploymentDevbox(input: {
   deadlineAtMs?: number;
   encodedKubeconfig: string;
   githubToken?: string;
-  managedInstanceName?: string;
+  managedInstanceName: string;
   kubeconfig: string;
   signal?: AbortSignal;
   task: DeployTaskRow;
@@ -3689,43 +3197,34 @@ export async function ensureAiDeploymentDevbox(input: {
     return await ensureDeployDevbox({
       deadlineAtMs: input.deadlineAtMs,
       existingRuntimeName: input.task.runtimeName,
-      env:
-        input.task.executionMode === "agent" && input.managedInstanceName
-          ? {
-              SEALAI_CONTRACT_DIR: MANAGED_DEPLOYMENT_CONTRACT_DIR,
-              SEALAI_DEPLOY_INSTANCE_NAME: input.managedInstanceName,
-              SEALAI_DEPLOY_MODE: "brain-managed",
-              SEALAI_DEPLOY_NAMESPACE: input.task.namespace,
-              SEALAI_DEPLOY_TASK_ID: input.task.id,
-              SEALAI_FIELD_MANAGER: managedDeploymentFieldManager(
-                input.task.id
-              ),
-              SEALAI_INPUTS_PATH: `${MANAGED_DEPLOYMENT_INPUT_ROOT}/${input.task.id}/inputs.json`,
-              SEALAI_KUBECONFIG_PATH: MANAGED_DEPLOYMENT_KUBECONFIG_PATH,
-              SEALAI_MAX_REPAIR_TURNS: String(
-                AGENT_DEPLOY_TIMEOUT_POLICY.maxRepairTurns
-              ),
-            }
-          : undefined,
+      env: {
+        SEALAI_CONTRACT_DIR: MANAGED_DEPLOYMENT_CONTRACT_DIR,
+        SEALAI_DEPLOY_INSTANCE_NAME: input.managedInstanceName,
+        SEALAI_DEPLOY_MODE: "agent-managed",
+        SEALAI_DEPLOY_NAMESPACE: input.task.namespace,
+        SEALAI_DEPLOY_TASK_ID: input.task.id,
+        SEALAI_INPUTS_PATH: `${MANAGED_DEPLOYMENT_INPUT_ROOT}/${input.task.id}/inputs.json`,
+        SEALAI_KUBECONFIG_PATH: MANAGED_DEPLOYMENT_KUBECONFIG_PATH,
+        SEALAI_MAX_REPAIR_TURNS: String(
+          AGENT_DEPLOY_TIMEOUT_POLICY.maxRepairTurns
+        ),
+      },
       githubToken: input.githubToken,
       namespace: input.task.namespace,
       repoUrl: aiSourceKey(input.task),
-      resolveGatewayCredentials:
-        input.task.source.kind === "github"
-          ? async (signal) => {
-              try {
-                return await resolveGithubCodexGatewayCredentials({
-                  encodedKubeconfig: input.encodedKubeconfig,
-                  kubeconfig: input.kubeconfig,
-                  signal,
-                });
-              } catch (error) {
-                throw withDeployFailureDetails(error, {
-                  reason: "ai-proxy-unavailable",
-                });
-              }
-            }
-          : undefined,
+      resolveGatewayCredentials: async (signal) => {
+        try {
+          return await resolveCodexGatewayCredentials({
+            encodedKubeconfig: input.encodedKubeconfig,
+            kubeconfig: input.kubeconfig,
+            signal,
+          });
+        } catch (error) {
+          throw withDeployFailureDetails(error, {
+            reason: "ai-proxy-unavailable",
+          });
+        }
+      },
       signal: input.signal,
       taskId: input.task.id,
     });
@@ -4047,20 +3546,14 @@ async function runManagedDeploymentTurn(input: {
       ? {}
       : { brainReviewPath: input.brainReviewPath }),
     deadlineAt: new Date(input.deadlineAtMs).toISOString(),
-    fieldManager: managedDeploymentFieldManager(input.task.id),
     identity: {
       instanceName: input.instanceName,
       namespace: input.namespace,
       projectId: input.projectId,
     },
     ...(input.inputPath === undefined ? {} : { inputsPath: input.inputPath }),
-    maxMutatedResourcesPerTurn: 128,
     maxRepairTurns: AGENT_DEPLOY_TIMEOUT_POLICY.maxRepairTurns,
-    mode: "brain-managed",
-    mutationAuthorizationPath:
-      MANAGED_DEPLOYMENT_MUTATION_AUTHORIZATION_RELATIVE_PATH,
-    mutationAuthorizationRequired: false,
-    mutationIntentPath: MANAGED_DEPLOYMENT_MUTATION_INTENT_RELATIVE_PATH,
+    mode: "agent-managed",
     ...(input.previousTurnId === undefined
       ? {}
       : { previousTurnId: input.previousTurnId }),
@@ -4462,7 +3955,7 @@ async function cloneAiDeploymentRepository(input: {
   });
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This integration orchestrator preserves the legacy Brain path beside the feature-gated managed Agent path.
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This integration orchestrator prepares and supervises the Agent-owned deployment lifecycle.
 async function runAiDeploymentTask(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
@@ -4477,48 +3970,29 @@ async function runAiDeploymentTask(input: {
       `AI runner does not support ${input.task.source.kind} deployments.`
     );
   }
-  if (
-    input.task.executionMode === "agent" &&
-    input.task.source.kind !== "github"
-  ) {
-    throw new Error(
-      "Managed Agent execution only supports GitHub deployments."
-    );
-  }
   const managedResume =
-    input.task.executionMode === "agent" &&
     Object.keys(input.submittedInputValues ?? {}).length > 0;
   const projectId = input.task.projectId?.trim();
-  if (input.task.executionMode === "agent" && !projectId) {
+  if (!projectId) {
     throw new Error(
       "Managed deployment task has no allocated Project identity."
     );
   }
-  const managedInstanceName =
-    input.task.executionMode === "agent"
-      ? (
-          await allocateTemplateInstanceName({
-            task: input.task,
-            templateName:
-              input.task.source.kind === "github"
-                ? input.task.source.repo.name
-                : input.task.id,
-          })
-        ).instanceName
-      : undefined;
-  const executionTimeoutPolicy =
-    input.task.executionMode === "agent"
-      ? AGENT_DEPLOY_TIMEOUT_POLICY
-      : DEPLOY_TIMEOUT_POLICY;
+  const managedInstanceName = (
+    await allocateTemplateInstanceName({
+      task: input.task,
+      templateName:
+        input.task.source.kind === "github"
+          ? input.task.source.repo.name
+          : input.task.id,
+    })
+  ).instanceName;
+  const executionTimeoutPolicy = AGENT_DEPLOY_TIMEOUT_POLICY;
   const remainingPhaseBudgetMs =
-    input.task.executionMode === "agent"
-      ? AGENT_DEPLOY_TIMEOUT_POLICY.repairMs +
-        AGENT_DEPLOY_TIMEOUT_POLICY.verifyMs +
-        AGENT_DEPLOY_TIMEOUT_POLICY.finalizeMs +
-        AGENT_DEPLOY_TIMEOUT_POLICY.operationalSlackMs
-      : DEPLOY_TIMEOUT_POLICY.applyMs +
-        DEPLOY_TIMEOUT_POLICY.readinessMs +
-        DEPLOY_TIMEOUT_POLICY.finalizeMs;
+    AGENT_DEPLOY_TIMEOUT_POLICY.repairMs +
+    AGENT_DEPLOY_TIMEOUT_POLICY.verifyMs +
+    AGENT_DEPLOY_TIMEOUT_POLICY.finalizeMs +
+    AGENT_DEPLOY_TIMEOUT_POLICY.operationalSlackMs;
 
   const taskDeadlineAtMs = deployTaskDeadlineAt({
     leaseClaimedAt: input.task.leaseClaimedAt,
@@ -4596,7 +4070,7 @@ async function runAiDeploymentTask(input: {
       runtimeName: runtime.name,
       taskId: input.task.id,
     });
-  } else if (input.task.source.kind !== "github") {
+  } else if (input.task.source.kind !== "github" && !managedResume) {
     await runWithDeployFailureDetails(
       { reason: "deploy-runtime-unavailable" },
       () =>
@@ -4790,122 +4264,18 @@ async function runAiDeploymentTask(input: {
       phase: "plan",
     });
   }
-  if (
-    input.task.executionMode === "agent" &&
-    managedInstanceName != null &&
-    projectId != null
-  ) {
-    await runManagedDeploymentLifecycle({
-      context: gatewayContext,
-      initialDeadlineAtMs: initialTurnDeadlineAtMs,
-      instanceName: managedInstanceName,
-      kubeconfig: input.kubeconfig,
-      outputProgressSignatures,
-      projectId,
-      resumeMode: managedResume ? "input-submitted" : "initial",
-      runtimeName: runtime.name,
-      task: input.task,
-      taskDeadlineAtMs,
-      values: input.submittedInputValues,
-    });
-    return;
-  }
-  await runDeployTaskGatewayWithOutputProgress({
+  await runManagedDeploymentLifecycle({
     context: gatewayContext,
-    deadlineAtMs: initialTurnDeadlineAtMs,
-    namespace: input.task.namespace,
-    runtimeName: runtime.name,
-    seenSignatures: outputProgressSignatures,
-    task: input.task,
-  });
-  await updateDeployTaskState(input.task.id, { phase: "generate-artifacts" });
-  await markTimelineStepWithEvent({
-    eventKind: "deployment_task.source_analysis_completed",
-    eventMessage: aiAnalyzeSourceCompletedMessage(input.task),
-    phase: "generate-artifacts",
-    status: "completed",
-    stepId: "analyze-source",
-    taskId: input.task.id,
-  });
-  await markDeploymentGenerationStartedIfNeeded({
-    seenOutputProgress: outputProgressSignatures,
-    taskId: input.task.id,
-  });
-
-  const deployOutput = await runWithDeployFailureDetails(
-    { reason: "deploy-runtime-unavailable" },
-    () =>
-      readDeployOutput({
-        deadlineAtMs: generationDeadlineAtMs,
-        namespace: input.task.namespace,
-        runtimeName: runtime.name,
-        signal: generationSignal,
-      })
-  );
-  await recordDeployOutputProgressIfPresent({
-    output: deployOutput,
-    seenSignatures: outputProgressSignatures,
-    taskId: input.task.id,
-  });
-  let finalDeployOutput = completeAiDeploymentOutput(deployOutput);
-  if (finalDeployOutput == null) {
-    await recordDeployTaskEvent(input.task.id, {
-      kind: "deployment_task.output_repair_started",
-      message:
-        "Codex gateway completed without deployment output; requesting a repair turn.",
-      phase: "generate-artifacts",
-    });
-    await markTimelineStepWithEvent({
-      eventKind: "deployment_task.output_repair_started",
-      eventMessage:
-        "Codex gateway completed without deployment output; requesting a repair turn.",
-      phase: "generate-artifacts",
-      status: "running",
-      stepId: "generate-deployment",
-      taskId: input.task.id,
-    });
-    const repairTurnDeadlineAtMs = deploymentPhaseDeadlineAt({
-      budgetMs: DEPLOY_TIMEOUT_POLICY.gatewayRepairTurnMs,
-      taskDeadlineAtMs: generationDeadlineAtMs,
-    });
-    await writeBuildRuntimeForTurn(repairTurnDeadlineAtMs);
-    await runDeployTaskGatewayWithOutputProgress({
-      context: gatewayContext,
-      deadlineAtMs: repairTurnDeadlineAtMs,
-      namespace: input.task.namespace,
-      repairOutput: true,
-      runtimeName: runtime.name,
-      seenSignatures: outputProgressSignatures,
-      task: input.task,
-    });
-    const repairedDeployOutput = await runWithDeployFailureDetails(
-      { reason: "deploy-runtime-unavailable" },
-      () =>
-        readDeployOutput({
-          deadlineAtMs: generationDeadlineAtMs,
-          namespace: input.task.namespace,
-          runtimeName: runtime.name,
-          signal: generationSignal,
-        })
-    );
-    await recordDeployOutputProgressIfPresent({
-      output: repairedDeployOutput,
-      seenSignatures: outputProgressSignatures,
-      taskId: input.task.id,
-    });
-    finalDeployOutput = completeAiDeploymentOutput(repairedDeployOutput);
-  }
-
-  if (finalDeployOutput == null) {
-    throw deployFailureError("deployment-output-missing");
-  }
-
-  await applyGeneratedAiDeployOutput({
-    encodedKubeconfig: input.encodedKubeconfig,
-    githubToken: githubToken ?? undefined,
+    initialDeadlineAtMs: initialTurnDeadlineAtMs,
+    instanceName: managedInstanceName,
     kubeconfig: input.kubeconfig,
-    output: finalDeployOutput,
+    outputProgressSignatures,
+    projectId,
+    resumeMode: managedResume ? "input-submitted" : "initial",
+    runtimeName: runtime.name,
     task: input.task,
+    taskDeadlineAtMs,
+    values: input.submittedInputValues,
   });
 }
 
@@ -4948,38 +4318,6 @@ export async function runDeployTask(
     const submittedInputValues = submittedInputStringValues(
       input.submittedInputValues
     );
-    if (
-      Object.keys(submittedInputValues).length > 0 &&
-      resolvedTask.runner.kind === "ai" &&
-      resolvedTask.executionMode !== "agent"
-    ) {
-      const outputJson = outputJsonFromArtifactSummary(resolvedTask);
-      if (outputJson == null) {
-        throw new Error("Deploy task has no generated deployment output.");
-      }
-      await applyAiDeploymentFromPreparedOutput({
-        args: {
-          ...deployTaskStringRecordValue(
-            requiredObjectValue(outputJson, "deliveryManifest").args
-          ),
-          ...deploymentPlanArgsFromTask(resolvedTask),
-          ...submittedInputValues,
-        },
-        encodedKubeconfig: input.encodedKubeconfig ?? "",
-        githubToken:
-          resolvedTask.source.kind === "github"
-            ? ((await githubTokenForTask(resolvedTask)) ?? undefined)
-            : undefined,
-        kubeconfig,
-        outputJson,
-        currentBlockingInputs: input.currentBlockingInputs,
-        submittedInputKeys: new Set(Object.keys(submittedInputValues)),
-        task: resolvedTask,
-        templateYaml: requiredStringValue(outputJson, "templateYaml"),
-      });
-      return;
-    }
-
     switch (resolvedTask.runner.kind) {
       case "direct":
         await runDirectDeploymentTask({

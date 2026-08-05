@@ -240,9 +240,6 @@ test("agent execution counters default safely and use fenced state writes", asyn
     status: "running",
   });
 
-  assert.equal(row.executionMode, "brain");
-  assert.equal(row.agentContractVersion, 0);
-  assert.equal(row.agentSkillRevision, null);
   assert.equal(row.agentTurnCount, 0);
   assert.equal(row.agentRepairCount, 0);
   assert.equal(row.agentLastReportDigest, null);
@@ -260,9 +257,6 @@ test("agent execution counters default safely and use fenced state writes", asyn
   });
 
   const stored = await taskById(row.id);
-  assert.equal(stored.executionMode, "brain");
-  assert.equal(stored.agentContractVersion, 0);
-  assert.equal(stored.agentSkillRevision, null);
   assert.equal(stored.agentTurnCount, 2);
   assert.equal(stored.agentRepairCount, 1);
   assert.equal(stored.agentLastReportDigest, "sha256:report-1");
