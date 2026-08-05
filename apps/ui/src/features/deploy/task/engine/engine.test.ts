@@ -1851,6 +1851,13 @@ test("reaper pauses terminal-task devboxes and deletes only runtimes after reten
     runtimeState: "Running",
     status: "failed",
   });
+  const cleanupFailed = await insertTaskRow(harness.db, {
+    completedAt: new Date(Date.now() - 1000),
+    runtimeName: "devbox-secret-cleanup",
+    runtimeProvider: "devbox",
+    runtimeState: "cleanup-failed",
+    status: "failed",
+  });
   const deleteDue = await insertTaskRow(harness.db, {
     completedAt: new Date(Date.now() - 120_000),
     runtimeName: "devbox-b",
@@ -1868,6 +1875,10 @@ test("reaper pauses terminal-task devboxes and deletes only runtimes after reten
   const pausedTask = await taskById(failedWithDevbox.id);
   assert.equal(pausedTask.runtimeState, "paused");
   assert.ok(pausedTask.runtimePausedAt);
+
+  assert.ok(devbox.deleted.includes("ns-test/devbox-secret-cleanup"));
+  assert.ok(!devbox.paused.includes("ns-test/devbox-secret-cleanup"));
+  assert.equal((await taskById(cleanupFailed.id)).runtimeState, "deleted");
 
   assert.ok(devbox.deleted.includes("ns-test/devbox-b"));
   assert.equal((await taskById(deleteDue.id)).runtimeState, "deleted");

@@ -40,6 +40,8 @@ test("managed gateway turns use one hydration contract for every resume mode", (
     });
     assert.ok(prompt.includes(`Resume mode: ${resumeMode}`));
     assert.ok(prompt.includes(".sealos/brain/control.json"));
+    assert.ok(prompt.includes(".sealos/brain/output-contract.json"));
+    assert.ok(prompt.includes("complete output protocol"));
     assert.ok(
       prompt.includes("existing files under /home/devbox/project/.sealos")
     );

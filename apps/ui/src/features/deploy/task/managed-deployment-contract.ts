@@ -8,6 +8,12 @@ export const MANAGED_INPUTS_REQUIRED_MAX_BYTES = 64 * 1024;
 export const MANAGED_TURN_REPORT_MAX_BYTES = 256 * 1024;
 export const MANAGED_VERIFY_REPORT_MAX_BYTES = 256 * 1024;
 export const MANAGED_INPUT_VALUES_MAX_BYTES = 64 * 1024;
+export const MANAGED_INPUTS_REQUIRED_RELATIVE_PATH =
+  ".sealos/brain/inputs-required.json";
+export const MANAGED_TURN_REPORT_RELATIVE_PATH =
+  ".sealos/brain/turn-report.json";
+export const MANAGED_VERIFY_REPORT_RELATIVE_PATH =
+  ".sealos/brain/verify-report.json";
 
 const TASK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const DNS_LABEL_PATTERN = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/;
@@ -201,7 +207,9 @@ const managedDiagnosticSchema = z
 export const managedTurnReportSchema = envelopeSchema
   .extend({
     diagnostics: z.array(managedDiagnosticSchema).max(64).default([]),
-    inputsRequiredPath: contractRelativePathSchema.optional(),
+    inputsRequiredPath: z
+      .literal(MANAGED_INPUTS_REQUIRED_RELATIVE_PATH)
+      .optional(),
     outcome: z.enum([
       "inputs-required",
       "applied",
@@ -210,7 +218,7 @@ export const managedTurnReportSchema = envelopeSchema
       "fatal",
     ]),
     summary: z.string().trim().min(1).max(8000),
-    verifyReportPath: contractRelativePathSchema.optional(),
+    verifyReportPath: z.literal(MANAGED_VERIFY_REPORT_RELATIVE_PATH).optional(),
   })
   .strict()
   .superRefine((report, context) => {
@@ -316,6 +324,49 @@ export type ManagedInputsRequired = z.infer<typeof managedInputsRequiredSchema>;
 export type ManagedTurnReport = z.infer<typeof managedTurnReportSchema>;
 export type ManagedVerifyReport = z.infer<typeof managedVerifyReportSchema>;
 export type ManagedResourceRef = z.infer<typeof managedResourceRefSchema>;
+
+export function managedDeploymentOutputContract(input: {
+  taskId: string;
+  turnId: number;
+}) {
+  const jsonSchema = (schema: z.ZodType) =>
+    z.toJSONSchema(schema, { io: "input", target: "draft-2020-12" });
+  return {
+    expectedEnvelope: {
+      schemaVersion: MANAGED_DEPLOYMENT_CONTRACT_VERSION,
+      taskId: input.taskId,
+      turnId: input.turnId,
+    },
+    files: {
+      inputsRequired: {
+        jsonSchema: jsonSchema(managedInputsRequiredSchema),
+        path: MANAGED_INPUTS_REQUIRED_RELATIVE_PATH,
+        writeWhen: "turn-report outcome is inputs-required",
+      },
+      turnReport: {
+        jsonSchema: jsonSchema(managedTurnReportSchema),
+        path: MANAGED_TURN_REPORT_RELATIVE_PATH,
+        writeWhen: "every turn",
+      },
+      verifyReport: {
+        jsonSchema: jsonSchema(managedVerifyReportSchema),
+        path: MANAGED_VERIFY_REPORT_RELATIVE_PATH,
+        writeWhen: "turn-report outcome is verified",
+      },
+    },
+    semanticRules: [
+      "Every document must use exactly the expectedEnvelope values.",
+      "Unknown fields are forbidden.",
+      "Input ids and keys must be unique; credential-like inputs must be sensitive.",
+      "inputs-required must include inputsRequiredPath with the fixed path from this contract.",
+      "verified must include verifyReportPath with the fixed path from this contract.",
+      "A passed verify verdict must contain at least one passed check and no failed checks.",
+      "A passed http or public-access check must include its target URL.",
+      "Every resource and check resource must use the deployment namespace from control.json.",
+    ],
+    schemaVersion: MANAGED_DEPLOYMENT_CONTRACT_VERSION,
+  } as const;
+}
 
 export class ManagedDeploymentContractError extends Error {
   readonly code:

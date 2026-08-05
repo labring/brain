@@ -201,6 +201,7 @@ async function sweepInvalidBlockedTasks(
 interface DevboxTaskRecord {
   namespace: string;
   runtimeName: string;
+  runtimeState: string;
   taskId: string;
 }
 
@@ -214,6 +215,7 @@ function devboxRecordsOf(result: unknown): DevboxTaskRecord[] {
       {
         namespace: String(record.namespace ?? ""),
         runtimeName,
+        runtimeState: String(record.runtime_state ?? "").toLowerCase(),
         taskId: String(record.id),
       },
     ];
@@ -283,8 +285,9 @@ async function processWithConcurrency<T>(
 
 /**
  * Pause devboxes left running by terminal tasks whose runner never got to
- * pause them (crash, forced resolution). Server-minted devbox JWT — the one
- * engine-side integration (ADR 0037/0038).
+ * pause them (crash, forced resolution). A runtime whose secret cleanup
+ * failed is deleted instead so it can never be archived. Server-minted devbox
+ * JWT — the one engine-side integration (ADR 0037/0038).
  */
 async function sweepTerminalDevboxPauses(
   ctx: DeployTaskEngineContext
@@ -311,13 +314,23 @@ async function sweepTerminalDevboxPauses(
         "runtime_cleanup_lease_expires_at" = now() + ${intervalFromMs(ctx.cadence.leaseDurationMs)}
     FROM candidates
     WHERE task."id" = candidates."id"
-    RETURNING task."id", task."namespace", task."runtime_name"
+    RETURNING task."id", task."namespace", task."runtime_name", task."runtime_state"
   `);
   const result = await processWithConcurrency(
     devboxRecordsOf(candidates),
     ctx.cadence.devboxOperationConcurrency,
     async (record) => {
       try {
+        if (record.runtimeState === "cleanup-failed") {
+          await ctx.devbox.deleteDevbox(record.namespace, record.runtimeName);
+          await markRuntimeState(
+            ctx,
+            record.taskId,
+            "deleted",
+            cleanupLeaseOwner
+          );
+          return true;
+        }
         const pauseResult = await ctx.devbox.pauseDevbox(
           record.namespace,
           record.runtimeName

@@ -34,6 +34,7 @@ import {
 import {
   createDevbox,
   DevboxApiError,
+  deleteDevbox,
   execDevbox,
   getDevbox,
   listDevboxes,
@@ -101,6 +102,7 @@ import {
   type ManagedInputsRequired,
   type ManagedTurnReport,
   type ManagedVerifyReport,
+  managedDeploymentOutputContract,
   managedTurnOutcomeStartsApplying,
   parseManagedInputMountProbe,
   parseManagedInputsRequired,
@@ -207,6 +209,7 @@ const DEPLOY_BUILD_RUNTIME_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-runtime
 const DEPLOY_TEMPLATE_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/template/index.yaml`;
 const MANAGED_DEPLOYMENT_CONTRACT_DIR = `${DEPLOY_WORKSPACE_DIR}/.sealos/brain`;
 const MANAGED_DEPLOYMENT_CONTROL_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/control.json`;
+const MANAGED_DEPLOYMENT_OUTPUT_CONTRACT_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/output-contract.json`;
 const MANAGED_DEPLOYMENT_INPUTS_REQUIRED_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/inputs-required.json`;
 const MANAGED_DEPLOYMENT_TURN_REPORT_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/turn-report.json`;
 const MANAGED_DEPLOYMENT_VERIFY_REPORT_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/verify-report.json`;
@@ -1695,7 +1698,17 @@ function prepareEmptyWorkspaceCommand(): string {
   ].join("\n");
 }
 
-/** Branch/tree URL for `skills add`; default brain-deploy, override via DEPLOY_SKILL_SOURCE. */
+export function buildManagedWorkspacePurgeCommand(): string {
+  return [
+    "set -euo pipefail",
+    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    `test "$workspace_dir" = ${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
+    'find "$workspace_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +',
+    'test -z "$(find "$workspace_dir" -mindepth 1 -print -quit)"',
+  ].join("\n");
+}
+
+/** Branch/tree URL for `skills add`; override via DEPLOY_SKILL_SOURCE. */
 export function buildDeploySkillInstallCommand(skillSource: string): string {
   return [
     "set -euo pipefail",
@@ -2081,6 +2094,12 @@ async function writeManagedTurnControl(input: {
         path: MANAGED_DEPLOYMENT_CONTROL_PATH,
         value: input.control,
       }),
+      buildAtomicJsonWriteCommand({
+        allowedRoot: MANAGED_DEPLOYMENT_CONTRACT_DIR,
+        mode: "0644",
+        path: MANAGED_DEPLOYMENT_OUTPUT_CONTRACT_PATH,
+        value: managedDeploymentOutputContract(input.control),
+      }),
     ].join("\n"),
     deadlineAtMs: input.deadlineAtMs,
     namespace: input.namespace,
@@ -2234,6 +2253,55 @@ async function removeManagedInputValues(input: {
     }
   }
   throw new Error("Failed to remove managed deployment input values.");
+}
+
+async function purgeManagedWorkspace(input: {
+  namespace: string;
+  runtimeName: string;
+}): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const result = (
+        await execDevbox(
+          input.namespace,
+          input.runtimeName,
+          {
+            command: ["bash", "-lc", buildManagedWorkspacePurgeCommand()],
+            timeoutSeconds: 30,
+          },
+          AbortSignal.timeout(30_000)
+        )
+      ).data;
+      if (result.exitCode === 0) {
+        return;
+      }
+    } catch {
+      // Workspace cleanup is retried independently from the deployment turn.
+    }
+  }
+  throw new Error("Failed to purge the managed deployment workspace.");
+}
+
+async function deleteManagedDeploymentDevbox(input: {
+  namespace: string;
+  runtimeName: string;
+  taskId: string;
+}): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await deleteDevbox(input.namespace, input.runtimeName);
+      await updateDeployTaskState(input.taskId, {
+        runtimeState: "deleted",
+      }).catch(() => undefined);
+      return true;
+    } catch {
+      // A failed secret cleanup must fall back to a bounded delete retry.
+    }
+  }
+  await updateDeployTaskState(input.taskId, {
+    runtimeState: "cleanup-failed",
+  }).catch(() => undefined);
+  return false;
 }
 
 async function readDeployOutput(input: {
@@ -3605,6 +3673,7 @@ async function runManagedDeploymentTurn(input: {
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is the bounded managed-turn state machine; each branch is a protocol outcome.
 async function runManagedDeploymentLifecycleCore(input: {
+  beforeComplete?: () => Promise<void>;
   context: GatewayContext;
   initialDeadlineAtMs: number;
   inputPath?: string;
@@ -3668,6 +3737,11 @@ async function runManagedDeploymentLifecycleCore(input: {
     sessionId = result.sessionId;
     brainReviewPath = undefined;
     if (result.report.outcome === "inputs-required") {
+      if (input.values != null && Object.keys(input.values).length > 0) {
+        throw new Error(
+          "Managed deployment cannot request additional input after input submission."
+        );
+      }
       if (applying) {
         throw new Error(
           "Managed deployment requested input after mutation began."
@@ -3765,6 +3839,7 @@ async function runManagedDeploymentLifecycleCore(input: {
         remainingVerifyBudgetMs - (Date.now() - verifyStartedAtMs)
       );
       if (brainVerification.ok) {
+        await input.beforeComplete?.();
         await updateDeployTaskState(input.task.id, {
           artifactSummary: {
             ...input.task.artifactSummary,
@@ -3854,8 +3929,51 @@ async function runManagedDeploymentLifecycle(input: {
 }): Promise<void> {
   let inputPath: string | undefined;
   let lifecycleError: unknown = null;
+  let cleanupComplete = false;
+  let runtimeDeleted = false;
+  let preventArchive = false;
+  const hasSubmittedValues =
+    input.values != null && Object.keys(input.values).length > 0;
+  const cleanupSubmittedValues = async (): Promise<void> => {
+    if (!hasSubmittedValues || cleanupComplete) {
+      return;
+    }
+    try {
+      if (inputPath != null) {
+        await removeManagedInputValues({
+          inputPath,
+          namespace: input.task.namespace,
+          runtimeName: input.runtimeName,
+          taskId: input.task.id,
+        });
+        inputPath = undefined;
+      }
+      await purgeManagedWorkspace({
+        namespace: input.task.namespace,
+        runtimeName: input.runtimeName,
+      });
+      cleanupComplete = true;
+    } catch (error) {
+      preventArchive = true;
+      runtimeDeleted = await deleteManagedDeploymentDevbox({
+        namespace: input.task.namespace,
+        runtimeName: input.runtimeName,
+        taskId: input.task.id,
+      });
+      if (runtimeDeleted) {
+        throw new Error(
+          "Managed deployment workspace cleanup failed; the Devbox was deleted to prevent secret archival.",
+          { cause: error }
+        );
+      }
+      throw new Error(
+        "Managed deployment workspace cleanup and Devbox deletion failed.",
+        { cause: error }
+      );
+    }
+  };
   try {
-    if (input.values != null && Object.keys(input.values).length > 0) {
+    if (hasSubmittedValues && input.values != null) {
       inputPath = await writeManagedInputValues({
         deadlineAtMs: input.initialDeadlineAtMs,
         namespace: input.task.namespace,
@@ -3866,6 +3984,7 @@ async function runManagedDeploymentLifecycle(input: {
       });
     }
     await runManagedDeploymentLifecycleCore({
+      beforeComplete: cleanupSubmittedValues,
       context: input.context,
       initialDeadlineAtMs: input.initialDeadlineAtMs,
       inputPath,
@@ -3883,27 +4002,17 @@ async function runManagedDeploymentLifecycle(input: {
     lifecycleError = error;
     throw error;
   } finally {
-    if (inputPath != null) {
-      await removeManagedInputValues({
-        inputPath,
-        namespace: input.task.namespace,
-        runtimeName: input.runtimeName,
-        taskId: input.task.id,
-      }).catch(async (error) => {
+    if (hasSubmittedValues && !cleanupComplete && !runtimeDeleted) {
+      await cleanupSubmittedValues().catch((error) => {
         if (lifecycleError == null) {
-          await pauseDevbox(
-            input.task.namespace,
-            input.runtimeName,
-            AbortSignal.timeout(DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs)
-          ).catch(() => undefined);
           throw error;
         }
         console.warn(
-          `[deploy-task] Failed to remove managed input values for ${input.task.id}.`
+          `[deploy-task] Failed to purge submitted deployment inputs for ${input.task.id}.`
         );
       });
     }
-    if (lifecycleError != null) {
+    if (lifecycleError != null && !runtimeDeleted && !preventArchive) {
       await pauseDevbox(
         input.task.namespace,
         input.runtimeName,

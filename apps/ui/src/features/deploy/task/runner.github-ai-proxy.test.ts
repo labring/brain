@@ -36,6 +36,7 @@ mock.module("server-only", () => ({}));
 const {
   buildCodexGatewayEnv,
   buildDeploySkillInstallCommand,
+  buildManagedWorkspacePurgeCommand,
   ensureAiDeploymentDevbox,
   resolveCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
@@ -126,16 +127,28 @@ describe("deploy skill installation", () => {
     expect(command).not.toMatch(PINNED_SKILL_COMMIT_SOURCE_RE);
   });
 
-  it("defaults to the brain-deploy branch via runtime config", () => {
+  it("defaults to the Agent-managed branch via runtime config", () => {
     expect(getDeploySkillSourceFromEnv({})).toBe(
-      "https://github.com/labring/sealos-skills/tree/brain-deploy"
+      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
     );
     const command = buildDeploySkillInstallCommand(
       getDeploySkillSourceFromEnv({})
     );
     expect(command).toContain(
-      "https://github.com/labring/sealos-skills/tree/brain-deploy"
+      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
     );
+  });
+});
+
+describe("managed deployment workspace cleanup", () => {
+  it("purges and verifies only the fixed task workspace", () => {
+    const command = buildManagedWorkspacePurgeCommand();
+
+    expect(command).toContain("/home/devbox/project");
+    expect(command).toContain("-mindepth 1 -maxdepth 1");
+    expect(command).toContain("rm -rf");
+    expect(command).toContain("-print -quit");
+    expect(command).not.toContain("/home/devbox/project/.sealos/brain");
   });
 });
 

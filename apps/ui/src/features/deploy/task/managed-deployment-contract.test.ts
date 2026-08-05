@@ -11,8 +11,12 @@ import {
   isManagedInputPathForTask,
   MANAGED_CONTROL_MAX_BYTES,
   MANAGED_INPUT_VALUES_MAX_BYTES,
+  MANAGED_INPUTS_REQUIRED_RELATIVE_PATH,
+  MANAGED_TURN_REPORT_RELATIVE_PATH,
+  MANAGED_VERIFY_REPORT_RELATIVE_PATH,
   ManagedDeploymentContractError,
   type ManagedInputStorageCandidate,
+  managedDeploymentOutputContract,
   managedTurnOutcomeStartsApplying,
   parseManagedDeploymentControl,
   parseManagedInputMountProbe,
@@ -193,6 +197,34 @@ describe("managed deployment contracts", () => {
         })
       ).outcome
     ).toBe("verified");
+  });
+
+  it("publishes the strict schemas and fixed output paths for the Agent", () => {
+    const contract = managedDeploymentOutputContract({
+      taskId: TASK_ID,
+      turnId: 2,
+    });
+
+    expect(contract.expectedEnvelope).toEqual({
+      schemaVersion: 1,
+      taskId: TASK_ID,
+      turnId: 2,
+    });
+    expect(contract.files.inputsRequired.path).toBe(
+      MANAGED_INPUTS_REQUIRED_RELATIVE_PATH
+    );
+    expect(contract.files.turnReport.path).toBe(
+      MANAGED_TURN_REPORT_RELATIVE_PATH
+    );
+    expect(contract.files.verifyReport.path).toBe(
+      MANAGED_VERIFY_REPORT_RELATIVE_PATH
+    );
+    expect(contract.files.turnReport.jsonSchema.additionalProperties).toBe(
+      false
+    );
+    expect(contract.files.verifyReport.jsonSchema.additionalProperties).toBe(
+      false
+    );
   });
 
   it("requires consistent passed verification", () => {

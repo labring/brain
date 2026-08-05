@@ -3,7 +3,7 @@ import { DEPLOY_TIMEOUT_POLICY } from "./timeout-policy";
 export const DEFAULT_DEPLOY_DEVBOX_STORAGE_LIMIT = "10Gi";
 
 export const DEFAULT_DEPLOY_SKILL_SOURCE =
-  "https://github.com/labring/sealos-skills/tree/brain-deploy";
+  "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy";
 
 export const DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS =
   DEPLOY_TIMEOUT_POLICY.devboxReadyMs;
