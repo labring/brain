@@ -5,7 +5,9 @@ import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { cn } from "@workspace/ui/lib/utils";
 import { ArrowRight, Check, Send } from "lucide-react";
-import { type ReactNode, useReducer } from "react";
+import { type ReactNode, useEffect, useReducer, useRef } from "react";
+
+import { trackBrainGtmEvent } from "@/features/analytics/brain-gtm";
 
 import {
   canAdvanceOnboardingStep,
@@ -14,7 +16,9 @@ import {
   onboardingCompletePayload,
   onboardingPriorityAnswerPayload,
   onboardingRoleAnswerPayload,
+  onboardingSkipEvent,
   onboardingSkipPayload,
+  onboardingStepViewEvent,
   onboardingSurveyReducer,
   onboardingUsageAnswerPayload,
 } from "./survey-state";
@@ -198,6 +202,22 @@ export function OnboardingSurveyCard({
     () => createInitialOnboardingSurveyState()
   );
 
+  // The funnel view events: one per step shown, the mount itself being the
+  // dialog's appearance (step 1). With no back navigation the step only
+  // grows, so the monotonic ref guard means exactly once per step — a
+  // dev-mode remount replaying the effect cannot double-fire.
+  const lastViewedStepRef = useRef(0);
+  useEffect(() => {
+    if (lastViewedStepRef.current >= state.currentStep) {
+      return;
+    }
+    lastViewedStepRef.current = state.currentStep;
+    const viewEvent = onboardingStepViewEvent(state.currentStep);
+    if (viewEvent !== null) {
+      trackBrainGtmEvent(viewEvent);
+    }
+  }, [state.currentStep]);
+
   const handleNext = () => {
     // Persist-then-advance, both synchronous from the click: the payload is
     // assembled from the state being left, and the write is the owner's
@@ -209,6 +229,21 @@ export function OnboardingSurveyCard({
     dispatch({ type: "advance-step" });
   };
 
+  const handleSkip = () => {
+    // The funnel event fires at click time, before the owner's terminal
+    // write — analytics is best-effort and never awaits persistence.
+    const skipEvent = onboardingSkipEvent(state.currentStep);
+    if (skipEvent !== null) {
+      trackBrainGtmEvent(skipEvent);
+    }
+    onSkip(onboardingSkipPayload(state));
+  };
+
+  const handleComplete = () => {
+    trackBrainGtmEvent({ event: "onboarding_complete" });
+    onComplete(onboardingCompletePayload(state));
+  };
+
   return (
     <div className="flex min-h-144 flex-col p-9">
       <div className="flex items-center justify-between">
@@ -217,7 +252,7 @@ export function OnboardingSurveyCard({
         </span>
         <button
           className="text-muted-foreground text-sm transition-colors hover:text-foreground"
-          onClick={() => onSkip(onboardingSkipPayload(state))}
+          onClick={handleSkip}
           type="button"
         >
           Skip
@@ -382,10 +417,7 @@ export function OnboardingSurveyCard({
         {state.currentStep === ONBOARDING_SURVEY_TOTAL_STEPS ? (
           // The terminal submit: never gated (the open goal is optional) and
           // never awaited — the owner closes the dialog into the console.
-          <AppButton
-            onClick={() => onComplete(onboardingCompletePayload(state))}
-            type="button"
-          >
+          <AppButton onClick={handleComplete} type="button">
             Submit & Enter Console
             <Send aria-hidden data-icon="inline-end" />
           </AppButton>

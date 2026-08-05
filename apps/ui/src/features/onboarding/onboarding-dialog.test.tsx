@@ -47,6 +47,20 @@ function optionButton(label: string): HTMLButtonElement {
   return button;
 }
 
+/** Clicks the explicit Next button, asserting it is rendered. */
+async function clickNext(): Promise<void> {
+  // Imported lazily like every DOM library here: the module may only load
+  // after installTestDom has put a document in place.
+  const { fireEvent } = await import("@testing-library/dom");
+  const next = bodyButtons().find((candidate) =>
+    candidate.textContent?.includes("Next")
+  );
+  assert.ok(next, "the explicit Next button is rendered");
+  await actAndDrain(() => {
+    fireEvent.click(next);
+  });
+}
+
 // The dialog primitive never renders in the test DOM (repo pattern: dialog
 // shells are asserted structurally), so the shell's non-dismissible contract
 // is pinned on the element tree: `open` is fully controlled, the only
@@ -169,16 +183,6 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
       fireEvent.keyUp(input, { key: "d" });
     });
   };
-  const clickNext = async () => {
-    const next = bodyButtons().find((candidate) =>
-      candidate.textContent?.includes("Next")
-    );
-    assert.ok(next, "the explicit Next button is rendered");
-    await actAndDrain(() => {
-      fireEvent.click(next);
-    });
-  };
-
   try {
     await actAndDrain(() => {
       rendered = render(
@@ -269,6 +273,186 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
     });
     assert.deepEqual(completes, [{ openGoalText: "test a product idea" }]);
     assert.equal(answers.length, 3, "submit is terminal, not a step write");
+  } finally {
+    await actAndDrain(() => {
+      rendered?.unmount();
+    });
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+/**
+ * The exact dataLayer entry a funnel event lands as: the event name, the
+ * shared context/module envelope, and — for view/skip — the bare step
+ * number. deepEqual on these pins the privacy rule observably: no answer
+ * value, free text, or user ID rides along.
+ */
+function funnelEntry(event: string, step?: number) {
+  return {
+    context: "app",
+    event,
+    module: "brain",
+    ...(step === undefined ? {} : { step }),
+  };
+}
+
+test("the funnel emits one view per step shown and complete at submit time", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const { render } = await import("@testing-library/react/pure");
+  const { fireEvent } = await import("@testing-library/dom");
+  const dataLayer: unknown[] = [];
+  Object.assign(window, { dataLayer });
+  const completes: unknown[] = [];
+  let rendered: ReturnType<typeof render> | undefined;
+
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <OnboardingSurveyCard
+          onAnswerStep={() => undefined}
+          onComplete={(payload) => {
+            completes.push(payload);
+          }}
+          onSkip={() => undefined}
+        />
+      );
+    });
+
+    // The dialog's appearance is the step 1 view.
+    assert.deepEqual(dataLayer, [funnelEntry("onboarding_step_view", 1)]);
+
+    // Interaction within a step re-renders without re-viewing it.
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Individual developer"));
+    });
+    assert.deepEqual(dataLayer, [funnelEntry("onboarding_step_view", 1)]);
+
+    await clickNext();
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Just exploring Sealos"));
+    });
+    await clickNext();
+    await actAndDrain(() => {
+      fireEvent.click(optionButton("Stability"));
+    });
+    await clickNext();
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Submit & Enter Console"));
+    });
+
+    // The whole flow, exactly: four views in order, then the completion.
+    assert.deepEqual(dataLayer, [
+      funnelEntry("onboarding_step_view", 1),
+      funnelEntry("onboarding_step_view", 2),
+      funnelEntry("onboarding_step_view", 3),
+      funnelEntry("onboarding_step_view", 4),
+      funnelEntry("onboarding_complete"),
+    ]);
+    // The event fired at click time and the owner's callback still ran.
+    assert.deepEqual(completes, [{ openGoalText: null }]);
+  } finally {
+    await actAndDrain(() => {
+      rendered?.unmount();
+    });
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+test("Skip fires the funnel event with the step it left from", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const { render } = await import("@testing-library/react/pure");
+  const { fireEvent } = await import("@testing-library/dom");
+  const dataLayer: unknown[] = [];
+  Object.assign(window, { dataLayer });
+  const skips: { dismissedAtStep: number }[] = [];
+  let rendered: ReturnType<typeof render> | undefined;
+
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <OnboardingSurveyCard
+          onAnswerStep={() => undefined}
+          onComplete={() => undefined}
+          onSkip={(payload) => {
+            skips.push(payload);
+          }}
+        />
+      );
+    });
+
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Individual developer"));
+    });
+    await clickNext();
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Skip"));
+    });
+
+    assert.deepEqual(dataLayer, [
+      funnelEntry("onboarding_step_view", 1),
+      funnelEntry("onboarding_step_view", 2),
+      funnelEntry("onboarding_skip", 2),
+    ]);
+    // The event fired at click time and the owner's dismiss still ran.
+    assert.deepEqual(skips, [{ dismissedAtStep: 2 }]);
+  } finally {
+    await actAndDrain(() => {
+      rendered?.unmount();
+    });
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+test("a broken dataLayer never touches the survey flow", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const { render } = await import("@testing-library/react/pure");
+  const { fireEvent } = await import("@testing-library/dom");
+  // Analytics is best-effort: every push throws, nothing may escape.
+  Object.assign(window, {
+    dataLayer: {
+      push: () => {
+        throw new Error("transport failed");
+      },
+    },
+  });
+  const answers: unknown[] = [];
+  const skips: { dismissedAtStep: number }[] = [];
+  let rendered: ReturnType<typeof render> | undefined;
+
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <OnboardingSurveyCard
+          onAnswerStep={(payload) => {
+            answers.push(payload);
+          }}
+          onComplete={() => undefined}
+          onSkip={(payload) => {
+            skips.push(payload);
+          }}
+        />
+      );
+    });
+
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Individual developer"));
+    });
+    await clickNext();
+
+    // The survey advanced and persisted as if analytics did not exist.
+    assert.match(document.body.textContent ?? "", STEP_TWO_INDICATOR_RE);
+    assert.equal(answers.length, 1);
+
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Skip"));
+    });
+    assert.deepEqual(skips, [{ dismissedAtStep: 2 }]);
   } finally {
     await actAndDrain(() => {
       rendered?.unmount();
