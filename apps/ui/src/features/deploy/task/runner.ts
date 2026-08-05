@@ -95,13 +95,6 @@ import {
 } from "./gateway";
 import type { ManagedDeployResumeMode } from "./gateway-prompt";
 import {
-  auditManagedDeploymentMutations,
-  buildManagedInventoryCommand,
-  type ManagedResourceInventory,
-  managedIdentityResourceRefs,
-  parseManagedResourceInventory,
-} from "./managed-deployment-audit";
-import {
   assertManagedContractEnvelope,
   assertManagedTurnReportForControl,
   assertManagedVerifyReportForControl,
@@ -117,16 +110,19 @@ import {
   type ManagedInputsRequired,
   type ManagedTurnReport,
   type ManagedVerifyReport,
+  managedTurnOutcomeStartsApplying,
   parseManagedInputMountProbe,
   parseManagedInputsRequired,
-  parseManagedMutationIntent,
   parseManagedTurnReport,
   parseManagedVerifyReport,
   selectManagedInputPath,
 } from "./managed-deployment-contract";
 import {
+  buildManagedResourceDiscoveryCommand,
   buildManagedResourceObservationCommand,
-  managedIdentityNetworkHosts,
+  managedObservedNetworkHosts,
+  managedObservedResourceRefs,
+  parseManagedResourceDiscovery,
   parseManagedResourceObservations,
   verifyManagedResourceObservations,
 } from "./managed-deployment-verifier";
@@ -227,14 +223,13 @@ const MANAGED_DEPLOYMENT_BRAIN_REVIEW_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}
 const MANAGED_DEPLOYMENT_BRAIN_REVIEW_RELATIVE_PATH =
   ".sealos/brain/brain-review.json";
 const MANAGED_DEPLOYMENT_INPUT_REF_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/input-ref.json`;
-const MANAGED_DEPLOYMENT_MUTATION_INTENT_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/mutation-intent.json`;
-const MANAGED_DEPLOYMENT_MUTATION_AUTHORIZATION_PATH = `${MANAGED_DEPLOYMENT_CONTRACT_DIR}/mutation-authorized.json`;
 const MANAGED_DEPLOYMENT_MUTATION_INTENT_RELATIVE_PATH =
   ".sealos/brain/mutation-intent.json";
 const MANAGED_DEPLOYMENT_MUTATION_AUTHORIZATION_RELATIVE_PATH =
   ".sealos/brain/mutation-authorized.json";
 const MANAGED_DEPLOYMENT_INPUT_ROOT = "/dev/shm/sealai";
 const MANAGED_DEPLOYMENT_KUBECONFIG_PATH = "/home/devbox/.kube/config";
+const MANAGED_VERIFICATION_QUERY_BATCH_MS = 60_000;
 const SKILL_INSTALL_COMMAND_TIMEOUT_SECONDS =
   DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000;
 const DEPLOY_SKILLS_CLI_VERSION = "1.5.20";
@@ -2127,7 +2122,7 @@ async function writeManagedTurnControl(input: {
   await execOrThrow({
     command: [
       "set -euo pipefail",
-      `rm -f -- ${shellQuote(MANAGED_DEPLOYMENT_INPUTS_REQUIRED_PATH)} ${shellQuote(MANAGED_DEPLOYMENT_TURN_REPORT_PATH)} ${shellQuote(MANAGED_DEPLOYMENT_VERIFY_REPORT_PATH)} ${shellQuote(MANAGED_DEPLOYMENT_MUTATION_INTENT_PATH)} ${shellQuote(MANAGED_DEPLOYMENT_MUTATION_AUTHORIZATION_PATH)}`,
+      `rm -f -- ${shellQuote(MANAGED_DEPLOYMENT_INPUTS_REQUIRED_PATH)} ${shellQuote(MANAGED_DEPLOYMENT_TURN_REPORT_PATH)} ${shellQuote(MANAGED_DEPLOYMENT_VERIFY_REPORT_PATH)}`,
       buildAtomicJsonWriteCommand({
         allowedRoot: MANAGED_DEPLOYMENT_CONTRACT_DIR,
         mode: "0644",
@@ -2287,68 +2282,6 @@ async function removeManagedInputValues(input: {
     }
   }
   throw new Error("Failed to remove managed deployment input values.");
-}
-
-async function monitorManagedMutationAuthorization(input: {
-  control: ManagedDeploymentControl;
-  deadlineAtMs: number;
-  namespace: string;
-  runtimeName: string;
-  stopSignal: AbortSignal;
-  taskId: string;
-}): Promise<boolean> {
-  const signal = AbortSignal.any([
-    input.stopSignal,
-    deployTaskRunSignal(input.taskId),
-    AbortSignal.timeout(Math.max(1, input.deadlineAtMs - Date.now())),
-  ]);
-  while (!signal.aborted) {
-    try {
-      const result = (
-        await execDevbox(
-          input.namespace,
-          input.runtimeName,
-          {
-            command: [
-              "bash",
-              "-lc",
-              `if test -f ${shellQuote(MANAGED_DEPLOYMENT_MUTATION_INTENT_PATH)}; then cat ${shellQuote(MANAGED_DEPLOYMENT_MUTATION_INTENT_PATH)}; fi`,
-            ],
-            timeoutSeconds: 2,
-          },
-          signal
-        )
-      ).data;
-      if (result.exitCode === 0 && result.stdout.trim() !== "") {
-        const intent = parseManagedMutationIntent(result.stdout);
-        assertManagedContractEnvelope(intent, input.control);
-        await deployTaskBeginApplying(input.taskId);
-        await execOrThrow({
-          command: buildAtomicJsonWriteCommand({
-            allowedRoot: MANAGED_DEPLOYMENT_CONTRACT_DIR,
-            path: MANAGED_DEPLOYMENT_MUTATION_AUTHORIZATION_PATH,
-            value: intent,
-          }),
-          deadlineAtMs: input.deadlineAtMs,
-          namespace: input.namespace,
-          runtimeName: input.runtimeName,
-          taskId: input.taskId,
-          timeoutSeconds: deploymentExecTimeoutSeconds({
-            capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
-            deadlineAtMs: input.deadlineAtMs,
-          }),
-        });
-        return true;
-      }
-    } catch (error) {
-      if (signal.aborted) {
-        return false;
-      }
-      throw error;
-    }
-    await abortableSleep(1000, signal).catch(() => undefined);
-  }
-  return false;
 }
 
 async function readDeployOutput(input: {
@@ -3769,7 +3702,6 @@ export async function ensureAiDeploymentDevbox(input: {
               ),
               SEALAI_INPUTS_PATH: `${MANAGED_DEPLOYMENT_INPUT_ROOT}/${input.task.id}/inputs.json`,
               SEALAI_KUBECONFIG_PATH: MANAGED_DEPLOYMENT_KUBECONFIG_PATH,
-              SEALAI_MAX_MUTATED_RESOURCES_PER_TURN: "128",
               SEALAI_MAX_REPAIR_TURNS: String(
                 AGENT_DEPLOY_TIMEOUT_POLICY.maxRepairTurns
               ),
@@ -3803,26 +3735,6 @@ export async function ensureAiDeploymentDevbox(input: {
       reason: "deploy-runtime-unavailable",
     });
   }
-}
-
-async function readManagedResourceInventory(input: {
-  deadlineAtMs: number;
-  namespace: string;
-  runtimeName: string;
-  taskId: string;
-}): Promise<ManagedResourceInventory> {
-  const contents = await execForOutput({
-    command: buildManagedInventoryCommand(input.namespace),
-    deadlineAtMs: input.deadlineAtMs,
-    namespace: input.namespace,
-    runtimeName: input.runtimeName,
-    taskId: input.taskId,
-    timeoutSeconds: deploymentExecTimeoutSeconds({
-      capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
-      deadlineAtMs: input.deadlineAtMs,
-    }),
-  });
-  return parseManagedResourceInventory(contents);
 }
 
 function isAllowedManagedHttpUrl(url: URL, allowedDomain: string): boolean {
@@ -3930,14 +3842,18 @@ async function probeManagedServiceTarget(input: {
 async function verifyManagedDeploymentWithBrain(input: {
   deadlineAtMs: number;
   instanceName: string;
-  inventory: ManagedResourceInventory;
   kubeconfig: string;
   namespace: string;
   projectId: string;
   report: ManagedVerifyReport;
   runtimeName: string;
   taskId: string;
-}): Promise<{ ok: boolean; retryable: boolean; violations: string[] }> {
+}): Promise<{
+  ok: boolean;
+  resources: ManagedVerifyReport["resources"];
+  retryable: boolean;
+  violations: string[];
+}> {
   const resourceMap = new Map<
     string,
     ManagedVerifyReport["resources"][number]
@@ -3948,16 +3864,37 @@ async function verifyManagedDeploymentWithBrain(input: {
     name: input.instanceName,
     namespace: input.namespace,
   };
-  const observedIdentityResources = managedIdentityResourceRefs({
-    instanceName: input.instanceName,
-    inventory: input.inventory,
-    projectId: input.projectId,
+  const discoveryText = await execForOutput({
+    command: buildManagedResourceDiscoveryCommand({
+      instanceName: input.instanceName,
+      namespace: input.namespace,
+      projectId: input.projectId,
+    }),
+    deadlineAtMs: input.deadlineAtMs,
+    namespace: input.namespace,
+    runtimeName: input.runtimeName,
+    taskId: input.taskId,
+    timeoutSeconds: deploymentExecTimeoutSeconds({
+      capMs: MANAGED_VERIFICATION_QUERY_BATCH_MS,
+      deadlineAtMs: input.deadlineAtMs,
+    }),
   });
-  for (const resource of [
-    instanceRef,
-    ...observedIdentityResources,
-    ...input.report.resources,
-  ]) {
+  const discovery = parseManagedResourceDiscovery(discoveryText);
+  for (const resource of [instanceRef, ...input.report.resources]) {
+    resourceMap.set(
+      [
+        resource.apiVersion,
+        resource.kind,
+        resource.namespace,
+        resource.name,
+      ].join("|"),
+      resource
+    );
+  }
+  for (const resource of discovery.resources) {
+    if (resourceMap.size >= 257) {
+      break;
+    }
     resourceMap.set(
       [
         resource.apiVersion,
@@ -3975,16 +3912,14 @@ async function verifyManagedDeploymentWithBrain(input: {
     runtimeName: input.runtimeName,
     taskId: input.taskId,
     timeoutSeconds: deploymentExecTimeoutSeconds({
-      capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
+      capMs: MANAGED_VERIFICATION_QUERY_BATCH_MS,
       deadlineAtMs: input.deadlineAtMs,
     }),
   });
   const observations = parseManagedResourceObservations(observationsText);
   const resourceResult = verifyManagedResourceObservations({
-    identityResources: observedIdentityResources,
     instanceName: input.instanceName,
     observations,
-    projectId: input.projectId,
     report: input.report,
   });
   const violations = [...resourceResult.violations];
@@ -3995,12 +3930,8 @@ async function verifyManagedDeploymentWithBrain(input: {
       ? [check.target]
       : []
   );
-  const { publicHosts, serviceHosts } = managedIdentityNetworkHosts({
-    identityResources: observedIdentityResources,
-    instanceName: input.instanceName,
-    observations,
-    projectId: input.projectId,
-  });
+  const { publicHosts, serviceHosts } =
+    managedObservedNetworkHosts(observations);
   if (
     httpTargets.length === 0 &&
     (serviceHosts.length > 0 || publicHosts.length > 0)
@@ -4037,7 +3968,6 @@ async function verifyManagedDeploymentWithBrain(input: {
   }
   const deterministicViolation = violations.some(
     (violation) =>
-      violation.includes("outside the allocated identity") ||
       violation.includes("outside the cluster domain") ||
       violation.includes("outside the owned public hosts") ||
       violation.includes("outside the verified Services") ||
@@ -4046,6 +3976,7 @@ async function verifyManagedDeploymentWithBrain(input: {
   );
   return {
     ok: violations.length === 0,
+    resources: managedObservedResourceRefs(observations),
     retryable: violations.length > 0 && !deterministicViolation,
     violations,
   };
@@ -4061,12 +3992,11 @@ async function verifyManagedDeploymentUntilDeadline(input: {
   runtimeName: string;
   taskId: string;
 }): Promise<{
-  inventory: ManagedResourceInventory;
   ok: boolean;
+  resources: ManagedVerifyReport["resources"];
   violations: string[];
 }> {
-  let inventory = await readManagedResourceInventory(input);
-  let result = await verifyManagedDeploymentWithBrain({ ...input, inventory });
+  let result = await verifyManagedDeploymentWithBrain(input);
   while (!result.ok && result.retryable) {
     const remainingMs = input.deadlineAtMs - Date.now();
     if (remainingMs <= 0) {
@@ -4079,22 +4009,22 @@ async function verifyManagedDeploymentUntilDeadline(input: {
     if (Date.now() >= input.deadlineAtMs) {
       break;
     }
-    inventory = await readManagedResourceInventory(input);
-    result = await verifyManagedDeploymentWithBrain({ ...input, inventory });
+    result = await verifyManagedDeploymentWithBrain(input);
   }
-  return { inventory, ok: result.ok, violations: result.violations };
+  return {
+    ok: result.ok,
+    resources: result.resources,
+    violations: result.violations,
+  };
 }
 
 interface ManagedTurnResult {
   control: ManagedDeploymentControl;
-  inventory: ManagedResourceInventory;
-  mutationAuthorized: boolean;
   report: ManagedTurnReport;
   sessionId: string;
 }
 
 async function runManagedDeploymentTurn(input: {
-  authorizationRequired: boolean;
   brainReviewPath?: string;
   context: GatewayContext;
   deadlineAtMs: number;
@@ -4129,7 +4059,7 @@ async function runManagedDeploymentTurn(input: {
     mode: "brain-managed",
     mutationAuthorizationPath:
       MANAGED_DEPLOYMENT_MUTATION_AUTHORIZATION_RELATIVE_PATH,
-    mutationAuthorizationRequired: input.authorizationRequired,
+    mutationAuthorizationRequired: false,
     mutationIntentPath: MANAGED_DEPLOYMENT_MUTATION_INTENT_RELATIVE_PATH,
     ...(input.previousTurnId === undefined
       ? {}
@@ -4151,47 +4081,17 @@ async function runManagedDeploymentTurn(input: {
     runtimeName: input.runtimeName,
     taskId: input.task.id,
   });
-  const before = await readManagedResourceInventory({
+  const sessionId = await runDeployTaskGatewayWithOutputProgress({
+    context: input.context,
     deadlineAtMs: input.deadlineAtMs,
+    existingSessionId: input.existingSessionId,
     namespace: input.namespace,
+    pauseOnError: false,
+    resumeMode: input.resumeMode,
     runtimeName: input.runtimeName,
-    taskId: input.task.id,
+    seenSignatures: input.outputProgressSignatures,
+    task: input.task,
   });
-  const authorizationMonitor = new AbortController();
-  let authorizationError: unknown = null;
-  const authorizationPromise = input.authorizationRequired
-    ? monitorManagedMutationAuthorization({
-        control,
-        deadlineAtMs: input.deadlineAtMs,
-        namespace: input.namespace,
-        runtimeName: input.runtimeName,
-        stopSignal: authorizationMonitor.signal,
-        taskId: input.task.id,
-      }).catch((error) => {
-        authorizationError = error;
-        return false;
-      })
-    : Promise.resolve(false);
-  let sessionId: string;
-  try {
-    sessionId = await runDeployTaskGatewayWithOutputProgress({
-      context: input.context,
-      deadlineAtMs: input.deadlineAtMs,
-      existingSessionId: input.existingSessionId,
-      namespace: input.namespace,
-      pauseOnError: false,
-      resumeMode: input.resumeMode,
-      runtimeName: input.runtimeName,
-      seenSignatures: input.outputProgressSignatures,
-      task: input.task,
-    });
-  } finally {
-    authorizationMonitor.abort();
-  }
-  const mutationAuthorized = await authorizationPromise;
-  if (authorizationError != null) {
-    throw authorizationError;
-  }
   const reportContents = await readManagedContract({
     deadlineAtMs: input.deadlineAtMs,
     maxBytes: MANAGED_TURN_REPORT_MAX_BYTES,
@@ -4202,40 +4102,12 @@ async function runManagedDeploymentTurn(input: {
   });
   const report = parseManagedTurnReport(reportContents);
   assertManagedTurnReportForControl(report, control);
-  if (
-    input.authorizationRequired &&
-    report.mutations.some((mutation) => mutation.operation !== "exec") &&
-    !mutationAuthorized
-  ) {
-    throw new Error(
-      "Managed deployment mutated resources without authorization."
-    );
-  }
-  const after = await readManagedResourceInventory({
-    deadlineAtMs: input.deadlineAtMs,
-    namespace: input.namespace,
-    runtimeName: input.runtimeName,
-    taskId: input.task.id,
-  });
-  const audit = auditManagedDeploymentMutations({
-    after,
-    before,
-    fieldManager: control.fieldManager,
-    instanceName: input.instanceName,
-    projectId: input.projectId,
-    report,
-  });
-  if (!audit.ok) {
-    throw new Error(
-      `Managed deployment mutation audit failed: ${audit.violations.join("; ")}`
-    );
-  }
   await updateDeployTaskState(input.task.id, {
     agentLastReportDigest: createHash("sha256")
       .update(reportContents)
       .digest("hex"),
   });
-  return { control, inventory: after, mutationAuthorized, report, sessionId };
+  return { control, report, sessionId };
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This is the bounded managed-turn state machine; each branch is a protocol outcome.
@@ -4282,7 +4154,6 @@ async function runManagedDeploymentLifecycleCore(input: {
           })
         : input.inputPath;
     const result = await runManagedDeploymentTurn({
-      authorizationRequired: !applying,
       brainReviewPath,
       context: input.context,
       deadlineAtMs,
@@ -4303,10 +4174,6 @@ async function runManagedDeploymentLifecycleCore(input: {
     previousTurnId = turnCount;
     sessionId = result.sessionId;
     brainReviewPath = undefined;
-    if (result.mutationAuthorized) {
-      applying = true;
-    }
-
     if (result.report.outcome === "inputs-required") {
       if (applying) {
         throw new Error(
@@ -4356,7 +4223,7 @@ async function runManagedDeploymentLifecycleCore(input: {
     if (result.report.outcome === "fatal") {
       throw new Error("Managed deployment Agent reported a fatal outcome.");
     }
-    if (!applying && result.report.outcome === "verified") {
+    if (!applying && managedTurnOutcomeStartsApplying(result.report.outcome)) {
       await deployTaskBeginApplying(input.task.id);
       applying = true;
     }
@@ -4405,17 +4272,12 @@ async function runManagedDeploymentLifecycleCore(input: {
         remainingVerifyBudgetMs - (Date.now() - verifyStartedAtMs)
       );
       if (brainVerification.ok) {
-        const verifiedResources = managedIdentityResourceRefs({
-          instanceName: input.instanceName,
-          inventory: brainVerification.inventory,
-          projectId: input.projectId,
-        });
         await updateDeployTaskState(input.task.id, {
           artifactSummary: {
             ...input.task.artifactSummary,
             publicProjectionVersion:
               CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
-            resources: verifiedResources,
+            resources: brainVerification.resources,
             resultIdentities: {
               ...input.task.artifactSummary.resultIdentities,
               templateInstanceName: input.instanceName,

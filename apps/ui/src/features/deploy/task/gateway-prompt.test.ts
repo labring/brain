@@ -65,6 +65,11 @@ test("managed gateway turns use one hydration contract for every resume mode", (
     assert.ok(prompt.includes("SEALAI_INPUTS_PATH"));
     assert.ok(prompt.includes("allocated resource identity"));
     assert.ok(prompt.includes("Run /sealos-deploy"));
+    assert.ok(prompt.includes("autonomously own every deployment operation"));
+    assert.ok(prompt.includes("kubectl apply, patch, delete, exec"));
+    assert.ok(prompt.includes("Do not wait for mutation authorization"));
+    assert.ok(prompt.includes(".sealos/brain/turn-report.json"));
+    assert.ok(prompt.includes(".sealos/brain/verify-report.json"));
     if (resumeMode !== "initial") {
       assert.ok(prompt.includes("/sealos-deploy managed resume"));
     }

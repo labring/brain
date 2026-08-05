@@ -13,6 +13,7 @@ import {
   MANAGED_INPUT_VALUES_MAX_BYTES,
   ManagedDeploymentContractError,
   type ManagedInputStorageCandidate,
+  managedTurnOutcomeStartsApplying,
   parseManagedDeploymentControl,
   parseManagedInputMountProbe,
   parseManagedInputsRequired,
@@ -270,7 +271,7 @@ describe("managed deployment contracts", () => {
     ).toBe("passed");
   });
 
-  it("validates reports against the authoritative control", () => {
+  it("uses only the authoritative task and turn envelope for v1 turn reports", () => {
     const parsedControl = parseManagedDeploymentControl(
       JSON.stringify(control({ maxMutatedResourcesPerTurn: 1 }))
     );
@@ -301,10 +302,20 @@ describe("managed deployment contracts", () => {
     ).not.toThrow();
     expect(() =>
       assertManagedTurnReportForControl(
-        { ...turnReport, mutations: [mutation, mutation] },
+        {
+          ...turnReport,
+          mutations: [
+            mutation,
+            {
+              ...mutation,
+              fieldManager: "another-manager",
+              resource: { ...mutation.resource, namespace: "other-ns" },
+            },
+          ],
+        },
         parsedControl
       )
-    ).toThrow("mutation limit");
+    ).not.toThrow();
 
     const verifyReport = parseManagedVerifyReport(
       JSON.stringify({
@@ -328,6 +339,14 @@ describe("managed deployment contracts", () => {
     expect(() =>
       assertManagedVerifyReportForControl(verifyReport, parsedControl)
     ).toThrow("outside its namespace");
+  });
+
+  it("starts applying for every outcome that can follow Agent mutation", () => {
+    expect(managedTurnOutcomeStartsApplying("inputs-required")).toBe(false);
+    expect(managedTurnOutcomeStartsApplying("fatal")).toBe(false);
+    expect(managedTurnOutcomeStartsApplying("applied")).toBe(true);
+    expect(managedTurnOutcomeStartsApplying("needs-repair")).toBe(true);
+    expect(managedTurnOutcomeStartsApplying("verified")).toBe(true);
   });
 });
 

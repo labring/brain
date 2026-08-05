@@ -1,13 +1,20 @@
 import { describe, expect, it } from "bun:test";
+import { execSync } from "node:child_process";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import type {
-  ManagedResourceRef,
-  ManagedVerifyReport,
-} from "./managed-deployment-contract";
+import type { ManagedVerifyReport } from "./managed-deployment-contract";
 import {
+  buildManagedResourceDiscoveryCommand,
+  buildManagedResourceObservationCommand,
+  MANAGED_READINESS_RESOURCE_TYPES,
   type ManagedResourceObservation,
-  managedIdentityNetworkHosts,
   managedIngressHosts,
+  managedObservedNetworkHosts,
+  managedObservedResourceRefs,
+  parseManagedResourceDiscovery,
+  parseManagedResourceObservations,
   verifyManagedResourceObservations,
 } from "./managed-deployment-verifier";
 
@@ -44,20 +51,12 @@ function observation(kind: string, name: string): ManagedResourceObservation {
   };
 }
 
-function identityResources(
-  observations: readonly ManagedResourceObservation[]
-): ManagedResourceRef[] {
-  return observations.map((item) => ({ ...item.resource }));
-}
-
 function verify(
   observations: ManagedResourceObservation[]
 ): ReturnType<typeof verifyManagedResourceObservations> {
   return verifyManagedResourceObservations({
-    identityResources: identityResources(observations),
     instanceName: "demo-template",
     observations,
-    projectId: "project-1",
     report,
   });
 }
@@ -91,7 +90,7 @@ describe("managed deployment Brain verification", () => {
     expect(result.violations).toContain("Deployment/web is not ready");
   });
 
-  it("rejects an allocated Instance with the wrong Project identity", () => {
+  it("does not use labels as a mutation ownership check", () => {
     const instance = observation("Instance", "demo-template");
     if (instance.snapshot == null) {
       throw new Error("instance observation fixture is empty");
@@ -100,10 +99,7 @@ describe("managed deployment Brain verification", () => {
 
     const result = verify([instance, observation("Deployment", "web")]);
 
-    expect(result.ok).toBe(false);
-    expect(result.violations).toContain(
-      "Instance/demo-template is outside the allocated identity"
-    );
+    expect(result).toEqual({ ok: true, violations: [] });
   });
 
   it("rejects an Instance-only self-reported success", () => {
@@ -150,44 +146,98 @@ describe("managed deployment Brain verification", () => {
     ).toEqual(["app.example.sealos.io"]);
   });
 
-  it("excludes network targets outside the allocated identity", () => {
+  it("derives network targets only from the observed verification set", () => {
     const ownedIngress = observation("Ingress", "web");
-    const unrelatedIngress = observation("Ingress", "other");
-    const unrelatedService = observation("Service", "other");
-    for (const ingress of [ownedIngress, unrelatedIngress]) {
-      if (ingress.snapshot == null) {
-        throw new Error("ingress observation fixture is empty");
-      }
-      ingress.snapshot.spec = {
-        rules: [{ host: `${ingress.resource.name}.example.sealos.io` }],
-      };
+    if (ownedIngress.snapshot == null) {
+      throw new Error("ingress observation fixture is empty");
     }
-    for (const unrelated of [unrelatedIngress, unrelatedService]) {
-      if (unrelated.snapshot == null) {
-        throw new Error("network observation fixture is empty");
-      }
-      unrelated.snapshot.labels = {
-        "brain.io/deployment-name": "another-template",
-        "brain.io/project-id": "another-project",
-      };
-    }
+    ownedIngress.snapshot.spec = {
+      rules: [{ host: "web.example.sealos.io" }],
+    };
 
-    const networkObservations = [
-      ownedIngress,
-      observation("Service", "web"),
-      unrelatedIngress,
-      unrelatedService,
-    ];
-    expect(
-      managedIdentityNetworkHosts({
-        identityResources: identityResources(networkObservations.slice(0, 2)),
-        instanceName: "demo-template",
-        observations: networkObservations,
-        projectId: "project-1",
-      })
-    ).toEqual({
+    const networkObservations = [ownedIngress, observation("Service", "web")];
+    expect(managedObservedNetworkHosts(networkObservations)).toEqual({
       publicHosts: ["web.example.sealos.io"],
       serviceHosts: ["web.ns-1.svc.cluster.local"],
     });
+  });
+
+  it("builds only targeted, bounded Kubernetes verification commands", () => {
+    const discovery = buildManagedResourceDiscoveryCommand({
+      instanceName: "demo-template",
+      namespace: "ns-1",
+      projectId: "project-1",
+    });
+    const observationCommand = buildManagedResourceObservationCommand([
+      observation("Deployment", "web").resource,
+    ]);
+
+    expect(MANAGED_READINESS_RESOURCE_TYPES).toContain("deployments.apps");
+    expect(discovery).not.toContain("api-resources");
+    expect(discovery).toContain("--request-timeout=");
+    expect(observationCommand).toContain("--request-timeout=");
+    expect(observationCommand).not.toContain("spawnSync");
+  });
+
+  it("executes targeted discovery and observation without API discovery", () => {
+    const directory = mkdtempSync(join(tmpdir(), "sealai-verifier-"));
+    const kubectl = join(directory, "kubectl");
+    writeFileSync(
+      kubectl,
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        `if [[ "\${2:-}" == "endpoints" ]]; then`,
+        '  printf \'%s\' \'{"subsets":[{"addresses":[{"ip":"10.0.0.1"}]}]}\'',
+        `elif [[ "\${3:-}" == "-n" ]]; then`,
+        '  printf \'%s\' \'{"items":[{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"web","namespace":"ns-1"}}]}\'',
+        "else",
+        '  printf \'%s\' \'{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"generation":1,"labels":{},"name":"web","namespace":"ns-1"},"spec":{"replicas":1},"status":{"availableReplicas":1,"observedGeneration":1,"readyReplicas":1}}\'',
+        "fi",
+      ].join("\n")
+    );
+    chmodSync(kubectl, 0o755);
+    const env = { ...process.env, PATH: `${directory}:${process.env.PATH}` };
+
+    try {
+      const discovery = parseManagedResourceDiscovery(
+        execSync(
+          buildManagedResourceDiscoveryCommand({
+            instanceName: "demo-template",
+            namespace: "ns-1",
+            projectId: "project-1",
+          }),
+          { encoding: "utf8", env, shell: "/bin/bash" }
+        )
+      );
+      expect(discovery.errors).toEqual([]);
+      expect(discovery.resources.length).toBe(
+        MANAGED_READINESS_RESOURCE_TYPES.length
+      );
+
+      const observations = parseManagedResourceObservations(
+        execSync(
+          buildManagedResourceObservationCommand([
+            observation("Deployment", "web").resource,
+          ]),
+          { encoding: "utf8", env, shell: "/bin/bash" }
+        )
+      );
+      expect(observations[0]?.error).toBeNull();
+      expect(observations[0]?.snapshot?.status.readyReplicas).toBe(1);
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("persists only resources Brain independently observed", () => {
+    const ready = observation("Deployment", "web");
+    const missing = observation("Service", "missing");
+    missing.error = "not found";
+    missing.snapshot = null;
+
+    expect(managedObservedResourceRefs([ready, missing])).toEqual([
+      ready.resource,
+    ]);
   });
 });

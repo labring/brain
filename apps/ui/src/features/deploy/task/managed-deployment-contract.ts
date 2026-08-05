@@ -508,34 +508,16 @@ export function assertManagedTurnReportForControl(
   control: ManagedDeploymentControl
 ): void {
   assertManagedContractEnvelope(report, control);
-  if (report.mutations.length > control.maxMutatedResourcesPerTurn) {
-    throw new ManagedDeploymentContractError(
-      "invalid-schema",
-      "Managed turn report exceeds the control mutation limit."
-    );
-  }
-  if (
-    report.mutations.some(
-      (mutation) => mutation.resource.namespace !== control.identity.namespace
-    )
-  ) {
-    throw new ManagedDeploymentContractError(
-      "invalid-schema",
-      "Managed turn report contains a mutation outside its namespace."
-    );
-  }
-  if (
-    report.mutations.some(
-      (mutation) =>
-        mutation.operation !== "exec" &&
-        mutation.fieldManager !== control.fieldManager
-    )
-  ) {
-    throw new ManagedDeploymentContractError(
-      "invalid-schema",
-      "Managed turn report contains an unexpected field manager."
-    );
-  }
+}
+
+export function managedTurnOutcomeStartsApplying(
+  outcome: ManagedTurnReport["outcome"]
+): boolean {
+  return (
+    outcome === "applied" ||
+    outcome === "needs-repair" ||
+    outcome === "verified"
+  );
 }
 
 export function assertManagedVerifyReportForControl(

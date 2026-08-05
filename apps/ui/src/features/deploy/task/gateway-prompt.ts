@@ -101,7 +101,7 @@ export function buildManagedGatewayPrompt(input: {
   task: DeployTaskRow;
 }): string {
   return [
-    "You are running a Brain-managed SealAI deployment turn.",
+    "You are the execution owner of an Agent-managed SealAI deployment turn. Brain only supervises task progress, bounded repair turns, and final availability verification.",
     "Work in /home/devbox/project and run the sealos-deploy skill in managed mode.",
     `Resume mode: ${input.resumeMode}`,
     "",
@@ -111,6 +111,9 @@ export function buildManagedGatewayPrompt(input: {
     "- the input file referenced by SEALAI_INPUTS_PATH when that environment variable is set",
     "",
     "Treat control.json as authoritative for task identity, turn identity, namespace, allocated resource identity, and deadline.",
+    "You autonomously own every deployment operation inside the Devbox, including kubectl apply, patch, delete, exec, get, describe, and logs.",
+    "Do not wait for mutation authorization or ask Brain to execute Kubernetes changes. Deploy, observe, diagnose, repair, re-apply, and verify the application yourself.",
+    "If required user configuration is missing, write inputs-required.json and return the inputs-required outcome before performing any deployment mutation.",
     input.resumeMode === "initial"
       ? "Begin the managed deployment from the source while preserving the allocated identity from control.json."
       : "Preserve completed phases and existing deployment conclusions. Do not restart source analysis, allocate a different identity, or discard existing artifacts unless the managed skill determines they are invalid.",
@@ -118,7 +121,11 @@ export function buildManagedGatewayPrompt(input: {
       ? "Run /sealos-deploy to completion for this initial managed turn."
       : "Run /sealos-deploy managed resume to completion for this managed continuation turn.",
     "Do not replace the skill workflow with ad-hoc deployment commands or ask for input in the conversation.",
-    "Write the managed turn result through the .sealos/brain contract before ending.",
+    "Before ending every turn, write /home/devbox/project/.sealos/brain/turn-report.json with the current taskId, turnId, outcome, diagnostics, and v1 mutations field.",
+    "Use exactly one turn outcome: inputs-required, applied, needs-repair, verified, or fatal. diagnostics and mutations are required arrays and may be empty.",
+    "For inputs-required, set inputsRequiredPath to .sealos/brain/inputs-required.json. For verified, set verifyReportPath to .sealos/brain/verify-report.json.",
+    "When the outcome is verified, also write /home/devbox/project/.sealos/brain/verify-report.json with a complete list of deployed resources and the checks you performed.",
+    "The verify report must repeat schemaVersion 1, taskId, and turnId; set verdict to passed only after real checks, and include artifacts, checks, resources, and summary.",
     "",
     ...gatewaySourcePromptLines(input.task),
     `Namespace: ${input.task.namespace}`,
