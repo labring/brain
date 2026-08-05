@@ -141,10 +141,36 @@ async function dismissRequest(
   );
 }
 
+async function stepRequest(
+  workspaceActor: string,
+  body: unknown,
+  options: { appToken?: string | null; namespace?: string } = {}
+): Promise<Request> {
+  const namespace = options.namespace ?? "shared";
+  return new Request(
+    `https://brain.test/api/onboarding-profile/step?namespace=${namespace}`,
+    {
+      body: JSON.stringify(body),
+      headers: {
+        Authorization: `Bearer ${encodedKubeconfig("shared", workspaceActor)}`,
+        "content-type": "application/json",
+        ...(options.appToken === null
+          ? {}
+          : {
+              "X-Sealos-App-Token":
+                options.appToken ?? (await mintAppToken(workspaceActor)),
+            }),
+      },
+      method: "POST",
+    }
+  );
+}
+
 function handlers(
   overrides: Partial<OnboardingProfileHandlerDependencies> = {}
 ) {
   return createOnboardingProfileHandlers({
+    answerStep: store.answerStep,
     appTokenConfig: APP_TOKEN_CONFIG,
     dismiss: store.dismiss,
     isSampled: store.isSampled,
@@ -192,6 +218,91 @@ test("the sampling verdict pins all four row shapes", async () => {
     "shape-none-cr": { sampled: false },
     "shape-progress-cr": { sampled: false },
   });
+});
+
+test("answering Step 1 upserts an in_progress row that still counts as Unsampled", async () => {
+  const { answerStep, sampling } = handlers();
+
+  const response = await answerStep(
+    await stepRequest("step1-cr", {
+      roleOtherText: null,
+      roleType: "founder",
+      step: 1,
+    })
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: "in_progress" });
+  const row = await profileRow("step1-cr-uid");
+  assert.equal(row?.status, "in_progress");
+  assert.equal(row?.roleType, "founder");
+  assert.equal(row?.roleOtherText, null);
+  assert.equal(row?.dismissedAtStep, null);
+
+  // Abandoning the tab here leaves exactly this row — the person is still
+  // Unsampled, so the dialog shows again on the next entry.
+  const verdict = await sampling(await samplingRequest("step1-cr"));
+  assert.deepEqual(await verdict.json(), { sampled: false });
+});
+
+test("re-answering Step 1 after an abandoned attempt replaces the whole Other pair", async () => {
+  const { answerStep } = handlers();
+
+  // First visit: Other with free text, then the tab dies mid-survey.
+  await answerStep(
+    await stepRequest("redo-cr", {
+      roleOtherText: "platform team lead",
+      roleType: "other",
+      step: 1,
+    })
+  );
+  const abandoned = await profileRow("redo-cr-uid");
+  assert.equal(abandoned?.roleType, "other");
+  assert.equal(abandoned?.roleOtherText, "platform team lead");
+
+  // Next entry restarts cleanly from Step 1; the new answer overwrites the
+  // pair — no stale Other text can survive a non-Other pick.
+  const response = await answerStep(
+    await stepRequest("redo-cr", {
+      roleOtherText: null,
+      roleType: "student",
+      step: 1,
+    })
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: "in_progress" });
+  const row = await profileRow("redo-cr-uid");
+  assert.equal(row?.roleType, "student");
+  assert.equal(row?.roleOtherText, null);
+});
+
+test("Skip after answering Step 1 keeps the role answer on the dismissed row", async () => {
+  const { answerStep, dismiss, sampling } = handlers();
+
+  await answerStep(
+    await stepRequest("answer-skip-cr", {
+      roleOtherText: "solo consultant",
+      roleType: "other",
+      step: 1,
+    })
+  );
+  const response = await dismiss(
+    await dismissRequest("answer-skip-cr", { dismissedAtStep: 2 })
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    dismissedAtStep: 2,
+    status: "dismissed",
+  });
+  const row = await profileRow("answer-skip-cr-uid");
+  assert.equal(row?.status, "dismissed");
+  assert.equal(row?.roleType, "other");
+  assert.equal(row?.roleOtherText, "solo consultant");
+
+  const verdict = await sampling(await samplingRequest("answer-skip-cr"));
+  assert.deepEqual(await verdict.json(), { sampled: true });
 });
 
 test("Skip records a terminal dismissed profile with the step number", async () => {
@@ -258,6 +369,38 @@ test("terminal wins: a later dismiss is a no-op returning the current state", as
   assert.deepEqual(await profileRow("terminal-cr-uid"), rowAfterFirst);
 });
 
+test("terminal wins: a step answer against a terminal row is a no-op reporting that status", async () => {
+  const { answerStep } = handlers();
+  await db.insert(onboardingProfiles).values([
+    { dismissedAtStep: 1, status: "dismissed", userUid: "late-skip-cr-uid" },
+    { roleType: "founder", status: "completed", userUid: "late-done-cr-uid" },
+  ]);
+  const dismissedBefore = await profileRow("late-skip-cr-uid");
+  const completedBefore = await profileRow("late-done-cr-uid");
+
+  const ontoDismissed = await answerStep(
+    await stepRequest("late-skip-cr", {
+      roleOtherText: null,
+      roleType: "student",
+      step: 1,
+    })
+  );
+  assert.equal(ontoDismissed.status, 200);
+  assert.deepEqual(await ontoDismissed.json(), { status: "dismissed" });
+  assert.deepEqual(await profileRow("late-skip-cr-uid"), dismissedBefore);
+
+  const ontoCompleted = await answerStep(
+    await stepRequest("late-done-cr", {
+      roleOtherText: null,
+      roleType: "student",
+      step: 1,
+    })
+  );
+  assert.equal(ontoCompleted.status, 200);
+  assert.deepEqual(await ontoCompleted.json(), { status: "completed" });
+  assert.deepEqual(await profileRow("late-done-cr-uid"), completedBefore);
+});
+
 test("a dismiss against a completed profile reports the completed state untouched", async () => {
   const { dismiss } = handlers();
   await db.insert(onboardingProfiles).values({
@@ -293,6 +436,72 @@ test("an out-of-range or malformed dismiss body is refused before any write", as
   }
 
   assert.equal(await profileRow("invalid-cr-uid"), undefined);
+});
+
+test("a malformed step answer is refused before any write", async () => {
+  const { answerStep } = handlers();
+
+  for (const body of [
+    // Unknown Cohort Tag.
+    { roleOtherText: null, roleType: "wizard", step: 1 },
+    // Loose text: Other text without the `other` tag.
+    { roleOtherText: "platform team lead", roleType: "founder", step: 1 },
+    // Blank text must be normalized to null by the client, not stored.
+    { roleOtherText: "   ", roleType: "other", step: 1 },
+    // Over the length bound.
+    { roleOtherText: "x".repeat(501), roleType: "other", step: 1 },
+    // A step that does not exist on this surface yet.
+    { step: 2, usageContext: "exploring" },
+    { roleType: "founder" },
+    {},
+    null,
+  ]) {
+    const response = await answerStep(await stepRequest("bad-step-cr", body));
+    assert.equal(response.status, 400);
+  }
+
+  assert.equal(await profileRow("bad-step-cr-uid"), undefined);
+});
+
+test("the step answer fails closed without the app token", async () => {
+  const { answerStep } = handlers();
+
+  const response = await answerStep(
+    await stepRequest(
+      "closed-step-cr",
+      { roleOtherText: null, roleType: "founder", step: 1 },
+      { appToken: null }
+    )
+  );
+
+  assert.equal(response.status, 401);
+  assert.equal(await profileRow("closed-step-cr-uid"), undefined);
+});
+
+test("the step answer's in-transaction binding re-check refuses a merge-swept actor", async () => {
+  const { answerStep } = handlers({
+    observeFingerprint: () => Promise.resolve({ outcome: "match" }),
+  });
+  await db.insert(identityFingerprints).values({
+    crName: "swept-step-cr",
+    mintedAt: APP_TOKEN_MINTED_AT + 100,
+    userUid: "surviving-uid",
+  });
+
+  const response = await answerStep(
+    await stepRequest("swept-step-cr", {
+      roleOtherText: null,
+      roleType: "founder",
+      step: 1,
+    })
+  );
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), {
+    code: "app_token_superseded",
+    error: "Authentication is required.",
+  });
+  assert.equal(await profileRow("swept-step-cr-uid"), undefined);
 });
 
 test("both routes fail closed without the app token", async () => {

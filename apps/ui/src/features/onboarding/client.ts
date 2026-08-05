@@ -1,6 +1,7 @@
 import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 import {
+  type AnswerOnboardingStepRequest,
   type OnboardingSamplingVerdict,
   onboardingSamplingVerdictSchema,
 } from "./types";
@@ -32,6 +33,28 @@ export async function fetchOnboardingSamplingVerdict(
   } catch {
     return null;
   }
+}
+
+/**
+ * Fire-and-forget stepwise answer write: Next never waits on it, and a
+ * silent failure at worst re-asks the question on the next entry (the row
+ * stays short of terminal, so the person is still Unsampled).
+ */
+export function answerOnboardingStep(
+  credentials: OnboardingFetcherCredentials,
+  payload: AnswerOnboardingStepRequest
+): void {
+  fetch(
+    `/api/onboarding-profile/step?namespace=${encodeURIComponent(credentials.namespace)}`,
+    {
+      body: JSON.stringify(payload),
+      headers: {
+        "content-type": "application/json",
+        ...personalResourceAuthHeaders(credentials),
+      },
+      method: "POST",
+    }
+  ).catch(() => undefined);
 }
 
 /**

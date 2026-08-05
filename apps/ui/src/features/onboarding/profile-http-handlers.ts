@@ -16,10 +16,18 @@ import {
   verifiedPersonalResourceActor,
 } from "@/lib/verified-personal-actor";
 
-import type { OnboardingProfileStore } from "./profile-store";
-import { dismissOnboardingProfileRequestSchema } from "./types";
+import type {
+  OnboardingProfileStore,
+  OnboardingStepAnswerColumns,
+} from "./profile-store";
+import {
+  type AnswerOnboardingStepRequest,
+  answerOnboardingStepRequestSchema,
+  dismissOnboardingProfileRequestSchema,
+} from "./types";
 
 export interface OnboardingProfileHandlerDependencies {
+  answerStep: OnboardingProfileStore["answerStep"];
   /** Test seam; defaults to `JWT_INTERNAL` from the env. */
   appTokenConfig?: AppTokenVerificationConfig | null;
   dismiss: OnboardingProfileStore["dismiss"];
@@ -38,6 +46,16 @@ function jsonError(input: {
     { code: input.code, error: input.message },
     { status: input.status }
   );
+}
+
+/** Maps one step's request onto the columns it owns (Step 1 only, today). */
+function stepAnswerColumns(
+  request: AnswerOnboardingStepRequest
+): OnboardingStepAnswerColumns {
+  return {
+    roleOtherText: request.roleOtherText,
+    roleType: request.roleType,
+  };
 }
 
 /** The write found the binding superseded by a concurrent merge (ADR-0059). */
@@ -89,6 +107,42 @@ export function createOnboardingProfileHandlers(
   };
 
   return {
+    answerStep: async (request: Request): Promise<Response> => {
+      const authorization = await authorize(request);
+      if (!authorization.ok) {
+        return authorization.response;
+      }
+      const body = await request.json().catch(() => null);
+      const parsed = answerOnboardingStepRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return jsonError({
+          code: "invalid_request",
+          message: "Invalid onboarding step answer.",
+          status: 400,
+        });
+      }
+      try {
+        const state = await dependencies.answerStep({
+          actor: {
+            legacyWorkspaceActor: authorization.actor.legacyWorkspaceActor,
+            userUid: authorization.actor.owner.userUid,
+          },
+          answers: stepAnswerColumns(parsed.data),
+        });
+        return Response.json(state);
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
+        console.error("[api/onboarding-profile/step] persistence unavailable");
+        return jsonError({
+          code: "onboarding_profile_unavailable",
+          message: "Onboarding profile persistence is unavailable.",
+          status: 503,
+        });
+      }
+    },
     dismiss: async (request: Request): Promise<Response> => {
       const authorization = await authorize(request);
       if (!authorization.ok) {
