@@ -1,3 +1,9 @@
+import type {
+  BrainGtmOnboardingSkipEvent,
+  BrainGtmOnboardingStep,
+  BrainGtmOnboardingStepViewEvent,
+} from "@/features/analytics/brain-gtm";
+
 import {
   type AnswerOnboardingStepRequest,
   type CompleteOnboardingProfileRequest,
@@ -239,4 +245,31 @@ export function onboardingSkipPayload(state: OnboardingSurveyState): {
   dismissedAtStep: number;
 } {
   return { dismissedAtStep: state.currentStep };
+}
+
+/** Narrows the reducer's numeric step to the closed GTM step union. */
+function onboardingGtmStep(step: number): BrainGtmOnboardingStep | null {
+  return step === 1 || step === 2 || step === 3 || step === 4 ? step : null;
+}
+
+/**
+ * The funnel view event for a step being shown; the dialog's appearance is
+ * step 1. Structure-only (spec #88): the event type has no fields for answer
+ * values, free text, or user IDs, so nothing else can travel to GTM.
+ */
+export function onboardingStepViewEvent(
+  step: number
+): BrainGtmOnboardingStepViewEvent | null {
+  const gtmStep = onboardingGtmStep(step);
+  return gtmStep === null
+    ? null
+    : { event: "onboarding_step_view", step: gtmStep };
+}
+
+/** The funnel skip event: just the step the person left from. */
+export function onboardingSkipEvent(
+  step: number
+): BrainGtmOnboardingSkipEvent | null {
+  const gtmStep = onboardingGtmStep(step);
+  return gtmStep === null ? null : { event: "onboarding_skip", step: gtmStep };
 }

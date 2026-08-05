@@ -9,7 +9,9 @@ import {
   onboardingCompletePayload,
   onboardingPriorityAnswerPayload,
   onboardingRoleAnswerPayload,
+  onboardingSkipEvent,
   onboardingSkipPayload,
+  onboardingStepViewEvent,
   onboardingSurveyReducer,
   onboardingUsageAnswerPayload,
 } from "./survey-state";
@@ -317,4 +319,27 @@ test("Skip reports the real current step, selection or not", () => {
     onboardingSkipPayload({ ...initialState(), currentStep: 3 }),
     { dismissedAtStep: 3 }
   );
+});
+
+test("the funnel events carry the step number and nothing else", () => {
+  // The GTM payloads are structure-only (spec #88): a step number is the
+  // whole event — deepEqual pins that no answer field can ride along.
+  assert.deepEqual(onboardingStepViewEvent(1), {
+    event: "onboarding_step_view",
+    step: 1,
+  });
+  assert.deepEqual(onboardingStepViewEvent(4), {
+    event: "onboarding_step_view",
+    step: 4,
+  });
+  assert.deepEqual(onboardingSkipEvent(2), {
+    event: "onboarding_skip",
+    step: 2,
+  });
+
+  // Outside the 4-step survey there is no event to send.
+  for (const step of [0, 5, 2.5, Number.NaN]) {
+    assert.equal(onboardingStepViewEvent(step), null);
+    assert.equal(onboardingSkipEvent(step), null);
+  }
 });
