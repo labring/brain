@@ -202,6 +202,7 @@ export function BillingPlanWorkflow({
       <BillingPlanChangeDialog
         credentials={credentials}
         currency={currency}
+        onManageCard={onManageCard}
         onOpenChange={handlePlanDialogOpenChange}
         onSelectedPlanChange={setSelectedPlanId}
         onSubscriptionChanged={handleSubscriptionChanged}

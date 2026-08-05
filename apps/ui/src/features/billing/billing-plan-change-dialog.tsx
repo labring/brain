@@ -6,21 +6,15 @@ import {
   AlertTitle,
 } from "@workspace/ui/components/alert";
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { Badge } from "@workspace/ui/components/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@workspace/ui/components/dialog";
 import { Separator } from "@workspace/ui/components/separator";
 import {
   ArrowDownRight,
   ArrowUpRight,
   CircleCheck,
+  CircleCheckBig,
   CreditCard,
   LoaderCircle,
 } from "lucide-react";
@@ -124,6 +118,7 @@ interface BillingPlanChangeDialogProps {
   credentials: BillingCredentials;
   currency: BillingCurrency;
   now?: () => number;
+  onManageCard?: () => void;
   onOpenChange: (open: boolean) => void;
   onSelectedPlanChange?: (planId: string | null) => void;
   onSubscriptionChanged: () => Promise<void>;
@@ -138,6 +133,13 @@ interface BillingPlanChangeDialogProps {
 
 type ChangeStage = "downgrade" | "quote" | "select" | "waiting";
 type SnapshotPlan = BillingPlanSnapshot["plans"][number];
+
+const STAGE_DIALOG_SIZES: Record<ChangeStage, "default" | "lg"> = {
+  downgrade: "default",
+  quote: "lg",
+  select: "default",
+  waiting: "default",
+};
 
 interface WaitingStageProps {
   error: string | null;
@@ -157,37 +159,37 @@ function WaitingStage({
 
   return (
     <>
-      <DialogHeader className="items-center text-center">
-        <LoaderCircle
-          aria-hidden
-          className="size-12 animate-spin text-primary"
-          strokeWidth={1.5}
-        />
-        <DialogTitle>
+      <AppDialog.Header>
+        <AppDialog.Icon>
+          <LoaderCircle aria-hidden className="animate-spin" />
+        </AppDialog.Icon>
+        <AppDialog.Title>
           {timedOut ? "Payment timed out" : "Waiting for payment"}
-        </DialogTitle>
-        <DialogDescription>
+        </AppDialog.Title>
+        <AppDialog.Description>
           {timedOut
             ? "Payment was not confirmed within 10 minutes. Reopen Stripe or cancel this invoice."
             : "Complete payment in the Stripe tab. This page will update automatically."}
-        </DialogDescription>
-      </DialogHeader>
+        </AppDialog.Description>
+      </AppDialog.Header>
       {error == null ? null : (
-        <p className="text-destructive text-sm" role="alert">
-          {error}
-        </p>
+        <AppDialog.Body>
+          <p className="text-destructive text-sm" role="alert">
+            {error}
+          </p>
+        </AppDialog.Body>
       )}
-      <DialogFooter className="flex-col sm:flex-col">
-        <AppButton disabled={cancelling} onClick={onReopen}>
-          Reopen payment page
-        </AppButton>
+      <AppDialog.Footer>
         <AppButton disabled={cancelling} onClick={onCancel} variant="quiet">
           {cancelling ? (
             <LoaderCircle aria-hidden className="animate-spin" />
           ) : null}
           {cancelling ? "Cancelling..." : "Cancel payment"}
         </AppButton>
-      </DialogFooter>
+        <AppButton disabled={cancelling} onClick={onReopen}>
+          Reopen payment page
+        </AppButton>
+      </AppDialog.Footer>
     </>
   );
 }
@@ -195,7 +197,6 @@ function WaitingStage({
 interface DowngradeStageProps {
   check: SubscriptionDowngradeCheck | null;
   error: string | null;
-  onBack: () => void;
   onConfirm: () => Promise<void>;
   plan: SnapshotPlan;
   submitting: boolean;
@@ -204,22 +205,24 @@ interface DowngradeStageProps {
 function DowngradeStage({
   check,
   error,
-  onBack,
   onConfirm,
   plan,
   submitting,
 }: DowngradeStageProps) {
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>Downgrade to {plan.name}</DialogTitle>
-        <DialogDescription>
+      <AppDialog.Header>
+        <AppDialog.Icon className="text-blue-400">
+          <CircleCheckBig aria-hidden strokeWidth={1.75} />
+        </AppDialog.Icon>
+        <AppDialog.Title>Downgrade to {plan.name}</AppDialog.Title>
+        <AppDialog.Description className="sr-only">
           Current workspace usage must fit the target plan before the downgrade
           can proceed.
-        </DialogDescription>
-      </DialogHeader>
+        </AppDialog.Description>
+      </AppDialog.Header>
 
-      <div className="flex flex-col gap-4">
+      <AppDialog.Body>
         {check == null && error == null ? (
           <div
             className="flex items-center gap-2 text-muted-foreground"
@@ -246,8 +249,11 @@ function DowngradeStage({
         ) : null}
         {check?.allowed ? (
           <p className="text-muted-foreground text-sm">
-            Current usage fits this plan. The change will take effect on the
-            next billing cycle.
+            You are now in the process of changing your subscription, and the
+            change will{" "}
+            <span className="font-medium text-blue-400">
+              {"take effect on the following month's subscription date."}
+            </span>
           </p>
         ) : null}
         {error == null ? null : (
@@ -255,32 +261,34 @@ function DowngradeStage({
             {error}
           </p>
         )}
-      </div>
+      </AppDialog.Body>
 
-      <DialogFooter>
-        <AppButton onClick={onBack} variant="secondary">
+      <AppDialog.Footer>
+        <AppDialog.Cancel disabled={submitting}>
           Keep current plan
-        </AppButton>
-        <AppButton
-          disabled={check?.allowed !== true || submitting}
+        </AppDialog.Cancel>
+        <AppDialog.Action
+          className="bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
+          disabled={check?.allowed !== true}
+          loading={submitting}
+          loadingLabel="Opening checkout..."
           onClick={onConfirm}
         >
-          {submitting ? (
-            <LoaderCircle aria-hidden className="animate-spin" />
-          ) : null}
-          {submitting ? "Opening checkout..." : "Confirm downgrade"}
-        </AppButton>
-      </DialogFooter>
+          Confirm downgrade
+        </AppDialog.Action>
+      </AppDialog.Footer>
     </>
   );
 }
 
 interface QuoteStageProps {
+  card: BillingPlanSnapshot["card"];
   currency: BillingCurrency;
   error: string | null;
   onApplyPromotion: () => Promise<void>;
   onBack: () => void;
   onConfirm: () => Promise<void>;
+  onManageCard?: () => void;
   onPromotionCodeChange: (value: string) => void;
   plan: SnapshotPlan;
   promotionCode: string;
@@ -290,12 +298,33 @@ interface QuoteStageProps {
   submitting: boolean;
 }
 
+function cardBrandLabel(brand: string): string {
+  const trimmed = brand.trim();
+  if (trimmed === "") {
+    return "Card";
+  }
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function cardExpiryLabel(
+  card: NonNullable<BillingPlanSnapshot["card"]>
+): string | null {
+  if (card.expMonth == null || card.expYear == null) {
+    return null;
+  }
+  const month = String(card.expMonth).padStart(2, "0");
+  const year = String(card.expYear).slice(-2);
+  return `${month}/${year}`;
+}
+
 function QuoteStage({
+  card,
   currency,
   error,
   onApplyPromotion,
   onBack,
   onConfirm,
+  onManageCard,
   onPromotionCodeChange,
   plan,
   promotionCode,
@@ -306,87 +335,163 @@ function QuoteStage({
 }: QuoteStageProps) {
   const promotionDisabled =
     promotionCode.trim() === "" || promotionPending || submitting;
+  const expiry = card == null ? null : cardExpiryLabel(card);
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>Upgrade to {plan.name}</DialogTitle>
-        <DialogDescription>
+      <AppDialog.Header>
+        <AppDialog.Title>Change Plan</AppDialog.Title>
+        <AppDialog.Description className="sr-only">
           Review the prorated amount before opening Stripe Checkout.
-        </DialogDescription>
-      </DialogHeader>
+        </AppDialog.Description>
+      </AppDialog.Header>
 
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-muted-foreground">Monthly price</span>
-          <span className="font-medium tabular-nums">
-            {formatBillingAmount(plan.priceMicroUnits, currency)}
-          </span>
-        </div>
-        <div className="flex items-end gap-2">
-          <AppInputField
-            className="min-w-0 flex-1"
-            disabled={promotionPending || submitting}
-            error={promotionError}
-            id="billing-promotion-code"
-            label="Promotion code"
-            onChange={(event) =>
-              onPromotionCodeChange(event.currentTarget.value)
-            }
-            placeholder="Enter a code"
-            value={promotionCode}
-          />
-          <AppButton
-            disabled={promotionDisabled}
-            onClick={onApplyPromotion}
-            variant="secondary"
-          >
-            {promotionPending ? (
-              <LoaderCircle aria-hidden className="animate-spin" />
+      <AppDialog.Body className="pb-4">
+        <div className="flex flex-col overflow-hidden rounded-lg border border-border sm:flex-row">
+          <div className="flex flex-1 flex-col gap-5 bg-gradient-to-r from-yellow-200/10 to-sky-300/10 p-6">
+            <h3 className="font-semibold text-foreground">Order summary</h3>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <span className="font-semibold text-3xl text-foreground">
+                {plan.name}
+              </span>
+              <p className="font-semibold text-lg tabular-nums">
+                {formatBillingAmount(plan.priceMicroUnits, currency)}
+                <span className="font-normal text-muted-foreground">
+                  /month
+                </span>
+              </p>
+            </div>
+            {plan.resources.length > 0 ? (
+              <ul className="flex flex-col gap-2">
+                {plan.resources.map((resource) => (
+                  <li className="flex items-center gap-2" key={resource.label}>
+                    <CircleCheck
+                      aria-hidden
+                      className="size-4 shrink-0 text-primary"
+                      strokeWidth={1.75}
+                    />
+                    <span className="text-muted-foreground text-sm">
+                      {resource.label}: {resource.value}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             ) : null}
-            {promotionPending ? "Applying..." : "Apply code"}
-          </AppButton>
-        </div>
-        {quote?.hasDiscount ? (
-          <div className="flex items-center justify-between gap-4 text-sm">
-            <span className="flex items-center gap-2 text-primary">
-              <CircleCheck aria-hidden className="size-4" />
-              Code applied
-            </span>
-            <span className="text-destructive tabular-nums">
-              -{formatBillingAmount(quote.discountMicroUnits, currency)}
-            </span>
+            <div className="flex items-end gap-2">
+              <AppInputField
+                className="min-w-0 flex-1"
+                disabled={promotionPending || submitting}
+                error={promotionError}
+                id="billing-promotion-code"
+                label="Promotion code"
+                onChange={(event) =>
+                  onPromotionCodeChange(event.currentTarget.value)
+                }
+                placeholder="Enter a code"
+                value={promotionCode}
+              />
+              <AppButton
+                disabled={promotionDisabled}
+                onClick={onApplyPromotion}
+                variant="secondary"
+              >
+                {promotionPending ? (
+                  <LoaderCircle aria-hidden className="animate-spin" />
+                ) : null}
+                {promotionPending ? "Applying..." : "Apply code"}
+              </AppButton>
+            </div>
+            {quote?.hasDiscount ? (
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span className="flex items-center gap-2 text-primary">
+                  <CircleCheck aria-hidden className="size-4" />
+                  Code applied
+                </span>
+                <span className="text-destructive tabular-nums">
+                  -{formatBillingAmount(quote.discountMicroUnits, currency)}
+                </span>
+              </div>
+            ) : null}
+            <Separator />
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="font-medium">Total billed monthly</span>
+              <span className="font-medium tabular-nums">
+                {formatBillingAmount(plan.priceMicroUnits, currency)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="font-medium">Due today</span>
+              <span className="font-semibold tabular-nums">
+                {quote == null
+                  ? "Calculating..."
+                  : formatBillingAmount(quote.amountMicroUnits, currency)}
+              </span>
+            </div>
           </div>
-        ) : null}
-        <Separator />
-        <div className="flex items-center justify-between gap-4">
-          <span className="font-medium">Due today</span>
-          <span className="font-semibold text-lg tabular-nums">
-            {quote == null
-              ? "Calculating..."
-              : formatBillingAmount(quote.amountMicroUnits, currency)}
-          </span>
-        </div>
-        {error == null ? null : (
-          <p className="text-destructive text-sm" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
 
-      <DialogFooter>
-        <AppButton onClick={onBack} variant="secondary">
-          Back
-        </AppButton>
-        <AppButton disabled={quote == null || submitting} onClick={onConfirm}>
-          {submitting ? (
-            <LoaderCircle aria-hidden className="animate-spin" />
-          ) : (
-            <CreditCard aria-hidden />
-          )}
-          {submitting ? "Opening checkout..." : "Confirm and pay"}
-        </AppButton>
-      </DialogFooter>
+          <div className="flex flex-1 flex-col justify-between gap-6 border-border border-t p-6 sm:border-t-0 sm:border-l">
+            <div className="flex flex-col gap-3">
+              <h3 className="font-semibold text-foreground">Payment method</h3>
+              {card == null ? (
+                <p className="text-muted-foreground text-sm">
+                  Payment is completed in Stripe Checkout.
+                </p>
+              ) : (
+                <div className="flex min-h-13 flex-wrap items-center gap-3 rounded-lg bg-input/30 px-3 py-2">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-input/40 text-muted-foreground">
+                    <CreditCard
+                      aria-hidden
+                      className="size-5"
+                      strokeWidth={1.75}
+                    />
+                  </div>
+                  <span className="font-medium text-foreground text-sm">
+                    {cardBrandLabel(card.brand)}
+                  </span>
+                  <span className="font-medium text-foreground text-sm">
+                    •••• {card.last4}
+                  </span>
+                  {expiry == null ? null : (
+                    <span className="text-muted-foreground text-xs">
+                      EXP: {expiry}
+                    </span>
+                  )}
+                </div>
+              )}
+              {card != null && onManageCard != null ? (
+                <AppButton
+                  className="h-auto self-start p-0 text-blue-400 hover:text-blue-400"
+                  onClick={onManageCard}
+                  variant="link"
+                >
+                  Manage Card Info
+                  <ArrowUpRight aria-hidden data-icon="inline-end" />
+                </AppButton>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-2">
+              {error == null ? null : (
+                <p className="text-destructive text-sm" role="alert">
+                  {error}
+                </p>
+              )}
+              <AppButton
+                className="w-full"
+                disabled={quote == null || submitting}
+                onClick={onConfirm}
+              >
+                {submitting ? (
+                  <LoaderCircle aria-hidden className="animate-spin" />
+                ) : null}
+                {submitting ? "Opening checkout..." : "Subscribe & Pay"}
+              </AppButton>
+              <AppButton className="w-full" onClick={onBack} variant="quiet">
+                Back
+              </AppButton>
+            </div>
+          </div>
+        </div>
+      </AppDialog.Body>
     </>
   );
 }
@@ -402,58 +507,63 @@ function PlanSelectionStage({
 }) {
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>Change subscription plan</DialogTitle>
-        <DialogDescription>
+      <AppDialog.Header>
+        <AppDialog.Title>Change subscription plan</AppDialog.Title>
+        <AppDialog.Description>
           Choose the plan that fits this workspace.
-        </DialogDescription>
-      </DialogHeader>
-      <div className="flex flex-col gap-3">
-        {plans.map((plan) => {
-          const actionLabel =
-            plan.changeKind === "upgrade"
-              ? `Upgrade to ${plan.name}`
-              : `Downgrade to ${plan.name}`;
-          return (
-            <div
-              className="flex flex-col gap-4 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
-              key={plan.id}
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-medium text-foreground">{plan.name}</h3>
-                  {plan.isCurrent ? (
-                    <Badge variant="secondary">Current</Badge>
-                  ) : null}
+        </AppDialog.Description>
+      </AppDialog.Header>
+      <AppDialog.Body>
+        <div className="flex flex-col gap-3">
+          {plans.map((plan) => {
+            const actionLabel =
+              plan.changeKind === "upgrade"
+                ? `Upgrade to ${plan.name}`
+                : `Downgrade to ${plan.name}`;
+            return (
+              <div
+                className="flex flex-col gap-4 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
+                key={plan.id}
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-medium text-foreground">{plan.name}</h3>
+                    {plan.isCurrent ? (
+                      <Badge variant="secondary">Current</Badge>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-muted-foreground text-sm">
+                    {plan.description}
+                  </p>
+                  <p className="mt-2 font-medium tabular-nums">
+                    {formatBillingAmount(plan.priceMicroUnits, currency)}
+                    <span className="font-normal text-muted-foreground">
+                      /month
+                    </span>
+                  </p>
                 </div>
-                <p className="mt-1 text-muted-foreground text-sm">
-                  {plan.description}
-                </p>
-                <p className="mt-2 font-medium tabular-nums">
-                  {formatBillingAmount(plan.priceMicroUnits, currency)}
-                  <span className="font-normal text-muted-foreground">
-                    /month
-                  </span>
-                </p>
+                {plan.changeKind == null ? null : (
+                  <AppButton
+                    className="w-full sm:w-auto"
+                    onClick={() => onSelect(plan.id)}
+                    variant="secondary"
+                  >
+                    {plan.changeKind === "upgrade" ? (
+                      <ArrowUpRight aria-hidden data-icon="inline-start" />
+                    ) : (
+                      <ArrowDownRight aria-hidden data-icon="inline-start" />
+                    )}
+                    {actionLabel}
+                  </AppButton>
+                )}
               </div>
-              {plan.changeKind == null ? null : (
-                <AppButton
-                  className="w-full sm:w-auto"
-                  onClick={() => onSelect(plan.id)}
-                  variant="secondary"
-                >
-                  {plan.changeKind === "upgrade" ? (
-                    <ArrowUpRight aria-hidden data-icon="inline-start" />
-                  ) : (
-                    <ArrowDownRight aria-hidden data-icon="inline-start" />
-                  )}
-                  {actionLabel}
-                </AppButton>
-              )}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </AppDialog.Body>
+      <AppDialog.Footer>
+        <AppDialog.Cancel />
+      </AppDialog.Footer>
     </>
   );
 }
@@ -514,6 +624,7 @@ export function BillingPlanChangeDialog({
   credentials,
   currency,
   now = Date.now,
+  onManageCard,
   onOpenChange,
   onSelectedPlanChange,
   onSubscriptionChanged,
@@ -878,7 +989,6 @@ export function BillingPlanChangeDialog({
       <DowngradeStage
         check={downgradeCheck}
         error={error}
-        onBack={() => onOpenChange(false)}
         onConfirm={confirmDowngrade}
         plan={selectedPlan}
         submitting={submitting}
@@ -887,6 +997,7 @@ export function BillingPlanChangeDialog({
   } else if (stage === "quote" && selectedPlan != null) {
     content = (
       <QuoteStage
+        card={snapshot.card}
         currency={currency}
         error={error}
         onApplyPromotion={applyPromotionCode}
@@ -898,6 +1009,7 @@ export function BillingPlanChangeDialog({
           onSelectedPlanChange(null);
         }}
         onConfirm={confirmUpgrade}
+        onManageCard={onManageCard}
         onPromotionCodeChange={(value) => {
           setPromotionCode(value);
           setPromotionError(null);
@@ -913,7 +1025,7 @@ export function BillingPlanChangeDialog({
   }
 
   return (
-    <Dialog
+    <AppDialog.Root
       onOpenChange={(nextOpen) => {
         if (stage !== "waiting" || nextOpen) {
           onOpenChange(nextOpen);
@@ -921,13 +1033,10 @@ export function BillingPlanChangeDialog({
       }}
       open={open}
     >
-      <DialogContent
-        className="max-h-dvh overflow-y-auto sm:max-w-xl"
-        showCloseButton={stage !== "waiting"}
-      >
+      <AppDialog.Content size={STAGE_DIALOG_SIZES[stage]}>
         {content}
-      </DialogContent>
-    </Dialog>
+      </AppDialog.Content>
+    </AppDialog.Root>
   );
 }
 
