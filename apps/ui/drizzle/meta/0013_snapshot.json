@@ -1,5 +1,5 @@
 {
-  "id": "2e467112-2960-4623-b43f-ffa3a3bacee9",
+  "id": "678e5a4c-9621-41e7-9e09-a5fc505ea6de",
   "prevId": "7956f65f-6a27-4154-a66f-e643ebd2dd3e",
   "version": "7",
   "dialect": "postgresql",
@@ -704,6 +704,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "request": {
+          "name": "request",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
         "request_hash": {
           "name": "request_hash",
           "type": "text",
@@ -794,7 +800,24 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "deploy_task_agent_calls_lease_epoch_nonnegative": {
+          "name": "deploy_task_agent_calls_lease_epoch_nonnegative",
+          "value": "\"sealai_deployment\".\"deploy_task_agent_calls\".\"lease_epoch\" >= 0"
+        },
+        "deploy_task_agent_calls_tool_name_valid": {
+          "name": "deploy_task_agent_calls_tool_name_valid",
+          "value": "\"sealai_deployment\".\"deploy_task_agent_calls\".\"tool_name\" IN ('template_ready', 'deployment_completed')"
+        },
+        "deploy_task_agent_calls_state_valid": {
+          "name": "deploy_task_agent_calls_state_valid",
+          "value": "\"sealai_deployment\".\"deploy_task_agent_calls\".\"state\" IN ('pending', 'running', 'succeeded', 'failed')"
+        },
+        "deploy_task_agent_calls_request_hash_valid": {
+          "name": "deploy_task_agent_calls_request_hash_valid",
+          "value": "char_length(\"sealai_deployment\".\"deploy_task_agent_calls\".\"request_hash\") = 64"
+        }
+      },
       "isRLSEnabled": false
     },
     "sealai_deployment.deploy_task_events": {
@@ -1142,25 +1165,12 @@
           "notNull": true,
           "default": 0
         },
-        "agent_last_report_digest": {
-          "name": "agent_last_report_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "agent_protocol": {
           "name": "agent_protocol",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'file-v1'"
-        },
-        "agent_run_epoch": {
-          "name": "agent_run_epoch",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
+          "default": "'mcp-v1'"
         },
         "agent_control_token_hash": {
           "name": "agent_control_token_hash",
@@ -1484,13 +1494,17 @@
           "name": "deploy_tasks_agent_repair_count_nonnegative",
           "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_repair_count\" >= 0"
         },
-        "deploy_tasks_agent_run_epoch_nonnegative": {
-          "name": "deploy_tasks_agent_run_epoch_nonnegative",
-          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_run_epoch\" >= 0"
-        },
         "deploy_tasks_agent_input_revision_nonnegative": {
           "name": "deploy_tasks_agent_input_revision_nonnegative",
           "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_input_revision\" >= 0"
+        },
+        "deploy_tasks_agent_protocol_valid": {
+          "name": "deploy_tasks_agent_protocol_valid",
+          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_protocol\" IN ('mcp-v1')"
+        },
+        "deploy_tasks_agent_control_token_hash_valid": {
+          "name": "deploy_tasks_agent_control_token_hash_valid",
+          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_control_token_hash\" IS NULL OR char_length(\"sealai_deployment\".\"deploy_tasks\".\"agent_control_token_hash\") = 64"
         }
       },
       "isRLSEnabled": false

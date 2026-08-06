@@ -202,6 +202,8 @@ describe("deployment AI Proxy credentials", () => {
     delete process.env.DEPLOY_DEVBOX_STORAGE_LIMIT;
     process.env.DEVBOX_API_BASE_URL = "https://devbox.test";
     process.env.DEVBOX_TOKEN = "devbox-test-token";
+    process.env.DEPLOY_AGENT_MCP_URL =
+      "https://brain.test/api/deploy-agent/mcp/v1";
   });
 
   afterEach(() => {
@@ -351,7 +353,6 @@ describe("deployment AI Proxy credentials", () => {
     const runtime = await ensureAiDeploymentDevbox({
       encodedKubeconfig: "invalid-when-unused",
       kubeconfig: "invalid-when-unused",
-      managedInstanceName: "agent-instance",
       task: githubTask("existing-devbox"),
       taskDeadlineAtMs: Date.now() + 60_000,
     });
@@ -389,7 +390,6 @@ describe("deployment AI Proxy credentials", () => {
       deadlineAtMs: Date.now() + 60_000,
       encodedKubeconfig: "invalid-when-unused",
       kubeconfig: "invalid-when-unused",
-      managedInstanceName: "agent-instance",
       signal: controller.signal,
       task: githubTask("existing-devbox"),
       taskDeadlineAtMs: Date.now() + 60_000,
@@ -432,7 +432,6 @@ describe("deployment AI Proxy credentials", () => {
       deadlineAtMs: Date.now() + 60_000,
       encodedKubeconfig: encodeURIComponent(kubeconfig()),
       kubeconfig: kubeconfig(),
-      managedInstanceName: "agent-instance",
       signal: controller.signal,
       task: githubTask(null),
       taskDeadlineAtMs: Date.now() + 60_000,
@@ -464,7 +463,6 @@ describe("deployment AI Proxy credentials", () => {
     const runtime = await ensureAiDeploymentDevbox({
       encodedKubeconfig: "invalid-when-unused",
       kubeconfig: "invalid-when-unused",
-      managedInstanceName: "agent-instance",
       task: githubTask(null),
       taskDeadlineAtMs: Date.now() + 60_000,
     });
@@ -514,7 +512,6 @@ describe("deployment AI Proxy credentials", () => {
     const runtime = await ensureAiDeploymentDevbox({
       encodedKubeconfig: encodeURIComponent(kubeconfig()),
       kubeconfig: kubeconfig(),
-      managedInstanceName: "agent-instance",
       task: promptTask(null),
       taskDeadlineAtMs: Date.now() + 60_000,
     });
@@ -529,7 +526,6 @@ describe("deployment AI Proxy credentials", () => {
     expect(createdEnv).toMatchObject({
       CODEX_GATEWAY_OPENAI_API_KEY: "new-user-key",
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
-      SEALAI_DEPLOY_INSTANCE_NAME: "agent-instance",
       SEALAI_DEPLOY_MODE: "managed",
     });
     expect(createdStorageLimit).toBe("10Gi");

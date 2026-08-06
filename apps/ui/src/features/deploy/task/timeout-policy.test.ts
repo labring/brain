@@ -21,22 +21,15 @@ describe("deployment timeout policy", () => {
     expect(DEPLOY_TIMEOUT_POLICY.finalizeMs).toBe(2 * MINUTE_MS);
   });
 
-  it("keeps Agent generation, repair, verification, and slack separate", () => {
+  it("keeps Agent execution, verification, and slack within the overall timeout", () => {
     expect(
       AGENT_DEPLOY_TIMEOUT_POLICY.prepareMs +
-        AGENT_DEPLOY_TIMEOUT_POLICY.generateMs +
-        AGENT_DEPLOY_TIMEOUT_POLICY.repairMs +
+        AGENT_DEPLOY_TIMEOUT_POLICY.agentExecutionMs +
         AGENT_DEPLOY_TIMEOUT_POLICY.verifyMs +
         AGENT_DEPLOY_TIMEOUT_POLICY.finalizeMs +
         AGENT_DEPLOY_TIMEOUT_POLICY.operationalSlackMs
     ).toBe(70 * MINUTE_MS);
-    expect(AGENT_DEPLOY_TIMEOUT_POLICY.generateMs).toBe(30 * MINUTE_MS);
-    expect(AGENT_DEPLOY_TIMEOUT_POLICY.gatewayInitialTurnMs).toBe(
-      30 * MINUTE_MS
-    );
-    expect(AGENT_DEPLOY_TIMEOUT_POLICY.repairMs).toBe(14 * MINUTE_MS);
-    expect(AGENT_DEPLOY_TIMEOUT_POLICY.repairTurnMs).toBe(7 * MINUTE_MS);
-    expect(AGENT_DEPLOY_TIMEOUT_POLICY.maxRepairTurns).toBe(2);
+    expect(AGENT_DEPLOY_TIMEOUT_POLICY.agentExecutionMs).toBe(44 * MINUTE_MS);
     expect(AGENT_DEPLOY_TIMEOUT_POLICY.verifyMs).toBe(10 * MINUTE_MS);
     expect(AGENT_DEPLOY_TIMEOUT_POLICY.finalizeMs).toBe(2 * MINUTE_MS);
     expect(AGENT_DEPLOY_TIMEOUT_POLICY.operationalSlackMs).toBe(6 * MINUTE_MS);

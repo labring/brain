@@ -336,9 +336,6 @@ export const deployTasks = ns.table(
     agentTurnCount: bigint("agent_turn_count", { mode: "number" })
       .notNull()
       .default(0),
-    agentRepairCount: bigint("agent_repair_count", { mode: "number" })
-      .notNull()
-      .default(0),
     agentProtocol: text("agent_protocol")
       .notNull()
       .$type<DeployTaskAgentProtocol>()
@@ -409,10 +406,6 @@ export const deployTasks = ns.table(
     check(
       "deploy_tasks_agent_turn_count_nonnegative",
       sql`${table.agentTurnCount} >= 0`
-    ),
-    check(
-      "deploy_tasks_agent_repair_count_nonnegative",
-      sql`${table.agentRepairCount} >= 0`
     ),
     check(
       "deploy_tasks_agent_input_revision_nonnegative",
@@ -550,6 +543,12 @@ export const deployTaskAgentCalls = ns.table(
       .notNull()
       .$type<DeployTaskAgentCallState>()
       .default("pending"),
+    claimOwner: text("claim_owner"),
+    claimExpiresAt: timestamp("claim_expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    attempt: bigint("attempt", { mode: "number" }).notNull().default(0),
     response: jsonb("response").$type<DeployTaskAgentCallResponse | null>(),
     errorCode: text("error_code"),
     createdAt: timestamp("created_at", { mode: "date", withTimezone: true })

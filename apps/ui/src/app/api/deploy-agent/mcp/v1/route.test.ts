@@ -79,14 +79,127 @@ describe("deployment control MCP route", () => {
     ]);
   });
 
-  it("rejects extra deployment_completed arguments before persistence", async () => {
+  it("rejects deployment_completed without workload references before persistence", async () => {
     const response = await POST(
       mcpRequest({
         id: 2,
         jsonrpc: "2.0",
         method: "tools/call",
         params: {
-          arguments: { secret: "must-not-persist" },
+          arguments: {},
+          name: "deployment_completed",
+        },
+      })
+    );
+    const payload = (await response.json()) as {
+      result?: { isError?: boolean };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.result?.isError).toBe(true);
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it("persists actual workload references for deployment_completed", async () => {
+    const response = await POST(
+      mcpRequest({
+        id: 4,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          arguments: {
+            workloads: [
+              {
+                apiVersion: "apps/v1",
+                kind: "Deployment",
+                name: "demo",
+                namespace: "tenant-a",
+              },
+            ],
+          },
+          name: "deployment_completed",
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(enqueued).toEqual([
+      {
+        request: {
+          workloads: [
+            {
+              apiVersion: "apps/v1",
+              kind: "Deployment",
+              name: "demo",
+              namespace: "tenant-a",
+            },
+          ],
+        },
+        toolName: "deployment_completed",
+      },
+    ]);
+  });
+
+  it("persists an optional publicUrl with deployment_completed", async () => {
+    const response = await POST(
+      mcpRequest({
+        id: 5,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          arguments: {
+            publicUrl: "https://demo.tenant-a.sealos.io",
+            workloads: [
+              {
+                apiVersion: "apps/v1",
+                kind: "Deployment",
+                name: "demo",
+                namespace: "tenant-a",
+              },
+            ],
+          },
+          name: "deployment_completed",
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(enqueued).toEqual([
+      {
+        request: {
+          publicUrl: "https://demo.tenant-a.sealos.io",
+          workloads: [
+            {
+              apiVersion: "apps/v1",
+              kind: "Deployment",
+              name: "demo",
+              namespace: "tenant-a",
+            },
+          ],
+        },
+        toolName: "deployment_completed",
+      },
+    ]);
+  });
+
+  it("rejects a non-http publicUrl before persistence", async () => {
+    const response = await POST(
+      mcpRequest({
+        id: 6,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          arguments: {
+            publicUrl: "ftp://demo.example",
+            workloads: [
+              {
+                apiVersion: "apps/v1",
+                kind: "Deployment",
+                name: "demo",
+                namespace: "tenant-a",
+              },
+            ],
+          },
           name: "deployment_completed",
         },
       })

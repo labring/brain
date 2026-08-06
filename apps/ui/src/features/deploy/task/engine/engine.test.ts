@@ -262,8 +262,7 @@ test("agent execution counters default safely and use fenced state writes", asyn
   });
 
   assert.equal(row.agentTurnCount, 0);
-  assert.equal(row.agentRepairCount, 0);
-  assert.equal(row.agentLastReportDigest, null);
+  assert.equal(row.agentProtocol, "mcp-v1");
 
   const active = createDeployTaskHandle(ctx, {
     controller: new AbortController(),
@@ -272,15 +271,12 @@ test("agent execution counters default safely and use fenced state writes", asyn
     taskId: row.id,
   });
   await active.setState({
-    agentLastReportDigest: "sha256:report-1",
-    agentRepairCount: 1,
     agentTurnCount: 2,
   });
 
   const stored = await taskById(row.id);
   assert.equal(stored.agentTurnCount, 2);
-  assert.equal(stored.agentRepairCount, 1);
-  assert.equal(stored.agentLastReportDigest, "sha256:report-1");
+  assert.equal(stored.agentProtocol, "mcp-v1");
 
   const stale = createDeployTaskHandle(ctx, {
     controller: new AbortController(),

@@ -421,9 +421,7 @@ function assertGatewaySessionProfile(
   session: CodexGatewaySessionResponse,
   status: number
 ): void {
-  if (
-    session.session?.toolProfile !== "sealai-deploy-control-v1"
-  ) {
+  if (session.session?.toolProfile !== "sealai-deploy-control-v1") {
     throw new CodexGatewayApiError(
       "Codex gateway did not activate the required deployment-control profile.",
       status

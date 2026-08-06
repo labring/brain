@@ -68,33 +68,28 @@ function sessionResponse(
 ): Response {
   return Response.json({
     ok: true,
-    session: { toolProfile: toolProfile ?? null },
+    session: {
+      toolProfile: toolProfile ?? "sealai-deploy-control-v1",
+    },
     sessionId,
     state: gatewayState(activeTurn),
   });
 }
 
-function task(gatewaySessionId: string | null = null): DeployTaskRow {
+function task(input?: {
+  gatewaySessionId?: string | null;
+  gatewayThreadId?: string | null;
+}): DeployTaskRow {
   return {
-    gatewaySessionId,
-    agentProtocol: "file-v1",
+    agentProtocol: "mcp-v1",
+    gatewaySessionId: input?.gatewaySessionId ?? null,
+    gatewayThreadId: input?.gatewayThreadId ?? null,
     id: "task-gateway-test",
     namespace: "ns-test",
     runner: { kind: "ai" },
     source: { kind: "prompt", prompt: "deploy" },
     status: "running",
   } as unknown as DeployTaskRow;
-}
-
-function mcpTask(input?: {
-  gatewaySessionId?: string | null;
-  gatewayThreadId?: string | null;
-}): DeployTaskRow {
-  return {
-    ...task(input?.gatewaySessionId ?? null),
-    agentProtocol: "mcp-v1",
-    gatewayThreadId: input?.gatewayThreadId ?? null,
-  } as DeployTaskRow;
 }
 
 function installGatewayFetch(input: {
@@ -218,7 +213,7 @@ describe("deployment Codex gateway interruption", () => {
     const sessionId = await runDeployTaskGateway({
       context: { authToken: "gateway-token", url: "https://gateway.test" },
       deadlineAtMs: Date.now() + 1000,
-      task: task("session-existing-1"),
+      task: task({ gatewaySessionId: "session-existing-1" }),
     });
 
     expect(sessionId).toBe("session-existing-1");
@@ -241,7 +236,7 @@ describe("deployment Codex gateway interruption", () => {
     const sessionId = await runDeployTaskGateway({
       context: { authToken: "gateway-token", url: "https://gateway.test" },
       deadlineAtMs: Date.now() + 5000,
-      task: task("session-active-1"),
+      task: task({ gatewaySessionId: "session-active-1" }),
     });
 
     expect(sessionId).toBe("session-active-1");
@@ -260,7 +255,7 @@ describe("deployment Codex gateway interruption", () => {
       context: { authToken: "gateway-token", url: "https://gateway.test" },
       deadlineAtMs: Date.now() + 1000,
       existingSessionId: "session-explicit-1",
-      task: task("session-task-1"),
+      task: task({ gatewaySessionId: "session-task-1" }),
     });
 
     expect(sessionId).toBe("session-explicit-1");
@@ -279,7 +274,10 @@ describe("deployment Codex gateway interruption", () => {
       const sessionId = await runDeployTaskGateway({
         context: { authToken: "gateway-token", url: "https://gateway.test" },
         deadlineAtMs: Date.now() + 1000,
-        task: task("session-missing-1"),
+        task: task({
+          gatewaySessionId: "session-missing-1",
+          gatewayThreadId: "thread-replacement-1",
+        }),
       });
 
       expect(sessionId).toBe("session-replacement-1");
@@ -299,7 +297,7 @@ describe("deployment Codex gateway interruption", () => {
       await runDeployTaskGateway({
         context: { authToken: "gateway-token", url: "https://gateway.test" },
         deadlineAtMs: Date.now() + 1000,
-        task: task("session-unavailable-1"),
+        task: task({ gatewaySessionId: "session-unavailable-1" }),
       });
     } catch (error) {
       thrown = error;
@@ -328,7 +326,7 @@ describe("deployment Codex gateway interruption", () => {
       context: { authToken: "gateway-token", url: "https://gateway.test" },
       deadlineAtMs: Date.now() + 1000,
       resumeMode: "input-submitted",
-      task: task("session-existing-1"),
+      task: task({ gatewaySessionId: "session-existing-1" }),
     });
 
     expect(createdPrompts).toEqual(["managed:input-submitted"]);
@@ -498,7 +496,7 @@ describe("deployment Codex gateway interruption", () => {
     await runDeployTaskGateway({
       context: { authToken: "gateway-token", url: "https://gateway.test" },
       deadlineAtMs: Date.now() + 1000,
-      task: mcpTask(),
+      task: task(),
     });
 
     expect(sessionBodies).toHaveLength(1);
@@ -518,7 +516,7 @@ describe("deployment Codex gateway interruption", () => {
     await runDeployTaskGateway({
       context: { authToken: "gateway-token", url: "https://gateway.test" },
       deadlineAtMs: Date.now() + 1000,
-      task: mcpTask({
+      task: task({
         gatewaySessionId: "session-lost-1",
         gatewayThreadId: "thread-resume-1",
       }),
@@ -538,7 +536,7 @@ describe("deployment Codex gateway interruption", () => {
       runDeployTaskGateway({
         context: { authToken: "gateway-token", url: "https://gateway.test" },
         deadlineAtMs: Date.now() + 1000,
-        task: mcpTask({ gatewaySessionId: "session-lost-2" }),
+        task: task({ gatewaySessionId: "session-lost-2" }),
       })
     ).rejects.toMatchObject({ status: 409 });
   });

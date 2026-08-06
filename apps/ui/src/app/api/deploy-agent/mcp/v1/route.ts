@@ -8,6 +8,7 @@ import {
   findTaskForAgentCapability,
   waitForAgentToolCall,
 } from "@/features/deploy/task/agent-tools/store";
+import { managedDeploymentCompletedInputSchema } from "@/features/deploy/task/managed-deployment-contract";
 import type {
   DeployTaskAgentCallResponse,
   DeployTaskRow,
@@ -33,7 +34,7 @@ const templateReadyOutputSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
 
-const completedInputSchema = z.object({}).strict();
+const completedInputSchema = managedDeploymentCompletedInputSchema;
 const completedOutputSchema = z.object({
   decision: z.enum(["accepted_stop", "repair"]),
   receiptId: z.string().min(1),

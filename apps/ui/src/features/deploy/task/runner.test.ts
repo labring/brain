@@ -1,7 +1,11 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { deployTaskFailureSummary } from "./failure-summary";
+import {
+  isAllowedManagedHttpUrl,
+  probeManagedPublicUrl,
+} from "./managed-public-probe";
 import { deployOutputProgressSummary } from "./output-progress";
 import {
   DEFAULT_DEPLOY_DEVBOX_STORAGE_LIMIT,
@@ -200,5 +204,81 @@ describe("deploy task output progress summary", () => {
         template: true,
       },
     });
+  });
+});
+
+describe("managed public URL probe", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("restricts probe targets to the tenant-owned domain", () => {
+    expect(
+      isAllowedManagedHttpUrl(
+        new URL("https://demo.tenant-a.sealos.io"),
+        "tenant-a.sealos.io"
+      )
+    ).toBe(true);
+    expect(
+      isAllowedManagedHttpUrl(
+        new URL("https://tenant-a.sealos.io"),
+        "tenant-a.sealos.io"
+      )
+    ).toBe(true);
+    expect(
+      isAllowedManagedHttpUrl(
+        new URL("https://internal.example"),
+        "tenant-a.sealos.io"
+      )
+    ).toBe(false);
+    expect(
+      isAllowedManagedHttpUrl(new URL("http://10.0.0.1"), "tenant-a.sealos.io")
+    ).toBe(false);
+  });
+
+  it("accepts a 2xx response with a non-empty body", async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response("ok", {
+          status: 200,
+        })
+      )) as unknown as typeof fetch;
+
+    await expect(
+      probeManagedPublicUrl({
+        allowedDomain: "tenant-a.sealos.io",
+        deadlineAtMs: Date.now() + 30_000,
+        publicUrl: "https://demo.tenant-a.sealos.io",
+      })
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects a non-2xx response", async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response("oops", {
+          status: 503,
+        })
+      )) as unknown as typeof fetch;
+
+    await expect(
+      probeManagedPublicUrl({
+        allowedDomain: "tenant-a.sealos.io",
+        deadlineAtMs: Date.now() + 30_000,
+        publicUrl: "https://demo.tenant-a.sealos.io",
+      })
+    ).rejects.toThrow("returned 503");
+  });
+
+  it("rejects a target outside the tenant domain", async () => {
+    await expect(
+      probeManagedPublicUrl({
+        allowedDomain: "tenant-a.sealos.io",
+        deadlineAtMs: Date.now() + 30_000,
+        publicUrl: "https://internal.example/",
+      })
+    ).rejects.toThrow("outside the tenant domain");
   });
 });

@@ -25,6 +25,35 @@ export const managedResourceRefSchema = z
 
 export type ManagedResourceRef = z.infer<typeof managedResourceRefSchema>;
 
+/**
+ * The Agent reports the resources it actually created. Brain treats these as
+ * lookup references only; readiness is decided from a fresh Kubernetes read.
+ * `publicUrl` is optional: when present, Brain performs a thin HTTP probe
+ * (2xx + non-empty body) against the tenant-owned domain before accepting.
+ */
+export const managedDeploymentCompletedInputSchema = z
+  .object({
+    workloads: z.array(managedResourceRefSchema).min(1).max(32),
+    publicUrl: z
+      .string()
+      .trim()
+      .max(2048)
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return url.protocol === "http:" || url.protocol === "https:";
+        } catch {
+          return false;
+        }
+      }, "publicUrl must be an absolute http(s) URL")
+      .optional(),
+  })
+  .strict();
+
+export type ManagedDeploymentCompletedInput = z.infer<
+  typeof managedDeploymentCompletedInputSchema
+>;
+
 function assertSafeAbsolutePath(value: string, label: string): void {
   if (
     !value.startsWith("/") ||

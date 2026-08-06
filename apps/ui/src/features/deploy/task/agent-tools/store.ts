@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, ne, or } from "drizzle-orm";
 
 import { getDeploymentTaskDb } from "../db";
 import {
@@ -17,6 +17,10 @@ export const AGENT_CONTROL_PROTOCOL = "mcp-v1" as const;
 export const AGENT_CONTROL_TOKEN_BYTES = 32;
 export const AGENT_CONTROL_CALL_WAIT_MS = 55_000;
 export const AGENT_CONTROL_POLL_MS = 250;
+export const AGENT_CONTROL_CALL_CLAIM_MS = 90_000;
+export const AGENT_CONTROL_CALL_MAX_ATTEMPTS = 3;
+export const AGENT_CONTROL_CALL_CLAIM_EXHAUSTED = "claim_exhausted" as const;
+export const AGENT_DEPLOYMENT_COMPLETED_MIN_INTERVAL_MS = 5000;
 
 export function hashAgentControlCapability(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
@@ -117,19 +121,68 @@ export async function enqueueAgentToolCall(input: {
   return row;
 }
 
+/**
+ * Returns the most recent persisted call of a tool for the task, excluding
+ * the given call id. Used to throttle repeated `deployment_completed` calls
+ * so a runaway Agent cannot amplify Brain-side observation cost.
+ */
+export async function lastAgentToolCallAt(input: {
+  taskId: string;
+  toolName: DeployTaskAgentToolName;
+  excludeCallId: string;
+}): Promise<Date | null> {
+  const db = getDeploymentTaskDb();
+  const rows = await db
+    .select({ createdAt: deployTaskAgentCalls.createdAt })
+    .from(deployTaskAgentCalls)
+    .where(
+      and(
+        eq(deployTaskAgentCalls.taskId, input.taskId),
+        eq(deployTaskAgentCalls.toolName, input.toolName),
+        ne(deployTaskAgentCalls.callId, input.excludeCallId)
+      )
+    )
+    .orderBy(desc(deployTaskAgentCalls.createdAt))
+    .limit(1);
+  return rows[0]?.createdAt ?? null;
+}
+
+/**
+ * Atomically claim the oldest processable Agent tool call for the current
+ * run. A `pending` call is claimable by any active Runner. A `running` call
+ * is only claimable after its `claimExpiresAt` passes (the previous Runner
+ * crashed or stalled), at which point the lease epoch is taken over and the
+ * attempt counter is bumped. When attempts reach the configured maximum the
+ * call is failed with `claim_exhausted` so the MCP client can retry instead
+ * of waiting forever.
+ */
 export async function claimNextAgentToolCall(input: {
   taskId: string;
   leaseEpoch: number;
+  claimOwner: string;
+  now?: Date;
 }): Promise<DeployTaskAgentCallRow | null> {
   const db = getDeploymentTaskDb();
+  const now = input.now ?? new Date();
+  const claimExpiresAt = new Date(now.getTime() + AGENT_CONTROL_CALL_CLAIM_MS);
+  const claimable = or(
+    eq(deployTaskAgentCalls.state, "pending"),
+    and(
+      eq(deployTaskAgentCalls.state, "running"),
+      or(
+        isNull(deployTaskAgentCalls.claimExpiresAt),
+        lt(deployTaskAgentCalls.claimExpiresAt, now)
+      )
+    )
+  );
   const rows = await db
     .select()
     .from(deployTaskAgentCalls)
     .where(
       and(
         eq(deployTaskAgentCalls.taskId, input.taskId),
-        eq(deployTaskAgentCalls.leaseEpoch, input.leaseEpoch),
-        eq(deployTaskAgentCalls.state, "pending")
+        claimable,
+        lt(deployTaskAgentCalls.attempt, AGENT_CONTROL_CALL_MAX_ATTEMPTS)
       )
     )
     .orderBy(asc(deployTaskAgentCalls.createdAt))
@@ -138,14 +191,24 @@ export async function claimNextAgentToolCall(input: {
   if (row == null) {
     return null;
   }
+  const exhausted = row.attempt + 1 >= AGENT_CONTROL_CALL_MAX_ATTEMPTS;
   const claimed = await db
     .update(deployTaskAgentCalls)
-    .set({ state: "running", updatedAt: new Date() })
+    .set({
+      attempt: row.attempt + 1,
+      claimExpiresAt,
+      claimOwner: input.claimOwner,
+      errorCode: exhausted ? AGENT_CONTROL_CALL_CLAIM_EXHAUSTED : row.errorCode,
+      leaseEpoch: input.leaseEpoch,
+      state: exhausted ? "failed" : "running",
+      updatedAt: now,
+    })
     .where(
       and(
         eq(deployTaskAgentCalls.taskId, row.taskId),
         eq(deployTaskAgentCalls.callId, row.callId),
-        eq(deployTaskAgentCalls.state, "pending")
+        claimable,
+        lt(deployTaskAgentCalls.attempt, AGENT_CONTROL_CALL_MAX_ATTEMPTS)
       )
     )
     .returning();
@@ -155,6 +218,7 @@ export async function claimNextAgentToolCall(input: {
 export async function resolveAgentToolCall(input: {
   taskId: string;
   callId: string;
+  claimOwner: string;
   response?: DeployTaskAgentCallResponse;
   errorCode?: string;
 }): Promise<void> {
@@ -170,12 +234,10 @@ export async function resolveAgentToolCall(input: {
     })
     .where(
       and(
+        eq(deployTaskAgentCalls.claimOwner, input.claimOwner),
         eq(deployTaskAgentCalls.taskId, input.taskId),
         eq(deployTaskAgentCalls.callId, input.callId),
-        or(
-          eq(deployTaskAgentCalls.state, "pending"),
-          eq(deployTaskAgentCalls.state, "running")
-        )
+        eq(deployTaskAgentCalls.state, "running")
       )
     );
 }

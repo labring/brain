@@ -47,7 +47,6 @@ export interface DeployTaskHandleStateFields {
   agentControlTokenRevokedAt?: DeployTaskRow["agentControlTokenRevokedAt"];
   agentInputRevision?: DeployTaskRow["agentInputRevision"];
   agentInputSchemaDigest?: DeployTaskRow["agentInputSchemaDigest"];
-  agentRepairCount?: DeployTaskRow["agentRepairCount"];
   agentTemplateDigest?: DeployTaskRow["agentTemplateDigest"];
   agentTurnCount?: DeployTaskRow["agentTurnCount"];
   artifactSummary?: DeployTaskArtifactSummary;

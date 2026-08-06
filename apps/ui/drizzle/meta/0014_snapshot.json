@@ -1,6 +1,6 @@
 {
-  "id": "05171b65-538f-4828-97cd-4eff5c5d04c1",
-  "prevId": "2e467112-2960-4623-b43f-ffa3a3bacee9",
+  "id": "84ca5103-6bdd-4c1a-9d40-55d1243c4ceb",
+  "prevId": "678e5a4c-9621-41e7-9e09-a5fc505ea6de",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -704,6 +704,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "request": {
+          "name": "request",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
         "request_hash": {
           "name": "request_hash",
           "type": "text",
@@ -716,6 +722,25 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'pending'"
+        },
+        "claim_owner": {
+          "name": "claim_owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_expires_at": {
+          "name": "claim_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "response": {
           "name": "response",
@@ -1159,25 +1184,12 @@
           "notNull": true,
           "default": 0
         },
-        "agent_last_report_digest": {
-          "name": "agent_last_report_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "agent_protocol": {
           "name": "agent_protocol",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'file-v1'"
-        },
-        "agent_run_epoch": {
-          "name": "agent_run_epoch",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
+          "default": "'mcp-v1'"
         },
         "agent_control_token_hash": {
           "name": "agent_control_token_hash",
@@ -1501,17 +1513,13 @@
           "name": "deploy_tasks_agent_repair_count_nonnegative",
           "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_repair_count\" >= 0"
         },
-        "deploy_tasks_agent_run_epoch_nonnegative": {
-          "name": "deploy_tasks_agent_run_epoch_nonnegative",
-          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_run_epoch\" >= 0"
-        },
         "deploy_tasks_agent_input_revision_nonnegative": {
           "name": "deploy_tasks_agent_input_revision_nonnegative",
           "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_input_revision\" >= 0"
         },
         "deploy_tasks_agent_protocol_valid": {
           "name": "deploy_tasks_agent_protocol_valid",
-          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_protocol\" IN ('file-v1', 'mcp-v1')"
+          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_protocol\" IN ('mcp-v1')"
         },
         "deploy_tasks_agent_control_token_hash_valid": {
           "name": "deploy_tasks_agent_control_token_hash_valid",

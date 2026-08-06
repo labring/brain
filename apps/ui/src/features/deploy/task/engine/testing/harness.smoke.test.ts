@@ -31,8 +31,7 @@ test("migrations apply with only Agent supervision columns", async () => {
   assert.equal(row.cancelRequestedAt, null);
   assert.equal(row.retriedFromTaskId, null);
   assert.equal(row.agentTurnCount, 0);
-  assert.equal(row.agentRepairCount, 0);
-  assert.equal(row.agentLastReportDigest, null);
+  assert.equal(row.agentProtocol, "mcp-v1");
 
   const columns = await harness.pglite.query<{ column_name: string }>(`
     SELECT column_name
@@ -45,8 +44,10 @@ test("migrations apply with only Agent supervision columns", async () => {
   assert.equal(names.has("agent_contract_version"), false);
   assert.equal(names.has("agent_skill_revision"), false);
   assert.equal(names.has("agent_turn_count"), true);
-  assert.equal(names.has("agent_repair_count"), true);
-  assert.equal(names.has("agent_last_report_digest"), true);
+  assert.equal(names.has("agent_repair_count"), false);
+  assert.equal(names.has("agent_last_report_digest"), false);
+  assert.equal(names.has("agent_run_epoch"), false);
+  assert.equal(names.has("agent_protocol"), true);
 });
 
 test("single-statement conditional updates guard on source status", async () => {

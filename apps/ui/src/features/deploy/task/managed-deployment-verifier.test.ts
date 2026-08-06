@@ -4,30 +4,17 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { ManagedVerifyReport } from "./managed-deployment-contract";
 import {
   buildManagedResourceDiscoveryCommand,
   buildManagedResourceObservationCommand,
   MANAGED_READINESS_RESOURCE_TYPES,
   type ManagedResourceObservation,
-  managedIngressHosts,
-  managedObservedNetworkHosts,
   managedObservedResourceRefs,
   parseManagedResourceDiscovery,
   parseManagedResourceObservations,
-  verifyManagedResourceObservations,
+  verifyManagedIdentityReadiness,
+  verifyManagedWorkloadReadiness,
 } from "./managed-deployment-verifier";
-
-const report: ManagedVerifyReport = {
-  artifacts: [],
-  checks: [{ kind: "workload", status: "passed", summary: "ready" }],
-  resources: [],
-  schemaVersion: 1,
-  summary: "verified",
-  taskId: "task-1",
-  turnId: 1,
-  verdict: "passed",
-};
 
 function observation(kind: string, name: string): ManagedResourceObservation {
   return {
@@ -53,15 +40,38 @@ function observation(kind: string, name: string): ManagedResourceObservation {
 
 function verify(
   observations: ManagedResourceObservation[]
-): ReturnType<typeof verifyManagedResourceObservations> {
-  return verifyManagedResourceObservations({
+): ReturnType<typeof verifyManagedIdentityReadiness> {
+  return verifyManagedIdentityReadiness({
     instanceName: "demo-template",
     observations,
-    report,
   });
 }
 
 describe("managed deployment Brain verification", () => {
+  it("uses only Agent-reported workloads and accepts a Ready Pod", () => {
+    const pod = observation("Pod", "web-pod");
+    expect(
+      verifyManagedWorkloadReadiness({
+        workloads: [pod.resource],
+        observations: [pod],
+      })
+    ).toEqual({ ok: true, violations: [] });
+  });
+
+  it("rejects completion when the reported workload is not Ready", () => {
+    const pod = observation("Pod", "web-pod");
+    if (pod.snapshot == null) {
+      throw new Error("pod observation fixture is empty");
+    }
+    pod.snapshot.conditions = [{ status: "False", type: "Ready" }];
+    expect(
+      verifyManagedWorkloadReadiness({
+        workloads: [pod.resource],
+        observations: [pod],
+      }).ok
+    ).toBe(false);
+  });
+
   it("requires the allocated Instance and ready identity resources", () => {
     const result = verify([
       observation("Instance", "demo-template"),
@@ -144,39 +154,6 @@ describe("managed deployment Brain verification", () => {
     ]);
 
     expect(result).toEqual({ ok: true, violations: [] });
-  });
-
-  it("derives public probe hosts only from observed Ingress rules", () => {
-    const ingress = observation("Ingress", "web");
-    if (ingress.snapshot == null) {
-      throw new Error("ingress observation fixture is empty");
-    }
-    ingress.snapshot.spec = {
-      rules: [
-        { host: "app.example.sealos.io" },
-        { host: "APP.example.sealos.io" },
-      ],
-    };
-
-    expect(
-      managedIngressHosts([ingress, observation("Service", "web")])
-    ).toEqual(["app.example.sealos.io"]);
-  });
-
-  it("derives network targets only from the observed verification set", () => {
-    const ownedIngress = observation("Ingress", "web");
-    if (ownedIngress.snapshot == null) {
-      throw new Error("ingress observation fixture is empty");
-    }
-    ownedIngress.snapshot.spec = {
-      rules: [{ host: "web.example.sealos.io" }],
-    };
-
-    const networkObservations = [ownedIngress, observation("Service", "web")];
-    expect(managedObservedNetworkHosts(networkObservations)).toEqual({
-      publicHosts: ["web.example.sealos.io"],
-      serviceHosts: ["web.ns-1.svc.cluster.local"],
-    });
   });
 
   it("builds only targeted, bounded Kubernetes verification commands", () => {

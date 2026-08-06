@@ -274,6 +274,55 @@ export interface ManagedBrainVerificationResult {
 }
 
 /**
+ * Thin Brain-side completion gate. The Agent supplies the resources it
+ * actually created; Brain only re-reads those resources and requires at least
+ * one reported runtime workload (or Pod) to be Ready. Deeper runtime truth,
+ * logs, HTTP probes and repair decisions stay with the Agent.
+ */
+export function verifyManagedWorkloadReadiness(input: {
+  observations: readonly ManagedResourceObservation[];
+  workloads: readonly ManagedResourceRef[];
+}): ManagedBrainVerificationResult {
+  const violations: string[] = [];
+  const observed = new Map(
+    input.observations.map((observation) => [
+      `${observation.resource.apiVersion}|${observation.resource.kind}|${observation.resource.namespace}|${observation.resource.name}`,
+      observation,
+    ])
+  );
+
+  for (const workload of input.workloads) {
+    const key = `${workload.apiVersion}|${workload.kind}|${workload.namespace}|${workload.name}`;
+    const observation = observed.get(key);
+    if (observation == null || observation.error != null) {
+      violations.push(
+        `${workload.kind}/${workload.name} could not be observed`
+      );
+      continue;
+    }
+    if (observation.snapshot == null || !resourceReady(observation)) {
+      violations.push(`${workload.kind}/${workload.name} is not ready`);
+    }
+  }
+
+  const hasReadyRuntime = input.observations.some((observation) => {
+    if (observation.error != null || observation.snapshot == null) {
+      return false;
+    }
+    const kind = observation.resource.kind.toLowerCase();
+    return (
+      ["deployment", "statefulset", "daemonset", "job", "pod"].includes(kind) &&
+      resourceReady(observation)
+    );
+  });
+  if (!hasReadyRuntime) {
+    violations.push("no reported runtime workload is Ready");
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
+/**
  * Brain-owned gate for MCP completion notifications. This deliberately has no
  * Agent report argument: the notification only asks Brain to observe the
  * identity-labeled resources that already exist in the cluster.

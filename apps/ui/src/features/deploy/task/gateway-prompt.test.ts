@@ -11,6 +11,8 @@ const PROJECT_ID = "project-uid";
 
 function githubTask(): DeployTaskRow {
   return {
+    agentInputRevision: 0,
+    agentProtocol: "mcp-v1",
     namespace: "tenant-a",
     projectName: PROJECT_ID,
     prompt: "Deploy example/web into a new Project",
@@ -25,12 +27,11 @@ function githubTask(): DeployTaskRow {
   } as DeployTaskRow;
 }
 
-test("managed gateway turns use one hydration contract for every resume mode", () => {
+test("managed gateway turns use the MCP control contract for every resume mode", () => {
   const resumeModes: ManagedDeployResumeMode[] = [
     "initial",
     "input-submitted",
     "repair",
-    "brain-review-rejected",
   ];
 
   for (const resumeMode of resumeModes) {
@@ -39,22 +40,32 @@ test("managed gateway turns use one hydration contract for every resume mode", (
       task: githubTask(),
     });
     assert.ok(prompt.includes(`Resume mode: ${resumeMode}`));
-    assert.ok(prompt.includes(".sealos/brain/control.json"));
-    assert.ok(prompt.includes(".sealos/brain/output-contract.json"));
-    assert.ok(prompt.includes("complete output protocol"));
-    assert.ok(
-      prompt.includes("existing files under /home/devbox/project/.sealos")
-    );
+    assert.ok(prompt.includes("template_ready"));
+    assert.ok(prompt.includes("deployment_completed"));
     assert.ok(prompt.includes("SEALAI_INPUTS_PATH"));
-    assert.ok(prompt.includes("allocated resource identity"));
-    assert.ok(prompt.includes("Run /sealos-deploy"));
-    assert.ok(prompt.includes("autonomously own every deployment operation"));
-    assert.ok(prompt.includes("kubectl apply, patch, delete, exec"));
-    assert.ok(prompt.includes(".sealos/brain/turn-report.json"));
-    assert.ok(prompt.includes(".sealos/brain/verify-report.json"));
-    assert.ok(!prompt.includes("mutations field"));
+    assert.ok(prompt.includes("sole execution owner"));
+    assert.ok(prompt.includes("kubectl apply"));
+    assert.ok(prompt.includes("actual workload resource references"));
+    assert.ok(
+      prompt.includes("Do not add Brain identity labels or extraLabels")
+    );
+    assert.ok(!prompt.includes("SEALAI_DEPLOY_INSTANCE_NAME"));
+    assert.ok(!prompt.includes(".sealos/brain/control.json"));
+    assert.ok(!prompt.includes(".sealos/brain/turn-report.json"));
+    assert.ok(!prompt.includes(".sealos/brain/verify-report.json"));
+    assert.ok(
+      prompt.includes("Do not create control.json, inputs-required.json")
+    );
     if (resumeMode !== "initial") {
-      assert.ok(prompt.includes("/sealos-deploy managed resume"));
+      assert.ok(
+        prompt.includes("Resume from the existing workspace and Thread")
+      );
+    }
+    if (resumeMode === "initial") {
+      assert.ok(prompt.includes("run /sealos-deploy"));
+    }
+    if (resumeMode === "input-submitted") {
+      assert.ok(prompt.includes("Input revision: 1"));
     }
   }
 });

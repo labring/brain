@@ -24,15 +24,19 @@ export const DEPLOY_TIMEOUT_POLICY = {
   readinessMs: 10 * MINUTE_MS,
 } as const;
 
-/** Agent-owned generation, repair, and Brain verification policy. */
+/**
+ * Agent-owned execution and Brain verification policy.
+ *
+ * The only hard deadline is `overallMs` (70 minutes) from the lease start.
+ * Once the task is handed to Codex, no single turn or repair round has its
+ * own limit; the whole Agent execution window (`agentExecutionMs`) is one
+ * unsegmented budget and every Gateway turn runs against its remaining time.
+ */
 export const AGENT_DEPLOY_TIMEOUT_POLICY = {
   ...COMMON_DEPLOY_TIMEOUT_POLICY,
-  gatewayInitialTurnMs: 30 * MINUTE_MS,
-  maxRepairTurns: 2,
+  /** Codex execution window: analysis, build, apply, and unlimited repairs. */
+  agentExecutionMs: 44 * MINUTE_MS,
   operationalSlackMs: 6 * MINUTE_MS,
-  repairMs: 14 * MINUTE_MS,
-  repairTurnMs: 7 * MINUTE_MS,
-  generateMs: 30 * MINUTE_MS,
   verifyMs: 10 * MINUTE_MS,
 } as const;
 
@@ -40,8 +44,7 @@ function assertTimeoutPolicy(): void {
   const agent = AGENT_DEPLOY_TIMEOUT_POLICY;
   const agentPhaseTotalMs =
     agent.prepareMs +
-    agent.generateMs +
-    agent.repairMs +
+    agent.agentExecutionMs +
     agent.verifyMs +
     agent.finalizeMs +
     agent.operationalSlackMs;
@@ -50,21 +53,13 @@ function assertTimeoutPolicy(): void {
       "Agent deployment phase budgets must equal the overall timeout."
     );
   }
-  if (agent.gatewayInitialTurnMs > agent.generateMs) {
-    throw new Error(
-      "Agent Gateway initial turn exceeds the generation budget."
-    );
-  }
-  if (agent.repairTurnMs * agent.maxRepairTurns > agent.repairMs) {
-    throw new Error("Gateway repair turns exceed the repair budget.");
-  }
   if (
     DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs >
     DEPLOY_TIMEOUT_POLICY.gatewayRequestMs
   ) {
     throw new Error("Gateway cleanup timeout exceeds the request timeout.");
   }
-  if (agent.imageBuildSeconds * SECOND_MS > agent.generateMs) {
+  if (agent.imageBuildSeconds * SECOND_MS > agent.agentExecutionMs) {
     throw new Error("Image build timeout exceeds the generation budget.");
   }
 }
