@@ -12,6 +12,7 @@ import {
   type OnboardingPriorityTag,
   type OnboardingRoleType,
   type OnboardingUsageContext,
+  onboardingPriorityTagSchema,
 } from "./types";
 
 /**
@@ -45,15 +46,9 @@ export type OnboardingSurveyAction =
   | { tag: OnboardingPriorityTag; type: "toggle-priority" }
   | { type: "toggle-usage"; usage: OnboardingUsageContext };
 
-/** The six non-Other Step 3 options — the pool the per-session shuffle draws from. */
-const PRIORITY_TAG_POOL: readonly OnboardingPriorityTag[] = [
-  "ease_of_use",
-  "stability",
-  "low_cost",
-  "performance",
-  "scalability",
-  "fast_launch",
-];
+/** The non-Other Step 3 options — the pool the per-session shuffle draws from. */
+const PRIORITY_TAG_POOL: readonly OnboardingPriorityTag[] =
+  onboardingPriorityTagSchema.options.filter((tag) => tag !== "other");
 
 /**
  * The Step 3 display order: the six non-Other options in a fresh random

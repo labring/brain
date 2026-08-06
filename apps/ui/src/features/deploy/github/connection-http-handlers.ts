@@ -3,10 +3,11 @@ import {
   type AppTokenVerificationConfig,
   appTokenFromRequest,
 } from "@/lib/app-token";
+import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
 import {
-  IdentityBindingSupersededError,
-  type ObserveIdentityFingerprint,
-} from "@/lib/identity-fingerprint-core";
+  jsonError,
+  supersededBindingResponse,
+} from "@/lib/personal-resource-http";
 import {
   authorizeWorkspaceActor,
   encodedKubeconfigFromRequest,
@@ -87,17 +88,6 @@ function publicConnectionStatus(connection: object | null): object | null {
   return status;
 }
 
-function jsonError(input: {
-  code: string;
-  message: string;
-  status: number;
-}): Response {
-  return Response.json(
-    { code: input.code, error: input.message },
-    { status: input.status }
-  );
-}
-
 async function authorizeGithubConnectionOwner(input: {
   appToken: string;
   appTokenConfig?: AppTokenVerificationConfig | null;
@@ -153,17 +143,6 @@ function authorizeGithubConnectionRequest(
       new URL(request.url).searchParams.get("namespace")?.trim() || undefined,
     verify: options.verify,
   });
-}
-
-/** The write found the binding superseded by a concurrent merge (ADR-0059). */
-function supersededBindingResponse(error: unknown): Response | null {
-  return error instanceof IdentityBindingSupersededError
-    ? jsonError({
-        code: "app_token_superseded",
-        message: "Authentication is required.",
-        status: 401,
-      })
-    : null;
 }
 
 async function authorizeGithubSessionRequest(

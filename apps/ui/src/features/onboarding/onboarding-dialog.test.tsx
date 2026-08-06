@@ -24,7 +24,7 @@ const STEP_FOUR_INDICATOR_RE = /Step 4 of 4/;
 const STEP_ONE_TITLE_RE = /Tell us a bit about you\./;
 const STEP_TWO_TITLE_RE = /What are you using Sealos for\?/;
 const STEP_THREE_SUBTITLE_RE = /Choose up to 3\./;
-const STEP_FOUR_TITLE_RE = /Anything specific you’re trying to achieve\?/;
+const STEP_FOUR_TITLE_RE = /Anything specific you're trying to achieve\?/;
 
 function bodyButtons(): HTMLButtonElement[] {
   return [...document.querySelectorAll("button")] as HTMLButtonElement[];
@@ -38,7 +38,7 @@ function buttonByText(text: string): HTMLButtonElement {
   return button;
 }
 
-/** Option cards prefix their text with the label ("Stability: I need…"). */
+/** Option cards prefix their text with the label ("Stability — I need…"). */
 function optionButton(label: string): HTMLButtonElement {
   const button = bodyButtons().find((candidate) =>
     candidate.textContent?.trim().startsWith(label)
@@ -61,11 +61,15 @@ async function clickNext(): Promise<void> {
   });
 }
 
-// The dialog primitive never renders in the test DOM (repo pattern: dialog
-// shells are asserted structurally), so the shell's non-dismissible contract
-// is pinned on the element tree: `open` is fully controlled, the only
-// open-change handler is the documented no-op, and no close/cancel control
-// exists — Skip inside the card is the only exit.
+// The dialog primitive cannot render in this suite: Base UI picks its
+// layout-effect shim at module load (`@base-ui/utils` `useIsoLayoutEffect`:
+// `typeof document !== 'undefined' ? React.useLayoutEffect : noop`), and
+// test files import the dialog chain before any suite-local DOM registers,
+// so the portal never mounts (repo pattern: dialog shells are asserted
+// structurally). The non-dismissible contract is therefore pinned
+// on the element tree: `open` is fully controlled, the only open-change
+// handler is the documented no-op, and no close/cancel control exists —
+// Skip inside the card is the only exit.
 test("the sampling dialog shell refuses every close except Skip", () => {
   const tree = OnboardingDialog({
     onAnswerStep: () => undefined,

@@ -51,6 +51,25 @@ test("failures retry on the backoff schedule before a verdict lands", async () =
   assert.deepEqual(delays, [...ONBOARDING_GATE_RETRY_DELAYS_MS]);
 });
 
+test("an authorization refusal fails closed without retries", async () => {
+  const delays: number[] = [];
+  let attempts = 0;
+  const opened = await judgeOnboardingSampling({
+    delay: (ms) => {
+      delays.push(ms);
+      return Promise.resolve();
+    },
+    fetchVerdict: () => {
+      attempts += 1;
+      return Promise.resolve("unauthorized" as const);
+    },
+  });
+
+  assert.equal(opened, false);
+  assert.equal(attempts, 1);
+  assert.deepEqual(delays, []);
+});
+
 test("after two failed retries the gate silently stands down", async () => {
   let attempts = 0;
   const opened = await judgeOnboardingSampling({

@@ -23,8 +23,11 @@ import type {
   CompleteOnboardingProfileRequest,
 } from "./types";
 
+// While forced, every write is inert and `open || forceOpen` keeps the
+// dialog up — it cannot be closed from inside; switching the knob off is
+// the only exit. This protects the developer's real sampling state.
 const ONBOARDING_TWEAKS = {
-  note: "Opens the dialog unconditionally; Skip is inert while forced, so sampling state stays untouched.",
+  note: "Opens the dialog unconditionally; Skip/Submit are inert while forced and the dialog stays open until the knob is switched off, so sampling state stays untouched.",
   title: "Onboarding · sampling dialog",
   tweaks: {
     forceModal: {
