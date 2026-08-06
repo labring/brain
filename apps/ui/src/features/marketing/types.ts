@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { type RefinementCtx, z } from "zod";
 
 const optionalText = z.string().trim().max(1024).default("");
 const nullableId = z.string().trim().min(1).max(512).nullable();
@@ -21,39 +21,56 @@ export const marketingTouchSchema = z
 
 export type MarketingTouch = z.infer<typeof marketingTouchSchema>;
 
+const attributionFieldsSchema = z.object({
+  ad_user_data_consent: z.boolean(),
+  first_touch: marketingTouchSchema.nullable(),
+  gbraid: z.string().trim().max(2048).nullable(),
+  gclid: z.string().trim().max(2048).nullable(),
+  last_touch: marketingTouchSchema.nullable(),
+  wbraid: z.string().trim().max(2048).nullable(),
+});
+
+type AttributionValidationInput = z.infer<typeof attributionFieldsSchema>;
+
+function addAttributionIssues(
+  attribution: AttributionValidationInput,
+  ctx: RefinementCtx,
+  label: "attribution snapshot" | "event"
+): void {
+  const clickIds = [
+    attribution.gclid,
+    attribution.gbraid,
+    attribution.wbraid,
+  ].filter(Boolean);
+  if (clickIds.length > 1) {
+    ctx.addIssue({
+      code: "custom",
+      message: `Each ${label} may contain one Google click ID.`,
+    });
+  }
+  const touchHasClickId = [
+    attribution.first_touch,
+    attribution.last_touch,
+  ].some((touch) => Boolean(touch?.click_id_value));
+  if (
+    !attribution.ad_user_data_consent &&
+    (clickIds.length > 0 || touchHasClickId)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Google click IDs require ad user data consent.",
+    });
+  }
+}
+
 export const marketingAttributionSnapshotSchema = z
   .object({
-    ad_user_data_consent: z.boolean(),
-    first_touch: marketingTouchSchema.nullable(),
-    gbraid: z.string().trim().max(2048).nullable(),
-    gclid: z.string().trim().max(2048).nullable(),
-    last_touch: marketingTouchSchema.nullable(),
+    ...attributionFieldsSchema.shape,
     version: z.literal(2),
-    wbraid: z.string().trim().max(2048).nullable(),
   })
   .strict()
   .superRefine((snapshot, ctx) => {
-    const clickIds = [snapshot.gclid, snapshot.gbraid, snapshot.wbraid].filter(
-      Boolean
-    );
-    if (clickIds.length > 1) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Each attribution snapshot may contain one Google click ID.",
-      });
-    }
-    const touchHasClickId = [snapshot.first_touch, snapshot.last_touch].some(
-      (touch) => Boolean(touch?.click_id_value)
-    );
-    if (
-      !snapshot.ad_user_data_consent &&
-      (clickIds.length > 0 || touchHasClickId)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Google click IDs require ad user data consent.",
-      });
-    }
+    addAttributionIssues(snapshot, ctx, "attribution snapshot");
   });
 
 export type MarketingAttributionSnapshot = z.infer<
@@ -89,7 +106,7 @@ const hashedUserDataSchema = z
 
 export const marketingLifecycleEventInputSchema = z
   .object({
-    ad_user_data_consent: z.boolean(),
+    ...attributionFieldsSchema.shape,
     currency: z
       .string()
       .regex(/^[A-Z]{3}$/)
@@ -97,43 +114,20 @@ export const marketingLifecycleEventInputSchema = z
     deployment_id: nullableId,
     event_id: z.string().trim().min(1).max(512),
     event_name: z.enum(MARKETING_LIFECYCLE_EVENT_NAMES),
-    first_touch: marketingTouchSchema.nullable(),
-    gbraid: z.string().trim().max(2048).nullable(),
-    gclid: z.string().trim().max(2048).nullable(),
     hashed_user_data: hashedUserDataSchema.optional(),
-    last_touch: marketingTouchSchema.nullable(),
     occurred_at: z.string().datetime({ offset: true }),
     transaction_id: z.string().trim().min(1).max(512).optional(),
     user_id: nullableId,
     value: z.number().finite().nonnegative().optional(),
-    wbraid: z.string().trim().max(2048).nullable(),
     workspace_id: nullableId,
   })
   .strict()
   .superRefine((event, ctx) => {
-    const clickIds = [event.gclid, event.gbraid, event.wbraid].filter(Boolean);
-    if (clickIds.length > 1) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Each event may contain one Google click ID.",
-      });
-    }
+    addAttributionIssues(event, ctx, "event");
     if (event.hashed_user_data && !event.ad_user_data_consent) {
       ctx.addIssue({
         code: "custom",
         message: "Hashed user data requires ad user data consent.",
-      });
-    }
-    const touchHasClickId = [event.first_touch, event.last_touch].some(
-      (touch) => Boolean(touch?.click_id_value)
-    );
-    if (
-      !event.ad_user_data_consent &&
-      (clickIds.length > 0 || touchHasClickId)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Google click IDs require ad user data consent.",
       });
     }
     if (

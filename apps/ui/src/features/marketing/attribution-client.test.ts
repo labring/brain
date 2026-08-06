@@ -31,7 +31,7 @@ const browser = {
 const originalWindow = globalThis.window;
 
 const touch = {
-  campaign: "us-search",
+  campaign: "caf\u00e9-search",
   channel: "paid_search",
   click_id_type: "gclid",
   click_id_value: "gclid-123",
@@ -81,6 +81,7 @@ test("product attribution keeps a click ID with explicit consent", () => {
 
   assert.equal(result?.ad_user_data_consent, true);
   assert.equal(result?.gclid, "gclid-123");
+  assert.equal(result?.first_touch?.campaign, "caf\u00e9-search");
   assert.match(
     localStorage.getItem(ATTRIBUTION_STORAGE_KEY) ?? "",
     TEST_GCLID_RE

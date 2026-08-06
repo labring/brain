@@ -39,10 +39,7 @@ CREATE TABLE "sealai_marketing"."lifecycle_events" (
 );
 --> statement-breakpoint
 ALTER TABLE "sealai_deployment"."deploy_tasks" ADD COLUMN "marketing_attribution" jsonb;--> statement-breakpoint
-CREATE INDEX "attribution_subjects_updated_at_idx" ON "sealai_marketing"."attribution_subjects" USING btree ("updated_at");--> statement-breakpoint
 CREATE INDEX "lifecycle_events_pending_idx" ON "sealai_marketing"."lifecycle_events" USING btree ("occurred_at") WHERE "sealai_marketing"."lifecycle_events"."status" = 'pending';--> statement-breakpoint
-CREATE INDEX "lifecycle_events_workspace_idx" ON "sealai_marketing"."lifecycle_events" USING btree ("workspace_id","occurred_at");--> statement-breakpoint
-CREATE INDEX "lifecycle_events_deployment_idx" ON "sealai_marketing"."lifecycle_events" USING btree ("deployment_id","occurred_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "lifecycle_events_payment_transaction_idx" ON "sealai_marketing"."lifecycle_events" USING btree ("transaction_id") WHERE "sealai_marketing"."lifecycle_events"."transaction_id" IS NOT NULL;
 --> statement-breakpoint
 CREATE FUNCTION "sealai_marketing"."upsert_attribution_subject"(

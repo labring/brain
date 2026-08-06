@@ -1338,23 +1338,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "attribution_subjects_updated_at_idx": {
-          "name": "attribution_subjects_updated_at_idx",
-          "columns": [
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "attribution_subjects_pk": {
@@ -1514,48 +1498,6 @@
           ],
           "isUnique": false,
           "where": "\"sealai_marketing\".\"lifecycle_events\".\"status\" = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "lifecycle_events_workspace_idx": {
-          "name": "lifecycle_events_workspace_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "lifecycle_events_deployment_idx": {
-          "name": "lifecycle_events_deployment_idx",
-          "columns": [
-            {
-              "expression": "deployment_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
