@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, test } from "node:test";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+
+import {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
 
 import { deploymentFailureMessage } from "../failure-summary";
 import {
@@ -515,6 +520,118 @@ test("create action inserts, claims inline, launches, and completes through the 
     "runner.progress",
     "deployment_task.completed",
   ]);
+});
+
+test("deployment transitions persist attribution and enqueue lifecycle events", async () => {
+  const ctx = testCtx();
+  const touch = {
+    campaign: "us-deploy-intent",
+    channel: "paid_search",
+    click_id_type: "gclid" as const,
+    click_id_value: "test-gclid-123",
+    content: "repo-to-url",
+    landing_hostname: "sealos.io",
+    landing_path: "/",
+    medium: "paid",
+    source: "google",
+    term: "deploy github repo",
+    ts: "2026-08-06T08:00:00.000Z",
+  };
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      creatingActor: "marketing-test-user",
+      marketingAttribution: {
+        ad_user_data_consent: true,
+        first_touch: touch,
+        gbraid: null,
+        gclid: "test-gclid-123",
+        last_touch: touch,
+        version: 2,
+        wbraid: null,
+      },
+      namespace: "marketing-test-workspace",
+      runner: { kind: "template" },
+      source: { kind: "template", templateName: "marketing-demo" },
+      target: { kind: "existingProject", projectId: "marketing-project" },
+    },
+    run: async (handle) => {
+      await handle.beginApplying();
+      await handle.complete();
+    },
+  });
+
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+  await result.launched?.done;
+
+  const lifecycleEvents = await harness.db
+    .select()
+    .from(marketingLifecycleEvents)
+    .where(eq(marketingLifecycleEvents.deploymentId, result.task.id))
+    .orderBy(marketingLifecycleEvents.occurredAt);
+  assert.deepEqual(
+    lifecycleEvents.map((event) => event.eventName),
+    ["build_started", "deploy_success"]
+  );
+  assert.equal(lifecycleEvents[0]?.gclid, "test-gclid-123");
+  assert.equal(lifecycleEvents[0]?.adUserDataConsent, "granted");
+
+  const subjects = await harness.db
+    .select()
+    .from(marketingAttributionSubjects)
+    .where(
+      and(
+        eq(marketingAttributionSubjects.gclid, "test-gclid-123"),
+        eq(marketingAttributionSubjects.adUserDataConsent, "granted")
+      )
+    );
+  assert.deepEqual(
+    subjects
+      .map((subject) => `${subject.subjectType}:${subject.subjectId}`)
+      .sort(),
+    ["user:marketing-test-user", "workspace:marketing-test-workspace"]
+  );
+});
+
+test("payment transaction IDs deduplicate across lifecycle events", async () => {
+  const payment = {
+    adUserDataConsent: "denied" as const,
+    currency: "USD",
+    deploymentId: null,
+    eventName: "topup_success" as const,
+    firstTouch: null,
+    gbraid: null,
+    gclid: null,
+    lastTouch: null,
+    occurredAt: new Date("2026-08-06T09:00:00.000Z"),
+    transactionId: "payment-deduplication-test",
+    userId: "payment-test-user",
+    value: "20.000000",
+    wbraid: null,
+    workspaceId: "payment-test-workspace",
+  };
+  const first = await harness.db
+    .insert(marketingLifecycleEvents)
+    .values({ ...payment, eventId: "payment-deduplication-event-1" })
+    .onConflictDoNothing()
+    .returning({ eventId: marketingLifecycleEvents.eventId });
+  const duplicate = await harness.db
+    .insert(marketingLifecycleEvents)
+    .values({ ...payment, eventId: "payment-deduplication-event-2" })
+    .onConflictDoNothing()
+    .returning({ eventId: marketingLifecycleEvents.eventId });
+
+  assert.equal(first.length, 1);
+  assert.equal(duplicate.length, 0);
+  const rows = await harness.db
+    .select()
+    .from(marketingLifecycleEvents)
+    .where(
+      eq(marketingLifecycleEvents.transactionId, "payment-deduplication-test")
+    );
+  assert.equal(rows.length, 1);
 });
 
 test("AI timeline persistence keeps event identity and dedupe semantics", async () => {

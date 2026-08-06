@@ -1,5 +1,6 @@
 "use client";
 
+import { readMarketingAttribution } from "@/features/marketing/attribution-client";
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import type {
   DeploymentTargetPipelineAdapters,
@@ -76,6 +77,7 @@ export async function createDeploymentTaskFromApi({
     body: JSON.stringify({
       ...input,
       encodedKubeconfig,
+      marketingAttribution: readMarketingAttribution() ?? undefined,
     }),
     headers: {
       "Content-Type": "application/json",

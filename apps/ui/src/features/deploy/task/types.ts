@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { marketingAttributionSnapshotSchema } from "@/features/marketing/types";
+
 import type {
   DeploymentCredentialBinding,
   DeploymentTaskCanvasProjection,
@@ -130,6 +132,7 @@ export const deploymentTaskRunnerSchema = z.discriminatedUnion("kind", [
 
 export const createDeployTaskInputSchema = z.object({
   createdFrom: z.enum(["api", "automation", "chat", "ui"]).optional(),
+  marketingAttribution: marketingAttributionSnapshotSchema.optional(),
   namespace: z.string().trim().min(1),
   prompt: z.string().trim().max(4000).optional(),
   runner: deploymentTaskRunnerSchema,

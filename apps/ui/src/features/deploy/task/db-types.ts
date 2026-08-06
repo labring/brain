@@ -1,5 +1,8 @@
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-
+import type {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
 import type {
   deployTaskEvents,
   deployTaskMessages,
@@ -11,6 +14,8 @@ export type DeploymentTaskDbSchema = {
   deployTaskEvents: typeof deployTaskEvents;
   deployTaskMessages: typeof deployTaskMessages;
   deployTasks: typeof deployTasks;
+  marketingAttributionSubjects: typeof marketingAttributionSubjects;
+  marketingLifecycleEvents: typeof marketingLifecycleEvents;
 };
 
 /**
