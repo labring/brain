@@ -1,5 +1,11 @@
 import { integer, jsonb, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
 
+import type {
+  OnboardingPriorityTag,
+  OnboardingRoleType,
+  OnboardingUsageContext,
+} from "./types";
+
 /**
  * Postgres schema owning the Onboarding Profile (ADR-0061). Isolated from
  * `public` so `drizzle-kit push` with `schemaFilter` does not try to drop
@@ -16,36 +22,9 @@ export const ns = pgSchema(ONBOARDING_DB_SCHEMA);
  */
 export type OnboardingProfileStatus = "completed" | "dismissed" | "in_progress";
 
-/** Step 1 Cohort Tags: who the person is. */
-export type OnboardingRoleType =
-  | "ai_builder"
-  | "devops_platform_engineer"
-  | "engineering_team_member"
-  | "founder"
-  | "individual_developer"
-  | "other"
-  | "student";
-
-/** Step 2 Cohort Tags: what the person is using Sealos for. */
-export type OnboardingUsageContext =
-  | "ai_built_app"
-  | "demo_or_prototype"
-  | "exploring"
-  | "new_product_launch"
-  | "other"
-  | "real_business"
-  | "side_project"
-  | "team_or_client";
-
-/** Step 3 Cohort Tags: the factors that matter most. */
-export type OnboardingPriorityTag =
-  | "ease_of_use"
-  | "fast_launch"
-  | "low_cost"
-  | "other"
-  | "performance"
-  | "scalability"
-  | "stability";
+// The Cohort Tag vocabularies live with their zod boundary in `./types` (the
+// application boundary owns validation; the database holds plain text) — the
+// type-only imports above keep this module's runtime free of that boundary.
 
 /**
  * One Onboarding Profile row per person — Brain's first namespace-less

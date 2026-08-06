@@ -371,7 +371,8 @@ export function OnboardingSurveyCard({
                   {option.label}
                   {option.description == null ? null : (
                     <span className="text-muted-foreground">
-                      : {option.description}
+                      {" — "}
+                      {option.description}
                     </span>
                   )}
                 </OptionCard>
@@ -397,10 +398,10 @@ export function OnboardingSurveyCard({
         <>
           <StepHeading
             head="Anything specific"
-            tail="you’re trying to achieve?"
+            tail="you're trying to achieve?"
           />
           <AppInput
-            aria-label="Anything specific you’re trying to achieve?"
+            aria-label="Anything specific you're trying to achieve?"
             className="mt-9"
             onChange={(event) =>
               dispatch({

@@ -1,19 +1,8 @@
 import { z } from "zod";
 
-import type {
-  OnboardingPriorityTag,
-  OnboardingProfileStatus,
-  OnboardingRoleType,
-  OnboardingUsageContext,
-} from "./schema";
+import type { OnboardingProfileStatus } from "./schema";
 
-export type {
-  OnboardingPriorityTag,
-  OnboardingProfileRow,
-  OnboardingProfileStatus,
-  OnboardingRoleType,
-  OnboardingUsageContext,
-} from "./schema";
+export type { OnboardingProfileRow, OnboardingProfileStatus } from "./schema";
 
 /** The sampling dialog is a 4-step survey; Skip records the step it was on. */
 export const ONBOARDING_SURVEY_TOTAL_STEPS = 4;
@@ -37,7 +26,11 @@ export type OnboardingSamplingVerdict = z.infer<
   typeof onboardingSamplingVerdictSchema
 >;
 
-/** Step 1 Cohort Tags as the zod boundary (stable machine values, ADR-0061). */
+/**
+ * Step 1 Cohort Tags (stable machine values, ADR-0061). The zod enum is the
+ * single source of each vocabulary: the row types and the request boundary
+ * both derive from it, so a new value cannot land in one and not the other.
+ */
 export const onboardingRoleTypeSchema = z.enum([
   "ai_builder",
   "devops_platform_engineer",
@@ -46,9 +39,11 @@ export const onboardingRoleTypeSchema = z.enum([
   "individual_developer",
   "other",
   "student",
-] as const satisfies readonly OnboardingRoleType[]);
+]);
 
-/** Step 2 Cohort Tags as the zod boundary (stable machine values, ADR-0061). */
+export type OnboardingRoleType = z.infer<typeof onboardingRoleTypeSchema>;
+
+/** Step 2 Cohort Tags (stable machine values, ADR-0061). */
 export const onboardingUsageContextSchema = z.enum([
   "ai_built_app",
   "demo_or_prototype",
@@ -58,9 +53,13 @@ export const onboardingUsageContextSchema = z.enum([
   "real_business",
   "side_project",
   "team_or_client",
-] as const satisfies readonly OnboardingUsageContext[]);
+]);
 
-/** Step 3 Cohort Tags as the zod boundary (stable machine values, ADR-0061). */
+export type OnboardingUsageContext = z.infer<
+  typeof onboardingUsageContextSchema
+>;
+
+/** Step 3 Cohort Tags (stable machine values, ADR-0061). */
 export const onboardingPriorityTagSchema = z.enum([
   "ease_of_use",
   "fast_launch",
@@ -69,7 +68,9 @@ export const onboardingPriorityTagSchema = z.enum([
   "performance",
   "scalability",
   "stability",
-] as const satisfies readonly OnboardingPriorityTag[]);
+]);
+
+export type OnboardingPriorityTag = z.infer<typeof onboardingPriorityTagSchema>;
 
 /** Step 3 caps the picks at three (spec #88: "Choose up to 3."). */
 export const ONBOARDING_PRIORITY_TAGS_MAX = 3;

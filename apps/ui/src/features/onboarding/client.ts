@@ -14,17 +14,22 @@ export interface OnboardingFetcherCredentials {
 }
 
 /**
- * `null` on any failure (HTTP error, parse failure, network) — the Gate
- * treats it as an unknown outcome and silently stands down.
+ * `"unauthorized"` on a definitive authorization refusal — retrying the same
+ * credentials cannot change that answer, so the Gate fails closed at once.
+ * `null` on any other failure (HTTP error, parse failure, network) — the
+ * Gate retries it as an unknown outcome and then silently stands down.
  */
 export async function fetchOnboardingSamplingVerdict(
   credentials: OnboardingFetcherCredentials
-): Promise<OnboardingSamplingVerdict | null> {
+): Promise<OnboardingSamplingVerdict | "unauthorized" | null> {
   try {
     const res = await fetch(
       `/api/onboarding-profile/sampling?namespace=${encodeURIComponent(credentials.namespace)}`,
       { headers: personalResourceAuthHeaders(credentials) }
     );
+    if (res.status === 401 || res.status === 403) {
+      return "unauthorized";
+    }
     if (!res.ok) {
       return null;
     }
@@ -35,17 +40,14 @@ export async function fetchOnboardingSamplingVerdict(
   }
 }
 
-/**
- * Fire-and-forget stepwise answer write: Next never waits on it, and a
- * silent failure at worst re-asks the question on the next entry (the row
- * stays short of terminal, so the person is still Unsampled).
- */
-export function answerOnboardingStep(
+/** The shared fire-and-forget POST every profile write travels. */
+function postOnboardingProfileWrite(
   credentials: OnboardingFetcherCredentials,
-  payload: AnswerOnboardingStepRequest
+  path: "complete" | "dismiss" | "step",
+  payload: unknown
 ): void {
   fetch(
-    `/api/onboarding-profile/step?namespace=${encodeURIComponent(credentials.namespace)}`,
+    `/api/onboarding-profile/${path}?namespace=${encodeURIComponent(credentials.namespace)}`,
     {
       body: JSON.stringify(payload),
       headers: {
@@ -58,6 +60,18 @@ export function answerOnboardingStep(
 }
 
 /**
+ * Fire-and-forget stepwise answer write: Next never waits on it, and a
+ * silent failure at worst re-asks the question on the next entry (the row
+ * stays short of terminal, so the person is still Unsampled).
+ */
+export function answerOnboardingStep(
+  credentials: OnboardingFetcherCredentials,
+  payload: AnswerOnboardingStepRequest
+): void {
+  postOnboardingProfileWrite(credentials, "step", payload);
+}
+
+/**
  * Fire-and-forget terminal complete: Submit & Enter Console never waits on
  * it, and the write is terminal-wins idempotent server-side, so a failure at
  * worst re-shows the dialog on the next entry.
@@ -66,17 +80,7 @@ export function completeOnboardingProfile(
   credentials: OnboardingFetcherCredentials,
   openGoalText: string | null
 ): void {
-  fetch(
-    `/api/onboarding-profile/complete?namespace=${encodeURIComponent(credentials.namespace)}`,
-    {
-      body: JSON.stringify({ openGoalText }),
-      headers: {
-        "content-type": "application/json",
-        ...personalResourceAuthHeaders(credentials),
-      },
-      method: "POST",
-    }
-  ).catch(() => undefined);
+  postOnboardingProfileWrite(credentials, "complete", { openGoalText });
 }
 
 /**
@@ -88,15 +92,5 @@ export function dismissOnboardingProfile(
   credentials: OnboardingFetcherCredentials,
   dismissedAtStep: number
 ): void {
-  fetch(
-    `/api/onboarding-profile/dismiss?namespace=${encodeURIComponent(credentials.namespace)}`,
-    {
-      body: JSON.stringify({ dismissedAtStep }),
-      headers: {
-        "content-type": "application/json",
-        ...personalResourceAuthHeaders(credentials),
-      },
-      method: "POST",
-    }
-  ).catch(() => undefined);
+  postOnboardingProfileWrite(credentials, "dismiss", { dismissedAtStep });
 }

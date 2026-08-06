@@ -25,13 +25,16 @@ function wait(ms: number): Promise<void> {
 
 /**
  * Judges the sampling predicate once per session: `true` only on a definitive
- * Unsampled verdict — the single outcome that opens the dialog. A `null`
- * verdict (network failure, unauthorized, parse failure) is retried on the
- * backoff schedule and then silently stands down; the person is simply
- * re-judged on their next entry.
+ * Unsampled verdict — the single outcome that opens the dialog. An
+ * `"unauthorized"` outcome fails closed at once — retrying the same
+ * credentials cannot change that answer. A `null` verdict (network failure,
+ * parse failure) is retried on the backoff schedule and then silently stands
+ * down; the person is simply re-judged on their next entry.
  */
 export async function judgeOnboardingSampling(input: {
-  fetchVerdict: () => Promise<OnboardingSamplingVerdict | null>;
+  fetchVerdict: () => Promise<
+    OnboardingSamplingVerdict | "unauthorized" | null
+  >;
   /** Test seam; defaults to a real timer. */
   delay?: (ms: number) => Promise<void>;
 }): Promise<boolean> {
@@ -45,6 +48,9 @@ export async function judgeOnboardingSampling(input: {
       await delay(ONBOARDING_GATE_RETRY_DELAYS_MS[attempt - 1] ?? 0);
     }
     const verdict = await input.fetchVerdict().catch(() => null);
+    if (verdict === "unauthorized") {
+      return false;
+    }
     if (verdict != null) {
       return !verdict.sampled;
     }

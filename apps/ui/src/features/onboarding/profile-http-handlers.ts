@@ -1,22 +1,18 @@
+import type { AppTokenVerificationConfig } from "@/lib/app-token";
+import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
 import {
-  type AppTokenVerificationConfig,
-  appTokenFromRequest,
-} from "@/lib/app-token";
-import {
-  IdentityBindingSupersededError,
-  type ObserveIdentityFingerprint,
-} from "@/lib/identity-fingerprint-core";
-import {
-  authorizeWorkspaceActor,
-  encodedKubeconfigFromRequest,
-  type VerifyKubeconfigNamespace,
-} from "@/lib/request-kubeconfig-auth";
+  authorizePersonalResourceRequest,
+  jsonError,
+  supersededBindingResponse,
+} from "@/lib/personal-resource-http";
+import type { VerifyKubeconfigNamespace } from "@/lib/request-kubeconfig-auth";
 import {
   type VerifiedPersonalResourceActor,
   verifiedPersonalResourceActor,
 } from "@/lib/verified-personal-actor";
 
 import type {
+  OnboardingProfileActor,
   OnboardingProfileStore,
   OnboardingStepAnswerColumns,
 } from "./profile-store";
@@ -37,17 +33,6 @@ export interface OnboardingProfileHandlerDependencies {
   /** Test seam; defaults to the region-local Identity Fingerprint store. */
   observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
-}
-
-function jsonError(input: {
-  code: string;
-  message: string;
-  status: number;
-}): Response {
-  return Response.json(
-    { code: input.code, error: input.message },
-    { status: input.status }
-  );
 }
 
 /** Maps one step's request onto the columns it owns. */
@@ -76,15 +61,14 @@ function stepAnswerColumns(
   }
 }
 
-/** The write found the binding superseded by a concurrent merge (ADR-0059). */
-function supersededBindingResponse(error: unknown): Response | null {
-  return error instanceof IdentityBindingSupersededError
-    ? jsonError({
-        code: "app_token_superseded",
-        message: "Authentication is required.",
-        status: 401,
-      })
-    : null;
+/** Maps the verified actor onto the store's bare-uid + re-check pair. */
+function profileActor(
+  actor: VerifiedPersonalResourceActor
+): OnboardingProfileActor {
+  return {
+    legacyWorkspaceActor: actor.legacyWorkspaceActor,
+    userUid: actor.owner.userUid,
+  };
 }
 
 /**
@@ -102,26 +86,14 @@ export function createOnboardingProfileHandlers(
     | { ok: true; actor: VerifiedPersonalResourceActor }
     | { ok: false; response: Response }
   > => {
-    const clientNamespace = new URL(request.url).searchParams.get("namespace");
-    const authorization = await authorizeWorkspaceActor({
-      appToken: appTokenFromRequest(request),
+    const result = await authorizePersonalResourceRequest(request, {
       appTokenConfig: dependencies.appTokenConfig,
-      encodedKubeconfig: encodedKubeconfigFromRequest(request),
-      expectedNamespace: clientNamespace?.trim() || undefined,
       observeFingerprint: dependencies.observeFingerprint,
       verify: dependencies.verify,
     });
-    if (!authorization.ok) {
-      return {
-        ok: false,
-        response: jsonError({
-          code: authorization.code,
-          message: authorization.message,
-          status: authorization.status,
-        }),
-      };
-    }
-    return { actor: verifiedPersonalResourceActor(authorization), ok: true };
+    return result.ok
+      ? { actor: verifiedPersonalResourceActor(result.authorization), ok: true }
+      : result;
   };
 
   return {
@@ -141,10 +113,7 @@ export function createOnboardingProfileHandlers(
       }
       try {
         const state = await dependencies.answerStep({
-          actor: {
-            legacyWorkspaceActor: authorization.actor.legacyWorkspaceActor,
-            userUid: authorization.actor.owner.userUid,
-          },
+          actor: profileActor(authorization.actor),
           answers: stepAnswerColumns(parsed.data),
         });
         return Response.json(state);
@@ -177,10 +146,7 @@ export function createOnboardingProfileHandlers(
       }
       try {
         const state = await dependencies.complete({
-          actor: {
-            legacyWorkspaceActor: authorization.actor.legacyWorkspaceActor,
-            userUid: authorization.actor.owner.userUid,
-          },
+          actor: profileActor(authorization.actor),
           openGoalText: parsed.data.openGoalText,
         });
         return Response.json(state);
@@ -215,10 +181,7 @@ export function createOnboardingProfileHandlers(
       }
       try {
         const state = await dependencies.dismiss({
-          actor: {
-            legacyWorkspaceActor: authorization.actor.legacyWorkspaceActor,
-            userUid: authorization.actor.owner.userUid,
-          },
+          actor: profileActor(authorization.actor),
           dismissedAtStep: parsed.data.dismissedAtStep,
         });
         return Response.json(state);
