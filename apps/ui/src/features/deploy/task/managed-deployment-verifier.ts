@@ -8,7 +8,6 @@ import {
 
 import {
   type ManagedResourceRef,
-  type ManagedVerifyReport,
   managedResourceRefSchema,
 } from "./managed-deployment-contract";
 
@@ -20,6 +19,7 @@ export const MANAGED_READINESS_RESOURCE_TYPES = [
   "daemonsets.apps",
   "jobs.batch",
   "cronjobs.batch",
+  "pods",
   "services",
   "ingresses.networking.k8s.io",
   "clusters.apps.kubeblocks.io",
@@ -156,52 +156,6 @@ export function parseManagedResourceObservations(
   return observationsSchema.parse(JSON.parse(contents));
 }
 
-export function managedIngressHosts(
-  observations: readonly ManagedResourceObservation[]
-): string[] {
-  const hosts = new Set<string>();
-  for (const observation of observations) {
-    if (
-      observation.resource.kind.toLowerCase() !== "ingress" ||
-      observation.snapshot == null
-    ) {
-      continue;
-    }
-    const rules = observation.snapshot.spec.rules;
-    if (!Array.isArray(rules)) {
-      continue;
-    }
-    for (const rule of rules) {
-      if (rule == null || typeof rule !== "object") {
-        continue;
-      }
-      const host = (rule as { host?: unknown }).host;
-      if (typeof host === "string" && host.trim() !== "") {
-        hosts.add(host.trim().toLowerCase());
-      }
-    }
-  }
-  return [...hosts];
-}
-
-export function managedObservedNetworkHosts(
-  observations: readonly ManagedResourceObservation[]
-): { publicHosts: string[]; serviceHosts: string[] } {
-  const observed = observations.filter(
-    (observation) => observation.error == null && observation.snapshot != null
-  );
-  return {
-    publicHosts: managedIngressHosts(observed),
-    serviceHosts: observed.flatMap((observation) =>
-      observation.resource.kind.toLowerCase() === "service"
-        ? [
-            `${observation.resource.name}.${observation.resource.namespace}.svc.cluster.local`,
-          ]
-        : []
-    ),
-  };
-}
-
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -270,6 +224,9 @@ function resourceReady(observation: ManagedResourceObservation): boolean {
   if (kind === "job") {
     return conditionTrue(snapshot.conditions, "Complete");
   }
+  if (kind === "pod") {
+    return conditionTrue(snapshot.conditions, "Ready");
+  }
   if (kind === "service") {
     return (
       snapshot.spec.type === "ExternalName" ||
@@ -316,10 +273,14 @@ export interface ManagedBrainVerificationResult {
   violations: string[];
 }
 
-export function verifyManagedResourceObservations(input: {
+/**
+ * Brain-owned gate for MCP completion notifications. This deliberately has no
+ * Agent report argument: the notification only asks Brain to observe the
+ * identity-labeled resources that already exist in the cluster.
+ */
+export function verifyManagedIdentityReadiness(input: {
   instanceName: string;
   observations: readonly ManagedResourceObservation[];
-  report: ManagedVerifyReport;
 }): ManagedBrainVerificationResult {
   const violations: string[] = [];
   const instance = input.observations.find(
@@ -341,6 +302,7 @@ export function verifyManagedResourceObservations(input: {
         "daemonset",
         "deployment",
         "job",
+        "pod",
         "statefulset",
       ].includes(observation.resource.kind.toLowerCase())
     )
@@ -356,9 +318,6 @@ export function verifyManagedResourceObservations(input: {
     if (!resourceReady(observation)) {
       violations.push(`${label} is not ready`);
     }
-  }
-  if (input.report.verdict !== "passed") {
-    violations.push("Agent verification report did not pass");
   }
   return { ok: violations.length === 0, violations };
 }

@@ -31,6 +31,16 @@ export type DeployTaskStatus =
   | "failed"
   | "cancelled";
 
+export type DeployTaskAgentProtocol = "mcp-v1";
+export type DeployTaskAgentCallState =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed";
+export type DeployTaskAgentToolName = "template_ready" | "deployment_completed";
+
+export type DeployTaskAgentCallResponse = Record<string, unknown>;
+
 export type DeployTaskPhase =
   | "queued"
   | "resolve-target"
@@ -329,7 +339,24 @@ export const deployTasks = ns.table(
     agentRepairCount: bigint("agent_repair_count", { mode: "number" })
       .notNull()
       .default(0),
-    agentLastReportDigest: text("agent_last_report_digest"),
+    agentProtocol: text("agent_protocol")
+      .notNull()
+      .$type<DeployTaskAgentProtocol>()
+      .default("mcp-v1"),
+    agentControlTokenHash: text("agent_control_token_hash"),
+    agentControlTokenRevokedAt: timestamp("agent_control_token_revoked_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    agentTemplateDigest: text("agent_template_digest"),
+    agentInputSchemaDigest: text("agent_input_schema_digest"),
+    agentCheckpointId: text("agent_checkpoint_id"),
+    agentInputRevision: bigint("agent_input_revision", { mode: "number" })
+      .notNull()
+      .default(0),
+    agentCompletionReceipt: jsonb(
+      "agent_completion_receipt"
+    ).$type<DeployTaskAgentCallResponse | null>(),
     failureDetails: jsonb(
       "failure_details"
     ).$type<DeployTaskFailureDetails | null>(),
@@ -387,6 +414,21 @@ export const deployTasks = ns.table(
       "deploy_tasks_agent_repair_count_nonnegative",
       sql`${table.agentRepairCount} >= 0`
     ),
+    check(
+      "deploy_tasks_agent_input_revision_nonnegative",
+      sql`${table.agentInputRevision} >= 0`
+    ),
+    check(
+      "deploy_tasks_agent_protocol_valid",
+      sql`${table.agentProtocol} IN ('mcp-v1')`
+    ),
+    check(
+      "deploy_tasks_agent_control_token_hash_valid",
+      sql`${table.agentControlTokenHash} IS NULL OR char_length(${table.agentControlTokenHash}) = 64`
+    ),
+    uniqueIndex("deploy_tasks_agent_control_token_hash_idx")
+      .on(table.agentControlTokenHash)
+      .where(sql`${table.agentControlTokenHash} IS NOT NULL`),
     index("deploy_tasks_namespace_updated_at_idx").on(
       table.namespace,
       table.updatedAt
@@ -493,6 +535,62 @@ export const deployTaskMessages = ns.table(
   ]
 );
 
+export const deployTaskAgentCalls = ns.table(
+  "deploy_task_agent_calls",
+  {
+    taskId: text("task_id")
+      .notNull()
+      .references(() => deployTasks.id, { onDelete: "cascade" }),
+    callId: text("call_id").notNull(),
+    leaseEpoch: bigint("lease_epoch", { mode: "number" }).notNull(),
+    toolName: text("tool_name").notNull().$type<DeployTaskAgentToolName>(),
+    request: jsonb("request").notNull().$type<Record<string, unknown>>(),
+    requestHash: text("request_hash").notNull(),
+    state: text("state")
+      .notNull()
+      .$type<DeployTaskAgentCallState>()
+      .default("pending"),
+    response: jsonb("response").$type<DeployTaskAgentCallResponse | null>(),
+    errorCode: text("error_code"),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.taskId, table.callId],
+      name: "deploy_task_agent_calls_pk",
+    }),
+    index("deploy_task_agent_calls_pending_idx")
+      .on(table.taskId, table.createdAt)
+      .where(sql`${table.state} = 'pending'`),
+    check(
+      "deploy_task_agent_calls_lease_epoch_nonnegative",
+      sql`${table.leaseEpoch} >= 0`
+    ),
+    check(
+      "deploy_task_agent_calls_tool_name_valid",
+      sql`${table.toolName} IN ('template_ready', 'deployment_completed')`
+    ),
+    check(
+      "deploy_task_agent_calls_state_valid",
+      sql`${table.state} IN ('pending', 'running', 'succeeded', 'failed')`
+    ),
+    check(
+      "deploy_task_agent_calls_request_hash_valid",
+      sql`char_length(${table.requestHash}) = 64`
+    ),
+  ]
+);
+
 export type DeployTaskRow = typeof deployTasks.$inferSelect;
 export type DeployTaskEventRow = typeof deployTaskEvents.$inferSelect;
 export type DeployTaskMessageRow = typeof deployTaskMessages.$inferSelect;
+export type DeployTaskAgentCallRow = typeof deployTaskAgentCalls.$inferSelect;

@@ -119,9 +119,9 @@ describe("deploy task runtime config", () => {
     expect(DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS).toBe(5 * 60_000);
   });
 
-  it("defaults the deploy skill source to the Agent-managed branch", () => {
+  it("defaults the deploy skill source to sealos-skills main", () => {
     expect(DEFAULT_DEPLOY_SKILL_SOURCE).toBe(
-      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
+      "https://github.com/labring/sealos-skills.git#main"
     );
     expect(getDeploySkillSourceFromEnv({})).toBe(DEFAULT_DEPLOY_SKILL_SOURCE);
     expect(
@@ -146,11 +146,9 @@ describe("deploy task runtime config", () => {
     expect(
       getDeploySkillSourceFromEnv({
         DEPLOY_SKILL_SOURCE:
-          "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy",
+          "https://github.com/labring/sealos-skills.git#main",
       })
-    ).toBe(
-      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
-    );
+    ).toBe("https://github.com/labring/sealos-skills.git#main");
   });
 });
 

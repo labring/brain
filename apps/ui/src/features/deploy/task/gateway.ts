@@ -61,6 +61,9 @@ interface CodexGatewayState {
 
 interface CodexGatewaySessionResponse {
   ok: boolean;
+  session?: {
+    toolProfile?: string | null;
+  };
   sessionId: string;
   state: CodexGatewayState;
 }
@@ -393,13 +396,20 @@ async function waitForCodexGatewayReady(
 async function createGatewaySession(
   context: GatewayContext,
   deadlineAtMs: number,
-  runSignal: AbortSignal
+  runSignal: AbortSignal,
+  options?: {
+    threadId?: string | null;
+  }
 ): Promise<CodexGatewaySessionResponse> {
   return await gatewayRequest<CodexGatewaySessionResponse>(
     context,
     "/api/sessions",
     {
-      body: JSON.stringify({ model: DEPLOY_GATEWAY_MODEL }),
+      body: JSON.stringify({
+        model: DEPLOY_GATEWAY_MODEL,
+        ...(options?.threadId == null ? {} : { threadId: options.threadId }),
+        toolProfile: "sealai-deploy-control-v1",
+      }),
       method: "POST",
     },
     deadlineAtMs,
@@ -407,10 +417,25 @@ async function createGatewaySession(
   );
 }
 
+function assertGatewaySessionProfile(
+  session: CodexGatewaySessionResponse,
+  status: number
+): void {
+  if (
+    session.session?.toolProfile !== "sealai-deploy-control-v1"
+  ) {
+    throw new CodexGatewayApiError(
+      "Codex gateway did not activate the required deployment-control profile.",
+      status
+    );
+  }
+}
+
 async function resolveGatewaySession(input: {
   context: GatewayContext;
   deadlineAtMs: number;
   existingSessionId?: string | null;
+  existingThreadId?: string | null;
   runSignal: AbortSignal;
 }): Promise<{
   created: boolean;
@@ -433,6 +458,7 @@ async function resolveGatewaySession(input: {
         input.deadlineAtMs,
         input.runSignal
       );
+      assertGatewaySessionProfile(existing, 409);
       return {
         created: false,
         sessionId: existingSessionId,
@@ -445,13 +471,22 @@ async function resolveGatewaySession(input: {
       ) {
         throw error;
       }
+      if (input.existingThreadId == null) {
+        throw new CodexGatewayApiError(
+          "Codex gateway session was lost and no resumable Thread is recorded.",
+          409
+        );
+      }
     }
   }
 
   const session = await createGatewaySession(
     input.context,
     input.deadlineAtMs,
-    input.runSignal
+    input.runSignal,
+    {
+      threadId: input.existingThreadId,
+    }
   );
   const sessionId = safeGatewaySessionIdentifier(session.sessionId);
   if (sessionId == null) {
@@ -460,6 +495,7 @@ async function resolveGatewaySession(input: {
       502
     );
   }
+  assertGatewaySessionProfile(session, 502);
   return { created: true, sessionId, state: session.state };
 }
 
@@ -684,12 +720,16 @@ async function projectGatewayState(input: {
 }): Promise<void> {
   await updateDeployTaskState(input.taskId, {
     gatewayStateSnapshot: gatewayStateSnapshot({ state: input.state }),
+    ...(input.state.threadId == null
+      ? {}
+      : { gatewayThreadId: input.state.threadId }),
   });
 }
 
 async function waitForGatewayTurnCompletion(input: {
   context: GatewayContext;
   deadlineAtMs: number;
+  onPoll?: () => Promise<void>;
   runSignal: AbortSignal;
   sessionId: string;
   taskId: string;
@@ -704,6 +744,7 @@ async function waitForGatewayTurnCompletion(input: {
       input.deadlineAtMs,
       input.runSignal
     );
+    await input.onPoll?.();
     await projectGatewayState({
       state: sessionState.state,
       taskId: input.taskId,
@@ -772,14 +813,14 @@ export async function runDeployTaskGateway(input: {
   context: GatewayContext;
   deadlineAtMs: number;
   existingSessionId?: string | null;
+  onPoll?: () => Promise<void>;
+  repairFindings?: readonly string[];
   resumeMode: ManagedDeployResumeMode;
   task: DeployTaskRow;
 }): Promise<string> {
   let managedPhase: "apply" | "plan" | "verify" = "plan";
   if (input.resumeMode === "repair") {
     managedPhase = "apply";
-  } else if (input.resumeMode === "brain-review-rejected") {
-    managedPhase = "verify";
   }
   const runSignal = deployTaskRunSignal(input.task.id);
   throwIfDeployTaskAborted(input.task.id);
@@ -804,11 +845,13 @@ export async function runDeployTaskGateway(input: {
     deadlineAtMs: input.deadlineAtMs,
     existingSessionId:
       input.existingSessionId ?? input.task.gatewaySessionId ?? null,
+    existingThreadId: input.task.gatewayThreadId,
     runSignal,
   });
   const { sessionId } = session;
   await updateDeployTaskState(input.task.id, {
     gatewaySessionId: sessionId,
+    gatewayThreadId: session.state.threadId ?? input.task.gatewayThreadId,
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: session.created
@@ -828,6 +871,7 @@ export async function runDeployTaskGateway(input: {
       runSignal,
       sessionId,
       taskId: input.task.id,
+      onPoll: input.onPoll,
     });
     await recordDeployTaskEvent(input.task.id, {
       kind: "deploy_task.gateway_turn_completed",
@@ -876,6 +920,7 @@ export async function runDeployTaskGateway(input: {
       interruptOnBoundary();
     }
     const prompt = buildManagedGatewayPrompt({
+      repairFindings: input.repairFindings,
       resumeMode: input.resumeMode,
       task: input.task,
     });
@@ -903,6 +948,7 @@ export async function runDeployTaskGateway(input: {
       runSignal,
       sessionId,
       taskId: input.task.id,
+      onPoll: input.onPoll,
     });
     turnMayBeActive = false;
   } catch (error) {

@@ -1,0 +1,1 @@
+ALTER TABLE "sealai_deployment"."deploy_task_agent_calls" ADD COLUMN "request" jsonb NOT NULL;

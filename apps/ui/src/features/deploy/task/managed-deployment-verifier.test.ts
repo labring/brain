@@ -90,6 +90,23 @@ describe("managed deployment Brain verification", () => {
     expect(result.violations).toContain("Deployment/web is not ready");
   });
 
+  it("requires the Pod Ready condition instead of accepting Running phase", () => {
+    const pod = observation("Pod", "web-pod");
+    if (pod.snapshot == null) {
+      throw new Error("pod observation fixture is empty");
+    }
+    pod.snapshot.conditions = [
+      { status: "False", type: "Ready" },
+      { status: "True", type: "ContainersReady" },
+    ];
+    pod.snapshot.status = { phase: "Running" };
+
+    const result = verify([observation("Instance", "demo-template"), pod]);
+
+    expect(result.ok).toBe(false);
+    expect(result.violations).toContain("Pod/web-pod is not ready");
+  });
+
   it("does not use labels as a mutation ownership check", () => {
     const instance = observation("Instance", "demo-template");
     if (instance.snapshot == null) {

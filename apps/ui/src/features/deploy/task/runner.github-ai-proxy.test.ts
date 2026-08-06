@@ -127,15 +127,15 @@ describe("deploy skill installation", () => {
     expect(command).not.toMatch(PINNED_SKILL_COMMIT_SOURCE_RE);
   });
 
-  it("defaults to the Agent-managed branch via runtime config", () => {
+  it("defaults to sealos-skills main via runtime config", () => {
     expect(getDeploySkillSourceFromEnv({})).toBe(
-      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
+      "https://github.com/labring/sealos-skills.git#main"
     );
     const command = buildDeploySkillInstallCommand(
       getDeploySkillSourceFromEnv({})
     );
     expect(command).toContain(
-      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
+      "https://github.com/labring/sealos-skills.git#main"
     );
   });
 });
@@ -353,6 +353,7 @@ describe("deployment AI Proxy credentials", () => {
       kubeconfig: "invalid-when-unused",
       managedInstanceName: "agent-instance",
       task: githubTask("existing-devbox"),
+      taskDeadlineAtMs: Date.now() + 60_000,
     });
 
     expect(runtime.name).toBe("existing-devbox");
@@ -391,6 +392,7 @@ describe("deployment AI Proxy credentials", () => {
       managedInstanceName: "agent-instance",
       signal: controller.signal,
       task: githubTask("existing-devbox"),
+      taskDeadlineAtMs: Date.now() + 60_000,
     });
     await started;
     controller.abort(new Error("devbox deadline reached"));
@@ -433,6 +435,7 @@ describe("deployment AI Proxy credentials", () => {
       managedInstanceName: "agent-instance",
       signal: controller.signal,
       task: githubTask(null),
+      taskDeadlineAtMs: Date.now() + 60_000,
     });
     await tokenRequestStart;
     controller.abort(new Error("prepare deadline reached"));
@@ -463,6 +466,7 @@ describe("deployment AI Proxy credentials", () => {
       kubeconfig: "invalid-when-unused",
       managedInstanceName: "agent-instance",
       task: githubTask(null),
+      taskDeadlineAtMs: Date.now() + 60_000,
     });
 
     expect(runtime.name).toBe("listed-devbox");
@@ -512,6 +516,7 @@ describe("deployment AI Proxy credentials", () => {
       kubeconfig: kubeconfig(),
       managedInstanceName: "agent-instance",
       task: promptTask(null),
+      taskDeadlineAtMs: Date.now() + 60_000,
     });
 
     expect(runtime.name).toStartWith("sealai-deploy-");
@@ -525,7 +530,7 @@ describe("deployment AI Proxy credentials", () => {
       CODEX_GATEWAY_OPENAI_API_KEY: "new-user-key",
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
       SEALAI_DEPLOY_INSTANCE_NAME: "agent-instance",
-      SEALAI_DEPLOY_MODE: "agent-managed",
+      SEALAI_DEPLOY_MODE: "managed",
     });
     expect(createdStorageLimit).toBe("10Gi");
   });

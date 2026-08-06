@@ -41,8 +41,14 @@ export type DeployTaskRunOutcome =
   | "failed";
 
 export interface DeployTaskHandleStateFields {
-  agentLastReportDigest?: DeployTaskRow["agentLastReportDigest"];
+  agentCheckpointId?: DeployTaskRow["agentCheckpointId"];
+  agentCompletionReceipt?: DeployTaskRow["agentCompletionReceipt"];
+  agentControlTokenHash?: DeployTaskRow["agentControlTokenHash"];
+  agentControlTokenRevokedAt?: DeployTaskRow["agentControlTokenRevokedAt"];
+  agentInputRevision?: DeployTaskRow["agentInputRevision"];
+  agentInputSchemaDigest?: DeployTaskRow["agentInputSchemaDigest"];
   agentRepairCount?: DeployTaskRow["agentRepairCount"];
+  agentTemplateDigest?: DeployTaskRow["agentTemplateDigest"];
   agentTurnCount?: DeployTaskRow["agentTurnCount"];
   artifactSummary?: DeployTaskArtifactSummary;
   blockingInputs?: DeployTaskBlockingInput[];
@@ -195,7 +201,10 @@ export function createDeployTaskHandle(
         },
         expectedLeaseEpoch: input.leaseEpoch,
         from: DEPLOY_TASK_LEASED_STATUSES,
-        set: { failureDetails: ack?.failureDetails ?? null },
+        set: {
+          agentControlTokenRevokedAt: new Date(),
+          failureDetails: ack?.failureDetails ?? null,
+        },
         taskId: input.taskId,
         to: "cancelled",
       });

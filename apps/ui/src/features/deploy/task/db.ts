@@ -4,9 +4,15 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import { getAppPostgresPool } from "@/lib/app-postgres/db";
 
-import { deployTaskEvents, deployTaskMessages, deployTasks } from "./schema";
+import {
+  deployTaskAgentCalls,
+  deployTaskEvents,
+  deployTaskMessages,
+  deployTasks,
+} from "./schema";
 
 const deploymentTaskSchema = {
+  deployTaskAgentCalls,
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,

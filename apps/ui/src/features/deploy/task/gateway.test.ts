@@ -63,10 +63,12 @@ function gatewayState(activeTurn: boolean) {
 
 function sessionResponse(
   activeTurn: boolean,
-  sessionId = "session-test-1"
+  sessionId = "session-test-1",
+  toolProfile?: string
 ): Response {
   return Response.json({
     ok: true,
+    session: { toolProfile: toolProfile ?? null },
     sessionId,
     state: gatewayState(activeTurn),
   });
@@ -75,6 +77,7 @@ function sessionResponse(
 function task(gatewaySessionId: string | null = null): DeployTaskRow {
   return {
     gatewaySessionId,
+    agentProtocol: "file-v1",
     id: "task-gateway-test",
     namespace: "ns-test",
     runner: { kind: "ai" },
@@ -83,12 +86,25 @@ function task(gatewaySessionId: string | null = null): DeployTaskRow {
   } as unknown as DeployTaskRow;
 }
 
+function mcpTask(input?: {
+  gatewaySessionId?: string | null;
+  gatewayThreadId?: string | null;
+}): DeployTaskRow {
+  return {
+    ...task(input?.gatewaySessionId ?? null),
+    agentProtocol: "mcp-v1",
+    gatewayThreadId: input?.gatewayThreadId ?? null,
+  } as DeployTaskRow;
+}
+
 function installGatewayFetch(input: {
   createdSessionId?: string;
   interruptStatus?: number;
   interruptStatuses?: number[];
   onState?: () => void;
   prompts?: string[];
+  sessionBodies?: Record<string, unknown>[];
+  sessionToolProfile?: string;
   stateActiveSequence?: boolean[];
   stateActive: boolean;
   stateStatuses?: number[];
@@ -112,7 +128,16 @@ function installGatewayFetch(input: {
       return Response.json({ ok: true });
     }
     if (url.pathname === "/api/sessions" && request.method === "POST") {
-      return sessionResponse(false, input.createdSessionId);
+      if (input.sessionBodies != null) {
+        input.sessionBodies.push(
+          JSON.parse(String(init?.body)) as Record<string, unknown>
+        );
+      }
+      return sessionResponse(
+        false,
+        input.createdSessionId,
+        input.sessionToolProfile
+      );
     }
     if (url.pathname.endsWith("/turn") && request.method === "POST") {
       if (input.turnError != null) {
@@ -134,7 +159,9 @@ function installGatewayFetch(input: {
         return Response.json({ error: "state unavailable" }, { status });
       }
       return sessionResponse(
-        input.stateActiveSequence?.[readIndex] ?? input.stateActive
+        input.stateActiveSequence?.[readIndex] ?? input.stateActive,
+        undefined,
+        input.sessionToolProfile
       );
     }
     if (url.pathname.endsWith("/turn/interrupt")) {
@@ -458,5 +485,61 @@ describe("deployment Codex gateway interruption", () => {
     expect(
       paths.filter((path) => path.endsWith("/turn/interrupt"))
     ).toHaveLength(1);
+  });
+
+  it("creates mcp-v1 sessions with the fixed deployment-control profile", async () => {
+    const sessionBodies: Record<string, unknown>[] = [];
+    installGatewayFetch({
+      sessionBodies,
+      sessionToolProfile: "sealai-deploy-control-v1",
+      stateActive: false,
+    });
+
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: mcpTask(),
+    });
+
+    expect(sessionBodies).toHaveLength(1);
+    expect(sessionBodies[0]?.toolProfile).toBe("sealai-deploy-control-v1");
+    expect(sessionBodies[0]?.threadId).toBeUndefined();
+  });
+
+  it("resumes the recorded Codex Thread when an mcp-v1 session is lost", async () => {
+    const sessionBodies: Record<string, unknown>[] = [];
+    installGatewayFetch({
+      sessionBodies,
+      sessionToolProfile: "sealai-deploy-control-v1",
+      stateActive: false,
+      stateStatuses: [404, 200],
+    });
+
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: mcpTask({
+        gatewaySessionId: "session-lost-1",
+        gatewayThreadId: "thread-resume-1",
+      }),
+    });
+
+    expect(sessionBodies[0]?.threadId).toBe("thread-resume-1");
+  });
+
+  it("fails closed when both the mcp-v1 session and Thread are unavailable", async () => {
+    installGatewayFetch({
+      sessionToolProfile: "sealai-deploy-control-v1",
+      stateActive: false,
+      stateStatuses: [404],
+    });
+
+    await expect(
+      runDeployTaskGateway({
+        context: { authToken: "gateway-token", url: "https://gateway.test" },
+        deadlineAtMs: Date.now() + 1000,
+        task: mcpTask({ gatewaySessionId: "session-lost-2" }),
+      })
+    ).rejects.toMatchObject({ status: 409 });
   });
 });

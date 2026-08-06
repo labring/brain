@@ -180,6 +180,27 @@ test("transitions reject illegal moves and stale statuses", async () => {
   assert.equal((await taskById(row.id)).status, "completed");
 });
 
+test("terminal transitions revoke an active Agent control capability", async () => {
+  const ctx = testCtx();
+  const row = await insertTaskRow(harness.db, {
+    agentControlTokenHash: "a".repeat(64),
+    leaseEpoch: 1,
+    leaseOwner: "test-proc",
+    status: "running",
+  });
+
+  const failed = await transitionDeployTask(ctx, {
+    expectedLeaseEpoch: 1,
+    from: ["running"],
+    set: { error: "test failure" },
+    taskId: row.id,
+    to: "failed",
+  });
+
+  assert.ok(failed);
+  assert.ok((await taskById(row.id)).agentControlTokenRevokedAt != null);
+});
+
 test("the status writer rejects blocked transitions without inputs", async () => {
   const ctx = testCtx();
   const row = await insertTaskRow(harness.db, {
