@@ -1772,8 +1772,8 @@ test("deadline transition CAS defines cancel-versus-timeout boundary priority", 
   }
 });
 
-test("reaper pauses devboxes of terminal tasks and purges after retention", async () => {
-  const ctx = testCtx({ retentionMs: 60_000 });
+test("reaper pauses terminal-task devboxes and deletes only runtimes after retention", async () => {
+  const ctx = testCtx({ devboxDeleteAfterPauseMs: 60_000 });
 
   const failedWithDevbox = await insertTaskRow(harness.db, {
     completedAt: new Date(Date.now() - 1000),
@@ -1782,38 +1782,26 @@ test("reaper pauses devboxes of terminal tasks and purges after retention", asyn
     runtimeState: "Running",
     status: "failed",
   });
-  const purgeDue = await insertTaskRow(harness.db, {
+  const deleteDue = await insertTaskRow(harness.db, {
     completedAt: new Date(Date.now() - 120_000),
     runtimeName: "devbox-b",
+    runtimePausedAt: new Date(Date.now() - 120_000),
     runtimeProvider: "devbox",
     runtimeState: "paused",
     status: "cancelled",
   });
 
-  const purgeEvents: string[] = [];
-  const unsubscribe = await harness.notify.subscribe((event) => {
-    if (event.kind === "purge") {
-      purgeEvents.push(event.taskId);
-    }
-  });
-
   const summary = await runDeployTaskReaperSweep(ctx);
   assert.ok(summary.devboxPaused >= 1);
-  assert.equal(summary.purged, 1);
+  assert.equal(summary.devboxDeleted, 1);
 
   assert.ok(devbox.paused.includes("ns-test/devbox-a"));
-  assert.equal((await taskById(failedWithDevbox.id)).runtimeState, "paused");
+  const pausedTask = await taskById(failedWithDevbox.id);
+  assert.equal(pausedTask.runtimeState, "paused");
+  assert.ok(pausedTask.runtimePausedAt);
 
   assert.ok(devbox.deleted.includes("ns-test/devbox-b"));
-  const [purgedRow] = await harness.db
-    .select({ id: deployTasks.id })
-    .from(deployTasks)
-    .where(eq(deployTasks.id, purgeDue.id));
-  assert.equal(purgedRow, undefined);
-
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  await unsubscribe();
-  assert.deepEqual(purgeEvents, [purgeDue.id]);
+  assert.equal((await taskById(deleteDue.id)).runtimeState, "deleted");
 });
 
 test("timer renewal keeps a slow integration alive across lease expiry", async () => {
@@ -1850,7 +1838,7 @@ test("timer renewal keeps a slow integration alive across lease expiry", async (
   assert.equal((await taskById(result.task.id)).status, "completed");
 });
 
-test("a redeploy chain keeps the root's identity after the root is purged", async () => {
+test("a redeploy chain keeps the root identity if a predecessor is missing", async () => {
   const ctx = testCtx();
   const root = await insertTaskRow(harness.db, {
     artifactSummary: {
@@ -1871,7 +1859,7 @@ test("a redeploy chain keeps the root's identity after the root is purged", asyn
   if (cloneB.kind !== "created") {
     return;
   }
-  // B fails without ever generating artifacts; the root is purged.
+  // B fails without ever generating artifacts; simulate a legacy missing root.
   await harness.db
     .update(deployTasks)
     .set({ completedAt: new Date(), status: "failed" })
@@ -1897,11 +1885,15 @@ test("a redeploy chain keeps the root's identity after the root is purged", asyn
   assert.equal(stored.source.kind, "template");
 });
 
-test("purge retries on the next sweep when devbox deletion fails", async () => {
-  const ctx = testCtx({ retentionMs: 60_000 });
+test("Devbox deletion retries without deleting task history", async () => {
+  const ctx = testCtx({
+    devboxDeleteAfterPauseMs: 60_000,
+    reaperIntervalMs: 0,
+  });
   const stuck = await insertTaskRow(harness.db, {
     completedAt: new Date(Date.now() - 120_000),
     runtimeName: "devbox-stuck",
+    runtimePausedAt: new Date(Date.now() - 120_000),
     runtimeProvider: "devbox",
     runtimeState: "paused",
     status: "failed",
@@ -1909,14 +1901,51 @@ test("purge retries on the next sweep when devbox deletion fails", async () => {
 
   devbox.failNextDelete = true;
   const first = await runDeployTaskReaperSweep(ctx);
-  assert.equal(first.purgeFailed, 1);
-  assert.ok(await taskById(stuck.id));
+  assert.equal(first.devboxDeleteFailed, 1);
+  assert.equal((await taskById(stuck.id)).runtimeState, "paused");
 
   const second = await runDeployTaskReaperSweep(ctx);
-  assert.equal(second.purged, 1);
-  const [gone] = await harness.db
-    .select({ id: deployTasks.id })
-    .from(deployTasks)
-    .where(eq(deployTasks.id, stuck.id));
-  assert.equal(gone, undefined);
+  assert.equal(second.devboxDeleted, 1);
+  assert.equal((await taskById(stuck.id)).runtimeState, "deleted");
+});
+
+test("concurrent reapers claim one paused Devbox deletion only once", async () => {
+  const ctx = testCtx({ devboxDeleteAfterPauseMs: 60_000 });
+  const due = await insertTaskRow(harness.db, {
+    completedAt: new Date(Date.now() - 120_000),
+    runtimeName: "devbox-claimed-once",
+    runtimePausedAt: new Date(Date.now() - 120_000),
+    runtimeProvider: "devbox",
+    runtimeState: "paused",
+    status: "failed",
+  });
+  let deleteCalls = 0;
+  let releaseDelete!: () => void;
+  let markDeleteStarted!: () => void;
+  const deleteStarted = new Promise<void>((resolve) => {
+    markDeleteStarted = resolve;
+  });
+  const deleteBlocked = new Promise<void>((resolve) => {
+    releaseDelete = resolve;
+  });
+  devbox.deleteDevbox = async (namespace, name) => {
+    deleteCalls += 1;
+    devbox.deleted.push(`${namespace}/${name}`);
+    markDeleteStarted();
+    await deleteBlocked;
+    return "deleted";
+  };
+
+  const first = runDeployTaskReaperSweep(ctx);
+  await deleteStarted;
+  const second = await runDeployTaskReaperSweep(ctx);
+
+  assert.equal(second.devboxDeleted, 0);
+  assert.equal(deleteCalls, 1);
+  releaseDelete();
+  assert.equal((await first).devboxDeleted, 1);
+  const stored = await taskById(due.id);
+  assert.equal(stored.runtimeState, "deleted");
+  assert.equal(stored.runtimeCleanupLeaseOwner, null);
+  assert.equal(stored.runtimeCleanupLeaseExpiresAt, null);
 });

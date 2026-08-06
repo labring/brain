@@ -2,6 +2,9 @@ import { mock, test } from "bun:test";
 import assert from "node:assert/strict";
 
 mock.module("server-only", () => ({}));
+mock.module("./lifecycle-registration", () => ({
+  recordChatDevboxActivity: () => Promise.resolve(),
+}));
 
 const { bootstrapChatDevboxIfNeeded } = await import("./chat-runtime");
 

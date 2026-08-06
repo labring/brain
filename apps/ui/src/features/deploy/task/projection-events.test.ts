@@ -189,32 +189,6 @@ it("independent tasks re-read concurrently", async () => {
   subscription.unsubscribe();
 });
 
-it("drops a re-read that raced a purge instead of resurrecting the task", async () => {
-  const { events, subscription } = subscribeCollectingEvents();
-  await subscription.ready;
-
-  notifyChange("task-1");
-  expect(issuedReads.length).toBe(1);
-  notifyListener?.({
-    kind: "purge",
-    namespace: "ns-test",
-    projectId: "project-1",
-    taskId: "task-1",
-  });
-  // The read was started before the purge deleted the row, so it can still
-  // return the stale row — the tombstone must swallow it.
-  issuedReads[0]?.resolve(taskRow({ status: "running" }));
-  await drain();
-
-  expect(events.map((event) => event.type)).toEqual(["remove"]);
-
-  // Purged ids stay tombstoned: later change notifications are ignored.
-  notifyChange("task-1");
-  await drain();
-  expect(issuedReads.length).toBe(1);
-  subscription.unsubscribe();
-});
-
 it("rejects ready when the notify subscribe fails", async () => {
   subscribeShouldFail = new Error("LISTEN refused");
   const { subscription } = subscribeCollectingEvents();
@@ -288,33 +262,5 @@ it("flushes held deliveries when the reset snapshot read fails", async () => {
   issuedListReads[0]?.reject(new Error("snapshot read failed"));
   await drain();
   expect(events.map(eventLabel)).toEqual(["upsert:task-1"]);
-  subscription.unsubscribe();
-});
-
-it("filters purged tasks out of a reset snapshot", async () => {
-  const { events, subscription } = subscribeWithDeferredSnapshots();
-  await subscription.ready;
-
-  notifyListener?.({ kind: "reset" });
-  // The purge lands while the snapshot read is in flight; a read whose
-  // visibility predates the delete can still contain the purged row.
-  notifyListener?.({
-    kind: "purge",
-    namespace: "ns-test",
-    projectId: "project-1",
-    taskId: "task-1",
-  });
-  issuedListReads[0]?.resolve([{ id: "task-1" } as DeploymentTaskProjection]);
-  await drain();
-
-  expect(events).toEqual([
-    { projections: [], type: "snapshot" },
-    {
-      namespace: "ns-test",
-      projectId: "project-1",
-      taskId: "task-1",
-      type: "remove",
-    },
-  ]);
   subscription.unsubscribe();
 });

@@ -54,7 +54,6 @@ export interface CreateDevboxKubeAccess {
 }
 
 export interface CreateDevboxInput {
-  archiveAfterPauseTime?: string;
   env?: Record<string, string>;
   image?: string;
   kubeAccess?: CreateDevboxKubeAccess;

@@ -2,7 +2,6 @@ import "server-only";
 
 import {
   DEVBOX_API_PREFIX,
-  getDevboxArchiveAfterPauseTimeFromEnv,
   getDevboxAuthTokenFromEnv,
   getDevboxBaseUrlFromEnv,
   getDevboxDefaultImageFromEnv,
@@ -23,10 +22,6 @@ export function getDevboxApiPrefix(): string {
 
 export function getDevboxDefaultImage(): string | undefined {
   return getDevboxDefaultImageFromEnv(process.env);
-}
-
-export function getDevboxArchiveAfterPauseTime(): string | undefined {
-  return getDevboxArchiveAfterPauseTimeFromEnv(process.env);
 }
 
 export async function getDevboxAuthToken(namespace: string): Promise<string> {

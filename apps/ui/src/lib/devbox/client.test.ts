@@ -18,7 +18,7 @@ afterAll(() => {
   process.env.DEVBOX_TOKEN = originalToken;
 });
 
-const { execDevbox, pauseDevbox } = await import("./client");
+const { deleteDevbox, execDevbox, pauseDevbox } = await import("./client");
 
 test("exec Devbox fetch is cancelled by the caller abort signal", async () => {
   let fetchSignal: AbortSignal | null | undefined;
@@ -80,4 +80,15 @@ test("pause Devbox fetch is cancelled by the caller abort signal", async () => {
   assert.equal(fetchSignal?.aborted, false);
   controller.abort();
   assert.equal(fetchSignal?.aborted, true);
+});
+
+test("delete Devbox leaves network retry to the lifecycle reaper", async () => {
+  let fetchCalls = 0;
+  globalThis.fetch = (() => {
+    fetchCalls += 1;
+    return Promise.reject(new TypeError("fetch failed"));
+  }) as unknown as typeof fetch;
+
+  await assert.rejects(deleteDevbox("ns-test", "runtime"));
+  assert.equal(fetchCalls, 1);
 });

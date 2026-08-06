@@ -234,7 +234,7 @@ export interface DeployTaskDTO {
   projectId: string | null;
   projectName: string | null;
   resultUrl: string | null;
-  /** Redeploy lineage (predecessor task id, purgeable; ADR 0038). */
+  /** Redeploy lineage (predecessor task id; ADR 0038). */
   retriedFromTaskId?: string | null;
   runner: DeploymentTaskRunner;
   runtimeName: string | null;

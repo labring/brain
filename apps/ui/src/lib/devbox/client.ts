@@ -23,6 +23,7 @@ import type {
 
 const DEVBOX_REQUEST_TIMEOUT_MS = 60_000;
 const DEVBOX_NETWORK_RETRY_DELAYS_MS = [500, 1500, 3000];
+const DEVBOX_DELETE_TIMEOUT_MS = 10_000;
 
 export class DevboxApiError extends Error {
   status: number;
@@ -129,6 +130,7 @@ async function devboxRequest<T>(
     skipAuth?: boolean;
     searchParams?: URLSearchParams;
     includeApiPrefix?: boolean;
+    networkRetryDelaysMs?: readonly number[];
     timeoutMs?: number;
   }
 ): Promise<DevboxEnvelope<T>> {
@@ -136,17 +138,14 @@ async function devboxRequest<T>(
     authNamespace,
     headers: initHeaders,
     includeApiPrefix,
+    networkRetryDelaysMs = DEVBOX_NETWORK_RETRY_DELAYS_MS,
     searchParams,
     skipAuth,
     timeoutMs,
     ...requestInit
   } = init ?? {};
 
-  for (
-    let attempt = 0;
-    attempt <= DEVBOX_NETWORK_RETRY_DELAYS_MS.length;
-    attempt += 1
-  ) {
+  for (let attempt = 0; attempt <= networkRetryDelaysMs.length; attempt += 1) {
     requestInit.signal?.throwIfAborted();
     const headers = new Headers(initHeaders);
 
@@ -184,7 +183,7 @@ async function devboxRequest<T>(
       return await parseJsonResponse<T>(response);
     } catch (error) {
       requestInit.signal?.throwIfAborted();
-      const retryDelay = DEVBOX_NETWORK_RETRY_DELAYS_MS[attempt];
+      const retryDelay = networkRetryDelaysMs[attempt];
       if (!isRetryableNetworkError(error) || retryDelay === undefined) {
         throw error;
       }
@@ -293,7 +292,12 @@ export async function resumeDevbox(
 export async function deleteDevbox(authNamespace: string, name: string) {
   return await devboxRequest<DeleteDevboxResult>(
     `/${encodeURIComponent(name)}`,
-    { authNamespace, method: "DELETE" }
+    {
+      authNamespace,
+      method: "DELETE",
+      networkRetryDelaysMs: [],
+      timeoutMs: DEVBOX_DELETE_TIMEOUT_MS,
+    }
   );
 }
 

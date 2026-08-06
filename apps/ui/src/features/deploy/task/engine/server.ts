@@ -14,6 +14,8 @@ import type {
 import { getDeployTaskNotifyTransport } from "./notify-server";
 import { startDeployTaskEngineRuntime } from "./runtime";
 
+const DEVBOX_REAPER_OPERATION_TIMEOUT_MS = 10_000;
+
 function isMissingDevboxError(error: unknown): boolean {
   return error instanceof DevboxApiError && error.status === 404;
 }
@@ -32,7 +34,11 @@ const serverDevbox: DeployTaskEngineDevbox = {
   },
   async pauseDevbox(namespace, name) {
     try {
-      await pauseDevbox(namespace, name);
+      await pauseDevbox(
+        namespace,
+        name,
+        AbortSignal.timeout(DEVBOX_REAPER_OPERATION_TIMEOUT_MS)
+      );
       return "paused";
     } catch (error) {
       if (isMissingDevboxError(error)) {

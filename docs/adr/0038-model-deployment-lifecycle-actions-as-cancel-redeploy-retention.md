@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted; supplemented by ADR-0056 — a Redeploy resolves a fresh Deployment
+Accepted; amended 2026-08-05 to retain task history permanently and delete
+paused Devboxes after 24 hours. Supplemented by ADR-0056 — a Redeploy resolves a fresh Deployment
 Credential Binding from the initiating Workspace Actor and never inherits the
 predecessor's actor, credential owner, or connection reference.
 
@@ -56,3 +57,15 @@ The original runner deleted a failed template deployment's labeled resources on 
 - **Cleanup requires both a typed apply-stage failure and a freshly allocated identity.** The apply provider call marks its own errors (`stage: "apply"` on the attached failure details); cleanup runs only when that marker is present and the template instance name was allocated by this run. Only then does the selector provably match nothing but this run's partial creation.
 - **Everything else preserves resources.** Readiness timeouts (failing with the readiness-timeout reason per ADR 0037), post-apply persistence errors, pre-apply generation errors, and any failure on a reused identity leave resources untouched — their deletion stays an explicit canvas action, and a Redeploy converges on whatever remains.
 - **Misjudgment degrades toward preservation.** A lost or absent stage marker skips cleanup; the failure summary for a readiness timeout tells the user the created resources were preserved and that Redeploy reuses them.
+
+## Amendment (2026-08-05): Task history is permanent; paused Devboxes are deleted after 24 hours
+
+The original retention decision coupled two resources with different ownership and value: an ephemeral Devbox runtime and the durable Deployment Task audit record. It also relied on Devbox archive to retain an execution environment that no supported workflow resumes. This amendment supersedes every earlier statement in this ADR that Deployment Tasks, events, messages, transcripts, or results are purged after 30 days.
+
+- **Deployment Task history has no application-level expiry.** Task rows, events, messages, timeline snapshots, failure details, artifact summaries, and deployment results remain in PostgreSQL. The engine publishes no purge notification and exposes no task deletion action. Existing `retried_from_task_id` storage remains unchanged for compatibility; its lack of a foreign key no longer implies that predecessors are routinely purgeable.
+- **Deploy Devboxes are deleted independently.** Every terminal AI Deploy Task is brought to `runtime_state=paused` and records `runtime_paused_at` when Brain confirms the pause. After 24 hours, the reaper calls the Devbox DELETE API. Success and not-found both converge on `runtime_state=deleted`; API failure leaves the task and paused timestamp intact for a later sweep.
+- **Chat Devboxes use a durable lifecycle ledger.** Brain records the upstream id, namespace, runtime name, and pause deadline before Create, Resume, warmup, or pause refresh. Confirmed pause starts a 24-hour delete deadline. Activity clears a pending delete before the external Resume path, while short-lived database cleanup claims serialize Pause/Delete against activity so an active Resume cannot race a deletion.
+- **Platform archive is no longer part of the contract.** Brain stops sending `archiveAfterPauseTime`. Historical Deploy Devboxes already represented by task rows enter the new deletion flow through a migration backfill. Historical chat Devboxes that Brain cannot identify safely are not discovered by a destructive global scan.
+- **Runtime cleanup is bounded, leased, and idempotent.** A reaper claims eligible rows with `FOR UPDATE SKIP LOCKED`, commits immediately, calls the Devbox API outside any database transaction, then finalizes through the cleanup owner token. Claims expire after the bounded API window so another process can recover after a crash; failures release the owner and defer eligibility to the next 30-second sweep. DELETE has a 10-second request timeout and no in-request network retry. The reaper processes bounded batches with at most four concurrent Devbox operations, treats 404 as success, and never deletes database history when the Devbox API is unavailable.
+
+There remains no user-facing task or Devbox delete action. The only product-visible lifecycle actions are still Cancel, Blocking Input submission, and Redeploy.

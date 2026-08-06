@@ -34,6 +34,7 @@ export interface TaskRowFixtureInput {
   retriedFromTaskId?: string | null;
   runner?: DeploymentTaskRunner;
   runtimeName?: string | null;
+  runtimePausedAt?: Date | null;
   runtimeProvider?: string | null;
   runtimeState?: string | null;
   source?: DeploymentTaskSource;
@@ -67,6 +68,7 @@ export async function insertTaskRow(
       retriedFromTaskId: null,
       runner: { kind: "template" },
       runtimeName: null,
+      runtimePausedAt: null,
       runtimeProvider: null,
       runtimeState: null,
       source: { kind: "template", templateName: "demo" },
