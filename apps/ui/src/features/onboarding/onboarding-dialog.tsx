@@ -229,7 +229,7 @@ function progressSegmentClass(index: number, currentStep: number): string {
     return "bg-input";
   }
   return index === 0
-    ? "bg-gradient-to-r from-foreground to-blue-500"
+    ? "bg-linear-to-r/srgb from-foreground to-blue-500"
     : "bg-blue-500";
 }
 
@@ -242,7 +242,9 @@ function StepHeading({
 }) {
   return (
     <div className="flex flex-col gap-2.5">
-      <h2 className="bg-gradient-to-r from-foreground to-onboarding-heading-accent bg-clip-text font-semibold text-4xl text-transparent">
+      {/* w-fit: the ramp spans the text itself, so the last word lands on
+          the accent endpoint; /srgb matches Figma's gradient interpolation. */}
+      <h2 className="w-fit bg-linear-to-r/srgb from-white to-onboarding-heading-accent bg-clip-text font-semibold text-4xl text-transparent">
         {title}
       </h2>
       {subtitle == null ? null : (
