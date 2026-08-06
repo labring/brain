@@ -25,6 +25,7 @@ const STEP_ONE_TITLE_RE = /Tell us a bit about you\./;
 const STEP_TWO_TITLE_RE = /What are you using Sealos for\?/;
 const STEP_THREE_SUBTITLE_RE = /Choose up to 3\./;
 const STEP_FOUR_TITLE_RE = /Anything specific you're trying to achieve\?/;
+const OTHER_REQUIRED_RE = /This field is required\./;
 
 function bodyButtons(): HTMLButtonElement[] {
   return [...document.querySelectorAll("button")] as HTMLButtonElement[];
@@ -38,7 +39,7 @@ function buttonByText(text: string): HTMLButtonElement {
   return button;
 }
 
-/** Option cards prefix their text with the label ("Stability — I need…"). */
+/** Option cards prefix their text with the label ("Stability: I need…"). */
 function optionButton(label: string): HTMLButtonElement {
   const button = bodyButtons().find((candidate) =>
     candidate.textContent?.trim().startsWith(label)
@@ -150,14 +151,89 @@ test("Step 1 skips with the step number and gates Next on a selection", async ()
       fireEvent.click(buttonByText("Other"));
     });
     const otherInput = document.querySelector("input");
-    assert.ok(otherInput, "selecting Other reveals the free-text input");
-    // The Other text is optional: revealing it never blocks Next.
+    assert.ok(otherInput, "selecting Other morphs the card into an input");
+    // Empty Other keeps Next clickable — the click surfaces the inline
+    // required error instead of disabling the button (pinned below).
     assert.equal(next.disabled, false);
 
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Skip"));
     });
     assert.deepEqual(skips, [{ dismissedAtStep: 1 }]);
+  } finally {
+    await actAndDrain(() => {
+      rendered?.unmount();
+    });
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+test("an empty Other refuses Next with the inline error until text arrives", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const { render } = await import("@testing-library/react/pure");
+  const { fireEvent } = await import("@testing-library/dom");
+  const answers: unknown[] = [];
+  let rendered: ReturnType<typeof render> | undefined;
+
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <OnboardingSurveyCard
+          onAnswerStep={(payload) => {
+            answers.push(payload);
+          }}
+          onComplete={() => undefined}
+          onSkip={() => undefined}
+        />
+      );
+    });
+
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Other"));
+    });
+    assert.doesNotMatch(document.body.textContent ?? "", OTHER_REQUIRED_RE);
+
+    // Next with no text: the error appears, nothing advances or persists.
+    await clickNext();
+    assert.match(document.body.textContent ?? "", OTHER_REQUIRED_RE);
+    assert.match(document.body.textContent ?? "", STEP_INDICATOR_RE);
+    assert.equal(answers.length, 0);
+
+    // Typing clears the error display without another Next.
+    const otherInput = document.querySelector("input");
+    assert.ok(otherInput, "the morphed Other input is rendered");
+    await actAndDrain(() => {
+      otherInput.focus();
+      fireEvent.input(otherInput, { target: { value: "SRE" } });
+      fireEvent.keyUp(otherInput, { key: "d" });
+    });
+    assert.doesNotMatch(document.body.textContent ?? "", OTHER_REQUIRED_RE);
+
+    // The glyph inside the morphed field unselects Other, restoring the card.
+    const unselect = bodyButtons().find(
+      (candidate) => candidate.getAttribute("aria-label") === "Unselect Other"
+    );
+    assert.ok(unselect, "the morphed field keeps the selection glyph");
+    await actAndDrain(() => {
+      fireEvent.click(unselect);
+    });
+    assert.equal(document.querySelector("input"), null);
+    assert.ok(buttonByText("Other"), "the Other card is restored");
+
+    // With text in place, Next advances and the trimmed pair persists.
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Other"));
+    });
+    const revived = document.querySelector("input");
+    assert.ok(revived, "re-selecting Other morphs the card again");
+    // The Other text survives the unselect round-trip by design.
+    await clickNext();
+    assert.deepEqual(answers, [
+      { roleOtherText: "SRE", roleType: "other", step: 1 },
+    ]);
+    assert.match(document.body.textContent ?? "", STEP_TWO_INDICATOR_RE);
   } finally {
     await actAndDrain(() => {
       rendered?.unmount();
