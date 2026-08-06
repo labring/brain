@@ -48,6 +48,7 @@
   --color-brand-primary-foreground: var(--sealai-brand-primary-foreground);
   --color-brand-primary: var(--sealai-brand-primary);
   --color-project-chrome-surface: var(--project-chrome-surface);
+  --color-onboarding-heading-accent: var(--onboarding-heading-accent);
   --color-db-access-sticky-header-surface: var(
     --db-access-sticky-header-surface
   );
@@ -125,6 +126,14 @@
     color-mix(in oklab, var(--input) 30%, transparent),
     color-mix(in oklab, var(--input) 30%, transparent)
   );
+  /** Onboarding survey dialog tokens (Figma Brain V2.0 onboarding). */
+  --onboarding-survey-surface-overlay: linear-gradient(
+    -30deg,
+    rgb(10 163 249 / 12%) 8.73%,
+    rgb(181 180 255 / 12%) 78.53%
+  );
+  --onboarding-heading-accent: #146dff;
+
   --project-surface-motion-duration: var(
     --project-surface-motion-enter-duration
   );

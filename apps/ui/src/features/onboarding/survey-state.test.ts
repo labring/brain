@@ -7,6 +7,7 @@ import {
   type OnboardingSurveyAction,
   type OnboardingSurveyState,
   onboardingCompletePayload,
+  onboardingOtherTextMissing,
   onboardingPriorityAnswerPayload,
   onboardingRoleAnswerPayload,
   onboardingSkipEvent,
@@ -193,6 +194,50 @@ test("Next is gated per step and Step 4 is always open", () => {
 test("a closed gate makes advance a no-op", () => {
   const stuck = reduce(initialState(), { type: "advance-step" });
   assert.equal(stuck.currentStep, 1);
+});
+
+test("a selected Other requires text before its step advances", () => {
+  // Step 1: Other alone keeps Next clickable but the advance is refused…
+  const blank = reduce(initialState(), { role: "other", type: "toggle-role" });
+  assert.equal(canAdvanceOnboardingStep(blank), true);
+  assert.equal(onboardingOtherTextMissing(blank), true);
+  assert.equal(reduce(blank, { type: "advance-step" }).currentStep, 1);
+  // …whitespace is not text…
+  const padded = reduce(blank, { text: "   ", type: "set-role-other-text" });
+  assert.equal(onboardingOtherTextMissing(padded), true);
+  // …and real text opens the step.
+  const filled = reduce(blank, { text: "SRE", type: "set-role-other-text" });
+  assert.equal(onboardingOtherTextMissing(filled), false);
+  const two = reduce(filled, { type: "advance-step" });
+  assert.equal(two.currentStep, 2);
+
+  // The same rule holds on Steps 2 and 3.
+  const usageBlank = reduce(two, { type: "toggle-usage", usage: "other" });
+  assert.equal(onboardingOtherTextMissing(usageBlank), true);
+  assert.equal(reduce(usageBlank, { type: "advance-step" }).currentStep, 2);
+  const three = reduce(
+    usageBlank,
+    { text: "homelab", type: "set-usage-other-text" },
+    { type: "advance-step" }
+  );
+  assert.equal(three.currentStep, 3);
+  const priorityBlank = reduce(three, {
+    tag: "other",
+    type: "toggle-priority",
+  });
+  assert.equal(onboardingOtherTextMissing(priorityBlank), true);
+  assert.equal(reduce(priorityBlank, { type: "advance-step" }).currentStep, 3);
+  // A non-Other pick with Other unselected never demands text.
+  const withoutOther = reduce(priorityBlank, {
+    tag: "other",
+    type: "toggle-priority",
+  });
+  const stability = reduce(withoutOther, {
+    tag: "stability",
+    type: "toggle-priority",
+  });
+  assert.equal(onboardingOtherTextMissing(stability), false);
+  assert.equal(reduce(stability, { type: "advance-step" }).currentStep, 4);
 });
 
 test("the role write payload is the Other pair or a bare tag, never loose text", () => {

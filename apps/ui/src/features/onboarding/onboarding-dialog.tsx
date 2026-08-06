@@ -5,7 +5,7 @@ import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { cn } from "@workspace/ui/lib/utils";
 import { ArrowRight, Check, Send } from "lucide-react";
-import { type ReactNode, useEffect, useReducer, useRef } from "react";
+import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 
 import { trackBrainGtmEvent } from "@/features/analytics/brain-gtm";
 
@@ -14,6 +14,7 @@ import {
   createInitialOnboardingSurveyState,
   type OnboardingSurveyState,
   onboardingCompletePayload,
+  onboardingOtherTextMissing,
   onboardingPriorityAnswerPayload,
   onboardingRoleAnswerPayload,
   onboardingSkipEvent,
@@ -91,16 +92,54 @@ const PRIORITY_OPTIONS: Record<
   },
 };
 
+/**
+ * The selection glyph pairs shape with the step's semantics — a deliberate
+ * correction over the design file, which draws squares everywhere: the
+ * single-select steps show a round radio dot, the multi-select step a square
+ * check. The blue border on the unselected glyph is the design's accent.
+ */
+function SelectionIndicator({
+  selected,
+  shape,
+}: {
+  selected: boolean;
+  shape: "checkbox" | "radio";
+}) {
+  let glyph: ReactNode = null;
+  if (selected) {
+    glyph =
+      shape === "radio" ? (
+        <span className="size-1.5 rounded-full bg-white" />
+      ) : (
+        <Check className="size-3" />
+      );
+  }
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center border border-blue-500",
+        shape === "radio" ? "rounded-full" : "rounded-xs",
+        selected && "bg-blue-500 text-white"
+      )}
+    >
+      {glyph}
+    </span>
+  );
+}
+
 function OptionCard({
   children,
   disabled = false,
   onToggle,
   selected,
+  shape,
 }: {
   children: ReactNode;
   disabled?: boolean;
   onToggle: () => void;
   selected: boolean;
+  shape: "checkbox" | "radio";
 }) {
   return (
     <button
@@ -108,50 +147,108 @@ function OptionCard({
       className={cn(
         // min-h, not h: the Step 3 descriptions must stay readable, so a
         // card grows and wraps rather than truncating its one-liner.
-        "flex min-h-12 items-center justify-between gap-3 rounded-lg border px-4 py-2 text-left text-sm transition-colors",
-        selected
-          ? "border-brand-primary bg-input/50 text-foreground"
-          : "border-transparent bg-input/30 text-foreground hover:bg-input/50",
-        disabled && "cursor-not-allowed opacity-50 hover:bg-input/30"
+        "flex min-h-12 items-center justify-between gap-3 rounded-lg border border-transparent bg-input/30 px-4 py-2.5 text-left text-foreground text-sm transition-colors hover:border-border",
+        disabled && "cursor-not-allowed opacity-50 hover:border-transparent"
       )}
       disabled={disabled}
       onClick={onToggle}
       type="button"
     >
       <span className="min-w-0">{children}</span>
-      <span
-        aria-hidden
-        className={cn(
-          "flex size-4 shrink-0 items-center justify-center rounded-xs border",
-          selected
-            ? "border-brand-primary bg-brand-primary text-brand-primary-foreground"
-            : "border-brand-primary/60"
-        )}
-      >
-        {selected ? <Check className="size-3" /> : null}
-      </span>
+      <SelectionIndicator selected={selected} shape={shape} />
     </button>
   );
 }
 
-function StepHeading({
-  head,
-  subtitle,
-  tail,
+/**
+ * The Other slot after selection (design annotation: clicking Other turns
+ * the card into an input in place; an empty Next surfaces the inline
+ * required error). The container keeps the card footprint and hosts the
+ * free text plus the still-toggleable selection glyph — without that glyph
+ * the multi-select step could never release Other's cap slot.
+ */
+function OtherOptionField({
+  error,
+  label,
+  onTextChange,
+  onUnselect,
+  shape,
+  text,
 }: {
-  head: string;
-  subtitle?: string;
-  tail: string;
+  error: boolean;
+  label: string;
+  onTextChange: (text: string) => void;
+  onUnselect: () => void;
+  shape: "checkbox" | "radio";
+  text: string;
 }) {
   return (
     <>
-      <h2 className="mt-12 font-bold text-3xl text-foreground">
-        {head} <span className="text-brand-primary">{tail}</span>
+      <div
+        className={cn(
+          // A focus-within field wrapper: matches appFieldFocusClass's blue
+          // by eye, per the field-state outlier note.
+          "flex min-h-12 items-center gap-3 rounded-lg border border-input bg-input/30 px-4 py-2.5 transition-colors",
+          error
+            ? "border-destructive ring-[1px] ring-destructive/50"
+            : "focus-within:border-blue-400 focus-within:ring-[1px] focus-within:ring-blue-400/50"
+        )}
+      >
+        <input
+          aria-invalid={error || undefined}
+          aria-label={label}
+          className="min-w-0 flex-1 bg-transparent text-foreground text-sm outline-none placeholder:text-muted-foreground"
+          onChange={(event) => onTextChange(event.target.value)}
+          placeholder="Tell us more"
+          value={text}
+        />
+        <button
+          aria-label="Unselect Other"
+          className="cursor-pointer"
+          onClick={onUnselect}
+          type="button"
+        >
+          <SelectionIndicator selected shape={shape} />
+        </button>
+      </div>
+      {error ? (
+        <p className="self-center text-destructive text-sm">
+          This field is required.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The filled track reads as one white→blue ramp: its leading segment carries
+ * the gradient, later filled segments hold the solid endpoint color.
+ */
+function progressSegmentClass(index: number, currentStep: number): string {
+  if (index >= currentStep) {
+    return "bg-input";
+  }
+  return index === 0
+    ? "bg-gradient-to-r from-foreground to-blue-500"
+    : "bg-blue-500";
+}
+
+function StepHeading({
+  subtitle,
+  title,
+}: {
+  subtitle?: string;
+  title: string;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <h2 className="bg-gradient-to-r from-foreground to-onboarding-heading-accent bg-clip-text font-semibold text-4xl text-transparent">
+        {title}
       </h2>
       {subtitle == null ? null : (
-        <p className="mt-2 text-muted-foreground text-sm">{subtitle}</p>
+        <p className="text-base text-muted-foreground">{subtitle}</p>
       )}
-    </>
+    </div>
   );
 }
 
@@ -201,6 +298,10 @@ export function OnboardingSurveyCard({
     // once-per-session seat of the Step 3 display-order shuffle.
     () => createInitialOnboardingSurveyState()
   );
+  // Armed by a refused Next; the visible error also needs the text to still
+  // be missing, so typing or unselecting Other clears it without a reset.
+  const [otherErrorArmed, setOtherErrorArmed] = useState(false);
+  const otherError = otherErrorArmed && onboardingOtherTextMissing(state);
 
   // The funnel view events: one per step shown, the mount itself being the
   // dialog's appearance (step 1). With no back navigation the step only
@@ -219,6 +320,13 @@ export function OnboardingSurveyCard({
   }, [state.currentStep]);
 
   const handleNext = () => {
+    // Other with no text refuses to advance and surfaces the inline error
+    // instead (the reducer's advance gate refuses too); nothing persists.
+    if (onboardingOtherTextMissing(state)) {
+      setOtherErrorArmed(true);
+      return;
+    }
+    setOtherErrorArmed(false);
     // Persist-then-advance, both synchronous from the click: the payload is
     // assembled from the state being left, and the write is the owner's
     // fire-and-forget concern — Next never blocks on it.
@@ -245,115 +353,139 @@ export function OnboardingSurveyCard({
   };
 
   return (
-    <div className="flex min-h-144 flex-col p-9">
-      <div className="flex items-center justify-between">
-        <span className="text-muted-foreground text-sm">
-          Step {state.currentStep} of {ONBOARDING_SURVEY_TOTAL_STEPS}
-        </span>
-        <button
-          className="text-muted-foreground text-sm transition-colors hover:text-foreground"
-          onClick={handleSkip}
-          type="button"
-        >
-          Skip
-        </button>
-      </div>
-      <div className="mt-3 grid grid-cols-4 gap-3">
-        {Array.from({ length: ONBOARDING_SURVEY_TOTAL_STEPS }, (_, index) => (
-          <div
-            className={cn(
-              "h-1 rounded-full",
-              index < state.currentStep ? "bg-brand-primary" : "bg-muted"
-            )}
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size ordinal track
-            key={index}
-          />
-        ))}
+    <div className="flex flex-col gap-10 p-9">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <span className="text-base text-muted-foreground">
+            Step {state.currentStep} of {ONBOARDING_SURVEY_TOTAL_STEPS}
+          </span>
+          <button
+            className="text-muted-foreground text-sm transition-colors hover:text-foreground"
+            onClick={handleSkip}
+            type="button"
+          >
+            Skip
+          </button>
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {Array.from({ length: ONBOARDING_SURVEY_TOTAL_STEPS }, (_, index) => (
+            <div
+              className={cn(
+                "h-2 rounded-full",
+                progressSegmentClass(index, state.currentStep)
+              )}
+              // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size ordinal track
+              key={index}
+            />
+          ))}
+        </div>
       </div>
       {/* Plain headings: the dialog context is optional for the card so the
           frame stays testable in a plain DOM; the shell labels the dialog. */}
       {state.currentStep === 1 ? (
         <>
           <StepHeading
-            head="Tell us"
             subtitle="This helps us tailor your workspace experience."
-            tail="a bit about you."
+            title="Tell us a bit about you."
           />
-          <fieldset className="mt-9 grid gap-4 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-5 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your role</legend>
-            {ROLE_OPTIONS.map((option) => (
-              <OptionCard
-                key={option.value}
-                onToggle={() =>
-                  dispatch({ role: option.value, type: "toggle-role" })
-                }
-                selected={state.roleType === option.value}
-              >
-                {option.label}
-              </OptionCard>
-            ))}
-            {state.roleType === "other" ? (
-              <AppInput
-                aria-label="Describe your role"
-                onChange={(event) =>
-                  dispatch({
-                    text: event.target.value,
-                    type: "set-role-other-text",
-                  })
-                }
-                placeholder="Tell us more (optional)"
-                value={state.roleOtherText}
-              />
-            ) : null}
+            {ROLE_OPTIONS.map((option) =>
+              option.value === "other" && state.roleType === "other" ? (
+                <OtherOptionField
+                  error={otherError}
+                  key={option.value}
+                  label="Describe your role"
+                  onTextChange={(text) =>
+                    dispatch({ text, type: "set-role-other-text" })
+                  }
+                  onUnselect={() =>
+                    dispatch({ role: "other", type: "toggle-role" })
+                  }
+                  shape="radio"
+                  text={state.roleOtherText}
+                />
+              ) : (
+                <OptionCard
+                  key={option.value}
+                  onToggle={() =>
+                    dispatch({ role: option.value, type: "toggle-role" })
+                  }
+                  selected={state.roleType === option.value}
+                  shape="radio"
+                >
+                  {option.label}
+                </OptionCard>
+              )
+            )}
           </fieldset>
         </>
       ) : null}
       {state.currentStep === 2 ? (
         <>
           <StepHeading
-            head="What are"
             subtitle="Let us know what stage your project is in."
-            tail="you using Sealos for?"
+            title="What are you using Sealos for?"
           />
-          <fieldset className="mt-9 grid gap-4 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-5 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your usage context</legend>
-            {USAGE_OPTIONS.map((option) => (
-              <OptionCard
-                key={option.value}
-                onToggle={() =>
-                  dispatch({ type: "toggle-usage", usage: option.value })
-                }
-                selected={state.usageContext === option.value}
-              >
-                {option.label}
-              </OptionCard>
-            ))}
-            {state.usageContext === "other" ? (
-              <AppInput
-                aria-label="Describe your usage"
-                onChange={(event) =>
-                  dispatch({
-                    text: event.target.value,
-                    type: "set-usage-other-text",
-                  })
-                }
-                placeholder="Tell us more (optional)"
-                value={state.usageOtherText}
-              />
-            ) : null}
+            {USAGE_OPTIONS.map((option) =>
+              option.value === "other" && state.usageContext === "other" ? (
+                <OtherOptionField
+                  error={otherError}
+                  key={option.value}
+                  label="Describe your usage"
+                  onTextChange={(text) =>
+                    dispatch({ text, type: "set-usage-other-text" })
+                  }
+                  onUnselect={() =>
+                    dispatch({ type: "toggle-usage", usage: "other" })
+                  }
+                  shape="radio"
+                  text={state.usageOtherText}
+                />
+              ) : (
+                <OptionCard
+                  key={option.value}
+                  onToggle={() =>
+                    dispatch({ type: "toggle-usage", usage: option.value })
+                  }
+                  selected={state.usageContext === option.value}
+                  shape="radio"
+                >
+                  {option.label}
+                </OptionCard>
+              )
+            )}
           </fieldset>
         </>
       ) : null}
       {state.currentStep === 3 ? (
         <>
           <StepHeading
-            head="Which factors are"
             subtitle="Choose up to 3."
-            tail="most important to you?"
+            title="Which factors are most important to you?"
           />
-          <fieldset className="mt-9 grid gap-4 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-5 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your top priorities</legend>
             {state.priorityDisplayOrder.map((tag) => {
+              if (tag === "other" && state.priorityTags.includes("other")) {
+                return (
+                  <OtherOptionField
+                    error={otherError}
+                    key={tag}
+                    label="Describe your priority"
+                    onTextChange={(text) =>
+                      dispatch({ text, type: "set-priority-other-text" })
+                    }
+                    onUnselect={() =>
+                      dispatch({ tag: "other", type: "toggle-priority" })
+                    }
+                    shape="checkbox"
+                    text={state.priorityOtherText}
+                  />
+                );
+              }
               const option = PRIORITY_OPTIONS[tag];
               const selected = state.priorityTags.includes(tag);
               return (
@@ -367,42 +499,27 @@ export function OnboardingSurveyCard({
                   key={tag}
                   onToggle={() => dispatch({ tag, type: "toggle-priority" })}
                   selected={selected}
+                  shape="checkbox"
                 >
-                  {option.label}
+                  <span className="font-medium">{option.label}</span>
                   {option.description == null ? null : (
                     <span className="text-muted-foreground">
-                      {" — "}
+                      {": "}
                       {option.description}
                     </span>
                   )}
                 </OptionCard>
               );
             })}
-            {state.priorityTags.includes("other") ? (
-              <AppInput
-                aria-label="Describe your priority"
-                onChange={(event) =>
-                  dispatch({
-                    text: event.target.value,
-                    type: "set-priority-other-text",
-                  })
-                }
-                placeholder="Tell us more (optional)"
-                value={state.priorityOtherText}
-              />
-            ) : null}
           </fieldset>
         </>
       ) : null}
       {state.currentStep === 4 ? (
         <>
-          <StepHeading
-            head="Anything specific"
-            tail="you're trying to achieve?"
-          />
+          <StepHeading title="Anything specific you're trying to achieve?" />
           <AppInput
             aria-label="Anything specific you're trying to achieve?"
-            className="mt-9"
+            className="h-12 rounded-lg bg-input/30 px-4 dark:bg-input/30"
             onChange={(event) =>
               dispatch({
                 text: event.target.value,
@@ -414,7 +531,7 @@ export function OnboardingSurveyCard({
           />
         </>
       ) : null}
-      <div className="mt-auto flex justify-end pt-9">
+      <div className="flex justify-end">
         {state.currentStep === ONBOARDING_SURVEY_TOTAL_STEPS ? (
           // The terminal submit: never gated (the open goal is optional) and
           // never awaited — the owner closes the dialog into the console.
@@ -468,6 +585,7 @@ export function OnboardingDialog({
     <AppDialog.Root onOpenChange={refuseOnboardingDialogClose} open={open}>
       <AppDialog.Content
         aria-label="Onboarding survey"
+        className="rounded-xl bg-[color:var(--project-chrome-surface-base)] bg-[image:var(--onboarding-survey-surface-overlay)]"
         overlayClassName="bg-black/60"
         size="xl"
       >

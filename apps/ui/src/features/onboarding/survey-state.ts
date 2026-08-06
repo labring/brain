@@ -97,6 +97,7 @@ export function onboardingSurveyReducer(
       // answer, and one step at a time; answers already given are kept.
       // Step 4 has no step to advance to — its exit is the terminal submit.
       return canAdvanceOnboardingStep(state) &&
+        !onboardingOtherTextMissing(state) &&
         state.currentStep < ONBOARDING_SURVEY_TOTAL_STEPS
         ? { ...state, currentStep: state.currentStep + 1 }
         : state;
@@ -136,6 +137,33 @@ export function onboardingSurveyReducer(
       };
     default:
       return state;
+  }
+}
+
+/**
+ * A selected Other must carry text before its step can advance. Next stays
+ * clickable while the text is missing — the click surfaces the inline
+ * "This field is required." error instead of advancing (design spec), so
+ * this is a separate predicate from `canAdvanceOnboardingStep`, which drives
+ * the disabled state.
+ */
+export function onboardingOtherTextMissing(
+  state: OnboardingSurveyState
+): boolean {
+  switch (state.currentStep) {
+    case 1:
+      return state.roleType === "other" && state.roleOtherText.trim() === "";
+    case 2:
+      return (
+        state.usageContext === "other" && state.usageOtherText.trim() === ""
+      );
+    case 3:
+      return (
+        state.priorityTags.includes("other") &&
+        state.priorityOtherText.trim() === ""
+      );
+    default:
+      return false;
   }
 }
 
