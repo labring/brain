@@ -78,6 +78,7 @@ cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
 - `ui.env.SYSTEM_OPENAI_API_BASE_URL`
 - `ui.env.FREE_CHAT_TURNS`
 - `ui.env.AI_PROXY_TOKEN_NAME`
+- `ui.env.MARKETING_EVENTS_INGEST_SECRET`
 - `ui.env.DEVBOX_TOKEN` 或 `ui.env.DEVBOX_JWT_SIGNING_KEY`
 - 可选的 `ui.env.DEPLOY_SKILL_SOURCE`；留空时默认使用
   `https://github.com/labring/sealos-skills/tree/brain-deploy`

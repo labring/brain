@@ -1,15 +1,19 @@
 import "server-only";
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-
+import {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
 import { getAppPostgresPool } from "@/lib/app-postgres/db";
-
 import { deployTaskEvents, deployTaskMessages, deployTasks } from "./schema";
 
 const deploymentTaskSchema = {
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
 };
 
 export type { DeploymentTaskPgDatabase } from "./db-types";

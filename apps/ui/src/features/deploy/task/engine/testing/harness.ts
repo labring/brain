@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-
+import {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
 import {
   deployTaskEvents,
   deployTaskMessages,
@@ -20,6 +23,8 @@ const deploymentTaskSchema = {
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
 };
 
 export type DeployTaskTestDb = ReturnType<

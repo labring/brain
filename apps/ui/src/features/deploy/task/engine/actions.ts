@@ -245,6 +245,10 @@ async function resolveCreateInputs(
     createdFrom: input.create.createdFrom,
     creatingActor: input.create.creatingActor,
     credentialBinding: input.create.credentialBinding,
+    marketingAttribution:
+      input.create.marketingAttribution ??
+      predecessor?.marketingAttribution ??
+      undefined,
     namespace: input.create.namespace,
     prompt: input.create.prompt,
     runner,
@@ -376,6 +380,7 @@ async function insertCreatedDeployTask(
         createdFrom: create.createdFrom ?? "api",
         creatingActor: create.creatingActor?.trim() || null,
         credentialBinding: create.credentialBinding ?? null,
+        marketingAttribution: create.marketingAttribution ?? null,
         githubConnectionId: null,
         namespace: create.namespace.trim(),
         phase: "queued",
