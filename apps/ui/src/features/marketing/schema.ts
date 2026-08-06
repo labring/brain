@@ -46,7 +46,6 @@ export const marketingAttributionSubjects = ns.table(
       columns: [table.subjectType, table.subjectId],
       name: "attribution_subjects_pk",
     }),
-    index("attribution_subjects_updated_at_idx").on(table.updatedAt),
   ]
 );
 
@@ -95,19 +94,8 @@ export const marketingLifecycleEvents = ns.table(
     index("lifecycle_events_pending_idx")
       .on(table.occurredAt)
       .where(sql`${table.status} = 'pending'`),
-    index("lifecycle_events_workspace_idx").on(
-      table.workspaceId,
-      table.occurredAt
-    ),
-    index("lifecycle_events_deployment_idx").on(
-      table.deploymentId,
-      table.occurredAt
-    ),
     uniqueIndex("lifecycle_events_payment_transaction_idx")
       .on(table.transactionId)
       .where(sql`${table.transactionId} IS NOT NULL`),
   ]
 );
-
-export type MarketingLifecycleEventRow =
-  typeof marketingLifecycleEvents.$inferSelect;

@@ -3,61 +3,8 @@ import "server-only";
 import { sql } from "drizzle-orm";
 
 import { getMarketingDb } from "./db";
-import {
-  marketingAttributionSubjects,
-  marketingLifecycleEvents,
-} from "./schema";
-import type { MarketingLifecycleEventInput, MarketingTouch } from "./types";
-
-async function upsertAttributionSubject(input: {
-  adUserDataConsent: boolean;
-  firstTouch: MarketingTouch | null;
-  gbraid: string | null;
-  gclid: string | null;
-  lastTouch: MarketingTouch | null;
-  subjectId: string | null;
-  subjectType: "user" | "workspace";
-  wbraid: string | null;
-}): Promise<void> {
-  if (input.subjectId == null) {
-    return;
-  }
-  await getMarketingDb()
-    .insert(marketingAttributionSubjects)
-    .values({
-      adUserDataConsent: input.adUserDataConsent ? "granted" : "denied",
-      firstTouch: input.firstTouch,
-      gbraid: input.gbraid,
-      gclid: input.gclid,
-      lastTouch: input.lastTouch,
-      subjectId: input.subjectId,
-      subjectType: input.subjectType,
-      wbraid: input.wbraid,
-    })
-    .onConflictDoUpdate({
-      set: {
-        adUserDataConsent: input.adUserDataConsent ? "granted" : "denied",
-        firstTouch: input.adUserDataConsent
-          ? sql`coalesce(${marketingAttributionSubjects.firstTouch}, excluded.first_touch)`
-          : input.firstTouch,
-        gbraid: input.adUserDataConsent
-          ? sql`coalesce(excluded.gbraid, ${marketingAttributionSubjects.gbraid})`
-          : null,
-        gclid: input.adUserDataConsent
-          ? sql`coalesce(excluded.gclid, ${marketingAttributionSubjects.gclid})`
-          : null,
-        lastTouch: input.adUserDataConsent ? input.lastTouch : null,
-        updatedAt: new Date(),
-        wbraid: input.adUserDataConsent
-          ? sql`coalesce(excluded.wbraid, ${marketingAttributionSubjects.wbraid})`
-          : null,
-      },
-      target: [
-        marketingAttributionSubjects.subjectType,
-        marketingAttributionSubjects.subjectId,
-      ],
-    });
-}
+import { marketingLifecycleEvents } from "./schema";
+import type { MarketingLifecycleEventInput } from "./types";
 
 export async function recordMarketingLifecycleEvent(
   event: MarketingLifecycleEventInput
@@ -85,27 +32,29 @@ export async function recordMarketingLifecycleEvent(
     .onConflictDoNothing()
     .returning({ eventId: marketingLifecycleEvents.eventId });
 
-  await Promise.all([
-    upsertAttributionSubject({
-      adUserDataConsent: event.ad_user_data_consent,
-      firstTouch: event.first_touch,
-      gbraid: event.gbraid,
-      gclid: event.gclid,
-      lastTouch: event.last_touch,
-      subjectId: event.user_id,
-      subjectType: "user",
-      wbraid: event.wbraid,
-    }),
-    upsertAttributionSubject({
-      adUserDataConsent: event.ad_user_data_consent,
-      firstTouch: event.first_touch,
-      gbraid: event.gbraid,
-      gclid: event.gclid,
-      lastTouch: event.last_touch,
-      subjectId: event.workspace_id,
-      subjectType: "workspace",
-      wbraid: event.wbraid,
-    }),
-  ]);
+  const attribution = JSON.stringify({
+    ad_user_data_consent: event.ad_user_data_consent,
+    first_touch: event.first_touch,
+    gbraid: event.gbraid,
+    gclid: event.gclid,
+    last_touch: event.last_touch,
+    wbraid: event.wbraid,
+  });
+  await Promise.all(
+    (
+      [
+        ["user", event.user_id],
+        ["workspace", event.workspace_id],
+      ] as const
+    ).map(([subjectType, subjectId]) =>
+      subjectId == null
+        ? Promise.resolve()
+        : getMarketingDb().execute(sql`
+            SELECT "sealai_marketing"."upsert_attribution_subject"(
+              ${subjectType}, ${subjectId}, ${attribution}::jsonb
+            )
+          `)
+    )
+  );
   return inserted.length === 0 ? "duplicate" : "created";
 }

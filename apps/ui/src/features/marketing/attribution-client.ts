@@ -22,12 +22,10 @@ function decodeAttributionState(value: string): Record<string, unknown> | null {
     while (normalized.length % 4 !== 0) {
       normalized += "=";
     }
-    const binary = window.atob(normalized);
-    let encoded = "";
-    for (let index = 0; index < binary.length; index += 1) {
-      encoded += `%${binary.charCodeAt(index).toString(16).padStart(2, "0")}`;
-    }
-    return recordValue(JSON.parse(decodeURIComponent(encoded)));
+    const decoded = Uint8Array.from(window.atob(normalized), (character) =>
+      character.charCodeAt(0)
+    );
+    return recordValue(JSON.parse(new TextDecoder().decode(decoded)));
   } catch {
     return null;
   }
@@ -111,12 +109,6 @@ function clickIds(
   return result;
 }
 
-function redactTouchClickId(
-  touch: MarketingTouch | null
-): MarketingTouch | null {
-  return touch ? { ...touch, click_id_value: "" } : null;
-}
-
 export function readMarketingAttribution(): MarketingAttributionSnapshot | null {
   if (typeof window === "undefined") {
     return null;
@@ -139,13 +131,9 @@ export function readMarketingAttribution(): MarketingAttributionSnapshot | null 
   const adUserDataConsent = state.ad_user_data_consent === true;
   return {
     ad_user_data_consent: adUserDataConsent,
-    first_touch: adUserDataConsent
-      ? firstTouch
-      : redactTouchClickId(firstTouch),
-    ...(adUserDataConsent ? ids : { gbraid: null, gclid: null, wbraid: null }),
-    last_touch: adUserDataConsent
-      ? (lastTouch ?? lastQualifiedTouch)
-      : redactTouchClickId(lastTouch ?? lastQualifiedTouch),
+    first_touch: firstTouch,
+    ...ids,
+    last_touch: lastTouch ?? lastQualifiedTouch,
     version: 2,
   };
 }
