@@ -12,7 +12,6 @@ import {
   managedObservedResourceRefs,
   parseManagedResourceDiscovery,
   parseManagedResourceObservations,
-  verifyManagedIdentityReadiness,
   verifyManagedWorkloadReadiness,
 } from "./managed-deployment-verifier";
 
@@ -36,15 +35,6 @@ function observation(kind: string, name: string): ManagedResourceObservation {
           : { phase: "Ready" },
     },
   };
-}
-
-function verify(
-  observations: ManagedResourceObservation[]
-): ReturnType<typeof verifyManagedIdentityReadiness> {
-  return verifyManagedIdentityReadiness({
-    instanceName: "demo-template",
-    observations,
-  });
 }
 
 describe("managed deployment Brain verification", () => {
@@ -72,16 +62,7 @@ describe("managed deployment Brain verification", () => {
     ).toBe(false);
   });
 
-  it("requires the allocated Instance and ready identity resources", () => {
-    const result = verify([
-      observation("Instance", "demo-template"),
-      observation("Deployment", "web"),
-    ]);
-
-    expect(result).toEqual({ ok: true, violations: [] });
-  });
-
-  it("rejects an unready resource", () => {
+  it("rejects an unready reported workload", () => {
     const deployment = observation("Deployment", "web");
     if (deployment.snapshot == null) {
       throw new Error("deployment observation fixture is empty");
@@ -91,11 +72,10 @@ describe("managed deployment Brain verification", () => {
       observedGeneration: 1,
       readyReplicas: 0,
     };
-    const result = verify([
-      observation("Instance", "demo-template"),
-      deployment,
-    ]);
-
+    const result = verifyManagedWorkloadReadiness({
+      observations: [deployment],
+      workloads: [deployment.resource],
+    });
     expect(result.ok).toBe(false);
     expect(result.violations).toContain("Deployment/web is not ready");
   });
@@ -111,49 +91,24 @@ describe("managed deployment Brain verification", () => {
     ];
     pod.snapshot.status = { phase: "Running" };
 
-    const result = verify([observation("Instance", "demo-template"), pod]);
-
+    const result = verifyManagedWorkloadReadiness({
+      observations: [pod],
+      workloads: [pod.resource],
+    });
     expect(result.ok).toBe(false);
     expect(result.violations).toContain("Pod/web-pod is not ready");
   });
 
-  it("does not use labels as a mutation ownership check", () => {
-    const instance = observation("Instance", "demo-template");
-    if (instance.snapshot == null) {
-      throw new Error("instance observation fixture is empty");
-    }
-    instance.snapshot.labels["brain.io/project-id"] = "another-project";
-
-    const result = verify([instance, observation("Deployment", "web")]);
-
-    expect(result).toEqual({ ok: true, violations: [] });
-  });
-
-  it("rejects an Instance-only self-reported success", () => {
-    const result = verify([observation("Instance", "demo-template")]);
-
+  it("requires at least one ready runtime workload among the report", () => {
+    const service = observation("Service", "web");
+    const result = verifyManagedWorkloadReadiness({
+      observations: [service],
+      workloads: [service.resource],
+    });
     expect(result.ok).toBe(false);
-    expect(result.violations).toContain("no runtime workload was observed");
-  });
-
-  it("does not require readiness status from controller-derived resources", () => {
-    const replicaSet = observation("ReplicaSet", "web-abc123");
-    if (replicaSet.snapshot == null) {
-      throw new Error("replica set observation fixture is empty");
-    }
-    replicaSet.snapshot.conditions = [];
-    replicaSet.snapshot.status = {};
-    replicaSet.snapshot.ownerReferences = [
-      { kind: "Instance", name: "demo-template" },
-    ];
-
-    const result = verify([
-      observation("Instance", "demo-template"),
-      observation("Deployment", "web"),
-      replicaSet,
-    ]);
-
-    expect(result).toEqual({ ok: true, violations: [] });
+    expect(result.violations).toContain(
+      "no reported runtime workload is Ready"
+    );
   });
 
   it("builds only targeted, bounded Kubernetes verification commands", () => {

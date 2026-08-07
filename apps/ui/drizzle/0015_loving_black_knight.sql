@@ -1,2 +1,0 @@
-ALTER TABLE "sealai_deployment"."deploy_tasks" DROP CONSTRAINT "deploy_tasks_agent_repair_count_nonnegative";--> statement-breakpoint
-ALTER TABLE "sealai_deployment"."deploy_tasks" DROP COLUMN "agent_repair_count";

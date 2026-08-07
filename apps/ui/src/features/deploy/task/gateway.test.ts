@@ -63,14 +63,10 @@ function gatewayState(activeTurn: boolean) {
 
 function sessionResponse(
   activeTurn: boolean,
-  sessionId = "session-test-1",
-  toolProfile?: string
+  sessionId = "session-test-1"
 ): Response {
   return Response.json({
     ok: true,
-    session: {
-      toolProfile: toolProfile ?? "sealai-deploy-control-v1",
-    },
     sessionId,
     state: gatewayState(activeTurn),
   });
@@ -99,7 +95,7 @@ function installGatewayFetch(input: {
   onState?: () => void;
   prompts?: string[];
   sessionBodies?: Record<string, unknown>[];
-  sessionToolProfile?: string;
+  sessionHeaders?: Record<string, string>[];
   stateActiveSequence?: boolean[];
   stateActive: boolean;
   stateStatuses?: number[];
@@ -128,11 +124,15 @@ function installGatewayFetch(input: {
           JSON.parse(String(init?.body)) as Record<string, unknown>
         );
       }
-      return sessionResponse(
-        false,
-        input.createdSessionId,
-        input.sessionToolProfile
-      );
+      if (input.sessionHeaders != null) {
+        input.sessionHeaders.push(
+          Object.fromEntries(request.headers.entries()) as Record<
+            string,
+            string
+          >
+        );
+      }
+      return sessionResponse(false, input.createdSessionId);
     }
     if (url.pathname.endsWith("/turn") && request.method === "POST") {
       if (input.turnError != null) {
@@ -154,9 +154,7 @@ function installGatewayFetch(input: {
         return Response.json({ error: "state unavailable" }, { status });
       }
       return sessionResponse(
-        input.stateActiveSequence?.[readIndex] ?? input.stateActive,
-        undefined,
-        input.sessionToolProfile
+        input.stateActiveSequence?.[readIndex] ?? input.stateActive
       );
     }
     if (url.pathname.endsWith("/turn/interrupt")) {
@@ -485,11 +483,12 @@ describe("deployment Codex gateway interruption", () => {
     ).toHaveLength(1);
   });
 
-  it("creates mcp-v1 sessions with the fixed deployment-control profile", async () => {
+  it("creates a standard session without a Gateway deployment profile", async () => {
     const sessionBodies: Record<string, unknown>[] = [];
+    const sessionHeaders: Record<string, string>[] = [];
     installGatewayFetch({
       sessionBodies,
-      sessionToolProfile: "sealai-deploy-control-v1",
+      sessionHeaders,
       stateActive: false,
     });
 
@@ -500,15 +499,15 @@ describe("deployment Codex gateway interruption", () => {
     });
 
     expect(sessionBodies).toHaveLength(1);
-    expect(sessionBodies[0]?.toolProfile).toBe("sealai-deploy-control-v1");
+    expect(sessionBodies[0]?.toolProfile).toBeUndefined();
     expect(sessionBodies[0]?.threadId).toBeUndefined();
+    expect(sessionHeaders[0]?.["x-sealai-control-token"]).toBeUndefined();
   });
 
-  it("resumes the recorded Codex Thread when an mcp-v1 session is lost", async () => {
+  it("resumes the recorded Codex Thread when a session is lost", async () => {
     const sessionBodies: Record<string, unknown>[] = [];
     installGatewayFetch({
       sessionBodies,
-      sessionToolProfile: "sealai-deploy-control-v1",
       stateActive: false,
       stateStatuses: [404, 200],
     });
@@ -525,9 +524,8 @@ describe("deployment Codex gateway interruption", () => {
     expect(sessionBodies[0]?.threadId).toBe("thread-resume-1");
   });
 
-  it("fails closed when both the mcp-v1 session and Thread are unavailable", async () => {
+  it("fails closed when both the session and Thread are unavailable", async () => {
     installGatewayFetch({
-      sessionToolProfile: "sealai-deploy-control-v1",
       stateActive: false,
       stateStatuses: [404],
     });

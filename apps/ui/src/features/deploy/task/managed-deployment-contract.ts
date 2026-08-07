@@ -2,6 +2,11 @@ import { posix as path } from "node:path";
 import { z } from "zod";
 
 export const MANAGED_INPUT_VALUES_MAX_BYTES = 64 * 1024;
+export const CODEX_MCP_CONFIG_PATH = "/codex-home/config.toml";
+export const CODEX_MCP_CONFIG_ROOT = "/codex-home";
+export const CODEX_GATEWAY_CODEX_HOME = CODEX_MCP_CONFIG_ROOT;
+export const CODEX_MCP_CONFIG_MAX_BYTES = 16 * 1024;
+export const CODEX_MCP_TOKEN_ENV = "SEALAI_DEPLOY_MCP_TOKEN";
 
 const DNS_LABEL_PATTERN = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/;
 const DNS_SUBDOMAIN_PATTERN = /^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$/;
@@ -82,6 +87,49 @@ function normalizedSafeRoot(root: string): string | null {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function tomlBasicString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function assertHttpUrl(value: string, label: string): string {
+  const trimmed = value.trim();
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error(`${label} must be an absolute http(s) URL.`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`${label} must be an absolute http(s) URL.`);
+  }
+  return trimmed;
+}
+
+export function buildCodexMcpConfig(input: { url: string }): string {
+  const url = assertHttpUrl(input.url, "Codex MCP URL");
+  return [
+    "# Generated per deployment task. Do not commit.",
+    "[mcp_servers.sealai_control]",
+    `url = ${tomlBasicString(url)}`,
+    "required = true",
+    'enabled_tools = ["template_ready", "deployment_completed"]',
+    `bearer_token_env_var = ${tomlBasicString(CODEX_MCP_TOKEN_ENV)}`,
+    "startup_timeout_sec = 60",
+    "tool_timeout_sec = 60",
+    'default_tools_approval_mode = "approve"',
+    "",
+  ].join("\n");
+}
+
+export function buildCodexMcpConfigWriteCommand(): string {
+  return buildAtomicStdinWriteCommand({
+    allowedRoot: CODEX_MCP_CONFIG_ROOT,
+    maxBytes: CODEX_MCP_CONFIG_MAX_BYTES,
+    mode: "0600",
+    path: CODEX_MCP_CONFIG_PATH,
+  });
 }
 
 /**

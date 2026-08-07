@@ -322,55 +322,6 @@ export function verifyManagedWorkloadReadiness(input: {
   return { ok: violations.length === 0, violations };
 }
 
-/**
- * Brain-owned gate for MCP completion notifications. This deliberately has no
- * Agent report argument: the notification only asks Brain to observe the
- * identity-labeled resources that already exist in the cluster.
- */
-export function verifyManagedIdentityReadiness(input: {
-  instanceName: string;
-  observations: readonly ManagedResourceObservation[];
-}): ManagedBrainVerificationResult {
-  const violations: string[] = [];
-  const instance = input.observations.find(
-    (observation) =>
-      observation.resource.kind.toLowerCase() === "instance" &&
-      observation.resource.name === input.instanceName &&
-      observation.error == null &&
-      observation.snapshot != null
-  );
-  if (instance == null) {
-    violations.push("allocated Instance was not observed");
-  }
-  if (
-    !input.observations.some((observation) =>
-      [
-        "app",
-        "cluster",
-        "cronjob",
-        "daemonset",
-        "deployment",
-        "job",
-        "pod",
-        "statefulset",
-      ].includes(observation.resource.kind.toLowerCase())
-    )
-  ) {
-    violations.push("no runtime workload was observed");
-  }
-  for (const observation of input.observations) {
-    const label = `${observation.resource.kind}/${observation.resource.name}`;
-    if (observation.error != null || observation.snapshot == null) {
-      violations.push(`${label} could not be observed`);
-      continue;
-    }
-    if (!resourceReady(observation)) {
-      violations.push(`${label} is not ready`);
-    }
-  }
-  return { ok: violations.length === 0, violations };
-}
-
 export function managedObservedResourceRefs(
   observations: readonly ManagedResourceObservation[]
 ): ManagedResourceRef[] {

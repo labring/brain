@@ -94,6 +94,10 @@ import {
 import type { ManagedDeployResumeMode } from "./gateway-prompt";
 import {
   buildAtomicStdinWriteCommand,
+  buildCodexMcpConfig,
+  buildCodexMcpConfigWriteCommand,
+  CODEX_GATEWAY_CODEX_HOME,
+  CODEX_MCP_TOKEN_ENV,
   MANAGED_INPUT_VALUES_MAX_BYTES,
   type ManagedResourceRef,
   managedDeploymentCompletedInputSchema,
@@ -3101,6 +3105,9 @@ export async function ensureAiDeploymentDevbox(input: {
   task: DeployTaskRow;
   taskDeadlineAtMs: number;
 }): Promise<Awaited<ReturnType<typeof ensureDeployDevbox>>> {
+  // Codex loads MCP servers when its app-server starts. Write the native
+  // config before the first Gateway session instead of teaching Gateway about
+  // deployment-specific profiles.
   const controlMcpUrl = process.env.DEPLOY_AGENT_MCP_URL?.trim();
   if (!controlMcpUrl) {
     throw new Error("DEPLOY_AGENT_MCP_URL is required for mcp-v1 deployments.");
@@ -3120,10 +3127,10 @@ export async function ensureAiDeploymentDevbox(input: {
         SEALAI_DEPLOY_TASK_ID: input.task.id,
         SEALAI_INPUTS_PATH: MANAGED_DEPLOYMENT_FIXED_INPUT_PATH,
         SEALAI_KUBECONFIG_PATH: MANAGED_DEPLOYMENT_KUBECONFIG_PATH,
-        SEALAI_CONTROL_MCP_URL: controlMcpUrl,
+        CODEX_GATEWAY_CODEX_HOME,
         ...(input.agentControlToken == null
           ? {}
-          : { SEALAI_CONTROL_TOKEN: input.agentControlToken }),
+          : { [CODEX_MCP_TOKEN_ENV]: input.agentControlToken }),
       },
       githubToken: input.githubToken,
       namespace: input.task.namespace,
@@ -3976,6 +3983,29 @@ async function runAiDeploymentTask(input: {
         reason: "deploy-skill-install-failed",
       });
     }
+  }
+
+  const controlMcpUrl = process.env.DEPLOY_AGENT_MCP_URL?.trim();
+  if (!controlMcpUrl) {
+    throw deployFailureError("deploy-runtime-unavailable");
+  }
+  try {
+    await execOrThrow({
+      command: buildCodexMcpConfigWriteCommand(),
+      deadlineAtMs: prepareDeadlineAtMs,
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      stdin: buildCodexMcpConfig({ url: controlMcpUrl }),
+      taskId: input.task.id,
+      timeoutSeconds: deploymentExecTimeoutSeconds({
+        capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
+        deadlineAtMs: prepareDeadlineAtMs,
+      }),
+    });
+  } catch (error) {
+    throw withDeployFailureDetails(error, {
+      reason: "deploy-runtime-unavailable",
+    });
   }
 
   await recordDeployTaskEvent(input.task.id, {

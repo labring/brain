@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import {
   buildAtomicStdinWriteCommand,
+  buildCodexMcpConfig,
+  buildCodexMcpConfigWriteCommand,
+  CODEX_MCP_TOKEN_ENV,
   MANAGED_INPUT_VALUES_MAX_BYTES,
   managedDeploymentCompletedInputSchema,
 } from "./managed-deployment-contract";
@@ -51,6 +54,38 @@ describe("managed deployment atomic input write", () => {
         path: "/run/sealai/deployment/inputs.json",
       })
     ).toThrow("positive integer");
+  });
+});
+
+describe("Codex MCP runtime config", () => {
+  it("uses the task endpoint and env-backed token without persisting the token", () => {
+    const config = buildCodexMcpConfig({
+      url: "https://brain.example.com/api/deploy-agent/mcp/v1",
+    });
+
+    expect(config).toContain(
+      'url = "https://brain.example.com/api/deploy-agent/mcp/v1"'
+    );
+    expect(config).toContain(`bearer_token_env_var = "${CODEX_MCP_TOKEN_ENV}"`);
+    expect(config).toContain(
+      'enabled_tools = ["template_ready", "deployment_completed"]'
+    );
+    expect(config).not.toContain("token-value");
+  });
+
+  it("rejects non-http MCP endpoints", () => {
+    expect(() => buildCodexMcpConfig({ url: "file:///tmp/mcp" })).toThrow(
+      "absolute http(s) URL"
+    );
+  });
+
+  it("writes the Codex config atomically under the Codex home", () => {
+    const command = buildCodexMcpConfigWriteCommand();
+
+    expect(command).toContain('cat > "$tmp"');
+    expect(command).toContain("/codex-home/config.toml");
+    expect(command).toContain("-le 16384");
+    expect(command).toContain("chmod 0600");
   });
 });
 

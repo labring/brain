@@ -61,9 +61,6 @@ interface CodexGatewayState {
 
 interface CodexGatewaySessionResponse {
   ok: boolean;
-  session?: {
-    toolProfile?: string | null;
-  };
   sessionId: string;
   state: CodexGatewayState;
 }
@@ -408,25 +405,12 @@ async function createGatewaySession(
       body: JSON.stringify({
         model: DEPLOY_GATEWAY_MODEL,
         ...(options?.threadId == null ? {} : { threadId: options.threadId }),
-        toolProfile: "sealai-deploy-control-v1",
       }),
       method: "POST",
     },
     deadlineAtMs,
     runSignal
   );
-}
-
-function assertGatewaySessionProfile(
-  session: CodexGatewaySessionResponse,
-  status: number
-): void {
-  if (session.session?.toolProfile !== "sealai-deploy-control-v1") {
-    throw new CodexGatewayApiError(
-      "Codex gateway did not activate the required deployment-control profile.",
-      status
-    );
-  }
 }
 
 async function resolveGatewaySession(input: {
@@ -456,7 +440,6 @@ async function resolveGatewaySession(input: {
         input.deadlineAtMs,
         input.runSignal
       );
-      assertGatewaySessionProfile(existing, 409);
       return {
         created: false,
         sessionId: existingSessionId,
@@ -493,7 +476,6 @@ async function resolveGatewaySession(input: {
       502
     );
   }
-  assertGatewaySessionProfile(session, 502);
   return { created: true, sessionId, state: session.state };
 }
 
