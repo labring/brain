@@ -266,6 +266,13 @@ function progressSegmentClass(index: number, currentStep: number): string {
     : "bg-blue-500";
 }
 
+/**
+ * One step's heading and inputs travel as a group: the tight gap binds the
+ * heading to what it introduces, and the min-height pins the frame so the
+ * footer button holds still across steps of different heights.
+ */
+const stepGroupClass = "flex min-h-[22rem] flex-col gap-6";
+
 function StepHeading({
   subtitle,
   title,
@@ -274,7 +281,7 @@ function StepHeading({
   title: string;
 }) {
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-1.5">
       {/* w-fit: the ramp spans the text itself, so the last word lands on
           the accent endpoint; /srgb matches Figma's gradient interpolation. */}
       <h2 className="w-fit bg-linear-to-r/srgb from-white to-onboarding-heading-accent bg-clip-text font-semibold text-4xl text-transparent">
@@ -397,7 +404,7 @@ export function OnboardingSurveyCard({
     <div className="flex flex-col gap-10 p-9">
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <span className="text-base text-muted-foreground">
+          <span className="text-muted-foreground text-sm">
             Step {state.currentStep} of {ONBOARDING_SURVEY_TOTAL_STEPS}
           </span>
           <button
@@ -424,12 +431,12 @@ export function OnboardingSurveyCard({
       {/* Plain headings: the dialog context is optional for the card so the
           frame stays testable in a plain DOM; the shell labels the dialog. */}
       {state.currentStep === 1 ? (
-        <>
+        <div className={stepGroupClass}>
           <StepHeading
             subtitle="This helps us tailor your workspace experience."
             title="Tell us a bit about you."
           />
-          <fieldset className="grid gap-5 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-x-3 gap-y-3 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your role</legend>
             {ROLE_OPTIONS.map((option) =>
               option.value === "other" && state.roleType === "other" ? (
@@ -461,15 +468,15 @@ export function OnboardingSurveyCard({
               )
             )}
           </fieldset>
-        </>
+        </div>
       ) : null}
       {state.currentStep === 2 ? (
-        <>
+        <div className={stepGroupClass}>
           <StepHeading
             subtitle="Let us know what stage your project is in."
             title="What are you using Sealos for?"
           />
-          <fieldset className="grid gap-5 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-x-3 gap-y-3 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your usage context</legend>
             {USAGE_OPTIONS.map((option) =>
               option.value === "other" && state.usageContext === "other" ? (
@@ -501,15 +508,15 @@ export function OnboardingSurveyCard({
               )
             )}
           </fieldset>
-        </>
+        </div>
       ) : null}
       {state.currentStep === 3 ? (
-        <>
+        <div className={stepGroupClass}>
           <StepHeading
             subtitle="Choose up to 3."
             title="Which factors are most important to you?"
           />
-          <fieldset className="grid gap-5 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-x-3 gap-y-3 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your top priorities</legend>
             {state.priorityDisplayOrder.map((tag) => {
               if (tag === "other" && state.priorityTags.includes("other")) {
@@ -556,10 +563,10 @@ export function OnboardingSurveyCard({
               );
             })}
           </fieldset>
-        </>
+        </div>
       ) : null}
       {state.currentStep === 4 ? (
-        <>
+        <div className={stepGroupClass}>
           <StepHeading title="Anything specific you're trying to achieve?" />
           <AppInput
             aria-label="Anything specific you're trying to achieve?"
@@ -573,7 +580,7 @@ export function OnboardingSurveyCard({
             placeholder="e.g. deploy an AI agent, move from VPS, test a product idea…"
             value={state.openGoalText}
           />
-        </>
+        </div>
       ) : null}
       <div className="flex justify-end">
         {state.currentStep === ONBOARDING_SURVEY_TOTAL_STEPS ? (
