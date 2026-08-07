@@ -194,6 +194,9 @@ app.kubernetes.io/instance: {{ .name | quote }}
 {{ else if and (eq $component "ui") (eq $key "NEXT_PUBLIC_APP_URL") (eq (toString $value) "") }}
 - name: {{ $key }}
   value: {{ include "brain-system.publicUrl" (dict "root" $root "namespace" $root.Release.Namespace "name" $root.Values.ui.name "platformAddresses" $root.Values.ui.platformAddresses "cloudDomain" (include "brain-system.cloudDomain" $root)) | quote }}
+{{ else if and (eq $component "ui") (eq $key "DEPLOY_AGENT_MCP_URL") (eq (toString $value) "") }}
+- name: {{ $key }}
+  value: {{ printf "%s/api/deploy-agent/mcp/v1" (default (include "brain-system.publicUrl" (dict "root" $root "namespace" $root.Release.Namespace "name" $root.Values.ui.name "platformAddresses" $root.Values.ui.platformAddresses "cloudDomain" (include "brain-system.cloudDomain" $root))) $root.Values.ui.env.NEXT_PUBLIC_APP_URL) | quote }}
 {{ else if and (eq $component "ui") (eq $key "DEVBOX_API_BASE_URL") (eq (toString $value) "") }}
 - name: {{ $key }}
   value: {{ printf "https://devbox-server.%s%s" (include "brain-system.cloudDomain" $root) (include "brain-system.cloudPort" $root) | quote }}

@@ -131,6 +131,10 @@ ui:
     DEVBOX_RUNTIME_IMAGE: ""
     DEVBOX_JWT_TTL_SECONDS: "14400"
     DEPLOY_DEVBOX_STORAGE_LIMIT: "10Gi"
+    # Devbox-reachable Brain MCP endpoint. Leave empty to default to the UI
+    # public URL + /api/deploy-agent/mcp/v1; set explicitly when the UI is
+    # not publicly reachable from deployment Devboxes.
+    DEPLOY_AGENT_MCP_URL: ""
     # Optional. Leave empty to use the production brain-deploy skill source.
     DEPLOY_SKILL_SOURCE: ""
   resources:
