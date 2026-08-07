@@ -102,8 +102,10 @@ const PRIORITY_OPTIONS: Record<
 /**
  * The selection glyph pairs shape with the step's semantics — a deliberate
  * correction over the design file, which draws squares everywhere: the
- * single-select steps show a round radio dot, the multi-select step a square
- * check. The blue border on the unselected glyph is the design's accent.
+ * single-select steps show a ring radio (blue inner dot, unfilled), the
+ * multi-select step a filled square check — the conventional pairing, and
+ * the one the shared checkbox already uses. The blue border on the
+ * unselected glyph is the design's accent.
  */
 function SelectionIndicator({
   selected,
@@ -116,7 +118,7 @@ function SelectionIndicator({
   if (selected) {
     glyph =
       shape === "radio" ? (
-        <span className="size-1.5 rounded-full bg-white" />
+        <span className="size-2 rounded-full bg-blue-500" />
       ) : (
         <Check className="size-3" />
       );
@@ -127,7 +129,7 @@ function SelectionIndicator({
       className={cn(
         "flex size-4 shrink-0 items-center justify-center border border-blue-500",
         shape === "radio" ? "rounded-full" : "rounded-xs",
-        selected && "bg-blue-500 text-white"
+        selected && shape === "checkbox" && "bg-blue-500 text-white"
       )}
     >
       {glyph}
@@ -154,7 +156,10 @@ function OptionCard({
       className={cn(
         // min-h, not h: the Step 3 descriptions must stay readable, so a
         // card grows and wraps rather than truncating its one-liner.
-        "flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border border-transparent bg-input/30 px-4 py-2.5 text-left text-foreground text-sm transition-colors hover:border-border",
+        "flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border border-transparent px-4 py-2.5 text-left text-foreground text-sm transition-colors",
+        // The deepened wash carries the selected state so it never rides on
+        // the 16px glyph alone.
+        selected ? "bg-input" : "bg-input/30 hover:border-border",
         disabled && "cursor-not-allowed opacity-50 hover:border-transparent"
       )}
       disabled={disabled}
