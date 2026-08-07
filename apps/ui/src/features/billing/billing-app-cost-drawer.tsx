@@ -250,7 +250,9 @@ export function BillingAppCostDrawer({
 
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:max-w-7xl">
+      {/* The old Cost Center floating panel: 12px viewport margins, large
+          radius, width following the 14-column table up to the viewport cap. */}
+      <SheetContent className="data-[side=right]:inset-y-3 data-[side=right]:right-3 data-[side=right]:h-auto data-[side=right]:w-fit data-[side=right]:max-w-[calc(100vw-1.5rem)] data-[side=right]:rounded-2xl data-[side=right]:border data-[side=right]:sm:max-w-[calc(100vw-1.5rem)]">
         <SheetHeader className="border-border border-b pr-14">
           <SheetTitle className="flex flex-wrap items-center gap-2">
             <Boxes aria-hidden className="size-5 text-brand-primary" />
@@ -271,8 +273,10 @@ export function BillingAppCostDrawer({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="min-h-0 flex-1 overflow-auto p-5">
-          <TableLayout>
+        <div className="min-h-0 flex-1 p-5">
+          {/* The table container is the single scroller for both axes so the
+              sticky header (top) and day separators (left) share it. */}
+          <TableLayout className="flex h-full flex-col [&_[data-slot=table-container]]:min-h-0 [&_[data-slot=table-container]]:flex-1 [&_[data-slot=table-container]]:overflow-auto">
             <TableLayoutCaption className="text-base">
               <div className="flex items-center gap-2">
                 <span className="font-medium">Billing & Usage</span>
@@ -287,7 +291,12 @@ export function BillingAppCostDrawer({
               />
             </TableLayoutCaption>
             <TableLayoutContent>
-              <TableLayoutHeadRow>
+              <TableLayoutHeadRow
+                className={{
+                  thead: "sticky top-0 z-10",
+                  tr: "[&>th]:bg-input/30 [&>th]:backdrop-blur-md",
+                }}
+              >
                 <TableHead>Time</TableHead>
                 {RESOURCE_COLUMNS.map((resource) => (
                   <Fragment key={resource.index}>
@@ -328,10 +337,12 @@ export function BillingAppCostDrawer({
                           key={`day-${tableRow.day}`}
                         >
                           <TableCell
-                            className="bg-muted/40 font-normal text-foreground"
+                            className="bg-white/8 font-normal text-foreground"
                             colSpan={COLUMN_COUNT}
                           >
-                            {tableRow.day}
+                            <span className="sticky left-4 inline-block">
+                              {tableRow.day}
+                            </span>
                           </TableCell>
                         </TableRow>
                       ) : (

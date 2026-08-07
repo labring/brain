@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { BillingCostCharts } from "./billing-cost-charts";
 import { BillingCostsSurface } from "./billing-costs";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 import { BillingPlanSurface } from "./billing-plan-surface";
@@ -408,11 +409,11 @@ test("Costs preserves Cost Center's detail and trend information layers", () => 
   const html = renderToStaticMarkup(<BillingCostsSurface />);
 
   assertTextOrder(html, ["Billing", "Cost &amp; Top-up Trends"]);
-  assert.equal(html.includes("Subscription Payments"), false);
-  assert.equal(html.includes("Total cost"), false);
   assertTextOrder(html, [
     "Select a card to view cost details",
     'data-slot="billing-cost-scope-banner"',
+    "Hangzhou / sealos-test Cost",
+    "Subscription",
     "PAYG",
   ]);
   for (const label of [
@@ -425,9 +426,22 @@ test("Costs preserves Cost Center's detail and trend information layers", () => 
     "Action",
     "Total:",
     "/ Page",
+    'data-slot="billing-plan-tier-badge"',
+    "Starter",
+    "Pro",
+    "Enterprise",
   ]) {
     assertIncludes(html, label);
   }
+
+  const chartsHtml = renderToStaticMarkup(<BillingCostCharts currency="usd" />);
+  assertTextOrder(chartsHtml, [
+    "Cost Trends",
+    "Last 7 days",
+    "Monthly Top-ups and Charges",
+    "Last 6 Months",
+    "All Regions",
+  ]);
 });
 
 test("Usage preserves the quota table's workspace and resource hierarchy", () => {
