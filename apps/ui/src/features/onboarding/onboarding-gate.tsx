@@ -16,6 +16,8 @@ import {
 import { OnboardingDialog } from "./onboarding-dialog";
 import {
   judgeOnboardingSampling,
+  obtainOnboardingSessionJudgment,
+  onboardingCredentialsKey,
   onboardingCredentialsReady,
 } from "./onboarding-gate-core";
 import type {
@@ -39,18 +41,6 @@ const ONBOARDING_TWEAKS = {
     },
   },
 } as const;
-
-/**
- * One sampling judgment per session (page load): remounts re-attach to the
- * same promise instead of re-querying, and a failed or exhausted judgment
- * silently stands down until the next entry.
- */
-let sessionJudgment: Promise<boolean> | null = null;
-
-/** Test seam. */
-export function resetOnboardingGateSessionForTesting(): void {
-  sessionJudgment = null;
-}
 
 /**
  * The Onboarding Gate (ADR-0061): opportunistic and non-blocking. The console
@@ -78,11 +68,20 @@ export function OnboardingGate() {
       kubeconfig,
       namespace: namespace.trim(),
     };
-    sessionJudgment ??= judgeOnboardingSampling({
-      fetchVerdict: () => fetchOnboardingSamplingVerdict(credentials),
+    const { promise, rekeyed } = obtainOnboardingSessionJudgment({
+      judge: () =>
+        judgeOnboardingSampling({
+          fetchVerdict: () => fetchOnboardingSamplingVerdict(credentials),
+        }),
+      key: onboardingCredentialsKey(credentials),
     });
+    if (rekeyed) {
+      // Whatever the discarded identity's judgment opened must not survive
+      // it; the new judgment below reopens the dialog if it should.
+      setOpen(false);
+    }
     let disposed = false;
-    sessionJudgment.then(
+    promise.then(
       (shouldOpen) => {
         if (!disposed && shouldOpen) {
           setOpen(true);

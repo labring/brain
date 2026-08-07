@@ -19,6 +19,46 @@ export function onboardingCredentialsReady(
   );
 }
 
+/**
+ * One sampling judgment per session (page load) and credential identity:
+ * remounts re-attach to the same promise instead of re-querying. Identity
+ * swaps normally arrive via a fresh page load (the Desktop reloads the
+ * iframe on account/region/workspace switches), but that is a Desktop
+ * contract this app cannot enforce — so a changed credential key defensively
+ * discards the old judgment rather than letting it speak for a new identity.
+ */
+let sessionJudgment: { key: string; promise: Promise<boolean> } | null = null;
+
+/** Test seam. */
+export function resetOnboardingGateSessionForTesting(): void {
+  sessionJudgment = null;
+}
+
+/** Fingerprint of the credential identity a judgment is made for. */
+export function onboardingCredentialsKey(
+  input: OnboardingFetcherCredentials
+): string {
+  return [input.appToken.trim(), input.kubeconfig, input.namespace.trim()].join(
+    "\u0000"
+  );
+}
+
+/**
+ * Returns the session judgment for `key`, starting one when none exists or
+ * the key changed. `rekeyed` is true only on a mid-session identity change —
+ * the caller must then drop any UI state the discarded judgment produced.
+ */
+export function obtainOnboardingSessionJudgment(input: {
+  key: string;
+  judge: () => Promise<boolean>;
+}): { promise: Promise<boolean>; rekeyed: boolean } {
+  const rekeyed = sessionJudgment !== null && sessionJudgment.key !== input.key;
+  if (sessionJudgment === null || rekeyed) {
+    sessionJudgment = { key: input.key, promise: input.judge() };
+  }
+  return { promise: sessionJudgment.promise, rekeyed };
+}
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
