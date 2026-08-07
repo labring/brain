@@ -1,6 +1,6 @@
 import { generateId } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
-
+import { normalizeMarketingAttribution } from "@/features/marketing/consent";
 import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
 import { publicDeployTaskBlockingInputs } from "../public-artifact-summary";
@@ -241,14 +241,18 @@ async function resolveCreateInputs(
       message: "Deploy task creation requires source, runner, and target.",
     };
   }
+  const marketingAttribution =
+    input.create.marketingAttribution == null
+      ? (predecessor?.marketingAttribution ?? undefined)
+      : await normalizeMarketingAttribution(
+          input.create.marketingAttribution,
+          input.create.creatingActor
+        );
   const create: CreateDeployTaskInput = {
     createdFrom: input.create.createdFrom,
     creatingActor: input.create.creatingActor,
     credentialBinding: input.create.credentialBinding,
-    marketingAttribution:
-      input.create.marketingAttribution ??
-      predecessor?.marketingAttribution ??
-      undefined,
+    marketingAttribution,
     namespace: input.create.namespace,
     prompt: input.create.prompt,
     runner,

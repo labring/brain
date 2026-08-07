@@ -3,6 +3,28 @@ import { type RefinementCtx, z } from "zod";
 const optionalText = z.string().trim().max(1024).default("");
 const nullableId = z.string().trim().min(1).max(512).nullable();
 
+export const MARKETING_CONSENT_STATES = [
+  "granted",
+  "denied",
+  "unspecified",
+] as const;
+
+export type MarketingConsentState = (typeof MARKETING_CONSENT_STATES)[number];
+
+const marketingConsentStateSchema = z.enum(MARKETING_CONSENT_STATES);
+
+export function resolveMarketingConsentState(
+  value: boolean | MarketingConsentState | null | undefined
+): MarketingConsentState {
+  if (value === true || value === "granted") {
+    return "granted";
+  }
+  if (value === false || value === "denied") {
+    return "denied";
+  }
+  return "unspecified";
+}
+
 export const marketingTouchSchema = z
   .object({
     campaign: optionalText,
@@ -22,7 +44,22 @@ export const marketingTouchSchema = z
 export type MarketingTouch = z.infer<typeof marketingTouchSchema>;
 
 const attributionFieldsSchema = z.object({
-  ad_user_data_consent: z.boolean(),
+  ad_personalization: marketingConsentStateSchema.default("unspecified"),
+  ad_user_data_consent: z.union([z.boolean(), marketingConsentStateSchema]),
+  click_id_candidates: z.array(marketingTouchSchema).max(6).default([]),
+  consent_provenance: z
+    .object({
+      issuer: z.string().trim().min(1).max(128),
+      jti: z.string().trim().min(1).max(256),
+      issued_at: z.string().datetime({ offset: true }),
+      region: optionalText,
+      source: z.literal("desktop_oauth"),
+      subject_id: z.string().trim().min(1).max(512),
+    })
+    .strict()
+    .nullable()
+    .default(null),
+  consent_token: z.string().trim().min(1).max(8192).optional(),
   first_touch: marketingTouchSchema.nullable(),
   gbraid: z.string().trim().max(2048).nullable(),
   gclid: z.string().trim().max(2048).nullable(),
@@ -32,33 +69,29 @@ const attributionFieldsSchema = z.object({
 
 type AttributionValidationInput = z.infer<typeof attributionFieldsSchema>;
 
+function hasClickId(attribution: AttributionValidationInput): boolean {
+  return [
+    attribution.gclid,
+    attribution.gbraid,
+    attribution.wbraid,
+    ...attribution.click_id_candidates.map((touch) => touch.click_id_value),
+    attribution.first_touch?.click_id_value,
+    attribution.last_touch?.click_id_value,
+  ].some(Boolean);
+}
+
 function addAttributionIssues(
   attribution: AttributionValidationInput,
   ctx: RefinementCtx,
   label: "attribution snapshot" | "event"
 ): void {
-  const clickIds = [
-    attribution.gclid,
-    attribution.gbraid,
-    attribution.wbraid,
-  ].filter(Boolean);
-  if (clickIds.length > 1) {
+  const consentState = resolveMarketingConsentState(
+    attribution.ad_user_data_consent
+  );
+  if (consentState !== "granted" && hasClickId(attribution)) {
     ctx.addIssue({
       code: "custom",
-      message: `Each ${label} may contain one Google click ID.`,
-    });
-  }
-  const touchHasClickId = [
-    attribution.first_touch,
-    attribution.last_touch,
-  ].some((touch) => Boolean(touch?.click_id_value));
-  if (
-    !attribution.ad_user_data_consent &&
-    (clickIds.length > 0 || touchHasClickId)
-  ) {
-    ctx.addIssue({
-      code: "custom",
-      message: "Google click IDs require ad user data consent.",
+      message: `Google click IDs require granted ad user data consent for each ${label}.`,
     });
   }
 }
@@ -66,7 +99,7 @@ function addAttributionIssues(
 export const marketingAttributionSnapshotSchema = z
   .object({
     ...attributionFieldsSchema.shape,
-    version: z.literal(2),
+    version: z.union([z.literal(2), z.literal(3)]),
   })
   .strict()
   .superRefine((snapshot, ctx) => {
@@ -119,12 +152,16 @@ export const marketingLifecycleEventInputSchema = z
     transaction_id: z.string().trim().min(1).max(512).optional(),
     user_id: nullableId,
     value: z.number().finite().nonnegative().optional(),
+    version: z.union([z.literal(2), z.literal(3)]).default(3),
     workspace_id: nullableId,
   })
   .strict()
   .superRefine((event, ctx) => {
     addAttributionIssues(event, ctx, "event");
-    if (event.hashed_user_data && !event.ad_user_data_consent) {
+    if (
+      event.hashed_user_data &&
+      resolveMarketingConsentState(event.ad_user_data_consent) !== "granted"
+    ) {
       ctx.addIssue({
         code: "custom",
         message: "Hashed user data requires ad user data consent.",
@@ -143,6 +180,28 @@ export const marketingLifecycleEventInputSchema = z
           });
         }
       }
+    }
+  });
+
+export const MARKETING_EXTERNAL_LIFECYCLE_EVENT_NAMES = [
+  "running_24h",
+  "new_subscription",
+  "topup_success",
+] as const;
+
+export const marketingExternalLifecycleEventInputSchema =
+  marketingLifecycleEventInputSchema.superRefine((event, ctx) => {
+    if (
+      !(MARKETING_EXTERNAL_LIFECYCLE_EVENT_NAMES as readonly string[]).includes(
+        event.event_name
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "External lifecycle producers may submit running_24h, new_subscription, or topup_success.",
+        path: ["event_name"],
+      });
     }
   });
 

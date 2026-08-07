@@ -3,7 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { recordMarketingLifecycleEvent } from "@/features/marketing/service";
-import { marketingLifecycleEventInputSchema } from "@/features/marketing/types";
+import { marketingExternalLifecycleEventInputSchema } from "@/features/marketing/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await request.json().catch(() => null);
-  const parsed = marketingLifecycleEventInputSchema.safeParse(body);
+  const parsed = marketingExternalLifecycleEventInputSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid lifecycle event", details: parsed.error.flatten() },
