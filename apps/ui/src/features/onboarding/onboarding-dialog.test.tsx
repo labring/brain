@@ -243,6 +243,62 @@ test("an empty Other refuses Next with the inline error until text arrives", asy
   }
 });
 
+test("the morphed Other input claims focus on select, wrapper press, and refused Next", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const { render } = await import("@testing-library/react/pure");
+  const { fireEvent } = await import("@testing-library/dom");
+  let rendered: ReturnType<typeof render> | undefined;
+
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <OnboardingSurveyCard
+          onAnswerStep={() => undefined}
+          onComplete={() => undefined}
+          onSkip={() => undefined}
+        />
+      );
+    });
+
+    // Selecting Other focuses the revealed input — typing starts without a
+    // second click.
+    await actAndDrain(() => {
+      fireEvent.click(buttonByText("Other"));
+    });
+    const otherInput = document.querySelector("input");
+    assert.ok(otherInput, "the morphed Other input is rendered");
+    assert.equal(document.activeElement, otherInput);
+
+    // The field wrapper's padding belongs to the input's hit area: a pointer
+    // press anywhere on it (outside the glyph) focuses the input.
+    await actAndDrain(() => {
+      otherInput.blur();
+    });
+    assert.notEqual(document.activeElement, otherInput);
+    const wrapper = otherInput.parentElement;
+    assert.ok(wrapper, "the input sits in the field wrapper");
+    await actAndDrain(() => {
+      fireEvent.pointerDown(wrapper);
+    });
+    assert.equal(document.activeElement, otherInput);
+
+    // A refused Next surfaces the error and sends focus into the empty field.
+    await actAndDrain(() => {
+      otherInput.blur();
+    });
+    await clickNext();
+    assert.match(document.body.textContent ?? "", OTHER_REQUIRED_RE);
+    assert.equal(document.activeElement, otherInput);
+  } finally {
+    await actAndDrain(() => {
+      rendered?.unmount();
+    });
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
 test("the survey walks Steps 1-4, persists each advance, and submits terminally", async () => {
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);

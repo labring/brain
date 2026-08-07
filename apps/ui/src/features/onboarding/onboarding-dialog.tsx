@@ -5,7 +5,14 @@ import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInput } from "@workspace/ui/components/app-input";
 import { cn } from "@workspace/ui/lib/utils";
 import { ArrowRight, Check, Send } from "lucide-react";
-import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 
 import { trackBrainGtmEvent } from "@/features/analytics/brain-gtm";
 
@@ -147,7 +154,7 @@ function OptionCard({
       className={cn(
         // min-h, not h: the Step 3 descriptions must stay readable, so a
         // card grows and wraps rather than truncating its one-liner.
-        "flex min-h-12 items-center justify-between gap-3 rounded-lg border border-transparent bg-input/30 px-4 py-2.5 text-left text-foreground text-sm transition-colors hover:border-border",
+        "flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border border-transparent bg-input/30 px-4 py-2.5 text-left text-foreground text-sm transition-colors hover:border-border",
         disabled && "cursor-not-allowed opacity-50 hover:border-transparent"
       )}
       disabled={disabled}
@@ -169,6 +176,7 @@ function OptionCard({
  */
 function OtherOptionField({
   error,
+  inputRef,
   label,
   onTextChange,
   onUnselect,
@@ -176,12 +184,19 @@ function OtherOptionField({
   text,
 }: {
   error: boolean;
+  inputRef: RefObject<HTMLInputElement | null>;
   label: string;
   onTextChange: (text: string) => void;
   onUnselect: () => void;
   shape: "checkbox" | "radio";
   text: string;
 }) {
+  // The field only ever mounts because the user just selected Other (no back
+  // navigation, no pre-selected initial state), so it claims focus on mount:
+  // typing starts without a second click.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [inputRef]);
   return (
     <>
       <div
@@ -193,6 +208,23 @@ function OtherOptionField({
             ? "border-destructive ring-[1px] ring-destructive/50"
             : "focus-within:border-blue-400 focus-within:ring-[1px] focus-within:ring-blue-400/50"
         )}
+        onPointerDown={(event) => {
+          // The whole card reads as one input, so its padding focuses the
+          // input too; the input itself and the unselect glyph keep their
+          // native pointer behavior.
+          if (
+            !(event.target instanceof Element) ||
+            event.target.closest("button, input")
+          ) {
+            return;
+          }
+          event.preventDefault();
+          const input = inputRef.current;
+          if (input) {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+          }
+        }}
       >
         <input
           aria-invalid={error || undefined}
@@ -200,6 +232,7 @@ function OtherOptionField({
           className="min-w-0 flex-1 bg-transparent text-foreground text-sm outline-none placeholder:text-muted-foreground"
           onChange={(event) => onTextChange(event.target.value)}
           placeholder="Tell us more"
+          ref={inputRef}
           value={text}
         />
         <button
@@ -304,6 +337,9 @@ export function OnboardingSurveyCard({
   // be missing, so typing or unselecting Other clears it without a reset.
   const [otherErrorArmed, setOtherErrorArmed] = useState(false);
   const otherError = otherErrorArmed && onboardingOtherTextMissing(state);
+  // At most one Other field renders at a time, so the steps share one ref;
+  // the card holds it to send focus into the field on a refused Next.
+  const otherInputRef = useRef<HTMLInputElement>(null);
 
   // The funnel view events: one per step shown, the mount itself being the
   // dialog's appearance (step 1). With no back navigation the step only
@@ -326,6 +362,9 @@ export function OnboardingSurveyCard({
     // instead (the reducer's advance gate refuses too); nothing persists.
     if (onboardingOtherTextMissing(state)) {
       setOtherErrorArmed(true);
+      // The error message alone would leave the user re-aiming at the field;
+      // focus lands in the empty input so typing can start immediately.
+      otherInputRef.current?.focus();
       return;
     }
     setOtherErrorArmed(false);
@@ -362,7 +401,7 @@ export function OnboardingSurveyCard({
             Step {state.currentStep} of {ONBOARDING_SURVEY_TOTAL_STEPS}
           </span>
           <button
-            className="text-muted-foreground text-sm transition-colors hover:text-foreground"
+            className="cursor-pointer text-muted-foreground text-sm transition-colors hover:text-foreground"
             onClick={handleSkip}
             type="button"
           >
@@ -396,6 +435,7 @@ export function OnboardingSurveyCard({
               option.value === "other" && state.roleType === "other" ? (
                 <OtherOptionField
                   error={otherError}
+                  inputRef={otherInputRef}
                   key={option.value}
                   label="Describe your role"
                   onTextChange={(text) =>
@@ -435,6 +475,7 @@ export function OnboardingSurveyCard({
               option.value === "other" && state.usageContext === "other" ? (
                 <OtherOptionField
                   error={otherError}
+                  inputRef={otherInputRef}
                   key={option.value}
                   label="Describe your usage"
                   onTextChange={(text) =>
@@ -475,6 +516,7 @@ export function OnboardingSurveyCard({
                 return (
                   <OtherOptionField
                     error={otherError}
+                    inputRef={otherInputRef}
                     key={tag}
                     label="Describe your priority"
                     onTextChange={(text) =>
