@@ -268,10 +268,10 @@ function progressSegmentClass(index: number, currentStep: number): string {
 
 /**
  * One step's heading and inputs travel as a group: the tight gap binds the
- * heading to what it introduces, and the min-height pins the frame so the
- * footer button holds still across steps of different heights.
+ * heading to what it introduces while keeping the step frame compact enough
+ * that the options do not end in a large unused gap.
  */
-const stepGroupClass = "flex min-h-[22rem] flex-col gap-6";
+const stepGroupClass = "flex min-h-[20rem] flex-col gap-6";
 
 function StepHeading({
   subtitle,
