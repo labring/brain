@@ -6,6 +6,7 @@ import {
   encodedKubeconfigFromRequest,
   type WorkspaceActorAuthorization,
 } from "@/lib/request-kubeconfig-auth";
+import { billingDevMockResponse } from "./dev-fixtures";
 
 export type AuthorizeWorkspaceActor = (input: {
   appToken: string | undefined;
@@ -77,6 +78,11 @@ export function createAuthorizedBillingProxy(
   config: BillingProxyConfig
 ) {
   return async function handler(request: Request): Promise<Response> {
+    const devMock = await billingDevMockResponse(config.pathname, request);
+    if (devMock != null) {
+      return devMock;
+    }
+
     const encodedKubeconfig = encodedKubeconfigFromRequest(request);
     const authorization = await authorizeWorkspaceActor({
       appToken: appTokenFromRequest(request),

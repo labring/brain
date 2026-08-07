@@ -31,11 +31,12 @@ import {
 } from "@workspace/ui/components/vercel-tabs";
 import { cn } from "@workspace/ui/lib/utils";
 import { AlertCircle, Boxes, Check, ChevronDown } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
 import type { SelectedBillingApp } from "@/features/billing/billing-app-cost-drawer";
 import { BillingCostCharts } from "@/features/billing/billing-cost-charts";
+import { BillingCostTree } from "@/features/billing/billing-cost-tree";
 import {
   type BillingCostScope,
   type BillingCostsSnapshot,
@@ -180,27 +181,6 @@ function EmptyTableRow({ columns }: { columns: number }) {
   );
 }
 
-/** The dotted canvas backdrop behind the old /billing cost tree. */
-function DotGridBackdrop() {
-  const patternId = useId();
-  return (
-    <svg
-      aria-hidden="true"
-      className="absolute inset-0 size-full text-muted-foreground/50"
-    >
-      <pattern
-        height="40"
-        id={patternId}
-        patternUnits="userSpaceOnUse"
-        width="40"
-      >
-        <circle cx="16" cy="16" fill="currentColor" r="0.75" />
-      </pattern>
-      <rect fill={`url(#${patternId})`} height="100%" width="100%" />
-    </svg>
-  );
-}
-
 function PlanTierBadge({ planName }: { planName: string }) {
   const label = planName.trim() === "" ? "Subscription" : planName;
   const tier = TIER_BADGE_STYLES[label.toUpperCase()];
@@ -227,102 +207,6 @@ function PlanTierBadge({ planName }: { planName: string }) {
   );
 }
 
-function CostScopeCard({
-  cost,
-  currency,
-  icon,
-  isLoading,
-  name,
-  onClick,
-  selected,
-}: {
-  cost: number;
-  currency: BillingCurrency;
-  icon?: ReactNode;
-  isLoading: boolean;
-  name: string;
-  onClick?: () => void;
-  selected: boolean;
-}) {
-  return (
-    <button
-      aria-pressed={selected}
-      className={cn(
-        "flex w-37.5 flex-col items-start gap-1 rounded-lg border border-muted-foreground/50 border-dashed bg-card p-3 text-left shadow-xs transition-colors hover:border-blue-400",
-        selected && "border-2 border-blue-400 border-solid"
-      )}
-      data-slot="billing-cost-scope-card"
-      onClick={onClick}
-      type="button"
-    >
-      <span className="flex w-full items-center gap-2">
-        {icon}
-        <span
-          className="min-w-0 flex-1 truncate text-muted-foreground text-sm"
-          title={name}
-        >
-          {name}
-        </span>
-      </span>
-      {isLoading ? (
-        <Skeleton className="h-6 w-16" />
-      ) : (
-        <span
-          className={cn(
-            "font-bold tabular-nums",
-            selected ? "text-blue-400" : "text-foreground"
-          )}
-        >
-          {formatBillingAmount(cost, currency)}
-        </span>
-      )}
-    </button>
-  );
-}
-
-/** The workspace cards' 16px gradient dot, built from existing color tokens. */
-function WorkspaceDot() {
-  return (
-    <span
-      aria-hidden
-      className="size-4 shrink-0 rounded-full bg-linear-to-br from-blue-400 to-brand-primary"
-    />
-  );
-}
-
-/** Indented tree level with the old dashed elbow connectors. */
-function CostTreeChildren({
-  items,
-}: {
-  items: Array<{ key: string; node: ReactNode; selected: boolean }>;
-}) {
-  const lastIndex = items.length - 1;
-  return (
-    <ul className="ml-5 flex flex-col">
-      {items.map((item, index) => (
-        <li className="relative pt-3 pl-8" key={item.key}>
-          <span
-            aria-hidden
-            className={cn(
-              "absolute top-0 left-0 h-12 w-6 rounded-bl-xl border-b border-l",
-              item.selected
-                ? "border-blue-400"
-                : "border-muted-foreground/40 border-dashed"
-            )}
-          />
-          {index === lastIndex ? null : (
-            <span
-              aria-hidden
-              className="absolute inset-y-0 left-0 border-muted-foreground/40 border-l border-dashed"
-            />
-          )}
-          {item.node}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function SubscriptionCostTable({
   currency,
   isLoading,
@@ -333,7 +217,7 @@ function SubscriptionCostTable({
   payments: SubscriptionPayment[];
 }) {
   return (
-    <TableLayout className="rounded-r-none rounded-l-lg bg-card">
+    <TableLayout className="rounded-r-none rounded-l-lg border-r-0 bg-card">
       <TableLayoutCaption className="h-12 py-0">
         <span className="font-semibold">Subscription</span>
       </TableLayoutCaption>
@@ -480,7 +364,7 @@ function ConsumptionCostTable({
   totalPages: number;
 }) {
   return (
-    <TableLayout className="rounded-r-none rounded-l-lg bg-card">
+    <TableLayout className="rounded-r-none rounded-l-lg border-r-0 bg-card">
       <TableLayoutCaption className="h-12 py-0">
         <div className="flex items-center gap-3">
           <span className="font-semibold">PAYG</span>
@@ -671,10 +555,7 @@ export function BillingCostsSurface({
   };
 
   return (
-    <div
-      className="flex flex-col gap-6 pb-16"
-      data-slot="billing-costs-surface"
-    >
+    <div className="flex flex-col gap-6" data-slot="billing-costs-surface">
       {error == null ? null : (
         <Alert variant="destructive">
           <AlertCircle aria-hidden />
@@ -705,117 +586,74 @@ export function BillingCostsSurface({
         </TabsList>
 
         <TabsContent className="py-6" value="details">
-          <div className="overflow-hidden rounded-lg border border-border">
-            <div className="flex h-17 items-center border-border border-b px-4">
+          {/* Old Cost Center shell: the card fills the viewport below the
+              billing chrome (52px header + p-4 + switcher + tab padding). */}
+          <div className="flex h-[calc(100vh-179px)] min-h-96 flex-col overflow-hidden rounded-lg border border-border">
+            <div className="flex h-17 shrink-0 items-center border-border border-b px-4">
               {dateFilter}
             </div>
-            <div className="flex flex-col lg:flex-row">
-              <div className="relative min-h-96 flex-1 overflow-hidden bg-muted/20 p-5">
-                <DotGridBackdrop />
-                <p className="relative text-muted-foreground text-sm">
-                  Select a card to view cost details
-                </p>
-                <div className="relative mt-5 flex flex-col items-start">
-                  <CostScopeCard
-                    cost={regionCostMicroUnits}
-                    currency={currency}
-                    isLoading={isLoading}
-                    name="Total Cost"
-                    onClick={() => onScopeChange?.({ kind: "total" })}
-                    selected={scope.kind === "total"}
-                  />
-                  <CostTreeChildren
-                    items={[
-                      {
-                        key: "region",
-                        node: (
-                          <>
-                            <CostScopeCard
-                              cost={regionCostMicroUnits}
-                              currency={currency}
-                              isLoading={isLoading}
-                              name={regionLabel}
-                              onClick={() =>
-                                onScopeChange?.({ kind: "region" })
-                              }
-                              selected={scope.kind === "region"}
-                            />
-                            <CostTreeChildren
-                              items={workspaceCosts.map((workspace) => ({
-                                key: workspace.id,
-                                node: (
-                                  <CostScopeCard
-                                    cost={workspace.totalMicroUnits}
-                                    currency={currency}
-                                    icon={<WorkspaceDot />}
-                                    isLoading={isLoading}
-                                    name={workspace.name}
-                                    onClick={() =>
-                                      onScopeChange?.({
-                                        kind: "workspace",
-                                        workspace: workspace.id,
-                                      })
-                                    }
-                                    selected={
-                                      selectedWorkspace === workspace.id
-                                    }
-                                  />
-                                ),
-                                selected: selectedWorkspace === workspace.id,
-                              }))}
-                            />
-                          </>
-                        ),
-                        selected: scope.kind !== "total",
-                      },
-                    ]}
-                  />
-                </div>
-              </div>
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <BillingCostTree
+                currency={currency}
+                isLoading={isLoading}
+                onScopeChange={onScopeChange}
+                regionCost={regionCostMicroUnits}
+                regionLabel={regionLabel}
+                scope={scope}
+                workspaces={workspaceCosts.map((workspace) => ({
+                  cost: workspace.totalMicroUnits,
+                  id: workspace.id,
+                  name: workspace.name,
+                }))}
+              />
 
-              <div className="flex w-full flex-col border-border border-t lg:w-1/2 lg:border-t-0 lg:border-l">
-                <div
-                  className="sticky top-0 z-10 ml-4 flex h-14 items-center justify-between gap-4 rounded-bl-lg border-border border-r border-b border-l bg-card bg-linear-to-b from-white/5 to-white/5 px-4 text-sm"
-                  data-slot="billing-cost-scope-banner"
-                >
-                  <div className="font-semibold">
-                    <span>{bannerTitle}: </span>
-                    <span className="text-blue-400 tabular-nums">
-                      {isLoading
-                        ? "…"
-                        : formatBillingAmount(bannerCostMicroUnits, currency)}
-                    </span>
+              {/* The detail panel floats over the full-width canvas and
+                  scrolls independently, as in the old Cost Center. */}
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[clamp(22.5rem,50%,36.5rem)] overflow-y-auto">
+                <div className="pointer-events-auto">
+                  <div
+                    className="sticky top-0 z-10 mb-4 flex h-14 items-center justify-between gap-4 rounded-bl-lg border-border border-b border-l bg-card bg-linear-to-b from-white/5 to-white/5 px-4 text-sm"
+                    data-slot="billing-cost-scope-banner"
+                  >
+                    <div className="font-semibold">
+                      <span>{bannerTitle}: </span>
+                      <span className="text-blue-400 tabular-nums">
+                        {isLoading
+                          ? "…"
+                          : formatBillingAmount(bannerCostMicroUnits, currency)}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-4 py-4 pl-4">
-                  <SubscriptionCostTable
-                    currency={currency}
-                    isLoading={isLoading}
-                    payments={subscriptionPayments}
-                  />
+                  <div className="flex flex-col gap-4 pb-4">
+                    <SubscriptionCostTable
+                      currency={currency}
+                      isLoading={isLoading}
+                      payments={subscriptionPayments}
+                    />
 
-                  <ConsumptionCostTable
-                    appPage={appPage}
-                    appTypeFilter={appTypeFilter}
-                    appTypeOptions={appTypeOptions}
-                    currency={currency}
-                    isLoading={isLoading}
-                    onAppPageChange={onAppPageChange}
-                    onAppTypeFilterChange={onAppTypeFilterChange}
-                    onSelectRow={selectApp}
-                    rows={consumptionRows}
-                    timeRangeLabel={timeRangeLabel}
-                    totalCount={snapshot.totalAppOverviews}
-                    totalPages={snapshot.totalAppOverviewPages}
-                  />
+                    <ConsumptionCostTable
+                      appPage={appPage}
+                      appTypeFilter={appTypeFilter}
+                      appTypeOptions={appTypeOptions}
+                      currency={currency}
+                      isLoading={isLoading}
+                      onAppPageChange={onAppPageChange}
+                      onAppTypeFilterChange={onAppTypeFilterChange}
+                      onSelectRow={selectApp}
+                      rows={consumptionRows}
+                      timeRangeLabel={timeRangeLabel}
+                      totalCount={snapshot.totalAppOverviews}
+                      totalPages={snapshot.totalAppOverviewPages}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </TabsContent>
 
-        <TabsContent className="py-6" value="trends">
+        <TabsContent className="pt-6 pb-16" value="trends">
           <BillingCostCharts
             currency={currency}
             daily={dailyTrend}
