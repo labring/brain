@@ -5,9 +5,9 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@workspace/ui/components/alert";
-import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Pagination } from "@workspace/ui/components/pagination";
+import { AppTypeBadge, PlanBadge } from "@workspace/ui/components/plan-badge";
 import {
   Popover,
   PopoverContent,
@@ -62,6 +62,12 @@ const CONSUMPTION_ROW_KEYS = [
   "row-9",
   "row-10",
 ];
+// The empty-plan default lives here, not in PlanBadge: "an unnamed payment is
+// a Subscription" is billing knowledge, not badge styling.
+function planBadgeLabel(planName: string): string {
+  return planName.trim() === "" ? "Subscription" : planName;
+}
+
 const EMPTY_SNAPSHOT: BillingCostsSnapshot = {
   appOverviews: [],
   appTypes: {},
@@ -73,25 +79,6 @@ const EMPTY_SNAPSHOT: BillingCostsSnapshot = {
   totalConsumptionMicroUnits: 0,
   workspaceConsumptionMicroUnits: {},
   workspaces: [],
-};
-
-// The Brain V2.0 tier badge recipe: border in the gradient's first stop, a 12%
-// gradient wash behind, and gradient-clipped text.
-const TIER_BADGE_STYLES: Record<string, { surface: string; text: string }> = {
-  ENTERPRISE: {
-    surface:
-      "border-tier-enterprise-from from-tier-enterprise-from/12 to-tier-enterprise-to/12",
-    text: "from-tier-enterprise-from to-tier-enterprise-to",
-  },
-  PRO: {
-    surface: "border-tier-pro-from from-tier-pro-from/12 to-tier-pro-to/12",
-    text: "from-tier-pro-from to-tier-pro-to",
-  },
-  STARTER: {
-    surface:
-      "border-tier-starter-from from-tier-starter-from/12 to-tier-starter-to/12",
-    text: "from-tier-starter-from to-tier-starter-to",
-  },
 };
 
 interface BillingCostsSurfaceProps {
@@ -181,32 +168,6 @@ function EmptyTableRow({ columns }: { columns: number }) {
   );
 }
 
-function PlanTierBadge({ planName }: { planName: string }) {
-  const label = planName.trim() === "" ? "Subscription" : planName;
-  const tier = TIER_BADGE_STYLES[label.toUpperCase()];
-  if (tier == null) {
-    return <Badge variant="secondary">{label}</Badge>;
-  }
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 w-fit items-center rounded-sm border bg-linear-to-r px-2 text-xs",
-        tier.surface
-      )}
-      data-slot="billing-plan-tier-badge"
-    >
-      <span
-        className={cn(
-          "bg-linear-to-r bg-clip-text font-medium text-transparent uppercase",
-          tier.text
-        )}
-      >
-        {label}
-      </span>
-    </span>
-  );
-}
-
 function SubscriptionCostTable({
   currency,
   isLoading,
@@ -240,7 +201,7 @@ function SubscriptionCostTable({
                     {formatBillingDateTime(payment.Time)}
                   </TableCell>
                   <TableCell>
-                    <PlanTierBadge planName={payment.PlanName} />
+                    <PlanBadge planName={planBadgeLabel(payment.PlanName)} />
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {formatBillingAmount(payment.Amount, currency)}
@@ -416,7 +377,7 @@ function ConsumptionCostTable({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{row.typeName}</Badge>
+                    <AppTypeBadge>{row.typeName}</AppTypeBadge>
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {formatBillingAmount(row.amount, currency)}
@@ -566,7 +527,7 @@ export function BillingCostsSurface({
         </Alert>
       )}
 
-      <Tabs defaultValue="details">
+      <Tabs className="flex flex-col gap-4" defaultValue="details">
         <TabsList
           aria-label="Cost views"
           className="w-fit gap-1 rounded-lg border border-border p-1"
@@ -585,10 +546,11 @@ export function BillingCostsSurface({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent className="py-6" value="details">
+        <TabsContent value="details">
           {/* Old Cost Center shell: the card fills the viewport below the
-              billing chrome (52px header + p-4 + switcher + tab padding). */}
-          <div className="flex h-[calc(100vh-179px)] min-h-96 flex-col overflow-hidden rounded-lg border border-border">
+              billing chrome (52px header + 16px top padding + 46px switcher
+              + 16px gap + 16px bottom padding). */}
+          <div className="flex h-[calc(100vh-146px)] min-h-96 flex-col overflow-hidden rounded-lg border border-border">
             <div className="flex h-17 shrink-0 items-center border-border border-b px-4">
               {dateFilter}
             </div>
@@ -609,7 +571,7 @@ export function BillingCostsSurface({
 
               {/* The detail panel floats over the full-width canvas and
                   scrolls independently, as in the old Cost Center. */}
-              <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[clamp(22.5rem,50%,36.5rem)] overflow-y-auto">
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[clamp(22.5rem,50%,32rem)] overflow-y-auto">
                 <div className="pointer-events-auto">
                   <div
                     className="sticky top-0 z-10 mb-4 flex h-14 items-center justify-between gap-4 rounded-bl-lg border-border border-b border-l bg-card bg-linear-to-b from-white/5 to-white/5 px-4 text-sm"
@@ -653,7 +615,7 @@ export function BillingCostsSurface({
           </div>
         </TabsContent>
 
-        <TabsContent className="pt-6 pb-16" value="trends">
+        <TabsContent className="pb-16" value="trends">
           <BillingCostCharts
             currency={currency}
             daily={dailyTrend}

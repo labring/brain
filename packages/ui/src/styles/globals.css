@@ -47,12 +47,18 @@
   --color-brand-primary-hover: var(--sealai-brand-primary-hover);
   --color-brand-primary-foreground: var(--sealai-brand-primary-foreground);
   --color-brand-primary: var(--sealai-brand-primary);
+  --color-tier-free-from: var(--sealai-tier-free-from);
+  --color-tier-free-to: var(--sealai-tier-free-to);
+  --color-tier-hobby-from: var(--sealai-tier-hobby-from);
+  --color-tier-hobby-to: var(--sealai-tier-hobby-to);
   --color-tier-starter-from: var(--sealai-tier-starter-from);
   --color-tier-starter-to: var(--sealai-tier-starter-to);
   --color-tier-pro-from: var(--sealai-tier-pro-from);
   --color-tier-pro-to: var(--sealai-tier-pro-to);
   --color-tier-enterprise-from: var(--sealai-tier-enterprise-from);
   --color-tier-enterprise-to: var(--sealai-tier-enterprise-to);
+  --color-tier-team-from: var(--sealai-tier-team-from);
+  --color-tier-team-to: var(--sealai-tier-team-to);
   --color-project-chrome-surface: var(--project-chrome-surface);
   --color-onboarding-heading-accent: var(--onboarding-heading-accent);
   --color-db-access-sticky-header-surface: var(
@@ -108,12 +114,18 @@
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
 
   /** SealAI plan-tier gradients (Brain V2.0 badge palette). */
+  --sealai-tier-free-from: #d4d4d4;
+  --sealai-tier-free-to: #a1a1a1;
+  --sealai-tier-hobby-from: #e5e476;
+  --sealai-tier-hobby-to: #81cbfc;
   --sealai-tier-starter-from: #81cbfc;
   --sealai-tier-starter-to: #519ff5;
   --sealai-tier-pro-from: #fc81d9;
   --sealai-tier-pro-to: #519ff5;
   --sealai-tier-enterprise-from: #fc9581;
   --sealai-tier-enterprise-to: #5177f5;
+  --sealai-tier-team-from: #9581fc;
+  --sealai-tier-team-to: #5177f5;
 
   /** Canvas component tokens. */
   --color-canvas-surface: var(--color-neutral-950);

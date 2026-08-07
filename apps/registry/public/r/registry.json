@@ -696,6 +696,19 @@
           "target": "components/metrics-chart/metrics-chart.tsx"
         }
       ]
+    },
+    {
+      "name": "plan-badge",
+      "type": "registry:ui",
+      "title": "Plan Badge",
+      "description": "Subscription-plan tier badge with the Brain V2.0 gradient recipes, plus the matching accent app-type badge for cost tables",
+      "files": [
+        {
+          "path": "../../packages/ui/src/components/plan-badge.tsx",
+          "type": "registry:component",
+          "target": "components/plan-badge.tsx"
+        }
+      ]
     }
   ]
 }
