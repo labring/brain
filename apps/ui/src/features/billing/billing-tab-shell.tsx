@@ -67,7 +67,7 @@ export function BillingNavigationFrame({
 }) {
   return (
     <div
-      className="main-action-surface-background relative flex h-full min-h-0 flex-1 flex-col"
+      className="surface-glow-overlay relative flex h-full min-h-0 flex-1 flex-col"
       data-slot="billing-tab-shell"
     >
       <header className="relative z-10 flex h-13 shrink-0 items-center justify-between gap-2 border-border border-b pr-2.5 pl-4">
