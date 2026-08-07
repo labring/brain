@@ -3,7 +3,7 @@ import { afterEach, beforeEach, test } from "node:test";
 
 import { readMarketingAttribution } from "./attribution-client";
 
-const ATTRIBUTION_STORAGE_KEY = "sealos_attr_v2";
+const ATTRIBUTION_STORAGE_KEY = "sealos_attr_v3";
 const TEST_GCLID_RE = /gclid-123/;
 
 class MemoryStorage {
@@ -75,11 +75,11 @@ afterEach(() => {
 });
 
 test("product attribution keeps a click ID with explicit consent", () => {
-  browser.location.href = `https://cloud.sealos.io/?sea_attr=${encodedState(true)}`;
+  browser.location.href = `https://cloud.sealos.io/?sea_attr=${encodedState(true)}&consent_token=signed-token`;
 
   const result = readMarketingAttribution();
 
-  assert.equal(result?.ad_user_data_consent, true);
+  assert.equal(result?.ad_user_data_consent, "granted");
   assert.equal(result?.gclid, "gclid-123");
   assert.equal(result?.first_touch?.campaign, "caf\u00e9-search");
   assert.match(
@@ -89,11 +89,11 @@ test("product attribution keeps a click ID with explicit consent", () => {
 });
 
 test("product attribution redacts a click ID after consent withdrawal", () => {
-  browser.location.href = `https://cloud.sealos.io/?sea_attr=${encodedState(false)}`;
+  browser.location.href = `https://cloud.sealos.io/?sea_attr=${encodedState(false)}&consent_token=signed-token`;
 
   const result = readMarketingAttribution();
 
-  assert.equal(result?.ad_user_data_consent, false);
+  assert.equal(result?.ad_user_data_consent, "denied");
   assert.equal(result?.gclid, null);
   assert.equal(result?.first_touch?.click_id_value, "");
   assert.doesNotMatch(
@@ -107,6 +107,6 @@ test("legacy attribution requires a fresh explicit consent signal", () => {
 
   const result = readMarketingAttribution();
 
-  assert.equal(result?.ad_user_data_consent, false);
+  assert.equal(result?.ad_user_data_consent, "unspecified");
   assert.equal(result?.gclid, null);
 });

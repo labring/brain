@@ -10,7 +10,11 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-import type { MarketingLifecycleEventName, MarketingTouch } from "./types";
+import type {
+  MarketingConsentState,
+  MarketingLifecycleEventName,
+  MarketingTouch,
+} from "./types";
 
 export const MARKETING_DB_SCHEMA = "sealai_marketing";
 export const ns = pgSchema(MARKETING_DB_SCHEMA);
@@ -30,10 +34,23 @@ export const marketingAttributionSubjects = ns.table(
     gclid: text("gclid"),
     gbraid: text("gbraid"),
     wbraid: text("wbraid"),
+    adPersonalization: text("ad_personalization")
+      .notNull()
+      .$type<MarketingConsentState>()
+      .default("unspecified"),
     adUserDataConsent: text("ad_user_data_consent")
       .notNull()
-      .$type<"denied" | "granted">()
-      .default("denied"),
+      .$type<MarketingConsentState>()
+      .default("unspecified"),
+    clickIdCandidates: jsonb("click_id_candidates").$type<MarketingTouch[]>(),
+    consentProvenance: jsonb("consent_provenance").$type<{
+      issuer: string;
+      issued_at: string;
+      jti: string;
+      region: string;
+      source: "desktop_oauth";
+      subject_id: string;
+    } | null>(),
     updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -68,10 +85,23 @@ export const marketingLifecycleEvents = ns.table(
     gclid: text("gclid"),
     gbraid: text("gbraid"),
     wbraid: text("wbraid"),
+    adPersonalization: text("ad_personalization")
+      .notNull()
+      .$type<MarketingConsentState>()
+      .default("unspecified"),
     adUserDataConsent: text("ad_user_data_consent")
       .notNull()
-      .$type<"denied" | "granted">()
-      .default("denied"),
+      .$type<MarketingConsentState>()
+      .default("unspecified"),
+    clickIdCandidates: jsonb("click_id_candidates").$type<MarketingTouch[]>(),
+    consentProvenance: jsonb("consent_provenance").$type<{
+      issuer: string;
+      issued_at: string;
+      jti: string;
+      region: string;
+      source: "desktop_oauth";
+      subject_id: string;
+    } | null>(),
     hashedUserData: jsonb("hashed_user_data").$type<{
       email_sha256?: string;
       phone_sha256?: string;
@@ -94,8 +124,8 @@ export const marketingLifecycleEvents = ns.table(
     index("lifecycle_events_pending_idx")
       .on(table.occurredAt)
       .where(sql`${table.status} = 'pending'`),
-    uniqueIndex("lifecycle_events_payment_transaction_idx")
-      .on(table.transactionId)
+    uniqueIndex("lifecycle_events_action_transaction_idx")
+      .on(table.eventName, table.transactionId)
       .where(sql`${table.transactionId} IS NOT NULL`),
   ]
 );

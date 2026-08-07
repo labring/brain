@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   marketingAttributionSnapshotSchema,
+  marketingExternalLifecycleEventInputSchema,
   marketingLifecycleEventInputSchema,
 } from "./types";
 
@@ -36,12 +37,12 @@ test("marketing lifecycle schema requires payment identity and value", () => {
   assert.equal(result.success, false);
 });
 
-test("marketing lifecycle schema enforces one click ID", () => {
+test("marketing lifecycle schema preserves multiple click IDs", () => {
   const result = marketingLifecycleEventInputSchema.safeParse({
     ...baseEvent,
     wbraid: "wbraid-1",
   });
-  assert.equal(result.success, false);
+  assert.equal(result.success, true);
 });
 
 test("marketing attribution rejects click IDs after consent withdrawal", () => {
@@ -74,5 +75,19 @@ test("marketing lifecycle rejects click IDs without consent", () => {
     ...baseEvent,
     ad_user_data_consent: false,
   });
+  assert.equal(result.success, false);
+});
+
+test("external lifecycle ingest accepts trusted post-deploy and payment events", () => {
+  const result = marketingExternalLifecycleEventInputSchema.safeParse({
+    ...baseEvent,
+    event_name: "running_24h",
+  });
+  assert.equal(result.success, true);
+});
+
+test("external lifecycle ingest rejects internal deployment events", () => {
+  const result =
+    marketingExternalLifecycleEventInputSchema.safeParse(baseEvent);
   assert.equal(result.success, false);
 });

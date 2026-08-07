@@ -1,5 +1,5 @@
 {
-  "id": "2917b92f-b503-4c28-acec-5dd5d38c600d",
+  "id": "44d56370-5699-4186-aea1-c82af04363a1",
   "prevId": "77ccc87d-883f-4159-a4dc-7736b73fe782",
   "version": "7",
   "dialect": "postgresql",
@@ -84,8 +84,12 @@
           "tableFrom": "assistant_chat_messages",
           "tableTo": "assistant_chats",
           "schemaTo": "sealai_assistant",
-          "columnsFrom": ["chat_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "chat_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -755,8 +759,12 @@
           "tableFrom": "deploy_task_events",
           "tableTo": "deploy_tasks",
           "schemaTo": "sealai_deployment",
-          "columnsFrom": ["task_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -764,7 +772,10 @@
       "compositePrimaryKeys": {
         "deploy_task_events_pk": {
           "name": "deploy_task_events_pk",
-          "columns": ["task_id", "seq"]
+          "columns": [
+            "task_id",
+            "seq"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -852,8 +863,12 @@
           "tableFrom": "deploy_task_messages",
           "tableTo": "deploy_tasks",
           "schemaTo": "sealai_deployment",
-          "columnsFrom": ["task_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1316,12 +1331,31 @@
           "primaryKey": false,
           "notNull": false
         },
+        "ad_personalization": {
+          "name": "ad_personalization",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unspecified'"
+        },
         "ad_user_data_consent": {
           "name": "ad_user_data_consent",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'denied'"
+          "default": "'unspecified'"
+        },
+        "click_id_candidates": {
+          "name": "click_id_candidates",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consent_provenance": {
+          "name": "consent_provenance",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",
@@ -1343,7 +1377,10 @@
       "compositePrimaryKeys": {
         "attribution_subjects_pk": {
           "name": "attribution_subjects_pk",
-          "columns": ["subject_type", "subject_id"]
+          "columns": [
+            "subject_type",
+            "subject_id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1421,12 +1458,31 @@
           "primaryKey": false,
           "notNull": false
         },
+        "ad_personalization": {
+          "name": "ad_personalization",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unspecified'"
+        },
         "ad_user_data_consent": {
           "name": "ad_user_data_consent",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'denied'"
+          "default": "'unspecified'"
+        },
+        "click_id_candidates": {
+          "name": "click_id_candidates",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consent_provenance": {
+          "name": "consent_provenance",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "hashed_user_data": {
           "name": "hashed_user_data",
@@ -1502,9 +1558,15 @@
           "method": "btree",
           "with": {}
         },
-        "lifecycle_events_payment_transaction_idx": {
-          "name": "lifecycle_events_payment_transaction_idx",
+        "lifecycle_events_action_transaction_idx": {
+          "name": "lifecycle_events_action_transaction_idx",
           "columns": [
+            {
+              "expression": "event_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "transaction_id",
               "isExpression": false,
@@ -1597,7 +1659,10 @@
       "compositePrimaryKeys": {
         "project_canvas_layouts_pk": {
           "name": "project_canvas_layouts_pk",
-          "columns": ["namespace", "project_uid"]
+          "columns": [
+            "namespace",
+            "project_uid"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1668,7 +1733,10 @@
       "compositePrimaryKeys": {
         "project_delete_operations_pk": {
           "name": "project_delete_operations_pk",
-          "columns": ["namespace", "project_id"]
+          "columns": [
+            "namespace",
+            "project_id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1790,7 +1858,9 @@
       "compositePrimaryKeys": {
         "project_delete_previews_pk": {
           "name": "project_delete_previews_pk",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1909,7 +1979,9 @@
       "compositePrimaryKeys": {
         "project_management_audit_events_pk": {
           "name": "project_management_audit_events_pk",
-          "columns": ["id"]
+          "columns": [
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1969,7 +2041,9 @@
       "compositePrimaryKeys": {
         "project_navigation_preferences_pk": {
           "name": "project_navigation_preferences_pk",
-          "columns": ["namespace"]
+          "columns": [
+            "namespace"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -2063,7 +2137,10 @@
       "compositePrimaryKeys": {
         "projects_pk": {
           "name": "projects_pk",
-          "columns": ["namespace", "id"]
+          "columns": [
+            "namespace",
+            "id"
+          ]
         }
       },
       "uniqueConstraints": {},

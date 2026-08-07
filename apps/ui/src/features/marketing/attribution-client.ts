@@ -4,10 +4,13 @@ import {
   type MarketingAttributionSnapshot,
   type MarketingTouch,
   marketingTouchSchema,
+  resolveMarketingConsentState,
 } from "./types";
 
-const ATTRIBUTION_STORAGE_KEY = "sealos_attr_v2";
+const ATTRIBUTION_STORAGE_KEYS = ["sealos_attr_v3", "sealos_attr_v2"] as const;
+const CONSENT_TOKEN_STORAGE_KEY = "sealos_marketing_consent_token";
 const ATTRIBUTION_URL_PARAM = "sea_attr";
+const CONSENT_TOKEN_URL_PARAM = "consent_token";
 const GOOGLE_CLICK_ID_TYPES = ["gclid", "gbraid", "wbraid"] as const;
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -33,9 +36,24 @@ function decodeAttributionState(value: string): Record<string, unknown> | null {
 
 function storedAttributionState(): Record<string, unknown> | null {
   try {
-    return recordValue(
-      JSON.parse(window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY) ?? "null")
-    );
+    for (const key of ATTRIBUTION_STORAGE_KEYS) {
+      const value = recordValue(
+        JSON.parse(window.localStorage.getItem(key) ?? "null")
+      );
+      if (value != null) {
+        return value;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function storedConsentToken(): string | null {
+  try {
+    const value = window.sessionStorage.getItem(CONSENT_TOKEN_STORAGE_KEY);
+    return value?.trim() || null;
   } catch {
     return null;
   }
@@ -47,16 +65,25 @@ function redactTouchRecord(value: unknown): unknown {
 }
 
 function consentSafeState(
-  state: Record<string, unknown>
+  state: Record<string, unknown>,
+  hasConsentToken: boolean
 ): Record<string, unknown> {
-  if (state.ad_user_data_consent === true) {
+  const consentState = resolveMarketingConsentState(
+    state.ad_user_data_consent as boolean | "granted" | "denied" | "unspecified"
+  );
+  if (hasConsentToken && consentState === "granted") {
     return state;
   }
   return {
     ...state,
+    ad_user_data_consent:
+      hasConsentToken && consentState === "denied" ? "denied" : "unspecified",
     first_touch: redactTouchRecord(state.first_touch),
     gbraid: null,
     gclid: null,
+    click_id_candidates: Array.isArray(state.click_id_candidates)
+      ? state.click_id_candidates.map(redactTouchRecord)
+      : [],
     last_qualified_touch: redactTouchRecord(state.last_qualified_touch),
     last_touch: redactTouchRecord(state.last_touch),
     wbraid: null,
@@ -102,8 +129,10 @@ function clickIds(
         touch.click_id_type as (typeof GOOGLE_CLICK_ID_TYPES)[number]
       )
     ) {
-      result[touch.click_id_type as keyof typeof result] = touch.click_id_value;
-      return result;
+      const key = touch.click_id_type as keyof typeof result;
+      if (result[key] == null) {
+        result[key] = touch.click_id_value;
+      }
     }
   }
   return result;
@@ -118,22 +147,62 @@ export function readMarketingAttribution(): MarketingAttributionSnapshot | null 
   );
   const inbound = inboundValue ? decodeAttributionState(inboundValue) : null;
   const stored = storedAttributionState();
-  const rawState = inbound?.version === 2 ? inbound : stored;
-  if (rawState?.version !== 2) {
+  const params = new URL(window.location.href).searchParams;
+  const consentToken =
+    params.get(CONSENT_TOKEN_URL_PARAM)?.trim() || storedConsentToken();
+  const rawState =
+    inbound?.version === 2 || inbound?.version === 3 ? inbound : stored;
+  if (rawState?.version !== 2 && rawState?.version !== 3) {
     return null;
   }
-  const state = consentSafeState(rawState);
-  window.localStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(state));
+  const state = consentSafeState(
+    consentToken == null
+      ? rawState
+      : { ...rawState, consent_token: consentToken },
+    consentToken != null
+  );
+  if (consentToken != null) {
+    try {
+      window.sessionStorage.setItem(CONSENT_TOKEN_STORAGE_KEY, consentToken);
+    } catch {
+      // Storage is optional in private browsing contexts.
+    }
+  }
+  window.localStorage.setItem("sealos_attr_v3", JSON.stringify(state));
   const firstTouch = normalizedTouch(state.first_touch);
   const lastQualifiedTouch = normalizedTouch(state.last_qualified_touch);
   const lastTouch = normalizedTouch(state.last_touch);
-  const ids = clickIds([lastQualifiedTouch, lastTouch, firstTouch]);
-  const adUserDataConsent = state.ad_user_data_consent === true;
+  const candidateTouches = Array.isArray(state.click_id_candidates)
+    ? state.click_id_candidates
+        .map(normalizedTouch)
+        .filter((touch): touch is MarketingTouch => touch != null)
+    : [];
+  const ids = clickIds([
+    ...candidateTouches,
+    lastQualifiedTouch,
+    lastTouch,
+    firstTouch,
+  ]);
+  const adUserDataConsent = consentToken
+    ? resolveMarketingConsentState(
+        state.ad_user_data_consent as
+          | boolean
+          | "granted"
+          | "denied"
+          | "unspecified"
+      )
+    : "unspecified";
   return {
+    ad_personalization: resolveMarketingConsentState(
+      state.ad_personalization as boolean | "granted" | "denied" | "unspecified"
+    ),
     ad_user_data_consent: adUserDataConsent,
+    click_id_candidates: candidateTouches,
+    consent_token: consentToken ?? undefined,
+    consent_provenance: null,
     first_touch: firstTouch,
     ...ids,
     last_touch: lastTouch ?? lastQualifiedTouch,
-    version: 2,
+    version: 3,
   };
 }

@@ -541,12 +541,15 @@ test("deployment transitions persist attribution and enqueue lifecycle events", 
     create: {
       creatingActor: "marketing-test-user",
       marketingAttribution: {
+        ad_personalization: "granted",
         ad_user_data_consent: true,
+        click_id_candidates: [touch],
+        consent_provenance: null,
         first_touch: touch,
         gbraid: null,
         gclid: "test-gclid-123",
         last_touch: touch,
-        version: 2,
+        version: 3,
         wbraid: null,
       },
       namespace: "marketing-test-workspace",
@@ -575,8 +578,8 @@ test("deployment transitions persist attribution and enqueue lifecycle events", 
     lifecycleEvents.map((event) => event.eventName),
     ["build_started", "deploy_success"]
   );
-  assert.equal(lifecycleEvents[0]?.gclid, "test-gclid-123");
-  assert.equal(lifecycleEvents[0]?.adUserDataConsent, "granted");
+  assert.equal(lifecycleEvents[0]?.gclid, null);
+  assert.equal(lifecycleEvents[0]?.adUserDataConsent, "unspecified");
 
   const subjects = await harness.db
     .select()
@@ -591,11 +594,84 @@ test("deployment transitions persist attribution and enqueue lifecycle events", 
     subjects
       .map((subject) => `${subject.subjectType}:${subject.subjectId}`)
       .sort(),
-    ["user:marketing-test-user", "workspace:marketing-test-workspace"]
+    []
   );
+
+  await harness.pglite.query(
+    `UPDATE "sealai_deployment"."deploy_tasks"
+     SET "marketing_attribution" = $1::jsonb
+     WHERE "id" = $2`,
+    [
+      JSON.stringify({
+        ad_personalization: "granted",
+        ad_user_data_consent: true,
+        gclid: "legacy-repair-gclid",
+        version: 2,
+      }),
+      result.task.id,
+    ]
+  );
+
+  await harness.pglite.query(
+    'DELETE FROM "sealai_marketing"."lifecycle_events" WHERE "deployment_id" = $1',
+    [result.task.id]
+  );
+  await harness.pglite.query(
+    `DELETE FROM "sealai_marketing"."attribution_subjects"
+     WHERE ("subject_type" = 'user' AND "subject_id" = $1)
+        OR ("subject_type" = 'workspace' AND "subject_id" = $2)`,
+    ["marketing-test-user", "marketing-test-workspace"]
+  );
+  await harness.pglite.query(
+    'SELECT "sealai_marketing"."reconcile_deploy_marketing_attribution"($1)',
+    [100]
+  );
+  const repairedEvents = await harness.db
+    .select()
+    .from(marketingLifecycleEvents)
+    .where(eq(marketingLifecycleEvents.deploymentId, result.task.id));
+  assert.deepEqual(repairedEvents.map((event) => event.eventName).sort(), [
+    "build_started",
+    "deploy_success",
+  ]);
+  assert.equal(repairedEvents[0]?.adUserDataConsent, "granted");
+  const [repairedSubject] = await harness.db
+    .select()
+    .from(marketingAttributionSubjects)
+    .where(eq(marketingAttributionSubjects.subjectId, "marketing-test-user"));
+  assert.equal(repairedSubject?.gclid, "legacy-repair-gclid");
+
+  const trustedProvenance = {
+    issuer: "sealos-desktop",
+    issued_at: "2026-08-06T08:00:00.000Z",
+    jti: "repair-provenance-jti",
+    region: "region-a",
+    source: "desktop_oauth",
+    subject_id: "marketing-test-user",
+  } as const;
+  await harness.pglite.query(
+    'SELECT "sealai_marketing"."upsert_attribution_subject"($1, $2, $3::jsonb)',
+    [
+      "user",
+      "marketing-test-user",
+      JSON.stringify({
+        ad_user_data_consent: "granted",
+        consent_provenance: trustedProvenance,
+      }),
+    ]
+  );
+  await harness.pglite.query(
+    'SELECT "sealai_marketing"."upsert_attribution_subject"($1, $2, $3::jsonb)',
+    ["user", "marketing-test-user", JSON.stringify({})]
+  );
+  const [preservedSubject] = await harness.db
+    .select()
+    .from(marketingAttributionSubjects)
+    .where(eq(marketingAttributionSubjects.subjectId, "marketing-test-user"));
+  assert.deepEqual(preservedSubject?.consentProvenance, trustedProvenance);
 });
 
-test("payment transaction IDs deduplicate across lifecycle events", async () => {
+test("payment transaction IDs deduplicate per conversion action", async () => {
   const payment = {
     adUserDataConsent: "denied" as const,
     currency: "USD",
@@ -622,16 +698,26 @@ test("payment transaction IDs deduplicate across lifecycle events", async () => 
     .values({ ...payment, eventId: "payment-deduplication-event-2" })
     .onConflictDoNothing()
     .returning({ eventId: marketingLifecycleEvents.eventId });
+  const otherAction = await harness.db
+    .insert(marketingLifecycleEvents)
+    .values({
+      ...payment,
+      eventId: "payment-deduplication-event-3",
+      eventName: "new_subscription",
+    })
+    .onConflictDoNothing()
+    .returning({ eventId: marketingLifecycleEvents.eventId });
 
   assert.equal(first.length, 1);
   assert.equal(duplicate.length, 0);
+  assert.equal(otherAction.length, 1);
   const rows = await harness.db
     .select()
     .from(marketingLifecycleEvents)
     .where(
       eq(marketingLifecycleEvents.transactionId, "payment-deduplication-test")
     );
-  assert.equal(rows.length, 1);
+  assert.equal(rows.length, 2);
 });
 
 test("AI timeline persistence keeps event identity and dedupe semantics", async () => {
