@@ -436,12 +436,11 @@ test("Usage preserves the quota table's workspace and resource hierarchy", () =>
   );
 
   assertTextOrder(html, [
-    "Usage",
     "Resource Name",
     "Chart",
     "Total",
     "Used",
-    "Remaining",
+    "Available",
   ]);
   for (const text of [
     "Workspace Alpha",

@@ -11,7 +11,7 @@ function TableLayout({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xs",
+        "overflow-hidden rounded-lg border border-border bg-transparent text-card-foreground shadow-xs",
         className
       )}
       data-slot="table-layout"
@@ -27,7 +27,7 @@ function TableLayoutCaption({
   return (
     <div
       className={cn(
-        "flex items-center justify-between border-border border-b bg-muted/30 px-4 py-3 text-sm",
+        "flex items-center justify-between border-border border-b bg-white/5 px-4 py-3 text-sm",
         className
       )}
       data-slot="table-layout-caption"
@@ -46,7 +46,7 @@ interface TableLayoutHeadRowProps {
 
 function TableLayoutHeadRow({ children, className }: TableLayoutHeadRowProps) {
   return (
-    <TableHeader className={cn("h-10", className?.thead)}>
+    <TableHeader className={cn("h-13", className?.thead)}>
       <TableRow className={cn("[&>th]:bg-transparent", className?.tr)}>
         {children}
       </TableRow>
