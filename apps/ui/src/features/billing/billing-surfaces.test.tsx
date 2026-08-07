@@ -228,7 +228,7 @@ test("Billing Area keeps Cost Center's vertical navigation hierarchy", () => {
     html.slice(activeLinkStart, activeLinkEnd),
     'href="/billing/usage"'
   );
-  assert.equal(html.includes("<h1"), false);
+  assertTextOrder(html, ["Billing", "Current page"]);
 });
 
 test("Plan keeps Cost Center's section order around the live balance", () => {

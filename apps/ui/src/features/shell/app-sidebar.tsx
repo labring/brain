@@ -33,6 +33,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
@@ -150,7 +151,7 @@ type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,
   "aria-label" | "children" | "className"
 > &
-  Pick<ComponentProps<typeof Link>, "href"> & {
+  Pick<ComponentProps<typeof Link>, "href" | "onClick"> & {
     active?: boolean;
     tooltip: ReactNode;
   };
@@ -161,6 +162,7 @@ function AppSidebarLinkButton({
   children,
   className,
   href,
+  onClick,
   tooltip,
 }: AppSidebarLinkButtonProps) {
   return (
@@ -172,7 +174,7 @@ function AppSidebarLinkButton({
             aria-label={ariaLabel}
             className={cn(APP_SIDEBAR_LINK_CLASS, className)}
             nativeButton={false}
-            render={<Link href={href} />}
+            render={<Link href={href} onClick={onClick} />}
             size="lg"
             variant="quiet"
           >
@@ -314,7 +316,12 @@ function AppSidebarUpgrade() {
           <AppButton
             className="w-full"
             nativeButton={false}
-            render={<Link href="/billing?mode=upgrade" />}
+            render={
+              <Link
+                href="/billing?mode=upgrade"
+                onClick={recordBillingReturnRoute}
+              />
+            }
             variant="secondary"
           >
             <Sparkles
@@ -505,6 +512,7 @@ const AppSidebarChrome = memo(function AppSidebarChrome({
             active={billingActive}
             aria-label="Billing"
             href="/billing"
+            onClick={recordBillingReturnRoute}
             tooltip="Billing"
           >
             <CreditCard aria-hidden className="size-4" strokeWidth={1.8} />
