@@ -7,6 +7,7 @@ import {
   buildMonthlyBillingTrend,
   buildWorkspaceCostBreakdown,
   calendarBillingDateRange,
+  fixedTrendWindows,
   loadBillingAppCosts,
   loadBillingCosts,
   resolveBillingAppType,
@@ -74,6 +75,34 @@ test("daily cost trend zero-fills the range and leads with the merged Total", ()
     region1: 250_000,
     total: 750_000,
   });
+});
+
+test("fixed trend windows always end now and span 7 days and 6 months", () => {
+  const windows = fixedTrendWindows(new Date("2026-08-07T10:30:00.000Z"));
+
+  assert.deepEqual(windows, {
+    daily: {
+      endTime: "2026-08-07T10:30:00.000Z",
+      startTime: "2026-08-01T00:00:00.000Z",
+    },
+    monthly: {
+      endTime: "2026-08-07T10:30:00.000Z",
+      startTime: "2026-03-01T00:00:00.000Z",
+    },
+  });
+  assert.equal(
+    buildDailyCostTrend({ dateRange: windows.daily, regions: [] }).points
+      .length,
+    7
+  );
+  assert.equal(
+    buildMonthlyBillingTrend({
+      costPoints: [],
+      dateRange: windows.monthly,
+      payments: [],
+    }).length,
+    6
+  );
 });
 
 test("chart axes identify the cluster Billing Currency", () => {

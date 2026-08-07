@@ -39,28 +39,16 @@ import { BillingCostCharts } from "@/features/billing/billing-cost-charts";
 import {
   type BillingCostScope,
   type BillingCostsSnapshot,
-  buildDailyCostTrend,
-  buildMonthlyBillingTrend,
   buildWorkspaceCostBreakdown,
+  type DailyCostTrend,
   isPaidSubscriptionPayment,
+  type MonthlyBillingTrendPoint,
   resolveBillingAppType,
   type SubscriptionPayment,
 } from "@/features/billing/billing-costs-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
 const APP_PAGE_SIZE = 10;
-// The old Cost Center rendered subscription rows as "2026/07/01 10:14".
-const SUBSCRIPTION_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-  day: "2-digit",
-  hour: "2-digit",
-  hour12: false,
-  minute: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
-const TIME_RANGE_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  timeZone: "UTC",
-});
 const CONSUMPTION_ROW_KEYS = [
   "row-1",
   "row-2",
@@ -86,20 +74,43 @@ const EMPTY_SNAPSHOT: BillingCostsSnapshot = {
   workspaces: [],
 };
 
+// The Brain V2.0 tier badge recipe: border in the gradient's first stop, a 12%
+// gradient wash behind, and gradient-clipped text.
+const TIER_BADGE_STYLES: Record<string, { surface: string; text: string }> = {
+  ENTERPRISE: {
+    surface:
+      "border-tier-enterprise-from from-tier-enterprise-from/12 to-tier-enterprise-to/12",
+    text: "from-tier-enterprise-from to-tier-enterprise-to",
+  },
+  PRO: {
+    surface: "border-tier-pro-from from-tier-pro-from/12 to-tier-pro-to/12",
+    text: "from-tier-pro-from to-tier-pro-to",
+  },
+  STARTER: {
+    surface:
+      "border-tier-starter-from from-tier-starter-from/12 to-tier-starter-to/12",
+    text: "from-tier-starter-from to-tier-starter-to",
+  },
+};
+
 interface BillingCostsSurfaceProps {
   appPage: number;
   appTypeFilter: string | null;
   currency: BillingCurrency;
+  dailyTrend?: DailyCostTrend;
   dateFilter: ReactNode;
   dateRange: { endTime: string; startTime: string };
   error: unknown;
   isLoading: boolean;
+  monthlyTrend?: MonthlyBillingTrendPoint[];
   onAppPageChange?: (page: number) => void;
   onAppTypeFilterChange?: (appType: string | null) => void;
   onScopeChange?: (scope: BillingCostScope) => void;
   onSelectApp?: (app: SelectedBillingApp) => void;
   scope: BillingCostScope;
   snapshot?: BillingCostsSnapshot;
+  trendsError?: unknown;
+  trendsLoading?: boolean;
 }
 
 interface ConsumptionRow {
@@ -111,6 +122,18 @@ interface ConsumptionRow {
   queryAppType: string;
   typeName: string;
   workspaceName: string;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** The V2.0 billing timestamp: `yyyy-MM-dd HH:mm` in local time. */
+function formatBillingDateTime(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
+    date.getDate()
+  )} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 function workspaceName(
@@ -178,9 +201,36 @@ function DotGridBackdrop() {
   );
 }
 
+function PlanTierBadge({ planName }: { planName: string }) {
+  const label = planName.trim() === "" ? "Subscription" : planName;
+  const tier = TIER_BADGE_STYLES[label.toUpperCase()];
+  if (tier == null) {
+    return <Badge variant="secondary">{label}</Badge>;
+  }
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 w-fit items-center rounded-sm border bg-linear-to-r px-2 text-xs",
+        tier.surface
+      )}
+      data-slot="billing-plan-tier-badge"
+    >
+      <span
+        className={cn(
+          "bg-linear-to-r bg-clip-text font-medium text-transparent uppercase",
+          tier.text
+        )}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
 function CostScopeCard({
   cost,
   currency,
+  icon,
   isLoading,
   name,
   onClick,
@@ -188,6 +238,7 @@ function CostScopeCard({
 }: {
   cost: number;
   currency: BillingCurrency;
+  icon?: ReactNode;
   isLoading: boolean;
   name: string;
   onClick?: () => void;
@@ -197,18 +248,21 @@ function CostScopeCard({
     <button
       aria-pressed={selected}
       className={cn(
-        "flex w-40 flex-col items-start gap-1 rounded-xl border border-muted-foreground/50 border-dashed bg-card p-3 text-left shadow-xs transition-colors hover:border-brand-primary",
-        selected && "border-2 border-brand-primary border-solid"
+        "flex w-37.5 flex-col items-start gap-1 rounded-lg border border-muted-foreground/50 border-dashed bg-card p-3 text-left shadow-xs transition-colors hover:border-blue-400",
+        selected && "border-2 border-blue-400 border-solid"
       )}
       data-slot="billing-cost-scope-card"
       onClick={onClick}
       type="button"
     >
-      <span
-        className="w-full truncate text-muted-foreground text-sm"
-        title={name}
-      >
-        {name}
+      <span className="flex w-full items-center gap-2">
+        {icon}
+        <span
+          className="min-w-0 flex-1 truncate text-muted-foreground text-sm"
+          title={name}
+        >
+          {name}
+        </span>
       </span>
       {isLoading ? (
         <Skeleton className="h-6 w-16" />
@@ -216,13 +270,23 @@ function CostScopeCard({
         <span
           className={cn(
             "font-bold tabular-nums",
-            selected ? "text-brand-primary" : "text-foreground"
+            selected ? "text-blue-400" : "text-foreground"
           )}
         >
           {formatBillingAmount(cost, currency)}
         </span>
       )}
     </button>
+  );
+}
+
+/** The workspace cards' 16px gradient dot, built from existing color tokens. */
+function WorkspaceDot() {
+  return (
+    <span
+      aria-hidden
+      className="size-4 shrink-0 rounded-full bg-linear-to-br from-blue-400 to-brand-primary"
+    />
   );
 }
 
@@ -242,7 +306,7 @@ function CostTreeChildren({
             className={cn(
               "absolute top-0 left-0 h-12 w-6 rounded-bl-xl border-b border-l",
               item.selected
-                ? "border-brand-primary"
+                ? "border-blue-400"
                 : "border-muted-foreground/40 border-dashed"
             )}
           />
@@ -269,12 +333,12 @@ function SubscriptionCostTable({
   payments: SubscriptionPayment[];
 }) {
   return (
-    <TableLayout>
-      <TableLayoutCaption>
-        <span className="font-medium">Subscription</span>
+    <TableLayout className="rounded-r-none rounded-l-lg bg-card">
+      <TableLayoutCaption className="h-12 py-0">
+        <span className="font-semibold">Subscription</span>
       </TableLayoutCaption>
       <TableLayoutContent>
-        <TableLayoutHeadRow>
+        <TableLayoutHeadRow className={{ thead: "h-10" }}>
           <TableHead className="w-1/3">Time</TableHead>
           <TableHead className="w-1/3">Plan</TableHead>
           <TableHead className="w-1/3">Cost</TableHead>
@@ -287,14 +351,12 @@ function SubscriptionCostTable({
           {isLoading
             ? null
             : payments.map((payment) => (
-                <TableRow key={payment.ID}>
+                <TableRow className="h-14" key={payment.ID}>
                   <TableCell className="whitespace-nowrap tabular-nums">
-                    {SUBSCRIPTION_TIME_FORMATTER.format(new Date(payment.Time))}
+                    {formatBillingDateTime(payment.Time)}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">
-                      {payment.PlanName || "Subscription"}
-                    </Badge>
+                    <PlanTierBadge planName={payment.PlanName} />
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {formatBillingAmount(payment.Amount, currency)}
@@ -418,15 +480,15 @@ function ConsumptionCostTable({
   totalPages: number;
 }) {
   return (
-    <TableLayout>
-      <TableLayoutCaption>
+    <TableLayout className="rounded-r-none rounded-l-lg bg-card">
+      <TableLayoutCaption className="h-12 py-0">
         <div className="flex items-center gap-3">
-          <span className="font-medium">PAYG</span>
+          <span className="font-semibold">PAYG</span>
           <span className="text-muted-foreground">{timeRangeLabel}</span>
         </div>
       </TableLayoutCaption>
       <TableLayoutContent>
-        <TableLayoutHeadRow>
+        <TableLayoutHeadRow className={{ thead: "h-10" }}>
           <TableHead className="w-48">Item</TableHead>
           <TableHead className="w-40">
             <AppTypeFilter
@@ -441,7 +503,7 @@ function ConsumptionCostTable({
         <TableLayoutBody>
           {isLoading
             ? CONSUMPTION_ROW_KEYS.map((key) => (
-                <TableRow className="h-12" key={`skeleton-${key}`}>
+                <TableRow className="h-14" key={`skeleton-${key}`}>
                   <TableCell colSpan={4}>
                     <Skeleton className="h-6 w-full" />
                   </TableCell>
@@ -454,7 +516,7 @@ function ConsumptionCostTable({
           {isLoading
             ? null
             : rows.map((row) => (
-                <TableRow className="h-12" key={row.key}>
+                <TableRow className="h-14" key={row.key}>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Boxes
@@ -490,7 +552,7 @@ function ConsumptionCostTable({
             ? CONSUMPTION_ROW_KEYS.slice(rows.length).map((key) => (
                 <TableRow
                   aria-hidden
-                  className="h-12 border-none hover:bg-transparent"
+                  className="h-14 border-none hover:bg-transparent"
                   key={`placeholder-${key}`}
                 >
                   <TableCell colSpan={4} />
@@ -525,16 +587,20 @@ export function BillingCostsSurface({
   appPage,
   appTypeFilter,
   currency,
+  dailyTrend,
   dateFilter,
   dateRange,
   error,
   isLoading,
+  monthlyTrend,
   onAppPageChange,
   onAppTypeFilterChange,
   onScopeChange,
   onSelectApp,
   scope,
   snapshot = EMPTY_SNAPSHOT,
+  trendsError = null,
+  trendsLoading = false,
 }: BillingCostsSurfaceProps) {
   const workspaceNames = new Map(snapshot.workspaces);
   const workspaceCosts = buildWorkspaceCostBreakdown(snapshot);
@@ -550,17 +616,8 @@ export function BillingCostsSurface({
   const subscriptionPayments = scopedPayments.filter(
     (payment) => payment.Type.toUpperCase() === "SUBSCRIPTION"
   );
-  const monthlyTrend = buildMonthlyBillingTrend({
-    costPoints: snapshot.costPoints,
-    dateRange,
-    payments: snapshot.payments,
-  });
   const regionLabel =
     snapshot.region?.name?.en ?? snapshot.region?.domain ?? "Current region";
-  const dailyTrend = buildDailyCostTrend({
-    dateRange,
-    regions: [{ costPoints: snapshot.costPoints, label: regionLabel }],
-  });
   const consumptionRows = snapshot.appOverviews.map((app) => {
     const { queryAppType, typeName } = resolveBillingAppType(
       app.appType,
@@ -597,9 +654,9 @@ export function BillingCostsSurface({
     scope.kind === "workspace"
       ? (selectedCost?.totalMicroUnits ?? 0)
       : regionCostMicroUnits;
-  const timeRangeLabel = `${TIME_RANGE_FORMATTER.format(
-    new Date(dateRange.startTime)
-  )} – ${TIME_RANGE_FORMATTER.format(new Date(dateRange.endTime))}`;
+  const timeRangeLabel = `${formatBillingDateTime(
+    dateRange.startTime
+  )} – ${formatBillingDateTime(dateRange.endTime)}`;
   const selectApp = (row: ConsumptionRow) => {
     onSelectApp?.({
       amount: row.amount,
@@ -629,18 +686,29 @@ export function BillingCostsSurface({
       )}
 
       <Tabs defaultValue="details">
-        <TabsList aria-label="Cost views">
-          <TabsTrigger className="min-h-11" value="details">
+        <TabsList
+          aria-label="Cost views"
+          className="w-fit gap-1 rounded-lg border border-border p-1"
+        >
+          <TabsTrigger
+            className="h-9 rounded-md px-4 after:hidden data-[state=active]:bg-input"
+            value="details"
+          >
             Billing
           </TabsTrigger>
-          <TabsTrigger className="min-h-11" value="trends">
+          <TabsTrigger
+            className="h-9 rounded-md px-4 after:hidden data-[state=active]:bg-input"
+            value="trends"
+          >
             Cost &amp; Top-up Trends
           </TabsTrigger>
         </TabsList>
 
         <TabsContent className="py-6" value="details">
-          <div className="overflow-hidden rounded-2xl border border-border">
-            <div className="border-border border-b px-4 py-3">{dateFilter}</div>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <div className="flex h-17 items-center border-border border-b px-4">
+              {dateFilter}
+            </div>
             <div className="flex flex-col lg:flex-row">
               <div className="relative min-h-96 flex-1 overflow-hidden bg-muted/20 p-5">
                 <DotGridBackdrop />
@@ -679,6 +747,7 @@ export function BillingCostsSurface({
                                   <CostScopeCard
                                     cost={workspace.totalMicroUnits}
                                     currency={currency}
+                                    icon={<WorkspaceDot />}
                                     isLoading={isLoading}
                                     name={workspace.name}
                                     onClick={() =>
@@ -704,14 +773,14 @@ export function BillingCostsSurface({
                 </div>
               </div>
 
-              <div className="flex w-full flex-col gap-4 border-border border-t p-4 lg:w-1/2 lg:border-t-0 lg:border-l">
+              <div className="flex w-full flex-col border-border border-t lg:w-1/2 lg:border-t-0 lg:border-l">
                 <div
-                  className="sticky top-0 z-10 flex items-center justify-between gap-4 rounded-xl border border-border bg-brand-primary/10 p-4 text-sm shadow-xs backdrop-blur-sm"
+                  className="sticky top-0 z-10 ml-4 flex h-14 items-center justify-between gap-4 rounded-bl-lg border-border border-r border-b border-l bg-card bg-linear-to-b from-white/5 to-white/5 px-4 text-sm"
                   data-slot="billing-cost-scope-banner"
                 >
                   <div className="font-semibold">
                     <span>{bannerTitle}: </span>
-                    <span className="text-brand-primary tabular-nums">
+                    <span className="text-blue-400 tabular-nums">
                       {isLoading
                         ? "…"
                         : formatBillingAmount(bannerCostMicroUnits, currency)}
@@ -719,26 +788,28 @@ export function BillingCostsSurface({
                   </div>
                 </div>
 
-                <SubscriptionCostTable
-                  currency={currency}
-                  isLoading={isLoading}
-                  payments={subscriptionPayments}
-                />
+                <div className="flex flex-col gap-4 py-4 pl-4">
+                  <SubscriptionCostTable
+                    currency={currency}
+                    isLoading={isLoading}
+                    payments={subscriptionPayments}
+                  />
 
-                <ConsumptionCostTable
-                  appPage={appPage}
-                  appTypeFilter={appTypeFilter}
-                  appTypeOptions={appTypeOptions}
-                  currency={currency}
-                  isLoading={isLoading}
-                  onAppPageChange={onAppPageChange}
-                  onAppTypeFilterChange={onAppTypeFilterChange}
-                  onSelectRow={selectApp}
-                  rows={consumptionRows}
-                  timeRangeLabel={timeRangeLabel}
-                  totalCount={snapshot.totalAppOverviews}
-                  totalPages={snapshot.totalAppOverviewPages}
-                />
+                  <ConsumptionCostTable
+                    appPage={appPage}
+                    appTypeFilter={appTypeFilter}
+                    appTypeOptions={appTypeOptions}
+                    currency={currency}
+                    isLoading={isLoading}
+                    onAppPageChange={onAppPageChange}
+                    onAppTypeFilterChange={onAppTypeFilterChange}
+                    onSelectRow={selectApp}
+                    rows={consumptionRows}
+                    timeRangeLabel={timeRangeLabel}
+                    totalCount={snapshot.totalAppOverviews}
+                    totalPages={snapshot.totalAppOverviewPages}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -748,6 +819,8 @@ export function BillingCostsSurface({
           <BillingCostCharts
             currency={currency}
             daily={dailyTrend}
+            error={trendsError}
+            isLoading={trendsLoading}
             monthly={monthlyTrend}
           />
         </TabsContent>

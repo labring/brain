@@ -111,6 +111,28 @@ export function calendarBillingDateRange(input: {
   return { endTime: end.toISOString(), startTime: start.toISOString() };
 }
 
+/**
+ * Fixed chart windows anchored at `now`, the old Cost Center behavior: the
+ * daily chart always covers the last 7 days and the monthly chart the last 6
+ * calendar months, independent of the Billing view's date selector.
+ */
+export function fixedTrendWindows(now: Date): {
+  daily: BillingDateRange;
+  monthly: BillingDateRange;
+} {
+  const endTime = now.toISOString();
+  const dailyStart = new Date(now);
+  dailyStart.setUTCDate(dailyStart.getUTCDate() - 6);
+  dailyStart.setUTCHours(0, 0, 0, 0);
+  const monthlyStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1)
+  );
+  return {
+    daily: { endTime, startTime: dailyStart.toISOString() },
+    monthly: { endTime, startTime: monthlyStart.toISOString() },
+  };
+}
+
 export interface LoadBillingCostsInput extends BillingCredentials {
   appType?: string | null;
   dateRange: BillingDateRange;
@@ -435,6 +457,80 @@ export async function loadBillingAppCosts(
     totalPages: response.app_costs.total_pages,
     totalRecords: response.app_costs.total_records,
   };
+}
+
+export interface LoadBillingTrendInput extends BillingCredentials {
+  dateRange: BillingDateRange;
+}
+
+export async function loadBillingDailyTrend(
+  input: LoadBillingTrendInput,
+  fetch: BillingFetch = globalThis.fetch
+): Promise<DailyCostTrend> {
+  const credentials = {
+    appToken: input.appToken,
+    kubeconfig: input.kubeconfig,
+  };
+  const range = {
+    endTime: input.dateRange.endTime,
+    startTime: input.dateRange.startTime,
+  };
+  const [regions, costs] = await Promise.all([
+    requestBillingCosts(
+      "/api/billing/regions",
+      regionsResponseSchema,
+      credentials,
+      fetch
+    ),
+    requestBillingCosts(
+      "/api/billing/costs",
+      costsResponseSchema,
+      credentials,
+      fetch,
+      range
+    ),
+  ]);
+  const region = regions.regions[0];
+  const regionLabel = region?.name?.en ?? region?.domain ?? "Current region";
+  return buildDailyCostTrend({
+    dateRange: input.dateRange,
+    regions: [{ costPoints: costs.data.costs, label: regionLabel }],
+  });
+}
+
+export async function loadBillingMonthlyTrend(
+  input: LoadBillingTrendInput,
+  fetch: BillingFetch = globalThis.fetch
+): Promise<MonthlyBillingTrendPoint[]> {
+  const credentials = {
+    appToken: input.appToken,
+    kubeconfig: input.kubeconfig,
+  };
+  const range = {
+    endTime: input.dateRange.endTime,
+    startTime: input.dateRange.startTime,
+  };
+  const [costs, payments] = await Promise.all([
+    requestBillingCosts(
+      "/api/billing/costs",
+      costsResponseSchema,
+      credentials,
+      fetch,
+      range
+    ),
+    requestBillingCosts(
+      "/api/billing/payments",
+      paymentsResponseSchema,
+      credentials,
+      fetch,
+      range
+    ),
+  ]);
+  return buildMonthlyBillingTrend({
+    costPoints: costs.data.costs,
+    dateRange: input.dateRange,
+    payments: payments.payments,
+  });
 }
 
 export async function loadBillingCosts(

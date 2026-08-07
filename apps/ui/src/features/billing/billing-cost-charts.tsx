@@ -9,6 +9,7 @@ import {
   ChartTooltipContent,
 } from "@workspace/ui/components/chart";
 import { Separator } from "@workspace/ui/components/separator";
+import { Skeleton } from "@workspace/ui/components/skeleton";
 import { Fragment, type ReactNode } from "react";
 import {
   Bar,
@@ -40,22 +41,26 @@ const TREND_SERIES_COLORS = [
   "var(--color-cyan-400)",
 ];
 
-// Cost Center's bar pairing: expenditure near-neutral, payments in blue.
+// Cost Center's bar pairing: charges near-neutral, top-ups in blue.
 const MONTHLY_CHART_CONFIG = {
   expenditureMicroUnits: {
     color: "var(--color-foreground)",
-    label: "Expenditure",
+    label: "Charges",
   },
   paymentMicroUnits: {
     color: "var(--color-brand-primary)",
-    label: "Payments",
+    label: "Top-ups",
   },
 } satisfies ChartConfig;
 
+const EMPTY_DAILY_TREND: DailyCostTrend = { points: [], series: [] };
+
 interface BillingCostChartsProps {
   currency: BillingCurrency;
-  daily: DailyCostTrend;
-  monthly: MonthlyBillingTrendPoint[];
+  daily?: DailyCostTrend;
+  error?: unknown;
+  isLoading?: boolean;
+  monthly?: MonthlyBillingTrendPoint[];
 }
 
 function ChartCard({
@@ -68,8 +73,8 @@ function ChartCard({
   title: string;
 }) {
   return (
-    <section className="min-w-0 rounded-2xl border border-border">
-      <div className="flex h-16 items-center gap-3 border-border border-b px-6">
+    <section className="min-w-0 rounded-lg border border-border">
+      <div className="flex h-18 items-center gap-3 border-border border-b p-4">
         <h3 className="font-medium text-foreground text-sm">{title}</h3>
         {subtitles.map((subtitle) => (
           <Fragment key={subtitle}>
@@ -83,10 +88,34 @@ function ChartCard({
   );
 }
 
+function ChartBody({
+  children,
+  error,
+  isLoading,
+}: {
+  children: ReactNode;
+  error: unknown;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return <Skeleton className="h-72 w-full bg-white/8" />;
+  }
+  if (error != null) {
+    return (
+      <div className="flex h-72 items-center justify-center text-muted-foreground text-sm">
+        Trend data is unavailable.
+      </div>
+    );
+  }
+  return children;
+}
+
 export function BillingCostCharts({
   currency,
-  daily,
-  monthly,
+  daily = EMPTY_DAILY_TREND,
+  error = null,
+  isLoading = false,
+  monthly = [],
 }: BillingCostChartsProps) {
   const formatAmount = (value: number) => formatBillingAmount(value, currency);
   const formatAxisAmount = (value: number) =>
@@ -103,76 +132,86 @@ export function BillingCostCharts({
 
   return (
     <div className="flex flex-col gap-4" data-slot="billing-cost-charts">
-      <ChartCard subtitles={["Selected period"]} title="Cost trend">
-        <ChartContainer
-          className="aspect-auto h-72 w-full"
-          config={dailyChartConfig}
-        >
-          <LineChart accessibilityLayer data={daily.points}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              axisLine={false}
-              dataKey="label"
-              minTickGap={24}
-              tickLine={false}
-            />
-            <YAxis
-              axisLine={false}
-              tickFormatter={formatAxisAmount}
-              tickLine={false}
-            />
-            <ChartTooltip
-              content={<ChartTooltipContent valueFormatter={formatAmount} />}
-            />
-            {/* itemSorter defaults to alphabetical; null keeps series order,
-                so the merged Total legend entry stays first. */}
-            <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
-            {daily.series.map((series) => (
-              <Line
-                dataKey={series.dataKey}
-                dot={{ r: 2.5 }}
-                key={series.dataKey}
-                stroke={`var(--color-${series.dataKey})`}
-                strokeWidth={2}
-                type="monotone"
+      <ChartCard subtitles={["Last 7 days"]} title="Cost Trends">
+        <ChartBody error={error} isLoading={isLoading}>
+          <ChartContainer
+            className="aspect-auto h-72 w-full"
+            config={dailyChartConfig}
+          >
+            <LineChart accessibilityLayer data={daily.points}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                axisLine={false}
+                dataKey="label"
+                minTickGap={24}
+                tickLine={false}
               />
-            ))}
-          </LineChart>
-        </ChartContainer>
+              <YAxis
+                axisLine={false}
+                tickFormatter={formatAxisAmount}
+                tickLine={false}
+              />
+              <ChartTooltip
+                content={<ChartTooltipContent valueFormatter={formatAmount} />}
+              />
+              {/* itemSorter defaults to alphabetical; null keeps series order,
+                  so the merged Total legend entry stays first. */}
+              <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
+              {daily.series.map((series) => (
+                <Line
+                  activeDot={{ r: 4 }}
+                  dataKey={series.dataKey}
+                  dot={false}
+                  key={series.dataKey}
+                  stroke={`var(--color-${series.dataKey})`}
+                  strokeWidth={2}
+                  type="monotone"
+                />
+              ))}
+            </LineChart>
+          </ChartContainer>
+        </ChartBody>
       </ChartCard>
 
-      <ChartCard subtitles={["By month"]} title="Expenditure vs payments">
-        <ChartContainer
-          className="aspect-auto h-72 w-full"
-          config={MONTHLY_CHART_CONFIG}
-        >
-          <BarChart accessibilityLayer data={monthly}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              axisLine={false}
-              dataKey="label"
-              minTickGap={24}
-              tickLine={false}
-            />
-            <YAxis
-              axisLine={false}
-              tickFormatter={formatAxisAmount}
-              tickLine={false}
-            />
-            <ChartTooltip
-              content={<ChartTooltipContent valueFormatter={formatAmount} />}
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            <Bar
-              dataKey="expenditureMicroUnits"
-              fill="var(--color-expenditureMicroUnits)"
-            />
-            <Bar
-              dataKey="paymentMicroUnits"
-              fill="var(--color-paymentMicroUnits)"
-            />
-          </BarChart>
-        </ChartContainer>
+      <ChartCard
+        subtitles={["Last 6 Months", "All Regions"]}
+        title="Monthly Top-ups and Charges"
+      >
+        <ChartBody error={error} isLoading={isLoading}>
+          <ChartContainer
+            className="aspect-auto h-72 w-full"
+            config={MONTHLY_CHART_CONFIG}
+          >
+            <BarChart accessibilityLayer data={monthly}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                axisLine={false}
+                dataKey="label"
+                minTickGap={24}
+                tickLine={false}
+              />
+              <YAxis
+                axisLine={false}
+                tickFormatter={formatAxisAmount}
+                tickLine={false}
+              />
+              <ChartTooltip
+                content={<ChartTooltipContent valueFormatter={formatAmount} />}
+              />
+              <ChartLegend content={<ChartLegendContent />} />
+              <Bar
+                dataKey="expenditureMicroUnits"
+                fill="var(--color-expenditureMicroUnits)"
+                radius={[4, 4, 0, 0]}
+              />
+              <Bar
+                dataKey="paymentMicroUnits"
+                fill="var(--color-paymentMicroUnits)"
+                radius={[4, 4, 0, 0]}
+              />
+            </BarChart>
+          </ChartContainer>
+        </ChartBody>
       </ChartCard>
     </div>
   );
