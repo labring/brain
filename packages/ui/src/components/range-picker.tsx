@@ -50,10 +50,13 @@ function RangePickerContent({
         "w-auto border border-border bg-input/30 p-0 text-foreground shadow-md ring-0 backdrop-blur-xl",
         className
       )}
-      data-slot="range-picker-content"
       {...props}
     >
-      <div className="flex">{children}</div>
+      {/* The slot marker lives on the inner wrapper: overriding the popover's
+          own data-slot would break calendar.tsx's popover-content selector. */}
+      <div className="flex" data-slot="range-picker-content">
+        {children}
+      </div>
     </PopoverContent>
   );
 }
