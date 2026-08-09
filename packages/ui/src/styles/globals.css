@@ -62,6 +62,11 @@
   --color-tier-enterprise-to: var(--sealai-tier-enterprise-to);
   --color-tier-team-from: var(--sealai-tier-team-from);
   --color-tier-team-to: var(--sealai-tier-team-to);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-project-chrome-surface: var(--project-chrome-surface);
   --color-onboarding-heading-accent: var(--onboarding-heading-accent);
   --color-db-access-sticky-header-surface: var(
@@ -115,6 +120,13 @@
   );
   --sealai-brand-primary-hover: var(--color-blue-500);
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
+
+  /** Chart categorical series palette (Brain V2.0 dataviz); theme-invariant. */
+  --chart-1: #49aeff;
+  --chart-2: #00d1b5;
+  --chart-3: var(--color-violet-400);
+  --chart-4: var(--color-amber-500);
+  --chart-5: var(--color-cyan-400);
 
   /** SealAI plan-tier gradients (Brain V2.0 badge palette). */
   --sealai-tier-free-from: #d4d4d4;

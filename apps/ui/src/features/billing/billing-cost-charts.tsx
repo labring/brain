@@ -4,9 +4,7 @@ import {
   type ChartConfig,
   ChartContainer,
   ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
-  ChartTooltipContent,
 } from "@workspace/ui/components/chart";
 import { Separator } from "@workspace/ui/components/separator";
 import { Skeleton } from "@workspace/ui/components/skeleton";
@@ -15,13 +13,16 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  type DefaultLegendContentProps,
   Line,
   LineChart,
+  type TooltipContentProps,
   XAxis,
   YAxis,
 } from "recharts";
 
 import {
+  billingCurrencySymbol,
   formatBillingAmount,
   formatCompactBillingAmount,
 } from "@/features/billing/billing-amount";
@@ -31,27 +32,45 @@ import type {
 } from "@/features/billing/billing-costs-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
-// Cost Center's trend palette (blue/teal/violet/amber/cyan), mapped to the
-// nearest Tailwind scale tokens; Total always takes the brand primary.
+// Series take the chart tokens in order; Total always comes first.
 const TREND_SERIES_COLORS = [
-  "var(--color-brand-primary)",
-  "var(--color-teal-400)",
-  "var(--color-violet-400)",
-  "var(--color-amber-500)",
-  "var(--color-cyan-400)",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
 ];
 
-// Cost Center's bar pairing: charges near-neutral, top-ups in blue.
-const MONTHLY_CHART_CONFIG = {
-  expenditureMicroUnits: {
-    color: "var(--color-foreground)",
+// Charges carry the saturated bar, top-ups the pale companion.
+const MONTHLY_SERIES = [
+  {
+    color: "var(--color-blue-500)",
+    dataKey: "expenditureMicroUnits",
     label: "Charges",
   },
-  paymentMicroUnits: {
-    color: "var(--color-brand-primary)",
+  {
+    color: "var(--color-blue-100)",
+    dataKey: "paymentMicroUnits",
     label: "Top-ups",
   },
-} satisfies ChartConfig;
+] as const;
+
+const MONTHLY_CHART_CONFIG = Object.fromEntries(
+  MONTHLY_SERIES.map((series) => [
+    series.dataKey,
+    { color: series.color, label: series.label },
+  ])
+) satisfies ChartConfig;
+
+const MONTHLY_SERIES_LABELS = Object.fromEntries(
+  MONTHLY_SERIES.map((series) => [series.dataKey, series.label])
+);
+
+const DASHED_GRID = "2 2";
+const AXIS_LINE = { stroke: "var(--color-border)", strokeWidth: 1.5 };
+const AXIS_TICK_LINE = { stroke: "var(--color-border)" };
+// Headroom for the currency label sitting above the Y axis.
+const CHART_MARGIN = { top: 24 };
 
 const EMPTY_DAILY_TREND: DailyCostTrend = { points: [], series: [] };
 
@@ -61,6 +80,141 @@ interface BillingCostChartsProps {
   error?: unknown;
   isLoading?: boolean;
   monthly?: MonthlyBillingTrendPoint[];
+}
+
+function currencyAxisLabel(symbol: string) {
+  return {
+    fill: "var(--color-muted-foreground)",
+    offset: 12,
+    position: "top",
+    value: symbol,
+  } as const;
+}
+
+function TrendTooltipContent({
+  active,
+  label,
+  labels,
+  payload,
+  symbol,
+  valueFormatter,
+}: Partial<TooltipContentProps> & {
+  labels: Record<string, string>;
+  symbol: string;
+  valueFormatter: (value: number) => string;
+}) {
+  if (!(active && payload?.length)) {
+    return null;
+  }
+  return (
+    <div className="w-50 rounded-lg border border-border bg-popover/80 p-4 backdrop-blur-xl">
+      <p className="text-popover-foreground text-sm">{`${String(label)} (${symbol})`}</p>
+      <div className="my-2 h-px w-full bg-border" />
+      <div className="flex flex-col gap-1.5">
+        {payload
+          .filter((item) => item.type !== "none")
+          .map((item) => {
+            const seriesKey = String(item.dataKey ?? item.name);
+            return (
+              <div
+                className="flex items-center justify-between gap-2 text-sm"
+                key={seriesKey}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <span className="truncate text-muted-foreground">
+                    {labels[seriesKey] ?? seriesKey}
+                  </span>
+                </span>
+                <span className="text-foreground tabular-nums">
+                  {valueFormatter(Number(item.value))}
+                </span>
+              </div>
+            );
+          })}
+      </div>
+    </div>
+  );
+}
+
+/** Line-chart legend marker: a series-colored line through a hollow ring. */
+function LineLegendContent({
+  labels,
+  payload,
+}: {
+  labels: Record<string, string>;
+  payload?: DefaultLegendContentProps["payload"];
+}) {
+  if (!payload?.length) {
+    return null;
+  }
+  return (
+    <div className="flex items-center justify-center gap-3 pt-3">
+      {payload
+        .filter((item) => item.type !== "none")
+        .map((item) => (
+          <span
+            className="flex items-center gap-1.5 text-muted-foreground text-xs"
+            key={String(item.value)}
+          >
+            <svg
+              aria-hidden="true"
+              className="shrink-0"
+              fill="none"
+              height="10"
+              viewBox="0 0 16 10"
+              width="16"
+            >
+              <path d="M0 5H16" stroke={item.color} strokeWidth="2" />
+              <circle
+                cx="8"
+                cy="5"
+                fill="var(--color-canvas-surface)"
+                r="3"
+                stroke={item.color}
+                strokeWidth="2"
+              />
+            </svg>
+            {labels[String(item.value)] ?? String(item.value)}
+          </span>
+        ))}
+    </div>
+  );
+}
+
+function BarLegendContent({
+  labels,
+  payload,
+}: {
+  labels: Record<string, string>;
+  payload?: DefaultLegendContentProps["payload"];
+}) {
+  if (!payload?.length) {
+    return null;
+  }
+  return (
+    <div className="flex items-center justify-center gap-6 pt-3">
+      {payload
+        .filter((item) => item.type !== "none")
+        .map((item) => (
+          <span
+            className="flex items-center gap-1.5 text-muted-foreground text-xs"
+            key={String(item.value)}
+          >
+            <span
+              aria-hidden
+              className="h-2 w-4 shrink-0 rounded-[2px]"
+              style={{ backgroundColor: item.color }}
+            />
+            {labels[String(item.value)] ?? String(item.value)}
+          </span>
+        ))}
+    </div>
+  );
 }
 
 function ChartCard({
@@ -117,6 +271,7 @@ export function BillingCostCharts({
   isLoading = false,
   monthly = [],
 }: BillingCostChartsProps) {
+  const symbol = billingCurrencySymbol(currency);
   const formatAmount = (value: number) => formatBillingAmount(value, currency);
   const formatAxisAmount = (value: number) =>
     formatCompactBillingAmount(value, currency);
@@ -129,6 +284,9 @@ export function BillingCostCharts({
       },
     ])
   );
+  const dailySeriesLabels = Object.fromEntries(
+    daily.series.map((series) => [series.dataKey, series.label])
+  );
 
   return (
     <div className="flex flex-col gap-4" data-slot="billing-cost-charts">
@@ -138,33 +296,62 @@ export function BillingCostCharts({
             className="aspect-auto h-72 w-full"
             config={dailyChartConfig}
           >
-            <LineChart accessibilityLayer data={daily.points}>
-              <CartesianGrid vertical={false} />
+            <LineChart
+              accessibilityLayer
+              data={daily.points}
+              margin={CHART_MARGIN}
+            >
+              <CartesianGrid
+                stroke="var(--color-border)"
+                strokeDasharray={DASHED_GRID}
+                vertical={false}
+              />
               <XAxis
-                axisLine={false}
+                axisLine={AXIS_LINE}
                 dataKey="label"
                 minTickGap={24}
-                tickLine={false}
+                tickLine={AXIS_TICK_LINE}
+                tickMargin={8}
+                tickSize={4}
               />
               <YAxis
                 axisLine={false}
+                label={currencyAxisLabel(symbol)}
                 tickFormatter={formatAxisAmount}
                 tickLine={false}
               />
               <ChartTooltip
-                content={<ChartTooltipContent valueFormatter={formatAmount} />}
+                content={
+                  <TrendTooltipContent
+                    labels={dailySeriesLabels}
+                    symbol={symbol}
+                    valueFormatter={formatAmount}
+                  />
+                }
+                cursor={{
+                  stroke: "var(--color-muted-foreground)",
+                  strokeDasharray: DASHED_GRID,
+                }}
               />
               {/* itemSorter defaults to alphabetical; null keeps series order,
                   so the merged Total legend entry stays first. */}
-              <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
+              <ChartLegend
+                content={<LineLegendContent labels={dailySeriesLabels} />}
+                itemSorter={null}
+              />
               {daily.series.map((series) => (
                 <Line
-                  activeDot={{ r: 4 }}
+                  activeDot={{
+                    fill: "var(--color-canvas-surface)",
+                    r: 3,
+                    stroke: `var(--color-${series.dataKey})`,
+                    strokeWidth: 2,
+                  }}
                   dataKey={series.dataKey}
                   dot={false}
                   key={series.dataKey}
                   stroke={`var(--color-${series.dataKey})`}
-                  strokeWidth={2}
+                  strokeWidth={1.5}
                   type="monotone"
                 />
               ))}
@@ -182,33 +369,51 @@ export function BillingCostCharts({
             className="aspect-auto h-72 w-full"
             config={MONTHLY_CHART_CONFIG}
           >
-            <BarChart accessibilityLayer data={monthly}>
-              <CartesianGrid vertical={false} />
+            <BarChart
+              accessibilityLayer
+              barGap={0}
+              data={monthly}
+              margin={CHART_MARGIN}
+            >
+              <CartesianGrid
+                stroke="var(--color-border)"
+                strokeDasharray={DASHED_GRID}
+                vertical={false}
+              />
               <XAxis
-                axisLine={false}
+                axisLine={AXIS_LINE}
                 dataKey="label"
                 minTickGap={24}
-                tickLine={false}
+                tickLine={AXIS_TICK_LINE}
+                tickMargin={8}
+                tickSize={4}
               />
               <YAxis
                 axisLine={false}
+                label={currencyAxisLabel(symbol)}
                 tickFormatter={formatAxisAmount}
                 tickLine={false}
               />
               <ChartTooltip
-                content={<ChartTooltipContent valueFormatter={formatAmount} />}
+                content={
+                  <TrendTooltipContent
+                    labels={MONTHLY_SERIES_LABELS}
+                    symbol={symbol}
+                    valueFormatter={formatAmount}
+                  />
+                }
               />
-              <ChartLegend content={<ChartLegendContent />} />
-              <Bar
-                dataKey="expenditureMicroUnits"
-                fill="var(--color-expenditureMicroUnits)"
-                radius={[4, 4, 0, 0]}
+              <ChartLegend
+                content={<BarLegendContent labels={MONTHLY_SERIES_LABELS} />}
               />
-              <Bar
-                dataKey="paymentMicroUnits"
-                fill="var(--color-paymentMicroUnits)"
-                radius={[4, 4, 0, 0]}
-              />
+              {MONTHLY_SERIES.map((series) => (
+                <Bar
+                  dataKey={series.dataKey}
+                  fill={`var(--color-${series.dataKey})`}
+                  key={series.dataKey}
+                  maxBarSize={60}
+                />
+              ))}
             </BarChart>
           </ChartContainer>
         </ChartBody>
