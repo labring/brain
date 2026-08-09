@@ -1,7 +1,7 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppSelect } from "@workspace/ui/components/app-select";
-import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
@@ -22,7 +22,6 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import {
-  Bot,
   Boxes,
   CircleCheck,
   CircuitBoard,
@@ -35,9 +34,8 @@ import {
   Minus,
   Network,
   Plus,
-  Users,
 } from "lucide-react";
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import useSWR from "swr";
 
 import {
@@ -46,7 +44,8 @@ import {
   formatPreciseBillingAmount,
   formatPreciseBillingNumber,
 } from "@/features/billing/billing-amount";
-import type { BillingPlanResourceType } from "@/features/billing/billing-plan-catalog";
+import { BillingPlanChangeDialog } from "@/features/billing/billing-plan-change-dialog";
+import { loadBillingPlanSnapshot } from "@/features/billing/billing-plan-data";
 import {
   type BillingMeteredPrice,
   type BillingPriceType,
@@ -81,12 +80,163 @@ const PRICE_ICONS = {
   traffic: Network,
 } satisfies Record<BillingPriceType, LucideIcon>;
 
-const PLAN_RESOURCE_ICONS = {
-  ...PRICE_ICONS,
-  ai: Bot,
-  other: Boxes,
-  seats: Users,
-} satisfies Record<BillingPlanResourceType, LucideIcon>;
+// Brain V2.0 pricing-card recipe: the tier gradient as a solid border (first
+// stop), a 12% wash across the face, and the full gradient clipped into the
+// name and price. Shares PlanBadge's palette aliases (STANDARD borrows PRO,
+// PLUS borrows ENTERPRISE); names without a recipe — Starter included, per the
+// pricing design — keep the neutral card.
+const PRO_CARD_RECIPE = {
+  card: "border-tier-pro-from bg-linear-to-br from-tier-pro-from/12 to-tier-pro-to/12",
+  text: "bg-linear-to-r from-tier-pro-from to-tier-pro-to bg-clip-text text-transparent",
+};
+const ENTERPRISE_CARD_RECIPE = {
+  card: "border-tier-enterprise-from bg-linear-to-br from-tier-enterprise-from/12 to-tier-enterprise-to/12",
+  text: "bg-linear-to-r from-tier-enterprise-from to-tier-enterprise-to bg-clip-text text-transparent",
+};
+const PLAN_CARD_RECIPES: Record<string, { card: string; text: string }> = {
+  ENTERPRISE: ENTERPRISE_CARD_RECIPE,
+  FREE: {
+    card: "border-tier-free-from bg-linear-to-br from-tier-free-from/12 to-tier-free-to/12",
+    text: "bg-linear-to-r from-tier-free-from to-tier-free-to bg-clip-text text-transparent",
+  },
+  HOBBY: {
+    card: "border-tier-hobby-from bg-linear-to-br from-tier-hobby-from/12 to-tier-hobby-to/12",
+    text: "bg-linear-to-r from-tier-hobby-from to-tier-hobby-to bg-clip-text text-transparent",
+  },
+  PLUS: ENTERPRISE_CARD_RECIPE,
+  PRO: PRO_CARD_RECIPE,
+  STANDARD: PRO_CARD_RECIPE,
+  TEAM: {
+    card: "border-tier-team-from bg-linear-to-br from-tier-team-from/12 to-tier-team-to/12",
+    text: "bg-linear-to-r from-tier-team-from to-tier-team-to bg-clip-text text-transparent",
+  },
+};
+
+const CHECK_GRADIENT_ID = "billing-pricing-check-gradient";
+
+interface BillingPlanCardState {
+  changeKind: "downgrade" | "upgrade" | null;
+  isCurrent: boolean;
+}
+
+function PlanCardSpec({ children }: { children: ReactNode }) {
+  return (
+    <li className="flex items-center gap-2 text-muted-foreground">
+      <CircleCheck
+        aria-hidden
+        className="size-5 shrink-0 [stroke:url(#billing-pricing-check-gradient)]"
+        strokeWidth={1.75}
+      />
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function BillingPlanCard({
+  action,
+  currency,
+  gpuEnabled,
+  mostPopular,
+  plan,
+}: {
+  action: ReactNode;
+  currency: BillingCurrency;
+  gpuEnabled: boolean;
+  mostPopular: boolean;
+  plan: BillingPricingPlan;
+}) {
+  const recipe = PLAN_CARD_RECIPES[plan.name.trim().toUpperCase()];
+  const resources = plan.resources.filter(
+    (resource) => gpuEnabled || resource.type !== "gpu"
+  );
+  const features = planFeatures(plan.name);
+  return (
+    <article
+      className={cn(
+        "relative flex min-w-0 flex-1 flex-col gap-5 rounded-xl border bg-white/5 px-7 pt-6 pb-10 shadow-xs",
+        recipe == null ? "border-border" : recipe.card
+      )}
+    >
+      {mostPopular ? (
+        <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-brand-primary px-2 py-1 font-medium text-brand-primary-foreground text-xs">
+          Most Popular
+        </span>
+      ) : null}
+      <div className="flex flex-col gap-2">
+        <h3
+          className={cn(
+            "font-semibold text-xl",
+            recipe == null ? "text-foreground" : recipe.text
+          )}
+        >
+          {plan.name}
+        </h3>
+        <p className="min-h-15 text-muted-foreground text-sm">
+          {plan.description}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-end gap-x-1 tabular-nums">
+        {plan.monthlyOriginalPriceMicroUnits > 0 ? (
+          <span className="font-semibold text-3xl text-foreground/50 leading-none line-through">
+            {formatBillingAmount(plan.monthlyOriginalPriceMicroUnits, currency)}
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            "font-semibold text-3xl leading-none",
+            recipe == null ? "text-foreground" : recipe.text
+          )}
+        >
+          {formatBillingAmount(plan.monthlyPriceMicroUnits, currency)}
+        </span>
+        <span className="text-muted-foreground text-sm">/month</span>
+      </div>
+      {action}
+      <ul className="flex flex-col gap-3 text-sm">
+        {resources.map((resource) => (
+          <PlanCardSpec key={`${resource.type}-${resource.label}`}>
+            {resource.value} {resource.label}
+          </PlanCardSpec>
+        ))}
+        {features.map((feature) => (
+          <PlanCardSpec key={feature}>{feature}</PlanCardSpec>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+function planCardAction({
+  onSelectPlan,
+  plan,
+  planStates,
+  planStatesPending,
+}: {
+  onSelectPlan?: (planId: string) => void;
+  plan: BillingPricingPlan;
+  planStates?: ReadonlyMap<string, BillingPlanCardState>;
+  planStatesPending: boolean;
+}): ReactNode {
+  if (planStates == null) {
+    return planStatesPending ? <Skeleton className="h-9 w-full" /> : null;
+  }
+  const state = planStates.get(plan.id);
+  if (state == null) {
+    return null;
+  }
+  if (state.isCurrent) {
+    return (
+      <AppButton className="w-full" disabled>
+        Your current plan
+      </AppButton>
+    );
+  }
+  return (
+    <AppButton className="w-full" onClick={() => onSelectPlan?.(plan.id)}>
+      {state.changeKind === "downgrade" ? "Downgrade" : "Upgrade"}
+    </AppButton>
+  );
+}
 
 const PLAN_FEATURES = [
   {
@@ -114,10 +264,16 @@ function planFeatures(planName: string): readonly string[] {
 export function BillingPlanCatalog({
   currency,
   gpuEnabled,
+  onSelectPlan,
+  planStates,
+  planStatesPending = false,
   plans,
 }: {
   currency: BillingCurrency;
   gpuEnabled: boolean;
+  onSelectPlan?: (planId: string) => void;
+  planStates?: ReadonlyMap<string, BillingPlanCardState>;
+  planStatesPending?: boolean;
   plans: BillingPricingPlan[];
 }) {
   const mainPlans = plans
@@ -129,105 +285,44 @@ export function BillingPlanCatalog({
     .slice()
     .sort((left, right) => left.order - right.order)
     .slice(0, 2);
+  const standardIndex = mainPlans.findIndex(
+    (plan) => plan.name.trim().toUpperCase() === "STANDARD"
+  );
+  const mostPopularIndex = standardIndex === -1 ? 1 : standardIndex;
 
   return (
     <section className="pb-8" data-slot="billing-pricing-plan-catalog">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="font-medium text-foreground text-lg">
-            Subscription plan catalog
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            Monthly workspace plans
-          </p>
-        </div>
-        <Badge variant="outline">Monthly</Badge>
-      </div>
+      <svg aria-hidden="true" className="absolute size-0">
+        <linearGradient id={CHECK_GRADIENT_ID} x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stopColor="var(--color-zinc-50)" />
+          <stop offset="1" stopColor="var(--color-blue-500)" />
+        </linearGradient>
+      </svg>
+      <h2 className="mb-4 font-medium text-foreground text-lg">
+        Choose Your Workspace Plan
+      </h2>
       {plans.length === 0 ? (
         <div className="border-border border-y py-12 text-center text-muted-foreground text-sm">
           No subscription plans are available.
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {mainPlans.map((plan, index) => {
-              const resources = plan.resources.filter(
-                (resource) => gpuEnabled || resource.type !== "gpu"
-              );
-              const features = planFeatures(plan.name);
-              return (
-                <article
-                  className="relative flex min-h-64 flex-col rounded-md border border-border bg-card p-5 shadow-xs"
-                  key={plan.id}
-                >
-                  {index === 1 ? (
-                    <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      Most popular
-                    </Badge>
-                  ) : null}
-                  <div className="min-w-0">
-                    <h3 className="font-semibold text-foreground text-lg">
-                      {plan.name}
-                    </h3>
-                    <p className="mt-1 min-h-10 text-muted-foreground text-sm">
-                      {plan.description}
-                    </p>
-                  </div>
-                  <div className="mt-5 flex flex-wrap items-baseline gap-x-2 tabular-nums">
-                    {plan.monthlyOriginalPriceMicroUnits > 0 ? (
-                      <span className="text-muted-foreground line-through">
-                        {formatBillingAmount(
-                          plan.monthlyOriginalPriceMicroUnits,
-                          currency
-                        )}
-                      </span>
-                    ) : null}
-                    <p className="font-semibold text-2xl text-foreground">
-                      {formatBillingAmount(
-                        plan.monthlyPriceMicroUnits,
-                        currency
-                      )}
-                      <span className="font-normal text-muted-foreground text-sm">
-                        /month
-                      </span>
-                    </p>
-                  </div>
-                  <ul className="mt-5 flex flex-col gap-2 text-sm">
-                    {resources.map((resource) => {
-                      const Icon = PLAN_RESOURCE_ICONS[resource.type];
-                      return (
-                        <li
-                          className="flex items-center gap-2 text-muted-foreground"
-                          key={`${resource.type}-${resource.label}`}
-                        >
-                          <Icon
-                            aria-hidden
-                            className="size-4 shrink-0 text-primary"
-                            strokeWidth={1.75}
-                          />
-                          <span>
-                            {resource.value} {resource.label}
-                          </span>
-                        </li>
-                      );
-                    })}
-                    {features.map((feature) => (
-                      <li
-                        className="flex items-center gap-2 text-muted-foreground"
-                        key={feature}
-                      >
-                        <CircleCheck
-                          aria-hidden
-                          className="size-4 shrink-0 text-primary"
-                          strokeWidth={1.75}
-                        />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              );
-            })}
+          <div className="flex flex-col gap-3 lg:flex-row">
+            {mainPlans.map((plan, index) => (
+              <BillingPlanCard
+                action={planCardAction({
+                  onSelectPlan,
+                  plan,
+                  planStates,
+                  planStatesPending,
+                })}
+                currency={currency}
+                gpuEnabled={gpuEnabled}
+                key={plan.id}
+                mostPopular={index === mostPopularIndex}
+                plan={plan}
+              />
+            ))}
           </div>
 
           {additionalPlans.length > 0 ? (
@@ -244,7 +339,7 @@ export function BillingPlanCatalog({
                   ].join(" + ");
                   return (
                     <article
-                      className="min-w-0 rounded-md border border-border bg-card p-4"
+                      className="min-w-0 rounded-xl border border-border bg-white/5 p-4"
                       key={plan.id}
                     >
                       <h4 className="font-medium text-foreground text-sm">
@@ -330,7 +425,7 @@ export function BillingPriceTable({
           ) : (
             sections.map((section) => (
               <Fragment key={section.title}>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                <TableRow className="bg-white/5 hover:bg-white/5">
                   <TableCell className="h-12 font-medium" colSpan={3}>
                     {section.title}
                   </TableCell>
@@ -541,7 +636,7 @@ function CalculatorRow({
 
 function CalculatorSectionBar({ title }: { title: string }) {
   return (
-    <h3 className="border-border border-y bg-muted/40 px-5 py-3.5 font-medium text-foreground text-sm">
+    <h3 className="border-border border-y bg-white/5 px-5 py-3.5 font-medium text-foreground text-sm">
       {title}
     </h3>
   );
@@ -623,7 +718,7 @@ export function BillingCalculator({
 
   return (
     <section
-      className="overflow-hidden rounded-xl border border-border bg-card shadow-xs"
+      className="overflow-hidden rounded-xl border border-border"
       data-slot="billing-price-calculator"
     >
       <div className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 bg-primary/5 px-5 py-4">
@@ -728,6 +823,9 @@ interface BillingPricingSurfaceProps {
   error?: unknown;
   gpuEnabled: boolean;
   isLoading?: boolean;
+  onSelectPlan?: (planId: string) => void;
+  planStates?: ReadonlyMap<string, BillingPlanCardState>;
+  planStatesPending?: boolean;
   snapshot?: BillingPricingSnapshot;
 }
 
@@ -736,6 +834,9 @@ export function BillingPricingSurface({
   error,
   gpuEnabled,
   isLoading = false,
+  onSelectPlan,
+  planStates,
+  planStatesPending = false,
   snapshot,
 }: BillingPricingSurfaceProps) {
   const [cycleIndex, setCycleIndex] = useState(0);
@@ -798,6 +899,9 @@ export function BillingPricingSurface({
         <BillingPlanCatalog
           currency={currency}
           gpuEnabled={gpuEnabled}
+          onSelectPlan={onSelectPlan}
+          planStates={planStates}
+          planStatesPending={planStatesPending}
           plans={snapshot.plans}
         />
       </TabsContent>
@@ -844,21 +948,78 @@ export default function BillingPricing({
   const workspace = useAtomValue(namespaceAtom).trim();
   const credentialsReady =
     appToken.trim() !== "" && kubeconfig.trim() !== "" && workspace !== "";
-  const { data, error, isLoading } = useSWR(
+  const {
+    data,
+    error,
+    isLoading,
+    mutate: refreshPricing,
+  } = useSWR(
     credentialsReady
       ? ["billing-pricing", workspace, appToken, kubeconfig]
       : null,
     () => loadBillingPricing({ appToken, kubeconfig, workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
+  const {
+    data: planSnapshot,
+    isLoading: planSnapshotLoading,
+    mutate: refreshPlanSnapshot,
+  } = useSWR(
+    credentialsReady
+      ? (["billing-plan-snapshot", workspace, kubeconfig, appToken] as const)
+      : null,
+    () => loadBillingPlanSnapshot({ appToken, kubeconfig, workspace }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+
+  const planStates = useMemo(() => {
+    if (planSnapshot?.current.canManage !== true) {
+      return;
+    }
+    return new Map(
+      planSnapshot.plans.map((plan) => [
+        plan.id,
+        { changeKind: plan.changeKind ?? null, isCurrent: plan.isCurrent },
+      ])
+    );
+  }, [planSnapshot]);
 
   return (
-    <BillingPricingSurface
-      currency={currency}
-      error={error}
-      gpuEnabled={gpuEnabled}
-      isLoading={!credentialsReady || isLoading}
-      snapshot={data}
-    />
+    <>
+      <BillingPricingSurface
+        currency={currency}
+        error={error}
+        gpuEnabled={gpuEnabled}
+        isLoading={!credentialsReady || isLoading}
+        onSelectPlan={(planId) => {
+          setSelectedPlanId(planId);
+          setPlanDialogOpen(true);
+        }}
+        planStates={planStates}
+        planStatesPending={planSnapshotLoading}
+        snapshot={data}
+      />
+      {planSnapshot == null ? null : (
+        <BillingPlanChangeDialog
+          credentials={{ appToken, kubeconfig }}
+          currency={currency}
+          onOpenChange={(open) => {
+            setPlanDialogOpen(open);
+            if (!open) {
+              setSelectedPlanId(null);
+            }
+          }}
+          onSelectedPlanChange={setSelectedPlanId}
+          onSubscriptionChanged={async () => {
+            await Promise.all([refreshPlanSnapshot(), refreshPricing()]);
+          }}
+          open={planDialogOpen}
+          selectedPlanId={selectedPlanId}
+          snapshot={planSnapshot}
+        />
+      )}
+    </>
   );
 }

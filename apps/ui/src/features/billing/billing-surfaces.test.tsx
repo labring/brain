@@ -624,7 +624,7 @@ test("Pricing preserves main and additional subscription plan catalog behavior",
 
   assertTextOrder(html, ["Hobby", "Standard", "More plans", "Pro", "Team"]);
   for (const text of [
-    "Most popular",
+    "Most Popular",
     "$8.00",
     "Priority Support",
     "All Hobby Features",
