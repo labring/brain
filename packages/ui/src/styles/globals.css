@@ -723,15 +723,16 @@
     background-color: transparent;
   }
 
-  /* Same canvas base + glow as .main-action-surface-background, but the glow
-     renders above the surface's content: content layers must stay below z-20. */
-  .surface-glow-overlay {
+  /* Canvas Glow material (see CONTEXT.md): same canvas base + glow as
+     .main-action-surface-background, but the glow renders above the surface's
+     content: content layers must stay below z-20. */
+  .canvas-glow-overlay {
     overflow: hidden;
     background-color: var(--color-canvas-surface);
     isolation: isolate;
   }
 
-  .surface-glow-overlay::after {
+  .canvas-glow-overlay::after {
     position: absolute;
     top: 46%;
     left: 50%;
