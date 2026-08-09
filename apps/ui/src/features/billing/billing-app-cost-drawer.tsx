@@ -252,7 +252,7 @@ export function BillingAppCostDrawer({
     <Sheet onOpenChange={onOpenChange} open={open}>
       {/* The old Cost Center floating panel: 12px viewport margins, large
           radius, width following the 14-column table up to the viewport cap. */}
-      <SheetContent className="data-[side=right]:inset-y-3 data-[side=right]:right-3 data-[side=right]:h-auto data-[side=right]:w-fit data-[side=right]:max-w-[calc(100vw-1.5rem)] data-[side=right]:rounded-2xl data-[side=right]:border data-[side=right]:sm:max-w-[calc(100vw-1.5rem)]">
+      <SheetContent className="gap-0 data-[side=right]:inset-y-3 data-[side=right]:right-3 data-[side=right]:h-auto data-[side=right]:w-fit data-[side=right]:max-w-[calc(100vw-1.5rem)] data-[side=right]:rounded-2xl data-[side=right]:border data-[side=right]:sm:max-w-[calc(100vw-1.5rem)]">
         <SheetHeader className="border-border border-b pr-14">
           <SheetTitle className="flex flex-wrap items-center gap-2">
             <Boxes aria-hidden className="size-5 text-brand-primary" />
