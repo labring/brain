@@ -5,7 +5,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@workspace/ui/components/alert";
-import { Button } from "@workspace/ui/components/button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { Pagination } from "@workspace/ui/components/pagination";
 import { AppTypeBadge, PlanBadge } from "@workspace/ui/components/plan-badge";
 import {
@@ -14,6 +14,10 @@ import {
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
 import { Skeleton } from "@workspace/ui/components/skeleton";
+import {
+  SlidingToggle,
+  type SlidingToggleOption,
+} from "@workspace/ui/components/sliding-toggle";
 import { TableCell, TableHead, TableRow } from "@workspace/ui/components/table";
 import {
   TableLayout,
@@ -23,12 +27,6 @@ import {
   TableLayoutFooter,
   TableLayoutHeadRow,
 } from "@workspace/ui/components/table-layout";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@workspace/ui/components/vercel-tabs";
 import { cn } from "@workspace/ui/lib/utils";
 import { AlertCircle, Boxes, Check, ChevronDown } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -50,6 +48,12 @@ import {
 import type { BillingCurrency } from "@/features/billing/config-core";
 
 const APP_PAGE_SIZE = 10;
+
+type BillingCostsView = "details" | "trends";
+const COST_VIEW_OPTIONS = [
+  { label: "Billing", value: "details" },
+  { label: "Cost & Top-up Trends", value: "trends" },
+] as const satisfies readonly SlidingToggleOption<BillingCostsView>[];
 const CONSUMPTION_ROW_KEYS = [
   "row-1",
   "row-2",
@@ -383,13 +387,13 @@ function ConsumptionCostTable({
                     {formatBillingAmount(row.amount, currency)}
                   </TableCell>
                   <TableCell>
-                    <Button
+                    <AppButton
                       onClick={() => onSelectRow?.(row)}
-                      size="sm"
-                      variant="outline"
+                      size="default"
+                      variant="secondary"
                     >
                       Usage
-                    </Button>
+                    </AppButton>
                   </TableCell>
                 </TableRow>
               ))}
@@ -447,6 +451,7 @@ export function BillingCostsSurface({
   trendsError = null,
   trendsLoading = false,
 }: BillingCostsSurfaceProps) {
+  const [view, setView] = useState<BillingCostsView>("details");
   const workspaceNames = new Map(snapshot.workspaces);
   const workspaceCosts = buildWorkspaceCostBreakdown(snapshot);
   const selectedWorkspace = scope.kind === "workspace" ? scope.workspace : null;
@@ -527,30 +532,24 @@ export function BillingCostsSurface({
         </Alert>
       )}
 
-      <Tabs className="flex flex-col gap-4" defaultValue="details">
-        <TabsList
-          aria-label="Cost views"
-          className="w-fit gap-1 rounded-lg border border-border p-1"
-        >
-          <TabsTrigger
-            className="h-9 rounded-md px-4 after:hidden data-[state=active]:bg-input"
-            value="details"
-          >
-            Billing
-          </TabsTrigger>
-          <TabsTrigger
-            className="h-9 rounded-md px-4 after:hidden data-[state=active]:bg-input"
-            value="trends"
-          >
-            Cost &amp; Top-up Trends
-          </TabsTrigger>
-        </TabsList>
+      <div className="flex flex-col gap-4">
+        <SlidingToggle
+          ariaLabel="Cost views"
+          className="w-fit border border-border bg-transparent"
+          indicatorClassName="rounded-[calc(var(--radius-lg)-1px)]"
+          itemClassName="!px-4 text-muted-foreground hover:text-muted-foreground aria-pressed:text-foreground aria-pressed:hover:text-foreground"
+          onValueChange={setView}
+          options={COST_VIEW_OPTIONS}
+          segments="fit"
+          value={view}
+          width="auto"
+        />
 
-        <TabsContent value="details">
-          {/* Old Cost Center shell: the card fills the viewport below the
-              billing chrome (52px header + 16px top padding + 46px switcher
-              + 16px gap + 16px bottom padding). */}
-          <div className="flex h-[calc(100vh-146px)] min-h-96 flex-col overflow-hidden rounded-lg border border-border">
+        {view === "details" ? (
+          /* Old Cost Center shell: the card fills the viewport below the
+             billing chrome (52px header + 16px top padding + 38px switcher
+             + 16px gap + 16px bottom padding). */
+          <div className="flex h-[calc(100vh-138px)] min-h-96 flex-col overflow-hidden rounded-lg border border-border">
             <div className="flex h-17 shrink-0 items-center border-border border-b px-4">
               {dateFilter}
             </div>
@@ -613,18 +612,18 @@ export function BillingCostsSurface({
               </div>
             </div>
           </div>
-        </TabsContent>
-
-        <TabsContent className="pb-16" value="trends">
-          <BillingCostCharts
-            currency={currency}
-            daily={dailyTrend}
-            error={trendsError}
-            isLoading={trendsLoading}
-            monthly={monthlyTrend}
-          />
-        </TabsContent>
-      </Tabs>
+        ) : (
+          <div className="pb-16">
+            <BillingCostCharts
+              currency={currency}
+              daily={dailyTrend}
+              error={trendsError}
+              isLoading={trendsLoading}
+              monthly={monthlyTrend}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
