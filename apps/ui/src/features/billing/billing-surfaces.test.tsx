@@ -32,6 +32,9 @@ function assertIncludes(html: string, fragment: string) {
   assert.ok(html.includes(fragment), `${fragment} is rendered`);
 }
 
+const USAGE_BUTTON_RE =
+  /<button(?=[^>]*data-size="default")(?=[^>]*data-slot="app-button")(?=[^>]*data-variant="secondary")[^>]*>Usage<\/button>/;
+
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
 
 const USAGE_SNAPSHOT = {
@@ -434,6 +437,7 @@ test("Costs preserves Cost Center's detail and trend information layers", () => 
   ]) {
     assertIncludes(html, label);
   }
+  assert.match(html, USAGE_BUTTON_RE);
 
   const chartsHtml = renderToStaticMarkup(<BillingCostCharts currency="usd" />);
   assertTextOrder(chartsHtml, [

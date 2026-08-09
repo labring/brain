@@ -11,6 +11,9 @@
   --scrollbar-thumb: var(--border);
   --scrollbar-track: transparent;
   --scrollbar-width: 0.5rem;
+  /* Strong ease-out for on-screen UI movement (sliding indicators, panels);
+     same family as --project-surface-motion-ease. */
+  --ease-out-strong: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @theme inline {

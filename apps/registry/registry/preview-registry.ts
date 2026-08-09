@@ -682,7 +682,7 @@ export const Index: RegistryIndex = {
     name: "sliding-toggle",
     title: "Sliding toggle",
     description:
-      "Segmented toggle with a sliding input-colored indicator, default and compact sizing, and full-width or content-width layout.",
+      "Segmented toggle with a sliding input-colored indicator, default and compact sizing, full-width or content-width layout, and equal or fit-width segments.",
     state: "done",
     type: "registry:preview",
     registryDependencies: ["preview", "sliding-toggle", "toggle-group"],
