@@ -574,9 +574,15 @@ _Avoid_: tier, package, chat plan, pricing row.
 
 ### Workspace Subscription
 
-The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade) and its most recent transaction. Every workspace on a subscription-mode cluster has exactly one. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
+The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade) and its most recent transaction. A workspace has at most one; a workspace without one is Pay-As-You-Go. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
 
 _Avoid_: account subscription, user subscription, namespace plan, workspace plan record.
+
+### Pay-As-You-Go (PAYG)
+
+The billing mode of a workspace that has no Workspace Subscription: usage is metered and settled against Account Balance instead of a plan commitment. PAYG is orthogonal to the plan catalog — it is not a Subscription Plan and never appears in one; the platform merely reports it as the workspace's subscription type when no subscription exists. A PAYG workspace leaves this mode by subscribing to a plan, which is a new subscription — not an upgrade or a downgrade.
+
+_Avoid_: PAYG plan, pay-as-you-go plan, free mode, plan named "PAYG".
 
 ### Subscription Payment
 
