@@ -618,7 +618,7 @@ export function BillingPlanSurface({
   );
 
   return (
-    <div className="flex flex-col gap-3 pb-16" data-slot="billing-plan-surface">
+    <div className="flex flex-col gap-3" data-slot="billing-plan-surface">
       <BillingPlanNotices
         current={current}
         invoiceCancellationPending={invoiceCancellationPending}

@@ -491,7 +491,8 @@ export default function BillingPlan({
     return (
       <div
         aria-label="Loading Plan"
-        className="flex flex-col gap-6 pb-16"
+        className="flex flex-col gap-6"
+        data-slot="billing-plan-surface"
         role="status"
       >
         <Skeleton className="h-64 w-full" />

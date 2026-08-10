@@ -602,15 +602,13 @@ export function BillingCostsSurface({
             </div>
           </div>
         ) : (
-          <div className="pb-16">
-            <BillingCostCharts
-              currency={currency}
-              daily={dailyTrend}
-              error={trendsError}
-              isLoading={trendsLoading}
-              monthly={monthlyTrend}
-            />
-          </div>
+          <BillingCostCharts
+            currency={currency}
+            daily={dailyTrend}
+            error={trendsError}
+            isLoading={trendsLoading}
+            monthly={monthlyTrend}
+          />
         )}
       </div>
     </div>
