@@ -46,9 +46,10 @@ export interface BillingPlanSnapshot {
     resources: BillingPlanResource[];
     workspace: string;
   };
+  pendingDowngrade: { planName: string; startsAt: string } | null;
   pendingUpgrade: { planName: string; startsAt: string } | null;
   plans: Array<{
-    changeKind?: "downgrade" | "upgrade" | null;
+    changeKind?: "contact" | "downgrade" | "subscribe" | "upgrade" | null;
     description: string;
     id: string;
     isCurrent: boolean;
@@ -208,11 +209,12 @@ function subscriptionLifecycle(input: {
   return "active";
 }
 
-function pendingUpgradeFromTransaction(
-  transaction: z.infer<typeof transactionResponseSchema>["transaction"]
+function pendingTransactionFromOperator(
+  transaction: z.infer<typeof transactionResponseSchema>["transaction"],
+  operator: "downgraded" | "upgraded"
 ): BillingPlanSnapshot["pendingUpgrade"] {
   if (
-    transaction?.Operator?.toLowerCase() !== "upgraded" ||
+    transaction?.Operator?.toLowerCase() !== operator ||
     transaction.Status?.toLowerCase() !== "pending" ||
     !transaction.NewPlanName ||
     !transaction.StartAt
@@ -293,7 +295,14 @@ export async function loadBillingPlanSnapshot(
     subscriptionsResponseSchema.parse(subscriptionsPayload).subscriptions;
   const workspaces = workspacesResponseSchema.parse(workspacesPayload).data;
   const paymentMethod = cardResponseSchema.parse(cardPayload).payment_method;
-  const pendingUpgrade = pendingUpgradeFromTransaction(transaction);
+  const pendingUpgrade = pendingTransactionFromOperator(
+    transaction,
+    "upgraded"
+  );
+  const pendingDowngrade = pendingTransactionFromOperator(
+    transaction,
+    "downgraded"
+  );
   const currentPlan = plans.find((plan) => plan.name === subscription.PlanName);
   const subscriptionByWorkspace = new Map(
     subscriptions.map((item) => [item.Workspace, item])
@@ -335,22 +344,29 @@ export async function loadBillingPlanSnapshot(
         [],
       workspace: subscription.Workspace,
     },
+    pendingDowngrade,
     pendingUpgrade,
     plans: plans.map((plan) => {
       const isCurrent = plan.name === subscription.PlanName;
-      let changeKind: "downgrade" | "upgrade" | null = null;
-      if (!isCurrent && currentPlan != null) {
-        const hasExplicitTransitions =
-          currentPlan.upgradePlanNames !== undefined ||
-          currentPlan.downgradePlanNames !== undefined;
-        if (currentPlan.upgradePlanNames?.includes(plan.name)) {
+      // Mirrors the legacy costcenter decision tree: PAYG (no matching
+      // current plan) treats every plan as a fresh subscription, the
+      // catalog's transition lists label upgrades/downgrades, Enterprise
+      // plans outside both lists route to sales, and anything else outside
+      // both lists stays selectable as an upgrade — account-service is the
+      // authority that rejects illegal moves.
+      let changeKind: "contact" | "downgrade" | "subscribe" | "upgrade" | null =
+        null;
+      if (!isCurrent) {
+        if (currentPlan == null) {
+          changeKind = "subscribe";
+        } else if (currentPlan.upgradePlanNames?.includes(plan.name)) {
           changeKind = "upgrade";
         } else if (currentPlan.downgradePlanNames?.includes(plan.name)) {
           changeKind = "downgrade";
-        } else if (!hasExplicitTransitions && plan.order > currentPlan.order) {
+        } else if (plan.name.includes("Enterprise")) {
+          changeKind = "contact";
+        } else {
           changeKind = "upgrade";
-        } else if (!hasExplicitTransitions && plan.order < currentPlan.order) {
-          changeKind = "downgrade";
         }
       }
       return {
@@ -449,7 +465,7 @@ export interface SubscriptionPlanCheckout {
 
 export async function createSubscriptionPlanPayment(
   input: BillingWorkspaceOperationContext & {
-    operator: "downgraded" | "renewed" | "upgraded";
+    operator: "created" | "downgraded" | "renewed" | "upgraded";
     planName: string;
     promotionCode?: string;
   },
@@ -626,6 +642,7 @@ export async function checkSubscriptionDowngrade(
 
 export async function loadSubscriptionUpgradeQuote(
   input: BillingWorkspaceOperationContext & {
+    operator?: "created" | "upgraded";
     planName: string;
     promotionCode?: string;
   },
@@ -641,7 +658,7 @@ export async function loadSubscriptionUpgradeQuote(
     payload = await requestBillingJson(
       "/api/billing/subscription/upgrade-amount",
       {
-        operator: "upgraded",
+        operator: input.operator ?? "upgraded",
         payMethod: "stripe",
         period: "1m",
         planName: input.planName,

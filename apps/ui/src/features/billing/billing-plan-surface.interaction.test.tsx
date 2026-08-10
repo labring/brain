@@ -31,6 +31,7 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
     resources: [{ label: "CPU", value: "4" }],
     workspace: "workspace-a",
   },
+  pendingDowngrade: null,
   pendingUpgrade: null,
   plans: [],
   workspaces: [],

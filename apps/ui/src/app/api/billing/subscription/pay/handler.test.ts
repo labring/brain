@@ -101,7 +101,12 @@ test("subscription pay route declares Brain and returns checkout URLs for paid p
     },
   });
 
-  for (const operator of ["upgraded", "downgraded", "renewed"] as const) {
+  for (const operator of [
+    "created",
+    "upgraded",
+    "downgraded",
+    "renewed",
+  ] as const) {
     const response = await handler(
       billingRequest({
         createWorkspace: {
@@ -127,8 +132,9 @@ test("subscription pay route declares Brain and returns checkout URLs for paid p
     });
   }
 
-  assert.equal(accountRequests.length, 3);
+  assert.equal(accountRequests.length, 4);
   for (const [index, operator] of [
+    "created",
     "upgraded",
     "downgraded",
     "renewed",
@@ -146,7 +152,7 @@ test("subscription pay route declares Brain and returns checkout URLs for paid p
   }
 });
 
-test("subscription pay route rejects removed subscription creation", async () => {
+test("subscription pay route rejects created without a billing period", async () => {
   let accountCalls = 0;
   const handler = createBillingSubscriptionPayHandler({
     authorizeWorkspaceActor: () => Promise.resolve(VERIFIED_ACTOR),

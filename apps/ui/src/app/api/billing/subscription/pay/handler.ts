@@ -20,7 +20,7 @@ const subscriptionPayRequestSchema = z.discriminatedUnion("operator", [
   z.object({
     ...subscriptionRequestFields,
     cardId: z.string().trim().min(1).optional(),
-    operator: z.enum(["upgraded", "downgraded", "renewed"]),
+    operator: z.enum(["created", "upgraded", "downgraded", "renewed"]),
     period: z.enum(["1m", "1y"]),
     promotionCode: z.string().trim().min(1).optional(),
   }),

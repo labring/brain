@@ -160,6 +160,7 @@ const CANCELLING_PLAN = {
     ],
     workspace: "workspace-a",
   },
+  pendingDowngrade: null,
   pendingUpgrade: {
     planName: "Team",
     startsAt: "2026-08-31T00:00:00Z",
@@ -303,6 +304,7 @@ test("Plan renders the compact PAYG summary next to the balance", () => {
       planName: "PAYG",
       priceMicroUnits: 0,
     },
+    pendingDowngrade: null,
     pendingUpgrade: null,
   };
   const html = renderToStaticMarkup(
@@ -341,6 +343,7 @@ test("Plan shows the free-plan expiry warning when expiry is within seven days",
       planName: "Free",
       priceMicroUnits: 0,
     },
+    pendingDowngrade: null,
     pendingUpgrade: null,
   };
   const html = renderToStaticMarkup(
@@ -372,6 +375,7 @@ test("Plan hides the free-plan expiry warning outside the near-expiry window", (
         planName: "Free",
         priceMicroUnits: 0,
       },
+      pendingDowngrade: null,
       pendingUpgrade: null,
     };
     const html = renderToStaticMarkup(

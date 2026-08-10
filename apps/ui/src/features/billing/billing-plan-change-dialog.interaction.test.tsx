@@ -28,6 +28,7 @@ const SNAPSHOT: BillingPlanSnapshot = {
     resources: [{ label: "CPU", value: "4" }],
     workspace: "workspace-a",
   },
+  pendingDowngrade: null,
   pendingUpgrade: null,
   plans: [
     {
@@ -336,7 +337,7 @@ test("upgrade confirmation shows distinct promotion-code errors", async () => {
   });
 });
 
-test("downgrade confirmation is blocked when target quota is exceeded", async () => {
+test("an exceeded target quota warns but never blocks the downgrade", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanChangeDialog } = await import(
       "./billing-plan-change-dialog"
@@ -394,11 +395,13 @@ test("downgrade confirmation is blocked when target quota is exceeded", async ()
       const confirm = rendered?.getByRole("button", {
         name: "Confirm downgrade",
       });
-      assert.equal(confirm?.hasAttribute("disabled"), true);
+      assert.equal(confirm?.hasAttribute("disabled"), false);
       if (confirm != null) {
-        fireEvent.click(confirm);
+        await act(() => {
+          fireEvent.click(confirm);
+        });
       }
-      assert.equal(paymentRequests, 0);
+      assert.equal(paymentRequests, 1);
     } finally {
       await act(() => rendered?.unmount());
     }
@@ -591,6 +594,119 @@ test("upgrade waiting ignores other payments, polls, times out, reopens, and can
       assert.ok(events.includes("cancel:invoice-1"));
       assert.ok(events.includes("refresh"));
       assert.ok(events.includes("open:false"));
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a PAYG workspace subscribes to a plan with the created operator", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    const quoteOperators: Array<string | undefined> = [];
+    const paymentOperators: string[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+
+    const paygSnapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        isPayg: true,
+        planName: "PAYG",
+        priceMicroUnits: 0,
+      },
+      plans: SNAPSHOT.plans.map((plan) => ({
+        ...plan,
+        changeKind: "subscribe" as const,
+        isCurrent: false,
+      })),
+    };
+
+    function PaygHarness() {
+      const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+      return (
+        <BillingPlanChangeDialog
+          credentials={{
+            appToken: "desktop-app-token",
+            kubeconfig: "apiVersion: v1",
+          }}
+          currency="usd"
+          onOpenChange={() => undefined}
+          onSelectedPlanChange={setSelectedPlanId}
+          onSubscriptionChanged={() => Promise.resolve()}
+          open
+          selectedPlanId={selectedPlanId}
+          services={{
+            cancelInvoice: () => Promise.resolve(),
+            checkDowngrade: () => Promise.reject(new Error("not used")),
+            createPayment: (input) => {
+              paymentOperators.push(input.operator);
+              return Promise.resolve({
+                invoiceId: null,
+                payId: null,
+                redirectUrl: "https://checkout.stripe.test/subscribe-1",
+                success: true,
+              });
+            },
+            loadTransaction: () => Promise.resolve(null),
+            loadUpgradeQuote: (input) => {
+              quoteOperators.push(input.operator);
+              return Promise.resolve({
+                amountMicroUnits: 20_000_000,
+                discountMicroUnits: 0,
+                hasDiscount: false,
+                originalAmountMicroUnits: 20_000_000,
+                promotionCode: "",
+              });
+            },
+            openCheckoutUrl: () => undefined,
+            openCheckoutWindow: () => ({
+              close: () => undefined,
+              navigate: () => undefined,
+            }),
+            redirectTop: () => undefined,
+          }}
+          snapshot={paygSnapshot}
+        />
+      );
+    }
+
+    try {
+      await act(() => {
+        rendered = render(<PaygHarness />);
+      });
+
+      // Every plan is offered as a fresh subscription, none is "current".
+      assert.ok(
+        rendered?.getByRole("button", { name: "Subscribe to Starter" })
+      );
+      assert.ok(rendered?.getByRole("button", { name: "Subscribe to Team" }));
+
+      await act(() => {
+        const subscribePro = rendered?.getByRole("button", {
+          name: "Subscribe to Pro",
+        });
+        if (subscribePro != null) {
+          fireEvent.click(subscribePro);
+        }
+      });
+
+      const text = rendered?.baseElement.textContent ?? "";
+      assert.ok(text.includes("Order summary"));
+      assert.ok(text.includes("$20.00"));
+      assert.deepEqual(quoteOperators, ["created"]);
+
+      await act(() => {
+        const confirm = rendered?.getByRole("button", {
+          name: "Subscribe & Pay",
+        });
+        if (confirm != null) {
+          fireEvent.click(confirm);
+        }
+      });
+      assert.deepEqual(paymentOperators, ["created"]);
     } finally {
       await act(() => rendered?.unmount());
     }
