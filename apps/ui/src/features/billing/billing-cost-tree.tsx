@@ -168,7 +168,7 @@ function CostScopeCard({
       aria-pressed={selected}
       className={cn(
         "flex w-37.5 flex-col items-start gap-1 rounded-lg border border-muted-foreground/50 border-dashed bg-card p-3 text-left shadow-xs transition-colors hover:border-blue-400",
-        selected && "border-2 border-blue-400 border-solid"
+        selected && "border border-blue-400 border-solid"
       )}
       data-slot="billing-cost-scope-card"
       onClick={onClick}
@@ -384,7 +384,7 @@ function CostNodesCanvas({
                 className="stroke-blue-400"
                 d={edge.d}
                 key={edge.id}
-                strokeWidth="2"
+                strokeWidth="1"
               />
             ))}
         </g>
