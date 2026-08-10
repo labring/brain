@@ -6,6 +6,7 @@ import {
   deploymentFailureMessage,
   isDeployTaskFailureReason,
 } from "../failure-summary";
+import { MANAGED_INPUT_CLEANUP_PENDING_RUNTIME_STATE } from "../managed-deployment-contract";
 import {
   CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
   type DeployTaskFailureDetails,
@@ -285,9 +286,9 @@ async function processWithConcurrency<T>(
 
 /**
  * Pause devboxes left running by terminal tasks whose runner never got to
- * pause them (crash, forced resolution). A runtime whose secret cleanup
- * failed is deleted instead so it can never be archived. Server-minted devbox
- * JWT — the one engine-side integration (ADR 0037/0038).
+ * pause them (crash, forced resolution). A runtime whose submitted-input
+ * cleanup is pending or failed is deleted instead so it can never be archived.
+ * Server-minted devbox JWT — the one engine-side integration (ADR 0037/0038).
  */
 async function sweepTerminalDevboxPauses(
   ctx: DeployTaskEngineContext
@@ -321,7 +322,10 @@ async function sweepTerminalDevboxPauses(
     ctx.cadence.devboxOperationConcurrency,
     async (record) => {
       try {
-        if (record.runtimeState === "cleanup-failed") {
+        if (
+          record.runtimeState === "cleanup-failed" ||
+          record.runtimeState === MANAGED_INPUT_CLEANUP_PENDING_RUNTIME_STATE
+        ) {
           await ctx.devbox.deleteDevbox(record.namespace, record.runtimeName);
           await markRuntimeState(
             ctx,

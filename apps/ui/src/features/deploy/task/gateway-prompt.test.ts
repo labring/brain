@@ -46,8 +46,12 @@ test("managed gateway turns use the MCP control contract for every resume mode",
     assert.ok(prompt.includes("sole execution owner"));
     assert.ok(prompt.includes("kubectl apply"));
     assert.ok(prompt.includes("actual workload resource references"));
+    assert.ok(prompt.includes("SEALAI_DEPLOY_LABELS_JSON"));
+    assert.ok(prompt.includes("pass them to the Template API as extraLabels"));
     assert.ok(
-      prompt.includes("Do not add Brain identity labels or extraLabels")
+      prompt.includes(
+        "Do not fabricate deployment-name or template-name labels"
+      )
     );
     assert.ok(!prompt.includes("SEALAI_DEPLOY_INSTANCE_NAME"));
     assert.ok(!prompt.includes(".sealos/brain/control.json"));
@@ -67,5 +71,29 @@ test("managed gateway turns use the MCP control contract for every resume mode",
     if (resumeMode === "input-submitted") {
       assert.ok(prompt.includes("Input revision: 1"));
     }
+  }
+});
+
+test("managed repair converges the original deployment in place", () => {
+  const repairPrompt = buildManagedGatewayPrompt({
+    resumeMode: "repair",
+    task: githubTask(),
+  });
+  assert.ok(repairPrompt.includes("in-place repair"));
+  assert.ok(repairPrompt.includes("identify the original Instance"));
+  assert.ok(repairPrompt.includes("reuse it only through the deploy helper"));
+  assert.ok(
+    repairPrompt.includes("do not ask for or invent replacement values")
+  );
+  assert.ok(repairPrompt.includes("Do not call the raw Template API"));
+  assert.ok(repairPrompt.includes("restart the fresh DEPLOY pipeline"));
+  assert.ok(repairPrompt.includes("fail this task rather than create"));
+
+  for (const resumeMode of ["initial", "input-submitted"] as const) {
+    const prompt = buildManagedGatewayPrompt({
+      resumeMode,
+      task: githubTask(),
+    });
+    assert.ok(!prompt.includes("in-place repair"));
   }
 });

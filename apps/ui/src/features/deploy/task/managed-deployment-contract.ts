@@ -2,6 +2,10 @@ import { posix as path } from "node:path";
 import { z } from "zod";
 
 export const MANAGED_INPUT_VALUES_MAX_BYTES = 64 * 1024;
+export const MANAGED_INPUT_CLEANUP_PENDING_RUNTIME_STATE =
+  "input-cleanup-pending";
+export const MANAGED_INPUT_CLEANUP_COMPLETE_RUNTIME_STATE =
+  "input-cleanup-complete";
 export const CODEX_MCP_CONFIG_PATH = "/codex-home/config.toml";
 export const CODEX_MCP_CONFIG_ROOT = "/codex-home";
 export const CODEX_GATEWAY_CODEX_HOME = CODEX_MCP_CONFIG_ROOT;

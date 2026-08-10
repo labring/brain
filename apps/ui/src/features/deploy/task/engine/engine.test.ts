@@ -1875,6 +1875,20 @@ test("reaper pauses terminal-task devboxes and deletes only runtimes after reten
     runtimeState: "cleanup-failed",
     status: "failed",
   });
+  const cleanupPending = await insertTaskRow(harness.db, {
+    completedAt: new Date(Date.now() - 1000),
+    runtimeName: "devbox-input-cleanup-pending",
+    runtimeProvider: "devbox",
+    runtimeState: "input-cleanup-pending",
+    status: "failed",
+  });
+  const cleanupComplete = await insertTaskRow(harness.db, {
+    completedAt: new Date(Date.now() - 1000),
+    runtimeName: "devbox-input-cleanup-complete",
+    runtimeProvider: "devbox",
+    runtimeState: "input-cleanup-complete",
+    status: "completed",
+  });
   const deleteDue = await insertTaskRow(harness.db, {
     completedAt: new Date(Date.now() - 120_000),
     runtimeName: "devbox-b",
@@ -1896,6 +1910,14 @@ test("reaper pauses terminal-task devboxes and deletes only runtimes after reten
   assert.ok(devbox.deleted.includes("ns-test/devbox-secret-cleanup"));
   assert.ok(!devbox.paused.includes("ns-test/devbox-secret-cleanup"));
   assert.equal((await taskById(cleanupFailed.id)).runtimeState, "deleted");
+
+  assert.ok(devbox.deleted.includes("ns-test/devbox-input-cleanup-pending"));
+  assert.ok(!devbox.paused.includes("ns-test/devbox-input-cleanup-pending"));
+  assert.equal((await taskById(cleanupPending.id)).runtimeState, "deleted");
+
+  assert.ok(devbox.paused.includes("ns-test/devbox-input-cleanup-complete"));
+  assert.ok(!devbox.deleted.includes("ns-test/devbox-input-cleanup-complete"));
+  assert.equal((await taskById(cleanupComplete.id)).runtimeState, "paused");
 
   assert.ok(devbox.deleted.includes("ns-test/devbox-b"));
   assert.equal((await taskById(deleteDue.id)).runtimeState, "deleted");

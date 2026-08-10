@@ -29,6 +29,7 @@ import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
   BRAIN_DEPLOYMENT_NAME_LABEL,
   BRAIN_PROJECT_ID_LABEL,
+  managedTemplateDeploymentLabels,
   templateDeploymentExtraLabels,
 } from "@/lib/brain-labels";
 import {
@@ -98,6 +99,8 @@ import {
   buildCodexMcpConfigWriteCommand,
   CODEX_GATEWAY_CODEX_HOME,
   CODEX_MCP_TOKEN_ENV,
+  MANAGED_INPUT_CLEANUP_COMPLETE_RUNTIME_STATE,
+  MANAGED_INPUT_CLEANUP_PENDING_RUNTIME_STATE,
   MANAGED_INPUT_VALUES_MAX_BYTES,
   type ManagedResourceRef,
   managedDeploymentCompletedInputSchema,
@@ -3112,6 +3115,10 @@ export async function ensureAiDeploymentDevbox(input: {
   if (!controlMcpUrl) {
     throw new Error("DEPLOY_AGENT_MCP_URL is required for mcp-v1 deployments.");
   }
+  const projectId = input.task.projectId?.trim();
+  if (!projectId) {
+    throw new Error("Managed deployment requires a Brain project ID.");
+  }
   try {
     return await ensureDeployDevbox({
       deadlineAtMs: input.deadlineAtMs,
@@ -3120,7 +3127,10 @@ export async function ensureAiDeploymentDevbox(input: {
         KUBECONFIG: MANAGED_DEPLOYMENT_KUBECONFIG_PATH,
         SEALAI_CONTRACT_DIR: MANAGED_DEPLOYMENT_CONTRACT_DIR,
         SEALAI_DEPLOY_MODE: "managed",
-        SEALAI_PROJECT_ID: input.task.projectId ?? "",
+        SEALAI_DEPLOY_LABELS_JSON: JSON.stringify(
+          managedTemplateDeploymentLabels(projectId)
+        ),
+        SEALAI_PROJECT_ID: projectId,
         SEALAI_TURN_DEADLINE_AT: new Date(input.taskDeadlineAtMs).toISOString(),
         SEALAI_DEPLOY_NAMESPACE: input.task.namespace,
         SEALAI_NAMESPACE: input.task.namespace,
@@ -3453,11 +3463,32 @@ interface ManagedTurnResult {
   turnId: number;
 }
 
+interface ManagedDeploymentLifecycleState {
+  inputsSubmitted: boolean;
+  resumeMode: ManagedDeployResumeMode;
+}
+
+export function createManagedDeploymentLifecycleState(
+  resumeMode: "initial" | "input-submitted"
+): ManagedDeploymentLifecycleState {
+  return {
+    inputsSubmitted: resumeMode === "input-submitted",
+    resumeMode,
+  };
+}
+
+export function enterManagedDeploymentRepair(
+  state: ManagedDeploymentLifecycleState
+): ManagedDeploymentLifecycleState {
+  return { ...state, resumeMode: "repair" };
+}
+
 async function runManagedDeploymentTurn(input: {
   allowedDomain: string;
   context: GatewayContext;
   deadlineAtMs: number;
   existingSessionId?: string | null;
+  inputsSubmitted: boolean;
   namespace: string;
   outputProgressSignatures: Set<string>;
   repairFindings?: readonly string[];
@@ -3485,7 +3516,7 @@ async function runManagedDeploymentTurn(input: {
       await processPendingManagedAgentToolCalls({
         allowedDomain: input.allowedDomain,
         deadlineAtMs: input.deadlineAtMs,
-        inputsSubmitted: input.resumeMode === "input-submitted",
+        inputsSubmitted: input.inputsSubmitted,
         namespace: input.namespace,
         runtimeName: input.runtimeName,
         signals: mcpSignals,
@@ -3510,7 +3541,7 @@ async function runManagedDeploymentLifecycleCore(input: {
   const allowedDomain = apUserDomain(input.kubeconfig);
   let turnCount = input.task.agentTurnCount;
   let sessionId = input.task.gatewaySessionId;
-  let resumeMode: ManagedDeployResumeMode = input.resumeMode;
+  let lifecycleState = createManagedDeploymentLifecycleState(input.resumeMode);
   let applying = input.task.status === "applying";
   let repairFindings: string[] | undefined;
 
@@ -3526,7 +3557,8 @@ async function runManagedDeploymentLifecycleCore(input: {
       namespace: input.task.namespace,
       outputProgressSignatures: input.outputProgressSignatures,
       repairFindings,
-      resumeMode,
+      inputsSubmitted: lifecycleState.inputsSubmitted,
+      resumeMode: lifecycleState.resumeMode,
       runtimeName: input.runtimeName,
       task: applying ? { ...input.task, status: "applying" } : input.task,
       turnCount,
@@ -3600,7 +3632,7 @@ async function runManagedDeploymentLifecycleCore(input: {
         payload: { violationCount: completion.violations.length },
         phase: "verify",
       });
-      resumeMode = "repair";
+      lifecycleState = enterManagedDeploymentRepair(lifecycleState);
       continue;
     }
     throw new Error(
@@ -3643,6 +3675,9 @@ async function runManagedDeploymentLifecycle(input: {
         namespace: input.task.namespace,
         runtimeName: input.runtimeName,
       });
+      await updateDeployTaskState(input.task.id, {
+        runtimeState: MANAGED_INPUT_CLEANUP_COMPLETE_RUNTIME_STATE,
+      });
       cleanupComplete = true;
     } catch (error) {
       preventArchive = true;
@@ -3667,6 +3702,7 @@ async function runManagedDeploymentLifecycle(input: {
     if (hasSubmittedValues && input.values != null) {
       await updateDeployTaskState(input.task.id, {
         agentInputRevision: input.task.agentInputRevision + 1,
+        runtimeState: MANAGED_INPUT_CLEANUP_PENDING_RUNTIME_STATE,
       });
       inputPath = await writeFixedManagedInputValues({
         deadlineAtMs: input.executionDeadlineAtMs,

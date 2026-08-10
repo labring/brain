@@ -26,6 +26,8 @@ const ENV_KEYS = [
   "DEVBOX_TOKEN",
   "SYSTEM_OPENAI_API_KEY",
   "SYSTEM_OPENAI_API_BASE_URL",
+  "SEALAI_DEPLOY_LABELS_JSON",
+  "SEALAI_PROJECT_ID",
 ] as const;
 const originalEnv = Object.fromEntries(
   ENV_KEYS.map((key) => [key, process.env[key]])
@@ -37,6 +39,8 @@ const {
   buildCodexGatewayEnv,
   buildDeploySkillInstallCommand,
   buildManagedWorkspacePurgeCommand,
+  createManagedDeploymentLifecycleState,
+  enterManagedDeploymentRepair,
   ensureAiDeploymentDevbox,
   resolveCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
@@ -149,6 +153,26 @@ describe("managed deployment workspace cleanup", () => {
     expect(command).toContain("rm -rf");
     expect(command).toContain("-print -quit");
     expect(command).not.toContain("/home/devbox/project/.sealos/brain");
+  });
+
+  it("keeps submitted inputs available across repair turns", () => {
+    const submitted = createManagedDeploymentLifecycleState("input-submitted");
+    const repair = enterManagedDeploymentRepair(submitted);
+
+    expect(repair).toEqual({
+      inputsSubmitted: true,
+      resumeMode: "repair",
+    });
+  });
+
+  it("does not invent submitted inputs for an initial repair", () => {
+    const initial = createManagedDeploymentLifecycleState("initial");
+    const repair = enterManagedDeploymentRepair(initial);
+
+    expect(repair).toEqual({
+      inputsSubmitted: false,
+      resumeMode: "repair",
+    });
   });
 });
 
@@ -475,6 +499,20 @@ describe("deployment AI Proxy credentials", () => {
     ]);
   });
 
+  it("rejects managed deployments without a Brain project ID", async () => {
+    const task = githubTask(null);
+    task.projectId = null;
+
+    await expect(
+      ensureAiDeploymentDevbox({
+        encodedKubeconfig: encodeURIComponent(kubeconfig()),
+        kubeconfig: kubeconfig(),
+        task,
+        taskDeadlineAtMs: Date.now() + 60_000,
+      })
+    ).rejects.toThrow("Managed deployment requires a Brain project ID.");
+  });
+
   it("creates prompt deployment Devboxes with Agent and user AI Proxy env", async () => {
     const requests: Request[] = [];
     let createdEnv: Record<string, string> | undefined;
@@ -527,6 +565,12 @@ describe("deployment AI Proxy credentials", () => {
       CODEX_GATEWAY_OPENAI_API_KEY: "new-user-key",
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
       SEALAI_DEPLOY_MODE: "managed",
+      SEALAI_PROJECT_ID: "project-1",
+      SEALAI_DEPLOY_LABELS_JSON: JSON.stringify({
+        "brain.io/managed-by": "brain",
+        "brain.io/project-id": "project-1",
+        "brain.io/deployment-kind": "template",
+      }),
     });
     expect(createdStorageLimit).toBe("10Gi");
   });
