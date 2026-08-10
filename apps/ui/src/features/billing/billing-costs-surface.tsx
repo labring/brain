@@ -29,7 +29,7 @@ import {
 } from "@workspace/ui/components/table-layout";
 import { cn } from "@workspace/ui/lib/utils";
 import { AlertCircle, Boxes, Check, ChevronDown } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
 import type { SelectedBillingApp } from "@/features/billing/billing-app-cost-drawer";
@@ -441,6 +441,26 @@ export function BillingCostsSurface({
   trendsLoading = false,
 }: BillingCostsSurfaceProps) {
   const [view, setView] = useState<BillingCostsView>("details");
+  const detailPanelRef = useRef<HTMLDivElement>(null);
+  const [detailPanelWidth, setDetailPanelWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    if (view !== "details") {
+      return;
+    }
+    const panel = detailPanelRef.current;
+    if (!panel) {
+      return;
+    }
+    const updateWidth = () => {
+      setDetailPanelWidth(panel.getBoundingClientRect().width);
+    };
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [view]);
+
   const workspaceNames = new Map(snapshot.workspaces);
   const workspaceCosts = buildWorkspaceCostBreakdown(snapshot);
   const selectedWorkspace = scope.kind === "workspace" ? scope.workspace : null;
@@ -547,6 +567,7 @@ export function BillingCostsSurface({
                 currency={currency}
                 isLoading={isLoading}
                 onScopeChange={onScopeChange}
+                panelRightInset={detailPanelWidth}
                 regionCost={regionCostMicroUnits}
                 regionLabel={regionLabel}
                 scope={scope}
@@ -559,7 +580,11 @@ export function BillingCostsSurface({
 
               {/* The detail panel floats over the full-width canvas and
                   scrolls independently, as in the old Cost Center. */}
-              <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[clamp(22.5rem,50%,32rem)] overflow-y-auto">
+              <div
+                className="pointer-events-none absolute inset-y-0 right-0 z-20 w-[clamp(22.5rem,50%,32rem)] overflow-y-auto"
+                data-slot="billing-cost-detail-panel"
+                ref={detailPanelRef}
+              >
                 <div className="pointer-events-auto">
                   <div
                     className="sticky top-0 z-10 mb-4 flex h-14 items-center justify-between gap-4 rounded-bl-lg border-border border-b border-l bg-card bg-linear-to-b from-white/5 to-white/5 px-4 text-sm"
