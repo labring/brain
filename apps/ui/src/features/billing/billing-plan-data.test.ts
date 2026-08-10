@@ -233,7 +233,7 @@ test("loads the verified account's Plan snapshot with workspace plan facts", asy
   });
 });
 
-test("uses plan order only when authoritative transition lists are absent", async () => {
+test("plans outside the transition lists stay selectable as upgrades", async () => {
   const plansResponse = RESPONSES["/api/billing/plans"] as {
     plans: Record<string, unknown>[];
   };
@@ -272,13 +272,16 @@ test("uses plan order only when authoritative transition lists are absent", asyn
     );
   };
 
+  // Mirrors the legacy costcenter: the frontend never forbids a move on its
+  // own — anything outside both lists submits as an upgrade and
+  // account-service is the authority that rejects illegal transitions.
   const restrictedSnapshot = await loadWithTransitions("restricted");
   assert.deepEqual(
     restrictedSnapshot.plans.map((plan) => [plan.name, plan.changeKind]),
     [
-      ["Starter", null],
+      ["Starter", "upgrade"],
       ["Pro", null],
-      ["Team", null],
+      ["Team", "upgrade"],
     ]
   );
 
@@ -286,11 +289,82 @@ test("uses plan order only when authoritative transition lists are absent", asyn
   assert.deepEqual(
     fallbackSnapshot.plans.map((plan) => [plan.name, plan.changeKind]),
     [
-      ["Starter", "downgrade"],
+      ["Starter", "upgrade"],
       ["Pro", null],
       ["Team", "upgrade"],
     ]
   );
+});
+
+test("a PAYG workspace treats every plan as a fresh subscription", async () => {
+  const snapshot = await loadBillingPlanSnapshot(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) => {
+        const url = input.toString();
+        if (url === "/api/billing/subscription") {
+          return Promise.resolve(
+            Response.json({ subscription: { type: "PAYG" } })
+          );
+        }
+        if (url === "/api/billing/subscription/last-transaction") {
+          return Promise.resolve(Response.json({}));
+        }
+        return Promise.resolve(Response.json(RESPONSES[url]));
+      },
+      now: () => NOW,
+    }
+  );
+
+  assert.equal(snapshot.current.isPayg, true);
+  assert.equal(snapshot.current.canManage, true);
+  assert.deepEqual(
+    snapshot.plans.map((plan) => [plan.name, plan.isCurrent, plan.changeKind]),
+    [
+      ["Starter", false, "subscribe"],
+      ["Pro", false, "subscribe"],
+      ["Team", false, "subscribe"],
+    ]
+  );
+});
+
+test("a pending downgrade transaction surfaces as pendingDowngrade", async () => {
+  const snapshot = await loadBillingPlanSnapshot(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) => {
+        const url = input.toString();
+        if (url === "/api/billing/subscription/last-transaction") {
+          return Promise.resolve(
+            Response.json({
+              transaction: {
+                NewPlanName: "Starter",
+                Operator: "downgraded",
+                StartAt: "2026-08-31T00:00:00Z",
+                Status: "pending",
+              },
+            })
+          );
+        }
+        return Promise.resolve(Response.json(RESPONSES[url]));
+      },
+      now: () => NOW,
+    }
+  );
+
+  assert.equal(snapshot.pendingUpgrade, null);
+  assert.deepEqual(snapshot.pendingDowngrade, {
+    planName: "Starter",
+    startsAt: "2026-08-31T00:00:00Z",
+  });
 });
 
 test("updates a subscription lifecycle with verified personal-resource credentials", async () => {

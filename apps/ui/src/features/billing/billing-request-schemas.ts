@@ -11,7 +11,7 @@ export const billingWorkspaceQuotaRequestSchema = z.object({
 
 export const billingSubscriptionUpgradeAmountRequestSchema =
   billingWorkspaceRequestSchema.extend({
-    operator: z.literal("upgraded"),
+    operator: z.enum(["created", "upgraded"]),
     payMethod: z.literal("stripe"),
     period: z.enum(["1m", "1y"]),
     planName: z.string().trim().min(1),

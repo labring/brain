@@ -44,6 +44,7 @@ interface CheckoutWindowHandle {
 }
 
 interface UpgradeQuoteInput extends BillingCredentials {
+  operator?: "created" | "upgraded";
   planName: string;
   promotionCode?: string;
   regionDomain: string;
@@ -51,7 +52,7 @@ interface UpgradeQuoteInput extends BillingCredentials {
 }
 
 interface PlanPaymentInput extends BillingCredentials {
-  operator: "downgraded" | "renewed" | "upgraded";
+  operator: "created" | "downgraded" | "renewed" | "upgraded";
   planName: string;
   promotionCode?: string;
   regionDomain: string;
@@ -133,6 +134,33 @@ interface BillingPlanChangeDialogProps {
 
 type ChangeStage = "downgrade" | "quote" | "select" | "waiting";
 type SnapshotPlan = BillingPlanSnapshot["plans"][number];
+type PlanChangeOperator = "created" | "downgraded" | "upgraded";
+
+// The legacy costcenter operator decision: debt always re-creates the
+// subscription (Renew), PAYG subscribes fresh, and the transition lists label
+// upgrades/downgrades. `null` means the plan is not actionable (the current
+// plan outside debt, or an Enterprise plan that routes to sales).
+function planOperator(
+  plan: SnapshotPlan | null,
+  inDebt: boolean
+): PlanChangeOperator | null {
+  if (plan == null) {
+    return null;
+  }
+  if (inDebt) {
+    return "created";
+  }
+  switch (plan.changeKind) {
+    case "downgrade":
+      return "downgraded";
+    case "subscribe":
+      return "created";
+    case "upgrade":
+      return "upgraded";
+    default:
+      return null;
+  }
+}
 
 const STAGE_DIALOG_SIZES: Record<ChangeStage, "default" | "lg"> = {
   downgrade: "default",
@@ -244,10 +272,14 @@ function DowngradeStage({
                   </li>
                 ))}
               </ul>
+              <p className="mt-2">
+                Reduce usage below the {plan.name} limits before the downgrade
+                takes effect to avoid extra charges.
+              </p>
             </AlertDescription>
           </Alert>
         ) : null}
-        {check?.allowed ? (
+        {check == null ? null : (
           <p className="text-muted-foreground text-sm">
             You are now in the process of changing your subscription, and the
             change will{" "}
@@ -255,7 +287,7 @@ function DowngradeStage({
               {"take effect on the following month's subscription date."}
             </span>
           </p>
-        ) : null}
+        )}
         {error == null ? null : (
           <p className="text-destructive text-sm" role="alert">
             {error}
@@ -269,7 +301,6 @@ function DowngradeStage({
         </AppDialog.Cancel>
         <AppDialog.Action
           className="bg-brand-primary text-brand-primary-foreground hover:bg-brand-primary-hover"
-          disabled={check?.allowed !== true}
           loading={submitting}
           loadingLabel="Opening checkout..."
           onClick={onConfirm}
@@ -496,13 +527,73 @@ function QuoteStage({
   );
 }
 
+function planSelectionActionLabel(
+  plan: SnapshotPlan,
+  operator: PlanChangeOperator
+): string {
+  if (operator === "created") {
+    return plan.isCurrent ? `Renew ${plan.name}` : `Subscribe to ${plan.name}`;
+  }
+  return operator === "upgraded"
+    ? `Upgrade to ${plan.name}`
+    : `Downgrade to ${plan.name}`;
+}
+
+function planSelectionAction({
+  onSelect,
+  operator,
+  pendingDowngradePlanName,
+  plan,
+}: {
+  onSelect: (planId: string) => void;
+  operator: PlanChangeOperator | null;
+  pendingDowngradePlanName: string | null;
+  plan: SnapshotPlan;
+}) {
+  if (plan.name === pendingDowngradePlanName) {
+    return (
+      <AppButton className="w-full sm:w-auto" disabled variant="secondary">
+        Starts next cycle
+      </AppButton>
+    );
+  }
+  if (operator == null) {
+    if (plan.changeKind === "contact") {
+      return (
+        <AppButton className="w-full sm:w-auto" disabled variant="secondary">
+          Contact us
+        </AppButton>
+      );
+    }
+    return null;
+  }
+  return (
+    <AppButton
+      className="w-full sm:w-auto"
+      onClick={() => onSelect(plan.id)}
+      variant="secondary"
+    >
+      {operator === "downgraded" ? (
+        <ArrowDownRight aria-hidden data-icon="inline-start" />
+      ) : (
+        <ArrowUpRight aria-hidden data-icon="inline-start" />
+      )}
+      {planSelectionActionLabel(plan, operator)}
+    </AppButton>
+  );
+}
+
 function PlanSelectionStage({
   currency,
+  inDebt,
   onSelect,
+  pendingDowngradePlanName,
   plans,
 }: {
   currency: BillingCurrency;
+  inDebt: boolean;
   onSelect: (planId: string) => void;
+  pendingDowngradePlanName: string | null;
   plans: BillingPlanSnapshot["plans"];
 }) {
   return (
@@ -516,10 +607,10 @@ function PlanSelectionStage({
       <AppDialog.Body>
         <div className="flex flex-col gap-3">
           {plans.map((plan) => {
-            const actionLabel =
-              plan.changeKind === "upgrade"
-                ? `Upgrade to ${plan.name}`
-                : `Downgrade to ${plan.name}`;
+            const operator =
+              plan.name === pendingDowngradePlanName
+                ? null
+                : planOperator(plan, inDebt);
             return (
               <div
                 className="flex flex-col gap-4 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -542,20 +633,12 @@ function PlanSelectionStage({
                     </span>
                   </p>
                 </div>
-                {plan.changeKind == null ? null : (
-                  <AppButton
-                    className="w-full sm:w-auto"
-                    onClick={() => onSelect(plan.id)}
-                    variant="secondary"
-                  >
-                    {plan.changeKind === "upgrade" ? (
-                      <ArrowUpRight aria-hidden data-icon="inline-start" />
-                    ) : (
-                      <ArrowDownRight aria-hidden data-icon="inline-start" />
-                    )}
-                    {actionLabel}
-                  </AppButton>
-                )}
+                {planSelectionAction({
+                  onSelect,
+                  operator,
+                  pendingDowngradePlanName,
+                  plan,
+                })}
               </div>
             );
           })}
@@ -641,8 +724,12 @@ export function BillingPlanChangeDialog({
     () => snapshot.plans.find((plan) => plan.id === selectedPlanId) ?? null,
     [selectedPlanId, snapshot.plans]
   );
+  const inDebt = snapshot.current.lifecycle === "payment-due";
+  const selectedOperator = planOperator(selectedPlan, inDebt);
   const [stage, setStage] = useState<ChangeStage>(
-    selectedPlan?.changeKind === "upgrade" ? "quote" : "select"
+    selectedOperator === "created" || selectedOperator === "upgraded"
+      ? "quote"
+      : "select"
   );
   const [quote, setQuote] = useState<SubscriptionUpgradeQuote | null>(null);
   const [checkout, setCheckout] = useState<SubscriptionPlanCheckout | null>(
@@ -675,7 +762,8 @@ export function BillingPlanChangeDialog({
       setWaitingStatus("polling");
       return;
     }
-    if (selectedPlan?.changeKind === "downgrade") {
+    const operator = planOperator(selectedPlan, inDebt);
+    if (selectedPlan != null && operator === "downgraded") {
       let active = true;
       setDowngradeCheck(null);
       setError(null);
@@ -707,7 +795,10 @@ export function BillingPlanChangeDialog({
         active = false;
       };
     }
-    if (selectedPlan?.changeKind !== "upgrade") {
+    if (
+      selectedPlan == null ||
+      (operator !== "created" && operator !== "upgraded")
+    ) {
       setStage("select");
       return;
     }
@@ -721,6 +812,7 @@ export function BillingPlanChangeDialog({
       .loadUpgradeQuote({
         appToken,
         kubeconfig,
+        operator,
         planName: selectedPlan.name,
         regionDomain: snapshot.current.regionDomain,
         workspace: snapshot.current.workspace,
@@ -745,6 +837,7 @@ export function BillingPlanChangeDialog({
     };
   }, [
     appToken,
+    inDebt,
     kubeconfig,
     open,
     selectedPlan,
@@ -754,7 +847,12 @@ export function BillingPlanChangeDialog({
   ]);
 
   const confirmUpgrade = async () => {
-    if (selectedPlan == null || quote == null || submitting) {
+    if (
+      selectedPlan == null ||
+      quote == null ||
+      submitting ||
+      (selectedOperator !== "created" && selectedOperator !== "upgraded")
+    ) {
       return;
     }
 
@@ -765,7 +863,7 @@ export function BillingPlanChangeDialog({
       const nextCheckout = await services.createPayment({
         appToken,
         kubeconfig,
-        operator: "upgraded",
+        operator: selectedOperator,
         planName: selectedPlan.name,
         promotionCode: quote.promotionCode || undefined,
         regionDomain: snapshot.current.regionDomain,
@@ -797,7 +895,7 @@ export function BillingPlanChangeDialog({
     const code = promotionCode.trim();
     if (
       selectedPlan == null ||
-      selectedPlan.changeKind !== "upgrade" ||
+      (selectedOperator !== "created" && selectedOperator !== "upgraded") ||
       code === "" ||
       promotionPending
     ) {
@@ -810,6 +908,7 @@ export function BillingPlanChangeDialog({
       const nextQuote = await services.loadUpgradeQuote({
         appToken,
         kubeconfig,
+        operator: selectedOperator,
         planName: selectedPlan.name,
         promotionCode: code,
         regionDomain: snapshot.current.regionDomain,
@@ -828,12 +927,11 @@ export function BillingPlanChangeDialog({
     }
   };
 
+  // Mirrors the legacy costcenter: an exceeded quota warns but never blocks —
+  // the downgrade lands at period end and the user gets the rest of the cycle
+  // to shrink usage.
   const confirmDowngrade = async () => {
-    if (
-      selectedPlan == null ||
-      downgradeCheck?.allowed !== true ||
-      submitting
-    ) {
+    if (selectedPlan == null || submitting) {
       return;
     }
 
@@ -967,7 +1065,9 @@ export function BillingPlanChangeDialog({
   let content = (
     <PlanSelectionStage
       currency={currency}
+      inDebt={inDebt}
       onSelect={(planId) => onSelectedPlanChange?.(planId)}
+      pendingDowngradePlanName={snapshot.pendingDowngrade?.planName ?? null}
       plans={snapshot.plans}
     />
   );

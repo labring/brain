@@ -113,8 +113,10 @@ const PLAN_CARD_RECIPES: Record<string, { card: string; text: string }> = {
 const CHECK_GRADIENT_ID = "billing-pricing-check-gradient";
 
 interface BillingPlanCardState {
-  changeKind: "downgrade" | "upgrade" | null;
+  changeKind: "contact" | "downgrade" | "subscribe" | "upgrade" | null;
+  inDebt: boolean;
   isCurrent: boolean;
+  isPendingDowngradeTarget: boolean;
 }
 
 function PlanCardSpec({ children }: { children: ReactNode }) {
@@ -228,16 +230,49 @@ function planCardAction({
   if (state == null) {
     return null;
   }
+  // Mirrors the legacy costcenter card rules: debt turns the current plan
+  // into a clickable Renew, a plan already scheduled by a pending downgrade
+  // is locked, Enterprise-outside-the-lists routes to sales, and everything
+  // else is actionable with its transition label.
   if (state.isCurrent) {
+    if (state.inDebt) {
+      return (
+        <AppButton className="w-full" onClick={() => onSelectPlan?.(plan.id)}>
+          Renew
+        </AppButton>
+      );
+    }
     return (
       <AppButton className="w-full" disabled>
         Your current plan
       </AppButton>
     );
   }
+  if (state.isPendingDowngradeTarget) {
+    return (
+      <AppButton className="w-full" disabled>
+        Starts next cycle
+      </AppButton>
+    );
+  }
+  if (!state.inDebt && state.changeKind === "contact") {
+    return (
+      <AppButton className="w-full" disabled>
+        Contact us
+      </AppButton>
+    );
+  }
+  const label = state.inDebt
+    ? "Subscribe"
+    : {
+        contact: "Subscribe",
+        downgrade: "Downgrade",
+        subscribe: "Subscribe",
+        upgrade: "Upgrade",
+      }[state.changeKind ?? "upgrade"];
   return (
     <AppButton className="w-full" onClick={() => onSelectPlan?.(plan.id)}>
-      {state.changeKind === "downgrade" ? "Downgrade" : "Upgrade"}
+      {label}
     </AppButton>
   );
 }
@@ -982,10 +1017,17 @@ export default function BillingPricing({
     if (planSnapshot?.current.canManage !== true) {
       return;
     }
+    const inDebt = planSnapshot.current.lifecycle === "payment-due";
     return new Map(
       planSnapshot.plans.map((plan) => [
         plan.id,
-        { changeKind: plan.changeKind ?? null, isCurrent: plan.isCurrent },
+        {
+          changeKind: plan.changeKind ?? null,
+          inDebt,
+          isCurrent: plan.isCurrent,
+          isPendingDowngradeTarget:
+            planSnapshot.pendingDowngrade?.planName === plan.name,
+        },
       ])
     );
   }, [planSnapshot]);

@@ -108,10 +108,12 @@ function BillingPlanNotices({
   current,
   invoiceCancellationPending,
   onCancelInvoice,
+  pendingDowngrade,
 }: {
   current: BillingPlanSnapshot["current"];
   invoiceCancellationPending: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
+  pendingDowngrade: BillingPlanSnapshot["pendingDowngrade"];
 }) {
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
   const invoiceId = current.invoiceId;
@@ -179,6 +181,20 @@ function BillingPlanNotices({
           </AlertDescription>
         </Alert>
       ) : null}
+
+      {pendingDowngrade == null ? null : (
+        <Alert>
+          <Info aria-hidden />
+          <AlertTitle>
+            Downgrade to {pendingDowngrade.planName} starts on{" "}
+            {formatDate(pendingDowngrade.startsAt)}
+          </AlertTitle>
+          <AlertDescription>
+            Reduce this workspace's usage to the {pendingDowngrade.planName}{" "}
+            limits before then to avoid extra charges.
+          </AlertDescription>
+        </Alert>
+      )}
     </div>
   );
 }
@@ -468,6 +484,11 @@ export function BillingPlanSurface({
                     Pending upgrade to {snapshot.pendingUpgrade.planName}
                   </Badge>
                 )}
+                {snapshot.pendingDowngrade == null ? null : (
+                  <Badge variant="outline">
+                    Downgrading to {snapshot.pendingDowngrade.planName}
+                  </Badge>
+                )}
               </div>
             </div>
 
@@ -539,6 +560,7 @@ export function BillingPlanSurface({
         current={current}
         invoiceCancellationPending={invoiceCancellationPending}
         onCancelInvoice={onCancelInvoice}
+        pendingDowngrade={snapshot.pendingDowngrade}
       />
 
       {planSummary}
