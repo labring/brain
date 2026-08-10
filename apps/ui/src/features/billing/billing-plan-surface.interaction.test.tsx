@@ -78,7 +78,7 @@ test("resume refreshes the Plan lifecycle state", async () => {
 
       await act(() => {
         const resume = rendered?.getByRole("button", {
-          name: "Resume subscription",
+          name: "Resume Plan",
         });
         if (resume != null) {
           fireEvent.click(resume);
@@ -96,7 +96,7 @@ test("resume refreshes the Plan lifecycle state", async () => {
         ),
         false
       );
-      assert.ok(rendered?.getByRole("button", { name: "Cancel subscription" }));
+      assert.ok(rendered?.getByRole("button", { name: "Cancel Plan" }));
     } finally {
       await act(() => rendered?.unmount());
     }
@@ -125,7 +125,7 @@ test("saved card management is exposed as a Plan action", async () => {
 
       await act(() => {
         const manageCard = rendered?.getByRole("button", {
-          name: "Manage card",
+          name: "Manage Card Info",
         });
         if (manageCard != null) {
           fireEvent.click(manageCard);
@@ -216,7 +216,7 @@ test("a payment-due subscription exposes the renewal action", async () => {
 
       await act(() => {
         const renew = rendered?.getByRole("button", {
-          name: "Renew subscription",
+          name: "Renew Plan",
         });
         if (renew != null) {
           fireEvent.click(renew);
@@ -293,7 +293,7 @@ test("plan actions open the change workflow with the selected plan", async () =>
 
       await act(() => {
         const changePlan = rendered?.getByRole("button", {
-          name: "Change plan",
+          name: "Upgrade Plan",
         });
         if (changePlan != null) {
           fireEvent.click(changePlan);
@@ -343,16 +343,16 @@ test("a PAYG workspace exposes only the subscribe entry point", async () => {
       });
 
       assert.equal(
-        rendered?.queryByRole("button", { name: "Cancel subscription" }),
+        rendered?.queryByRole("button", { name: "Cancel Plan" }),
         null
       );
       assert.equal(
-        rendered?.queryByRole("button", { name: "Change plan" }),
+        rendered?.queryByRole("button", { name: "Upgrade Plan" }),
         null
       );
       await act(() => {
         const subscribe = rendered?.getByRole("button", {
-          name: "Subscribe plan",
+          name: "Subscribe Plan",
         });
         if (subscribe != null) {
           fireEvent.click(subscribe);

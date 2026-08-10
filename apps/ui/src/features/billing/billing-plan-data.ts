@@ -8,6 +8,7 @@ import {
   createBillingJsonRequester,
 } from "./billing-data-client";
 import {
+  type BillingPlanResourceType,
   billingPlansResponseSchema,
   normalizeBillingPlan,
 } from "./billing-plan-catalog";
@@ -20,6 +21,7 @@ export type SubscriptionLifecycle =
 
 export interface BillingPlanResource {
   label: string;
+  type?: BillingPlanResourceType;
   value: string;
 }
 
@@ -56,8 +58,10 @@ export interface BillingPlanSnapshot {
     limits?: SubscriptionPlanLimits;
     name: string;
     order: number;
+    originalPriceMicroUnits?: number;
     priceMicroUnits: number;
     resources: BillingPlanResource[];
+    tags?: string[];
   }>;
   workspaces: Array<{
     id: string;
@@ -377,8 +381,14 @@ export async function loadBillingPlanSnapshot(
         limits: plan.limits ?? {},
         name: plan.name,
         order: plan.order,
+        originalPriceMicroUnits: plan.monthlyOriginalPriceMicroUnits,
         priceMicroUnits: plan.monthlyPriceMicroUnits,
-        resources: plan.resources.map(({ label, value }) => ({ label, value })),
+        resources: plan.resources.map(({ label, type, value }) => ({
+          label,
+          type,
+          value,
+        })),
+        tags: plan.tags,
       };
     }),
     workspaces: workspaces.map(([id, name]) => {

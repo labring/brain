@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { BillingCostCharts } from "./billing-cost-charts";
 import { BillingCostsSurface } from "./billing-costs";
+import { formatBillingDateTime } from "./billing-datetime";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 import { BillingPlanSurface } from "./billing-plan-surface";
 import {
@@ -245,10 +246,10 @@ test("Plan keeps Cost Center's section order around the live balance", () => {
   );
 
   assertTextOrder(html, [
-    "Current workspace plan",
+    "Current Workspace Plan",
     "Account Balance",
     "Payment method",
-    "All workspaces",
+    "All Plans",
   ]);
   assertIncludes(html, "$3.00");
   assertIncludes(html, 'data-slot="billing-plan-summary"');
@@ -274,12 +275,12 @@ test("Plan renders lifecycle notices, card facts, and workspace plan rows", () =
     "You have an unpaid invoice",
     "Visa",
     "•••• 4242",
-    "Expires 12/28",
+    "EXP: 12/28",
     "us.example.test",
     "Workspace Alpha",
     "Workspace Beta",
     "Starter",
-    "Aug 15, 2026",
+    formatBillingDateTime("2026-08-15T00:00:00Z"),
     "$20.00",
     "$5.00",
     "$3.00",
@@ -315,12 +316,12 @@ test("Plan renders the compact PAYG summary next to the balance", () => {
     />
   );
 
-  assertTextOrder(html, ["Current workspace plan", "PAYG", "Account Balance"]);
-  assertIncludes(html, "Subscribe plan");
+  assertTextOrder(html, ["Current Workspace Plan", "Pay-As-You-Go", "Account Balance"]);
+  assertIncludes(html, "Subscribe Plan");
   for (const absent of [
-    "Cancel subscription",
-    "Change plan",
-    "Price per month",
+    "Cancel Plan",
+    "Upgrade Plan",
+    "Price/Month",
     "No included resource quota",
     "Payment method",
   ]) {
@@ -409,7 +410,7 @@ test("Plan keeps cancellation available while an upgrade is pending", () => {
     />
   );
 
-  assertIncludes(html, "Cancel subscription");
+  assertIncludes(html, "Cancel Plan");
 });
 
 test("Costs preserves Cost Center's detail and trend information layers", () => {
