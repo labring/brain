@@ -123,7 +123,7 @@ test("every scenario passes every loader's schemas", async () => {
         mockFetch
       ),
     ]);
-    assert.equal(plan.plans.length, 3, `${scenario}: plan catalog loads`);
+    assert.equal(plan.plans.length, 9, `${scenario}: plan catalog loads`);
     assert.ok(usage.rows.length >= 5, `${scenario}: usage rows load`);
     assert.ok(pricing.prices.length >= 6, `${scenario}: metered prices load`);
     assert.equal(costs.appOverviews.length, 8, `${scenario}: overviews load`);

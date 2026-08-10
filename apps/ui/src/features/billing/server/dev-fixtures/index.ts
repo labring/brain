@@ -133,56 +133,163 @@ function namespacesPayload(context: FixtureContext): [string, string][] {
   return rows;
 }
 
+// Snapshot of the production catalog: `POST
+// https://costcenter.usw-1.sealos.io/api/plan/list` (2026-08-10). Values are
+// verbatim, including Free's empty Prices (not purchasable, never rendered as
+// a card) and MaxResources arriving as a JSON string.
 const PLAN_CATALOG = [
   {
     AIQuota: 0,
-    Description: "Get started with personal experiments.",
+    Description:
+      "Free 14-day trial with 4C4G/5G/1M for a Devbox and database, ideal for development testing",
     DowngradePlanList: [],
-    ID: "plan-free",
-    MaxResources: { cpu: "1", memory: "1Gi", nodeports: 1, storage: "10Gi" },
-    MaxSeats: 1,
-    Name: "Free",
-    Order: 0,
-    Prices: [{ BillingCycle: "1m", OriginalPrice: 0, Price: 0 }],
-    Tags: [],
-    Traffic: 10_240,
-    UpgradePlanList: ["Hobby", "Pro"],
-  },
-  {
-    AIQuota: 100,
-    Description: "Everything a side project needs.",
-    DowngradePlanList: ["Free"],
-    ID: "plan-hobby",
-    MaxResources: { cpu: "4", memory: "8Gi", nodeports: 5, storage: "100Gi" },
-    MaxSeats: 3,
-    Name: "Hobby",
-    Order: 1,
-    Prices: [
-      { BillingCycle: "1m", OriginalPrice: 7_000_000, Price: 5_000_000 },
-    ],
-    Tags: [],
-    Traffic: 102_400,
-    UpgradePlanList: ["Pro"],
-  },
-  {
-    AIQuota: 1000,
-    Description: "Production workloads with room to grow.",
-    DowngradePlanList: ["Free", "Hobby"],
-    ID: "plan-pro",
-    MaxResources: {
-      cpu: "16",
-      memory: "32Gi",
-      nodeports: 20,
-      storage: "500Gi",
-    },
+    ID: "8c839f25-22ba-4df6-adad-b12de0e75a49",
+    MaxResources:
+      '{"cpu": "4", "memory": "4Gi", "storage": "5Gi", "nodeports": "4"}',
     MaxSeats: 10,
-    Name: "Pro",
+    Name: "Free",
+    Order: 1,
+    Prices: [],
+    Tags: ["base"],
+    Traffic: 500,
+    UpgradePlanList: [
+      "Starter",
+      "Hobby",
+      "Standard",
+      "Plus",
+      "Pro",
+      "Team",
+      "Enterprise",
+    ],
+  },
+  {
+    AIQuota: 1_000_000,
+    Description:
+      "For beginners deploying existing images. Not for development work.",
+    DowngradePlanList: [],
+    ID: "61dc0438-ea7a-4ad5-a19d-dc838e4b25af",
+    MaxResources:
+      '{"cpu": "2", "memory": "2Gi", "storage": "10Gi", "nodeports": "4"}',
+    MaxSeats: 10,
+    Name: "Starter",
     Order: 2,
     Prices: [
-      { BillingCycle: "1m", OriginalPrice: 20_000_000, Price: 20_000_000 },
+      { BillingCycle: "1m", OriginalPrice: 33_500_000, Price: 7_000_000 },
     ],
-    Tags: [],
+    Tags: ["base"],
+    Traffic: 10_240,
+    UpgradePlanList: ["Hobby", "Standard", "Plus", "Pro", "Team", "Enterprise"],
+  },
+  {
+    AIQuota: 3_000_000,
+    Description:
+      "For hobbyists building side projects. Not for production use.",
+    DowngradePlanList: ["Starter"],
+    ID: "28bfd5f9-3766-4fe6-95f8-0166a3e6adc4",
+    MaxResources:
+      '{"cpu": "4", "memory": "4Gi", "storage": "20Gi", "nodeports": "8"}',
+    MaxSeats: 10,
+    Name: "Hobby",
+    Order: 3,
+    Prices: [
+      { BillingCycle: "1m", OriginalPrice: 69_500_000, Price: 25_000_000 },
+    ],
+    Tags: ["base"],
+    Traffic: 51_200,
+    UpgradePlanList: ["Standard", "Plus", "Pro", "Team", "Enterprise"],
+  },
+  {
+    AIQuota: 8_000_000,
+    Description:
+      "For growing startups and apps. The ideal balance of performance and scale.",
+    DowngradePlanList: ["Starter", "Hobby"],
+    ID: "a528337a-083f-4a67-a603-84ff80f3c7c9",
+    MaxResources:
+      '{"cpu": "8", "memory": "16Gi", "storage": "50Gi", "nodeports": "16"}',
+    MaxSeats: 20,
+    Name: "Standard",
+    Order: 4,
+    Prices: [{ BillingCycle: "1m", OriginalPrice: 0, Price: 128_000_000 }],
+    Tags: ["base"],
+    Traffic: 307_200,
+    UpgradePlanList: ["Plus", "Pro", "Team", "Enterprise"],
+  },
+  {
+    AIQuota: 9_000_000,
+    Description:
+      "For high-growth startups and demanding apps. Ideal for scaling workloads.",
+    DowngradePlanList: ["Starter", "Hobby", "Standard"],
+    ID: "f64768ae-4654-4f41-9289-bc7167c20fe9",
+    MaxResources:
+      '{"cpu": "12", "memory": "24Gi", "storage": "100Gi", "nodeports": "24"}',
+    MaxSeats: 20,
+    Name: "Plus",
+    Order: 5,
+    Prices: [{ BillingCycle: "1m", OriginalPrice: 0, Price: 196_000_000 }],
+    Tags: ["base"],
+    Traffic: 512_000,
+    UpgradePlanList: ["Pro", "Team", "Enterprise"],
+  },
+  {
+    AIQuota: 10_000_000,
+    Description:
+      "For professional and team workloads. Expanded capacity for scaling projects.",
+    DowngradePlanList: ["Starter", "Hobby", "Standard", "Plus"],
+    ID: "9589afb1-0478-4bd6-9a7a-e58168154e01",
+    MaxResources:
+      '{"cpu": "16", "memory": "32Gi", "storage": "200Gi", "nodeports": "32"}',
+    MaxSeats: 50,
+    Name: "Pro",
+    Order: 6,
+    Prices: [{ BillingCycle: "1m", OriginalPrice: 0, Price: 512_000_000 }],
+    Tags: ["more"],
     Traffic: 1_048_576,
+    UpgradePlanList: ["Team", "Enterprise"],
+  },
+  {
+    AIQuota: 15_000_000,
+    Description:
+      "For large teams with compliance needs. Built for collaboration.",
+    DowngradePlanList: ["Starter", "Hobby", "Standard", "Plus", "Pro"],
+    ID: "7853aeb8-88b5-4e64-9781-f62ba2933795",
+    MaxResources:
+      '{"cpu": "64", "memory": "128Gi", "storage": "500Gi", "nodeports": "64"}',
+    MaxSeats: 100,
+    Name: "Team",
+    Order: 7,
+    Prices: [{ BillingCycle: "1m", OriginalPrice: 0, Price: 2_030_000_000 }],
+    Tags: ["base", "more"],
+    Traffic: 3_145_728,
+    UpgradePlanList: ["Enterprise"],
+  },
+  {
+    AIQuota: 20_000_000,
+    Description:
+      "256C1T/1T/10T for enterprise-grade development and production",
+    DowngradePlanList: ["Starter", "Hobby", "Standard", "Plus", "Pro", "Team"],
+    ID: "92936924-0652-423e-a3f2-4c7c61f7f8f5",
+    MaxResources:
+      '{"cpu": "256", "memory": "1024Gi", "storage": "1024Gi", "nodeports": "128"}',
+    MaxSeats: 500,
+    Name: "Enterprise",
+    Order: 8,
+    Prices: [{ BillingCycle: "1m", OriginalPrice: 0, Price: 12_451_000_000 }],
+    Tags: ["base", "more"],
+    Traffic: 10_485_760,
+    UpgradePlanList: [],
+  },
+  {
+    AIQuota: 0,
+    Description: "https://go.sealos.in/contact-sales",
+    DowngradePlanList: [],
+    ID: "92936924-0652-423e-a3f2-4c7c61f7f8f9",
+    MaxResources: '{"cpu": "256", "memory": "1024Gi", "storage": "1000Gi"}',
+    MaxSeats: 5000,
+    Name: "Customized",
+    Order: 12,
+    Prices: [{ BillingCycle: "1m", OriginalPrice: 0, Price: 2_030_000_000 }],
+    Tags: ["more"],
+    Traffic: 10_485_760,
     UpgradePlanList: [],
   },
 ];
@@ -202,7 +309,7 @@ function costPointsPayload(): [number, number][] {
 
 function paymentsPayload(context: FixtureContext): unknown[] {
   const subscriptionPayment = (id: string, operator: string, time: string) => ({
-    Amount: 5_000_000,
+    Amount: 25_000_000,
     ID: id,
     Operator: operator,
     PlanName: "Hobby",
@@ -391,26 +498,28 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
     plans: PLAN_CATALOG,
   }),
   "/account/v1alpha1/workspace-subscription/upgrade-amount": () => ({
-    amount: 15_000_000,
+    amount: 103_000_000,
     has_discount: false,
-    original_amount: 15_000_000,
+    original_amount: 103_000_000,
     promotion_code: "",
   }),
+  // Mirrors the production Hobby plan's MaxResources (the scenarios' current
+  // plan) so downgrade checks compare realistic numbers.
   "/account/v1alpha1/workspace/get-resource-quota": () => ({
     quota: {
       hard: {
         "limits.cpu": "4",
-        "limits.memory": "8Gi",
-        "limits.nvidia.com/gpu": "1",
-        "requests.storage": "100Gi",
-        "services.nodeports": "5",
-        traffic: "107374182400",
+        "limits.memory": "4Gi",
+        "limits.nvidia.com/gpu": "0",
+        "requests.storage": "20Gi",
+        "services.nodeports": "8",
+        traffic: "53687091200",
       },
       used: {
         "limits.cpu": "1500m",
         "limits.memory": "3Gi",
         "limits.nvidia.com/gpu": "0",
-        "requests.storage": "40Gi",
+        "requests.storage": "12Gi",
         "services.nodeports": "2",
         traffic: "26843545600",
       },
