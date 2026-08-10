@@ -599,10 +599,14 @@ export function OnboardingSurveyCard({
           <StepHeading title="Anything specific you're trying to achieve?" />
           <div className="flex flex-col gap-1.5">
             {/* Auto-growing (field-sizing-content via AppTextarea): the open
-                goal allows 2000 characters, far past one input line. */}
+                goal allows 2000 characters, far past one input line. The
+                min-height equals the three-row empty state exactly (3×20px
+                lines + 28px padding + 2px border), so the first keystroke —
+                which flips field-sizing from fixed to content — cannot
+                shrink the field; past three lines it grows. */}
             <AppTextarea
               aria-label="Anything specific you're trying to achieve?"
-              className="min-h-12 rounded-lg bg-input/30 px-4 py-3.5 dark:bg-input/30"
+              className="min-h-22.5 resize-none rounded-lg bg-input/30 px-4 py-3.5 dark:bg-input/30"
               maxLength={ONBOARDING_OPEN_GOAL_TEXT_MAX_LENGTH}
               onChange={(event) =>
                 dispatch({
@@ -611,6 +615,7 @@ export function OnboardingSurveyCard({
                 })
               }
               placeholder="e.g. deploy an AI agent, move from VPS, test a product idea…"
+              rows={3}
               value={state.openGoalText}
             />
             <div className="flex justify-end">
