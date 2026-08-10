@@ -159,7 +159,7 @@ function BillingPlanCard({
           ? "border-border"
           : cn(
               "border-transparent bg-linear-to-br",
-              "before:pointer-events-none before:absolute before:-inset-px before:rounded-[inherit] before:bg-linear-to-br before:p-px before:content-[''] before:[mask:linear-gradient(#000_0_0)_content-box_exclude,linear-gradient(#000_0_0)]",
+              "before:pointer-events-none before:absolute before:-inset-px before:rounded-[inherit] before:bg-linear-to-b before:p-px before:content-[''] before:[mask:linear-gradient(#000_0_0)_content-box_exclude,linear-gradient(#000_0_0)]",
               recipe.card
             )
       )}
