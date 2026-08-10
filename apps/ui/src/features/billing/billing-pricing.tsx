@@ -80,34 +80,35 @@ const PRICE_ICONS = {
   traffic: Network,
 } satisfies Record<BillingPriceType, LucideIcon>;
 
-// Brain V2.0 pricing-card recipe: the tier gradient as a solid border (first
-// stop), a 12% wash across the face, and the full gradient clipped into the
-// name and price. Shares PlanBadge's palette aliases (STANDARD borrows PRO,
-// PLUS borrows ENTERPRISE); names without a recipe — Starter included, per the
-// pricing design — keep the neutral card.
+// Brain V2.0 pricing-card recipe: the tier gradient at 12% as the wash, at
+// full strength as the stroke ring, and clipped into the name and price.
+// Figma flattens the stroke to its first stop when exporting, so the ring is
+// a masked ::before — the same trick as PlanBadge, whose palette aliases we
+// share (STANDARD borrows PRO, PLUS borrows ENTERPRISE). Names without a
+// recipe — Starter included, per the pricing design — keep the neutral card.
 const PRO_CARD_RECIPE = {
-  card: "border-tier-pro-from bg-linear-to-br from-tier-pro-from/12 to-tier-pro-to/12",
+  card: "from-tier-pro-from/12 to-tier-pro-to/12 before:from-tier-pro-from before:to-tier-pro-to",
   text: "bg-linear-to-r from-tier-pro-from to-tier-pro-to bg-clip-text text-transparent",
 };
 const ENTERPRISE_CARD_RECIPE = {
-  card: "border-tier-enterprise-from bg-linear-to-br from-tier-enterprise-from/12 to-tier-enterprise-to/12",
+  card: "from-tier-enterprise-from/12 to-tier-enterprise-to/12 before:from-tier-enterprise-from before:to-tier-enterprise-to",
   text: "bg-linear-to-r from-tier-enterprise-from to-tier-enterprise-to bg-clip-text text-transparent",
 };
 const PLAN_CARD_RECIPES: Record<string, { card: string; text: string }> = {
   ENTERPRISE: ENTERPRISE_CARD_RECIPE,
   FREE: {
-    card: "border-tier-free-from bg-linear-to-br from-tier-free-from/12 to-tier-free-to/12",
+    card: "from-tier-free-from/12 to-tier-free-to/12 before:from-tier-free-from before:to-tier-free-to",
     text: "bg-linear-to-r from-tier-free-from to-tier-free-to bg-clip-text text-transparent",
   },
   HOBBY: {
-    card: "border-tier-hobby-from bg-linear-to-br from-tier-hobby-from/12 to-tier-hobby-to/12",
+    card: "from-tier-hobby-from/12 to-tier-hobby-to/12 before:from-tier-hobby-from before:to-tier-hobby-to",
     text: "bg-linear-to-r from-tier-hobby-from to-tier-hobby-to bg-clip-text text-transparent",
   },
   PLUS: ENTERPRISE_CARD_RECIPE,
   PRO: PRO_CARD_RECIPE,
   STANDARD: PRO_CARD_RECIPE,
   TEAM: {
-    card: "border-tier-team-from bg-linear-to-br from-tier-team-from/12 to-tier-team-to/12",
+    card: "from-tier-team-from/12 to-tier-team-to/12 before:from-tier-team-from before:to-tier-team-to",
     text: "bg-linear-to-r from-tier-team-from to-tier-team-to bg-clip-text text-transparent",
   },
 };
@@ -154,7 +155,13 @@ function BillingPlanCard({
     <article
       className={cn(
         "relative flex min-w-0 flex-1 flex-col gap-5 rounded-xl border bg-white/5 px-7 pt-6 pb-10 shadow-xs",
-        recipe == null ? "border-border" : recipe.card
+        recipe == null
+          ? "border-border"
+          : cn(
+              "border-transparent bg-linear-to-br",
+              "before:pointer-events-none before:absolute before:-inset-px before:rounded-[inherit] before:bg-linear-to-br before:p-px before:content-[''] before:[mask:linear-gradient(#000_0_0)_content-box_exclude,linear-gradient(#000_0_0)]",
+              recipe.card
+            )
       )}
     >
       {mostPopular ? (
