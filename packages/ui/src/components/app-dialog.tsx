@@ -15,7 +15,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { Loader2, TriangleAlert } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 
-type AppDialogSize = "sm" | "default" | "lg" | "xl";
+type AppDialogSize = "sm" | "default" | "lg" | "xl" | "2xl";
 type AppDialogActionTone = "default" | "destructive";
 
 function AppDialogRoot(props: ComponentProps<typeof Dialog>) {
@@ -38,7 +38,7 @@ function AppDialogContent({
     <DialogContent
       className={cn(
         "dark flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-lg border border-border bg-project-chrome-surface p-0 text-foreground shadow-2xl ring-0 backdrop-blur-[20px]",
-        "max-w-[calc(100vw-2rem)] data-[size=default]:sm:max-w-[502px] data-[size=lg]:sm:max-w-3xl data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-5xl",
+        "max-w-[calc(100vw-2rem)] data-[size=2xl]:sm:max-w-[1200px] data-[size=default]:sm:max-w-[502px] data-[size=lg]:sm:max-w-3xl data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-5xl",
         className
       )}
       data-size={size}
