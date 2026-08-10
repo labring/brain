@@ -45,6 +45,7 @@ import {
   resolveBillingAppType,
   type SubscriptionPayment,
 } from "@/features/billing/billing-costs-data";
+import { formatBillingDateTime } from "@/features/billing/billing-datetime";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
 const APP_PAGE_SIZE = 10;
@@ -114,18 +115,6 @@ interface ConsumptionRow {
   queryAppType: string;
   typeName: string;
   workspaceName: string;
-}
-
-function pad2(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-/** The V2.0 billing timestamp: `yyyy-MM-dd HH:mm` in local time. */
-function formatBillingDateTime(iso: string): string {
-  const date = new Date(iso);
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
-    date.getDate()
-  )} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 function workspaceName(

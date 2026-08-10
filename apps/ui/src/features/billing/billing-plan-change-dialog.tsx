@@ -8,10 +8,9 @@ import {
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
-import { Badge } from "@workspace/ui/components/badge";
+import { AppSelect } from "@workspace/ui/components/app-select";
 import { Separator } from "@workspace/ui/components/separator";
 import {
-  ArrowDownRight,
   ArrowUpRight,
   CircleCheck,
   CircleCheckBig,
@@ -22,6 +21,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
+import {
+  BillingPlanCard,
+  type BillingPlanCardState,
+  PlanCheckGradientDefs,
+  planCardAction,
+  planFeatures,
+} from "@/features/billing/billing-plan-card";
+import type { NormalizedBillingPlan } from "@/features/billing/billing-plan-catalog";
 import {
   type BillingPlanSnapshot,
   cancelSubscriptionInvoice,
@@ -162,10 +169,10 @@ function planOperator(
   }
 }
 
-const STAGE_DIALOG_SIZES: Record<ChangeStage, "default" | "lg"> = {
+const STAGE_DIALOG_SIZES: Record<ChangeStage, "default" | "lg" | "xl"> = {
   downgrade: "default",
   quote: "lg",
-  select: "default",
+  select: "xl",
   waiting: "default",
 };
 
@@ -527,60 +534,32 @@ function QuoteStage({
   );
 }
 
-function planSelectionActionLabel(
-  plan: SnapshotPlan,
-  operator: PlanChangeOperator
-): string {
-  if (operator === "created") {
-    return plan.isCurrent ? `Renew ${plan.name}` : `Subscribe to ${plan.name}`;
-  }
-  return operator === "upgraded"
-    ? `Upgrade to ${plan.name}`
-    : `Downgrade to ${plan.name}`;
+// The select stage renders catalog plans through the shared pricing-card
+// surface, which expects the pricing loader's plan shape.
+function selectionCardPlan(plan: SnapshotPlan): NormalizedBillingPlan {
+  return {
+    description: plan.description,
+    id: plan.id,
+    limits: plan.limits,
+    monthlyOriginalPriceMicroUnits: plan.originalPriceMicroUnits ?? 0,
+    monthlyPriceMicroUnits: plan.priceMicroUnits,
+    name: plan.name,
+    order: plan.order,
+    primaryPriceMicroUnits: plan.priceMicroUnits,
+    resources: plan.resources.map(({ label, type, value }) => ({
+      label,
+      type: type ?? "other",
+      value,
+    })),
+    tags: plan.tags ?? [],
+  };
 }
 
-function planSelectionAction({
-  onSelect,
-  operator,
-  pendingDowngradePlanName,
-  plan,
-}: {
-  onSelect: (planId: string) => void;
-  operator: PlanChangeOperator | null;
-  pendingDowngradePlanName: string | null;
-  plan: SnapshotPlan;
-}) {
-  if (plan.name === pendingDowngradePlanName) {
-    return (
-      <AppButton className="w-full sm:w-auto" disabled variant="secondary">
-        Starts next cycle
-      </AppButton>
-    );
-  }
-  if (operator == null) {
-    if (plan.changeKind === "contact") {
-      return (
-        <AppButton className="w-full sm:w-auto" disabled variant="secondary">
-          Contact us
-        </AppButton>
-      );
-    }
-    return null;
-  }
-  return (
-    <AppButton
-      className="w-full sm:w-auto"
-      onClick={() => onSelect(plan.id)}
-      variant="secondary"
-    >
-      {operator === "downgraded" ? (
-        <ArrowDownRight aria-hidden data-icon="inline-start" />
-      ) : (
-        <ArrowUpRight aria-hidden data-icon="inline-start" />
-      )}
-      {planSelectionActionLabel(plan, operator)}
-    </AppButton>
-  );
+function planSpecSummary(plan: SnapshotPlan): string {
+  return [
+    ...plan.resources.map((resource) => `${resource.value} ${resource.label}`),
+    ...planFeatures(plan.name),
+  ].join(" + ");
 }
 
 function PlanSelectionStage({
@@ -596,52 +575,106 @@ function PlanSelectionStage({
   pendingDowngradePlanName: string | null;
   plans: BillingPlanSnapshot["plans"];
 }) {
+  // The legacy costcenter split: plans without the "more" tag are the card
+  // row (Free stays uncardable), "more" plans live in the selector row —
+  // Customized included.
+  const cardPlans = plans
+    .filter(
+      (plan) =>
+        !(plan.tags ?? []).includes("more") &&
+        plan.name.trim().toLowerCase() !== "free"
+    )
+    .slice()
+    .sort((left, right) => left.order - right.order);
+  const morePlans = plans
+    .filter((plan) => (plan.tags ?? []).includes("more"))
+    .slice()
+    .sort((left, right) => left.order - right.order);
+  const [morePlanId, setMorePlanId] = useState(morePlans[0]?.id ?? null);
+  const selectedMorePlan =
+    morePlans.find((plan) => plan.id === morePlanId) ?? morePlans[0] ?? null;
+
+  const planStates = new Map<string, BillingPlanCardState>(
+    plans.map((plan) => [
+      plan.id,
+      {
+        changeKind: plan.changeKind ?? null,
+        inDebt,
+        isCurrent: plan.isCurrent,
+        isPendingDowngradeTarget: pendingDowngradePlanName === plan.name,
+      },
+    ])
+  );
+  const standardIndex = cardPlans.findIndex(
+    (plan) => plan.name.trim().toUpperCase() === "STANDARD"
+  );
+  const mostPopularIndex = standardIndex === -1 ? 1 : standardIndex;
+
   return (
     <>
       <AppDialog.Header>
-        <AppDialog.Title>Change subscription plan</AppDialog.Title>
-        <AppDialog.Description>
+        <AppDialog.Title>Choose Your Workspace Plan</AppDialog.Title>
+        <AppDialog.Description className="sr-only">
           Choose the plan that fits this workspace.
         </AppDialog.Description>
       </AppDialog.Header>
-      <AppDialog.Body>
+      <AppDialog.Body className="pb-4">
+        <PlanCheckGradientDefs />
         <div className="flex flex-col gap-3">
-          {plans.map((plan) => {
-            const operator =
-              plan.name === pendingDowngradePlanName
-                ? null
-                : planOperator(plan, inDebt);
-            return (
-              <div
-                className="flex flex-col gap-4 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
-                key={plan.id}
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-medium text-foreground">{plan.name}</h3>
-                    {plan.isCurrent ? (
-                      <Badge variant="secondary">Current</Badge>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-muted-foreground text-sm">
-                    {plan.description}
-                  </p>
-                  <p className="mt-2 font-medium tabular-nums">
-                    {formatBillingAmount(plan.priceMicroUnits, currency)}
-                    <span className="font-normal text-muted-foreground">
-                      /month
-                    </span>
-                  </p>
-                </div>
-                {planSelectionAction({
-                  onSelect,
-                  operator,
-                  pendingDowngradePlanName,
-                  plan,
+          <div className="flex flex-col gap-3 pt-2 lg:flex-row">
+            {cardPlans.map((plan, index) => (
+              <BillingPlanCard
+                action={planCardAction({
+                  onSelectPlan: onSelect,
+                  plan: selectionCardPlan(plan),
+                  planStates,
+                  planStatesPending: false,
                 })}
-              </div>
-            );
-          })}
+                currency={currency}
+                gpuEnabled
+                key={plan.id}
+                mostPopular={index === mostPopularIndex}
+                plan={selectionCardPlan(plan)}
+              />
+            ))}
+          </div>
+
+          {selectedMorePlan == null ? null : (
+            <div className="flex flex-col gap-3 rounded-lg bg-input/30 p-3 lg:flex-row lg:items-center">
+              <AppSelect
+                aria-label="More plans"
+                className="w-full lg:w-44"
+                onValueChange={setMorePlanId}
+                options={morePlans.map((plan) => ({
+                  label: plan.name,
+                  value: plan.id,
+                }))}
+                value={selectedMorePlan.id}
+              />
+              <p
+                className="min-w-0 flex-1 truncate text-muted-foreground text-sm"
+                title={planSpecSummary(selectedMorePlan)}
+              >
+                {planSpecSummary(selectedMorePlan)}
+              </p>
+              <p className="shrink-0 font-medium text-sm tabular-nums">
+                {formatBillingAmount(
+                  selectedMorePlan.priceMicroUnits,
+                  currency
+                )}
+                <span className="font-normal text-muted-foreground">
+                  /month
+                </span>
+              </p>
+              {planCardAction({
+                className: "w-full lg:w-auto",
+                onSelectPlan: onSelect,
+                plan: selectionCardPlan(selectedMorePlan),
+                planStates,
+                planStatesPending: false,
+              })}
+            </div>
+          )}
         </div>
       </AppDialog.Body>
       <AppDialog.Footer>

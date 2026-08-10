@@ -81,7 +81,7 @@ test("upgrade mode opens the plan workflow and is consumed from the URL", async 
 
       assert.ok(
         rendered?.getByRole("dialog", {
-          name: "Change subscription plan",
+          name: "Choose Your Workspace Plan",
         })
       );
       assert.deepEqual(replacements, ["/billing?source=quota"]);

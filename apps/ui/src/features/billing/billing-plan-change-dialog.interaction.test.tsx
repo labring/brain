@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { fireEvent, render } from "@testing-library/react/pure";
+import { fireEvent, render, within } from "@testing-library/react/pure";
 import { useState } from "react";
 
 import { withTestDom } from "@/features/project-canvas/react-test-harness";
@@ -125,13 +125,11 @@ test("plan picker continues into the selected upgrade workflow", async () => {
 
       assert.ok(
         (rendered?.baseElement.textContent ?? "").includes(
-          "Change subscription plan"
+          "Choose Your Workspace Plan"
         )
       );
       await act(() => {
-        const selectTeam = rendered?.getByRole("button", {
-          name: "Upgrade to Team",
-        });
+        const selectTeam = rendered?.getByRole("button", { name: "Upgrade" });
         if (selectTeam != null) {
           fireEvent.click(selectTeam);
         }
@@ -679,15 +677,19 @@ test("a PAYG workspace subscribes to a plan with the created operator", async ()
       });
 
       // Every plan is offered as a fresh subscription, none is "current".
-      assert.ok(
-        rendered?.getByRole("button", { name: "Subscribe to Starter" })
+      assert.equal(
+        rendered?.getAllByRole("button", { name: "Subscribe" }).length,
+        3
       );
-      assert.ok(rendered?.getByRole("button", { name: "Subscribe to Team" }));
 
       await act(() => {
-        const subscribePro = rendered?.getByRole("button", {
-          name: "Subscribe to Pro",
-        });
+        const proCard = rendered
+          ?.getByRole("heading", { name: "Pro" })
+          .closest("article");
+        const subscribePro =
+          proCard == null ? null : within(proCard).getByRole("button", {
+            name: "Subscribe",
+          });
         if (subscribePro != null) {
           fireEvent.click(subscribePro);
         }
