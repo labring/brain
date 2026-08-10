@@ -85,7 +85,8 @@ const PRICE_ICONS = {
 // Figma flattens the stroke to its first stop when exporting, so the ring is
 // a masked ::before — the same trick as PlanBadge, whose palette aliases we
 // share (STANDARD borrows PRO, PLUS borrows ENTERPRISE). Names without a
-// recipe — Starter included, per the pricing design — keep the neutral card.
+// recipe — Free and Starter included, per the pricing design — keep the
+// neutral card: input/30 fill and a plain border.
 const PRO_CARD_RECIPE = {
   card: "from-tier-pro-from/12 to-tier-pro-to/12 before:from-tier-pro-from before:to-tier-pro-to",
   text: "bg-linear-to-r from-tier-pro-from to-tier-pro-to bg-clip-text text-transparent",
@@ -96,10 +97,6 @@ const ENTERPRISE_CARD_RECIPE = {
 };
 const PLAN_CARD_RECIPES: Record<string, { card: string; text: string }> = {
   ENTERPRISE: ENTERPRISE_CARD_RECIPE,
-  FREE: {
-    card: "from-tier-free-from/12 to-tier-free-to/12 before:from-tier-free-from before:to-tier-free-to",
-    text: "bg-linear-to-r from-tier-free-from to-tier-free-to bg-clip-text text-transparent",
-  },
   HOBBY: {
     card: "from-tier-hobby-from/12 to-tier-hobby-to/12 before:from-tier-hobby-from before:to-tier-hobby-to",
     text: "bg-linear-to-r from-tier-hobby-from to-tier-hobby-to bg-clip-text text-transparent",
@@ -154,7 +151,7 @@ function BillingPlanCard({
   return (
     <article
       className={cn(
-        "relative flex min-w-0 flex-1 flex-col gap-5 rounded-xl border bg-white/5 px-7 pt-6 pb-10 shadow-xs",
+        "relative flex min-w-0 flex-1 flex-col gap-5 rounded-xl border bg-input/30 px-7 pt-6 pb-10 shadow-xs",
         recipe == null
           ? "border-border"
           : cn(
@@ -346,7 +343,7 @@ export function BillingPlanCatalog({
                   ].join(" + ");
                   return (
                     <article
-                      className="min-w-0 rounded-xl border border-border bg-white/5 p-4"
+                      className="min-w-0 rounded-xl border border-border bg-input/30 p-4"
                       key={plan.id}
                     >
                       <h4 className="font-medium text-foreground text-sm">

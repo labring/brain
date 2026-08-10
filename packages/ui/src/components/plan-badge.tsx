@@ -20,11 +20,6 @@ const PRO_RECIPE = {
  */
 const PLAN_BADGE_RECIPES: Record<string, { surface: string; text: string }> = {
   ENTERPRISE: ENTERPRISE_RECIPE,
-  FREE: {
-    surface:
-      "from-tier-free-from/12 to-tier-free-to/12 before:from-tier-free-from/30 before:to-tier-free-to/30",
-    text: "from-tier-free-from to-tier-free-to",
-  },
   HOBBY: {
     surface:
       "from-tier-hobby-from/12 to-tier-hobby-to/12 before:from-tier-hobby-from/30 before:to-tier-hobby-to/30",
@@ -47,8 +42,8 @@ const PLAN_BADGE_RECIPES: Record<string, { surface: string; text: string }> = {
 
 /**
  * Subscription-plan tier badge. Matches the plan name case-insensitively
- * against the tier palette; unknown names keep the same shell with neutral
- * border and foreground text.
+ * against the tier palette; Free and unknown names keep the same shell with
+ * an input/30 fill, neutral border, and foreground text.
  */
 function PlanBadge({
   className,
@@ -64,7 +59,7 @@ function PlanBadge({
       className={cn(
         "relative inline-flex h-5 w-fit items-center rounded-sm border border-transparent bg-linear-to-r px-1 text-sm",
         "before:pointer-events-none before:absolute before:-inset-px before:rounded-[inherit] before:bg-linear-to-r before:p-px before:content-[''] before:[mask:linear-gradient(#000_0_0)_content-box_exclude,linear-gradient(#000_0_0)]",
-        recipe?.surface ?? "border-border before:hidden",
+        recipe?.surface ?? "border-border bg-input/30 before:hidden",
         className
       )}
       data-slot="plan-badge"
