@@ -40,23 +40,41 @@ export async function fetchOnboardingSamplingVerdict(
   }
 }
 
+/**
+ * Profile writes are fire-and-forget for the UI but strictly ordered on the
+ * wire: a terminal complete/dismiss racing ahead of an in-flight step write
+ * would make terminal-wins silently drop that step's answer, so each write
+ * waits for the previous one to settle before it is sent.
+ */
+let onboardingWriteQueue: Promise<void> = Promise.resolve();
+
+/** Test seam: the tail of the ordered write queue. */
+export function onboardingWriteQueueSettled(): Promise<void> {
+  return onboardingWriteQueue;
+}
+
 /** The shared fire-and-forget POST every profile write travels. */
 function postOnboardingProfileWrite(
   credentials: OnboardingFetcherCredentials,
   path: "complete" | "dismiss" | "step",
   payload: unknown
 ): void {
-  fetch(
-    `/api/onboarding-profile/${path}?namespace=${encodeURIComponent(credentials.namespace)}`,
-    {
-      body: JSON.stringify(payload),
-      headers: {
-        "content-type": "application/json",
-        ...personalResourceAuthHeaders(credentials),
-      },
-      method: "POST",
-    }
-  ).catch(() => undefined);
+  onboardingWriteQueue = onboardingWriteQueue.then(() =>
+    fetch(
+      `/api/onboarding-profile/${path}?namespace=${encodeURIComponent(credentials.namespace)}`,
+      {
+        body: JSON.stringify(payload),
+        headers: {
+          "content-type": "application/json",
+          ...personalResourceAuthHeaders(credentials),
+        },
+        method: "POST",
+      }
+    ).then(
+      () => undefined,
+      () => undefined
+    )
+  );
 }
 
 /**
