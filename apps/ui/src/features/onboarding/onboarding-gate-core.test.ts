@@ -8,6 +8,7 @@ import {
   onboardingCredentialsKey,
   onboardingCredentialsReady,
   resetOnboardingGateSessionForTesting,
+  settleOnboardingSessionJudgmentSampled,
 } from "./onboarding-gate-core";
 
 test("the gate does nothing until every credential has hydrated", () => {
@@ -66,6 +67,52 @@ test("a mid-session credential change discards the old judgment and re-judges", 
   assert.equal(judged, 2);
   assert.notEqual(first.promise, swapped.promise);
   assert.equal(swapped.rekeyed, true, "the identity swap is reported");
+  resetOnboardingGateSessionForTesting();
+});
+
+test("a terminal action settles the judgment so a remount cannot reopen", async () => {
+  resetOnboardingGateSessionForTesting();
+  const key = onboardingCredentialsKey({
+    appToken: "token-a",
+    kubeconfig: "kc-a",
+    namespace: "ns-a",
+  });
+  let judged = 0;
+  const judge = () => {
+    judged += 1;
+    return Promise.resolve(true);
+  };
+
+  obtainOnboardingSessionJudgment({ judge, key });
+  settleOnboardingSessionJudgmentSampled(key);
+  const remount = obtainOnboardingSessionJudgment({ judge, key });
+
+  assert.equal(judged, 1, "the settled judgment is reused, not re-judged");
+  assert.equal(remount.rekeyed, false);
+  assert.equal(await remount.promise, false, "the survey stays closed");
+  resetOnboardingGateSessionForTesting();
+});
+
+test("settling never clobbers a different identity's judgment", async () => {
+  resetOnboardingGateSessionForTesting();
+  const currentKey = onboardingCredentialsKey({
+    appToken: "token-b",
+    kubeconfig: "kc-b",
+    namespace: "ns-b",
+  });
+  const staleKey = onboardingCredentialsKey({
+    appToken: "token-a",
+    kubeconfig: "kc-a",
+    namespace: "ns-a",
+  });
+  const judge = () => Promise.resolve(true);
+
+  obtainOnboardingSessionJudgment({ judge, key: currentKey });
+  settleOnboardingSessionJudgmentSampled(staleKey);
+  const held = obtainOnboardingSessionJudgment({ judge, key: currentKey });
+
+  assert.equal(held.rekeyed, false);
+  assert.equal(await held.promise, true, "the live judgment is untouched");
   resetOnboardingGateSessionForTesting();
 });
 

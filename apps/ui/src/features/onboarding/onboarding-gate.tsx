@@ -19,6 +19,7 @@ import {
   obtainOnboardingSessionJudgment,
   onboardingCredentialsKey,
   onboardingCredentialsReady,
+  settleOnboardingSessionJudgmentSampled,
 } from "./onboarding-gate-core";
 import type {
   AnswerOnboardingStepRequest,
@@ -123,18 +124,26 @@ export function OnboardingGate() {
     // Submit & Enter Console drops the person into the console immediately;
     // the terminal write never blocks the exit.
     setOpen(false);
-    fireWrite((credentials) =>
-      completeOnboardingProfile(credentials, payload.openGoalText)
-    );
+    fireWrite((credentials) => {
+      completeOnboardingProfile(credentials, payload.openGoalText);
+      // The session judgment must flip to Sampled with the write, or a Gate
+      // remount would re-attach to the stale verdict and reopen the survey.
+      settleOnboardingSessionJudgmentSampled(
+        onboardingCredentialsKey(credentials)
+      );
+    });
   };
 
   const handleSkip = (payload: { dismissedAtStep: number }) => {
     // Skip drops the person into the console immediately; the terminal
     // write never blocks the exit.
     setOpen(false);
-    fireWrite((credentials) =>
-      dismissOnboardingProfile(credentials, payload.dismissedAtStep)
-    );
+    fireWrite((credentials) => {
+      dismissOnboardingProfile(credentials, payload.dismissedAtStep);
+      settleOnboardingSessionJudgmentSampled(
+        onboardingCredentialsKey(credentials)
+      );
+    });
   };
 
   return (

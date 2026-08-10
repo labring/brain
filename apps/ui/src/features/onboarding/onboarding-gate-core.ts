@@ -59,6 +59,20 @@ export function obtainOnboardingSessionJudgment(input: {
   return { promise: sessionJudgment.promise, rekeyed };
 }
 
+/**
+ * Overrides `key`'s session judgment with Sampled the moment a terminal
+ * complete/dismiss fires: without this, a Gate remount under the same
+ * credentials (client-side navigation away from and back to the console)
+ * would re-attach to the stale Unsampled verdict and reopen the survey the
+ * person just finished. A judgment held by a different identity is not
+ * touched — the terminal action wasn't theirs.
+ */
+export function settleOnboardingSessionJudgmentSampled(key: string): void {
+  if (sessionJudgment === null || sessionJudgment.key === key) {
+    sessionJudgment = { key, promise: Promise.resolve(false) };
+  }
+}
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
