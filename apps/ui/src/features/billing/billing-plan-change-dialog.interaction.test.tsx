@@ -687,9 +687,11 @@ test("a PAYG workspace subscribes to a plan with the created operator", async ()
           ?.getByRole("heading", { name: "Pro" })
           .closest("article");
         const subscribePro =
-          proCard == null ? null : within(proCard).getByRole("button", {
-            name: "Subscribe",
-          });
+          proCard == null
+            ? null
+            : within(proCard).getByRole("button", {
+                name: "Subscribe",
+              });
         if (subscribePro != null) {
           fireEvent.click(subscribePro);
         }

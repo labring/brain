@@ -316,7 +316,11 @@ test("Plan renders the compact PAYG summary next to the balance", () => {
     />
   );
 
-  assertTextOrder(html, ["Current Workspace Plan", "Pay-As-You-Go", "Account Balance"]);
+  assertTextOrder(html, [
+    "Current Workspace Plan",
+    "Pay-As-You-Go",
+    "Account Balance",
+  ]);
   assertIncludes(html, "Subscribe Plan");
   for (const absent of [
     "Cancel Plan",
