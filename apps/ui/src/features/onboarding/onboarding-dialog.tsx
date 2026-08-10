@@ -2,7 +2,7 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { AppInput } from "@workspace/ui/components/app-input";
+import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import { cn } from "@workspace/ui/lib/utils";
 import { ArrowRight, Check, Send } from "lucide-react";
 import {
@@ -33,6 +33,8 @@ import {
 import {
   type AnswerOnboardingStepRequest,
   type CompleteOnboardingProfileRequest,
+  ONBOARDING_OPEN_GOAL_TEXT_MAX_LENGTH,
+  ONBOARDING_OTHER_TEXT_MAX_LENGTH,
   ONBOARDING_PRIORITY_TAGS_MAX,
   ONBOARDING_SURVEY_TOTAL_STEPS,
   type OnboardingPriorityTag,
@@ -172,6 +174,21 @@ function OptionCard({
   );
 }
 
+/** The length allowance at a free-text field's tail: current/max, muted. */
+function LengthHint({ max, value }: { max: number; value: string }) {
+  return (
+    <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+      {value.length}/{max}
+    </span>
+  );
+}
+
+/**
+ * At most one Other field mounts at a time, so its error message can hold a
+ * fixed id for the input's `aria-describedby`.
+ */
+const OTHER_ERROR_ID = "onboarding-other-error";
+
 /**
  * The Other slot after selection (design annotation: clicking Other turns
  * the card into an input in place; an empty Next surfaces the inline
@@ -232,14 +249,17 @@ function OtherOptionField({
         }}
       >
         <input
+          aria-describedby={error ? OTHER_ERROR_ID : undefined}
           aria-invalid={error || undefined}
           aria-label={label}
           className="min-w-0 flex-1 bg-transparent text-foreground text-sm outline-none placeholder:text-muted-foreground"
+          maxLength={ONBOARDING_OTHER_TEXT_MAX_LENGTH}
           onChange={(event) => onTextChange(event.target.value)}
           placeholder="Tell us more"
           ref={inputRef}
           value={text}
         />
+        <LengthHint max={ONBOARDING_OTHER_TEXT_MAX_LENGTH} value={text} />
         <button
           aria-label="Unselect Other"
           className="cursor-pointer"
@@ -250,7 +270,11 @@ function OtherOptionField({
         </button>
       </div>
       {error ? (
-        <p className="self-center text-destructive text-sm">
+        <p
+          className="self-center text-destructive text-sm"
+          id={OTHER_ERROR_ID}
+          role="alert"
+        >
           This field is required.
         </p>
       ) : null}
@@ -573,18 +597,29 @@ export function OnboardingSurveyCard({
       {state.currentStep === 4 ? (
         <div className={stepGroupClass}>
           <StepHeading title="Anything specific you're trying to achieve?" />
-          <AppInput
-            aria-label="Anything specific you're trying to achieve?"
-            className="h-12 rounded-lg bg-input/30 px-4 dark:bg-input/30"
-            onChange={(event) =>
-              dispatch({
-                text: event.target.value,
-                type: "set-open-goal-text",
-              })
-            }
-            placeholder="e.g. deploy an AI agent, move from VPS, test a product idea…"
-            value={state.openGoalText}
-          />
+          <div className="flex flex-col gap-1.5">
+            {/* Auto-growing (field-sizing-content via AppTextarea): the open
+                goal allows 2000 characters, far past one input line. */}
+            <AppTextarea
+              aria-label="Anything specific you're trying to achieve?"
+              className="min-h-12 rounded-lg bg-input/30 px-4 py-3.5 dark:bg-input/30"
+              maxLength={ONBOARDING_OPEN_GOAL_TEXT_MAX_LENGTH}
+              onChange={(event) =>
+                dispatch({
+                  text: event.target.value,
+                  type: "set-open-goal-text",
+                })
+              }
+              placeholder="e.g. deploy an AI agent, move from VPS, test a product idea…"
+              value={state.openGoalText}
+            />
+            <div className="flex justify-end">
+              <LengthHint
+                max={ONBOARDING_OPEN_GOAL_TEXT_MAX_LENGTH}
+                value={state.openGoalText}
+              />
+            </div>
+          </div>
         </div>
       ) : null}
       <div className="flex justify-end">
@@ -645,11 +680,16 @@ export function OnboardingDialog({
         overlayClassName="bg-black/60"
         size="xl"
       >
-        <OnboardingSurveyCard
-          onAnswerStep={onAnswerStep}
-          onComplete={onComplete}
-          onSkip={onSkip}
-        />
+        {/* The dialog content clamps to the viewport with overflow-hidden,
+            so the survey scrolls inside it: on short viewports the step
+            body pans while Next/Submit stays reachable at the frame's end. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <OnboardingSurveyCard
+            onAnswerStep={onAnswerStep}
+            onComplete={onComplete}
+            onSkip={onSkip}
+          />
+        </div>
       </AppDialog.Content>
     </AppDialog.Root>
   );

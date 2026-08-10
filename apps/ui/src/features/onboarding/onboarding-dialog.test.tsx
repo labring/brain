@@ -308,7 +308,10 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
   const completes: unknown[] = [];
   let rendered: ReturnType<typeof render> | undefined;
 
-  const typeInto = async (input: HTMLInputElement, value: string) => {
+  const typeInto = async (
+    input: HTMLInputElement | HTMLTextAreaElement,
+    value: string
+  ) => {
     await actAndDrain(() => {
       // A real focus (emitting focusin) plus a keyUp flush: React falls back
       // to keystroke polling for change detection when react-dom was first
@@ -401,8 +404,9 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
 
     // Step 4: the open goal is optional; submit fires the terminal payload.
     assert.match(document.body.textContent ?? "", STEP_FOUR_TITLE_RE);
-    const goalInput = document.querySelector("input");
-    assert.ok(goalInput, "the open goal input is rendered");
+    // The open goal is an auto-growing textarea (2000 characters allowed).
+    const goalInput = document.querySelector("textarea");
+    assert.ok(goalInput, "the open goal field is rendered");
     await typeInto(goalInput, " test a product idea ");
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Submit & Enter Console"));
