@@ -15,8 +15,8 @@ type DeploymentTaskProjectionListener = (
 /**
  * Project-scoped projection events, driven by the global NOTIFY channel
  * (ADR 0037): payloads carry ids only, so each event re-reads the row —
- * serialized per task so deliveries stay monotonic; a purge notification is
- * itself the removal; a transport reset re-reads the whole project because
+ * serialized per task so deliveries stay monotonic; a transport reset
+ * re-reads the whole project because
  * notifications during the gap are lost, holding per-task deliveries back
  * until its snapshot lands so the snapshot never erases a newer delivery.
  */
@@ -45,10 +45,7 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
   // project-scoped): concurrent re-reads can resolve out of order and
   // deliver an older row state after a newer one; the trailing read folds
   // every notification that arrived mid-read into one final delivery.
-  // Purged ids are tombstoned so a re-read racing the purge cannot
-  // resurrect the task — task ids are never reused.
   const inflightReads = new Map<string, { queued: boolean }>();
-  const purgedTaskIds = new Set<string>();
 
   // Reset snapshots replace the listener's whole set, so a snapshot must
   // never land after a per-task delivery it does not contain — the replace
@@ -87,12 +84,7 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
     inflightReads.set(taskId, slot);
     getDeployTaskById(taskId)
       .then((row) => {
-        if (
-          cancelled ||
-          purgedTaskIds.has(taskId) ||
-          row == null ||
-          row.namespace !== input.namespace
-        ) {
+        if (cancelled || row == null || row.namespace !== input.namespace) {
           return;
         }
         const rowProjectId = row.projectId?.trim() ?? "";
@@ -136,12 +128,7 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
             if (cancelled || generation !== resetGeneration) {
               return;
             }
-            // The read can predate a purge that was already delivered:
-            // tombstoned ids never re-enter through a snapshot.
-            const snapshot = projections.filter(
-              (projection) => !purgedTaskIds.has(projection.id)
-            );
-            input.listener({ projections: snapshot, type: "snapshot" });
+            input.listener({ projections, type: "snapshot" });
             flushBufferedDuringReset();
           })
           .catch((error) => {
@@ -158,25 +145,6 @@ export function subscribeDeploymentTaskProjectionEvents(input: {
         return;
       }
       if (event.namespace !== input.namespace) {
-        return;
-      }
-      if (event.kind === "purge") {
-        purgedTaskIds.add(event.taskId);
-        const inflight = inflightReads.get(event.taskId);
-        if (inflight != null) {
-          inflight.queued = false;
-        }
-        if (event.projectId === input.projectId) {
-          deliver({
-            namespace: event.namespace,
-            projectId: input.projectId,
-            taskId: event.taskId,
-            type: "remove",
-          });
-        }
-        return;
-      }
-      if (purgedTaskIds.has(event.taskId)) {
         return;
       }
       emitTask(event.taskId);

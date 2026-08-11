@@ -47,10 +47,6 @@ export function getDevboxDefaultImageFromEnv(
   return image === "" ? undefined : image;
 }
 
-export function getDevboxArchiveAfterPauseTimeFromEnv(env: DevboxEnv): string {
-  return env.DEVBOX_ARCHIVE_AFTER_PAUSE_TIME?.trim() || "24h";
-}
-
 export function validateDevboxAuthNamespace(namespace: string): string {
   const trimmed = namespace.trim();
   if (!DNS_1123_LABEL_REGEX.test(trimmed)) {

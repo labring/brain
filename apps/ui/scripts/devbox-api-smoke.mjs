@@ -51,7 +51,6 @@ const token = await new SignJWT({ namespace })
 const name = `sealai-curl-${Date.now()}`;
 const url = `${devboxApiBaseUrl}/api/v1/devbox`;
 const body = {
-  archiveAfterPauseTime: env.DEVBOX_ARCHIVE_AFTER_PAUSE_TIME || "24h",
   env: { SEALAI_ASSISTANT_NAMESPACE: namespace },
   kubeAccess: { enabled: true, roleTemplate: "edit" },
   labels: [

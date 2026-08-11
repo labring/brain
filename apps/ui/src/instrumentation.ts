@@ -54,4 +54,18 @@ export async function register() {
       error
     );
   }
+  try {
+    const { startChatDevboxLifecycleRuntime } = await import(
+      "@/features/chat/devbox/lifecycle"
+    );
+    startChatDevboxLifecycleRuntime();
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      throw error;
+    }
+    console.warn(
+      "[instrumentation] chat Devbox lifecycle failed to start:",
+      error
+    );
+  }
 }

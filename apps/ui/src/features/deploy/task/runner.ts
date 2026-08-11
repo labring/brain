@@ -44,10 +44,7 @@ import {
   refreshDevboxPause,
   resumeDevbox,
 } from "@/lib/devbox/client";
-import {
-  getDevboxArchiveAfterPauseTime,
-  getDevboxDefaultImage,
-} from "@/lib/devbox/config";
+import { getDevboxDefaultImage } from "@/lib/devbox/config";
 import type { DevboxInfo } from "@/lib/devbox/types";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
@@ -1827,7 +1824,6 @@ async function ensureDeployDevbox(input: {
     await createDevbox(
       input.namespace,
       {
-        archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
         env: {
           ...buildCodexGatewayEnv(gatewayCredentials),
           ...(input.githubToken?.trim()

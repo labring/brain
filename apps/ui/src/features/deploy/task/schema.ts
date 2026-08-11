@@ -303,6 +303,18 @@ export const deployTasks = ns.table(
     runtimeProvider: text("runtime_provider"),
     runtimeName: text("runtime_name"),
     runtimeState: text("runtime_state"),
+    runtimePausedAt: timestamp("runtime_paused_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    runtimeCleanupLeaseOwner: text("runtime_cleanup_lease_owner"),
+    runtimeCleanupLeaseExpiresAt: timestamp(
+      "runtime_cleanup_lease_expires_at",
+      {
+        mode: "date",
+        withTimezone: true,
+      }
+    ),
     gatewayUrl: text("gateway_url"),
     gatewaySessionId: text("gateway_session_id"),
     gatewayThreadId: text("gateway_thread_id"),
@@ -372,7 +384,7 @@ export const deployTasks = ns.table(
       table.updatedAt
     ),
     // Reaper scans (ADR 0037): leased statuses by lease expiry, queued by
-    // age, terminal by completion time.
+    // age, terminal by completion time, and paused runtimes by deletion due.
     index("deploy_tasks_leased_expiry_idx")
       .on(table.leaseExpiresAt)
       .where(sql`${table.status} IN ('running', 'applying')`),
@@ -382,6 +394,11 @@ export const deployTasks = ns.table(
     index("deploy_tasks_terminal_completed_idx")
       .on(table.completedAt)
       .where(sql`${table.status} IN ('completed', 'failed', 'cancelled')`),
+    index("deploy_tasks_runtime_paused_idx")
+      .on(table.runtimePausedAt)
+      .where(
+        sql`${table.runtimeProvider} = 'devbox' AND lower(coalesce(${table.runtimeState}, '')) IN ('paused', 'archived')`
+      ),
     // One active clone per predecessor (ADR 0038): a concurrent redeploy
     // loses this insert and surfaces as a conflict. Keyed by namespace so a
     // stray cross-namespace row (predecessor lookups are namespace-scoped,

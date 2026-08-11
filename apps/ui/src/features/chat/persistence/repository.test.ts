@@ -28,6 +28,7 @@ import {
 import {
   assistantChatMessages,
   assistantChats,
+  assistantDevboxRuntimes,
   assistantEntitlements,
   githubAppInstallSessions,
   githubConnections,
@@ -38,6 +39,7 @@ import {
 const assistantSchema = {
   assistantChatMessages,
   assistantChats,
+  assistantDevboxRuntimes,
   assistantEntitlements,
   githubAppInstallSessions,
   githubConnections,

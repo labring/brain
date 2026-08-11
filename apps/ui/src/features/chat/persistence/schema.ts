@@ -95,6 +95,44 @@ export const assistantEntitlements = ns.table(
   ]
 );
 
+/** Brain-owned lifecycle ledger for shared assistant Devbox runtimes. */
+export const assistantDevboxRuntimes = ns.table(
+  "assistant_devbox_runtimes",
+  {
+    upstreamId: text("upstream_id").primaryKey(),
+    namespace: text("namespace").notNull(),
+    runtimeName: text("runtime_name").notNull(),
+    pauseDueAt: timestamp("pause_due_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    pausedAt: timestamp("paused_at", { mode: "date", withTimezone: true }),
+    deleteDueAt: timestamp("delete_due_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    cleanupLeaseOwner: text("cleanup_lease_owner"),
+    cleanupLeaseExpiresAt: timestamp("cleanup_lease_expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("assistant_devbox_runtimes_pause_due_idx")
+      .on(table.pauseDueAt)
+      .where(sql`${table.pausedAt} IS NULL`),
+    index("assistant_devbox_runtimes_delete_due_idx")
+      .on(table.deleteDueAt)
+      .where(sql`${table.deleteDueAt} IS NOT NULL`),
+  ]
+);
+
 export const githubConnections = ns.table(
   "github_connections",
   {
@@ -216,6 +254,8 @@ export const githubOauthConnections = ns.table(
 export type AssistantChatRow = typeof assistantChats.$inferSelect;
 export type AssistantChatMessageRow = typeof assistantChatMessages.$inferSelect;
 export type AssistantEntitlementRow = typeof assistantEntitlements.$inferSelect;
+export type AssistantDevboxRuntimeRow =
+  typeof assistantDevboxRuntimes.$inferSelect;
 export type IdentityFingerprintRow = typeof identityFingerprints.$inferSelect;
 export type GithubAppInstallSessionRow =
   typeof githubAppInstallSessions.$inferSelect;

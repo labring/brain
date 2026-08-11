@@ -71,7 +71,7 @@ export function subscribeDeploymentTaskTimelineEvents(input: {
         emitCurrent();
         return;
       }
-      if (event.taskId !== input.taskId || event.kind === "purge") {
+      if (event.taskId !== input.taskId) {
         return;
       }
       emitCurrent();

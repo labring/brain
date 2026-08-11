@@ -262,9 +262,9 @@ The immutable selection on a GitHub Deployment Task identifying the credential-o
 
 ### Deployment Task Retention
 
-The automatic cleanup boundary for Deployment Task records: terminal tasks, their events, transcripts, and per-task runtimes are purged after a fixed window. Active and blocked tasks are never purged, and there is no user-facing task deletion.
+The split lifecycle boundary between permanent Deployment Task history and its ephemeral execution runtime. Deployment Task rows, events, runner transcripts, and deployment results have no application-level retention deletion. A per-task Deploy Devbox is paused at a terminal outcome and deleted after 24 confirmed paused hours; the task then records `runtimeState=deleted`. There is no user-facing task deletion.
 
-_Avoid_: delete task, clear history.
+_Avoid_: task purge, clear history, archive task, Devbox retention as task retention.
 
 ### GitHub Connection
 

@@ -12,11 +12,9 @@ import {
   refreshDevboxPause,
   resumeDevbox,
 } from "@/lib/devbox/client";
-import {
-  getDevboxArchiveAfterPauseTime,
-  getDevboxDefaultImage,
-} from "@/lib/devbox/config";
+import { getDevboxDefaultImage } from "@/lib/devbox/config";
 import type { DevboxInfo } from "@/lib/devbox/types";
+import { recordChatDevboxActivity } from "./lifecycle-registration";
 
 const DEVBOX_NAME_PREFIX = "sealai-chat";
 const DEVBOX_RUNTIME_READY_TIMEOUT_MS = 60_000;
@@ -172,15 +170,11 @@ async function ensureRunningDevbox(
 async function refreshLease(
   authNamespace: string,
   name: string,
+  pauseAt: string,
   signal?: AbortSignal
 ): Promise<void> {
   signal?.throwIfAborted();
-  await refreshDevboxPause(
-    authNamespace,
-    name,
-    { pauseAt: getPauseAt() },
-    signal
-  );
+  await refreshDevboxPause(authNamespace, name, { pauseAt }, signal);
 }
 
 function shellQuote(value: string): string {
@@ -262,12 +256,23 @@ async function ensureChatDevbox(
   const runtimeHash = hashRuntimeIdentity(kubeconfig, options.namespace);
   const name = runtimeName(runtimeHash);
   const upstreamID = runtimeUpstreamId(runtimeHash);
+  const pauseAt = getPauseAt();
+
+  await recordChatDevboxActivity(
+    {
+      namespace: authNamespace,
+      pauseDueAt: new Date(pauseAt),
+      runtimeName: name,
+      upstreamId: upstreamID,
+    },
+    signal
+  );
 
   const existing = (await listDevboxes(authNamespace, upstreamID, signal)).data
     .items[0];
   if (existing != null) {
     await ensureRunningDevbox(authNamespace, existing.name, signal);
-    await refreshLease(authNamespace, existing.name, signal);
+    await refreshLease(authNamespace, existing.name, pauseAt, signal);
     await assertDevboxKubectlReady(
       authNamespace,
       existing.name,
@@ -281,7 +286,6 @@ async function ensureChatDevbox(
   await createDevbox(
     authNamespace,
     {
-      archiveAfterPauseTime: getDevboxArchiveAfterPauseTime(),
       env: {
         SEALAI_ASSISTANT_NAMESPACE: options.namespace,
       },
@@ -295,7 +299,7 @@ async function ensureChatDevbox(
         { key: "app.kubernetes.io/component", value: "assistant-runtime" },
       ],
       name,
-      pauseAt: getPauseAt(),
+      pauseAt,
       upstreamID,
     },
     signal

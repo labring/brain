@@ -11,6 +11,7 @@ import { SignJWT } from "jose";
 import {
   assistantChatMessages,
   assistantChats,
+  assistantDevboxRuntimes,
   assistantEntitlements,
   githubAppInstallSessions,
   githubConnections,
@@ -29,6 +30,7 @@ import { onboardingProfiles } from "./schema";
 const testSchema = {
   assistantChatMessages,
   assistantChats,
+  assistantDevboxRuntimes,
   assistantEntitlements,
   githubAppInstallSessions,
   githubConnections,
