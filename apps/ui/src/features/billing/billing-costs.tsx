@@ -15,7 +15,8 @@ import {
   type BillingDateRange,
   calendarBillingDateRange,
   fixedTrendWindows,
-  loadBillingCosts,
+  loadBillingAppOverview,
+  loadBillingCostsBase,
   loadBillingDailyTrend,
   loadBillingMonthlyTrend,
 } from "@/features/billing/billing-costs-data";
@@ -23,7 +24,7 @@ import { BillingCostsSurface as BillingCostsSurfaceView } from "@/features/billi
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { appTokenAtom, kubeconfigAtom } from "@/lib/auth-store";
 
-const APP_PAGE_SIZE = 10;
+const APP_PAGE_SIZE = 5;
 
 // Static fixture for the render test: one region, one workspace, the three
 // tier plans, and one PAYG app row.
@@ -142,10 +143,30 @@ export default function BillingCosts({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const selectedWorkspace = scope.kind === "workspace" ? scope.workspace : null;
   const credentialsReady = appToken.trim() !== "" && kubeconfig.trim() !== "";
-  const { data, error, isLoading } = useSWR(
+  // Tree / totals / payments only depend on the date range. Paging the app
+  // overview table must not re-fetch or re-skeleton the cost tree.
+  const costsBase = useSWR(
     credentialsReady
       ? [
-          "billing-costs",
+          "billing-costs-base",
+          dateRange.startTime,
+          dateRange.endTime,
+          appToken,
+          kubeconfig,
+        ]
+      : null,
+    () =>
+      loadBillingCostsBase({
+        appToken,
+        dateRange,
+        kubeconfig,
+      }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  const appOverview = useSWR(
+    credentialsReady
+      ? [
+          "billing-costs-overview",
           dateRange.startTime,
           dateRange.endTime,
           selectedWorkspace,
@@ -156,7 +177,7 @@ export default function BillingCosts({
         ]
       : null,
     () =>
-      loadBillingCosts({
+      loadBillingAppOverview({
         appToken,
         appType: appTypeFilter,
         dateRange,
@@ -165,8 +186,24 @@ export default function BillingCosts({
         pageSize: APP_PAGE_SIZE,
         workspace: selectedWorkspace,
       }),
-    { revalidateOnFocus: false, shouldRetryOnError: false }
+    {
+      keepPreviousData: true,
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    }
   );
+  const data: BillingCostsSnapshot | undefined =
+    costsBase.data == null
+      ? undefined
+      : {
+          ...costsBase.data,
+          appOverviews: appOverview.data?.appOverviews ?? [],
+          totalAppOverviewPages: appOverview.data?.totalAppOverviewPages ?? 1,
+          totalAppOverviews: appOverview.data?.totalAppOverviews ?? 0,
+        };
+  const error = costsBase.error ?? appOverview.error;
+  const isLoading = costsBase.isLoading;
+  const isAppOverviewLoading = appOverview.isLoading;
   const dailyTrend = useSWR(
     credentialsReady
       ? [
@@ -258,6 +295,7 @@ export default function BillingCosts({
         dateFilter={dateFilter}
         dateRange={dateRange}
         error={error}
+        isAppOverviewLoading={!credentialsReady || isAppOverviewLoading}
         isLoading={!credentialsReady || isLoading}
         monthlyTrend={monthlyTrend.data}
         onAppPageChange={setAppPage}

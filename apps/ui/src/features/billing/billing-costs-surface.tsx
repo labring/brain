@@ -50,7 +50,7 @@ import {
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
-const APP_PAGE_SIZE = 10;
+const APP_PAGE_SIZE = 5;
 
 type BillingCostsView = "details" | "trends";
 const COST_VIEW_OPTIONS = [
@@ -63,11 +63,6 @@ const CONSUMPTION_ROW_KEYS = [
   "row-3",
   "row-4",
   "row-5",
-  "row-6",
-  "row-7",
-  "row-8",
-  "row-9",
-  "row-10",
 ];
 // The empty-plan default lives here, not in PlanBadge: "an unnamed payment is
 // a Subscription" is billing knowledge, not badge styling.
@@ -96,6 +91,9 @@ interface BillingCostsSurfaceProps {
   dateFilter: ReactNode;
   dateRange: { endTime: string; startTime: string };
   error: unknown;
+  /** Loading state for the paginated app overview table only. */
+  isAppOverviewLoading?: boolean;
+  /** Loading state for the cost tree, banner totals, and subscription table. */
   isLoading: boolean;
   monthlyTrend?: MonthlyBillingTrendPoint[];
   onAppPageChange?: (page: number) => void;
@@ -431,6 +429,7 @@ export function BillingCostsSurface({
   dateFilter,
   dateRange,
   error,
+  isAppOverviewLoading = false,
   isLoading,
   monthlyTrend,
   onAppPageChange,
@@ -614,7 +613,7 @@ export function BillingCostsSurface({
                       appTypeFilter={appTypeFilter}
                       appTypeOptions={appTypeOptions}
                       currency={currency}
-                      isLoading={isLoading}
+                      isLoading={isAppOverviewLoading}
                       onAppPageChange={onAppPageChange}
                       onAppTypeFilterChange={onAppTypeFilterChange}
                       onSelectRow={selectApp}

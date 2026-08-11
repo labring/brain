@@ -335,6 +335,33 @@ function paymentsPayload(context: FixtureContext): unknown[] {
   ];
 }
 
+function paginationFromBody(body: Record<string, unknown>): {
+  page: number;
+  pageSize: number;
+} {
+  const page = typeof body.page === "number" && body.page >= 1 ? body.page : 1;
+  const pageSize =
+    typeof body.pageSize === "number" && body.pageSize >= 1
+      ? body.pageSize
+      : 10;
+  return { page, pageSize };
+}
+
+function paginateItems<T>(
+  items: readonly T[],
+  page: number,
+  pageSize: number
+): { items: T[]; total: number; totalPage: number } {
+  const total = items.length;
+  const totalPage = Math.max(1, Math.ceil(total / pageSize));
+  const start = (page - 1) * pageSize;
+  return {
+    items: items.slice(start, start + pageSize),
+    total,
+    totalPage,
+  };
+}
+
 function appOverviewsPayload(context: FixtureContext): unknown[] {
   return [
     { amount: 6_820_000, appName: "brain-api", appType: 2 },
@@ -381,12 +408,14 @@ function appCostsPayload(context: FixtureContext): unknown {
     ],
     time: daysFromNow(-daysAgo),
   }));
+  const { page, pageSize } = paginationFromBody(context.body);
+  const { items, total, totalPage } = paginateItems(rows, page, pageSize);
   return {
     app_costs: {
-      costs: rows,
-      current_page: 1,
-      total_pages: 1,
-      total_records: rows.length,
+      costs: items,
+      current_page: page,
+      total_pages: totalPage,
+      total_records: total,
     },
   };
 }
@@ -417,7 +446,13 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   }),
   "/account/v1alpha1/cost-overview": (context) => {
     const overviews = appOverviewsPayload(context);
-    return { data: { overviews, total: overviews.length, totalPage: 1 } };
+    const { page, pageSize } = paginationFromBody(context.body);
+    const { items, total, totalPage } = paginateItems(
+      overviews,
+      page,
+      pageSize
+    );
+    return { data: { overviews: items, total, totalPage } };
   },
   "/account/v1alpha1/costs": () => ({ data: { costs: costPointsPayload() } }),
   "/account/v1alpha1/costs/consumption": () => ({ amount: 18_230_000 }),
