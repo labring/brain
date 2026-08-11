@@ -97,8 +97,10 @@ export function BillingNavigationFrame({
                 <Link
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md p-2 font-normal text-primary text-sm leading-none transition-colors hover:bg-input/30 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
-                    active && "bg-input font-medium text-foreground"
+                    "flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md p-2 font-medium text-primary text-sm leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
+                    active
+                      ? "bg-input text-foreground [&_svg]:text-blue-400"
+                      : "hover:bg-input/30 hover:text-foreground"
                   )}
                   href={tab.href}
                   key={tab.value}

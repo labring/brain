@@ -229,10 +229,11 @@ test("Billing Area keeps Cost Center's vertical navigation hierarchy", () => {
   assertTextOrder(html, ["Plan", "Costs", "Usage", "Pricing"]);
   const activeLinkStart = html.indexOf('<a aria-current="page"');
   const activeLinkEnd = html.indexOf("</a>", activeLinkStart);
-  assertIncludes(
-    html.slice(activeLinkStart, activeLinkEnd),
-    'href="/billing/usage"'
-  );
+  const activeLink = html.slice(activeLinkStart, activeLinkEnd);
+  assertIncludes(activeLink, 'href="/billing/usage"');
+  assertIncludes(activeLink, "bg-input");
+  assertIncludes(activeLink, "text-blue-400");
+  assert.equal(activeLink.includes("hover:bg-input/30"), false);
   assertTextOrder(html, ["Billing", "Current page"]);
 });
 
