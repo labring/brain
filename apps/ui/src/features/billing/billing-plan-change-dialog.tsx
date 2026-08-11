@@ -398,9 +398,7 @@ function QuoteStage({
               </span>
               <p className="font-semibold text-lg tabular-nums">
                 {formatBillingAmount(plan.priceMicroUnits, currency)}
-                <span className="font-normal text-muted-foreground">
-                  /month
-                </span>
+                <span className="font-normal text-muted-foreground">/mo</span>
               </p>
             </div>
             {plan.resources.length > 0 ? (
@@ -632,7 +630,7 @@ function morePlanOption({
     };
   }
   const spec = planSpecSummary(plan);
-  const price = `${formatBillingAmount(plan.priceMicroUnits, currency)}/month`;
+  const price = `${formatBillingAmount(plan.priceMicroUnits, currency)}/mo`;
   return {
     label: (
       <span className="flex min-w-0 items-center gap-3">
