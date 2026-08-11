@@ -60,7 +60,10 @@ test("a terminal write cannot overtake an in-flight step write", async () => {
       roleType: "founder",
       step: 1,
     });
-    completeOnboardingProfile(credentials, "ship an app");
+    completeOnboardingProfile(credentials, {
+      answers: [{ roleOtherText: null, roleType: "founder", step: 1 }],
+      openGoalText: "ship an app",
+    });
     await flushMicrotasks();
 
     // The step write is on the wire; the terminal complete is still queued
@@ -91,7 +94,10 @@ test("a failed write releases the queue for the writes behind it", async () => {
       roleType: "founder",
       step: 1,
     });
-    dismissOnboardingProfile(credentials, 2);
+    dismissOnboardingProfile(credentials, {
+      answers: [{ roleOtherText: null, roleType: "founder", step: 1 }],
+      dismissedAtStep: 2,
+    });
     await onboardingWriteQueueSettled();
 
     assert.equal(stub.calls.length, 2);

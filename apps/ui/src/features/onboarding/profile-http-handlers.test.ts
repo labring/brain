@@ -476,6 +476,96 @@ test("Submit & Enter Console completes the accumulated row terminally", async ()
   assert.deepEqual(await verdict.json(), { sampled: true });
 });
 
+test("the Terminal Snapshot makes a completed row whole when every step write was lost", async () => {
+  // The P1 scenario: all three fire-and-forget step writes failed (none is
+  // sent here), yet the one terminal write must still capture everything —
+  // a completed row is never re-sampled, so this is the last chance.
+  const { complete, sampling } = handlers();
+
+  const response = await complete(
+    await completeRequest("snapshot-cr", {
+      answers: [
+        { roleOtherText: null, roleType: "founder", step: 1 },
+        { step: 2, usageContext: "real_business", usageOtherText: null },
+        {
+          priorityDisplayOrder: [...FULL_DISPLAY_ORDER],
+          priorityOtherText: "fair pricing",
+          priorityTags: ["stability", "other"],
+          step: 3,
+        },
+      ],
+      openGoalText: "deploy an AI agent",
+    })
+  );
+
+  assert.equal(response.status, 200);
+  const row = await profileRow("snapshot-cr-uid");
+  assert.equal(row?.status, "completed");
+  assert.equal(row?.roleType, "founder");
+  assert.equal(row?.usageContext, "real_business");
+  assert.deepEqual(row?.priorityTags, ["stability", "other"]);
+  assert.equal(row?.priorityOtherText, "fair pricing");
+  assert.equal(row?.openGoalText, "deploy an AI agent");
+
+  const verdict = await sampling(await samplingRequest("snapshot-cr"));
+  assert.deepEqual(await verdict.json(), { sampled: true });
+});
+
+test("a dismiss snapshot lands its steps but never clears steps it doesn't carry", async () => {
+  // An earlier session persisted Step 1 stepwise and was abandoned; this
+  // session confirmed only Step 2 before skipping. The snapshot must land
+  // Step 2 and leave the earlier Step 1 answer untouched.
+  const { dismiss } = handlers();
+  await db.insert(onboardingProfiles).values({
+    roleOtherText: "platform team lead",
+    roleType: "other",
+    status: "in_progress",
+    userUid: "partial-snapshot-cr-uid",
+  });
+
+  const response = await dismiss(
+    await dismissRequest("partial-snapshot-cr", {
+      answers: [{ step: 2, usageContext: "exploring", usageOtherText: null }],
+      dismissedAtStep: 3,
+    })
+  );
+
+  assert.equal(response.status, 200);
+  const row = await profileRow("partial-snapshot-cr-uid");
+  assert.equal(row?.status, "dismissed");
+  assert.equal(row?.dismissedAtStep, 3);
+  assert.equal(row?.usageContext, "exploring");
+  assert.equal(row?.roleType, "other");
+  assert.equal(row?.roleOtherText, "platform team lead");
+});
+
+test("a malformed Terminal Snapshot is refused before any write", async () => {
+  const { complete, dismiss } = handlers();
+
+  const step1 = { roleOtherText: null, roleType: "founder", step: 1 } as const;
+  for (const answers of [
+    // Duplicate steps are not a snapshot.
+    [step1, step1],
+    // Each member must be a valid step answer.
+    [{ roleOtherText: null, roleType: "wizard", step: 1 }],
+    // Loose text: the pair rules hold inside the snapshot too.
+    [{ roleOtherText: "platform team lead", roleType: "founder", step: 1 }],
+    // Step 4 has no snapshot member — its answer is `openGoalText`.
+    [{ openGoalText: "ship it", step: 4 }],
+  ]) {
+    const completeResponse = await complete(
+      await completeRequest("bad-snapshot-cr", { answers, openGoalText: null })
+    );
+    assert.equal(completeResponse.status, 400);
+    const dismissResponse = await dismiss(
+      await dismissRequest("bad-snapshot-cr", { answers, dismissedAtStep: 2 })
+    );
+    assert.equal(dismissResponse.status, 400);
+  }
+
+  assert.equal(await profileRow("bad-snapshot-cr-uid"), undefined);
+});
+
 test("the Step 4 text is optional: an empty submit completes cleanly", async () => {
   const { complete, sampling } = handlers();
 

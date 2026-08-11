@@ -6,6 +6,7 @@ import {
   createInitialOnboardingSurveyState,
   type OnboardingSurveyAction,
   type OnboardingSurveyState,
+  onboardingAnswersSnapshot,
   onboardingCompletePayload,
   onboardingOtherTextMissing,
   onboardingPriorityAnswerPayload,
@@ -337,13 +338,14 @@ test("the priority write payload carries click order, display order, and the Oth
 
 test("the complete payload trims the optional open goal to text or null", () => {
   assert.deepEqual(onboardingCompletePayload(initialState()), {
+    answers: [],
     openGoalText: null,
   });
   assert.deepEqual(
     onboardingCompletePayload(
       reduce(initialState(), { text: "   ", type: "set-open-goal-text" })
     ),
-    { openGoalText: null }
+    { answers: [], openGoalText: null }
   );
   assert.deepEqual(
     onboardingCompletePayload(
@@ -352,18 +354,63 @@ test("the complete payload trims the optional open goal to text or null", () => 
         type: "set-open-goal-text",
       })
     ),
-    { openGoalText: "deploy an AI agent" }
+    { answers: [], openGoalText: "deploy an AI agent" }
   );
 });
 
 test("Skip reports the real current step, selection or not", () => {
   assert.deepEqual(onboardingSkipPayload(initialState()), {
+    answers: [],
     dismissedAtStep: 1,
   });
   assert.deepEqual(
     onboardingSkipPayload({ ...initialState(), currentStep: 3 }),
-    { dismissedAtStep: 3 }
+    { answers: [], dismissedAtStep: 3 }
   );
+});
+
+test("the Terminal Snapshot carries every step confirmed with Next", () => {
+  // Steps 1-3 answered and confirmed; the state sits on Step 4.
+  const state = reduce(
+    initialState(),
+    { role: "founder", type: "toggle-role" },
+    { type: "advance-step" },
+    { type: "toggle-usage", usage: "real_business" },
+    { type: "advance-step" },
+    { tag: "stability", type: "toggle-priority" },
+    { type: "advance-step" }
+  );
+
+  const snapshot = onboardingAnswersSnapshot(state);
+
+  assert.deepEqual(snapshot, [
+    { roleOtherText: null, roleType: "founder", step: 1 },
+    { step: 2, usageContext: "real_business", usageOtherText: null },
+    {
+      priorityDisplayOrder: state.priorityDisplayOrder,
+      priorityOtherText: null,
+      priorityTags: ["stability"],
+      step: 3,
+    },
+  ]);
+  // The complete payload rides exactly this snapshot.
+  assert.deepEqual(onboardingCompletePayload(state).answers, snapshot);
+});
+
+test("the Terminal Snapshot excludes the current step's unconfirmed selection", () => {
+  // Step 1 confirmed; a Step 2 selection made but never advanced past.
+  const state = reduce(
+    initialState(),
+    { role: "founder", type: "toggle-role" },
+    { type: "advance-step" },
+    { type: "toggle-usage", usage: "exploring" }
+  );
+
+  // Skip here submits only what Next confirmed — the Step 2 pick stays out.
+  assert.deepEqual(onboardingSkipPayload(state), {
+    answers: [{ roleOtherText: null, roleType: "founder", step: 1 }],
+    dismissedAtStep: 2,
+  });
 });
 
 test("the funnel events carry the step number and nothing else", () => {

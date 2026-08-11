@@ -516,6 +516,17 @@ re-judged on every entry.
 
 _Avoid_: has logged in before, first-login flag, seen-dialog cookie, survey done.
 
+### Terminal Snapshot
+
+The full set of confirmed answers a survey session carries on its terminal
+action (submit or skip), making the resulting Sampled record complete on
+its own — it never depends on the per-step best-effort saves having
+survived. Only answers the person confirmed by advancing are part of the
+snapshot; an unconfirmed selection or unsubmitted draft is not. A snapshot
+never erases previously saved answers it does not itself carry.
+
+_Avoid_: final sync, answer replay, batched answers, form dump.
+
 ### Onboarding Gate
 
 The client-side judgment that decides whether the sampling dialog appears

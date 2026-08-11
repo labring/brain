@@ -7,8 +7,10 @@ import type {
 import {
   type AnswerOnboardingStepRequest,
   type CompleteOnboardingProfileRequest,
+  type DismissOnboardingProfileRequest,
   ONBOARDING_PRIORITY_TAGS_MAX,
   ONBOARDING_SURVEY_TOTAL_STEPS,
+  type OnboardingAnswersSnapshot,
   type OnboardingPriorityTag,
   type OnboardingRoleType,
   type OnboardingUsageContext,
@@ -253,21 +255,54 @@ export function onboardingPriorityAnswerPayload(
 }
 
 /**
- * The terminal payload "Submit & Enter Console" fires: the optional Step 4
- * open goal, trimmed to text or null (an empty submit completes cleanly).
+ * The Terminal Snapshot this session earned: the answers of every step
+ * already confirmed with Next (strictly below the current step — a selection
+ * still sitting on the current step was never confirmed). It rides on the
+ * terminal write so a Sampled row is complete even when a stepwise write
+ * silently failed.
+ */
+export function onboardingAnswersSnapshot(
+  state: OnboardingSurveyState
+): OnboardingAnswersSnapshot {
+  return [
+    onboardingRoleAnswerPayload(state),
+    onboardingUsageAnswerPayload(state),
+    onboardingPriorityAnswerPayload(state),
+  ].filter(
+    (payload): payload is AnswerOnboardingStepRequest =>
+      payload !== null && payload.step < state.currentStep
+  );
+}
+
+/**
+ * The terminal payload "Submit & Enter Console" fires: the Terminal Snapshot
+ * (submit sits on Step 4, so all three answer steps are confirmed) plus the
+ * optional open goal, trimmed to text or null (an empty submit completes
+ * cleanly).
  */
 export function onboardingCompletePayload(
   state: OnboardingSurveyState
 ): CompleteOnboardingProfileRequest {
   const trimmed = state.openGoalText.trim();
-  return { openGoalText: trimmed === "" ? null : trimmed };
+  return {
+    answers: onboardingAnswersSnapshot(state),
+    openGoalText: trimmed === "" ? null : trimmed,
+  };
 }
 
-/** The terminal dismiss payload Skip fires: the step the survey was on. */
-export function onboardingSkipPayload(state: OnboardingSurveyState): {
-  dismissedAtStep: number;
-} {
-  return { dismissedAtStep: state.currentStep };
+/**
+ * The terminal dismiss payload Skip fires: the step the survey was on, plus
+ * the Terminal Snapshot of the steps confirmed before it. The current step's
+ * unconfirmed selection and any Step 4 draft stay out — Skip declines to
+ * submit them.
+ */
+export function onboardingSkipPayload(
+  state: OnboardingSurveyState
+): DismissOnboardingProfileRequest {
+  return {
+    answers: onboardingAnswersSnapshot(state),
+    dismissedAtStep: state.currentStep,
+  };
 }
 
 /** Narrows the reducer's numeric step to the closed GTM step union. */

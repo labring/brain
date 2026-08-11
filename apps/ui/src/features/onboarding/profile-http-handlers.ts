@@ -61,6 +61,21 @@ function stepAnswerColumns(
   }
 }
 
+/**
+ * Flattens a Terminal Snapshot onto the answer columns it carries. Steps are
+ * schema-guaranteed distinct and each step owns disjoint columns, so the
+ * merge order cannot matter.
+ */
+function snapshotAnswerColumns(
+  answers: readonly AnswerOnboardingStepRequest[]
+): OnboardingStepAnswerColumns {
+  const columns: OnboardingStepAnswerColumns = {};
+  for (const answer of answers) {
+    Object.assign(columns, stepAnswerColumns(answer));
+  }
+  return columns;
+}
+
 /** Maps the verified actor onto the store's bare-uid + re-check pair. */
 function profileActor(
   actor: VerifiedPersonalResourceActor
@@ -147,6 +162,7 @@ export function createOnboardingProfileHandlers(
       try {
         const state = await dependencies.complete({
           actor: profileActor(authorization.actor),
+          answers: snapshotAnswerColumns(parsed.data.answers),
           openGoalText: parsed.data.openGoalText,
         });
         return Response.json(state);
@@ -182,6 +198,7 @@ export function createOnboardingProfileHandlers(
       try {
         const state = await dependencies.dismiss({
           actor: profileActor(authorization.actor),
+          answers: snapshotAnswerColumns(parsed.data.answers),
           dismissedAtStep: parsed.data.dismissedAtStep,
         });
         return Response.json(state);

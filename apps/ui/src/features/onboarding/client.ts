@@ -2,6 +2,8 @@ import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 import {
   type AnswerOnboardingStepRequest,
+  type CompleteOnboardingProfileRequest,
+  type DismissOnboardingProfileRequest,
   type OnboardingSamplingVerdict,
   onboardingSamplingVerdictSchema,
 } from "./types";
@@ -41,10 +43,11 @@ export async function fetchOnboardingSamplingVerdict(
 }
 
 /**
- * Profile writes are fire-and-forget for the UI but strictly ordered on the
- * wire: a terminal complete/dismiss racing ahead of an in-flight step write
- * would make terminal-wins silently drop that step's answer, so each write
- * waits for the previous one to settle before it is sent.
+ * Profile writes are fire-and-forget for the UI but ordered on the wire:
+ * each write waits for the previous one to settle before it is sent. The
+ * final answers never depend on this — the terminal write carries the whole
+ * Terminal Snapshot — but ordering keeps the wire deterministic, so
+ * terminal-wins is the only server-side guard the writes need.
  */
 let onboardingWriteQueue: Promise<void> = Promise.resolve();
 
@@ -78,9 +81,11 @@ function postOnboardingProfileWrite(
 }
 
 /**
- * Fire-and-forget stepwise answer write: Next never waits on it, and a
- * silent failure at worst re-asks the question on the next entry (the row
- * stays short of terminal, so the person is still Unsampled).
+ * Fire-and-forget stepwise answer write, the abandonment safety net: Next
+ * never waits on it, and a silent failure costs nothing final — a session
+ * that reaches Submit or Skip re-sends every confirmed answer on the
+ * terminal write's snapshot, and a session that abandons is still Unsampled
+ * and re-asked on the next entry.
  */
 export function answerOnboardingStep(
   credentials: OnboardingFetcherCredentials,
@@ -91,24 +96,27 @@ export function answerOnboardingStep(
 
 /**
  * Fire-and-forget terminal complete: Submit & Enter Console never waits on
- * it, and the write is terminal-wins idempotent server-side, so a failure at
- * worst re-shows the dialog on the next entry.
+ * it. The payload carries the Terminal Snapshot, so this one request is
+ * sufficient for a complete row — no earlier stepwise write needs to have
+ * landed. Terminal-wins keeps it idempotent server-side; a failure at worst
+ * re-shows the dialog on the next entry.
  */
 export function completeOnboardingProfile(
   credentials: OnboardingFetcherCredentials,
-  openGoalText: string | null
+  payload: CompleteOnboardingProfileRequest
 ): void {
-  postOnboardingProfileWrite(credentials, "complete", { openGoalText });
+  postOnboardingProfileWrite(credentials, "complete", payload);
 }
 
 /**
- * Fire-and-forget terminal dismiss: Skip never waits on it, and the write is
- * terminal-wins idempotent server-side, so a failure at worst re-shows the
- * dialog on the next entry.
+ * Fire-and-forget terminal dismiss: Skip never waits on it. Like complete,
+ * the payload carries the Terminal Snapshot of the steps confirmed before
+ * the skip. Terminal-wins keeps it idempotent server-side; a failure at
+ * worst re-shows the dialog on the next entry.
  */
 export function dismissOnboardingProfile(
   credentials: OnboardingFetcherCredentials,
-  dismissedAtStep: number
+  payload: DismissOnboardingProfileRequest
 ): void {
-  postOnboardingProfileWrite(credentials, "dismiss", { dismissedAtStep });
+  postOnboardingProfileWrite(credentials, "dismiss", payload);
 }

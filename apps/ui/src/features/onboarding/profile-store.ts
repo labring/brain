@@ -56,21 +56,30 @@ export interface OnboardingProfileStore {
   }): Promise<OnboardingProfileWriteState>;
   /**
    * Terminal complete (Submit & Enter Console): finalizes the row with
-   * `status: completed` and the optional Step 4 open goal. Terminal wins —
-   * against a row already `completed` or `dismissed`, nothing is written and
-   * the pre-existing state is returned.
+   * `status: completed`, the Terminal Snapshot's answer columns, and the
+   * optional Step 4 open goal — one atomic write, so a completed row never
+   * depends on the fire-and-forget stepwise writes having landed. Columns
+   * absent from `answers` are left untouched: a snapshot never destroys an
+   * earlier session's persisted partials. Terminal wins — against a row
+   * already `completed` or `dismissed`, nothing is written and the
+   * pre-existing state is returned.
    */
   complete(input: {
     actor: OnboardingProfileActor;
+    answers: OnboardingStepAnswerColumns;
     openGoalText: string | null;
   }): Promise<OnboardingProfileTerminalState>;
   /**
-   * Terminal dismiss (Skip). Terminal wins: when the row is already
-   * `completed` or `dismissed`, nothing is written and the pre-existing state
-   * is returned, so fire-and-forget retries can never corrupt a terminal row.
+   * Terminal dismiss (Skip): finalizes the row with `status: dismissed` and
+   * the Terminal Snapshot of the steps confirmed before the skip, with the
+   * same untouched-columns rule as complete. Terminal wins: when the row is
+   * already `completed` or `dismissed`, nothing is written and the
+   * pre-existing state is returned, so fire-and-forget retries can never
+   * corrupt a terminal row.
    */
   dismiss(input: {
     actor: OnboardingProfileActor;
+    answers: OnboardingStepAnswerColumns;
     dismissedAtStep: number;
   }): Promise<OnboardingProfileTerminalState>;
   /**
@@ -134,14 +143,18 @@ export function createOnboardingProfileStore(
         await tx
           .insert(onboardingProfiles)
           .values({
+            ...input.answers,
             openGoalText: input.openGoalText,
             status: "completed",
             userUid: input.actor.userUid,
           })
           .onConflictDoUpdate({
-            // Answers already given stay persisted: completing touches only
-            // its own columns, never the per-step answer columns.
+            // The Terminal Snapshot lands with the status in one write; the
+            // spread carries only the steps the session confirmed, so answer
+            // columns outside the snapshot stay as the stepwise writes (or an
+            // earlier session) left them.
             set: {
+              ...input.answers,
               openGoalText: input.openGoalText,
               status: "completed",
               updatedAt: new Date(),
@@ -175,14 +188,17 @@ export function createOnboardingProfileStore(
         await tx
           .insert(onboardingProfiles)
           .values({
+            ...input.answers,
             dismissedAtStep: input.dismissedAtStep,
             status: "dismissed",
             userUid: input.actor.userUid,
           })
           .onConflictDoUpdate({
-            // Answers already given stay persisted: only the terminal
-            // columns are touched, never the per-step answer columns.
+            // Same one-write snapshot rule as complete: only the steps the
+            // session confirmed travel here, so answer columns outside the
+            // snapshot keep whatever an earlier write persisted.
             set: {
+              ...input.answers,
               dismissedAtStep: input.dismissedAtStep,
               status: "dismissed",
               updatedAt: new Date(),

@@ -191,17 +191,48 @@ export interface OnboardingProfileWriteState {
   status: OnboardingProfileStatus;
 }
 
+/**
+ * The Terminal Snapshot: the answers of every step the session confirmed
+ * (advanced past with Next), carried on the terminal write itself. The
+ * stepwise writes are fire-and-forget and may silently fail, so the terminal
+ * write cannot rely on them having landed — a Sampled row must be complete
+ * on the strength of this one request. Steps absent from the snapshot are
+ * left untouched by the store, so an earlier session's persisted partials
+ * survive a snapshot that never re-answered them.
+ */
+export const onboardingAnswersSnapshotSchema = z
+  .array(answerOnboardingStepRequestSchema)
+  .max(ONBOARDING_SURVEY_TOTAL_STEPS - 1)
+  .superRefine((answers, ctx) => {
+    if (new Set(answers.map((answer) => answer.step)).size !== answers.length) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Snapshot steps must be distinct.",
+      });
+    }
+  });
+
+export type OnboardingAnswersSnapshot = z.infer<
+  typeof onboardingAnswersSnapshotSchema
+>;
+
 export const dismissOnboardingProfileRequestSchema = z.object({
+  // Defaulted for one deploy's grace: a terminal write from a client built
+  // before the snapshot existed lands as an empty snapshot — exactly the
+  // pre-snapshot behavior — instead of being refused. The inferred request
+  // type still requires it, so no current client can forget it.
+  answers: onboardingAnswersSnapshotSchema.default([]),
   dismissedAtStep: onboardingSurveyStepSchema,
 });
 
 /**
- * The terminal complete write ("Submit & Enter Console"). It carries the
- * Step 4 open goal because submit is that step's only advance — a separate
- * fire-and-forget step write could land after the terminal one and lose the
- * text to terminal-wins. The text is optional: `null` submits cleanly.
+ * The terminal complete write ("Submit & Enter Console"): the Terminal
+ * Snapshot plus the Step 4 open goal, which travels here because submit is
+ * that step's only advance. The text is optional: `null` submits cleanly.
  */
 export const completeOnboardingProfileRequestSchema = z.object({
+  // Same one-deploy grace as dismiss: absent means an empty snapshot.
+  answers: onboardingAnswersSnapshotSchema.default([]),
   openGoalText: z
     .string()
     .trim()

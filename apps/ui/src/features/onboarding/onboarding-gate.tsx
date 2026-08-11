@@ -24,6 +24,7 @@ import {
 import type {
   AnswerOnboardingStepRequest,
   CompleteOnboardingProfileRequest,
+  DismissOnboardingProfileRequest,
 } from "./types";
 
 // While forced, every write is inert and `open || forceOpen` keeps the
@@ -125,21 +126,29 @@ export function OnboardingGate() {
     // the terminal write never blocks the exit.
     setOpen(false);
     fireWrite((credentials) => {
-      completeOnboardingProfile(credentials, payload.openGoalText);
-      // The session judgment must flip to Sampled with the write, or a Gate
-      // remount would re-attach to the stale verdict and reopen the survey.
+      completeOnboardingProfile(credentials, payload);
+      // Settled at the action, deliberately not at the write's success: the
+      // session judgment records "this person terminated the survey this
+      // session", so a Gate remount (client-side navigation away and back)
+      // never reopens a survey the person just finished — even if the write
+      // fails. Durability doesn't ride on this cache: the next full page
+      // load re-judges from the database, and a lost terminal write means
+      // re-asking then, with the stepwise-persisted answers still in place.
       settleOnboardingSessionJudgmentSampled(
         onboardingCredentialsKey(credentials)
       );
     });
   };
 
-  const handleSkip = (payload: { dismissedAtStep: number }) => {
+  const handleSkip = (payload: DismissOnboardingProfileRequest) => {
     // Skip drops the person into the console immediately; the terminal
     // write never blocks the exit.
     setOpen(false);
     fireWrite((credentials) => {
-      dismissOnboardingProfile(credentials, payload.dismissedAtStep);
+      dismissOnboardingProfile(credentials, payload);
+      // Same action-time settle as complete: never re-ask in the same
+      // session someone just declined; the database re-judgment on the next
+      // page load is the recovery path for a lost write.
       settleOnboardingSessionJudgmentSampled(
         onboardingCredentialsKey(credentials)
       );

@@ -159,7 +159,9 @@ test("Step 1 skips with the step number and gates Next on a selection", async ()
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Skip"));
     });
-    assert.deepEqual(skips, [{ dismissedAtStep: 1 }]);
+    // Nothing was confirmed with Next, so the Terminal Snapshot is empty —
+    // the unconfirmed Other pick on the current step stays out.
+    assert.deepEqual(skips, [{ answers: [], dismissedAtStep: 1 }]);
   } finally {
     await actAndDrain(() => {
       rendered?.unmount();
@@ -411,7 +413,12 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Submit & Enter Console"));
     });
-    assert.deepEqual(completes, [{ openGoalText: "test a product idea" }]);
+    // The terminal payload re-sends every confirmed answer as the Terminal
+    // Snapshot — exactly the three step payloads — so a completed row never
+    // depends on the fire-and-forget step writes having landed.
+    assert.deepEqual(completes, [
+      { answers, openGoalText: "test a product idea" },
+    ]);
     assert.equal(answers.length, 3, "submit is terminal, not a step write");
   } finally {
     await actAndDrain(() => {
@@ -490,8 +497,19 @@ test("the funnel emits one view per step shown and complete at submit time", asy
       funnelEntry("onboarding_step_view", 4),
       funnelEntry("onboarding_complete"),
     ]);
-    // The event fired at click time and the owner's callback still ran.
-    assert.deepEqual(completes, [{ openGoalText: null }]);
+    // The event fired at click time and the owner's callback still ran,
+    // carrying the snapshot of the three confirmed steps (the display order
+    // inside is the session's shuffle, so only the steps are pinned here).
+    assert.equal(completes.length, 1);
+    const complete = completes[0] as {
+      answers: { step: number }[];
+      openGoalText: string | null;
+    };
+    assert.equal(complete.openGoalText, null);
+    assert.deepEqual(
+      complete.answers.map((answer) => answer.step),
+      [1, 2, 3]
+    );
   } finally {
     await actAndDrain(() => {
       rendered?.unmount();
@@ -537,8 +555,16 @@ test("Skip fires the funnel event with the step it left from", async () => {
       funnelEntry("onboarding_step_view", 2),
       funnelEntry("onboarding_skip", 2),
     ]);
-    // The event fired at click time and the owner's dismiss still ran.
-    assert.deepEqual(skips, [{ dismissedAtStep: 2 }]);
+    // The event fired at click time and the owner's dismiss still ran,
+    // with the confirmed Step 1 answer riding the Terminal Snapshot.
+    assert.deepEqual(skips, [
+      {
+        answers: [
+          { roleOtherText: null, roleType: "individual_developer", step: 1 },
+        ],
+        dismissedAtStep: 2,
+      },
+    ]);
   } finally {
     await actAndDrain(() => {
       rendered?.unmount();
@@ -592,7 +618,14 @@ test("a broken dataLayer never touches the survey flow", async () => {
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Skip"));
     });
-    assert.deepEqual(skips, [{ dismissedAtStep: 2 }]);
+    assert.deepEqual(skips, [
+      {
+        answers: [
+          { roleOtherText: null, roleType: "individual_developer", step: 1 },
+        ],
+        dismissedAtStep: 2,
+      },
+    ]);
   } finally {
     await actAndDrain(() => {
       rendered?.unmount();

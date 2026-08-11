@@ -33,6 +33,7 @@ import {
 import {
   type AnswerOnboardingStepRequest,
   type CompleteOnboardingProfileRequest,
+  type DismissOnboardingProfileRequest,
   ONBOARDING_OPEN_GOAL_TEXT_MAX_LENGTH,
   ONBOARDING_OTHER_TEXT_MAX_LENGTH,
   ONBOARDING_PRIORITY_TAGS_MAX,
@@ -330,12 +331,13 @@ export interface OnboardingSurveyCardProps {
    */
   onAnswerStep: (payload: AnswerOnboardingStepRequest) => void;
   /**
-   * Submit & Enter Console: the terminal completion, carrying the optional
-   * Step 4 open goal. The owner closes the dialog and persists.
+   * Submit & Enter Console: the terminal completion, carrying the Terminal
+   * Snapshot and the optional Step 4 open goal. The owner closes the dialog
+   * and persists.
    */
   onComplete: (payload: CompleteOnboardingProfileRequest) => void;
   /** Skip: the single exit short of the final submit; the owner persists. */
-  onSkip: (payload: { dismissedAtStep: number }) => void;
+  onSkip: (payload: DismissOnboardingProfileRequest) => void;
 }
 
 function stepAnswerPayload(
