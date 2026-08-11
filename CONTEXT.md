@@ -580,9 +580,15 @@ _Avoid_: plan catalog, plan list, plan cards section, Subscription plans tab (as
 
 ### Workspace Subscription
 
-The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade) and its most recent transaction. A workspace has at most one; a workspace without one is Pay-As-You-Go. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
+The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade, payment-due) and its most recent transaction. Cancelling means the user has cancelled but the paid period still runs; payment-due means the subscription has expired — a failed renewal charge and a cancelled period reaching its end both land here — and the workspace sits suspended under the Deletion Countdown. Payment-due outranks cancelling when both hold. A workspace has at most one; a workspace without one is Pay-As-You-Go. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
 
-_Avoid_: account subscription, user subscription, namespace plan, workspace plan record.
+_Avoid_: account subscription, user subscription, namespace plan, workspace plan record, in debt (as a user-facing label), cancelled (as a lifecycle distinct from cancelling).
+
+### Deletion Countdown
+
+The platform's fixed grace timeline that starts the moment a Workspace Subscription expires: the workspace is suspended immediately, the warning escalates as the countdown runs, and the workspace's resources are permanently deleted when it ends. Both roads into expiry — failed renewal payment and cancelled-then-lapsed — join the same countdown. The Billing Area surfaces it as a destructive warning carrying the deletion date; renewing (or resuming, before expiry) exits the countdown.
+
+_Avoid_: grace period (as the user-facing name), debt period, deletion schedule.
 
 ### Pay-As-You-Go (PAYG)
 

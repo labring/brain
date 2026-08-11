@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { mutate } from "swr";
 
+import { devTweaksStore } from "@/features/dev-tweaks/dev-tweaks-store";
 import {
   BILLING_DEV_MOCK_COOKIE,
   BILLING_DEV_SCENARIOS,
@@ -14,8 +15,7 @@ import {
   DEFAULT_BILLING_DEV_SCENARIO,
   formatBillingDevMockCookie,
   parseBillingDevMockCookie,
-} from "@/features/billing/dev-mock-cookie";
-import { devTweaksStore } from "./dev-tweaks-store";
+} from "./dev-mock-cookie";
 
 const DISABLED_STATE: BillingDevMockState = Object.freeze({
   enabled: false,
@@ -119,7 +119,10 @@ function useBillingDevMock(): BillingDevMockState {
   );
 }
 
-/** "Billing mock" section rendered at the top of the dev tweaks pane. */
+/**
+ * "Billing mock" section for the dev tweaks pane — billing owns this UI; the
+ * dev-tweaks mount point composes it into the pane as children.
+ */
 export function BillingDevMockSection() {
   const state = useBillingDevMock();
   return (

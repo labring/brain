@@ -11,6 +11,7 @@ import {
   BILLING_DEV_SCENARIOS,
   formatBillingDevMockCookie,
 } from "../../dev-mock-cookie";
+import { BILLING_ROUTES } from "../billing-route-table";
 import { billingDevMockResponse } from "./index";
 
 /**
@@ -20,29 +21,12 @@ import { billingDevMockResponse } from "./index";
  * a successful mutation must move the scenario cookie.
  */
 
-const ROUTE_TO_UPSTREAM: Record<string, string> = {
-  "/api/billing/account": "/account/v1alpha1/account",
-  "/api/billing/app-costs": "/account/v1alpha1/costs/workspace/app",
-  "/api/billing/app-overview": "/account/v1alpha1/cost-overview",
-  "/api/billing/app-types": "/account/v1alpha1/cost-app-type-list",
-  "/api/billing/card": "/account/v1alpha1/workspace-subscription/card-info",
-  "/api/billing/consumption": "/account/v1alpha1/costs/consumption",
-  "/api/billing/costs": "/account/v1alpha1/costs",
-  "/api/billing/payments":
-    "/account/v1alpha1/workspace-subscription/payment-list",
-  "/api/billing/plans": "/account/v1alpha1/workspace-subscription/plan-list",
-  "/api/billing/properties": "/account/v1alpha1/properties",
-  "/api/billing/regions": "/account/v1alpha1/regions",
-  "/api/billing/subscription": "/account/v1alpha1/workspace-subscription/info",
-  "/api/billing/subscription/last-transaction":
-    "/account/v1alpha1/workspace-subscription/last-transaction",
-  "/api/billing/subscriptions": "/account/v1alpha1/workspace-subscription/list",
-  "/api/billing/workspace-consumption":
-    "/account/v1alpha1/costs/workspace/consumption",
-  "/api/billing/workspace-quota":
-    "/account/v1alpha1/workspace/get-resource-quota",
-  "/api/billing/workspaces": "/account/v1alpha1/namespaces",
-};
+const ROUTE_TO_UPSTREAM = new Map<string, string>(
+  Object.values(BILLING_ROUTES).map((entry) => [
+    entry.apiPath,
+    entry.upstreamPathname,
+  ])
+);
 
 function requestPathname(input: Parameters<BillingFetch>[0]): string {
   if (typeof input === "string") {
@@ -71,7 +55,7 @@ function mockRequest(
 function mockFetchFor(scenario: string): BillingFetch {
   return async (input, init) => {
     const pathname = requestPathname(input);
-    const upstream = ROUTE_TO_UPSTREAM[pathname];
+    const upstream = ROUTE_TO_UPSTREAM.get(pathname);
     assert.ok(upstream, `route ${pathname} has an upstream mapping`);
     const response = await billingDevMockResponse(
       upstream,
@@ -221,12 +205,25 @@ test("cancelling derives the cancelling lifecycle", async () => {
 test("payment-due derives debt with a payable invoice", async () => {
   const plan = await loadPlanForScenario("payment-due");
   assert.equal(plan.current.lifecycle, "payment-due");
+  assert.equal(plan.current.warningStage, "expired");
   assert.ok(plan.current.invoicePaymentUrl);
+  assert.ok(plan.current.resourceDeletionAt, "deletion date is derived");
+  assert.ok(
+    new Date(plan.current.resourceDeletionAt ?? "").getTime() > Date.now(),
+    "the deletion date is still ahead in the expired stage"
+  );
   const balance = await loadAccountBalance(
     { appToken: "t", currency: "usd", kubeconfig: "k" },
     mockFetchFor("payment-due")
   );
   assert.ok(balance.microUnits < 0, "debt scenario shows a negative balance");
+});
+
+test("payment-due-deletion derives the deletion-imminent stage", async () => {
+  const plan = await loadPlanForScenario("payment-due-deletion");
+  assert.equal(plan.current.lifecycle, "payment-due");
+  assert.equal(plan.current.warningStage, "deletion-imminent");
+  assert.ok(plan.current.resourceDeletionAt, "deletion date is derived");
 });
 
 test("pending-upgrade derives the queued plan change", async () => {
@@ -254,6 +251,7 @@ test("pay transitions move the scenario cookie", async () => {
   const transitions: [string, string, string][] = [
     ["payg", "created", "active"],
     ["payment-due", "renewed", "active"],
+    ["payment-due-deletion", "renewed", "active"],
     ["active", "canceled", "cancelling"],
     ["cancelling", "resumed", "active"],
     ["active-balance", "upgraded", "active"],

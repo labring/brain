@@ -10,7 +10,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { BillingDevMockSection } from "./billing-dev-mock";
 import {
   type DevTweakDef,
   devTweaksStore,
@@ -21,7 +20,12 @@ import {
 
 const getServerOverrides = () => EMPTY_DEV_TWEAK_OVERRIDES;
 
-export function DevTweaksPane() {
+/**
+ * `children` hosts feature-owned sections (composed in by the dev-tweaks
+ * mount point) above the registered knob groups — the pane itself stays
+ * feature-agnostic.
+ */
+export function DevTweaksPane({ children }: { children?: ReactNode }) {
   const open = useSyncExternalStore(
     devTweaksStore.subscribe,
     devTweaksStore.isOpen,
@@ -93,7 +97,7 @@ export function DevTweaksPane() {
         </PaneIconButton>
       </header>
       <div className="flex flex-col gap-5 overflow-y-auto p-3">
-        <BillingDevMockSection />
+        {children}
         {groups.length === 0 ? (
           <p className="text-muted-foreground text-xs">
             Nothing registered on this screen. Call useDevTweaks() in a

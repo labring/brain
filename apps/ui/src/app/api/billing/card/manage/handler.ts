@@ -4,6 +4,7 @@ import {
   BillingProxyRequestError,
   createAuthorizedBillingProxy,
 } from "@/features/billing/server/authorized-proxy";
+import { BILLING_ROUTES } from "@/features/billing/server/billing-route-table";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
@@ -38,7 +39,7 @@ export function createBillingCardManageHandler(
   return createAuthorizedBillingProxy(dependencies, {
     invalidRequestMessage: "Invalid card management request.",
     mapRequestBody: addBrainReturnUrl,
-    pathname: "/account/v1alpha1/workspace-subscription/card-manage",
+    pathname: BILLING_ROUTES.cardManage.upstreamPathname,
     requestSchema: billingWorkspaceRequestSchema,
   });
 }

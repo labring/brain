@@ -1,11 +1,7 @@
-import { createAuthorizedBillingProxy } from "@/features/billing/server/authorized-proxy";
-import { requestAccountService } from "@/lib/account-service/client";
-import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
+import { BILLING_ROUTES } from "@/features/billing/server/billing-route-table";
+import { createBillingRoute } from "@/features/billing/server/create-billing-route";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export const GET = createAuthorizedBillingProxy(
-  { authorizeWorkspaceActor, requestAccountService },
-  { pathname: "/account/v1alpha1/workspace-subscription/list" }
-);
+export const GET = createBillingRoute(BILLING_ROUTES.subscriptions);

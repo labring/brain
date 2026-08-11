@@ -7,14 +7,27 @@ const DevTweaksPane = dynamic(
   { ssr: false }
 );
 
+const BillingDevMockSection = dynamic(
+  () =>
+    import("@/features/billing/billing-dev-mock").then(
+      (mod) => mod.BillingDevMockSection
+    ),
+  { ssr: false }
+);
+
 const BillingDevMockBadge = dynamic(
-  () => import("./billing-dev-mock").then((mod) => mod.BillingDevMockBadge),
+  () =>
+    import("@/features/billing/billing-dev-mock").then(
+      (mod) => mod.BillingDevMockBadge
+    ),
   { ssr: false }
 );
 
 /**
- * Mounts the dev tweaks pane (⌃⌥T) and the billing-mock badge in development
- * builds only.
+ * Dev-only composition root: mounts the generic dev tweaks pane (⌃⌥T) and
+ * composes feature-owned pieces into it — the billing mock section and its
+ * always-on badge. Deliberately the only place dev-tweaks meets a feature;
+ * the pane itself stays feature-agnostic.
  */
 export function DevTweaks() {
   if (process.env.NODE_ENV !== "development") {
@@ -22,7 +35,9 @@ export function DevTweaks() {
   }
   return (
     <>
-      <DevTweaksPane />
+      <DevTweaksPane>
+        <BillingDevMockSection />
+      </DevTweaksPane>
       <BillingDevMockBadge />
     </>
   );

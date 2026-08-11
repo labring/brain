@@ -4,6 +4,7 @@ import {
   type BillingProxyDependencies,
   createAuthorizedBillingProxy,
 } from "@/features/billing/server/authorized-proxy";
+import { BILLING_ROUTES } from "@/features/billing/server/billing-route-table";
 
 const subscriptionRequestFields = {
   payMethod: z.enum(["stripe", "balance"]),
@@ -37,7 +38,7 @@ export function createBillingSubscriptionPayHandler(
   return createAuthorizedBillingProxy(dependencies, {
     invalidRequestMessage: "Invalid subscription payment request.",
     mapRequestBody: addBrainPayApp,
-    pathname: "/account/v1alpha1/workspace-subscription/pay",
+    pathname: BILLING_ROUTES.subscriptionPay.upstreamPathname,
     requestSchema: subscriptionPayRequestSchema,
   });
 }
