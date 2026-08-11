@@ -127,9 +127,11 @@ export function BillingPlanCard({
           {plan.description}
         </p>
       </div>
-      <div className="flex flex-wrap items-end gap-x-1 tabular-nums">
+      {/* One line — strikethrough original, price, then the /mo shorthand —
+          kept small enough that a discounted price still fits the card. */}
+      <div className="flex items-end gap-x-1.5 tabular-nums">
         {plan.monthlyOriginalPriceMicroUnits > 0 ? (
-          <span className="font-semibold text-3xl text-foreground/50 leading-none line-through">
+          <span className="font-medium text-foreground/50 text-lg leading-none line-through">
             {formatBillingAmount(plan.monthlyOriginalPriceMicroUnits, currency)}
           </span>
         ) : null}
@@ -141,7 +143,7 @@ export function BillingPlanCard({
         >
           {formatBillingAmount(plan.monthlyPriceMicroUnits, currency)}
         </span>
-        <span className="text-muted-foreground text-sm">/month</span>
+        <span className="text-muted-foreground text-sm">/mo</span>
       </div>
       {action}
       <ul className="flex flex-col gap-3 text-sm">
