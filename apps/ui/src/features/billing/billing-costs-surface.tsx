@@ -8,13 +8,16 @@ import {
 } from "@workspace/ui/components/alert";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppTypeIcon } from "@workspace/ui/components/app-type-icon";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu";
 import { Pagination } from "@workspace/ui/components/pagination";
 import { AppTypeBadge, PlanBadge } from "@workspace/ui/components/plan-badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@workspace/ui/components/popover";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import {
   SlidingToggle,
@@ -30,7 +33,7 @@ import {
   TableLayoutHeadRow,
 } from "@workspace/ui/components/table-layout";
 import { cn } from "@workspace/ui/lib/utils";
-import { AlertCircle, Check, ChevronDown } from "lucide-react";
+import { AlertCircle, ChevronDown } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
@@ -57,13 +60,7 @@ const COST_VIEW_OPTIONS = [
   { label: "Billing", value: "details" },
   { label: "Cost & Top-up Trends", value: "trends" },
 ] as const satisfies readonly SlidingToggleOption<BillingCostsView>[];
-const CONSUMPTION_ROW_KEYS = [
-  "row-1",
-  "row-2",
-  "row-3",
-  "row-4",
-  "row-5",
-];
+const CONSUMPTION_ROW_KEYS = ["row-1", "row-2", "row-3", "row-4", "row-5"];
 // The empty-plan default lives here, not in PlanBadge: "an unnamed payment is
 // a Subscription" is billing knowledge, not badge styling.
 function planBadgeLabel(planName: string): string {
@@ -207,35 +204,11 @@ function SubscriptionCostTable({
   );
 }
 
-function AppTypeFilterOption({
-  checked,
-  label,
-  onSelect,
-}: {
-  checked: boolean;
-  label: string;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      aria-pressed={checked}
-      className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-popover-foreground text-sm hover:bg-muted",
-        checked && "font-medium"
-      )}
-      onClick={onSelect}
-      type="button"
-    >
-      <Check
-        aria-hidden
-        className={cn("size-4 shrink-0", checked ? "" : "invisible")}
-      />
-      {label}
-    </button>
-  );
-}
+/** Matches DB Access DataViewSortMenu active row emphasis. */
+const activeAppTypeFilterItemClass =
+  "bg-input focus:bg-input data-highlighted:bg-input";
 
-/** The old Type column-header filter: All types + each AppType. */
+/** Type column-header filter: All types + each AppType (shared DropdownMenu surface). */
 function AppTypeFilter({
   appTypeFilter,
   appTypeOptions,
@@ -245,18 +218,9 @@ function AppTypeFilter({
   appTypeOptions: string[];
   onAppTypeFilterChange?: (appType: string | null) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const selectOption = (appType: string | null) => {
-    onAppTypeFilterChange?.(appType);
-    setOpen(false);
-  };
-
   return (
-    <Popover onOpenChange={setOpen} open={open}>
-      <PopoverTrigger
-        className="flex cursor-pointer items-center gap-1"
-        type="button"
-      >
+    <DropdownMenu>
+      <DropdownMenuTrigger className="flex cursor-pointer items-center gap-1">
         Type
         <ChevronDown
           aria-hidden
@@ -267,26 +231,32 @@ function AppTypeFilter({
               : "text-brand-primary"
           )}
         />
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-48 gap-0 p-1">
-        <span className="px-2 py-1.5 font-medium text-muted-foreground text-xs">
-          Type
-        </span>
-        <AppTypeFilterOption
-          checked={appTypeFilter == null}
-          label="All types"
-          onSelect={() => selectOption(null)}
-        />
-        {appTypeOptions.map((appType) => (
-          <AppTypeFilterOption
-            checked={appTypeFilter === appType}
-            key={appType}
-            label={appTypeDisplayName(appType) ?? appType}
-            onSelect={() => selectOption(appType)}
-          />
-        ))}
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Type</DropdownMenuLabel>
+          <DropdownMenuItem
+            className={cn(
+              appTypeFilter == null && activeAppTypeFilterItemClass
+            )}
+            onClick={() => onAppTypeFilterChange?.(null)}
+          >
+            All types
+          </DropdownMenuItem>
+          {appTypeOptions.map((appType) => (
+            <DropdownMenuItem
+              className={cn(
+                appTypeFilter === appType && activeAppTypeFilterItemClass
+              )}
+              key={appType}
+              onClick={() => onAppTypeFilterChange?.(appType)}
+            >
+              {appTypeDisplayName(appType) ?? appType}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
