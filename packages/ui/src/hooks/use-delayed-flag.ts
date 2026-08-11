@@ -22,18 +22,19 @@ export function useDelayedFlag(
 ): boolean {
   const [delayed, setDelayed] = useState(false);
 
+  // Reset during render rather than in the effect, so the flag drops in the
+  // same pass that `active` does instead of one cascading render later.
+  if (!active && delayed) {
+    setDelayed(false);
+  }
+
   useEffect(() => {
-    if (!active) {
-      setDelayed(false);
-      return;
-    }
-    if (delayMs <= 0) {
-      setDelayed(true);
+    if (!active || delayMs <= 0) {
       return;
     }
     const timer = setTimeout(() => setDelayed(true), delayMs);
     return () => clearTimeout(timer);
   }, [active, delayMs]);
 
-  return active && delayed;
+  return active && (delayMs <= 0 || delayed);
 }
