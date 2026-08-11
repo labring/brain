@@ -1,19 +1,23 @@
-/* eslint-disable turbo/no-undeclared-env-vars -- temporary dev-only knob, never a build input */
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
-
+import { test } from "node:test";
 import { loadAccountBalance } from "../../account-balance";
 import { loadBillingCosts } from "../../billing-costs-data";
 import type { BillingFetch } from "../../billing-data-client";
 import { loadBillingPlanSnapshot } from "../../billing-plan-data";
 import { loadBillingPricing } from "../../billing-pricing-data";
 import { loadBillingUsage } from "../../billing-usage-data";
+import {
+  BILLING_DEV_MOCK_COOKIE,
+  BILLING_DEV_SCENARIOS,
+  formatBillingDevMockCookie,
+} from "../../dev-mock-cookie";
 import { billingDevMockResponse } from "./index";
 
 /**
  * Pins every dev-mock scenario to the real loaders: each fixture payload must
  * survive the loaders' zod parsing, and the lifecycle derivations must land
- * on the state the scenario name promises. Delete together with the fixtures.
+ * on the state the scenario name promises. Also pins the write transitions —
+ * a successful mutation must move the scenario cookie.
  */
 
 const ROUTE_TO_UPSTREAM: Record<string, string> = {
@@ -50,17 +54,49 @@ function requestPathname(input: Parameters<BillingFetch>[0]): string {
   return new URL(input.url, "http://localhost").pathname;
 }
 
-const mockFetch: BillingFetch = async (input, init) => {
-  const pathname = requestPathname(input);
-  const upstream = ROUTE_TO_UPSTREAM[pathname];
-  assert.ok(upstream, `route ${pathname} has an upstream mapping`);
-  const response = await billingDevMockResponse(
-    upstream,
-    new Request(new URL(pathname, "http://localhost"), init)
-  );
-  assert.ok(response, "mock mode answers the request");
-  return response;
-};
+function mockCookieHeader(scenario: string): string {
+  return `${BILLING_DEV_MOCK_COOKIE}=${scenario}`;
+}
+
+function mockRequest(
+  pathname: string,
+  scenario: string,
+  init?: RequestInit
+): Request {
+  const request = new Request(new URL(pathname, "http://localhost"), init);
+  request.headers.set("cookie", mockCookieHeader(scenario));
+  return request;
+}
+
+function mockFetchFor(scenario: string): BillingFetch {
+  return async (input, init) => {
+    const pathname = requestPathname(input);
+    const upstream = ROUTE_TO_UPSTREAM[pathname];
+    assert.ok(upstream, `route ${pathname} has an upstream mapping`);
+    const response = await billingDevMockResponse(
+      upstream,
+      mockRequest(pathname, scenario, init ?? undefined)
+    );
+    assert.ok(response, "mock mode answers the request");
+    return response;
+  };
+}
+
+function payRequest(scenario: string, operator: string): Request {
+  return mockRequest("/api/billing/subscription/pay", scenario, {
+    body: JSON.stringify({ operator, workspace: "ns-test" }),
+    method: "POST",
+  });
+}
+
+function scenarioFromSetCookie(response: Response): string | null {
+  const header = response.headers.get("set-cookie");
+  if (header == null) {
+    return null;
+  }
+  const match = header.match(new RegExp(`${BILLING_DEV_MOCK_COOKIE}=([^;]+)`));
+  return match?.[1] ?? null;
+}
 
 const CREDENTIALS = {
   appToken: "test-token",
@@ -74,31 +110,15 @@ const DATE_RANGE = {
   startTime: new Date(Date.now() - 31 * DAY_IN_MILLISECONDS).toISOString(),
 };
 
-const originalScenario = process.env.BILLING_DEV_MOCK;
-after(() => {
-  if (originalScenario === undefined) {
-    delete process.env.BILLING_DEV_MOCK;
-  } else {
-    process.env.BILLING_DEV_MOCK = originalScenario;
-  }
-});
-
 function loadPlanForScenario(scenario: string) {
-  process.env.BILLING_DEV_MOCK = scenario;
-  return loadBillingPlanSnapshot(CREDENTIALS, { fetch: mockFetch });
+  return loadBillingPlanSnapshot(CREDENTIALS, {
+    fetch: mockFetchFor(scenario),
+  });
 }
 
 test("every scenario passes every loader's schemas", async () => {
-  for (const scenario of [
-    "payg",
-    "active",
-    "active-balance",
-    "cancelling",
-    "payment-due",
-    "pending-upgrade",
-    "mixed-workspaces",
-  ]) {
-    process.env.BILLING_DEV_MOCK = scenario;
+  for (const scenario of BILLING_DEV_SCENARIOS) {
+    const mockFetch = mockFetchFor(scenario);
     const [plan, usage, pricing, costs, balance] = await Promise.all([
       loadBillingPlanSnapshot(CREDENTIALS, { fetch: mockFetch }),
       loadBillingUsage(CREDENTIALS, { fetch: mockFetch }),
@@ -136,7 +156,7 @@ test("every scenario passes every loader's schemas", async () => {
 });
 
 test("cost-overview fixture honors page and pageSize", async () => {
-  process.env.BILLING_DEV_MOCK = "active";
+  const mockFetch = mockFetchFor("active");
   const page1 = await loadBillingCosts(
     {
       appToken: CREDENTIALS.appToken,
@@ -164,7 +184,10 @@ test("cost-overview fixture honors page and pageSize", async () => {
   assert.equal(page1.totalAppOverviewPages, 2);
   assert.equal(page2.appOverviews.length, 3);
   assert.equal(page2.totalAppOverviewPages, 2);
-  assert.notEqual(page1.appOverviews[0]?.appName, page2.appOverviews[0]?.appName);
+  assert.notEqual(
+    page1.appOverviews[0]?.appName,
+    page2.appOverviews[0]?.appName
+  );
 });
 
 test("payg derives a PAYG snapshot", async () => {
@@ -199,10 +222,9 @@ test("payment-due derives debt with a payable invoice", async () => {
   const plan = await loadPlanForScenario("payment-due");
   assert.equal(plan.current.lifecycle, "payment-due");
   assert.ok(plan.current.invoicePaymentUrl);
-  process.env.BILLING_DEV_MOCK = "payment-due";
   const balance = await loadAccountBalance(
     { appToken: "t", currency: "usd", kubeconfig: "k" },
-    mockFetch
+    mockFetchFor("payment-due")
   );
   assert.ok(balance.microUnits < 0, "debt scenario shows a negative balance");
 });
@@ -228,23 +250,119 @@ test("mixed-workspaces spreads lifecycles across the workspace list", async () =
   );
 });
 
-test("write endpoints answer 501 instead of reaching upstream", async () => {
-  process.env.BILLING_DEV_MOCK = "active";
+test("pay transitions move the scenario cookie", async () => {
+  const transitions: [string, string, string][] = [
+    ["payg", "created", "active"],
+    ["payment-due", "renewed", "active"],
+    ["active", "canceled", "cancelling"],
+    ["cancelling", "resumed", "active"],
+    ["active-balance", "upgraded", "active"],
+  ];
+  for (const [from, operator, to] of transitions) {
+    const response = await billingDevMockResponse(
+      "/account/v1alpha1/workspace-subscription/pay",
+      payRequest(from, operator)
+    );
+    assert.equal(response?.status, 200, `${operator} from ${from} succeeds`);
+    assert.equal(
+      scenarioFromSetCookie(response),
+      to,
+      `${operator} moves ${from} → ${to}`
+    );
+  }
+});
+
+test("checkout operators answer a pollable payment", async () => {
   const response = await billingDevMockResponse(
     "/account/v1alpha1/workspace-subscription/pay",
-    new Request("http://localhost/api/billing/subscription/pay", {
+    payRequest("payg", "created")
+  );
+  const payload = (await response?.json()) as Record<string, unknown>;
+  assert.equal(payload.success, true);
+  assert.ok(payload.redirectUrl, "the checkout dialog insists on a URL");
+  const payId = payload.payID;
+  assert.ok(typeof payId === "string" && payId !== "");
+
+  // The destination scenario's last-transaction must settle that payID, or
+  // the checkout dialog's payment poll never completes.
+  const transaction = await loadBillingPlanSnapshot(CREDENTIALS, {
+    fetch: mockFetchFor("active"),
+  });
+  assert.equal(transaction.pendingUpgrade, null);
+  const status = await (
+    await billingDevMockResponse(
+      "/account/v1alpha1/workspace-subscription/last-transaction",
+      mockRequest("/api/billing/subscription/last-transaction", "active", {
+        body: "{}",
+        method: "POST",
+      })
+    )
+  )?.json();
+  assert.equal(status.transaction.PayID, payId);
+  assert.equal(status.transaction.Status, "completed");
+});
+
+test("lifecycle operators answer plain success without a checkout", async () => {
+  const response = await billingDevMockResponse(
+    "/account/v1alpha1/workspace-subscription/pay",
+    payRequest("active", "canceled")
+  );
+  assert.deepEqual(await response?.json(), { success: true });
+});
+
+test("invoice-cancel drops a queued upgrade back to active", async () => {
+  const response = await billingDevMockResponse(
+    "/account/v1alpha1/workspace-subscription/invoice-cancel",
+    mockRequest("/api/billing/subscription/invoice-cancel", "pending-upgrade", {
+      body: JSON.stringify({ invoiceID: "inv-123", workspace: "ns-test" }),
+      method: "POST",
+    })
+  );
+  assert.equal(response?.status, 200);
+  assert.equal(scenarioFromSetCookie(response), "active");
+  const payload = (await response?.json()) as Record<string, unknown>;
+  assert.equal(payload.success, true);
+  assert.equal(payload.invoice_id, "inv-123");
+});
+
+test("unmapped writes answer 501 instead of reaching upstream", async () => {
+  const card = await billingDevMockResponse(
+    "/account/v1alpha1/workspace-subscription/card-manage",
+    mockRequest("/api/billing/card/manage", "active", {
       body: "{}",
       method: "POST",
     })
   );
-  assert.equal(response?.status, 501);
+  assert.equal(card?.status, 501);
+
+  const downgrade = await billingDevMockResponse(
+    "/account/v1alpha1/workspace-subscription/pay",
+    payRequest("active", "downgraded")
+  );
+  assert.equal(downgrade?.status, 501);
+});
+
+test("an absent or disabled cookie falls through to the real proxy", async () => {
+  const absent = await billingDevMockResponse(
+    "/account/v1alpha1/regions",
+    new Request("http://localhost/api/billing/regions")
+  );
+  assert.equal(absent, null);
+
+  const disabled = await billingDevMockResponse(
+    "/account/v1alpha1/regions",
+    mockRequest(
+      "/api/billing/regions",
+      formatBillingDevMockCookie({ enabled: false, scenario: "active" })
+    )
+  );
+  assert.equal(disabled, null);
 });
 
 test("unknown scenarios fail loud instead of falling through", async () => {
-  process.env.BILLING_DEV_MOCK = "dept";
   const response = await billingDevMockResponse(
     "/account/v1alpha1/regions",
-    new Request("http://localhost/api/billing/regions")
+    mockRequest("/api/billing/regions", "dept")
   );
   assert.equal(response?.status, 500);
 });

@@ -1,27 +1,30 @@
+import {
+  BILLING_DEV_MOCK_COOKIE,
+  BILLING_DEV_SCENARIOS,
+  type BillingDevScenario,
+  formatBillingDevMockCookie,
+  parseBillingDevMockCookie,
+} from "@/features/billing/dev-mock-cookie";
 import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 /**
- * Temporary style-testing scaffolding — delete this directory together with
- * the `billingDevMockResponse` call in `../authorized-proxy.ts`.
+ * Billing dev-mock fixtures (dev builds only, permanent dev infrastructure).
  *
- * When `BILLING_DEV_MOCK=<scenario>` is set (dev builds only), every
- * `/api/billing/*` proxy answers from these fixtures instead of the account
- * service, so the real /billing pages can be eyeballed in any subscription
- * state. Endpoints without a fixture (all writes) answer 501 so a mock
+ * The dev-tweaks pane (⌃⌥T → "Billing mock") writes a session cookie
+ * (`dev-mock-cookie.ts` documents the grammar); while it names a scenario,
+ * every `/api/billing/*` proxy answers from these fixtures instead of the
+ * account service, so the real /billing pages can be exercised in any
+ * subscription state without credentials.
+ *
+ * Reads come from `FIXTURES`, pure functions of (body, scenario, workspace).
+ * Writes are scenario transitions: a successful mutation answers with
+ * `Set-Cookie` moving the scenario (e.g. pay/canceled: active → cancelling),
+ * so after the client revalidates, every read shows the new state and whole
+ * flows can be clicked through. `active`'s last-transaction reports the mock
+ * checkout as completed so the checkout dialog's payment poll settles.
+ * Writes outside `WRITE_FIXTURES`' transition tables answer 501 so a mock
  * session can never mutate a real account.
  */
-
-const BILLING_DEV_SCENARIOS = [
-  "payg",
-  "active",
-  "active-balance",
-  "cancelling",
-  "payment-due",
-  "pending-upgrade",
-  "mixed-workspaces",
-] as const;
-
-type BillingDevScenario = (typeof BILLING_DEV_SCENARIOS)[number];
 
 interface FixtureContext {
   body: Record<string, unknown>;
@@ -31,16 +34,14 @@ interface FixtureContext {
 
 const REGION_DOMAIN = "mock.sealos.run";
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
+const MOCK_CHECKOUT_PAY_ID = "pay-mock-checkout";
+const MOCK_CHECKOUT_INVOICE_ID = "inv-mock-checkout";
 const MOCK_WORKSPACES = {
   cancelling: "ns-mock-cancel",
   debt: "ns-mock-debt",
   payg: "ns-mock-payg",
   pro: "ns-mock-pro",
 } as const;
-
-function isBillingDevScenario(value: string): value is BillingDevScenario {
-  return (BILLING_DEV_SCENARIOS as readonly string[]).includes(value);
-}
 
 function daysFromNow(days: number): string {
   return new Date(Date.now() + days * DAY_IN_MILLISECONDS).toISOString();
@@ -517,19 +518,36 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   }),
   "/account/v1alpha1/workspace-subscription/last-transaction": ({
     scenario,
-  }) =>
-    scenario === "pending-upgrade"
-      ? {
-          transaction: {
-            ID: "txn-mock-1",
-            NewPlanName: "Pro",
-            Operator: "upgraded",
-            PayID: "pay-mock-upgrade",
-            StartAt: daysFromNow(12),
-            Status: "pending",
-          },
-        }
-      : {},
+  }) => {
+    if (scenario === "pending-upgrade") {
+      return {
+        transaction: {
+          ID: "txn-mock-1",
+          NewPlanName: "Pro",
+          Operator: "upgraded",
+          PayID: "pay-mock-upgrade",
+          StartAt: daysFromNow(12),
+          Status: "pending",
+        },
+      };
+    }
+    if (scenario === "payg") {
+      return {};
+    }
+    // A settled record matching the mock checkout ids: the checkout dialog
+    // polls last-transaction for status "completed" + its payID, so landing
+    // on a subscribed scenario after a mock payment closes the dialog.
+    return {
+      transaction: {
+        ID: "txn-mock-settled",
+        NewPlanName: "Hobby",
+        Operator: "upgraded",
+        PayID: MOCK_CHECKOUT_PAY_ID,
+        StartAt: daysFromNow(-1),
+        Status: "completed",
+      },
+    };
+  },
   "/account/v1alpha1/workspace-subscription/list": (context) => ({
     subscriptions: subscriptionListPayload(context),
   }),
@@ -569,33 +587,136 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   }),
 };
 
+interface WriteFixtureResult {
+  /** Scenario the successful write moves the session to. */
+  nextScenario: BillingDevScenario;
+  payload: unknown;
+}
+
+/**
+ * Writes as scenario transitions. Each entry answers a mutation with a
+ * success payload plus a `Set-Cookie` moving the scenario; returning null
+ * (operator/scenario pair outside the table) answers 501 instead.
+ */
+const WRITE_FIXTURES: Record<
+  string,
+  (context: FixtureContext) => WriteFixtureResult | null
+> = {
+  "/account/v1alpha1/workspace-subscription/invoice-cancel": (context) => ({
+    nextScenario:
+      context.scenario === "pending-upgrade" ? "active" : context.scenario,
+    payload: {
+      invoice_id:
+        typeof context.body.invoiceID === "string"
+          ? context.body.invoiceID
+          : MOCK_CHECKOUT_INVOICE_ID,
+      message: "Mock unpaid invoice cancelled.",
+      success: true,
+    },
+  }),
+  "/account/v1alpha1/workspace-subscription/pay": (context) => {
+    const operator =
+      typeof context.body.operator === "string" ? context.body.operator : "";
+    const nextScenario = PAY_TRANSITIONS[operator]?.[context.scenario];
+    if (nextScenario == null) {
+      return null;
+    }
+    // created/renewed/upgraded run the checkout dialog: it insists on a
+    // redirect URL for the checkout window, then polls last-transaction for
+    // the returned payID. about:blank skips the Stripe hop.
+    const opensCheckout =
+      operator === "created" ||
+      operator === "renewed" ||
+      operator === "upgraded";
+    return {
+      nextScenario,
+      payload: opensCheckout
+        ? {
+            invoiceID: MOCK_CHECKOUT_INVOICE_ID,
+            payID: MOCK_CHECKOUT_PAY_ID,
+            redirectUrl: "about:blank",
+            success: true,
+          }
+        : { success: true },
+    };
+  },
+};
+
+/**
+ * pay-operator × current-scenario → next scenario. Upgrades land on `active`
+ * (not `pending-upgrade`) because the checkout poll needs last-transaction to
+ * report the payment as completed, which `pending-upgrade` by definition
+ * does not; select `pending-upgrade` in the panel to eyeball the queued
+ * banner directly.
+ */
+const PAY_TRANSITIONS: Record<
+  string,
+  Partial<Record<BillingDevScenario, BillingDevScenario>> | undefined
+> = {
+  canceled: {
+    active: "cancelling",
+    "active-balance": "cancelling",
+    "mixed-workspaces": "cancelling",
+  },
+  created: { payg: "active" },
+  renewed: { "payment-due": "active" },
+  resumed: { cancelling: "active" },
+  upgraded: {
+    active: "active",
+    "active-balance": "active",
+    "mixed-workspaces": "active",
+  },
+};
+
+function mockCookieValue(request: Request): string | undefined {
+  const header = request.headers.get("cookie") ?? "";
+  for (const pair of header.split(";")) {
+    const separator = pair.indexOf("=");
+    if (separator === -1) {
+      continue;
+    }
+    if (pair.slice(0, separator).trim() === BILLING_DEV_MOCK_COOKIE) {
+      return decodeURIComponent(pair.slice(separator + 1).trim());
+    }
+  }
+  return undefined;
+}
+
+function transitionHeaders(
+  nextScenario: BillingDevScenario
+): Record<string, string> {
+  const value = formatBillingDevMockCookie({
+    enabled: true,
+    scenario: nextScenario,
+  });
+  return {
+    "set-cookie": `${BILLING_DEV_MOCK_COOKIE}=${value}; Path=/; SameSite=Lax`,
+  };
+}
+
 export async function billingDevMockResponse(
   pathname: string,
   request: Request
 ): Promise<Response | null> {
-  // eslint-disable-next-line turbo/no-undeclared-env-vars -- temporary dev-only knob, never a build input
-  const scenario = process.env.BILLING_DEV_MOCK?.trim() ?? "";
-  if (process.env.NODE_ENV === "production" || scenario === "") {
+  if (process.env.NODE_ENV === "production") {
     return null;
   }
-  if (!isBillingDevScenario(scenario)) {
+  const parsed = parseBillingDevMockCookie(mockCookieValue(request));
+  if (
+    parsed.kind === "unset" ||
+    (parsed.kind === "set" && !parsed.state.enabled)
+  ) {
+    return null;
+  }
+  if (parsed.kind === "invalid") {
     return Response.json(
       {
-        error: `Unknown BILLING_DEV_MOCK scenario "${scenario}". Valid scenarios: ${BILLING_DEV_SCENARIOS.join(", ")}.`,
+        error: `Unknown billing mock scenario "${parsed.raw}". Valid scenarios: ${BILLING_DEV_SCENARIOS.join(", ")}. Toggle the mock from the dev tweaks pane (⌃⌥T).`,
       },
       { status: 500 }
     );
   }
-
-  const fixture = FIXTURES[pathname];
-  if (fixture == null) {
-    return Response.json(
-      {
-        error: `BILLING_DEV_MOCK is on; ${pathname} has no fixture (writes are disabled in mock mode).`,
-      },
-      { status: 501 }
-    );
-  }
+  const scenario = parsed.state.scenario;
 
   const payload: unknown = await request.json().catch(() => null);
   const body =
@@ -606,7 +727,33 @@ export async function billingDevMockResponse(
     typeof body.workspace === "string" && body.workspace.trim() !== ""
       ? body.workspace
       : defaultWorkspace();
-  return Response.json(
-    fixture({ body, scenario, workspace: requestedWorkspace })
-  );
+  const context: FixtureContext = {
+    body,
+    scenario,
+    workspace: requestedWorkspace,
+  };
+
+  const write = WRITE_FIXTURES[pathname];
+  if (write != null) {
+    const result = write(context);
+    if (result != null) {
+      return Response.json(result.payload, {
+        headers:
+          result.nextScenario === scenario
+            ? undefined
+            : transitionHeaders(result.nextScenario),
+      });
+    }
+  }
+
+  const fixture = FIXTURES[pathname];
+  if (fixture == null) {
+    return Response.json(
+      {
+        error: `Billing mock mode does not support this operation (${pathname} has no fixture or transition).`,
+      },
+      { status: 501 }
+    );
+  }
+  return Response.json(fixture(context));
 }

@@ -7,10 +7,23 @@ const DevTweaksPane = dynamic(
   { ssr: false }
 );
 
-/** Mounts the dev tweaks pane (⌃⌥T) in development builds only. */
+const BillingDevMockBadge = dynamic(
+  () => import("./billing-dev-mock").then((mod) => mod.BillingDevMockBadge),
+  { ssr: false }
+);
+
+/**
+ * Mounts the dev tweaks pane (⌃⌥T) and the billing-mock badge in development
+ * builds only.
+ */
 export function DevTweaks() {
   if (process.env.NODE_ENV !== "development") {
     return null;
   }
-  return <DevTweaksPane />;
+  return (
+    <>
+      <DevTweaksPane />
+      <BillingDevMockBadge />
+    </>
+  );
 }

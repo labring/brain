@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { BillingDevMockSection } from "./billing-dev-mock";
 import {
   type DevTweakDef,
   devTweaksStore,
@@ -92,6 +93,7 @@ export function DevTweaksPane() {
         </PaneIconButton>
       </header>
       <div className="flex flex-col gap-5 overflow-y-auto p-3">
+        <BillingDevMockSection />
         {groups.length === 0 ? (
           <p className="text-muted-foreground text-xs">
             Nothing registered on this screen. Call useDevTweaks() in a
