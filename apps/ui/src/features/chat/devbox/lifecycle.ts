@@ -193,7 +193,8 @@ function claimedRuntimesOf(result: unknown): ClaimedChatDevboxRuntime[] {
 async function claimPauseCandidates(
   ctx: ChatDevboxLifecycleContext,
   now: Date,
-  leaseOwner: string
+  leaseOwner: string,
+  limit: number
 ): Promise<ClaimedChatDevboxRuntime[]> {
   return claimedRuntimesOf(
     await ctx.db.execute(sql`
@@ -208,7 +209,7 @@ async function claimPauseCandidates(
           )
         ORDER BY "pause_due_at"
         FOR UPDATE SKIP LOCKED
-        LIMIT ${LIFECYCLE_BATCH_SIZE}
+        LIMIT ${limit}
       )
       UPDATE ${assistantDevboxRuntimes} runtime
       SET "cleanup_lease_owner" = ${leaseOwner},
@@ -224,7 +225,8 @@ async function claimPauseCandidates(
 async function claimDeleteCandidates(
   ctx: ChatDevboxLifecycleContext,
   now: Date,
-  leaseOwner: string
+  leaseOwner: string,
+  limit: number
 ): Promise<ClaimedChatDevboxRuntime[]> {
   return claimedRuntimesOf(
     await ctx.db.execute(sql`
@@ -239,7 +241,7 @@ async function claimDeleteCandidates(
           )
         ORDER BY "delete_due_at"
         FOR UPDATE SKIP LOCKED
-        LIMIT ${LIFECYCLE_BATCH_SIZE}
+        LIMIT ${limit}
       )
       UPDATE ${assistantDevboxRuntimes} runtime
       SET "cleanup_lease_owner" = ${leaseOwner},
@@ -250,6 +252,28 @@ async function claimDeleteCandidates(
       RETURNING runtime."upstream_id", runtime."namespace", runtime."runtime_name"
     `)
   );
+}
+
+async function renewCleanupClaim(
+  ctx: ChatDevboxLifecycleContext,
+  runtime: ClaimedChatDevboxRuntime,
+  leaseOwner: string
+): Promise<boolean> {
+  const renewed = await ctx.db
+    .update(assistantDevboxRuntimes)
+    .set({
+      cleanupLeaseExpiresAt: sql`now() + ${intervalFromMs(LIFECYCLE_CLAIM_TTL_MS)}`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(assistantDevboxRuntimes.upstreamId, runtime.upstreamId),
+        eq(assistantDevboxRuntimes.cleanupLeaseOwner, leaseOwner),
+        sql`${assistantDevboxRuntimes.cleanupLeaseExpiresAt} > now()`
+      )
+    )
+    .returning({ upstreamId: assistantDevboxRuntimes.upstreamId });
+  return renewed.length > 0;
 }
 
 async function releaseFailedClaim(
@@ -273,42 +297,131 @@ async function releaseFailedClaim(
     );
 }
 
-async function mapWithConcurrency<T>(
+async function runConcurrentWave<T>(
   values: readonly T[],
   operation: (value: T) => Promise<boolean>
 ): Promise<{ failed: number; succeeded: number }> {
-  let failed = 0;
-  let succeeded = 0;
-  for (let index = 0; index < values.length; index += LIFECYCLE_CONCURRENCY) {
-    const outcomes = await Promise.all(
-      values.slice(index, index + LIFECYCLE_CONCURRENCY).map(async (value) => {
-        try {
-          return await operation(value);
-        } catch (error) {
-          console.error("[chat-devbox-lifecycle] operation failed:", error);
-          return false;
-        }
-      })
-    );
-    succeeded += outcomes.filter(Boolean).length;
-    failed += outcomes.filter((outcome) => !outcome).length;
+  if (values.length > LIFECYCLE_CONCURRENCY) {
+    throw new Error("A Devbox cleanup wave exceeds the concurrency limit");
   }
-  return { failed, succeeded };
+  const outcomes = await Promise.all(
+    values.map(async (value) => {
+      try {
+        return await operation(value);
+      } catch (error) {
+        console.error("[chat-devbox-lifecycle] operation failed:", error);
+        return false;
+      }
+    })
+  );
+  return {
+    failed: outcomes.filter((outcome) => !outcome).length,
+    succeeded: outcomes.filter(Boolean).length,
+  };
+}
+
+async function processClaimedWaves(
+  claim: (
+    leaseOwner: string,
+    limit: number
+  ) => Promise<ClaimedChatDevboxRuntime[]>,
+  operation: (
+    runtime: ClaimedChatDevboxRuntime,
+    leaseOwner: string
+  ) => Promise<boolean>
+): Promise<{ failed: number; succeeded: number }> {
+  // Keep queued rows unclaimed so every lease covers only one active API wave.
+  const summary = { failed: 0, succeeded: 0 };
+  let remaining = LIFECYCLE_BATCH_SIZE;
+  while (remaining > 0) {
+    const leaseOwner = randomUUID();
+    const candidates = await claim(
+      leaseOwner,
+      Math.min(LIFECYCLE_CONCURRENCY, remaining)
+    );
+    if (candidates.length === 0) {
+      break;
+    }
+    remaining -= candidates.length;
+    const wave = await runConcurrentWave(candidates, (runtime) =>
+      operation(runtime, leaseOwner)
+    );
+    summary.failed += wave.failed;
+    summary.succeeded += wave.succeeded;
+  }
+  return summary;
 }
 
 async function sweepPauses(
   ctx: ChatDevboxLifecycleContext,
   now: Date
 ): Promise<{ failed: number; succeeded: number }> {
-  const leaseOwner = randomUUID();
-  const candidates = await claimPauseCandidates(ctx, now, leaseOwner);
-  return await mapWithConcurrency(candidates, async (runtime) => {
-    try {
-      const result = await ctx.api.pause(
-        runtime.namespace,
-        runtime.runtimeName
-      );
-      if (result === "missing") {
+  return await processClaimedWaves(
+    (leaseOwner, limit) => claimPauseCandidates(ctx, now, leaseOwner, limit),
+    async (runtime, leaseOwner) => {
+      if (!(await renewCleanupClaim(ctx, runtime, leaseOwner))) {
+        return false;
+      }
+      try {
+        const result = await ctx.api.pause(
+          runtime.namespace,
+          runtime.runtimeName
+        );
+        if (result === "missing") {
+          await ctx.db
+            .delete(assistantDevboxRuntimes)
+            .where(
+              and(
+                eq(assistantDevboxRuntimes.upstreamId, runtime.upstreamId),
+                eq(assistantDevboxRuntimes.cleanupLeaseOwner, leaseOwner)
+              )
+            );
+          return true;
+        }
+
+        await ctx.db
+          .update(assistantDevboxRuntimes)
+          .set({
+            cleanupLeaseExpiresAt: null,
+            cleanupLeaseOwner: null,
+            deleteDueAt: new Date(now.getTime() + DELETE_AFTER_PAUSE_MS),
+            pausedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(assistantDevboxRuntimes.upstreamId, runtime.upstreamId),
+              eq(assistantDevboxRuntimes.cleanupLeaseOwner, leaseOwner)
+            )
+          );
+        return true;
+      } catch (error) {
+        try {
+          await releaseFailedClaim(ctx, runtime, leaseOwner, now);
+        } catch (releaseError) {
+          console.error(
+            "[chat-devbox-lifecycle] failed to release cleanup claim:",
+            releaseError
+          );
+        }
+        throw error;
+      }
+    }
+  );
+}
+
+async function sweepDeletes(
+  ctx: ChatDevboxLifecycleContext,
+  now: Date
+): Promise<{ failed: number; succeeded: number }> {
+  return await processClaimedWaves(
+    (leaseOwner, limit) => claimDeleteCandidates(ctx, now, leaseOwner, limit),
+    async (runtime, leaseOwner) => {
+      if (!(await renewCleanupClaim(ctx, runtime, leaseOwner))) {
+        return false;
+      }
+      try {
+        await ctx.api.delete(runtime.namespace, runtime.runtimeName);
         await ctx.db
           .delete(assistantDevboxRuntimes)
           .where(
@@ -318,68 +431,19 @@ async function sweepPauses(
             )
           );
         return true;
+      } catch (error) {
+        try {
+          await releaseFailedClaim(ctx, runtime, leaseOwner, now);
+        } catch (releaseError) {
+          console.error(
+            "[chat-devbox-lifecycle] failed to release cleanup claim:",
+            releaseError
+          );
+        }
+        throw error;
       }
-
-      await ctx.db
-        .update(assistantDevboxRuntimes)
-        .set({
-          cleanupLeaseExpiresAt: null,
-          cleanupLeaseOwner: null,
-          deleteDueAt: new Date(now.getTime() + DELETE_AFTER_PAUSE_MS),
-          pausedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(assistantDevboxRuntimes.upstreamId, runtime.upstreamId),
-            eq(assistantDevboxRuntimes.cleanupLeaseOwner, leaseOwner)
-          )
-        );
-      return true;
-    } catch (error) {
-      try {
-        await releaseFailedClaim(ctx, runtime, leaseOwner, now);
-      } catch (releaseError) {
-        console.error(
-          "[chat-devbox-lifecycle] failed to release cleanup claim:",
-          releaseError
-        );
-      }
-      throw error;
     }
-  });
-}
-
-async function sweepDeletes(
-  ctx: ChatDevboxLifecycleContext,
-  now: Date
-): Promise<{ failed: number; succeeded: number }> {
-  const leaseOwner = randomUUID();
-  const candidates = await claimDeleteCandidates(ctx, now, leaseOwner);
-  return await mapWithConcurrency(candidates, async (runtime) => {
-    try {
-      await ctx.api.delete(runtime.namespace, runtime.runtimeName);
-      await ctx.db
-        .delete(assistantDevboxRuntimes)
-        .where(
-          and(
-            eq(assistantDevboxRuntimes.upstreamId, runtime.upstreamId),
-            eq(assistantDevboxRuntimes.cleanupLeaseOwner, leaseOwner)
-          )
-        );
-      return true;
-    } catch (error) {
-      try {
-        await releaseFailedClaim(ctx, runtime, leaseOwner, now);
-      } catch (releaseError) {
-        console.error(
-          "[chat-devbox-lifecycle] failed to release cleanup claim:",
-          releaseError
-        );
-      }
-      throw error;
-    }
-  });
+  );
 }
 
 export async function runChatDevboxLifecycleSweep(

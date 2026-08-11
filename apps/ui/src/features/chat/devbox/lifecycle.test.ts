@@ -208,6 +208,146 @@ test("concurrent chat lifecycle sweeps claim a runtime only once", async () => {
   assert.equal((await first).paused, 1);
 });
 
+test("chat lifecycle claims only the concurrency wave being processed", async () => {
+  await clearRuntimes();
+  const currentNow = new Date();
+  await db.insert(assistantDevboxRuntimes).values(
+    Array.from({ length: 5 }, (_, index) => ({
+      namespace: "ns-test",
+      pauseDueAt: new Date(currentNow.getTime() - 5 + index),
+      runtimeName: `runtime-wave-${index}`,
+      upstreamId: `upstream-wave-${index}`,
+    }))
+  );
+  const started: string[] = [];
+  let active = 0;
+  let maxActive = 0;
+  let releaseFirstWave!: () => void;
+  let markFirstWaveStarted!: () => void;
+  const firstWaveStarted = new Promise<void>((resolve) => {
+    markFirstWaveStarted = resolve;
+  });
+  const firstWaveBlocked = new Promise<void>((resolve) => {
+    releaseFirstWave = resolve;
+  });
+  const api = {
+    delete: () => Promise.resolve("deleted" as const),
+    async pause(_namespace: string, runtimeName: string) {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      started.push(runtimeName);
+      if (started.length === 4) {
+        markFirstWaveStarted();
+      }
+      if (runtimeName !== "runtime-wave-4") {
+        await firstWaveBlocked;
+      }
+      active -= 1;
+      return "paused" as const;
+    },
+  };
+
+  const sweep = runChatDevboxLifecycleSweep({
+    api,
+    db,
+    now: () => currentNow,
+  });
+  await firstWaveStarted;
+
+  const [queuedRuntime] = await db
+    .select()
+    .from(assistantDevboxRuntimes)
+    .where(eq(assistantDevboxRuntimes.upstreamId, "upstream-wave-4"));
+  assert.equal(queuedRuntime?.cleanupLeaseOwner, null);
+  assert.equal(started.length, 4);
+
+  releaseFirstWave();
+  const summary = await sweep;
+  assert.equal(summary.paused, 5);
+  assert.equal(maxActive, 4);
+  assert.equal(started.length, 5);
+});
+
+test("chat lifecycle skips an external operation after losing its claim", async () => {
+  await clearRuntimes();
+  const currentNow = new Date();
+  await db.insert(assistantDevboxRuntimes).values({
+    namespace: "ns-test",
+    pauseDueAt: new Date(currentNow.getTime() - 1),
+    runtimeName: "runtime-stolen",
+    upstreamId: "upstream-stolen",
+  });
+  let stealNextClaim = true;
+  const racingDb = new Proxy(db, {
+    get(target, property) {
+      if (property === "execute") {
+        return async (query: Parameters<AssistantPgDatabase["execute"]>[0]) => {
+          const result = await target.execute(query);
+          if (stealNextClaim) {
+            stealNextClaim = false;
+            await target
+              .update(assistantDevboxRuntimes)
+              .set({
+                cleanupLeaseExpiresAt: new Date(currentNow.getTime() + DAY_MS),
+                cleanupLeaseOwner: "replacement-owner",
+              })
+              .where(eq(assistantDevboxRuntimes.upstreamId, "upstream-stolen"));
+          }
+          return result;
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as AssistantPgDatabase;
+  let pauseCalls = 0;
+
+  const summary = await runChatDevboxLifecycleSweep({
+    api: {
+      delete: () => Promise.resolve("deleted" as const),
+      pause() {
+        pauseCalls += 1;
+        return Promise.resolve("paused" as const);
+      },
+    },
+    db: racingDb,
+    now: () => currentNow,
+  });
+
+  assert.equal(pauseCalls, 0);
+  assert.equal(summary.paused, 0);
+  assert.equal(summary.pauseFailed, 1);
+});
+
+test("chat lifecycle keeps the total sweep batch bounded", async () => {
+  await clearRuntimes();
+  const currentNow = new Date();
+  await db.insert(assistantDevboxRuntimes).values(
+    Array.from({ length: 21 }, (_, index) => ({
+      namespace: "ns-test",
+      pauseDueAt: new Date(currentNow.getTime() - 21 + index),
+      runtimeName: `runtime-batch-${index}`,
+      upstreamId: `upstream-batch-${index}`,
+    }))
+  );
+
+  const summary = await runChatDevboxLifecycleSweep({
+    api: {
+      delete: () => Promise.resolve("deleted" as const),
+      pause: () => Promise.resolve("paused" as const),
+    },
+    db,
+    now: () => currentNow,
+  });
+  const runtimes = await db.select().from(assistantDevboxRuntimes);
+
+  assert.equal(summary.paused, 20);
+  assert.equal(
+    runtimes.filter((runtime) => runtime.pausedAt === null).length,
+    1
+  );
+});
+
 test("activity waits for an in-flight delete claim before recreating the ledger", async () => {
   await clearRuntimes();
   const currentNow = new Date();
