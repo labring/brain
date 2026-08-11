@@ -54,7 +54,7 @@ export function OnboardingGate() {
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
-  const [open, setOpen] = useState(false);
+  const [openForKey, setOpenForKey] = useState<string | null>(null);
   const { values } = useDevTweaks("onboarding", ONBOARDING_TWEAKS);
   const forceOpen =
     process.env.NODE_ENV === "development" && values.forceModal >= 0.5;
@@ -70,23 +70,19 @@ export function OnboardingGate() {
       kubeconfig,
       namespace: namespace.trim(),
     };
-    const { promise, rekeyed } = obtainOnboardingSessionJudgment({
+    const key = onboardingCredentialsKey(credentials);
+    const { promise } = obtainOnboardingSessionJudgment({
       judge: () =>
         judgeOnboardingSampling({
           fetchVerdict: () => fetchOnboardingSamplingVerdict(credentials),
         }),
-      key: onboardingCredentialsKey(credentials),
+      key,
     });
-    if (rekeyed) {
-      // Whatever the discarded identity's judgment opened must not survive
-      // it; the new judgment below reopens the dialog if it should.
-      setOpen(false);
-    }
     let disposed = false;
     promise.then(
       (shouldOpen) => {
         if (!disposed && shouldOpen) {
-          setOpen(true);
+          setOpenForKey(key);
         }
       },
       () => undefined
@@ -95,6 +91,21 @@ export function OnboardingGate() {
       disposed = true;
     };
   }, [appToken, kubeconfig, namespace]);
+
+  // Open derives from which identity's judgment opened the dialog: on a
+  // mid-session rekey the credential key stops matching and the dialog
+  // closes in the same render — whatever the discarded identity's judgment
+  // opened must not survive it; the new judgment reopens it if it should.
+  // Credentials going momentarily unready leave an open dialog open.
+  const renderedKey = onboardingCredentialsReady({
+    appToken,
+    kubeconfig,
+    namespace,
+  })
+    ? onboardingCredentialsKey({ appToken, kubeconfig, namespace })
+    : null;
+  const open =
+    openForKey !== null && (renderedKey === null || renderedKey === openForKey);
 
   // The shared tail of every dialog write, all fire-and-forget: the
   // forced-open preview knob must never mutate the developer's real sampling
@@ -124,7 +135,7 @@ export function OnboardingGate() {
   const handleComplete = (payload: CompleteOnboardingProfileRequest) => {
     // Submit & Enter Console drops the person into the console immediately;
     // the terminal write never blocks the exit.
-    setOpen(false);
+    setOpenForKey(null);
     fireWrite((credentials) => {
       completeOnboardingProfile(credentials, payload);
       // Settled at the action, deliberately not at the write's success: the
@@ -143,7 +154,7 @@ export function OnboardingGate() {
   const handleSkip = (payload: DismissOnboardingProfileRequest) => {
     // Skip drops the person into the console immediately; the terminal
     // write never blocks the exit.
-    setOpen(false);
+    setOpenForKey(null);
     fireWrite((credentials) => {
       dismissOnboardingProfile(credentials, payload);
       // Same action-time settle as complete: never re-ask in the same

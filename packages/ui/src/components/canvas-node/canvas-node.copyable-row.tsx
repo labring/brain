@@ -54,13 +54,13 @@ export interface CanvasNodeCopyableRowState {
   copyRow: () => Promise<void>;
 }
 
-type CanvasNodeCopyableRowChildren =
+type CanvasNodeCopyableRowChildrenProp =
   | ReactNode
   | ((state: CanvasNodeCopyableRowState) => ReactNode);
 
 export interface CanvasNodeCopyableRowProps
   extends Omit<ComponentPropsWithoutRef<"section">, "children" | "onCopy"> {
-  children?: CanvasNodeCopyableRowChildren;
+  children?: CanvasNodeCopyableRowChildrenProp;
   copyAriaLabel: string;
   copyable?: boolean;
   copyValue?: string;
@@ -118,10 +118,13 @@ function CanvasNodeCopyFeedbackChildren({
   return children;
 }
 
-function renderCopyableRowChildren(
-  children: CanvasNodeCopyableRowChildren | undefined,
-  state: CanvasNodeCopyableRowState
-) {
+function CanvasNodeCopyableRowChildren({
+  children,
+}: {
+  children?: CanvasNodeCopyableRowChildrenProp;
+}) {
+  const state = useCanvasNodeCopyableRow();
+
   if (typeof children === "function") {
     return children(state);
   }
@@ -250,14 +253,16 @@ export function CanvasNodeCopyableRow({
     }
   }, [copyValue, onCopy, resolvedCopyable, rowKey, showCopiedFeedback]);
 
+  const copied = copiedKey === rowKey;
+
   const state = useMemo(
     (): CanvasNodeCopyableRowState => ({
       busy: copyBusy,
-      copied: copiedKey === rowKey,
+      copied,
       copyable: resolvedCopyable,
       copyRow,
     }),
-    [copiedKey, copyBusy, copyRow, resolvedCopyable, rowKey]
+    [copied, copyBusy, copyRow, resolvedCopyable]
   );
 
   return (
@@ -269,7 +274,7 @@ export function CanvasNodeCopyableRow({
           className
         )}
         data-busy={copyBusy || undefined}
-        data-copied={state.copied ? "true" : undefined}
+        data-copied={copied ? "true" : undefined}
         data-copyable={resolvedCopyable || undefined}
         data-slot="canvas-node-copyable-row"
         {...props}
@@ -290,7 +295,9 @@ export function CanvasNodeCopyableRow({
             type="button"
           />
         ) : null}
-        {renderCopyableRowChildren(children, state)}
+        <CanvasNodeCopyableRowChildren>
+          {children}
+        </CanvasNodeCopyableRowChildren>
       </section>
     </CanvasNodeCopyableRowContext>
   );
