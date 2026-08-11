@@ -242,6 +242,40 @@ export async function resolveAgentToolCall(input: {
     );
 }
 
+/**
+ * Return a transiently failed control call to the durable inbox. The same
+ * MCP request remains open while the runner makes another bounded attempt.
+ */
+export async function retryAgentToolCall(input: {
+  taskId: string;
+  callId: string;
+  claimOwner: string;
+}): Promise<boolean> {
+  const db = getDeploymentTaskDb();
+  const rows = await db
+    .update(deployTaskAgentCalls)
+    .set({
+      claimExpiresAt: null,
+      claimOwner: null,
+      completedAt: null,
+      errorCode: null,
+      response: null,
+      state: "pending",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(deployTaskAgentCalls.claimOwner, input.claimOwner),
+        eq(deployTaskAgentCalls.taskId, input.taskId),
+        eq(deployTaskAgentCalls.callId, input.callId),
+        eq(deployTaskAgentCalls.state, "running"),
+        lt(deployTaskAgentCalls.attempt, AGENT_CONTROL_CALL_MAX_ATTEMPTS)
+      )
+    )
+    .returning({ callId: deployTaskAgentCalls.callId });
+  return rows.length === 1;
+}
+
 export async function waitForAgentToolCall(input: {
   taskId: string;
   callId: string;

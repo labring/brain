@@ -54,11 +54,13 @@ import {
   ProjectPersistenceError,
 } from "@/lib/project-persistence/projects";
 import {
+  AGENT_CONTROL_CALL_MAX_ATTEMPTS,
   AGENT_DEPLOYMENT_COMPLETED_MIN_INTERVAL_MS,
   claimNextAgentToolCall,
   createAgentControlCapability,
   lastAgentToolCallAt,
   resolveAgentToolCall,
+  retryAgentToolCall,
 } from "./agent-tools/store";
 import {
   blockingInputsFromDeploymentPlan,
@@ -3447,11 +3449,23 @@ async function processPendingManagedAgentToolCalls(input: {
       }
       await handleManagedDeploymentCompletedCall(handlerContext, call);
     } catch (error) {
+      const errorCode = safeErrorCode(error);
+      if (
+        errorCode === "agent_tool_failed" &&
+        call.attempt < AGENT_CONTROL_CALL_MAX_ATTEMPTS &&
+        (await retryAgentToolCall({
+          callId: call.callId,
+          claimOwner,
+          taskId: call.taskId,
+        }))
+      ) {
+        continue;
+      }
       await resolveAgentToolCall({
         claimOwner,
         taskId: call.taskId,
         callId: call.callId,
-        errorCode: safeErrorCode(error),
+        errorCode,
       });
     }
   }
@@ -3481,6 +3495,33 @@ export function enterManagedDeploymentRepair(
   state: ManagedDeploymentLifecycleState
 ): ManagedDeploymentLifecycleState {
   return { ...state, resumeMode: "repair" };
+}
+
+export function enterManagedDeploymentCompletionRequired(
+  state: ManagedDeploymentLifecycleState
+): ManagedDeploymentLifecycleState {
+  return { ...state, resumeMode: "completion-required" };
+}
+
+const MAX_COMPLETION_REQUIRED_TURNS = 2;
+
+async function continueManagedDeploymentAfterMissingControlNotification(input: {
+  attempt: number;
+  applying: boolean;
+  lifecycleState: ManagedDeploymentLifecycleState;
+  taskId: string;
+}): Promise<ManagedDeploymentLifecycleState> {
+  if (input.attempt > MAX_COMPLETION_REQUIRED_TURNS) {
+    throw deployFailureError("runner-error");
+  }
+  await recordDeployTaskEvent(input.taskId, {
+    kind: "deployment_task.gateway_completion_required",
+    message:
+      "Agent turn ended without a deployment completion notification; continuing the same Thread.",
+    payload: { attempt: input.attempt },
+    phase: input.applying ? "apply" : "plan",
+  });
+  return enterManagedDeploymentCompletionRequired(input.lifecycleState);
 }
 
 async function runManagedDeploymentTurn(input: {
@@ -3544,6 +3585,7 @@ async function runManagedDeploymentLifecycleCore(input: {
   let lifecycleState = createManagedDeploymentLifecycleState(input.resumeMode);
   let applying = input.task.status === "applying";
   let repairFindings: string[] | undefined;
+  let completionRequiredTurns = 0;
 
   while (true) {
     // No per-turn limit: every turn shares the same Agent execution window,
@@ -3635,9 +3677,14 @@ async function runManagedDeploymentLifecycleCore(input: {
       lifecycleState = enterManagedDeploymentRepair(lifecycleState);
       continue;
     }
-    throw new Error(
-      "Managed MCP Agent turn completed without a control notification."
-    );
+    completionRequiredTurns += 1;
+    lifecycleState =
+      await continueManagedDeploymentAfterMissingControlNotification({
+        attempt: completionRequiredTurns,
+        applying,
+        lifecycleState,
+        taskId: input.task.id,
+      });
   }
 }
 

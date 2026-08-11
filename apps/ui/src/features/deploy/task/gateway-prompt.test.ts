@@ -32,6 +32,7 @@ test("managed gateway turns use the MCP control contract for every resume mode",
     "initial",
     "input-submitted",
     "repair",
+    "completion-required",
   ];
 
   for (const resumeMode of resumeModes) {
@@ -64,6 +65,14 @@ test("managed gateway turns use the MCP control contract for every resume mode",
       assert.ok(
         prompt.includes("Resume from the existing workspace and Thread")
       );
+    }
+    if (resumeMode === "completion-required") {
+      assert.ok(
+        prompt.includes(
+          "previous turn ended without a Brain control notification"
+        )
+      );
+      assert.ok(prompt.includes("do not restart source analysis"));
     }
     if (resumeMode === "initial") {
       assert.ok(prompt.includes("run /sealos-deploy"));

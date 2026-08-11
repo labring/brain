@@ -1,6 +1,10 @@
 import type { DeployTaskRow } from "./schema";
 
-export type ManagedDeployResumeMode = "initial" | "input-submitted" | "repair";
+export type ManagedDeployResumeMode =
+  | "initial"
+  | "input-submitted"
+  | "repair"
+  | "completion-required";
 
 function gatewaySourcePromptLines(task: DeployTaskRow): string[] {
   switch (task.source.kind) {
@@ -45,12 +49,15 @@ export function buildManagedGatewayPrompt(input: {
     input.resumeMode === "repair"
       ? "This is an in-place repair of the deployment this task already created, not a new deployment. Use SEALAI_PROJECT_ID, the previous Template API result, existing .sealos state, and live project-labeled resources to identify the original Instance. Preserve its concrete app name, random suffix, public host, databases, PVCs, and other resource identities. If SEALAI_INPUTS_PATH exists, reuse it only through the deploy helper; do not ask for or invent replacement values. Do not call the raw Template API to create another Instance, restart the fresh DEPLOY pipeline, or re-evaluate identity-bearing random() defaults. Rebuild images and use kubectl apply, patch, or rollout operations to converge the existing resources. If you cannot identify exactly one original deployment, keep diagnosing and fail this task rather than create a replacement deployment."
       : null,
+    input.resumeMode === "completion-required"
+      ? "The previous turn ended without a Brain control notification. Continue this same deployment Thread now; do not restart source analysis, create another Instance, or finish with a text response. Inspect the deployment work already performed, run the required runtime checks, and call deployment_completed with the actual workload references. Keep working until Brain returns accepted_stop or repair."
+      : null,
     "After apply, perform real readiness and runtime-truth checks yourself. If anything fails, inspect Pod status, Events, describe output, and logs; fix it, re-apply, and verify again as many times as needed. The single hard limit is SEALAI_TURN_DEADLINE_AT; there is no per-turn or per-repair limit.",
     input.repairFindings?.length
       ? `Brain final readiness findings from the previous turn: ${JSON.stringify(input.repairFindings.slice(0, 64))}`
       : null,
     "Only after your own deployment checks pass, call deployment_completed with the actual workload resource references you just deployed (apiVersion, kind, name, namespace). When the deployment exposes a public URL, include it as publicUrl. Brain treats the references only as lookup targets, performs a small Ready check, and probes publicUrl for a 2xx response when provided. If Brain returns repair, use its findings as evidence, diagnose and repair yourself, then call deployment_completed again. If Brain returns accepted_stop, end the turn successfully.",
-    "The only Brain control tools you may call are template_ready and deployment_completed. Do not ask Brain to apply, patch, delete, exec, read logs, or debug.",
+    "The only Brain control tools you may call are template_ready and deployment_completed. A control-tool error is recoverable: diagnose the reported error, retry the same control step, and do not end the turn until the required control notification succeeds. Do not ask Brain to apply, patch, delete, exec, read logs, or debug.",
     input.resumeMode === "initial"
       ? "Start from the source repository and run /sealos-deploy to completion."
       : "Resume from the existing workspace and Thread. Preserve completed work and the actual resources already created; do not restart source analysis.",

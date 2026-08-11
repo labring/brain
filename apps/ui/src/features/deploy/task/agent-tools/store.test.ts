@@ -158,6 +158,38 @@ describe("deployment Agent durable tool inbox", () => {
     expect(result.response?.decision).toBe("accepted_stop");
   });
 
+  it("returns a transiently failed call to the durable inbox", async () => {
+    const { task } = await activeMcpTask("agent-retry-task");
+    await store.enqueueAgentToolCall({
+      callId: "call-retry",
+      request: {},
+      task,
+      toolName: "deployment_completed",
+    });
+    const claimed = await store.claimNextAgentToolCall({
+      claimOwner: "proc-retry:3",
+      leaseEpoch: task.leaseEpoch,
+      taskId: task.id,
+    });
+
+    expect(claimed?.attempt).toBe(1);
+    expect(
+      await store.retryAgentToolCall({
+        callId: "call-retry",
+        claimOwner: "proc-retry:3",
+        taskId: task.id,
+      })
+    ).toBe(true);
+
+    const retried = await store.claimNextAgentToolCall({
+      claimOwner: "proc-retry:3",
+      leaseEpoch: task.leaseEpoch,
+      taskId: task.id,
+    });
+    expect(retried?.state).toBe("running");
+    expect(retried?.attempt).toBe(2);
+  });
+
   it("takes over a stale pending call from an older lease", async () => {
     const { task } = await activeMcpTask("agent-failover-pending-task");
     await store.enqueueAgentToolCall({
