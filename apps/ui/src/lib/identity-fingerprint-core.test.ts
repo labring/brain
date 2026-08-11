@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PGlite } from "@electric-sql/pglite";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
@@ -17,6 +17,7 @@ import {
   githubOauthConnections,
   identityFingerprints,
 } from "@/features/chat/persistence/schema";
+import { onboardingProfiles } from "@/features/onboarding/schema";
 
 import {
   createIdentityFingerprintStore,
@@ -375,6 +376,145 @@ test("a merge re-keys pending current-generation authorization sessions and leav
       workspaceActor: "session-cr",
     },
   ]);
+});
+
+// Full rows, so any field-level answer merging shows up in the deepEqual.
+function selectProfiles(userUids: string[]) {
+  return db
+    .select()
+    .from(onboardingProfiles)
+    .where(inArray(onboardingProfiles.userUid, userUids))
+    .orderBy(onboardingProfiles.userUid);
+}
+
+async function observeCapturingTelemetry(
+  binding: Parameters<typeof observe>[0]
+): Promise<Record<string, unknown> | undefined> {
+  const infoCalls: unknown[][] = [];
+  const originalInfo = console.info;
+  console.info = (...args: unknown[]) => {
+    infoCalls.push(args);
+  };
+  try {
+    assert.deepEqual(await observe(binding), { outcome: "merge" });
+  } finally {
+    console.info = originalInfo;
+  }
+  return infoCalls.find(
+    (args) =>
+      args[0] === "[telemetry] account merge re-keyed personal resources"
+  )?.[1] as Record<string, unknown> | undefined;
+}
+
+test("a merge re-keys the tombstone's onboarding profile when the survivor holds none", async () => {
+  // ADR-0061: the profile is keyed by the bare uid, and updatedAt doubles as
+  // the terminal timestamp — a re-key must not touch it.
+  const terminalUpdatedAt = new Date("2026-06-20T08:00:00Z");
+  await observe({
+    crName: "profile-cr",
+    mintedAt: 7000,
+    userUid: "profile-tombstone-uid",
+  });
+  const tombstoneCreatedAt = new Date("2026-06-20T07:00:00Z");
+  await db.insert(onboardingProfiles).values({
+    createdAt: tombstoneCreatedAt,
+    dismissedAtStep: 2,
+    roleType: "founder",
+    status: "dismissed",
+    updatedAt: terminalUpdatedAt,
+    userUid: "profile-tombstone-uid",
+  });
+
+  const telemetry = await observeCapturingTelemetry({
+    crName: "profile-cr",
+    mintedAt: 8000,
+    userUid: "profile-survivor-uid",
+  });
+
+  // Only the key moved: every other column, answered or not, is verbatim.
+  assert.deepEqual(
+    await selectProfiles(["profile-tombstone-uid", "profile-survivor-uid"]),
+    [
+      {
+        createdAt: tombstoneCreatedAt,
+        dismissedAtStep: 2,
+        openGoalText: null,
+        priorityDisplayOrder: null,
+        priorityOtherText: null,
+        priorityTags: null,
+        roleOtherText: null,
+        roleType: "founder",
+        status: "dismissed",
+        updatedAt: terminalUpdatedAt,
+        usageContext: null,
+        usageOtherText: null,
+        userUid: "profile-survivor-uid",
+      },
+    ]
+  );
+  assert.equal(telemetry?.profilesRekeyed, 1);
+  assert.equal(telemetry?.profilesReleased, 0);
+});
+
+test("where both merged accounts hold a profile, the survivor's row wins and the tombstone's is deleted", async () => {
+  await observe({
+    crName: "profile-both-cr",
+    mintedAt: 9000,
+    userUid: "both-tombstone-uid",
+  });
+  // The tombstone answered everything; the survivor answered nothing. Any
+  // field-level merging would surface as a non-null answer column below.
+  const survivorTouchedAt = new Date("2026-06-21T09:00:00Z");
+  await db.insert(onboardingProfiles).values([
+    {
+      openGoalText: "migrate the studio's client apps",
+      priorityDisplayOrder: ["low_cost", "stability", "other"],
+      priorityOtherText: "compliance",
+      priorityTags: ["stability", "other"],
+      roleOtherText: "agency owner",
+      roleType: "other",
+      status: "completed",
+      usageContext: "team_or_client",
+      usageOtherText: "client work",
+      userUid: "both-tombstone-uid",
+    },
+    {
+      createdAt: survivorTouchedAt,
+      dismissedAtStep: 1,
+      status: "dismissed",
+      updatedAt: survivorTouchedAt,
+      userUid: "both-survivor-uid",
+    },
+  ]);
+
+  const telemetry = await observeCapturingTelemetry({
+    crName: "profile-both-cr",
+    mintedAt: 9500,
+    userUid: "both-survivor-uid",
+  });
+
+  assert.deepEqual(
+    await selectProfiles(["both-tombstone-uid", "both-survivor-uid"]),
+    [
+      {
+        createdAt: survivorTouchedAt,
+        dismissedAtStep: 1,
+        openGoalText: null,
+        priorityDisplayOrder: null,
+        priorityOtherText: null,
+        priorityTags: null,
+        roleOtherText: null,
+        roleType: null,
+        status: "dismissed",
+        updatedAt: survivorTouchedAt,
+        usageContext: null,
+        usageOtherText: null,
+        userUid: "both-survivor-uid",
+      },
+    ]
+  );
+  assert.equal(telemetry?.profilesRekeyed, 0);
+  assert.equal(telemetry?.profilesReleased, 1);
 });
 
 test("a write-transaction re-check passes only while the binding is current", async () => {

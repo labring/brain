@@ -296,6 +296,7 @@ test("reading another member's conversation is indistinguishable from a missing 
   const missingBody = await missing.json();
   assert.deepEqual(foreignBody, missingBody);
   assert.deepEqual(missingBody, {
+    code: "assistant_conversation_not_found",
     error: "Assistant conversation not found.",
   });
 });

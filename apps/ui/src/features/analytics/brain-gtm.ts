@@ -57,12 +57,37 @@ interface BrainGtmCardActionEvent {
   project_id: string;
 }
 
+/** The sampling dialog's 4 steps; the dialog's appearance counts as step 1. */
+export type BrainGtmOnboardingStep = 1 | 2 | 3 | 4;
+
+// The three onboarding funnel events carry step numbers only (spec #88):
+// answer values, free text, and user IDs have no fields to travel in, so the
+// privacy rule is enforced by the closed union rather than by discipline.
+
+export interface BrainGtmOnboardingStepViewEvent {
+  event: "onboarding_step_view";
+  step: BrainGtmOnboardingStep;
+}
+
+export interface BrainGtmOnboardingSkipEvent {
+  event: "onboarding_skip";
+  /** The step the person left from. */
+  step: BrainGtmOnboardingStep;
+}
+
+export interface BrainGtmOnboardingCompleteEvent {
+  event: "onboarding_complete";
+}
+
 export type BrainGtmEvent =
   | BrainGtmCardActionEvent
   | BrainGtmDeploymentCreateEvent
   | BrainGtmDeploymentDeleteEvent
   | BrainGtmDeploymentStartEvent
-  | BrainGtmModuleViewEvent;
+  | BrainGtmModuleViewEvent
+  | BrainGtmOnboardingCompleteEvent
+  | BrainGtmOnboardingSkipEvent
+  | BrainGtmOnboardingStepViewEvent;
 
 export interface BrainGtmSessionStorage {
   getItem: (key: string) => string | null;

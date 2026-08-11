@@ -494,6 +494,62 @@ The per-cluster, OpenAI-compatible gateway (Sealos `aiproxy`) serving user-bille
 
 _Avoid_: model provider, LLM backend, system token, platform key.
 
+## Onboarding
+
+### Onboarding Profile
+
+The per-person survey record captured by the first-entry sampling dialog
+(the user understanding loop). An Onboarding Profile belongs to the bare
+global `userUid` — Brain's only namespace-less personal resource — so one
+person holds at most one profile per region, regardless of workspaces
+(ADR-0061).
+
+_Avoid_: first-login record, workspace profile, per-workspace survey, user cohort row.
+
+### Sampled
+
+The terminal predicate on an Onboarding Profile: a person is Sampled once a
+completed or dismissed record exists, and the sampling dialog never shows
+again. Anything short of a terminal record — including an abandoned
+mid-survey attempt — leaves the person Unsampled, and the predicate is
+re-judged on every entry.
+
+_Avoid_: has logged in before, first-login flag, seen-dialog cookie, survey done.
+
+### Terminal Snapshot
+
+The full set of confirmed answers a survey session carries on its terminal
+action (submit or skip), making the resulting Sampled record complete on
+its own — it never depends on the per-step best-effort saves having
+survived. Only answers the person confirmed by advancing are part of the
+snapshot; an unconfirmed selection or unsubmitted draft is not. A snapshot
+never erases previously saved answers it does not itself carry.
+
+_Avoid_: final sync, answer replay, batched answers, form dump.
+
+### Onboarding Gate
+
+The client-side judgment that decides whether the sampling dialog appears
+for the current person. The Gate is opportunistic and non-blocking: the
+console always renders, and the dialog appears only on a definitive
+Unsampled verdict. Any unknown outcome — credentials never arriving, a
+failed or unresolved status check — means the Gate silently stands down
+until the next entry. Sampling is never bought at the cost of console
+access.
+
+_Avoid_: login wall, blocking splash, mandatory interstitial, onboarding redirect.
+
+### Cohort Tag
+
+The stable machine-readable enum value recorded for a survey answer (e.g.
+`real_business`), decoupled from display copy so a copy revision never
+splits a cohort. Only first-order answers — what the person actually
+selected or typed — are recorded as Cohort Tags; derived interpretations
+(business intent, company context) are read-time computations and are never
+stored.
+
+_Avoid_: raw answer text, display label, derived segment column, business intent field.
+
 ## Design System
 
 ### Component Registry

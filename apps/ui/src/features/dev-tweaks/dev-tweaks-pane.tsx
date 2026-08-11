@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { createPortal } from "react-dom";
 
 import {
   type DevTweakDef,
@@ -62,10 +63,14 @@ export function DevTweaksPane() {
     return null;
   }
 
-  return (
+  // Portaled to <body> at z-[60] so it stacks above every popup layer —
+  // dialogs sit at z-[51] and their pointer-blocking internal backdrop at
+  // z-auto, so a debug pane rendered in-tree gets buried and its knobs
+  // (e.g. the onboarding forceModal switch) become unreachable.
+  return createPortal(
     <aside
       aria-label="Dev tweaks"
-      className="fixed top-16 right-4 z-50 flex max-h-[calc(100dvh-5rem)] w-80 flex-col overflow-hidden rounded-xl border bg-popover/95 text-popover-foreground shadow-xl backdrop-blur-sm"
+      className="fixed top-16 right-4 z-[60] flex max-h-[calc(100dvh-5rem)] w-80 flex-col overflow-hidden rounded-xl border bg-popover/95 text-popover-foreground shadow-xl backdrop-blur-sm"
     >
       <header className="flex items-center gap-1 border-b px-3 py-2">
         <h2 className="flex-1 truncate font-medium text-xs">Dev tweaks</h2>
@@ -101,7 +106,8 @@ export function DevTweaksPane() {
       <footer className="border-t px-3 py-1.5 text-muted-foreground text-xs">
         ⌃⌥T toggles this pane
       </footer>
-    </aside>
+    </aside>,
+    document.body
   );
 }
 
