@@ -58,6 +58,7 @@ test("resume refreshes the Plan lifecycle state", async () => {
                 lifecycle: "active",
               },
             }));
+            return undefined;
           }}
           snapshot={snapshot}
         />

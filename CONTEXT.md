@@ -572,6 +572,12 @@ A platform-defined subscription offering — name, price, cycle, and included re
 
 _Avoid_: tier, package, chat plan, pricing row.
 
+### Plan Picker
+
+The plan selection surface: Subscription Plan cards plus the additional-plans selector, shown identically wherever the user chooses a plan — the Pricing view's plans area and the Plan view's plan-change dialog render the same picker. Choosing an actionable plan hands off to checkout (quote, downgrade confirmation, or payment wait); the picker itself never takes payment. On Pricing, the plans area may sit under a multi-option view switcher (for example when metered price table and calculator are available) or be the only Pricing content with no switcher chrome.
+
+_Avoid_: plan catalog, plan list, plan cards section, Subscription plans tab (as the name of the surface).
+
 ### Workspace Subscription
 
 The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade) and its most recent transaction. A workspace has at most one; a workspace without one is Pay-As-You-Go. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.

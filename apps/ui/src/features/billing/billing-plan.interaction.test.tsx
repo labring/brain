@@ -71,6 +71,7 @@ test("upgrade mode opens the plan workflow and is consumed from the URL", async 
               kubeconfig: "apiVersion: v1",
             }}
             currency="usd"
+            gpuEnabled
             initialMode="upgrade"
             onRefreshSnapshot={() => Promise.resolve(SNAPSHOT)}
             replaceUrl={(url) => replacements.push(url)}
@@ -123,6 +124,7 @@ test("Stripe return refreshes before congratulations and clears on close", async
               kubeconfig: "apiVersion: v1",
             }}
             currency="usd"
+            gpuEnabled
             onRefreshSnapshot={(workspaceId) => {
               events.push(`refresh:${workspaceId}`);
               return Promise.resolve(refreshedSnapshot);

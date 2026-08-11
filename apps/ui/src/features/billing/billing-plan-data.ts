@@ -76,6 +76,10 @@ export interface BillingPlanSnapshot {
 
 export type SubscriptionLifecycleAction = "canceled" | "resumed";
 
+export type SubscriptionLifecycleOutcome =
+  | { ok: true }
+  | { ok: false; message: string };
+
 interface BillingPlanLoaderDependencies {
   fetch?: BillingFetch;
   now?: () => Date;

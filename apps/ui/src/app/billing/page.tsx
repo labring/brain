@@ -1,7 +1,10 @@
 import BillingPlan, {
   type BillingStripeReturn,
 } from "@/features/billing/billing-plan";
-import { getBillingCurrency } from "@/features/billing/config";
+import {
+  getBillingCurrency,
+  getBillingGpuEnabled,
+} from "@/features/billing/config";
 
 type BillingPageSearchParams = Record<string, string | string[] | undefined>;
 
@@ -30,6 +33,7 @@ export default async function BillingPlanPage({
   return (
     <BillingPlan
       currency={getBillingCurrency()}
+      gpuEnabled={getBillingGpuEnabled()}
       initialMode={initialMode}
       stripeReturn={stripeReturn}
     />
