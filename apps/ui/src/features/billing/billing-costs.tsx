@@ -32,11 +32,11 @@ const FIXTURE_SNAPSHOT: BillingCostsSnapshot = {
     {
       amount: 3_000_000,
       appName: "devbox-main",
-      appType: 8,
+      appType: 10,
       namespace: "ws-sealos-test",
     },
   ],
-  appTypes: { "8": "DevBox" },
+  appTypes: { "10": "DEV-BOX" },
   costPoints: [],
   payments: [
     {

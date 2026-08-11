@@ -1,6 +1,7 @@
 "use client";
 
 import { Skeleton } from "@workspace/ui/components/skeleton";
+import { WorkspaceAvatar } from "@workspace/ui/components/workspace-avatar";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   type ReactNode,
@@ -156,16 +157,6 @@ function DotGridBackdrop() {
       </pattern>
       <rect fill={`url(#${patternId})`} height="100%" width="100%" />
     </svg>
-  );
-}
-
-/** The workspace cards' 16px gradient dot, built from existing color tokens. */
-function WorkspaceDot() {
-  return (
-    <span
-      aria-hidden
-      className="size-4 shrink-0 rounded-full bg-linear-to-br from-blue-400 to-brand-primary"
-    />
   );
 }
 
@@ -515,7 +506,9 @@ function CostNodesCanvas({
           <CostScopeCard
             cost={workspace.cost}
             currency={currency}
-            icon={<WorkspaceDot />}
+            icon={
+              <WorkspaceAvatar className="size-4" workspaceId={workspace.id} />
+            }
             isLoading={isLoading}
             name={workspace.name}
             onClick={() =>

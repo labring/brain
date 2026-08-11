@@ -382,10 +382,14 @@ test("the per-app drawer uses the tab's active date range", async () => {
   });
 });
 
-test("app type fallbacks remain valid legacy query identifiers", () => {
-  assert.deepEqual(resolveBillingAppType(5, { "5": "DB" }), {
+test("app type codes resolve to display names but query with the code", () => {
+  assert.deepEqual(resolveBillingAppType(1, { "1": "DB" }), {
     queryAppType: "DB",
-    typeName: "DB",
+    typeName: "Database",
+  });
+  assert.deepEqual(resolveBillingAppType(12, { "12": "NEW-THING" }), {
+    queryAppType: "NEW-THING",
+    typeName: "NEW-THING",
   });
   assert.deepEqual(resolveBillingAppType(9, {}), {
     queryAppType: "9",
