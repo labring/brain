@@ -15,10 +15,27 @@ const LIFECYCLE_CLAIM_TTL_MS = 30_000;
 const LIFECYCLE_CONCURRENCY = 4;
 const LIFECYCLE_RETRY_DELAY_MS = 30_000;
 const LIFECYCLE_SWEEP_INTERVAL_MS = 30_000;
-const LIFECYCLE_WAIT_POLL_MS = 100;
+const LIFECYCLE_WAIT_INITIAL_MS = 100;
+const LIFECYCLE_WAIT_MAX_MS = 2000;
 
 function intervalFromMs(ms: number) {
   return sql`make_interval(secs => ${ms / 1000})`;
+}
+
+function waitWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 interface ChatDevboxLifecycleApi {
@@ -91,10 +108,13 @@ export async function recordChatDevboxActivity(
     runtimeName: string;
     upstreamId: string;
   },
-  db: AssistantPgDatabase = getAssistantDb()
+  db: AssistantPgDatabase = getAssistantDb(),
+  signal?: AbortSignal
 ): Promise<void> {
   const waitStartedAt = Date.now();
+  let waitMs = LIFECYCLE_WAIT_INITIAL_MS;
   while (true) {
+    signal?.throwIfAborted();
     const now = new Date();
     const changed = await db
       .insert(assistantDevboxRuntimes)
@@ -130,7 +150,12 @@ export async function recordChatDevboxActivity(
     if (Date.now() - waitStartedAt >= LIFECYCLE_ACTIVITY_WAIT_TIMEOUT_MS) {
       throw new Error("Timed out waiting for the Devbox cleanup lease");
     }
-    await new Promise((resolve) => setTimeout(resolve, LIFECYCLE_WAIT_POLL_MS));
+    const jitteredWaitMs = Math.max(
+      1,
+      Math.round(waitMs * (0.8 + Math.random() * 0.4))
+    );
+    await waitWithSignal(jitteredWaitMs, signal);
+    waitMs = Math.min(waitMs * 2, LIFECYCLE_WAIT_MAX_MS);
   }
 }
 

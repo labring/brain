@@ -258,12 +258,15 @@ async function ensureChatDevbox(
   const upstreamID = runtimeUpstreamId(runtimeHash);
   const pauseAt = getPauseAt();
 
-  await recordChatDevboxActivity({
-    namespace: authNamespace,
-    pauseDueAt: new Date(pauseAt),
-    runtimeName: name,
-    upstreamId: upstreamID,
-  });
+  await recordChatDevboxActivity(
+    {
+      namespace: authNamespace,
+      pauseDueAt: new Date(pauseAt),
+      runtimeName: name,
+      upstreamId: upstreamID,
+    },
+    signal
+  );
 
   const existing = (await listDevboxes(authNamespace, upstreamID, signal)).data
     .items[0];

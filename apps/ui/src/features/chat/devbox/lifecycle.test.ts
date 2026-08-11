@@ -269,3 +269,32 @@ test("activity waits for an in-flight delete claim before recreating the ledger"
   assert.equal(runtime?.deleteDueAt, null);
   assert.equal(runtime?.pauseDueAt.toISOString(), nextPause.toISOString());
 });
+
+test("activity cleanup wait honors request cancellation", async () => {
+  await clearRuntimes();
+  const currentNow = new Date();
+  await db.insert(assistantDevboxRuntimes).values({
+    cleanupLeaseExpiresAt: new Date(currentNow.getTime() + DAY_MS),
+    cleanupLeaseOwner: "active-cleanup",
+    namespace: "ns-test",
+    pauseDueAt: new Date(currentNow.getTime() - 1),
+    runtimeName: "runtime-f",
+    upstreamId: "upstream-f",
+  });
+  const controller = new AbortController();
+  const activity = recordChatDevboxActivity(
+    {
+      namespace: "ns-test",
+      pauseDueAt: new Date(currentNow.getTime() + 5 * 60 * 60_000),
+      runtimeName: "runtime-f",
+      upstreamId: "upstream-f",
+    },
+    db,
+    controller.signal
+  );
+
+  setTimeout(() => controller.abort(), 10);
+  await assert.rejects(activity, (error: unknown) => {
+    return error instanceof DOMException && error.name === "AbortError";
+  });
+});
