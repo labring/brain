@@ -6,16 +6,10 @@ import { BillingCostCharts } from "./billing-cost-charts";
 import { BillingCostsSurface } from "./billing-costs";
 import { formatBillingDateTime } from "./billing-datetime";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
+import { BillingPlanPicker } from "./billing-plan-picker";
 import { BillingPlanSurface } from "./billing-plan-surface";
-import {
-  BillingPlanCatalog,
-  BillingPriceTable,
-  BillingPricingSurface,
-} from "./billing-pricing";
-import type {
-  BillingPricingPlan,
-  BillingPricingSnapshot,
-} from "./billing-pricing-data";
+import { BillingPriceTable, BillingPricingSurface } from "./billing-pricing";
+import type { BillingPricingSnapshot } from "./billing-pricing-data";
 import { BillingNavigationFrame } from "./billing-tab-shell";
 import { BillingUsageSurface } from "./billing-usage";
 import type { BillingUsageSnapshot } from "./billing-usage-data";
@@ -512,6 +506,7 @@ test("Pricing preserves Cost Center's three pricing information layers", () => {
     <BillingPricingSurface
       currency="usd"
       gpuEnabled={false}
+      planSnapshot={CANCELLING_PLAN}
       snapshot={PRICING_SNAPSHOT}
     />
   );
@@ -521,29 +516,73 @@ test("Pricing preserves Cost Center's three pricing information layers", () => {
     "Price table",
     "Price calculator",
   ]);
+  assertIncludes(html, "Choose Your Workspace Plan");
+  assertIncludes(html, 'data-slot="billing-plan-picker"');
+  assertIncludes(html, 'aria-label="Pricing views"');
 });
 
-test("Pricing hides metered views for subscription workspaces", () => {
+test("Pricing hides the view switcher when only subscription plans are available", () => {
   const html = renderToStaticMarkup(
     <BillingPricingSurface
       currency="usd"
       gpuEnabled
+      planSnapshot={CANCELLING_PLAN}
       snapshot={{ ...PRICING_SNAPSHOT, isPayg: false }}
     />
   );
 
-  assertIncludes(html, "Subscription plans");
+  assertIncludes(html, "Choose Your Workspace Plan");
+  assertIncludes(html, 'data-slot="billing-plan-picker"');
+  assert.equal(html.includes('aria-label="Pricing views"'), false);
+  assert.equal(html.includes("Subscription plans"), false);
   assert.equal(html.includes("Price table"), false);
   assert.equal(html.includes("Price calculator"), false);
 });
 
-test("Pricing renders cluster currency and filters GPU catalog and price rows", () => {
+test("Pricing surfaces a plans-area error state when the plan snapshot fails", () => {
+  const html = renderToStaticMarkup(
+    <BillingPricingSurface
+      currency="usd"
+      gpuEnabled={false}
+      planSnapshotError={new Error("account-service is down")}
+      snapshot={PRICING_SNAPSHOT}
+    />
+  );
+
+  assertIncludes(html, "Choose Your Workspace Plan");
+  assertIncludes(html, "Subscription plans are unavailable.");
+  assertIncludes(html, "account-service is down");
+  assert.equal(html.includes('data-slot="billing-plan-picker"'), false);
+});
+
+const PICKER_PLANS: BillingPlanSnapshot["plans"] = [
+  {
+    changeKind: "upgrade",
+    description: "For personal projects",
+    id: "plan-starter",
+    isCurrent: false,
+    name: "Starter",
+    order: 1,
+    priceMicroUnits: 5_000_000,
+    resources: [
+      { label: "CPU", type: "cpu", value: "2" },
+      { label: "Memory", type: "memory", value: "4Gi" },
+      { label: "GPU", type: "gpu", value: "1" },
+    ],
+  },
+];
+
+test("Pricing renders cluster currency and filters GPU picker and price rows", () => {
   const withoutGpu = renderToStaticMarkup(
     <>
-      <BillingPlanCatalog
+      <BillingPlanPicker
+        actionable
         currency="cny"
         gpuEnabled={false}
-        plans={PRICING_SNAPSHOT.plans}
+        inDebt={false}
+        onOpenUrl={() => undefined}
+        pendingDowngradePlanName={null}
+        plans={PICKER_PLANS}
       />
       <BillingPriceTable
         currency="cny"
@@ -559,15 +598,19 @@ test("Pricing renders cluster currency and filters GPU catalog and price rows", 
   assertIncludes(withoutGpu, "Price (¥)");
   assertIncludes(withoutGpu, "0.010000");
   assert.equal(withoutGpu.includes("NVIDIA A100"), false);
-  assert.equal(withoutGpu.includes(">GPU<"), false);
+  assert.equal(withoutGpu.includes("1 GPU"), false);
   assert.equal(withoutGpu.includes("GPU Price Table"), false);
 
   const withGpu = renderToStaticMarkup(
     <>
-      <BillingPlanCatalog
+      <BillingPlanPicker
+        actionable
         currency="usd"
         gpuEnabled
-        plans={PRICING_SNAPSHOT.plans}
+        inDebt={false}
+        onOpenUrl={() => undefined}
+        pendingDowngradePlanName={null}
+        plans={PICKER_PLANS}
       />
       <BillingPriceTable
         currency="usd"
@@ -582,10 +625,18 @@ test("Pricing renders cluster currency and filters GPU catalog and price rows", 
   assertTextOrder(withGpu, ["Basic Pricing", "GPU Price Table", "NVIDIA A100"]);
 });
 
-test("Pricing preserves main and additional subscription plan catalog behavior", () => {
-  const basePlan = PRICING_SNAPSHOT.plans[0];
+test("Plan Picker splits cards from the more-plans selector like the dialog", () => {
+  const basePlan = PICKER_PLANS[0];
   assert.ok(basePlan);
-  const plans: BillingPricingPlan[] = [
+  const plans: BillingPlanSnapshot["plans"] = [
+    {
+      ...basePlan,
+      changeKind: null,
+      id: "free",
+      isCurrent: true,
+      name: "Free",
+      order: 0,
+    },
     {
       ...basePlan,
       id: "hobby",
@@ -595,9 +646,9 @@ test("Pricing preserves main and additional subscription plan catalog behavior",
     {
       ...basePlan,
       id: "standard",
-      monthlyOriginalPriceMicroUnits: 8_000_000,
       name: "Standard",
       order: 2,
+      originalPriceMicroUnits: 8_000_000,
     },
     {
       ...basePlan,
@@ -615,13 +666,7 @@ test("Pricing preserves main and additional subscription plan catalog behavior",
     },
     {
       ...basePlan,
-      id: "enterprise",
-      name: "Enterprise",
-      order: 5,
-      tags: ["more"],
-    },
-    {
-      ...basePlan,
+      description: "https://contact.example.test",
       id: "customized",
       name: "Customized",
       order: 0,
@@ -629,21 +674,34 @@ test("Pricing preserves main and additional subscription plan catalog behavior",
     },
   ];
   const html = renderToStaticMarkup(
-    <BillingPlanCatalog currency="usd" gpuEnabled={false} plans={plans} />
+    <BillingPlanPicker
+      actionable
+      currency="usd"
+      gpuEnabled={false}
+      inDebt={false}
+      onOpenUrl={() => undefined}
+      pendingDowngradePlanName={null}
+      plans={plans}
+    />
   );
 
-  assertTextOrder(html, ["Hobby", "Standard", "More plans", "Pro", "Team"]);
+  // Free never renders as a card; Hobby and Standard do, with the Standard
+  // card carrying the badge and the discounted price pair.
+  assertTextOrder(html, ["Hobby", "Standard"]);
+  assert.equal(html.includes(">Free<"), false);
   for (const text of [
     "Most Popular",
     "$8.00",
+    "$5.00",
     "Priority Support",
     "All Hobby Features",
     "99.99% SLA",
-    "24/7 Dedicated Support",
-    "Custom Contracts",
+    'aria-label="More plans"',
   ]) {
     assertIncludes(html, text);
   }
-  assert.equal(html.includes("Customized"), false);
-  assert.equal(html.includes("Enterprise"), false);
+  // The selector defaults to the first purchasable "more" plan (Pro), whose
+  // action stays alongside; the contact-jump entry is not the default.
+  assertTextOrder(html, ["More plans", "Pro"]);
+  assertIncludes(html, "Upgrade");
 });

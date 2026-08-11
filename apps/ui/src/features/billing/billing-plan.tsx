@@ -36,6 +36,7 @@ import {
   createSubscriptionPlanPayment,
   loadBillingPlanSnapshot,
   type SubscriptionLifecycleAction,
+  type SubscriptionLifecycleOutcome,
   updateSubscriptionLifecycle,
 } from "@/features/billing/billing-plan-data";
 import { BillingPlanSurface } from "@/features/billing/billing-plan-surface";
@@ -54,10 +55,13 @@ interface BillingPlanWorkflowProps {
   cardManagementPending?: boolean;
   credentials: BillingCredentials;
   currency: BillingCurrency;
+  gpuEnabled: boolean;
   initialMode?: "upgrade" | null;
   invoiceCancellationPending?: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
-  onLifecycleAction?: (operator: SubscriptionLifecycleAction) => void;
+  onLifecycleAction?: (
+    operator: SubscriptionLifecycleAction
+  ) => Promise<SubscriptionLifecycleOutcome> | undefined;
   onManageCard?: () => void;
   onRefreshSnapshot: (workspaceId?: string) => Promise<BillingPlanSnapshot>;
   onRenew?: () => void;
@@ -82,6 +86,7 @@ export function BillingPlanWorkflow({
   cardManagementPending = false,
   credentials,
   currency,
+  gpuEnabled,
   initialMode = null,
   invoiceCancellationPending = false,
   onCancelInvoice,
@@ -139,18 +144,22 @@ export function BillingPlanWorkflow({
       stripeRefreshRef.current = refresh;
     }
 
-    setPlanDialogOpen(false);
-    setSelectedPlanId(null);
     let active = true;
     refresh.request
       .then((nextSnapshot) => {
         if (active) {
           stripeAcknowledgedKeyRef.current = key;
+          // Close and open in the same commit: the plan dialog's backdrop
+          // hands off to the congratulations one without a bright gap.
+          setPlanDialogOpen(false);
+          setSelectedPlanId(null);
           setCongratulationsSnapshot(nextSnapshot);
         }
       })
       .catch((error: unknown) => {
         if (active) {
+          setPlanDialogOpen(false);
+          setSelectedPlanId(null);
           toastErrorDetail(
             "Payment succeeded, but the Plan could not be refreshed.",
             errorDescription(
@@ -202,6 +211,7 @@ export function BillingPlanWorkflow({
       <BillingPlanChangeDialog
         credentials={credentials}
         currency={currency}
+        gpuEnabled={gpuEnabled}
         onManageCard={onManageCard}
         onOpenChange={handlePlanDialogOpenChange}
         onSelectedPlanChange={setSelectedPlanId}
@@ -284,10 +294,12 @@ function accountBalanceContent(input: {
 
 export default function BillingPlan({
   currency,
+  gpuEnabled,
   initialMode = null,
   stripeReturn = null,
 }: {
   currency: BillingCurrency;
+  gpuEnabled: boolean;
   initialMode?: "upgrade" | null;
   stripeReturn?: BillingStripeReturn | null;
 }) {
@@ -327,9 +339,11 @@ export default function BillingPlan({
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
-  const updateLifecycle = async (operator: SubscriptionLifecycleAction) => {
+  const updateLifecycle = async (
+    operator: SubscriptionLifecycleAction
+  ): Promise<SubscriptionLifecycleOutcome> => {
     if (snapshot == null || actionPending != null) {
-      return;
+      return { ok: false, message: "The subscription could not be updated." };
     }
 
     const { current } = snapshot;
@@ -350,13 +364,17 @@ export default function BillingPlan({
           ? "Subscription cancellation scheduled."
           : "Subscription resumed."
       );
+      return { ok: true };
     } catch (error) {
-      toastErrorDetail(
-        operator === "canceled"
-          ? "Could not cancel subscription."
-          : "Could not resume subscription.",
-        errorDescription(error, "The subscription could not be updated.")
+      const message = errorDescription(
+        error,
+        "The subscription could not be updated."
       );
+      // Cancel failures render inline in the confirm dialog, which stays open.
+      if (operator !== "canceled") {
+        toastErrorDetail("Could not resume subscription.", message);
+      }
+      return { message, ok: false };
     } finally {
       setActionPending(null);
     }
@@ -532,6 +550,7 @@ export default function BillingPlan({
       cardManagementPending={cardManagementPending}
       credentials={{ appToken, kubeconfig }}
       currency={currency}
+      gpuEnabled={gpuEnabled}
       initialMode={initialMode}
       invoiceCancellationPending={invoiceCancellationPending}
       onCancelInvoice={cancelInvoice}

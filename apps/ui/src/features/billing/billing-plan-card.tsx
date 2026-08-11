@@ -18,29 +18,49 @@ import type { BillingCurrency } from "@/features/billing/config-core";
 // recipe — Free and Starter included, per the pricing design — keep the
 // neutral card: input/30 fill and a plain border.
 const PRO_CARD_RECIPE = {
-  card: "from-tier-pro-from/12 to-tier-pro-to/12 before:from-tier-pro-from before:to-tier-pro-to",
+  ring: "before:from-tier-pro-from before:to-tier-pro-to",
   text: "bg-linear-to-r from-tier-pro-from to-tier-pro-to bg-clip-text text-transparent",
+  wash: "from-tier-pro-from/12 to-tier-pro-to/12",
 };
 const ENTERPRISE_CARD_RECIPE = {
-  card: "from-tier-enterprise-from/12 to-tier-enterprise-to/12 before:from-tier-enterprise-from before:to-tier-enterprise-to",
+  ring: "before:from-tier-enterprise-from before:to-tier-enterprise-to",
   text: "bg-linear-to-r from-tier-enterprise-from to-tier-enterprise-to bg-clip-text text-transparent",
+  wash: "from-tier-enterprise-from/12 to-tier-enterprise-to/12",
 };
-const PLAN_CARD_RECIPES: Record<string, { card: string; text: string }> = {
+export interface PlanCardRecipe {
+  /** Gradient stops for the masked stroke ring, `before:`-scoped. */
+  ring: string;
+  /** The tier gradient clipped into name and price text. */
+  text: string;
+  /** The tier gradient at 12% — pair with a `bg-linear-to-*` direction. */
+  wash: string;
+}
+const PLAN_CARD_RECIPES: Record<string, PlanCardRecipe> = {
   ENTERPRISE: ENTERPRISE_CARD_RECIPE,
   HOBBY: {
-    card: "from-tier-hobby-from/12 to-tier-hobby-to/12 before:from-tier-hobby-from before:to-tier-hobby-to",
+    ring: "before:from-tier-hobby-from before:to-tier-hobby-to",
     text: "bg-linear-to-r from-tier-hobby-from to-tier-hobby-to bg-clip-text text-transparent",
+    wash: "from-tier-hobby-from/12 to-tier-hobby-to/12",
   },
   PLUS: ENTERPRISE_CARD_RECIPE,
   PRO: PRO_CARD_RECIPE,
   STANDARD: PRO_CARD_RECIPE,
   TEAM: {
-    card: "from-tier-team-from/12 to-tier-team-to/12 before:from-tier-team-from before:to-tier-team-to",
+    ring: "before:from-tier-team-from before:to-tier-team-to",
     text: "bg-linear-to-r from-tier-team-from to-tier-team-to bg-clip-text text-transparent",
+    wash: "from-tier-team-from/12 to-tier-team-to/12",
   },
 };
 
+export function planCardRecipe(planName: string): PlanCardRecipe | null {
+  return PLAN_CARD_RECIPES[planName.trim().toUpperCase()] ?? null;
+}
+
 const CHECK_GRADIENT_ID = "billing-pricing-check-gradient";
+
+/** Stroke class wiring a CircleCheck to the shared svg gradient below. */
+export const PLAN_CHECK_STROKE =
+  "[stroke:url(#billing-pricing-check-gradient)]";
 
 /**
  * The svg gradient behind every plan-card spec check. Render once per surface
@@ -70,7 +90,7 @@ function PlanCardSpec({ children }: { children: ReactNode }) {
     <li className="flex items-center gap-2 text-muted-foreground">
       <CircleCheck
         aria-hidden
-        className="size-5 shrink-0 [stroke:url(#billing-pricing-check-gradient)]"
+        className={cn("size-5 shrink-0", PLAN_CHECK_STROKE)}
         strokeWidth={1.75}
       />
       <span>{children}</span>
@@ -105,7 +125,8 @@ export function BillingPlanCard({
           : cn(
               "border-transparent bg-linear-to-br",
               "before:pointer-events-none before:absolute before:-inset-px before:rounded-[inherit] before:bg-linear-to-b before:p-px before:content-[''] before:[mask:linear-gradient(#000_0_0)_content-box_exclude,linear-gradient(#000_0_0)]",
-              recipe.card
+              recipe.wash,
+              recipe.ring
             )
       )}
     >

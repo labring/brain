@@ -84,6 +84,7 @@ test("plan picker continues into the selected upgrade workflow", async () => {
             kubeconfig: "apiVersion: v1",
           }}
           currency="usd"
+          gpuEnabled
           onOpenChange={() => undefined}
           onSelectedPlanChange={setSelectedPlanId}
           onSubscriptionChanged={() => Promise.resolve()}
@@ -193,6 +194,7 @@ test("upgrade confirmation shows the quote before reserving checkout at click ti
           kubeconfig: "apiVersion: v1",
         }}
         currency="usd"
+        gpuEnabled
         onOpenChange={() => undefined}
         onSubscriptionChanged={() => Promise.resolve()}
         open
@@ -259,6 +261,7 @@ test("upgrade confirmation shows distinct promotion-code errors", async () => {
               kubeconfig: "apiVersion: v1",
             }}
             currency="usd"
+            gpuEnabled
             onOpenChange={() => undefined}
             onSubscriptionChanged={() => Promise.resolve()}
             open
@@ -307,6 +310,16 @@ test("upgrade confirmation shows distinct promotion-code errors", async () => {
         );
       });
 
+      // The promo input hides behind a disclosure link until asked for.
+      await act(() => {
+        const reveal = rendered?.getByRole("button", {
+          name: "Have a promo code?",
+        });
+        if (reveal != null) {
+          fireEvent.click(reveal);
+        }
+      });
+
       for (const [code, message] of [
         ["UNKNOWN", "was not found"],
         ["EXPIRED", "has expired"],
@@ -352,6 +365,7 @@ test("an exceeded target quota warns but never blocks the downgrade", async () =
               kubeconfig: "apiVersion: v1",
             }}
             currency="usd"
+            gpuEnabled
             onOpenChange={() => undefined}
             onSubscriptionChanged={() => Promise.resolve()}
             open
@@ -424,6 +438,7 @@ test("an allowed downgrade keeps the top-level single-tab checkout", async () =>
               kubeconfig: "apiVersion: v1",
             }}
             currency="usd"
+            gpuEnabled
             onOpenChange={() => undefined}
             onSubscriptionChanged={() => Promise.resolve()}
             open
@@ -496,6 +511,7 @@ test("upgrade waiting ignores other payments, polls, times out, reopens, and can
               kubeconfig: "apiVersion: v1",
             }}
             currency="usd"
+            gpuEnabled
             now={() => now}
             onOpenChange={(nextOpen) => events.push(`open:${String(nextOpen)}`)}
             onSubscriptionChanged={() => {
@@ -631,6 +647,7 @@ test("a PAYG workspace subscribes to a plan with the created operator", async ()
             kubeconfig: "apiVersion: v1",
           }}
           currency="usd"
+          gpuEnabled
           onOpenChange={() => undefined}
           onSelectedPlanChange={setSelectedPlanId}
           onSubscriptionChanged={() => Promise.resolve()}

@@ -5,6 +5,10 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
 import { Skeleton } from "@workspace/ui/components/skeleton";
+import {
+  SlidingToggle,
+  type SlidingToggleOption,
+} from "@workspace/ui/components/sliding-toggle";
 import { TableCell, TableHead, TableRow } from "@workspace/ui/components/table";
 import {
   TableLayout,
@@ -12,12 +16,6 @@ import {
   TableLayoutContent,
   TableLayoutHeadRow,
 } from "@workspace/ui/components/table-layout";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@workspace/ui/components/vercel-tabs";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import {
@@ -38,23 +36,21 @@ import useSWR from "swr";
 
 import {
   billingCurrencySymbol,
-  formatBillingAmount,
   formatPreciseBillingAmount,
   formatPreciseBillingNumber,
 } from "@/features/billing/billing-amount";
 import {
-  BillingPlanCard,
-  type BillingPlanCardState,
-  PlanCheckGradientDefs,
-  planCardAction,
-  planFeatures,
-} from "@/features/billing/billing-plan-card";
-import { BillingPlanChangeDialog } from "@/features/billing/billing-plan-change-dialog";
-import { loadBillingPlanSnapshot } from "@/features/billing/billing-plan-data";
+  BillingPlanCheckoutDialog,
+  planOperator,
+} from "@/features/billing/billing-plan-checkout-dialog";
+import {
+  type BillingPlanSnapshot,
+  loadBillingPlanSnapshot,
+} from "@/features/billing/billing-plan-data";
+import { BillingPlanPicker } from "@/features/billing/billing-plan-picker";
 import {
   type BillingMeteredPrice,
   type BillingPriceType,
-  type BillingPricingPlan,
   type BillingPricingSnapshot,
   loadBillingPricing,
 } from "@/features/billing/billing-pricing-data";
@@ -85,100 +81,74 @@ const PRICE_ICONS = {
   traffic: Network,
 } satisfies Record<BillingPriceType, LucideIcon>;
 
-export function BillingPlanCatalog({
+// The Pricing plans area is the Plan Picker — the same surface the Plan
+// view's plan-change dialog renders — fed by the plan snapshot rather than
+// the pricing catalog, so the two never drift apart.
+export function BillingPlanCatalogSection({
   currency,
   gpuEnabled,
   onSelectPlan,
-  planStates,
-  planStatesPending = false,
-  plans,
+  planSnapshot,
+  planSnapshotError,
+  planSnapshotLoading = false,
 }: {
   currency: BillingCurrency;
   gpuEnabled: boolean;
   onSelectPlan?: (planId: string) => void;
-  planStates?: ReadonlyMap<string, BillingPlanCardState>;
-  planStatesPending?: boolean;
-  plans: BillingPricingPlan[];
+  planSnapshot?: BillingPlanSnapshot | null;
+  planSnapshotError?: unknown;
+  planSnapshotLoading?: boolean;
 }) {
-  const mainPlans = plans
-    .filter((plan) => !plan.tags.includes("more"))
-    .slice()
-    .sort((left, right) => left.order - right.order);
-  const additionalPlans = plans
-    .filter((plan) => plan.tags.includes("more") && plan.name !== "Customized")
-    .slice()
-    .sort((left, right) => left.order - right.order)
-    .slice(0, 2);
-  const standardIndex = mainPlans.findIndex(
-    (plan) => plan.name.trim().toUpperCase() === "STANDARD"
-  );
-  const mostPopularIndex = standardIndex === -1 ? 1 : standardIndex;
+  let content: ReactNode;
+  if (planSnapshot != null) {
+    content = (
+      <BillingPlanPicker
+        actionable={planSnapshot.current.canManage}
+        currency={currency}
+        gpuEnabled={gpuEnabled}
+        inDebt={planSnapshot.current.lifecycle === "payment-due"}
+        onOpenUrl={(url) => {
+          window.open(url, "_blank", "noopener,noreferrer");
+        }}
+        onSelectPlan={onSelectPlan}
+        pendingDowngradePlanName={
+          planSnapshot.pendingDowngrade?.planName ?? null
+        }
+        plans={planSnapshot.plans}
+      />
+    );
+  } else if (planSnapshotLoading) {
+    content = (
+      <div
+        aria-label="Loading subscription plans"
+        className="flex flex-col gap-3"
+        role="status"
+      >
+        <Skeleton className="h-80 w-full" />
+      </div>
+    );
+  } else {
+    content = (
+      <div className="py-16 text-center" role="alert">
+        <p className="font-medium text-foreground">
+          Subscription plans are unavailable.
+        </p>
+        <p className="mt-1 text-muted-foreground text-sm">
+          {errorDescription(
+            planSnapshotError,
+            "The billing service could not be reached."
+          )}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <section className="pb-8" data-slot="billing-pricing-plan-catalog">
-      <PlanCheckGradientDefs />
       <h2 className="mb-4 font-medium text-foreground text-lg">
         Choose Your Workspace Plan
       </h2>
-      {plans.length === 0 ? (
-        <div className="border-border border-y py-12 text-center text-muted-foreground text-sm">
-          No subscription plans are available.
-        </div>
-      ) : (
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-3 lg:flex-row">
-            {mainPlans.map((plan, index) => (
-              <BillingPlanCard
-                action={planCardAction({
-                  onSelectPlan,
-                  plan,
-                  planStates,
-                  planStatesPending,
-                })}
-                currency={currency}
-                gpuEnabled={gpuEnabled}
-                key={plan.id}
-                mostPopular={index === mostPopularIndex}
-                plan={plan}
-              />
-            ))}
-          </div>
-
-          {additionalPlans.length > 0 ? (
-            <div>
-              <h3 className="mb-3 font-medium text-foreground">More plans</h3>
-              <div className="grid gap-3 md:grid-cols-2">
-                {additionalPlans.map((plan) => {
-                  const resourceSummary = plan.resources
-                    .filter((resource) => gpuEnabled || resource.type !== "gpu")
-                    .map((resource) => `${resource.value} ${resource.label}`);
-                  const details = [
-                    ...resourceSummary,
-                    ...planFeatures(plan.name),
-                  ].join(" + ");
-                  return (
-                    <article
-                      className="min-w-0 rounded-xl border border-border bg-input/30 p-4"
-                      key={plan.id}
-                    >
-                      <h4 className="font-medium text-foreground text-sm">
-                        {plan.name}
-                      </h4>
-                      <p className="mt-1 break-words text-muted-foreground text-xs">
-                        {details} -{" "}
-                        {formatBillingAmount(
-                          plan.primaryPriceMicroUnits,
-                          currency
-                        )}
-                      </p>
-                    </article>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      )}
+      {content}
     </section>
   );
 }
@@ -637,14 +607,39 @@ export function BillingCalculator({
   );
 }
 
+type BillingPricingView = "plans" | "table" | "calculator";
+
+const PRICING_VIEW_OPTIONS = {
+  plans: { label: "Subscription plans", value: "plans" },
+  table: { label: "Price table", value: "table" },
+  calculator: { label: "Price calculator", value: "calculator" },
+} as const satisfies Record<
+  BillingPricingView,
+  SlidingToggleOption<BillingPricingView>
+>;
+
+function pricingViewOptions(
+  isPayg: boolean
+): readonly SlidingToggleOption<BillingPricingView>[] {
+  if (isPayg) {
+    return [
+      PRICING_VIEW_OPTIONS.plans,
+      PRICING_VIEW_OPTIONS.table,
+      PRICING_VIEW_OPTIONS.calculator,
+    ];
+  }
+  return [PRICING_VIEW_OPTIONS.plans];
+}
+
 interface BillingPricingSurfaceProps {
   currency: BillingCurrency;
   error?: unknown;
   gpuEnabled: boolean;
   isLoading?: boolean;
   onSelectPlan?: (planId: string) => void;
-  planStates?: ReadonlyMap<string, BillingPlanCardState>;
-  planStatesPending?: boolean;
+  planSnapshot?: BillingPlanSnapshot | null;
+  planSnapshotError?: unknown;
+  planSnapshotLoading?: boolean;
   snapshot?: BillingPricingSnapshot;
 }
 
@@ -654,12 +649,13 @@ export function BillingPricingSurface({
   gpuEnabled,
   isLoading = false,
   onSelectPlan,
-  planStates,
-  planStatesPending = false,
+  planSnapshot,
+  planSnapshotError,
+  planSnapshotLoading = false,
   snapshot,
 }: BillingPricingSurfaceProps) {
   const [cycleIndex, setCycleIndex] = useState(0);
-  const [view, setView] = useState("plans");
+  const [view, setView] = useState<BillingPricingView>("plans");
 
   if (isLoading || snapshot == null) {
     return error == null ? (
@@ -668,7 +664,6 @@ export function BillingPricingSurface({
         className="flex flex-col gap-4"
         role="status"
       >
-        <Skeleton className="h-10 w-80" />
         <Skeleton className="h-72 w-full" />
       </div>
     ) : (
@@ -681,24 +676,28 @@ export function BillingPricingSurface({
     );
   }
 
+  const viewOptions = pricingViewOptions(snapshot.isPayg);
+  const activeView = viewOptions.some((option) => option.value === view)
+    ? view
+    : "plans";
+  const showSwitcher = viewOptions.length > 1;
+
   return (
-    <Tabs className="flex flex-col gap-5" onValueChange={setView} value={view}>
-      <TabsList aria-label="Pricing views">
-        <TabsTrigger className="min-h-11" value="plans">
-          Subscription plans
-        </TabsTrigger>
-        {snapshot.isPayg ? (
-          <>
-            <TabsTrigger className="min-h-11" value="table">
-              Price table
-            </TabsTrigger>
-            <TabsTrigger className="min-h-11" value="calculator">
-              Price calculator
-            </TabsTrigger>
-          </>
-        ) : null}
-        {snapshot.isPayg && view === "table" ? (
-          <div className="ml-auto pb-1 pl-3">
+    <div className="flex flex-col gap-5" data-slot="billing-pricing-surface">
+      {showSwitcher ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SlidingToggle
+            ariaLabel="Pricing views"
+            className="w-fit border border-border bg-transparent"
+            indicatorClassName="rounded-[calc(var(--radius-lg)-1px)]"
+            itemClassName="!px-4 text-muted-foreground hover:text-muted-foreground aria-pressed:text-foreground aria-pressed:hover:text-foreground"
+            onValueChange={setView}
+            options={viewOptions}
+            segments="fit"
+            value={activeView}
+            width="auto"
+          />
+          {activeView === "table" ? (
             <AppSelect
               aria-label="Billing cycle"
               className="w-28"
@@ -706,52 +705,41 @@ export function BillingPricingSurface({
               options={PRICING_CYCLE_OPTIONS}
               value={String(cycleIndex)}
             />
-          </div>
-        ) : null}
-      </TabsList>
+          ) : null}
+        </div>
+      ) : null}
 
-      <TabsContent
-        className="data-[state=inactive]:hidden"
-        forceMount
-        value="plans"
-      >
-        <BillingPlanCatalog
+      {/* Keep inactive panels mounted so calculator inputs survive view switches. */}
+      <div className={activeView === "plans" ? undefined : "hidden"}>
+        <BillingPlanCatalogSection
           currency={currency}
           gpuEnabled={gpuEnabled}
           onSelectPlan={onSelectPlan}
-          planStates={planStates}
-          planStatesPending={planStatesPending}
-          plans={snapshot.plans}
+          planSnapshot={planSnapshot}
+          planSnapshotError={planSnapshotError}
+          planSnapshotLoading={planSnapshotLoading}
         />
-      </TabsContent>
+      </div>
       {snapshot.isPayg ? (
         <>
-          <TabsContent
-            className="data-[state=inactive]:hidden"
-            forceMount
-            value="table"
-          >
+          <div className={activeView === "table" ? undefined : "hidden"}>
             <BillingPriceTable
               currency={currency}
               cycleIndex={cycleIndex}
               gpuEnabled={gpuEnabled}
               prices={snapshot.prices}
             />
-          </TabsContent>
-          <TabsContent
-            className="data-[state=inactive]:hidden"
-            forceMount
-            value="calculator"
-          >
+          </div>
+          <div className={activeView === "calculator" ? undefined : "hidden"}>
             <BillingCalculator
               currency={currency}
               gpuEnabled={gpuEnabled}
               prices={snapshot.prices}
             />
-          </TabsContent>
+          </div>
         </>
       ) : null}
-    </Tabs>
+    </div>
   );
 }
 
@@ -781,6 +769,7 @@ export default function BillingPricing({
   );
   const {
     data: planSnapshot,
+    error: planSnapshotError,
     isLoading: planSnapshotLoading,
     mutate: refreshPlanSnapshot,
   } = useSWR(
@@ -790,27 +779,14 @@ export default function BillingPricing({
     () => loadBillingPlanSnapshot({ appToken, kubeconfig, workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
-  const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-
-  const planStates = useMemo(() => {
-    if (planSnapshot?.current.canManage !== true) {
-      return;
-    }
-    const inDebt = planSnapshot.current.lifecycle === "payment-due";
-    return new Map(
-      planSnapshot.plans.map((plan) => [
-        plan.id,
-        {
-          changeKind: plan.changeKind ?? null,
-          inDebt,
-          isCurrent: plan.isCurrent,
-          isPendingDowngradeTarget:
-            planSnapshot.pendingDowngrade?.planName === plan.name,
-        },
-      ])
-    );
-  }, [planSnapshot]);
+  const selectedPlan = useMemo(() => {
+    const plan =
+      planSnapshot?.plans.find((entry) => entry.id === selectedPlanId) ?? null;
+    const inDebt = planSnapshot?.current.lifecycle === "payment-due";
+    return planOperator(plan, inDebt) == null ? null : plan;
+  }, [planSnapshot, selectedPlanId]);
+  const clearSelection = () => setSelectedPlanId(null);
 
   return (
     <>
@@ -819,30 +795,27 @@ export default function BillingPricing({
         error={error}
         gpuEnabled={gpuEnabled}
         isLoading={!credentialsReady || isLoading}
-        onSelectPlan={(planId) => {
-          setSelectedPlanId(planId);
-          setPlanDialogOpen(true);
-        }}
-        planStates={planStates}
-        planStatesPending={planSnapshotLoading}
+        onSelectPlan={setSelectedPlanId}
+        planSnapshot={planSnapshot}
+        planSnapshotError={planSnapshotError}
+        planSnapshotLoading={!credentialsReady || planSnapshotLoading}
         snapshot={data}
       />
+      {/* The Pricing page's plans area is itself the Plan Picker, so a card's
+          Upgrade/Downgrade opens the checkout dialog alone — no picker dialog
+          stacked underneath. */}
       {planSnapshot == null ? null : (
-        <BillingPlanChangeDialog
+        <BillingPlanCheckoutDialog
           credentials={{ appToken, kubeconfig }}
           currency={currency}
-          onOpenChange={(open) => {
-            setPlanDialogOpen(open);
-            if (!open) {
-              setSelectedPlanId(null);
-            }
-          }}
-          onSelectedPlanChange={setSelectedPlanId}
+          gpuEnabled={gpuEnabled}
+          onClose={clearSelection}
+          onDismiss={clearSelection}
           onSubscriptionChanged={async () => {
             await Promise.all([refreshPlanSnapshot(), refreshPricing()]);
           }}
-          open={planDialogOpen}
-          selectedPlanId={selectedPlanId}
+          open={selectedPlan != null}
+          plan={selectedPlan}
           snapshot={planSnapshot}
         />
       )}

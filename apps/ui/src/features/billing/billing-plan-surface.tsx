@@ -7,20 +7,10 @@ import {
   AlertTitle,
 } from "@workspace/ui/components/alert";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@workspace/ui/components/alert-dialog";
-import {
   AppButton,
   appButtonVariants,
 } from "@workspace/ui/components/app-button";
+import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { PlanBadge } from "@workspace/ui/components/plan-badge";
 import { Separator } from "@workspace/ui/components/separator";
@@ -53,6 +43,7 @@ import type {
   BillingPlanSnapshot,
   SubscriptionLifecycle,
   SubscriptionLifecycleAction,
+  SubscriptionLifecycleOutcome,
 } from "@/features/billing/billing-plan-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
@@ -345,6 +336,101 @@ function BillingBalanceSection({ balance }: { balance: ReactNode }) {
   );
 }
 
+type LifecycleActionHandler = (
+  operator: SubscriptionLifecycleAction
+) => Promise<SubscriptionLifecycleOutcome> | undefined;
+
+function CancelPlanDialog({
+  currentPeriodEndAt,
+  disabled,
+  onConfirm,
+}: {
+  currentPeriodEndAt: string | null;
+  disabled: boolean;
+  onConfirm?: LifecycleActionHandler;
+}) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const confirmCancellation = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const outcome = await onConfirm?.("canceled");
+      if (outcome != null && !outcome.ok) {
+        setError(outcome.message);
+        return;
+      }
+      setOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <AppDialog.Root
+      onOpenChange={(nextOpen) => {
+        if (submitting) {
+          return;
+        }
+        setOpen(nextOpen);
+        if (nextOpen) {
+          setError(null);
+        }
+      }}
+      open={open}
+    >
+      <AppDialog.Trigger
+        disabled={disabled}
+        id="billing-cancel-subscription-trigger"
+        render={<AppButton variant="secondary" />}
+      >
+        Cancel Plan
+      </AppDialog.Trigger>
+      <AppDialog.Content>
+        <AppDialog.Header>
+          <AppDialog.WarningIcon className="text-destructive" />
+          <AppDialog.Title>We are sorry to see you go</AppDialog.Title>
+          <AppDialog.Description className="sr-only">
+            Cancelling keeps the plan until the current period ends, after which
+            all workspace resources are deleted.
+          </AppDialog.Description>
+        </AppDialog.Header>
+        <AppDialog.Body>
+          <p className="text-muted-foreground">
+            Your resources will be kept until the current subscription period
+            ends (
+            <span className="font-medium text-destructive">
+              {formatDate(currentPeriodEndAt)}
+            </span>
+            ).{" "}
+            <span className="font-medium text-destructive">
+              After that, all workspace resources will be deleted
+            </span>
+            . Please backup your work in advance to avoid data loss.
+          </p>
+          {error == null ? null : (
+            <p className="text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+        </AppDialog.Body>
+        <AppDialog.Footer>
+          <AppDialog.Cancel disabled={submitting}>Keep Plan</AppDialog.Cancel>
+          <AppDialog.DestructiveAction
+            loading={submitting}
+            loadingLabel="Cancelling..."
+            onClick={confirmCancellation}
+          >
+            Cancel Plan
+          </AppDialog.DestructiveAction>
+        </AppDialog.Footer>
+      </AppDialog.Content>
+    </AppDialog.Root>
+  );
+}
+
 function BillingPlanActions({
   actionPending,
   current,
@@ -355,12 +441,11 @@ function BillingPlanActions({
 }: {
   actionPending: SubscriptionLifecycleAction | null;
   current: BillingPlanSnapshot["current"];
-  onLifecycleAction?: (operator: SubscriptionLifecycleAction) => void;
+  onLifecycleAction?: LifecycleActionHandler;
   onPlanChange?: (planId: string | null) => void;
   onRenew?: () => void;
   renewalPending: boolean;
 }) {
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   if (!current.canManage) {
     return null;
   }
@@ -376,47 +461,11 @@ function BillingPlanActions({
   return (
     <div className="flex flex-wrap items-center gap-3">
       {canCancel ? (
-        <AlertDialog
-          onOpenChange={setCancelDialogOpen}
-          open={cancelDialogOpen}
-          triggerId="billing-cancel-subscription-trigger"
-        >
-          <AlertDialogTrigger
-            className={cn(
-              appButtonVariants({ variant: "secondary" }),
-              "cursor-pointer"
-            )}
-            disabled={actionPending != null}
-            id="billing-cancel-subscription-trigger"
-          >
-            Cancel Plan
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Cancel Plan?</AlertDialogTitle>
-              <AlertDialogDescription>
-                {current.planName} remains active until{" "}
-                {formatDate(current.currentPeriodEndAt)}. You can resume it
-                before then.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={actionPending != null}>
-                Keep Plan
-              </AlertDialogCancel>
-              <AlertDialogAction
-                disabled={actionPending != null}
-                onClick={() => {
-                  setCancelDialogOpen(false);
-                  onLifecycleAction?.("canceled");
-                }}
-                variant="destructive"
-              >
-                {actionPending === "canceled" ? "Cancelling..." : "Cancel Plan"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <CancelPlanDialog
+          currentPeriodEndAt={current.currentPeriodEndAt}
+          disabled={actionPending != null}
+          onConfirm={onLifecycleAction}
+        />
       ) : null}
       {canResume ? (
         <AppButton
@@ -454,7 +503,7 @@ interface BillingPlanSurfaceProps {
   currency: BillingCurrency;
   invoiceCancellationPending?: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
-  onLifecycleAction?: (operator: SubscriptionLifecycleAction) => void;
+  onLifecycleAction?: LifecycleActionHandler;
   onManageCard?: () => void;
   onPlanChange?: (planId: string | null) => void;
   onRenew?: () => void;

@@ -33,6 +33,7 @@ function TooltipContent({
   alignOffset = 0,
   arrow = false,
   children,
+  positionerClassName,
   ...props
 }: TooltipPrimitive.Popup.Props &
   Pick<
@@ -40,13 +41,15 @@ function TooltipContent({
     "align" | "alignOffset" | "side" | "sideOffset"
   > & {
     arrow?: boolean;
+    /** Merged into the positioner — the z-index lives there, so tooltips inside dialogs (popup z-[51]) must raise it. */
+    positionerClassName?: string;
   }) {
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
-        className="isolate z-50"
+        className={cn("isolate z-50", positionerClassName)}
         side={side}
         sideOffset={sideOffset}
       >
