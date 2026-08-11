@@ -134,13 +134,21 @@ export function fixedTrendWindows(now: Date): {
   };
 }
 
-export interface LoadBillingCostsInput extends BillingCredentials {
+export interface LoadBillingCostsBaseInput extends BillingCredentials {
+  dateRange: BillingDateRange;
+}
+
+export interface LoadBillingAppOverviewInput extends BillingCredentials {
   appType?: string | null;
   dateRange: BillingDateRange;
   page: number;
   pageSize: number;
   workspace: string | null;
 }
+
+/** Full Costs snapshot load (base + paginated app overview). */
+export type LoadBillingCostsInput = LoadBillingCostsBaseInput &
+  LoadBillingAppOverviewInput;
 
 export interface LoadBillingAppCostsInput extends BillingCredentials {
   appName: string;
@@ -164,18 +172,25 @@ export interface BillingAppCostsPage {
   totalRecords: number;
 }
 
-export interface BillingCostsSnapshot {
-  appOverviews: BillingAppOverview[];
+/** Costs canvas data that does not depend on app-overview pagination. */
+export interface BillingCostsBaseSnapshot {
   appTypes: Record<string, string>;
   costPoints: [number, string | number][];
   payments: SubscriptionPayment[];
   region: BillingRegion | null;
-  totalAppOverviewPages: number;
-  totalAppOverviews: number;
   totalConsumptionMicroUnits: number;
   workspaceConsumptionMicroUnits: Record<string, number>;
   workspaces: BillingWorkspace[];
 }
+
+export interface BillingAppOverviewPage {
+  appOverviews: BillingAppOverview[];
+  totalAppOverviewPages: number;
+  totalAppOverviews: number;
+}
+
+export type BillingCostsSnapshot = BillingCostsBaseSnapshot &
+  BillingAppOverviewPage;
 
 export interface MonthlyBillingTrendPoint {
   expenditureMicroUnits: number;
@@ -539,10 +554,10 @@ export async function loadBillingMonthlyTrend(
   });
 }
 
-export async function loadBillingCosts(
-  input: LoadBillingCostsInput,
+export async function loadBillingCostsBase(
+  input: LoadBillingCostsBaseInput,
   fetch: BillingFetch = globalThis.fetch
-): Promise<BillingCostsSnapshot> {
+): Promise<BillingCostsBaseSnapshot> {
   const credentials = {
     appToken: input.appToken,
     kubeconfig: input.kubeconfig,
@@ -558,7 +573,6 @@ export async function loadBillingCosts(
     consumption,
     workspaceConsumption,
     workspaces,
-    appOverview,
     costs,
     payments,
   ] = await Promise.all([
@@ -597,20 +611,6 @@ export async function loadBillingCosts(
       { ...range, type: 0 }
     ),
     requestBillingCosts(
-      "/api/billing/app-overview",
-      appOverviewResponseSchema,
-      credentials,
-      fetch,
-      {
-        ...range,
-        appName: "",
-        appType: input.appType ?? "",
-        namespace: input.workspace ?? "",
-        page: input.page,
-        pageSize: input.pageSize,
-      }
-    ),
-    requestBillingCosts(
       "/api/billing/costs",
       costsResponseSchema,
       credentials,
@@ -631,15 +631,49 @@ export async function loadBillingCosts(
   }
 
   return {
-    appOverviews: appOverview.data.overviews,
     appTypes: appTypes.data,
     costPoints: costs.data.costs,
     payments: payments.payments,
     region,
-    totalAppOverviews: appOverview.data.total,
-    totalAppOverviewPages: appOverview.data.totalPage,
     totalConsumptionMicroUnits: consumption.amount,
     workspaceConsumptionMicroUnits: workspaceConsumption.amount,
     workspaces: workspaces.data,
   };
+}
+
+export async function loadBillingAppOverview(
+  input: LoadBillingAppOverviewInput,
+  fetch: BillingFetch = globalThis.fetch
+): Promise<BillingAppOverviewPage> {
+  const appOverview = await requestBillingCosts(
+    "/api/billing/app-overview",
+    appOverviewResponseSchema,
+    { appToken: input.appToken, kubeconfig: input.kubeconfig },
+    fetch,
+    {
+      endTime: input.dateRange.endTime,
+      startTime: input.dateRange.startTime,
+      appName: "",
+      appType: input.appType ?? "",
+      namespace: input.workspace ?? "",
+      page: input.page,
+      pageSize: input.pageSize,
+    }
+  );
+  return {
+    appOverviews: appOverview.data.overviews,
+    totalAppOverviews: appOverview.data.total,
+    totalAppOverviewPages: appOverview.data.totalPage,
+  };
+}
+
+export async function loadBillingCosts(
+  input: LoadBillingCostsInput,
+  fetch: BillingFetch = globalThis.fetch
+): Promise<BillingCostsSnapshot> {
+  const [base, overview] = await Promise.all([
+    loadBillingCostsBase(input, fetch),
+    loadBillingAppOverview(input, fetch),
+  ]);
+  return { ...base, ...overview };
 }

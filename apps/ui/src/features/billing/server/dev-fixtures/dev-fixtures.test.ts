@@ -135,6 +135,38 @@ test("every scenario passes every loader's schemas", async () => {
   }
 });
 
+test("cost-overview fixture honors page and pageSize", async () => {
+  process.env.BILLING_DEV_MOCK = "active";
+  const page1 = await loadBillingCosts(
+    {
+      appToken: CREDENTIALS.appToken,
+      dateRange: DATE_RANGE,
+      kubeconfig: CREDENTIALS.kubeconfig,
+      page: 1,
+      pageSize: 5,
+      workspace: null,
+    },
+    mockFetch
+  );
+  const page2 = await loadBillingCosts(
+    {
+      appToken: CREDENTIALS.appToken,
+      dateRange: DATE_RANGE,
+      kubeconfig: CREDENTIALS.kubeconfig,
+      page: 2,
+      pageSize: 5,
+      workspace: null,
+    },
+    mockFetch
+  );
+  assert.equal(page1.appOverviews.length, 5);
+  assert.equal(page1.totalAppOverviews, 8);
+  assert.equal(page1.totalAppOverviewPages, 2);
+  assert.equal(page2.appOverviews.length, 3);
+  assert.equal(page2.totalAppOverviewPages, 2);
+  assert.notEqual(page1.appOverviews[0]?.appName, page2.appOverviews[0]?.appName);
+});
+
 test("payg derives a PAYG snapshot", async () => {
   const plan = await loadPlanForScenario("payg");
   assert.equal(plan.current.isPayg, true);
