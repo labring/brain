@@ -64,8 +64,12 @@ export function obtainOnboardingSessionJudgment(input: {
  * complete/dismiss fires: without this, a Gate remount under the same
  * credentials (client-side navigation away from and back to the console)
  * would re-attach to the stale Unsampled verdict and reopen the survey the
- * person just finished. A judgment held by a different identity is not
- * touched — the terminal action wasn't theirs.
+ * person just finished. Deliberately settled at the action, not at the
+ * write's success — the judgment records "this person terminated the survey
+ * this session", and re-asking someone who just declined would be worse
+ * than a lost write, whose recovery is the database re-judgment on the next
+ * page load. A judgment held by a different identity is not touched — the
+ * terminal action wasn't theirs.
  */
 export function settleOnboardingSessionJudgmentSampled(key: string): void {
   if (sessionJudgment === null || sessionJudgment.key === key) {
