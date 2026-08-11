@@ -1,11 +1,13 @@
 "use client";
 
+import { appTypeDisplayName } from "@workspace/ui/assets/app-icons";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
 } from "@workspace/ui/components/alert";
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppTypeIcon } from "@workspace/ui/components/app-type-icon";
 import { Pagination } from "@workspace/ui/components/pagination";
 import { AppTypeBadge, PlanBadge } from "@workspace/ui/components/plan-badge";
 import {
@@ -28,7 +30,7 @@ import {
   TableLayoutHeadRow,
 } from "@workspace/ui/components/table-layout";
 import { cn } from "@workspace/ui/lib/utils";
-import { AlertCircle, Boxes, Check, ChevronDown } from "lucide-react";
+import { AlertCircle, Check, ChevronDown } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
@@ -281,7 +283,7 @@ function AppTypeFilter({
           <AppTypeFilterOption
             checked={appTypeFilter === appType}
             key={appType}
-            label={appType}
+            label={appTypeDisplayName(appType) ?? appType}
             onSelect={() => selectOption(appType)}
           />
         ))}
@@ -357,8 +359,8 @@ function ConsumptionCostTable({
                 <TableRow className="h-14" key={row.key}>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Boxes
-                        aria-hidden
+                      <AppTypeIcon
+                        appTypeCode={row.queryAppType}
                         className="size-4 shrink-0 text-muted-foreground"
                       />
                       <span

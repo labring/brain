@@ -337,18 +337,18 @@ function paymentsPayload(context: FixtureContext): unknown[] {
 
 function appOverviewsPayload(context: FixtureContext): unknown[] {
   return [
-    { amount: 6_820_000, appName: "brain-api", appType: 1 },
-    { amount: 4_310_000, appName: "postgres-main", appType: 2 },
+    { amount: 6_820_000, appName: "brain-api", appType: 2 },
+    { amount: 4_310_000, appName: "postgres-main", appType: 1 },
     {
       amount: 2_150_000,
       appName: "an-unreasonably-long-application-name-that-tests-truncation",
-      appType: 1,
+      appType: 2,
     },
-    { amount: 1_930_000, appName: "devbox-experiments", appType: 3 },
-    { amount: 1_120_000, appName: "asset-bucket", appType: 4 },
-    { amount: 640_000, appName: "nightly-report", appType: 5 },
-    { amount: 410_000, appName: "ai-proxy-gateway", appType: 8 },
-    { amount: 90_000, appName: "redis-cache", appType: 2 },
+    { amount: 1_930_000, appName: "devbox-experiments", appType: 10 },
+    { amount: 1_120_000, appName: "asset-bucket", appType: 6 },
+    { amount: 640_000, appName: "nightly-report", appType: 4 },
+    { amount: 410_000, appName: "ai-proxy-gateway", appType: 11 },
+    { amount: 90_000, appName: "redis-cache", appType: 1 },
   ].map((overview) => ({
     ...overview,
     namespace: context.workspace,
@@ -360,14 +360,14 @@ function appCostsPayload(context: FixtureContext): unknown {
   const rows = [0, 1, 1, 2, 2, 3].map((daysAgo, index) => ({
     amount: 380_000 + index * 45_000,
     app_name: "brain-api",
-    app_type: 1,
+    app_type: 2,
     namespace: context.workspace,
     order_id: `ord-mock-${index + 1}`,
     resources_by_type: [
       {
         amount: 380_000 + index * 45_000,
         app_name: "brain-api",
-        app_type: 1,
+        app_type: 2,
         used: { 0: 1500, 1: 2048, 2: 10_240, 3: 120, 4: 1, 5: 0 },
         used_amount: {
           0: 180_000 + index * 20_000,
@@ -398,14 +398,21 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
         ? { Balance: 5_000_000, DeductionBalance: 11_320_000 }
         : { Balance: 128_000_000, DeductionBalance: 23_450_000 },
   }),
+  // The production account service maps numbers to app-type codes (not
+  // display names); the UI resolves codes to display names and icons.
   "/account/v1alpha1/cost-app-type-list": () => ({
     data: {
-      1: "App Launchpad",
-      2: "Database",
-      3: "DevBox",
-      4: "Object Storage",
-      5: "Cron Job",
-      8: "AI Proxy",
+      1: "DB",
+      2: "APP",
+      3: "TERMINAL",
+      4: "JOB",
+      5: "OTHER",
+      6: "OBJECT-STORAGE",
+      7: "CLOUD-VM",
+      8: "APP-STORE",
+      9: "DB-BACKUP",
+      10: "DEV-BOX",
+      11: "LLM-TOKEN",
     },
   }),
   "/account/v1alpha1/cost-overview": (context) => {

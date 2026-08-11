@@ -22,6 +22,7 @@ import {
   TableLayoutContent,
   TableLayoutHeadRow,
 } from "@workspace/ui/components/table-layout";
+import { WorkspaceAvatar } from "@workspace/ui/components/workspace-avatar";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   AlertCircle,
@@ -710,10 +711,7 @@ export function BillingPlanSurface({
                 <TableRow key={workspace.id}>
                   <TableCell className="h-14">
                     <div className="flex items-center gap-2.5">
-                      <div
-                        aria-hidden
-                        className="size-5 shrink-0 rounded-full bg-linear-to-br from-blue-400 to-brand-primary"
-                      />
+                      <WorkspaceAvatar workspaceId={workspace.id} />
                       <span>{workspace.name}</span>
                       {workspace.isCurrent ? (
                         <Badge variant="outline">Current</Badge>

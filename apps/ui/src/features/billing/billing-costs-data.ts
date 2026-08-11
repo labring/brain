@@ -1,3 +1,4 @@
+import { appTypeDisplayName } from "@workspace/ui/assets/app-icons";
 import { z } from "zod";
 import {
   type BillingCredentials,
@@ -215,10 +216,15 @@ export function resolveBillingAppType(
   appTypes: Record<string, string>
 ): { queryAppType: string; typeName: string } {
   const rawAppType = String(appType);
-  const mappedAppType = appTypes[rawAppType];
+  // The account service maps the numeric app type to a code such as "DB" or
+  // "DEV-BOX"; queries echo that code back, while the UI shows its display
+  // name.
+  const appTypeCode = appTypes[rawAppType];
   return {
-    queryAppType: mappedAppType ?? rawAppType,
-    typeName: mappedAppType ?? `App type ${rawAppType}`,
+    queryAppType: appTypeCode ?? rawAppType,
+    typeName: appTypeCode
+      ? (appTypeDisplayName(appTypeCode) ?? appTypeCode)
+      : `App type ${rawAppType}`,
   };
 }
 

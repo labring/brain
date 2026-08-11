@@ -1,6 +1,7 @@
 "use client";
 
 import { Quantity } from "@workspace/shared";
+import { AppTypeIcon } from "@workspace/ui/components/app-type-icon";
 import { Badge } from "@workspace/ui/components/badge";
 import { DateRangePicker } from "@workspace/ui/components/date-range-picker";
 import { Pagination } from "@workspace/ui/components/pagination";
@@ -22,7 +23,6 @@ import {
   TableLayoutHeadRow,
 } from "@workspace/ui/components/table-layout";
 import { cn } from "@workspace/ui/lib/utils";
-import { Boxes } from "lucide-react";
 import { Fragment, useState } from "react";
 import useSWR from "swr";
 
@@ -257,7 +257,10 @@ export function BillingAppCostDrawer({
       <SheetContent className="canvas-glow-overlay gap-0 data-[side=right]:inset-y-3 data-[side=right]:right-3 data-[side=right]:h-auto data-[side=right]:w-fit data-[side=right]:max-w-[calc(100vw-1.5rem)] data-[side=right]:rounded-2xl data-[side=right]:border data-[side=right]:sm:max-w-[calc(100vw-1.5rem)]">
         <SheetHeader className="border-border border-b pr-14">
           <SheetTitle className="flex flex-wrap items-center gap-2">
-            <Boxes aria-hidden className="size-5 text-brand-primary" />
+            <AppTypeIcon
+              appTypeCode={selectedApp?.queryAppType}
+              className="size-5 text-brand-primary"
+            />
             <span className="text-nowrap">
               {selectedApp?.appName || selectedApp?.typeName || "App"}
             </span>
