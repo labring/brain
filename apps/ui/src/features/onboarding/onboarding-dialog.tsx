@@ -159,7 +159,7 @@ function OptionCard({
       className={cn(
         // min-h, not h: the Step 3 descriptions must stay readable, so a
         // card grows and wraps rather than truncating its one-liner.
-        "flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border border-transparent px-4 py-2.5 text-left text-foreground text-sm transition-colors",
+        "flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border border-transparent px-4 py-2 text-left text-foreground text-sm transition-colors",
         // The deepened wash carries the selected state so it never rides on
         // the 16px glyph alone.
         selected ? "bg-input" : "bg-input/30 hover:border-border",
@@ -185,8 +185,9 @@ function LengthHint({ max, value }: { max: number; value: string }) {
 }
 
 /**
- * At most one Other field mounts at a time, so its error message can hold a
- * fixed id for the input's `aria-describedby`.
+ * Passed steps keep their Other fields mounted in their inert panels, but
+ * only the active step's field ever receives `error`, so the error message
+ * can hold a fixed id for the input's `aria-describedby`.
  */
 const OTHER_ERROR_ID = "onboarding-other-error";
 
@@ -226,7 +227,7 @@ function OtherOptionField({
         className={cn(
           // A focus-within field wrapper: matches appFieldFocusClass's blue
           // by eye, per the field-state outlier note.
-          "flex min-h-12 items-center gap-3 rounded-lg border border-input bg-input/30 px-4 py-2.5 transition-colors",
+          "flex min-h-12 items-center gap-3 rounded-lg border border-input bg-input/30 px-4 py-2 transition-colors",
           error
             ? "border-destructive ring-[1px] ring-destructive/50"
             : "focus-within:border-blue-400 focus-within:ring-[1px] focus-within:ring-blue-400/50"
@@ -300,8 +301,33 @@ function progressSegmentClass(index: number, currentStep: number): string {
  * One step's heading and inputs travel as a group: the tight gap binds the
  * heading to what it introduces while keeping the step frame compact enough
  * that the options do not end in a large unused gap.
+ *
+ * All four panels stay mounted, stacked in one grid cell, so the frame is
+ * always exactly as tall as the tallest step at any width or copy length:
+ * advancing never moves the frame edge or the Next button, and a future
+ * cross-step transition has both steps in the DOM to animate between. An
+ * inactive panel is invisible and inert — unfocusable and hidden from
+ * readers — so the stack never leaks tab stops or announcement text.
  */
-const stepGroupClass = "flex min-h-[20rem] flex-col gap-6";
+function StepPanel({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "col-start-1 row-start-1 flex min-h-[20rem] flex-col gap-6",
+        !active && "invisible"
+      )}
+      inert={!active}
+    >
+      {children}
+    </div>
+  );
+}
 
 function StepHeading({
   subtitle,
@@ -338,6 +364,15 @@ export interface OnboardingSurveyCardProps {
   onComplete: (payload: CompleteOnboardingProfileRequest) => void;
   /** Skip: the single exit short of the final submit; the owner persists. */
   onSkip: (payload: DismissOnboardingProfileRequest) => void;
+  /**
+   * Dev-only (the dev tweaks preview knob, set while the dialog is
+   * force-opened): the survey genuinely starts on this step, so selections,
+   * gating, and Next behave exactly as a session that reached it — earlier
+   * steps just hold no answers (the forced dialog's writes are inert).
+   * Read once at mount; the owner remounts the card (keyed by this value)
+   * to apply a change.
+   */
+  previewStep?: number;
 }
 
 function stepAnswerPayload(
@@ -363,20 +398,30 @@ export function OnboardingSurveyCard({
   onAnswerStep,
   onComplete,
   onSkip,
+  previewStep,
 }: OnboardingSurveyCardProps) {
   const [state, dispatch] = useReducer(
     onboardingSurveyReducer,
     undefined,
     // The card mounts when the dialog opens, so the lazy initializer is the
-    // once-per-session seat of the Step 3 display-order shuffle.
-    () => createInitialOnboardingSurveyState()
+    // once-per-session seat of the Step 3 display-order shuffle — and of the
+    // dev preview's starting step.
+    () => {
+      const initial = createInitialOnboardingSurveyState();
+      return previewStep === undefined
+        ? initial
+        : { ...initial, currentStep: previewStep };
+    }
   );
   // Armed by a refused Next; the visible error also needs the text to still
   // be missing, so typing or unselecting Other clears it without a reset.
   const [otherErrorArmed, setOtherErrorArmed] = useState(false);
   const otherError = otherErrorArmed && onboardingOtherTextMissing(state);
-  // At most one Other field renders at a time, so the steps share one ref;
-  // the card holds it to send focus into the field on a refused Next.
+  // The steps share one ref; passed steps keep their Other fields mounted in
+  // inert panels, but a field only ever mounts when Other is selected on the
+  // active step (there is no back navigation), so the latest mount — the one
+  // holding the ref — is the active step's field whenever a refused Next
+  // needs to send focus into it.
   const otherInputRef = useRef<HTMLInputElement>(null);
 
   // The funnel view events: one per step shown, the mount itself being the
@@ -432,8 +477,11 @@ export function OnboardingSurveyCard({
   };
 
   return (
-    <div className="flex flex-col gap-10 p-9">
-      <div className="flex flex-col gap-4">
+    // Explicit seams instead of one container gap: the header keeps its
+    // wide berth from the step body, while the footer sits closer so the
+    // frame ends compactly under the options.
+    <div className="flex flex-col p-9">
+      <div className="mb-10 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground text-sm">
             Step {state.currentStep} of {ONBOARDING_SURVEY_TOTAL_STEPS}
@@ -461,18 +509,18 @@ export function OnboardingSurveyCard({
       </div>
       {/* Plain headings: the dialog context is optional for the card so the
           frame stays testable in a plain DOM; the shell labels the dialog. */}
-      {state.currentStep === 1 ? (
-        <div className={stepGroupClass}>
+      <div className="grid">
+        <StepPanel active={state.currentStep === 1}>
           <StepHeading
             subtitle="This helps us tailor your workspace experience."
             title="Tell us a bit about you."
           />
-          <fieldset className="grid gap-x-3 gap-y-3 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-x-3 gap-y-2 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your role</legend>
             {ROLE_OPTIONS.map((option) =>
               option.value === "other" && state.roleType === "other" ? (
                 <OtherOptionField
-                  error={otherError}
+                  error={otherError && state.currentStep === 1}
                   inputRef={otherInputRef}
                   key={option.value}
                   label="Describe your role"
@@ -499,20 +547,18 @@ export function OnboardingSurveyCard({
               )
             )}
           </fieldset>
-        </div>
-      ) : null}
-      {state.currentStep === 2 ? (
-        <div className={stepGroupClass}>
+        </StepPanel>
+        <StepPanel active={state.currentStep === 2}>
           <StepHeading
             subtitle="Let us know what stage your project is in."
             title="What are you using Sealos for?"
           />
-          <fieldset className="grid gap-x-3 gap-y-3 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-x-3 gap-y-2 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your usage context</legend>
             {USAGE_OPTIONS.map((option) =>
               option.value === "other" && state.usageContext === "other" ? (
                 <OtherOptionField
-                  error={otherError}
+                  error={otherError && state.currentStep === 2}
                   inputRef={otherInputRef}
                   key={option.value}
                   label="Describe your usage"
@@ -539,21 +585,19 @@ export function OnboardingSurveyCard({
               )
             )}
           </fieldset>
-        </div>
-      ) : null}
-      {state.currentStep === 3 ? (
-        <div className={stepGroupClass}>
+        </StepPanel>
+        <StepPanel active={state.currentStep === 3}>
           <StepHeading
             subtitle="Choose up to 3."
             title="Which factors are most important to you?"
           />
-          <fieldset className="grid gap-x-3 gap-y-3 border-0 sm:grid-cols-2">
+          <fieldset className="grid gap-x-3 gap-y-2 border-0 sm:grid-cols-2">
             <legend className="sr-only">Your top priorities</legend>
             {state.priorityDisplayOrder.map((tag) => {
               if (tag === "other" && state.priorityTags.includes("other")) {
                 return (
                   <OtherOptionField
-                    error={otherError}
+                    error={otherError && state.currentStep === 3}
                     inputRef={otherInputRef}
                     key={tag}
                     label="Describe your priority"
@@ -583,21 +627,23 @@ export function OnboardingSurveyCard({
                   selected={selected}
                   shape="checkbox"
                 >
-                  <span className="font-medium">{option.label}</span>
-                  {option.description == null ? null : (
-                    <span className="text-muted-foreground">
-                      {": "}
-                      {option.description}
-                    </span>
-                  )}
+                  {/* Stacked label/description: the description wraps inside
+                      its own muted block, so long or localized copy reads as
+                      typesetting rather than a run-in line overflowing. */}
+                  <span className="flex flex-col">
+                    <span className="font-medium">{option.label}</span>
+                    {option.description == null ? null : (
+                      <span className="text-muted-foreground leading-snug">
+                        {option.description}
+                      </span>
+                    )}
+                  </span>
                 </OptionCard>
               );
             })}
           </fieldset>
-        </div>
-      ) : null}
-      {state.currentStep === 4 ? (
-        <div className={stepGroupClass}>
+        </StepPanel>
+        <StepPanel active={state.currentStep === 4}>
           <StepHeading title="Anything specific you're trying to achieve?" />
           <div className="flex flex-col gap-1.5">
             {/* Auto-growing (field-sizing-content via AppTextarea): the open
@@ -627,9 +673,9 @@ export function OnboardingSurveyCard({
               />
             </div>
           </div>
-        </div>
-      ) : null}
-      <div className="flex justify-end">
+        </StepPanel>
+      </div>
+      <div className="mt-8 flex justify-end">
         {state.currentStep === ONBOARDING_SURVEY_TOTAL_STEPS ? (
           // The terminal submit: never gated (the open goal is optional) and
           // never awaited — the owner closes the dialog into the console.
@@ -678,6 +724,7 @@ export function OnboardingDialog({
   onComplete,
   onSkip,
   open,
+  previewStep,
 }: OnboardingDialogProps) {
   return (
     <AppDialog.Root onOpenChange={refuseOnboardingDialogClose} open={open}>
@@ -692,9 +739,13 @@ export function OnboardingDialog({
             body pans while Next/Submit stays reachable at the frame's end. */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           <OnboardingSurveyCard
+            // The card reads previewStep once at mount (it seeds the
+            // reducer), so the key remounts it when the knob moves.
+            key={previewStep ?? "follow"}
             onAnswerStep={onAnswerStep}
             onComplete={onComplete}
             onSkip={onSkip}
+            previewStep={previewStep}
           />
         </div>
       </AppDialog.Content>

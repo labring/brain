@@ -41,6 +41,15 @@ const ONBOARDING_TWEAKS = {
       step: 1,
       value: 0,
     },
+    // Only honored while the modal is forced: preview never redirects a
+    // real survey in progress, where the forced-looking step could submit.
+    previewStep: {
+      label: "Preview step (0 follows the survey · 1-4 force)",
+      max: 4,
+      min: 0,
+      step: 1,
+      value: 0,
+    },
   },
 } as const;
 
@@ -58,6 +67,10 @@ export function OnboardingGate() {
   const { values } = useDevTweaks("onboarding", ONBOARDING_TWEAKS);
   const forceOpen =
     process.env.NODE_ENV === "development" && values.forceModal >= 0.5;
+  const previewStep =
+    forceOpen && values.previewStep >= 1 && values.previewStep <= 4
+      ? Math.round(values.previewStep)
+      : undefined;
 
   useEffect(() => {
     // The app token arrives asynchronously from the Desktop SDK; with no
@@ -172,6 +185,7 @@ export function OnboardingGate() {
       onComplete={handleComplete}
       onSkip={handleSkip}
       open={open || forceOpen}
+      previewStep={previewStep}
     />
   );
 }
