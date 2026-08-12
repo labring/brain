@@ -1,6 +1,6 @@
-# Copy this file to a private path and fill only private credentials, for example:
-#   cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
-#   charts/brain-system/install.sh /tmp/brain-system.values.yaml
+# Copy this file once to a persistent private path and fill private credentials.
+# Do not overwrite that file during upgrades because it contains stable keys.
+# See charts/brain-system/README.md for the guarded creation command.
 #
 # The install script reads cloudDomain/cloudPort from
 # sealos-system/sealos-config and passes them to Helm. Do not set global

@@ -36,16 +36,17 @@ After reviewing the generated SQL and manifest:
 ```bash
 bun scripts/brain-v1-import.mjs apply \
   --manifest .migration/brain-v1-all-namespaces/migration-manifest.json \
-  --database-url "$DATABASE_URL" \
   --yes
 
 bun scripts/brain-v1-import.mjs rollback \
   --manifest .migration/brain-v1-all-namespaces/migration-manifest.json \
-  --database-url "$DATABASE_URL" \
   --yes
 ```
 
-`apply` and `rollback` require `--yes` or `BRAIN_V1_IMPORT_YES=1`.
+Set `DATABASE_URL` in the command environment before running `apply` or
+`rollback`; omitting `--database-url` keeps the credential-bearing DSN out of
+the process argument list. Both commands require `--yes` or
+`BRAIN_V1_IMPORT_YES=1`.
 
 `apply` and `rollback` accept only the new `brain-v1-migration/v2` manifest. A legacy manifest has no source fingerprint and is rejected rather than risking writes to an unverified cluster.
 

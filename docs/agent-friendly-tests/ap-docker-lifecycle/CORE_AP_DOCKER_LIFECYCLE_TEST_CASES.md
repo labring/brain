@@ -697,7 +697,7 @@ Steps:
 1. Open AP node.
 2. Open Terminal surface if available.
 3. Wait for terminal URL/session request.
-4. If terminal opens, run a harmless command such as `pwd` or `env | head`.
+4. If terminal opens, run a harmless command such as `pwd`.
 5. If terminal is unavailable, record the visible unavailable state.
 
 Expected:
