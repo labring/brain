@@ -592,7 +592,7 @@ _Avoid_: grace period (as the user-facing name), debt period, deletion schedule.
 
 ### Pay-As-You-Go (PAYG)
 
-The billing mode of a workspace that has no Workspace Subscription: usage is metered and settled against Account Balance instead of a plan commitment. PAYG is orthogonal to the plan catalog — it is not a Subscription Plan and never appears in one; the platform merely reports it as the workspace's subscription type when no subscription exists. A PAYG workspace leaves this mode by subscribing to a plan, which is a new subscription — not an upgrade or a downgrade.
+The billing mode of a workspace that has no Workspace Subscription: usage is metered and settled against Account Balance instead of a plan commitment. PAYG is orthogonal to the plan catalog — it is not a Subscription Plan and never appears in one; the platform merely reports it as the workspace's subscription type when no subscription exists. Surfaces that list workspaces rather than plans (such as a workspace subscription overview) may report PAYG as a workspace's billing state — that is reporting the mode, not a catalog entry. A PAYG workspace leaves this mode by subscribing to a plan, which is a new subscription — not an upgrade or a downgrade.
 
 _Avoid_: PAYG plan, pay-as-you-go plan, free mode, plan named "PAYG".
 
