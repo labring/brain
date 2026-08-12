@@ -23,22 +23,6 @@ const fontMono = JetBrains_Mono({
   variable: "--font-mono",
 });
 
-const reactScanEnabled =
-  process.env.NODE_ENV === "development" && process.env.REACT_SCAN === "true";
-
-const reactScanOptionsScript = `
-window.reactScan?.({
-  allowInIframe: true,
-  animationSpeed: "slow",
-  enabled: true,
-  safeArea: { bottom: 80, right: 24 },
-  showFPS: true,
-  showNotificationCount: true,
-  showToolbar: true,
-  trackUnnecessaryRenders: true,
-});
-`;
-
 const gtmId = process.env.GTM_ID?.trim() ?? "";
 
 export default function RootLayout({
@@ -57,14 +41,6 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
     >
-      <head>
-        {reactScanEnabled ? (
-          <>
-            <script src="https://unpkg.com/react-scan/dist/auto.global.js" />
-            <script>{reactScanOptionsScript}</script>
-          </>
-        ) : null}
-      </head>
       <body>
         <JotaiProvider>
           <NuqsAdapter>

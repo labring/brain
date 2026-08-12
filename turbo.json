@@ -60,7 +60,6 @@
     },
     "dev": {
       "cache": false,
-      "env": ["REACT_SCAN"],
       "persistent": true
     }
   }

@@ -20,13 +20,21 @@ The cluster must already have these platform resources installed:
 
 ## Install
 
-Create a private values file:
+Create the private values file once in a persistent, user-readable-only
+location. Do not recreate or overwrite it during upgrades because it contains
+stable encryption keys:
 
 ```bash
-cp charts/brain-system/values.local.example.yaml /tmp/brain-system.values.yaml
+private_values_dir="${XDG_CONFIG_HOME:-$HOME/.config}/brain"
+private_values_file="$private_values_dir/brain-system.values.yaml"
+mkdir -p -m 700 "$private_values_dir"
+if [ ! -e "$private_values_file" ]; then
+  install -m 600 charts/brain-system/values.local.example.yaml "$private_values_file"
+fi
 ```
 
-Edit `/tmp/brain-system.values.yaml`, especially:
+Back up this file through the operator's approved secret-management process,
+then edit `$private_values_file`, especially:
 
 - `api.env.VLSELECT_*` or `api.env.VMAUTH_SECRET_*` if VictoriaLogs requires authentication
 - GitHub App and OAuth values (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`)
@@ -83,7 +91,7 @@ When left empty, `ui.env.API_URL` and `ui.env.NEXT_PUBLIC_APP_URL` are derived f
 Install or upgrade:
 
 ```bash
-charts/brain-system/install.sh /tmp/brain-system.values.yaml
+charts/brain-system/install.sh "$private_values_file"
 ```
 
 ## Database Credentials
@@ -105,3 +113,24 @@ For app and database resources:
 kubectl -n brain-system get deploy,svc,ingress -l app.kubernetes.io/instance=brain-system
 kubectl -n brain-system get cluster -l sealos-db-provider-cr=brain-pg
 ```
+
+## Roll Back
+
+Inspect the release history, then roll back to a known-good revision:
+
+```bash
+helm history brain-system -n brain-system
+helm rollback brain-system <revision> -n brain-system --wait --timeout=15m
+```
+
+Verify the workloads after rollback:
+
+```bash
+kubectl -n brain-system get deploy,pod,svc,ingress,cluster -o wide
+kubectl -n brain-system rollout status deploy/brain-api-staging --timeout=5m
+kubectl -n brain-system rollout status deploy/brain-ui-staging --timeout=5m
+kubectl -n brain-system rollout status deploy/whodb --timeout=5m
+```
+
+Do not use `helm uninstall` as a routine rollback mechanism because it can
+affect the stateful `brain-pg` resources.
