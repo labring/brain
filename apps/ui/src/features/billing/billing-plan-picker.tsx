@@ -106,10 +106,10 @@ function morePlanOption({
     };
   }
   const spec = planSpecSummary(plan);
-  const price = `${formatBillingAmount(plan.priceMicroUnits, currency)}/mo`;
+  const price = `${formatBillingAmount(plan.priceMicroUnits, currency)}/month`;
   return {
     label: (
-      <span className="flex min-w-0 items-center gap-3">
+      <span className="flex w-full min-w-0 items-center gap-3">
         <span className="shrink-0 font-medium">{plan.name}</span>
         <MorePlanSeparator />
         <span
@@ -118,16 +118,57 @@ function morePlanOption({
         >
           {spec}
         </span>
-        <MorePlanSeparator />
-        <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+        {morePlanStatusBadge(plan, pendingDowngradePlanName)}
+        <span className="ml-auto shrink-0 pl-3 text-muted-foreground text-xs tabular-nums">
           {price}
         </span>
-        {morePlanStatusBadge(plan, pendingDowngradePlanName)}
       </span>
     ),
     textValue: `${plan.name} ${spec} ${price}`,
     value: plan.id,
   };
+}
+
+/**
+ * Selected-plan content for the selector trigger: `name │ spec [badge]` on the
+ * left, the price pinned right against the chevron — the collapsed-bar layout
+ * from the plan-selector design (Figma 7333:53119).
+ */
+function morePlanTriggerContent({
+  currency,
+  pendingDowngradePlanName,
+  plan,
+}: {
+  currency: BillingCurrency;
+  pendingDowngradePlanName: string | null;
+  plan: SnapshotPlan;
+}) {
+  if (isContactJumpPlan(plan)) {
+    return (
+      <span className="flex w-full min-w-0 items-center gap-3">
+        <span className="shrink-0 font-semibold">{plan.name}</span>
+        <MorePlanSeparator />
+        <span className="shrink-0 text-muted-foreground">Contact us</span>
+      </span>
+    );
+  }
+  const spec = planSpecSummary(plan);
+  return (
+    <span className="flex w-full min-w-0 items-center gap-3">
+      <span className="shrink-0 font-semibold">{plan.name}</span>
+      <MorePlanSeparator />
+      <span className="min-w-0 truncate text-muted-foreground" title={spec}>
+        {spec}
+      </span>
+      {morePlanStatusBadge(plan, pendingDowngradePlanName)}
+      <span className="ml-auto flex shrink-0 items-center gap-3">
+        <MorePlanSeparator />
+        <span className="font-semibold tabular-nums">
+          {formatBillingAmount(plan.priceMicroUnits, currency)}/month
+        </span>
+      </span>
+    </span>
+  );
 }
 
 interface BillingPlanPickerProps {
@@ -239,7 +280,7 @@ export function BillingPlanPicker({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <AppSelect
             aria-label="More plans"
-            className="h-10 min-w-0 lg:flex-1"
+            className="min-w-0 lg:flex-1"
             onValueChange={(value) => {
               const plan = morePlans.find((entry) => entry.id === value);
               if (plan == null) {
@@ -258,6 +299,18 @@ export function BillingPlanPicker({
               morePlanOption({ currency, pendingDowngradePlanName, plan })
             )}
             placeholder="Select a plan"
+            renderValue={(option) => {
+              const plan = morePlans.find((entry) => entry.id === option.value);
+              if (plan == null) {
+                return null;
+              }
+              return morePlanTriggerContent({
+                currency,
+                pendingDowngradePlanName,
+                plan,
+              });
+            }}
+            triggerClassName="rounded-lg border-0 bg-input/30 px-3 hover:bg-input"
             value={selectedMorePlan?.id}
           />
           {selectedMorePlan == null

@@ -43,10 +43,12 @@ function OptionIcon({ children }: { children: ReactNode }) {
 }
 
 function OptionContent({ option }: { option: AppSelectOption }) {
+  // flex-1 on both wrappers so a full-width label row can pin content to the
+  // right edge (e.g. a price column); hugging consumers are unaffected.
   return (
-    <span className="flex min-w-0 items-center gap-2">
+    <span className="flex min-w-0 flex-1 items-center gap-2">
       {option.icon ? <OptionIcon>{option.icon}</OptionIcon> : null}
-      <span className="min-w-0 truncate">{option.label}</span>
+      <span className="min-w-0 flex-1 truncate">{option.label}</span>
     </span>
   );
 }
@@ -137,6 +139,11 @@ export interface AppSelectProps {
   onValueChange?: (value: string) => void;
   options: readonly AppSelectOption[];
   placeholder?: ReactNode;
+  /**
+   * Custom trigger content for the selected option. Defaults to rendering the
+   * option label the same way popup items do.
+   */
+  renderValue?: (option: AppSelectOption) => ReactNode;
   /** Show an in-popup search input. @default false */
   searchable?: boolean;
   searchPlaceholder?: string;
@@ -157,6 +164,7 @@ export function AppSelect({
   onValueChange,
   options,
   placeholder = "Select an option",
+  renderValue,
   searchPlaceholder = "Search",
   searchable = false,
   triggerClassName,
@@ -214,7 +222,11 @@ export function AppSelect({
                 </span>
               );
             }
-            return <OptionContent option={option} />;
+            return renderValue ? (
+              renderValue(option)
+            ) : (
+              <OptionContent option={option} />
+            );
           }}
         </Combobox.Value>
         <TriggerChevron />
