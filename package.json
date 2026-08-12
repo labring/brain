@@ -6,7 +6,6 @@
     "build": "turbo build",
     "dev": "turbo dev --filter=!@sealai/whodb",
     "dev:worktree": "bun scripts/dev-worktree.ts",
-    "dev:scan": "REACT_SCAN=true turbo dev --filter=!@sealai/whodb",
     "dev:all": "turbo dev",
     "lint": "turbo lint",
     "format": "turbo format",
@@ -18,12 +17,9 @@
     "whodb:test": "bun --filter @sealai/whodb test"
   },
   "devDependencies": {
-    "@ai-hero/sandcastle": "^0.5.11",
     "@biomejs/biome": "2.4.11",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
-    "prettier": "^3.8.1",
-    "prettier-plugin-tailwindcss": "^0.7.2",
     "turbo": "2.9.6",
     "typescript": "5.9.3",
     "ultracite": "7.5.8"

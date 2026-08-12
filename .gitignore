@@ -57,7 +57,6 @@ packages/crossplane/public/service/ap/templates/.venv-sync/
 main
 apps/api/api
 
-.sandcastle
 specs/*
 !specs/model-github-integrations-as-namespace-scoped-app-installations.md
 .playwright-mcp
