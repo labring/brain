@@ -630,6 +630,6 @@ _Avoid_: Pane Registry, Flow Registry.
 
 ### Canvas Glow
 
-The dark material shared by immersive product surfaces: a near-black canvas base with a soft blue luminous wash floating above the surface's content. A surface or overlay adopts Canvas Glow as its material — "surface" itself always names a place, never a look. Carried by the Billing Area and its app cost drawer, and by the canvas action surface.
+The dark material shared by immersive product surfaces: a near-black canvas base with a soft blue luminous wash floating above the surface's content. A surface or overlay adopts Canvas Glow as its material — "surface" itself always names a place, never a look. Carried by the Billing Area, its app cost drawer, and its plan-change dialog, and by the canvas action surface.
 
 _Avoid_: surface style (when meaning the material), canvas material, glow overlay.

@@ -78,7 +78,9 @@ export function BillingPlanChangeDialog({
 
   return (
     <AppDialog.Root onOpenChange={onOpenChange} open={open}>
-      <AppDialog.Content size="2xl">
+      {/* Carries the Canvas Glow material (see CONTEXT.md), like the app
+          cost drawer: content layers must stay below z-20. */}
+      <AppDialog.Content className="canvas-glow-overlay" size="2xl">
         <div className="flex shrink-0 items-center gap-4 px-8 pt-7">
           <AppDialog.Title className="h-auto font-semibold text-2xl/8">
             Choose Your Workspace Plan
