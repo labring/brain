@@ -336,6 +336,10 @@ test("Plan renders lifecycle notices, card facts, and workspace plan rows", asyn
   // unpaid-invoice alert; it carries no payment link of its own.
   assert.equal(html.includes("You have an unpaid invoice"), false);
   assert.equal(html.includes("https://payments.example.test"), false);
+  // A pending upgrade is voiced only by the target-naming change badge; the
+  // bare lifecycle badge and the "Plan Cancelled" wording are retired.
+  assert.equal(html.includes(">Pending upgrade<"), false);
+  assert.equal(html.includes("Plan Cancelled"), false);
 });
 
 test("Plan renders the compact PAYG summary next to the balance", async () => {

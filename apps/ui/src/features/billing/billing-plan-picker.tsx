@@ -4,6 +4,7 @@ import {
   AppSelect,
   type AppSelectOption,
 } from "@workspace/ui/components/app-select";
+import { Badge } from "@workspace/ui/components/badge";
 import { useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
@@ -67,18 +68,10 @@ function morePlanStatusBadge(
   pendingDowngradePlanName: string | null
 ) {
   if (plan.isCurrent) {
-    return (
-      <span className="shrink-0 rounded-full bg-blue-400/10 px-2 py-0.5 text-blue-400 text-xs">
-        Your current plan
-      </span>
-    );
+    return <Badge variant="secondary">Your current plan</Badge>;
   }
   if (pendingDowngradePlanName === plan.name) {
-    return (
-      <span className="shrink-0 rounded-full bg-yellow-400/10 px-2 py-0.5 text-xs text-yellow-400">
-        Your next plan
-      </span>
-    );
+    return <Badge variant="warning">Your next plan</Badge>;
   }
   return null;
 }

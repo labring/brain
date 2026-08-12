@@ -151,17 +151,21 @@ function formatDateTime(value: string | null): string {
   return formatBillingDateTime(value);
 }
 
+// Badge shape is uniform (filled pill); color carries the meaning: gray for
+// neutral facts, yellow for pending changes, red for expiry. Lifecycles with
+// no badge of their own: active needs none, pending-upgrade is voiced by the
+// "Pending upgrade to X" change badge instead.
 const LIFECYCLE_METADATA = {
-  active: { label: "Active", variant: "default" },
+  active: null,
   cancelling: { label: "Cancelling", variant: "secondary" },
-  "payment-due": { label: "Payment due", variant: "destructive" },
-  "pending-upgrade": { label: "Pending upgrade", variant: "secondary" },
+  "payment-due": { label: "Plan Expired", variant: "destructive" },
+  "pending-upgrade": null,
 } as const satisfies Record<
   SubscriptionLifecycle,
   {
     label: string;
-    variant: "default" | "destructive" | "outline" | "secondary";
-  }
+    variant: "destructive" | "secondary";
+  } | null
 >;
 
 function cardBrand(brand: string): string {
@@ -620,18 +624,18 @@ export function BillingPlanSurface({
 
   const lifecycleBadges = (
     <>
-      {current.lifecycle === "active" || current.warningStage != null ? null : (
+      {lifecycleMetadata == null || current.warningStage != null ? null : (
         <Badge variant={lifecycleMetadata.variant}>
           {lifecycleMetadata.label}
         </Badge>
       )}
       {snapshot.pendingUpgrade == null ? null : (
-        <Badge variant="outline">
+        <Badge variant="warning">
           Pending upgrade to {snapshot.pendingUpgrade.planName}
         </Badge>
       )}
       {snapshot.pendingDowngrade == null ? null : (
-        <Badge variant="outline">
+        <Badge variant="warning">
           Downgrading to {snapshot.pendingDowngrade.planName}
         </Badge>
       )}
@@ -801,13 +805,13 @@ export function BillingPlanSurface({
                       <WorkspaceAvatar workspaceId={workspace.id} />
                       <span>{workspace.name}</span>
                       {workspace.isCurrent ? (
-                        <Badge variant="outline">Current</Badge>
+                        <Badge variant="secondary">Current</Badge>
                       ) : null}
                       {workspace.lifecycle === "payment-due" ? (
-                        <Badge variant="secondary">Plan Expired</Badge>
+                        <Badge variant="destructive">Plan Expired</Badge>
                       ) : null}
                       {workspace.lifecycle === "cancelling" ? (
-                        <Badge variant="secondary">Plan Cancelled</Badge>
+                        <Badge variant="secondary">Cancelling</Badge>
                       ) : null}
                     </div>
                   </TableCell>
