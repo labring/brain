@@ -408,7 +408,30 @@ function BillingPaymentMethod({
   );
 }
 
-function BillingBalanceSection({ balance }: { balance: ReactNode }) {
+function BillingBalanceSection({
+  balance,
+  variant = "panel",
+}: {
+  balance: ReactNode;
+  variant?: "card" | "panel";
+}) {
+  if (variant === "card") {
+    return (
+      <section
+        className="rounded-xl border border-border bg-card p-2 shadow-xs"
+        data-slot="billing-balance-section"
+      >
+        <div className="flex h-full min-h-24 items-center rounded-lg bg-muted/30 px-6 py-5">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-muted-foreground text-sm">
+              Account Balance
+            </span>
+            {balance}
+          </div>
+        </div>
+      </section>
+    );
+  }
   return (
     <section
       className="flex min-h-24 items-center rounded-xl bg-input/30 px-6 py-5"
@@ -643,33 +666,36 @@ export function BillingPlanSurface({
   );
 
   const planSummary = current.isPayg ? (
-    <section
-      className="rounded-xl bg-input/30 p-4"
-      data-slot="billing-plan-summary"
-    >
-      <div className="flex flex-col justify-between gap-4 rounded-lg bg-input/30 p-4 sm:flex-row sm:items-center">
-        <div className="flex flex-col gap-1">
-          <span className="text-muted-foreground text-sm">
-            Current Workspace Plan
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-semibold text-2xl text-foreground">
-              Pay-As-You-Go
-            </h2>
-            {lifecycleBadges}
+    <div className="grid gap-4 lg:grid-cols-3">
+      <section
+        className="rounded-xl border border-border bg-card p-2 text-card-foreground shadow-xs lg:col-span-2"
+        data-slot="billing-plan-summary"
+      >
+        <div className="flex h-full min-h-24 flex-col justify-between gap-4 rounded-lg bg-muted/30 px-6 py-5 sm:flex-row sm:items-center">
+          <div className="flex flex-col gap-1">
+            <span className="text-muted-foreground text-sm">
+              Current Workspace Plan
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-semibold text-2xl text-foreground">
+                Pay-As-You-Go
+              </h2>
+              {lifecycleBadges}
+            </div>
           </div>
+          {current.canManage ? (
+            <AppButton
+              disabled={actionPending != null}
+              onClick={() => onPlanChange?.(null)}
+            >
+              <Sparkles aria-hidden data-icon="inline-start" />
+              Subscribe Plan
+            </AppButton>
+          ) : null}
         </div>
-        {current.canManage ? (
-          <AppButton
-            disabled={actionPending != null}
-            onClick={() => onPlanChange?.(null)}
-          >
-            <Sparkles aria-hidden data-icon="inline-start" />
-            Subscribe Plan
-          </AppButton>
-        ) : null}
-      </div>
-    </section>
+      </section>
+      <BillingBalanceSection balance={balance} variant="card" />
+    </div>
   ) : (
     <section
       className="flex flex-col rounded-xl bg-input/30 p-4"
@@ -769,7 +795,7 @@ export function BillingPlanSurface({
 
       {planSummary}
 
-      <BillingBalanceSection balance={balance} />
+      {current.isPayg ? null : <BillingBalanceSection balance={balance} />}
 
       <BillingPaymentMethod
         canManage={current.canManage}
