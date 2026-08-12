@@ -27,8 +27,34 @@ const STEP_THREE_SUBTITLE_RE = /Choose up to 3\./;
 const STEP_FOUR_TITLE_RE = /Anything specific you're trying to achieve\?/;
 const OTHER_REQUIRED_RE = /This field is required\./;
 
+/**
+ * All four step panels stay mounted (stacked for frame-height stability),
+ * with inactive ones marked inert. The helpers scope every query and text
+ * assertion to reachable content — what a user could actually see or focus.
+ */
+function isReachable(element: Element): boolean {
+  return element.closest("[inert]") === null;
+}
+
 function bodyButtons(): HTMLButtonElement[] {
-  return [...document.querySelectorAll("button")] as HTMLButtonElement[];
+  return (
+    [...document.querySelectorAll("button")] as HTMLButtonElement[]
+  ).filter(isReachable);
+}
+
+function reachableInput(): HTMLInputElement | null {
+  const input = (
+    [...document.querySelectorAll("input")] as HTMLInputElement[]
+  ).find(isReachable);
+  return input ?? null;
+}
+
+function reachableText(): string {
+  const clone = document.body.cloneNode(true) as HTMLElement;
+  for (const hidden of clone.querySelectorAll("[inert]")) {
+    hidden.remove();
+  }
+  return clone.textContent ?? "";
 }
 
 function buttonByText(text: string): HTMLButtonElement {
@@ -39,7 +65,7 @@ function buttonByText(text: string): HTMLButtonElement {
   return button;
 }
 
-/** Option cards prefix their text with the label ("Stability: I need…"). */
+/** Option cards start their text with the label ("Stability" + description). */
 function optionButton(label: string): HTMLButtonElement {
   const button = bodyButtons().find((candidate) =>
     candidate.textContent?.trim().startsWith(label)
@@ -126,8 +152,8 @@ test("Step 1 skips with the step number and gates Next on a selection", async ()
       );
     });
 
-    assert.match(document.body.textContent ?? "", STEP_INDICATOR_RE);
-    assert.match(document.body.textContent ?? "", STEP_ONE_TITLE_RE);
+    assert.match(reachableText(), STEP_INDICATOR_RE);
+    assert.match(reachableText(), STEP_ONE_TITLE_RE);
 
     const next = bodyButtons().find((candidate) =>
       candidate.textContent?.includes("Next")
@@ -146,11 +172,11 @@ test("Step 1 skips with the step number and gates Next on a selection", async ()
     });
     assert.equal(next.disabled, true);
 
-    assert.equal(document.querySelector("input"), null);
+    assert.equal(reachableInput(), null);
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Other"));
     });
-    const otherInput = document.querySelector("input");
+    const otherInput = reachableInput();
     assert.ok(otherInput, "selecting Other morphs the card into an input");
     // Empty Other keeps Next clickable — the click surfaces the inline
     // required error instead of disabling the button (pinned below).
@@ -195,23 +221,23 @@ test("an empty Other refuses Next with the inline error until text arrives", asy
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Other"));
     });
-    assert.doesNotMatch(document.body.textContent ?? "", OTHER_REQUIRED_RE);
+    assert.doesNotMatch(reachableText(), OTHER_REQUIRED_RE);
 
     // Next with no text: the error appears, nothing advances or persists.
     await clickNext();
-    assert.match(document.body.textContent ?? "", OTHER_REQUIRED_RE);
-    assert.match(document.body.textContent ?? "", STEP_INDICATOR_RE);
+    assert.match(reachableText(), OTHER_REQUIRED_RE);
+    assert.match(reachableText(), STEP_INDICATOR_RE);
     assert.equal(answers.length, 0);
 
     // Typing clears the error display without another Next.
-    const otherInput = document.querySelector("input");
+    const otherInput = reachableInput();
     assert.ok(otherInput, "the morphed Other input is rendered");
     await actAndDrain(() => {
       otherInput.focus();
       fireEvent.input(otherInput, { target: { value: "SRE" } });
       fireEvent.keyUp(otherInput, { key: "d" });
     });
-    assert.doesNotMatch(document.body.textContent ?? "", OTHER_REQUIRED_RE);
+    assert.doesNotMatch(reachableText(), OTHER_REQUIRED_RE);
 
     // The glyph inside the morphed field unselects Other, restoring the card.
     const unselect = bodyButtons().find(
@@ -221,21 +247,21 @@ test("an empty Other refuses Next with the inline error until text arrives", asy
     await actAndDrain(() => {
       fireEvent.click(unselect);
     });
-    assert.equal(document.querySelector("input"), null);
+    assert.equal(reachableInput(), null);
     assert.ok(buttonByText("Other"), "the Other card is restored");
 
     // With text in place, Next advances and the trimmed pair persists.
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Other"));
     });
-    const revived = document.querySelector("input");
+    const revived = reachableInput();
     assert.ok(revived, "re-selecting Other morphs the card again");
     // The Other text survives the unselect round-trip by design.
     await clickNext();
     assert.deepEqual(answers, [
       { roleOtherText: "SRE", roleType: "other", step: 1 },
     ]);
-    assert.match(document.body.textContent ?? "", STEP_TWO_INDICATOR_RE);
+    assert.match(reachableText(), STEP_TWO_INDICATOR_RE);
   } finally {
     await actAndDrain(() => {
       rendered?.unmount();
@@ -268,7 +294,7 @@ test("the morphed Other input claims focus on select, wrapper press, and refused
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Other"));
     });
-    const otherInput = document.querySelector("input");
+    const otherInput = reachableInput();
     assert.ok(otherInput, "the morphed Other input is rendered");
     assert.equal(document.activeElement, otherInput);
 
@@ -290,7 +316,7 @@ test("the morphed Other input claims focus on select, wrapper press, and refused
       otherInput.blur();
     });
     await clickNext();
-    assert.match(document.body.textContent ?? "", OTHER_REQUIRED_RE);
+    assert.match(reachableText(), OTHER_REQUIRED_RE);
     assert.equal(document.activeElement, otherInput);
   } finally {
     await actAndDrain(() => {
@@ -343,18 +369,18 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Other"));
     });
-    const roleInput = document.querySelector("input");
+    const roleInput = reachableInput();
     assert.ok(roleInput, "the Other input is revealed");
     await typeInto(roleInput, "  platform team lead ");
     await clickNext();
     assert.deepEqual(answers, [
       { roleOtherText: "platform team lead", roleType: "other", step: 1 },
     ]);
-    assert.match(document.body.textContent ?? "", STEP_TWO_INDICATOR_RE);
-    assert.doesNotMatch(document.body.textContent ?? "", STEP_ONE_TITLE_RE);
+    assert.match(reachableText(), STEP_TWO_INDICATOR_RE);
+    assert.doesNotMatch(reachableText(), STEP_ONE_TITLE_RE);
 
     // Step 2: single-select usage context.
-    assert.match(document.body.textContent ?? "", STEP_TWO_TITLE_RE);
+    assert.match(reachableText(), STEP_TWO_TITLE_RE);
     await actAndDrain(() => {
       fireEvent.click(buttonByText("Running a real business project"));
     });
@@ -364,10 +390,10 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
       usageContext: "real_business",
       usageOtherText: null,
     });
-    assert.match(document.body.textContent ?? "", STEP_THREE_INDICATOR_RE);
+    assert.match(reachableText(), STEP_THREE_INDICATOR_RE);
 
     // Step 3: multi-select capped at 3, Other pinned last with optional text.
-    assert.match(document.body.textContent ?? "", STEP_THREE_SUBTITLE_RE);
+    assert.match(reachableText(), STEP_THREE_SUBTITLE_RE);
     await actAndDrain(() => {
       fireEvent.click(optionButton("Stability"));
     });
@@ -379,7 +405,7 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
     });
     // The cap is 3: every unselected option is locked out.
     assert.equal(optionButton("Performance").disabled, true);
-    const priorityInput = document.querySelector("input");
+    const priorityInput = reachableInput();
     assert.ok(priorityInput, "the Step 3 Other input is revealed");
     await typeInto(priorityInput, " fair pricing ");
     await clickNext();
@@ -402,10 +428,10 @@ test("the survey walks Steps 1-4, persists each advance, and submits terminally"
     assert.equal(priorityAnswer.step, 3);
     assert.equal(priorityAnswer.priorityDisplayOrder.length, 7);
     assert.equal(priorityAnswer.priorityDisplayOrder.at(-1), "other");
-    assert.match(document.body.textContent ?? "", STEP_FOUR_INDICATOR_RE);
+    assert.match(reachableText(), STEP_FOUR_INDICATOR_RE);
 
     // Step 4: the open goal is optional; submit fires the terminal payload.
-    assert.match(document.body.textContent ?? "", STEP_FOUR_TITLE_RE);
+    assert.match(reachableText(), STEP_FOUR_TITLE_RE);
     // The open goal is an auto-growing textarea (2000 characters allowed).
     const goalInput = document.querySelector("textarea");
     assert.ok(goalInput, "the open goal field is rendered");
@@ -574,6 +600,61 @@ test("Skip fires the funnel event with the step it left from", async () => {
   }
 });
 
+test("previewStep starts the survey on that step, fully interactive", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const { render } = await import("@testing-library/react/pure");
+  const { fireEvent } = await import("@testing-library/dom");
+  const dataLayer: unknown[] = [];
+  Object.assign(window, { dataLayer });
+  const answers: unknown[] = [];
+  let rendered: ReturnType<typeof render> | undefined;
+
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <OnboardingSurveyCard
+          onAnswerStep={(payload) => {
+            answers.push(payload);
+          }}
+          onComplete={() => undefined}
+          onSkip={() => undefined}
+          previewStep={3}
+        />
+      );
+    });
+
+    // The survey genuinely sits on the previewed step: indicator, panel,
+    // and the funnel's mount view all say step 3.
+    assert.match(reachableText(), STEP_THREE_INDICATOR_RE);
+    assert.match(reachableText(), STEP_THREE_SUBTITLE_RE);
+    assert.doesNotMatch(reachableText(), STEP_ONE_TITLE_RE);
+    assert.deepEqual(dataLayer, [funnelEntry("onboarding_step_view", 3)]);
+
+    // Step 3's own gating applies: Next unlocks with a pick and advances
+    // to step 4, persisting the step 3 payload like any real session.
+    const next = bodyButtons().find((candidate) =>
+      candidate.textContent?.includes("Next")
+    );
+    assert.ok(next, "the footer renders Next for the previewed step");
+    assert.equal(next.disabled, true);
+    await actAndDrain(() => {
+      fireEvent.click(optionButton("Stability"));
+    });
+    assert.equal(next.disabled, false);
+    await clickNext();
+    assert.match(reachableText(), STEP_FOUR_INDICATOR_RE);
+    assert.equal(answers.length, 1);
+    assert.equal((answers[0] as { step: number }).step, 3);
+  } finally {
+    await actAndDrain(() => {
+      rendered?.unmount();
+    });
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
 test("a broken dataLayer never touches the survey flow", async () => {
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
@@ -612,7 +693,7 @@ test("a broken dataLayer never touches the survey flow", async () => {
     await clickNext();
 
     // The survey advanced and persisted as if analytics did not exist.
-    assert.match(document.body.textContent ?? "", STEP_TWO_INDICATOR_RE);
+    assert.match(reachableText(), STEP_TWO_INDICATOR_RE);
     assert.equal(answers.length, 1);
 
     await actAndDrain(() => {
