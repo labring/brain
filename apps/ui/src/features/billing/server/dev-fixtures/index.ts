@@ -83,14 +83,28 @@ function subscriptionPayload(
       return { ...base, PayMethod: "balance" };
     case "cancelling":
       return { ...base, CancelAtPeriodEnd: true };
+    // Debt scenarios expire in the past: the upstream only reports DEBT*
+    // once CurrentPeriodEndAt has passed, and the UI derives the resource
+    // deletion date (expiry + 14 days) from it.
     case "payment-due":
       return {
         ...base,
+        CurrentPeriodEndAt: daysFromNow(-2),
         InvoiceInfo: {
           ID: "inv-mock-1",
           PaymentUrl: "https://billing.example.com/invoice/inv-mock-1",
         },
-        Status: "debt",
+        Status: "DEBT",
+      };
+    case "payment-due-deletion":
+      return {
+        ...base,
+        CurrentPeriodEndAt: daysFromNow(-8),
+        InvoiceInfo: {
+          ID: "inv-mock-1",
+          PaymentUrl: "https://billing.example.com/invoice/inv-mock-1",
+        },
+        Status: "DEBT_PRE_DELETION",
       };
     default:
       return base;
@@ -424,7 +438,7 @@ function appCostsPayload(context: FixtureContext): unknown {
 const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   "/account/v1alpha1/account": ({ scenario }) => ({
     account:
-      scenario === "payment-due"
+      scenario === "payment-due" || scenario === "payment-due-deletion"
         ? { Balance: 5_000_000, DeductionBalance: 11_320_000 }
         : { Balance: 128_000_000, DeductionBalance: 23_450_000 },
   }),
@@ -659,7 +673,7 @@ const PAY_TRANSITIONS: Record<
     "mixed-workspaces": "cancelling",
   },
   created: { payg: "active" },
-  renewed: { "payment-due": "active" },
+  renewed: { "payment-due": "active", "payment-due-deletion": "active" },
   resumed: { cancelling: "active" },
   upgraded: {
     active: "active",

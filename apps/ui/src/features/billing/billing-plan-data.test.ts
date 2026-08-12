@@ -162,6 +162,9 @@ test("loads the verified account's Plan snapshot with workspace plan facts", asy
 
   assert.equal(snapshot.current.planName, "Pro");
   assert.equal(snapshot.current.lifecycle, "cancelling");
+  assert.equal(snapshot.current.warningStage, "cancelling");
+  // Expiry (2026-08-31) plus the platform's 14-day deletion grace.
+  assert.equal(snapshot.current.resourceDeletionAt, "2026-09-14T00:00:00.000Z");
   assert.equal(snapshot.current.invoiceId, "invoice-1");
   assert.equal(snapshot.current.priceMicroUnits, 20_000_000);
   assert.deepEqual(snapshot.current.resources.slice(0, 3), [
@@ -231,6 +234,45 @@ test("loads the verified account's Plan snapshot with workspace plan facts", asy
     startTime: "2026-06-29T12:00:00.000Z",
     type: 0,
   });
+});
+
+test("expiry statuses outrank a pending cancellation", async () => {
+  // A cancelled subscription that has since expired: the deletion pipeline
+  // must surface as payment-due, not linger on "cancelling".
+  const responses: Record<string, unknown> = {
+    ...RESPONSES,
+    "/api/billing/subscription": {
+      subscription: {
+        CancelAtPeriodEnd: true,
+        CurrentPeriodEndAt: "2026-07-20T00:00:00Z",
+        ExpireAt: "2026-07-20T00:00:00Z",
+        PayMethod: "stripe",
+        PlanName: "Pro",
+        RegionDomain: "us.example.test",
+        Status: "DEBT_PRE_DELETION",
+        Workspace: "workspace-a",
+        role: "OWNER",
+        type: "SUBSCRIPTION",
+      },
+    },
+  };
+
+  const snapshot = await loadBillingPlanSnapshot(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) =>
+        Promise.resolve(Response.json(responses[input.toString()])),
+      now: () => NOW,
+    }
+  );
+
+  assert.equal(snapshot.current.lifecycle, "payment-due");
+  assert.equal(snapshot.current.warningStage, "deletion-imminent");
+  assert.equal(snapshot.current.resourceDeletionAt, "2026-08-03T00:00:00.000Z");
 });
 
 test("plans outside the transition lists stay selectable as upgrades", async () => {

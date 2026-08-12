@@ -1,18 +1,61 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderToStaticMarkup } from "react-dom/server";
 
-import { BillingCostCharts } from "./billing-cost-charts";
-import { BillingCostsSurface } from "./billing-costs";
-import { formatBillingDateTime } from "./billing-datetime";
+import { installTestDom } from "@/features/project-canvas/react-test-harness";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
-import { BillingPlanPicker } from "./billing-plan-picker";
-import { BillingPlanSurface } from "./billing-plan-surface";
-import { BillingPriceTable, BillingPricingSurface } from "./billing-pricing";
 import type { BillingPricingSnapshot } from "./billing-pricing-data";
-import { BillingNavigationFrame } from "./billing-tab-shell";
-import { BillingUsageSurface } from "./billing-usage";
 import type { BillingUsageSnapshot } from "./billing-usage-data";
+
+// Loaded with a DOM registered, matching the interaction tests' convention:
+// importing a component graph (next/link etc.) without a DOM poisons React
+// rendering for interaction test files that run later in the same process.
+async function loadSurfaceModules() {
+  const dom = installTestDom();
+  try {
+    const [
+      { renderToStaticMarkup },
+      { BillingCostCharts },
+      { BillingCostsSurface },
+      { formatBillingDateTime },
+      { BillingPlanPicker },
+      { BillingPlanSurface },
+      { BillingPriceTable, BillingPricingSurface },
+      { BillingNavigationFrame },
+      { BillingUsageSurface },
+    ] = await Promise.all([
+      import("react-dom/server"),
+      import("./billing-cost-charts"),
+      import("./billing-costs"),
+      import("./billing-datetime"),
+      import("./billing-plan-picker"),
+      import("./billing-plan-surface"),
+      import("./billing-pricing"),
+      import("./billing-tab-shell"),
+      import("./billing-usage"),
+    ]);
+    return {
+      BillingCostCharts,
+      BillingCostsSurface,
+      BillingNavigationFrame,
+      BillingPlanPicker,
+      BillingPlanSurface,
+      BillingPriceTable,
+      BillingPricingSurface,
+      BillingUsageSurface,
+      formatBillingDateTime,
+      renderToStaticMarkup,
+    };
+  } finally {
+    await dom.restore();
+  }
+}
+
+let cachedModules: ReturnType<typeof loadSurfaceModules> | undefined;
+
+function surfaceModules() {
+  cachedModules ??= loadSurfaceModules();
+  return cachedModules;
+}
 
 function assertTextOrder(html: string, labels: readonly string[]) {
   let previousIndex = -1;
@@ -149,10 +192,12 @@ const CANCELLING_PLAN = {
     planName: "Pro",
     priceMicroUnits: 20_000_000,
     regionDomain: "us.example.test",
+    resourceDeletionAt: "2026-09-14T00:00:00Z",
     resources: [
       { label: "CPU", value: "4" },
       { label: "Memory", value: "8Gi" },
     ],
+    warningStage: "cancelling",
     workspace: "workspace-a",
   },
   pendingDowngrade: null,
@@ -211,7 +256,9 @@ const CANCELLING_PLAN = {
   ],
 } satisfies BillingPlanSnapshot;
 
-test("Billing Area keeps Cost Center's vertical navigation hierarchy", () => {
+test("Billing Area keeps Cost Center's vertical navigation hierarchy", async () => {
+  const { BillingNavigationFrame, renderToStaticMarkup } =
+    await surfaceModules();
   const html = renderToStaticMarkup(
     <BillingNavigationFrame activeTab="usage">
       <div>Current page</div>
@@ -231,7 +278,8 @@ test("Billing Area keeps Cost Center's vertical navigation hierarchy", () => {
   assertTextOrder(html, ["Billing", "Current page"]);
 });
 
-test("Plan keeps Cost Center's section order around the live balance", () => {
+test("Plan keeps Cost Center's section order around the live balance", async () => {
+  const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
   const html = renderToStaticMarkup(
     <BillingPlanSurface
       balance={<span>$3.00</span>}
@@ -254,7 +302,9 @@ test("Plan keeps Cost Center's section order around the live balance", () => {
   assert.equal(html.includes("Compare plans"), false);
 });
 
-test("Plan renders lifecycle notices, card facts, and workspace plan rows", () => {
+test("Plan renders lifecycle notices, card facts, and workspace plan rows", async () => {
+  const { BillingPlanSurface, formatBillingDateTime, renderToStaticMarkup } =
+    await surfaceModules();
   const html = renderToStaticMarkup(
     <BillingPlanSurface
       balance={<span>$3.00</span>}
@@ -264,10 +314,10 @@ test("Plan renders lifecycle notices, card facts, and workspace plan rows", () =
   );
 
   for (const text of [
-    "Cancelling",
     "Pending upgrade to Team",
-    "Your subscription is being cancelled",
-    "You have an unpaid invoice",
+    "Your subscription is cancelled",
+    "Resources will be deleted after",
+    "Sep 14, 2026",
     "Visa",
     "•••• 4242",
     "EXP: 12/28",
@@ -282,10 +332,14 @@ test("Plan renders lifecycle notices, card facts, and workspace plan rows", () =
   ]) {
     assertIncludes(html, text);
   }
-  assertIncludes(html, 'href="https://payments.example.test/invoice-1"');
+  // The warning banner suppresses the lifecycle badge and the standalone
+  // unpaid-invoice alert; it carries no payment link of its own.
+  assert.equal(html.includes("You have an unpaid invoice"), false);
+  assert.equal(html.includes("https://payments.example.test"), false);
 });
 
-test("Plan renders the compact PAYG summary next to the balance", () => {
+test("Plan renders the compact PAYG summary next to the balance", async () => {
+  const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
   const snapshot: BillingPlanSnapshot = {
     ...CANCELLING_PLAN,
     card: null,
@@ -299,6 +353,8 @@ test("Plan renders the compact PAYG summary next to the balance", () => {
       lifecycle: "active",
       planName: "PAYG",
       priceMicroUnits: 0,
+      resourceDeletionAt: null,
+      warningStage: null,
     },
     pendingDowngrade: null,
     pendingUpgrade: null,
@@ -328,7 +384,8 @@ test("Plan renders the compact PAYG summary next to the balance", () => {
   }
 });
 
-test("Plan shows the free-plan expiry warning when expiry is within seven days", () => {
+test("Plan shows the free-plan expiry warning when expiry is within seven days", async () => {
+  const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
   const snapshot: BillingPlanSnapshot = {
     ...CANCELLING_PLAN,
     current: {
@@ -342,6 +399,8 @@ test("Plan shows the free-plan expiry warning when expiry is within seven days",
       lifecycle: "active",
       planName: "Free",
       priceMicroUnits: 0,
+      resourceDeletionAt: null,
+      warningStage: null,
     },
     pendingDowngrade: null,
     pendingUpgrade: null,
@@ -359,7 +418,8 @@ test("Plan shows the free-plan expiry warning when expiry is within seven days",
   assert.equal(html.includes("unpaid invoice"), false);
 });
 
-test("Plan hides the free-plan expiry warning outside the near-expiry window", () => {
+test("Plan hides the free-plan expiry warning outside the near-expiry window", async () => {
+  const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
   for (const daysUntilExpiry of [8, -1]) {
     const snapshot: BillingPlanSnapshot = {
       ...CANCELLING_PLAN,
@@ -374,6 +434,8 @@ test("Plan hides the free-plan expiry warning outside the near-expiry window", (
         lifecycle: "active",
         planName: "Free",
         priceMicroUnits: 0,
+        resourceDeletionAt: null,
+        warningStage: null,
       },
       pendingDowngrade: null,
       pendingUpgrade: null,
@@ -390,7 +452,8 @@ test("Plan hides the free-plan expiry warning outside the near-expiry window", (
   }
 });
 
-test("Plan keeps cancellation available while an upgrade is pending", () => {
+test("Plan keeps cancellation available while an upgrade is pending", async () => {
+  const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
   const snapshot: BillingPlanSnapshot = {
     ...CANCELLING_PLAN,
     current: {
@@ -399,6 +462,8 @@ test("Plan keeps cancellation available while an upgrade is pending", () => {
       invoiceId: null,
       invoicePaymentUrl: null,
       lifecycle: "pending-upgrade",
+      resourceDeletionAt: null,
+      warningStage: null,
     },
   };
   const html = renderToStaticMarkup(
@@ -412,7 +477,9 @@ test("Plan keeps cancellation available while an upgrade is pending", () => {
   assertIncludes(html, "Cancel Plan");
 });
 
-test("Costs preserves Cost Center's detail and trend information layers", () => {
+test("Costs preserves Cost Center's detail and trend information layers", async () => {
+  const { BillingCostCharts, BillingCostsSurface, renderToStaticMarkup } =
+    await surfaceModules();
   const html = renderToStaticMarkup(<BillingCostsSurface />);
 
   assertTextOrder(html, ["Billing", "Cost &amp; Top-up Trends"]);
@@ -453,7 +520,8 @@ test("Costs preserves Cost Center's detail and trend information layers", () => 
   ]);
 });
 
-test("Usage preserves the quota table's workspace and resource hierarchy", () => {
+test("Usage preserves the quota table's workspace and resource hierarchy", async () => {
+  const { BillingUsageSurface, renderToStaticMarkup } = await surfaceModules();
   const html = renderToStaticMarkup(
     <BillingUsageSurface gpuEnabled={false} snapshot={USAGE_SNAPSHOT} />
   );
@@ -485,7 +553,8 @@ test("Usage preserves the quota table's workspace and resource hierarchy", () =>
   assert.equal(html.includes("Current quota allocation"), false);
 });
 
-test("Usage adds the GPU quota row only when the cluster flag is enabled", () => {
+test("Usage adds the GPU quota row only when the cluster flag is enabled", async () => {
+  const { BillingUsageSurface, renderToStaticMarkup } = await surfaceModules();
   const html = renderToStaticMarkup(
     <BillingUsageSurface gpuEnabled snapshot={USAGE_SNAPSHOT} />
   );
@@ -501,7 +570,9 @@ test("Usage adds the GPU quota row only when the cluster flag is enabled", () =>
   ]);
 });
 
-test("Pricing preserves Cost Center's three pricing information layers", () => {
+test("Pricing preserves Cost Center's three pricing information layers", async () => {
+  const { BillingPricingSurface, renderToStaticMarkup } =
+    await surfaceModules();
   const html = renderToStaticMarkup(
     <BillingPricingSurface
       currency="usd"
@@ -521,7 +592,9 @@ test("Pricing preserves Cost Center's three pricing information layers", () => {
   assertIncludes(html, 'aria-label="Pricing views"');
 });
 
-test("Pricing hides the view switcher when only subscription plans are available", () => {
+test("Pricing hides the view switcher when only subscription plans are available", async () => {
+  const { BillingPricingSurface, renderToStaticMarkup } =
+    await surfaceModules();
   const html = renderToStaticMarkup(
     <BillingPricingSurface
       currency="usd"
@@ -539,7 +612,9 @@ test("Pricing hides the view switcher when only subscription plans are available
   assert.equal(html.includes("Price calculator"), false);
 });
 
-test("Pricing surfaces a plans-area error state when the plan snapshot fails", () => {
+test("Pricing surfaces a plans-area error state when the plan snapshot fails", async () => {
+  const { BillingPricingSurface, renderToStaticMarkup } =
+    await surfaceModules();
   const html = renderToStaticMarkup(
     <BillingPricingSurface
       currency="usd"
@@ -572,7 +647,9 @@ const PICKER_PLANS: BillingPlanSnapshot["plans"] = [
   },
 ];
 
-test("Pricing renders cluster currency and filters GPU picker and price rows", () => {
+test("Pricing renders cluster currency and filters GPU picker and price rows", async () => {
+  const { BillingPlanPicker, BillingPriceTable, renderToStaticMarkup } =
+    await surfaceModules();
   const withoutGpu = renderToStaticMarkup(
     <>
       <BillingPlanPicker
@@ -625,7 +702,8 @@ test("Pricing renders cluster currency and filters GPU picker and price rows", (
   assertTextOrder(withGpu, ["Basic Pricing", "GPU Price Table", "NVIDIA A100"]);
 });
 
-test("Plan Picker splits cards from the more-plans selector like the dialog", () => {
+test("Plan Picker splits cards from the more-plans selector like the dialog", async () => {
+  const { BillingPlanPicker, renderToStaticMarkup } = await surfaceModules();
   const basePlan = PICKER_PLANS[0];
   assert.ok(basePlan);
   const plans: BillingPlanSnapshot["plans"] = [

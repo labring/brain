@@ -33,8 +33,8 @@ import {
   Dock,
   ExternalLink,
   Info,
-  RotateCcw,
   Sparkles,
+  TriangleAlert,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -45,6 +45,7 @@ import type {
   SubscriptionLifecycle,
   SubscriptionLifecycleAction,
   SubscriptionLifecycleOutcome,
+  SubscriptionWarningStage,
 } from "@/features/billing/billing-plan-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
@@ -113,6 +114,28 @@ const PLAN_SUMMARY_RECIPES: Record<string, { panel: string; title: string }> = {
   },
 };
 
+// While the subscription warning is up, the panel trades the tier gradient
+// for a wash matching the banner's severity — an amber caution while
+// cancelling, orange→red once expiry hits — and the title drops the tier
+// tint.
+const WARNING_SUMMARY_RECIPES: Record<
+  SubscriptionWarningStage,
+  { panel: string; title: string }
+> = {
+  cancelling: {
+    panel: "bg-linear-to-r from-amber-400/10 to-orange-400/10",
+    title: "text-foreground",
+  },
+  "deletion-imminent": {
+    panel: "bg-linear-to-r from-orange-500/10 to-red-500/10",
+    title: "text-foreground",
+  },
+  expired: {
+    panel: "bg-linear-to-r from-orange-500/10 to-red-500/10",
+    title: "text-foreground",
+  },
+};
+
 function formatDate(value: string | null): string {
   if (value == null || value.trim() === "") {
     return "-";
@@ -153,6 +176,72 @@ function isNearFutureExpiry(value: string): boolean {
   );
 }
 
+// Copy per warning stage: a scannable title plus a description split around
+// the bolded deletion date. "Expired" (not "payment failed"/"cancelled") is
+// the platform's own wording for the suspended stage: a failed renewal and a
+// cancelled-then-lapsed period both land in the same deletion pipeline.
+const SUBSCRIPTION_WARNING_COPY: Record<
+  SubscriptionWarningStage,
+  { after: string; before: string; title: string }
+> = {
+  cancelling: {
+    after: ". Back up your data or renew to avoid loss.",
+    before: "Resources will be deleted after ",
+    title: "Your subscription is cancelled",
+  },
+  "deletion-imminent": {
+    after: ". Renew now to avoid data loss.",
+    before: "All resources will be permanently deleted after ",
+    title: "Workspace scheduled for deletion",
+  },
+  expired: {
+    after: ". Renew to avoid loss.",
+    before: "Your workspace is suspended and resources will be deleted after ",
+    title: "Your subscription has expired",
+  },
+};
+
+// Severity escalates with the deletion countdown: a pending cancellation is
+// still a caution (amber), while an expired or deletion-bound workspace is
+// destructive (red). The semantic color stays on the icon and title only —
+// the description keeps its muted default.
+const SUBSCRIPTION_WARNING_TONES: Record<SubscriptionWarningStage, string> = {
+  cancelling: "bg-amber-400/10 text-amber-600 dark:text-amber-400",
+  "deletion-imminent": "bg-red-500/10 text-destructive",
+  expired: "bg-red-500/10 text-destructive",
+};
+
+function SubscriptionWarningBanner({
+  current,
+}: {
+  current: BillingPlanSnapshot["current"];
+}) {
+  const stage = current.warningStage;
+  if (stage == null) {
+    return null;
+  }
+  const copy = SUBSCRIPTION_WARNING_COPY[stage];
+
+  return (
+    <Alert
+      className={cn("border-none", SUBSCRIPTION_WARNING_TONES[stage])}
+      data-slot="billing-subscription-warning"
+    >
+      <TriangleAlert aria-hidden />
+      <AlertTitle>{copy.title}</AlertTitle>
+      <AlertDescription>
+        {copy.before}
+        <strong className="font-semibold text-foreground">
+          {current.resourceDeletionAt == null
+            ? "the grace period ends"
+            : formatDate(current.resourceDeletionAt)}
+        </strong>
+        {copy.after}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function BillingPlanNotices({
   current,
   invoiceCancellationPending,
@@ -169,7 +258,10 @@ function BillingPlanNotices({
 
   return (
     <div className="flex flex-col gap-3" data-slot="billing-plan-notices">
-      {current.invoicePaymentUrl == null ? null : (
+      <SubscriptionWarningBanner current={current} />
+
+      {current.invoicePaymentUrl == null ||
+      current.warningStage != null ? null : (
         <Alert
           className="has-data-[slot=alert-action]:pr-4 sm:has-data-[slot=alert-action]:pr-18"
           variant="destructive"
@@ -207,17 +299,6 @@ function BillingPlanNotices({
           </AlertAction>
         </Alert>
       )}
-
-      {current.cancelAtPeriodEnd && !isFreePlan ? (
-        <Alert>
-          <Info aria-hidden />
-          <AlertTitle>Your subscription is being cancelled</AlertTitle>
-          <AlertDescription>
-            Access continues until {formatDate(current.currentPeriodEndAt)}.
-            Resume before then to keep this workspace active.
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
       {isFreePlan && isNearFutureExpiry(current.currentPeriodEndAt) ? (
         <Alert>
@@ -452,6 +533,8 @@ function BillingPlanActions({
   }
 
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
+  // One "Renew" button covers both warning roads: before expiry it revokes
+  // the cancellation (no payment), after expiry it re-opens checkout.
   const canResume = current.lifecycle === "cancelling";
   const canRenew = current.lifecycle === "payment-due";
   const canCancel =
@@ -473,8 +556,8 @@ function BillingPlanActions({
           disabled={actionPending != null}
           onClick={() => onLifecycleAction?.("resumed")}
         >
-          <RotateCcw aria-hidden data-icon="inline-start" />
-          {actionPending === "resumed" ? "Resuming..." : "Resume Plan"}
+          <Sparkles aria-hidden data-icon="inline-start" />
+          {actionPending === "resumed" ? "Renewing..." : "Renew"}
         </AppButton>
       ) : null}
       {canRenew ? (
@@ -482,17 +565,19 @@ function BillingPlanActions({
           disabled={renewalPending || actionPending != null}
           onClick={onRenew}
         >
-          <CreditCard aria-hidden data-icon="inline-start" />
-          {renewalPending ? "Opening..." : "Renew Plan"}
+          <Sparkles aria-hidden data-icon="inline-start" />
+          {renewalPending ? "Opening..." : "Renew"}
         </AppButton>
       ) : null}
-      <AppButton
-        disabled={actionPending != null}
-        onClick={() => onPlanChange?.(null)}
-      >
-        <Sparkles aria-hidden data-icon="inline-start" />
-        Upgrade Plan
-      </AppButton>
+      {canResume || canRenew ? null : (
+        <AppButton
+          disabled={actionPending != null}
+          onClick={() => onPlanChange?.(null)}
+        >
+          <Sparkles aria-hidden data-icon="inline-start" />
+          Upgrade Plan
+        </AppButton>
+      )}
     </div>
   );
 }
@@ -529,11 +614,13 @@ export function BillingPlanSurface({
   const { current } = snapshot;
   const lifecycleMetadata = LIFECYCLE_METADATA[current.lifecycle];
   const summaryRecipe =
-    PLAN_SUMMARY_RECIPES[current.planName.trim().toUpperCase()];
+    current.warningStage == null
+      ? PLAN_SUMMARY_RECIPES[current.planName.trim().toUpperCase()]
+      : WARNING_SUMMARY_RECIPES[current.warningStage];
 
   const lifecycleBadges = (
     <>
-      {current.lifecycle === "active" ? null : (
+      {current.lifecycle === "active" || current.warningStage != null ? null : (
         <Badge variant={lifecycleMetadata.variant}>
           {lifecycleMetadata.label}
         </Badge>
@@ -717,7 +804,7 @@ export function BillingPlanSurface({
                         <Badge variant="outline">Current</Badge>
                       ) : null}
                       {workspace.lifecycle === "payment-due" ? (
-                        <Badge variant="destructive">In debt</Badge>
+                        <Badge variant="secondary">Plan Expired</Badge>
                       ) : null}
                       {workspace.lifecycle === "cancelling" ? (
                         <Badge variant="secondary">Plan Cancelled</Badge>

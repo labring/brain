@@ -17,6 +17,7 @@ export const BILLING_DEV_SCENARIOS = [
   "active-balance",
   "cancelling",
   "payment-due",
+  "payment-due-deletion",
   "pending-upgrade",
   "mixed-workspaces",
 ] as const;

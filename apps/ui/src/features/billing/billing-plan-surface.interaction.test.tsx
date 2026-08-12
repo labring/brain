@@ -10,8 +10,8 @@ import type {
   SubscriptionLifecycleAction,
 } from "./billing-plan-data";
 
-const CANCELLING_BANNER_PATTERN = /Your subscription is being cancelled/;
-const CANCELLING_PATTERN = /Cancelling/;
+const CANCELLING_BANNER_PATTERN = /Your subscription is cancelled/;
+const EXPIRED_BANNER_PATTERN = /Your subscription has expired/;
 
 const CANCELLING_PLAN: BillingPlanSnapshot = {
   card: { brand: "visa", last4: "4242" },
@@ -28,7 +28,9 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
     planName: "Pro",
     priceMicroUnits: 20_000_000,
     regionDomain: "us.example.test",
+    resourceDeletionAt: "2099-09-14T00:00:00Z",
     resources: [{ label: "CPU", value: "4" }],
+    warningStage: "cancelling",
     workspace: "workspace-a",
   },
   pendingDowngrade: null,
@@ -56,6 +58,8 @@ test("resume refreshes the Plan lifecycle state", async () => {
                 ...current.current,
                 cancelAtPeriodEnd: false,
                 lifecycle: "active",
+                resourceDeletionAt: null,
+                warningStage: null,
               },
             }));
             return undefined;
@@ -71,7 +75,6 @@ test("resume refreshes the Plan lifecycle state", async () => {
         rendered = render(<Harness />);
       });
 
-      assert.match(rendered?.container.textContent ?? "", CANCELLING_PATTERN);
       assert.match(
         rendered?.container.textContent ?? "",
         CANCELLING_BANNER_PATTERN
@@ -79,7 +82,7 @@ test("resume refreshes the Plan lifecycle state", async () => {
 
       await act(() => {
         const resume = rendered?.getByRole("button", {
-          name: "Resume Plan",
+          name: "Renew",
         });
         if (resume != null) {
           fireEvent.click(resume);
@@ -89,13 +92,7 @@ test("resume refreshes the Plan lifecycle state", async () => {
       assert.deepEqual(actions, ["resumed"]);
       assert.doesNotMatch(
         rendered?.container.textContent ?? "",
-        CANCELLING_PATTERN
-      );
-      assert.equal(
-        (rendered?.container.textContent ?? "").includes(
-          "Your subscription is being cancelled"
-        ),
-        false
+        CANCELLING_BANNER_PATTERN
       );
       assert.ok(rendered?.getByRole("button", { name: "Cancel Plan" }));
     } finally {
@@ -144,12 +141,18 @@ test("an unpaid invoice can be cancelled from its Plan banner", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanSurface } = await import("./billing-plan-surface");
     const invoiceIds: string[] = [];
+    // A non-warning lifecycle: the standalone unpaid-invoice alert only
+    // renders while the subscription warning banner is down.
     const snapshot: BillingPlanSnapshot = {
       ...CANCELLING_PLAN,
       current: {
         ...CANCELLING_PLAN.current,
+        cancelAtPeriodEnd: false,
         invoiceId: "invoice-1",
         invoicePaymentUrl: "https://payments.example.test/invoice-1",
+        lifecycle: "pending-upgrade",
+        resourceDeletionAt: null,
+        warningStage: null,
       },
     };
     let rendered: ReturnType<typeof render> | undefined;
@@ -196,7 +199,10 @@ test("a payment-due subscription exposes the renewal action", async () => {
       current: {
         ...CANCELLING_PLAN.current,
         cancelAtPeriodEnd: false,
+        invoiceId: "invoice-1",
+        invoicePaymentUrl: "https://payments.example.test/invoice-1",
         lifecycle: "payment-due",
+        warningStage: "expired",
       },
     };
     let rendered: ReturnType<typeof render> | undefined;
@@ -215,9 +221,26 @@ test("a payment-due subscription exposes the renewal action", async () => {
         );
       });
 
+      // The warning banner replaces the standalone unpaid-invoice alert;
+      // renewal (not invoice payment) is the single call to action.
+      assert.match(
+        rendered?.container.textContent ?? "",
+        EXPIRED_BANNER_PATTERN
+      );
+      assert.equal(
+        (rendered?.container.textContent ?? "").includes(
+          "You have an unpaid invoice"
+        ),
+        false
+      );
+      assert.equal(
+        rendered?.queryByRole("link", { name: "Pay invoice" }),
+        null
+      );
+
       await act(() => {
         const renew = rendered?.getByRole("button", {
-          name: "Renew Plan",
+          name: "Renew",
         });
         if (renew != null) {
           fireEvent.click(renew);
@@ -241,6 +264,8 @@ test("plan actions open the change workflow with the selected plan", async () =>
         ...CANCELLING_PLAN.current,
         cancelAtPeriodEnd: false,
         lifecycle: "active",
+        resourceDeletionAt: null,
+        warningStage: null,
       },
       plans: [
         {
@@ -327,6 +352,8 @@ test("a PAYG workspace exposes only the subscribe entry point", async () => {
         lifecycle: "active",
         planName: "PAYG",
         priceMicroUnits: 0,
+        resourceDeletionAt: null,
+        warningStage: null,
       },
     };
     let rendered: ReturnType<typeof render> | undefined;

@@ -19,6 +19,18 @@ export type SubscriptionLifecycle =
   | "payment-due"
   | "pending-upgrade";
 
+/**
+ * Escalation stage of the destructive subscription warning, following the
+ * platform's expiry pipeline: a cancelled subscription still inside its paid
+ * period ("cancelling"), an expired one whose workspace is suspended
+ * ("expired"), and one whose deletion window has opened
+ * ("deletion-imminent").
+ */
+export type SubscriptionWarningStage =
+  | "cancelling"
+  | "deletion-imminent"
+  | "expired";
+
 export interface BillingPlanResource {
   label: string;
   type?: BillingPlanResourceType;
@@ -45,7 +57,10 @@ export interface BillingPlanSnapshot {
     planName: string;
     priceMicroUnits: number;
     regionDomain: string;
+    /** When the platform will delete the workspace's resources; set only while `warningStage` is. */
+    resourceDeletionAt: string | null;
     resources: BillingPlanResource[];
+    warningStage: SubscriptionWarningStage | null;
     workspace: string;
   };
   pendingDowngrade: { planName: string; startsAt: string } | null;
@@ -192,6 +207,22 @@ const workspacesResponseSchema = z.object({
 
 const DAYS_31_IN_MILLISECONDS = 31 * 24 * 60 * 60 * 1000;
 
+// Mirror of the platform's workspace-subscription expiry pipeline: resources
+// are finally deleted 14 days after the subscription expires. The upstream
+// does not report a deletion date, so the client derives it from expiry; see
+// docs/adr/0062-derive-resource-deletion-dates-client-side.md for when this
+// constant must be replaced by an upstream field.
+const RESOURCE_DELETION_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
+
+// Upstream subscription statuses that mean the subscription has expired and
+// entered the deletion pipeline; only the first still precedes deletion by
+// the full grace window.
+const DEBT_STATUSES = new Set([
+  "debt",
+  "debt_pre_deletion",
+  "debt_final_deletion",
+]);
+
 function normalizedPayMethod(value: string): "balance" | "stripe" {
   return value.trim().toLowerCase() === "balance" ? "balance" : "stripe";
 }
@@ -202,19 +233,49 @@ function subscriptionLifecycle(input: {
   planName: string;
   status: string;
 }): SubscriptionLifecycle {
+  // Expiry outranks a pending cancellation: once the platform starts the
+  // deletion pipeline, "cancelling" would hide the countdown.
+  if (DEBT_STATUSES.has(input.status.trim().toLowerCase())) {
+    return "payment-due";
+  }
   if (
     input.cancelAtPeriodEnd &&
     input.planName.trim().toLowerCase() !== "free"
   ) {
     return "cancelling";
   }
-  if (input.status.trim().toLowerCase() === "debt") {
-    return "payment-due";
-  }
   if (input.hasPendingUpgrade) {
     return "pending-upgrade";
   }
   return "active";
+}
+
+function subscriptionWarningStage(input: {
+  lifecycle: SubscriptionLifecycle;
+  status: string;
+}): SubscriptionWarningStage | null {
+  if (input.lifecycle === "payment-due") {
+    return input.status.trim().toLowerCase() === "debt"
+      ? "expired"
+      : "deletion-imminent";
+  }
+  return input.lifecycle === "cancelling" ? "cancelling" : null;
+}
+
+function resourceDeletionDate(input: {
+  currentPeriodEndAt: string;
+  expireAt: string | null;
+  stage: SubscriptionWarningStage | null;
+}): string | null {
+  if (input.stage == null) {
+    return null;
+  }
+  const basis = input.currentPeriodEndAt.trim() || input.expireAt?.trim() || "";
+  const expiry = new Date(basis);
+  if (Number.isNaN(expiry.getTime())) {
+    return null;
+  }
+  return new Date(expiry.getTime() + RESOURCE_DELETION_GRACE_MS).toISOString();
 }
 
 function pendingTransactionFromOperator(
@@ -312,6 +373,16 @@ export async function loadBillingPlanSnapshot(
     "downgraded"
   );
   const currentPlan = plans.find((plan) => plan.name === subscription.PlanName);
+  const lifecycle = subscriptionLifecycle({
+    cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
+    hasPendingUpgrade: pendingUpgrade != null,
+    planName: subscription.PlanName,
+    status: subscription.Status,
+  });
+  const warningStage = subscriptionWarningStage({
+    lifecycle,
+    status: subscription.Status,
+  });
   const subscriptionByWorkspace = new Map(
     subscriptions.map((item) => [item.Workspace, item])
   );
@@ -337,19 +408,20 @@ export async function loadBillingPlanSnapshot(
       invoiceId: subscription.InvoiceInfo?.ID ?? null,
       invoicePaymentUrl: subscription.InvoiceInfo?.PaymentUrl ?? null,
       isPayg: subscription.type === "PAYG",
-      lifecycle: subscriptionLifecycle({
-        cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
-        hasPendingUpgrade: pendingUpgrade != null,
-        planName: subscription.PlanName,
-        status: subscription.Status,
-      }),
+      lifecycle,
       payMethod: normalizedPayMethod(subscription.PayMethod),
       planName: subscription.PlanName,
       priceMicroUnits: currentPlan?.monthlyPriceMicroUnits ?? 0,
       regionDomain: subscription.RegionDomain || region.domain,
+      resourceDeletionAt: resourceDeletionDate({
+        currentPeriodEndAt: subscription.CurrentPeriodEndAt,
+        expireAt: subscription.ExpireAt ?? null,
+        stage: warningStage,
+      }),
       resources:
         currentPlan?.resources.map(({ label, value }) => ({ label, value })) ??
         [],
+      warningStage,
       workspace: subscription.Workspace,
     },
     pendingDowngrade,
