@@ -184,6 +184,7 @@ function Sidebar({
   variant = "sidebar",
   collapsible = "offcanvas",
   className,
+  innerClassName,
   children,
   dir,
   ...props
@@ -191,6 +192,8 @@ function Sidebar({
   side?: "left" | "right";
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
+  /** Extra classes for the inner surface element (data-slot="sidebar-inner"). */
+  innerClassName?: string;
 }) {
   const { enableMobile, isMobile, state, openMobile, setOpenMobile } =
     useSidebar();
@@ -230,7 +233,9 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          <div className={cn("flex h-full w-full flex-col", innerClassName)}>
+            {children}
+          </div>
         </SheetContent>
       </Sheet>
     );
@@ -275,7 +280,10 @@ function Sidebar({
         {...props}
       >
         <div
-          className="flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          className={cn(
+            "flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border",
+            innerClassName
+          )}
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
         >

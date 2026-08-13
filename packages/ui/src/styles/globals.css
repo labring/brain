@@ -14,6 +14,9 @@
   /* Strong ease-out for on-screen UI movement (sliding indicators, panels);
      same family as --project-surface-motion-ease. */
   --ease-out-strong: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Matches the App Sidebar container's expand curve (see the
+     app-sidebar-surface rules); collapse pairs it with ease-out. */
+  --ease-sidebar: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @theme inline {
@@ -520,7 +523,7 @@
       > [data-slot="sidebar-container"].app-sidebar-surface
     )[data-state="expanded"]
     > [data-slot="sidebar-container"] {
-    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    transition-timing-function: var(--ease-sidebar);
     transition-duration: 300ms;
   }
 
@@ -560,10 +563,6 @@
       transition: none !important;
       animation: none !important;
     }
-  }
-
-  .app-sidebar-label {
-    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .cn-toast[data-sonner-toast] {
@@ -742,6 +741,14 @@
   }
 }
 
+/* Registered via @utility (not a plain class in @layer utilities) so it can
+   compose with variants; plain layered classes silently produce no CSS when
+   used behind a variant prefix. */
+@utility project-chrome-surface {
+  background-color: var(--project-chrome-surface-base);
+  background-image: var(--project-chrome-surface-overlay);
+}
+
 @layer utilities {
   /** Legacy explicit marker for chat scroll surfaces; global scrollbar tokens provide the styling. */
   .scrollbar-chat-thin {
@@ -757,11 +764,6 @@
   .scrollbar-chat-thin::-webkit-scrollbar-thumb {
     background-color: var(--scrollbar-thumb);
     border-radius: calc(infinity * 1px);
-  }
-
-  .project-chrome-surface {
-    background-color: var(--project-chrome-surface-base);
-    background-image: var(--project-chrome-surface-overlay);
   }
 
   .main-action-surface-background {

@@ -65,8 +65,6 @@ import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 const APP_SIDEBAR_NAV_ID = "app-sidebar-nav";
 const APP_SIDEBAR_WIDTH = "16.5rem";
 const APP_SIDEBAR_WIDTH_ICON = "3.25rem";
-const APP_SIDEBAR_LABEL_STAGGER_CAP = 9;
-const APP_SIDEBAR_LABEL_STAGGER_MS = 25;
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
 
@@ -122,19 +120,11 @@ function BrandLogo({ className }: { className?: string }) {
   );
 }
 
-function labelDelay(index: number, expanded: boolean): string {
-  if (!expanded) {
-    return "0ms";
-  }
-  return `${Math.min(index, APP_SIDEBAR_LABEL_STAGGER_CAP) * APP_SIDEBAR_LABEL_STAGGER_MS}ms`;
-}
-
 interface AppSidebarNavRowProps {
   active?: boolean;
   ariaLabel?: string;
   href?: string;
   icon: ReactNode;
-  index: number;
   label: string;
   onClick?: ComponentProps<typeof Link>["onClick"];
   rel?: string;
@@ -146,7 +136,6 @@ function AppSidebarNavRow({
   ariaLabel,
   href,
   icon,
-  index,
   label,
   onClick,
   rel,
@@ -154,34 +143,38 @@ function AppSidebarNavRow({
 }: AppSidebarNavRowProps) {
   const { state } = useSidebar();
   const expanded = state === "expanded";
+  const iconSlotRef = useRef<HTMLSpanElement>(null);
   const accessibleName = ariaLabel ?? label;
-  const className = cn(
-    "group/row relative flex h-8 w-full shrink-0 items-center overflow-hidden rounded-md text-left text-neutral-50 text-sm",
-    active && "text-blue-400"
-  );
+  const className =
+    "group/row relative flex h-8 w-full shrink-0 items-center overflow-hidden rounded-md text-left text-neutral-50 text-sm";
   const body = (
     <>
       <span
         aria-hidden
         className={cn(
-          "app-sidebar-hover absolute inset-y-0 left-0 rounded-md transition-[width,background-color] duration-200 group-hover/row:bg-input/30",
-          expanded ? "w-full" : "w-9",
-          active && expanded && "bg-input group-hover/row:bg-input"
+          "app-sidebar-hover absolute inset-y-0 left-0 rounded-md transition-[width,background-color] group-hover/row:bg-input/30 motion-reduce:transition-none",
+          expanded
+            ? "w-full duration-300 ease-sidebar"
+            : "w-9 duration-200 ease-out",
+          active && "bg-input group-hover/row:bg-input"
         )}
       />
-      <span className="relative flex w-9 shrink-0 items-center justify-center">
+      <span
+        className={cn(
+          "relative flex w-9 shrink-0 items-center justify-center",
+          active && "text-blue-400"
+        )}
+        ref={iconSlotRef}
+      >
         {icon}
       </span>
       <span
         className={cn(
-          "app-sidebar-label relative min-w-0 flex-1 truncate whitespace-nowrap pr-2 transition-[opacity,transform] motion-reduce:transition-none",
+          "app-sidebar-label relative min-w-0 flex-1 truncate whitespace-nowrap pr-2 transition-opacity motion-reduce:transition-none",
           expanded
-            ? "translate-x-0 opacity-100 duration-300"
-            : "-translate-x-2 opacity-0 duration-150"
+            ? "opacity-100 duration-300 ease-sidebar"
+            : "opacity-0 duration-200 ease-out"
         )}
-        style={{
-          transitionDelay: labelDelay(index, expanded),
-        }}
       >
         {label}
       </span>
@@ -208,14 +201,19 @@ function AppSidebarNavRow({
     <span {...sharedProps}>{body}</span>
   );
 
-  if (expanded) {
-    return row;
-  }
-
+  // Tooltip root/trigger stay mounted in both states so the row keeps one DOM
+  // tree across expand/collapse. `disabled` (not conditional content) turns it
+  // off while expanded — hovers must never reach the open state, or every
+  // stuck-open tooltip pops at once when collapsing mounts the popups.
+  // Anchor to the icon slot, not the row: the row keeps its full expanded
+  // width under the collapsed rail's clipping, which would float the tooltip
+  // far from the visible edge.
   return (
-    <Tooltip>
+    <Tooltip disabled={expanded}>
       <TooltipTrigger render={row} />
-      <TooltipContent side="right">{label}</TooltipContent>
+      <TooltipContent anchor={iconSlotRef} side="right">
+        {label}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -227,8 +225,8 @@ function AppSidebarGroupHeading({ children }: { children: ReactNode }) {
   return (
     <div
       className={cn(
-        "app-sidebar-heading relative shrink-0 overflow-hidden transition-[height] duration-150 motion-reduce:transition-none",
-        expanded ? "h-8" : "h-4"
+        "app-sidebar-heading relative shrink-0 overflow-hidden transition-[height] motion-reduce:transition-none",
+        expanded ? "h-8 duration-300 ease-sidebar" : "h-4 duration-200 ease-out"
       )}
     >
       <div
@@ -252,66 +250,77 @@ function AppSidebarGroupHeading({ children }: { children: ReactNode }) {
 
 function AppSidebarHeader() {
   const { setOpen, state } = useSidebar();
+  const expanded = state === "expanded";
 
-  if (state === "expanded") {
-    return (
-      <div className="flex h-11 shrink-0 items-center">
-        <span className="flex w-9 shrink-0 items-center justify-center">
-          <BrandLogo className="size-5" />
-        </span>
-        <span className="min-w-0 flex-1 truncate font-semibold text-neutral-50 text-sm">
-          Sealos
-        </span>
-        <AppIconButton
-          aria-controls={APP_SIDEBAR_NAV_ID}
-          aria-expanded
-          aria-label="Collapse sidebar"
-          className="shrink-0 border-0 text-neutral-50"
-          data-slot="app-sidebar-collapse"
-          onClick={() => {
-            setOpen(false);
-          }}
-          size="lg"
-          type="button"
-          variant="quiet"
-        >
-          <PanelLeft aria-hidden className="size-4" strokeWidth={1.33} />
-        </AppIconButton>
-      </div>
-    );
-  }
-
+  // One DOM tree for both states: the logo never leaves the icon slot. While
+  // expanded the logo button is inert (the PanelLeft button on the right
+  // collapses); once collapsed it becomes the expand control, swapping to a
+  // PanelLeft glyph on hover.
   return (
     <div className="flex h-11 shrink-0 items-center">
       <AppIconButton
         aria-controls={APP_SIDEBAR_NAV_ID}
-        aria-expanded={false}
+        aria-expanded={expanded ? undefined : false}
+        aria-hidden={expanded || undefined}
         aria-label="Expand sidebar"
-        className="group/expand shrink-0 border-0 text-neutral-50"
+        className={cn(
+          "group/expand shrink-0 border-0 text-neutral-50",
+          expanded && "pointer-events-none"
+        )}
         data-slot="app-sidebar-expand"
         onClick={() => {
           setOpen(true);
         }}
         size="lg"
+        tabIndex={expanded ? -1 : undefined}
         type="button"
         variant="quiet"
       >
-        <span aria-hidden className="relative block size-4">
-          <span
-            className="absolute inset-0 bg-center bg-contain bg-no-repeat opacity-100 transition-opacity duration-150 group-hover/expand:opacity-0 group-focus-visible/expand:opacity-0 motion-reduce:transition-none"
-            style={{ backgroundImage: `url(${JSON.stringify(sealosLogoSrc)})` }}
-          />
+        <span aria-hidden className="relative block size-5">
+          <BrandLogo className="absolute inset-0 size-5 opacity-100 transition-opacity duration-150 group-hover/expand:opacity-0 group-focus-visible/expand:opacity-0 motion-reduce:transition-none" />
           <PanelLeft
             className="absolute top-1/2 left-1/2 size-4 -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover/expand:opacity-100 group-focus-visible/expand:opacity-100 motion-reduce:transition-none"
             strokeWidth={1.33}
           />
         </span>
       </AppIconButton>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate whitespace-nowrap font-semibold text-neutral-50 text-sm transition-opacity motion-reduce:transition-none",
+          expanded
+            ? "opacity-100 duration-300 ease-sidebar"
+            : "opacity-0 duration-200 ease-out"
+        )}
+      >
+        Sealos
+      </span>
+      <AppIconButton
+        aria-controls={APP_SIDEBAR_NAV_ID}
+        aria-expanded
+        aria-hidden={expanded ? undefined : true}
+        aria-label="Collapse sidebar"
+        className={cn(
+          "shrink-0 border-0 text-neutral-50 transition-opacity motion-reduce:transition-none",
+          expanded
+            ? "opacity-100 duration-300 ease-sidebar"
+            : "pointer-events-none opacity-0 duration-150 ease-out"
+        )}
+        data-slot="app-sidebar-collapse"
+        onClick={() => {
+          setOpen(false);
+        }}
+        size="lg"
+        tabIndex={expanded ? undefined : -1}
+        type="button"
+        variant="quiet"
+      >
+        <PanelLeft aria-hidden className="size-4" strokeWidth={1.33} />
+      </AppIconButton>
     </div>
   );
 }
 
-function AppSidebarDesktopReturn({ index }: { index: number }) {
+function AppSidebarDesktopReturn() {
   const desktopUrl = useSealosDesktopUrl();
 
   return (
@@ -319,7 +328,6 @@ function AppSidebarDesktopReturn({ index }: { index: number }) {
       ariaLabel="Back to Desktop"
       href={desktopUrl ?? undefined}
       icon={<House aria-hidden className="size-4" strokeWidth={1.8} />}
-      index={index}
       label="Back to Desktop"
       rel={desktopUrl ? "noopener noreferrer" : undefined}
       target={desktopUrl ? "_blank" : undefined}
@@ -371,26 +379,33 @@ function AppSidebarUpgrade() {
       });
   }, []);
 
-  const trigger = expanded ? (
-    <AppButton className="w-full" type="button" variant="secondary">
-      <Sparkles
-        aria-hidden
-        className="size-4"
-        data-icon="inline-start"
-        strokeWidth={1.75}
-      />
-      <span>Upgrade</span>
-    </AppButton>
-  ) : (
-    <AppIconButton
+  // One button for both states: it keeps its centered layout and tracks the
+  // sidebar's width animation, the surface fading out into the quiet
+  // icon-button look as it reaches the rail.
+  const trigger = (
+    <AppButton
       aria-label="Upgrade"
-      className="shrink-0 border-0 text-neutral-50"
-      size="lg"
+      className={cn(
+        "overflow-hidden transition-[width,gap,padding,background-color,color] motion-reduce:transition-none",
+        expanded
+          ? "w-full duration-300 ease-sidebar"
+          : "w-9 gap-0 bg-transparent px-0 text-neutral-50 duration-200 ease-out hover:bg-input/30 hover:text-blue-400"
+      )}
       type="button"
-      variant="quiet"
+      variant="secondary"
     >
-      <Sparkles aria-hidden className="size-4" strokeWidth={1.8} />
-    </AppIconButton>
+      <Sparkles aria-hidden className="size-4" strokeWidth={1.75} />
+      <span
+        className={cn(
+          "overflow-hidden whitespace-nowrap transition-[max-width,opacity] motion-reduce:transition-none",
+          expanded
+            ? "max-w-24 opacity-100 duration-300 ease-sidebar"
+            : "max-w-0 opacity-0 duration-200 ease-out"
+        )}
+      >
+        Upgrade
+      </span>
+    </AppButton>
   );
 
   return (
@@ -447,13 +462,11 @@ function AppSidebarProjectRow({
   ariaLabel,
   currentProjectId,
   iconKey,
-  index,
   project,
 }: {
   ariaLabel?: string;
   currentProjectId: string | undefined;
   iconKey: ProjectShortcutIconKey;
-  index: number;
   project: { id: string; name: string };
 }) {
   const active = currentProjectId === project.id;
@@ -463,7 +476,6 @@ function AppSidebarProjectRow({
       ariaLabel={ariaLabel}
       href={`/project/${encodeURIComponent(project.id)}`}
       icon={<ProjectShortcutIcon active={active} iconKey={iconKey} />}
-      index={index}
       label={project.name}
     />
   );
@@ -478,28 +490,21 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
   groups: ReturnType<typeof createAppSidebarProjectGroups>;
   projectShortcutIconKeys: ProjectShortcutIconKeyMap | undefined;
 }) {
-  let rowIndex = 1;
-
   return (
     <>
       {groups.pinned.length > 0 ? (
         <div className="shrink-0" data-slot="app-sidebar-pinned">
           <AppSidebarGroupHeading>PINNED</AppSidebarGroupHeading>
           <div className="flex flex-col gap-1.5">
-            {groups.pinned.map((project) => {
-              const index = rowIndex;
-              rowIndex += 1;
-              return (
-                <AppSidebarProjectRow
-                  ariaLabel={`Pinned project: ${project.name}`}
-                  currentProjectId={currentProjectId}
-                  iconKey={projectShortcutIconKeys?.get(project.id) ?? "docker"}
-                  index={index}
-                  key={project.id}
-                  project={project}
-                />
-              );
-            })}
+            {groups.pinned.map((project) => (
+              <AppSidebarProjectRow
+                ariaLabel={`Pinned project: ${project.name}`}
+                currentProjectId={currentProjectId}
+                iconKey={projectShortcutIconKeys?.get(project.id) ?? "docker"}
+                key={project.id}
+                project={project}
+              />
+            ))}
           </div>
         </div>
       ) : null}
@@ -508,21 +513,14 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
           <AppSidebarGroupHeading>PROJECTS</AppSidebarGroupHeading>
           <div className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-10px),transparent)]">
             <div className="flex flex-col gap-1.5 py-1">
-              {groups.projects.map((project) => {
-                const index = rowIndex;
-                rowIndex += 1;
-                return (
-                  <AppSidebarProjectRow
-                    currentProjectId={currentProjectId}
-                    iconKey={
-                      projectShortcutIconKeys?.get(project.id) ?? "docker"
-                    }
-                    index={index}
-                    key={project.id}
-                    project={project}
-                  />
-                );
-              })}
+              {groups.projects.map((project) => (
+                <AppSidebarProjectRow
+                  currentProjectId={currentProjectId}
+                  iconKey={projectShortcutIconKeys?.get(project.id) ?? "docker"}
+                  key={project.id}
+                  project={project}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -544,7 +542,12 @@ function AppSidebarFocusTransfer() {
       state === "expanded"
         ? '[data-slot="app-sidebar-collapse"]'
         : '[data-slot="app-sidebar-expand"]';
-    document.querySelector<HTMLElement>(selector)?.focus();
+    // preventScroll: while the expand animation is starting the collapse
+    // button still sits in the clipped overflow, and a default focus() would
+    // scroll the sidebar's inner surface sideways — a visible jump.
+    document.querySelector<HTMLElement>(selector)?.focus({
+      preventScroll: true,
+    });
   }, [state]);
 
   return null;
@@ -576,8 +579,9 @@ function AppSidebarChrome({
 
   return (
     <Sidebar
-      className="app-sidebar-surface [&_[data-slot=sidebar-inner]]:project-chrome-surface border-border [&_[data-slot=sidebar-inner]]:overflow-hidden"
+      className="app-sidebar-surface border-border"
       collapsible="icon"
+      innerClassName="project-chrome-surface overflow-hidden"
     >
       <div className="flex h-full min-h-0 w-(--sidebar-width) flex-col px-2 py-2.5">
         <SidebarHeader className="p-0">
@@ -600,7 +604,6 @@ function AppSidebarChrome({
                     strokeWidth={1.33}
                   />
                 }
-                index={0}
                 label="Projects"
               />
             </div>
@@ -619,13 +622,10 @@ function AppSidebarChrome({
               icon={
                 <CreditCard aria-hidden className="size-4" strokeWidth={1.8} />
               }
-              index={(states.projects?.length ?? 0) + 1}
               label="Billing"
               onClick={recordBillingReturnRoute}
             />
-            <AppSidebarDesktopReturn
-              index={(states.projects?.length ?? 0) + 2}
-            />
+            <AppSidebarDesktopReturn />
             <AppSidebarUpgrade />
           </div>
         </SidebarFooter>
