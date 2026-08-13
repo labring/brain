@@ -26,8 +26,6 @@ const explorer = {
     projects,
   } satisfies ProjectExplorerStates,
 };
-const PINNED_RE = /PINNED/;
-const PROJECTS_RE = /PROJECTS/;
 const UPGRADE_RE = /Upgrade/;
 
 mock.module("next/navigation", () => ({
@@ -97,6 +95,12 @@ async function withSidebar(
     restoreActEnvironment(previousActEnvironment);
     await dom.restore();
   }
+}
+
+function sidebarHeadings(nav: Element | null): string[] {
+  return [...(nav?.querySelectorAll(".app-sidebar-heading") ?? [])].map(
+    (heading) => heading.textContent?.trim() ?? ""
+  );
 }
 
 function sidebarState(): string | null {
@@ -187,8 +191,7 @@ test("pinned projects stay above the remaining projects", async () => {
     assert.ok(nav);
     assert.equal(nav.getAttribute("aria-label"), "Projects");
     assert.ok(document.querySelector('[data-slot="app-sidebar-pinned"]'));
-    assert.match(nav.textContent ?? "", PINNED_RE);
-    assert.match(nav.textContent ?? "", PROJECTS_RE);
+    assert.deepEqual(sidebarHeadings(nav), ["Pinned", "Projects"]);
     const pinnedLink = document.querySelector(
       '[aria-label="Pinned project: Alpha"]'
     );
@@ -203,16 +206,16 @@ test("pinned projects stay above the remaining projects", async () => {
   });
 });
 
-test("an empty PINNED group is omitted", async () => {
+test("an empty Pinned group is omitted", async () => {
   explorer.states = { pinnedProjectIds: [], projects };
   await withSidebar(() => {
     assert.equal(
       document.querySelector('[data-slot="app-sidebar-pinned"]'),
       null
     );
-    assert.doesNotMatch(
-      document.querySelector("#app-sidebar-nav")?.textContent ?? "",
-      PINNED_RE
+    assert.deepEqual(
+      sidebarHeadings(document.querySelector("#app-sidebar-nav")),
+      ["Projects"]
     );
   });
 });

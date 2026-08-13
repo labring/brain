@@ -231,7 +231,7 @@ function AppSidebarGroupHeading({ children }: { children: ReactNode }) {
     >
       <div
         className={cn(
-          "absolute inset-x-0 bottom-1 truncate pl-2 font-medium text-muted-foreground text-xs uppercase tracking-wider transition-opacity duration-150 motion-reduce:transition-none",
+          "absolute inset-x-0 bottom-1 truncate pl-2 font-medium text-muted-foreground text-xs transition-opacity duration-150 motion-reduce:transition-none",
           expanded ? "opacity-100" : "opacity-0"
         )}
       >
@@ -494,7 +494,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
     <>
       {groups.pinned.length > 0 ? (
         <div className="shrink-0" data-slot="app-sidebar-pinned">
-          <AppSidebarGroupHeading>PINNED</AppSidebarGroupHeading>
+          <AppSidebarGroupHeading>Pinned</AppSidebarGroupHeading>
           <div className="flex flex-col gap-1.5">
             {groups.pinned.map((project) => (
               <AppSidebarProjectRow
@@ -510,7 +510,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
       ) : null}
       {groups.projects.length > 0 ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <AppSidebarGroupHeading>PROJECTS</AppSidebarGroupHeading>
+          <AppSidebarGroupHeading>Projects</AppSidebarGroupHeading>
           <div className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-10px),transparent)]">
             <div className="flex flex-col gap-1.5 py-1">
               {groups.projects.map((project) => (
