@@ -71,7 +71,8 @@ export async function createDeploymentTaskFromApi({
 }): Promise<DeploymentTaskCreateResult> {
   const marketingAttribution = readMarketingAttribution() ?? undefined;
   const requiresIdentityToken =
-    input.source.kind === "github" || marketingAttribution?.consent_token != null;
+    input.source.kind === "github" ||
+    marketingAttribution?.consent_token != null;
   const response = await fetch("/api/deploy-tasks", {
     body: JSON.stringify({
       ...input,

@@ -63,7 +63,7 @@ function storedConsentToken(): string | null {
 function storedAttributionRaw(): string | null {
   try {
     const value = window.sessionStorage.getItem(ATTRIBUTION_RAW_STORAGE_KEY);
-    return value?.trim() && value.length <= 16384 ? value : null;
+    return value?.trim() && value.length <= 16_384 ? value : null;
   } catch {
     return null;
   }
@@ -148,6 +148,20 @@ function clickIds(
   return result;
 }
 
+function resolveStoredRawAttribution(
+  inboundValue: string | null
+): string | undefined {
+  const inbound = inboundValue ? decodeAttributionState(inboundValue) : null;
+  if (inbound?.version === 2 || inbound?.version === 3) {
+    return inboundValue ?? undefined;
+  }
+  return storedAttributionRaw() ?? undefined;
+}
+
+function resolveConsentToken(params: URLSearchParams): string | null {
+  return params.get(CONSENT_TOKEN_URL_PARAM)?.trim() || storedConsentToken();
+}
+
 export function readMarketingAttribution(): MarketingAttributionSnapshot | null {
   if (typeof window === "undefined") {
     return null;
@@ -156,14 +170,10 @@ export function readMarketingAttribution(): MarketingAttributionSnapshot | null 
     .get(ATTRIBUTION_URL_PARAM)
     ?.trim();
   const inbound = inboundValue ? decodeAttributionState(inboundValue) : null;
-  const attributionRaw =
-    inbound != null && (inbound.version === 2 || inbound.version === 3)
-      ? inboundValue
-      : storedAttributionRaw();
+  const attributionRaw = resolveStoredRawAttribution(inboundValue);
   const stored = storedAttributionState();
   const params = new URL(window.location.href).searchParams;
-  const consentToken =
-    params.get(CONSENT_TOKEN_URL_PARAM)?.trim() || storedConsentToken();
+  const consentToken = resolveConsentToken(params);
   const rawState =
     inbound?.version === 2 || inbound?.version === 3 ? inbound : stored;
   if (rawState?.version !== 2 && rawState?.version !== 3) {

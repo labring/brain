@@ -246,9 +246,7 @@ export async function POST(request: Request) {
       createdFrom: "ui",
       ...(creatingActor == null ? {} : { creatingActor }),
       ...(credentialBinding == null ? {} : { credentialBinding }),
-      ...(marketingConsentSubject == null
-        ? {}
-        : { marketingConsentSubject }),
+      ...(marketingConsentSubject == null ? {} : { marketingConsentSubject }),
       namespace: taskNamespace,
     },
     predecessorTaskId,

@@ -53,9 +53,7 @@ async function consentToken(
   return await new SignJWT({
     ad_personalization: "granted",
     ad_user_data_consent: "granted",
-    attribution_hash: createHash("sha256")
-      .update(attributionRaw)
-      .digest("hex"),
+    attribution_hash: createHash("sha256").update(attributionRaw).digest("hex"),
     consent_source: "desktop_oauth",
     region: "global",
   })

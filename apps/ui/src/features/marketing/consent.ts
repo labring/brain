@@ -12,6 +12,7 @@ import {
 
 const CONSENT_TOKEN_ISSUER = "sealos-desktop";
 const CONSENT_TOKEN_AUDIENCE = "brain-marketing-attribution";
+const ATTRIBUTION_HASH_RE = /^[a-f0-9]{64}$/;
 
 interface VerifiedConsentToken {
   ad_personalization: MarketingConsentState;
@@ -85,7 +86,7 @@ export async function verifyMarketingConsentToken(
       typeof payload.ad_user_data_consent !== "string" ||
       typeof payload.ad_personalization !== "string" ||
       typeof payload.attribution_hash !== "string" ||
-      !/^[a-f0-9]{64}$/.test(payload.attribution_hash) ||
+      !ATTRIBUTION_HASH_RE.test(payload.attribution_hash) ||
       !MARKETING_CONSENT_STATES.includes(
         payload.ad_user_data_consent as MarketingConsentState
       ) ||
