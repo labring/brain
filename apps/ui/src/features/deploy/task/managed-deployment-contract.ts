@@ -35,8 +35,10 @@ export const managedResourceRefSchema = z
 export type ManagedResourceRef = z.infer<typeof managedResourceRefSchema>;
 
 /**
- * The Agent reports the resources it actually created. Brain treats these as
- * lookup references only; readiness is decided from a fresh Kubernetes read.
+ * v1 intentionally trusts the Agent to report the resources it created. Brain
+ * treats those reports as lookup references and decides readiness from a fresh
+ * Kubernetes read; independent label-based discovery is a later hardening
+ * option, not part of this contract.
  * `publicUrl` is optional: when present, Brain performs a thin HTTP probe
  * (2xx + non-empty body) against the tenant-owned domain before accepting.
  */

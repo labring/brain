@@ -78,6 +78,9 @@ export function buildManagedResourceDiscoveryCommand(input: {
   namespace: string;
   projectId: string;
 }): string {
+  // Reserved for a future independent-verification mode. The current v1 gate
+  // deliberately verifies the Agent-reported references instead of requiring
+  // Brain to discover every resource by label.
   const encoded = Buffer.from(
     JSON.stringify({
       concurrency: RESOURCE_QUERY_CONCURRENCY,
