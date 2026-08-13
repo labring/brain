@@ -63,6 +63,13 @@ In the Agent-managed state machine, `completed/completed` is only written after
 the task's `deployment_completed` MCP call is accepted. The public DTO does not
 expose the private completion receipt.
 
+For v1, this is a trusted-Agent workflow assertion rather than an independent
+security attestation. The Agent selects the reported workload references, and
+the readiness observations are collected inside the Agent-controlled Devbox.
+The smoke test proves that the configured Agent workflow converges through the
+completion protocol; it does not prove Brain independently discovered resource
+ownership or verified the cluster through a separate trusted execution path.
+
 `blocked`, `failed`, and `cancelled` are reported as unsuccessful. A blocked
 task exits with code `3`; other failures exit with code `1`.
 
