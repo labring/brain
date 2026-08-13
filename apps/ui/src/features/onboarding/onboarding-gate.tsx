@@ -33,12 +33,9 @@ import type {
 const ONBOARDING_TWEAKS = {
   controls: {
     forceModal: {
-      label: "Force onboarding modal (0 off · 1 on)",
-      max: 1,
-      min: 0,
-      step: 1,
-      type: "slider",
-      value: 0,
+      label: "Force onboarding modal",
+      type: "switch",
+      value: false,
     },
     // Only honored while the modal is forced: preview never redirects a
     // real survey in progress, where the forced-looking step could submit.
@@ -69,8 +66,7 @@ export function OnboardingGate() {
   const namespace = useAtomValue(namespaceAtom);
   const [openForKey, setOpenForKey] = useState<string | null>(null);
   const { values } = useDevTweaks("onboarding", ONBOARDING_TWEAKS);
-  const forceOpen =
-    process.env.NODE_ENV === "development" && values.forceModal >= 0.5;
+  const forceOpen = process.env.NODE_ENV === "development" && values.forceModal;
   const previewStep =
     forceOpen && values.previewStep >= 1 && values.previewStep <= 4
       ? Math.round(values.previewStep)

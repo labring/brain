@@ -85,6 +85,7 @@ function NumberControl({
   );
 }
 
+/** Boolean as an Off/On segment — the state is readable without decoding a track. */
 function SwitchControl({
   def,
   onChange,
@@ -95,10 +96,16 @@ function SwitchControl({
     <Switch.Root
       aria-label={def.label}
       checked={current}
-      className="dtp-switch"
+      className="dtp-seg"
       onCheckedChange={(checked) => onChange(checked)}
     >
-      <Switch.Thumb className="dtp-knob" />
+      <Switch.Thumb className="dtp-seg-thumb" />
+      <span aria-hidden className="dtp-seg-off">
+        Off
+      </span>
+      <span aria-hidden className="dtp-seg-on">
+        On
+      </span>
     </Switch.Root>
   );
 }
@@ -136,6 +143,7 @@ function ColorControl({
   const current = typeof value === "string" ? value : def.value;
   return (
     <span className="dtp-colorwrap">
+      <span className="dtp-hex">{current}</span>
       <span className="dtp-swatch" style={{ background: current }}>
         <input
           aria-label={def.label}
@@ -144,7 +152,6 @@ function ColorControl({
           value={current}
         />
       </span>
-      <span className="dtp-hex">{current}</span>
     </span>
   );
 }
@@ -178,7 +185,10 @@ export interface ControlRowProps {
   value: DevTweaksValue;
 }
 
-/** Shared 28px row shell: label column, control, hover-revealed reset. */
+/**
+ * Shared row chip: label, control, reset once overridden. `data-kind` lets a
+ * control paint into the chip itself — the slider fills it edge to edge.
+ */
 export function ControlRow({
   def,
   onChange,
@@ -187,7 +197,11 @@ export function ControlRow({
   value,
 }: ControlRowProps) {
   return (
-    <div className="dtp-row" data-ov={overridden ? "true" : undefined}>
+    <div
+      className="dtp-row"
+      data-kind={def.type}
+      data-ov={overridden ? "true" : undefined}
+    >
       <span className="dtp-label" title={def.label}>
         {overridden ? <span className="dtp-dot" /> : null}
         {def.label}

@@ -128,7 +128,7 @@ function PanelChrome({
   const cardStyle: CSSProperties = {
     // Ring via shadow (no 1px layout shift) + soft elevation; both states
     // keep the same two-layer list shape so the browser interpolates.
-    borderRadius: framed ? 16 : 0,
+    borderRadius: framed ? 14 : 0,
     boxShadow: framed
       ? "0 0 0 1px var(--dtp-card-ring, var(--dtp-border)), 0 24px 64px -24px rgb(0 0 0 / 0.6)"
       : "0 0 0 0 var(--dtp-card-ring, var(--dtp-border)), 0 24px 64px -24px rgb(0 0 0 / 0)",
@@ -581,7 +581,6 @@ function GroupSection({
           <button
             aria-label={`Reset ${group.def.title} to defaults`}
             className="dtp-reset"
-            data-shown="true"
             onClick={() => store.clearGroup(group.key)}
             type="button"
           >
