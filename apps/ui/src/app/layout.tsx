@@ -9,7 +9,6 @@ import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { DevTweaks } from "@/features/dev-tweaks/dev-tweaks";
-import { StatusHeartbeatTweaks } from "@/features/dev-tweaks/status-heartbeat-tweaks";
 import { JotaiProvider } from "@/features/shell/jotai-provider";
 
 // GTM_ID is injected by the deployment environment and must not be baked into
@@ -48,11 +47,8 @@ export default function RootLayout({
               <TooltipProvider>
                 <Toaster />
                 {/* DevTweaks wraps the app so frame mode can dock the page
-                    into an inset card; StatusHeartbeatTweaks sits outside the
-                    children Suspense so it works while the app content is
-                    still streaming or blocked on data. */}
+                    into an inset card. */}
                 <DevTweaks>
-                  <StatusHeartbeatTweaks />
                   <Suspense fallback={null}>{children}</Suspense>
                 </DevTweaks>
               </TooltipProvider>

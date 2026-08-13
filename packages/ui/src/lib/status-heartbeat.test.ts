@@ -20,7 +20,7 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const FAST = { minPeriodMs: 10, periodMs: 25 };
+const FAST = { periodMs: 25 };
 
 test("first acquire beats immediately and keeps beating", async () => {
   const root = fakeRoot();
@@ -108,23 +108,4 @@ test("releasing the last ref while suspended clears the attribute", async () => 
   heartbeat.setSuspended(false);
   await sleep(40);
   assert.equal(root.attributes.has("data-status-heartbeat"), false);
-});
-
-test("setPeriodMs clamps to the minimum period", async () => {
-  const root = fakeRoot();
-  const heartbeat = createStatusHeartbeat(root, {
-    minPeriodMs: 30,
-    periodMs: 1000,
-  });
-
-  const release = heartbeat.acquire();
-  heartbeat.setPeriodMs(1); // clamped to 30ms
-
-  const before = root.attributes.get("data-status-heartbeat");
-  await sleep(15);
-  assert.equal(root.attributes.get("data-status-heartbeat"), before);
-  await sleep(35);
-  assert.notEqual(root.attributes.get("data-status-heartbeat"), before);
-
-  release();
 });
