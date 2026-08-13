@@ -17,6 +17,7 @@ packages/
   ui/         @workspace/ui — shared shadcn/ui + Radix + Tailwind 4 components
   api/        @workspace/api — shared API fetchers, hooks, schemas, and constants
   shared/     @workspace/shared — runtime utils (k8s quantity parsing + zod)
+  dev-tweaks/ @workspace/dev-tweaks — standalone-ready dev tweaks panel (dev/demo only)
   eslint-config/, typescript-config/ — shared lint and tsconfig bases
 ```
 

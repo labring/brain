@@ -33,7 +33,7 @@ export default function RootLayout({
   return (
     <html
       className={cn(
-        "antialiased",
+        "h-full antialiased",
         fontMono.variable,
         "font-sans",
         geist.variable
@@ -41,17 +41,20 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
     >
-      <body>
+      <body className="h-full">
         <JotaiProvider>
           <NuqsAdapter>
             <ThemeProvider>
               <TooltipProvider>
                 <Toaster />
-                {/* Outside the children Suspense so it works while the app
-                    content is still streaming or blocked on data. */}
-                <DevTweaks />
-                <StatusHeartbeatTweaks />
-                <Suspense fallback={null}>{children}</Suspense>
+                {/* DevTweaks wraps the app so frame mode can dock the page
+                    into an inset card; StatusHeartbeatTweaks sits outside the
+                    children Suspense so it works while the app content is
+                    still streaming or blocked on data. */}
+                <DevTweaks>
+                  <StatusHeartbeatTweaks />
+                  <Suspense fallback={null}>{children}</Suspense>
+                </DevTweaks>
               </TooltipProvider>
             </ThemeProvider>
           </NuqsAdapter>

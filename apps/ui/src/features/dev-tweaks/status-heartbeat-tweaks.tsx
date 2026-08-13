@@ -1,9 +1,8 @@
 "use client";
 
+import { type DevTweaksGroupDef, useDevTweaks } from "@workspace/dev-tweaks";
 import { setStatusHeartbeatPeriodMs } from "@workspace/ui/lib/status-heartbeat";
 import { useEffect } from "react";
-
-import { useDevTweaks } from "./use-dev-tweaks";
 
 /**
  * Defaults mirror DEFAULT_PERIOD_MS in status-heartbeat.ts and the
@@ -12,14 +11,13 @@ import { useDevTweaks } from "./use-dev-tweaks";
  * as long as the pulse shortens with it.
  */
 const STATUS_HEARTBEAT_TWEAKS = {
-  note: "status-heartbeat.ts → DEFAULT_PERIOD_MS; globals.css → --status-heartbeat-pulse",
-  title: "Status dots · heartbeat",
-  tweaks: {
+  controls: {
     period: {
       label: "Beat period",
       max: 10,
       min: 1.5,
       step: 0.5,
+      type: "slider",
       unit: "s",
       value: 2,
     },
@@ -28,11 +26,16 @@ const STATUS_HEARTBEAT_TWEAKS = {
       max: 1.5,
       min: 0.3,
       step: 0.1,
+      type: "slider",
       unit: "s",
       value: 1,
     },
   },
-} as const;
+  feature: "status",
+  kind: "tweak",
+  note: "status-heartbeat.ts → DEFAULT_PERIOD_MS; globals.css → --status-heartbeat-pulse",
+  title: "Status dots · heartbeat",
+} as const satisfies DevTweaksGroupDef;
 
 /**
  * Renders nothing — bridges the dev tweaks knob to the heartbeat scheduler,
