@@ -149,7 +149,7 @@ function clickIds(
 }
 
 function resolveStoredRawAttribution(
-  inboundValue: string | null
+  inboundValue: string | null | undefined
 ): string | undefined {
   const inbound = inboundValue ? decodeAttributionState(inboundValue) : null;
   if (inbound?.version === 2 || inbound?.version === 3) {
