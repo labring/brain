@@ -314,7 +314,7 @@ test("subscription Plan shows converted AI Credits used, total, bar, and reset d
       assertTextOrder(text, [
         "Current Workspace Plan",
         "AI Credits",
-        "1,200 / 2,000",
+        "1,200",
         "Account Balance",
       ]);
       const bar = rendered?.getByRole("progressbar", {
@@ -324,6 +324,14 @@ test("subscription Plan shows converted AI Credits used, total, bar, and reset d
       assert.equal(bar?.getAttribute("aria-valuemin"), "0");
       assert.equal(bar?.getAttribute("aria-valuemax"), "100");
       assert.equal(bar?.getAttribute("aria-valuetext"), "1,200 / 2,000");
+      assert.ok(bar?.classList.contains("h-2"));
+      assert.ok(bar?.classList.contains("bg-input"));
+      assert.ok(bar?.firstElementChild?.classList.contains("bg-linear-to-r"));
+      assert.ok(bar?.firstElementChild?.classList.contains("from-blue-950"));
+      assert.ok(bar?.firstElementChild?.classList.contains("to-blue-500"));
+      assert.equal(text.includes("Purchased Credits"), false);
+      assert.equal(text.includes("Promotion Credits"), false);
+      assert.equal(text.includes("Add Credits"), false);
     } finally {
       await restore();
     }
@@ -465,7 +473,7 @@ test("a failed AI Credits request keeps the card and degrades like Account Balan
 
     try {
       const text = rendered?.container.textContent ?? "";
-      assert.ok(text.includes("AI Credits is unavailable."));
+      assert.ok(text.includes("Couldn’t load AI Credits."));
       assert.ok(text.includes("Current Workspace Plan"));
       assert.equal(rendered?.queryByRole("progressbar"), null);
     } finally {

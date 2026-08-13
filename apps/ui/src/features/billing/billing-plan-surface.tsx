@@ -414,6 +414,17 @@ function BillingPaymentMethod({
   );
 }
 
+function AiCreditsMetric({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1 py-2">
+      <span className="text-muted-foreground text-sm leading-5">
+        AI Credits
+      </span>
+      {children}
+    </div>
+  );
+}
+
 function AiCreditsBody({
   credits,
   error,
@@ -424,13 +435,19 @@ function AiCreditsBody({
   isLoading: boolean;
 }) {
   if (isLoading) {
-    return <Skeleton aria-label="Loading AI Credits" className="h-8 w-36" />;
+    return (
+      <AiCreditsMetric>
+        <Skeleton aria-label="Loading AI Credits" className="h-6 w-36" />
+      </AiCreditsMetric>
+    );
   }
   if (error != null) {
     return (
-      <p className="text-destructive text-sm" role="alert">
-        AI Credits is unavailable.
-      </p>
+      <AiCreditsMetric>
+        <p className="text-destructive text-sm leading-5" role="alert">
+          Couldn’t load AI Credits.
+        </p>
+      </AiCreditsMetric>
     );
   }
   if (credits == null) {
@@ -440,23 +457,28 @@ function AiCreditsBody({
     credits.usedMicroUnits,
     credits.totalMicroUnits
   );
-  const usedTotal = `${formatAiCredits(credits.usedMicroUnits)} / ${formatAiCredits(credits.totalMicroUnits)}`;
+  const used = formatAiCredits(credits.usedMicroUnits);
+  const total = formatAiCredits(credits.totalMicroUnits);
+  const usedTotal = `${used} / ${total}`;
   return (
     <>
-      <p className="font-semibold text-2xl text-foreground tabular-nums">
-        {usedTotal}
-      </p>
+      <AiCreditsMetric>
+        <p className="flex items-baseline gap-1 whitespace-nowrap font-semibold text-foreground tabular-nums">
+          <span className="text-2xl leading-none">{used}</span>
+          <span className="text-base leading-none">/ {total}</span>
+        </p>
+      </AiCreditsMetric>
       <div
         aria-label="AI Credits used"
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={percent}
         aria-valuetext={usedTotal}
-        className="h-1.5 w-full overflow-hidden rounded-full bg-white/8"
+        className="h-2 w-full overflow-hidden rounded-full bg-input"
         role="progressbar"
       >
         <div
-          className="h-full rounded-full bg-primary"
+          className="h-full rounded-full bg-linear-to-r from-blue-950 to-blue-500"
           style={{ width: `${percent}%` }}
         />
       </div>
@@ -490,12 +512,18 @@ export function BillingAiCreditsSection({
   return (
     <section
       aria-live="polite"
-      className="flex min-h-24 flex-col justify-center gap-3 rounded-xl bg-input/30 px-6 py-5"
+      className="flex min-h-24 flex-col gap-4 rounded-lg bg-input/30 p-4"
       data-slot="billing-ai-credits-section"
     >
-      <span className="text-muted-foreground text-sm">AI Credits</span>
       <AiCreditsBody credits={credits} error={error} isLoading={isLoading} />
-      <p className="text-muted-foreground text-sm">Resets: {resetAt}</p>
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-muted-foreground text-sm leading-5">
+          {"Resets: "}
+        </span>
+        <span className="font-semibold text-base text-card-foreground tabular-nums leading-none">
+          {resetAt}
+        </span>
+      </p>
     </section>
   );
 }
