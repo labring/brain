@@ -67,6 +67,7 @@
         "@monaco-editor/react": "^4.7.0",
         "@next/third-parties": "16.2.6",
         "@workspace/api": "workspace:*",
+        "@workspace/dev-tweaks": "workspace:*",
         "@workspace/shared": "workspace:*",
         "@workspace/ui": "workspace:*",
         "@xterm/addon-fit": "^0.11.0",
@@ -133,6 +134,31 @@
       "peerDependencies": {
         "react": "^19.0.0",
         "swr": "^2.4.0",
+      },
+    },
+    "packages/dev-tweaks": {
+      "name": "@workspace/dev-tweaks",
+      "version": "0.0.0",
+      "dependencies": {
+        "@base-ui/react": "^1.4.0",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.10.6",
+        "@testing-library/dom": "^10.4.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/node": "^25.1.0",
+        "@types/react": "^19.2.10",
+        "@types/react-dom": "^19.2.3",
+        "@workspace/eslint-config": "workspace:*",
+        "@workspace/typescript-config": "workspace:*",
+        "eslint": "^9.39.2",
+        "react": "^19.2.4",
+        "react-dom": "^19.2.4",
+        "typescript": "^5.9.3",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
       },
     },
     "packages/eslint-config": {
@@ -871,6 +897,8 @@
     "@workflow/serde": ["@workflow/serde@4.1.0-beta.2", "https://registry.npmmirror.com/@workflow/serde/-/serde-4.1.0-beta.2.tgz", {}, "sha512-8kkeoQKLDaKXefjV5dbhBj2aErfKp1Mc4pb6tj8144cF+Em5SPbyMbyLCHp+BVrFfFVCBluCtMx+jjvaFVZGww=="],
 
     "@workspace/api": ["@workspace/api@workspace:packages/api"],
+
+    "@workspace/dev-tweaks": ["@workspace/dev-tweaks@workspace:packages/dev-tweaks"],
 
     "@workspace/eslint-config": ["@workspace/eslint-config@workspace:packages/eslint-config"],
 

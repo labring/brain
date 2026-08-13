@@ -24,21 +24,17 @@ export interface StatusHeartbeatRoot {
 }
 
 export interface StatusHeartbeatOptions {
-  /** Floor for `setPeriodMs`; a beat must outlast the pulse animation. */
-  minPeriodMs?: number;
   periodMs?: number;
 }
 
 const ATTRIBUTE = "data-status-heartbeat";
 const DEFAULT_PERIOD_MS = 2000;
-const DEFAULT_MIN_PERIOD_MS = 1200;
 
 export function createStatusHeartbeat(
   root: StatusHeartbeatRoot,
   options?: StatusHeartbeatOptions
 ) {
-  const minPeriodMs = options?.minPeriodMs ?? DEFAULT_MIN_PERIOD_MS;
-  let periodMs = Math.max(minPeriodMs, options?.periodMs ?? DEFAULT_PERIOD_MS);
+  const periodMs = options?.periodMs ?? DEFAULT_PERIOD_MS;
   let phase: "a" | "b" = "b";
   let refCount = 0;
   let suspended = false;
@@ -103,17 +99,6 @@ export function createStatusHeartbeat(
         schedule();
       }
     },
-    setPeriodMs(nextMs: number) {
-      const clamped = Math.max(minPeriodMs, Math.round(nextMs));
-      if (clamped === periodMs) {
-        return;
-      }
-      periodMs = clamped;
-      if (timer !== null) {
-        clearTimeout(timer);
-        schedule();
-      }
-    },
   };
 }
 
@@ -131,14 +116,6 @@ function getSharedHeartbeat(): StatusHeartbeat {
     sharedHeartbeat = heartbeat;
   }
   return sharedHeartbeat;
-}
-
-/** Live-tunes the shared beat period (dev tweaks pane). */
-export function setStatusHeartbeatPeriodMs(nextMs: number) {
-  if (typeof document === "undefined") {
-    return;
-  }
-  getSharedHeartbeat().setPeriodMs(nextMs);
 }
 
 /**

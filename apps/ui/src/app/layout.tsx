@@ -9,7 +9,6 @@ import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { DevTweaks } from "@/features/dev-tweaks/dev-tweaks";
-import { StatusHeartbeatTweaks } from "@/features/dev-tweaks/status-heartbeat-tweaks";
 import { JotaiProvider } from "@/features/shell/jotai-provider";
 
 // GTM_ID is injected by the deployment environment and must not be baked into
@@ -33,7 +32,7 @@ export default function RootLayout({
   return (
     <html
       className={cn(
-        "antialiased",
+        "h-full antialiased",
         fontMono.variable,
         "font-sans",
         geist.variable
@@ -41,17 +40,17 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
     >
-      <body>
+      <body className="h-full">
         <JotaiProvider>
           <NuqsAdapter>
             <ThemeProvider>
               <TooltipProvider>
                 <Toaster />
-                {/* Outside the children Suspense so it works while the app
-                    content is still streaming or blocked on data. */}
-                <DevTweaks />
-                <StatusHeartbeatTweaks />
-                <Suspense fallback={null}>{children}</Suspense>
+                {/* DevTweaks wraps the app so frame mode can dock the page
+                    into an inset card. */}
+                <DevTweaks>
+                  <Suspense fallback={null}>{children}</Suspense>
+                </DevTweaks>
               </TooltipProvider>
             </ThemeProvider>
           </NuqsAdapter>
