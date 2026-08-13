@@ -41,3 +41,17 @@ export function templateDeploymentExtraLabels(input: {
     [BRAIN_TEMPLATE_NAME_LABEL]: input.templateName,
   };
 }
+
+/**
+ * Labels that the managed Agent flow can know before the Template API
+ * resolves the generated Instance name.
+ */
+export function managedTemplateDeploymentLabels(
+  projectId: string
+): Record<string, string> {
+  return {
+    [BRAIN_MANAGED_BY_LABEL]: BRAIN_MANAGED_BY_VALUE,
+    [BRAIN_PROJECT_ID_LABEL]: projectId,
+    [BRAIN_DEPLOYMENT_KIND_LABEL]: "template",
+  };
+}

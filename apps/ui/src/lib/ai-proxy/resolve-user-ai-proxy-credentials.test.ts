@@ -104,7 +104,7 @@ describe("user AI Proxy credentials", () => {
       ok: true,
     });
     expect(observedRequest?.headers.get("Authorization")).toBe(
-      "encoded-kubeconfig"
+      encodeURIComponent(kubeconfig())
     );
     await expect(observedRequest?.json()).resolves.toEqual({
       name: "sealos-brain",

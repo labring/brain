@@ -12,6 +12,7 @@ node_modules
 
 # Testing
 coverage
+output/playwright/
 
 # Local migration snapshots and manifests
 apps/ui/.migration/
