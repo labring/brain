@@ -8,6 +8,12 @@ All notable changes to Brain are documented in this file.
 
 - Removed unused dependencies and dead React Scan wiring across the workspace.
 - Moved the remaining formatting path to Biome and tidied Go module dependencies.
+- Added an agent-managed GitHub deployment loop in which the deployment Agent
+  owns build, apply, repair, and verification while Brain remains the task
+  control plane and final gate.
+- Added the deployment Agent MCP control plane with durable leased tool calls,
+  bounded repair handling, managed-file contracts, mutation audit metadata, and
+  independent workload and public URL verification.
 
 ### Security
 
@@ -16,8 +22,10 @@ All notable changes to Brain are documented in this file.
 
 ### Upgrade Notes
 
-- No database migration is required. Roll out the API and UI images for this
-  release.
+- Run UI database migration `0013`.
+- Configure `DEPLOY_AGENT_MCP_URL` when enabling agent-managed deployments.
+- Roll out the API and UI images together; the deployment Agent flow depends on
+  the matching UI MCP route and task runner contract.
 
 ## [2.0.5] - 2026-08-12
 
