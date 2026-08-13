@@ -490,7 +490,13 @@
      transform/opacity overlays only. A width transition reintroduces
      per-frame reflow (canvas ResizeObserver storms, container-query
      re-evaluation) that looks correct in review and only shows up in
-     traces. */
+     traces.
+
+     App Sidebar is the documented exception: it is app chrome, toggled
+     infrequently by an explicit user action. Its gap and container animate
+     width (expand 300ms / collapse 200ms). If a canvas trace shows
+     drop-frame reflow during that toggle, fall back to snapping width and
+     tweening transform/opacity only. */
   .side-pane-footer-lift {
     box-shadow: none;
     transition: box-shadow 200ms ease;
@@ -504,6 +510,60 @@
     .side-pane-footer-lift {
       transition: none;
     }
+  }
+
+  [data-slot="sidebar"]:has(
+      > [data-slot="sidebar-container"].app-sidebar-surface
+    )[data-state="expanded"]
+    > [data-slot="sidebar-gap"],
+  [data-slot="sidebar"]:has(
+      > [data-slot="sidebar-container"].app-sidebar-surface
+    )[data-state="expanded"]
+    > [data-slot="sidebar-container"] {
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+    transition-duration: 300ms;
+  }
+
+  [data-slot="sidebar"]:has(
+      > [data-slot="sidebar-container"].app-sidebar-surface
+    )[data-state="collapsed"]
+    > [data-slot="sidebar-gap"],
+  [data-slot="sidebar"]:has(
+      > [data-slot="sidebar-container"].app-sidebar-surface
+    )[data-state="collapsed"]
+    > [data-slot="sidebar-container"] {
+    transition-timing-function: ease-out;
+    transition-duration: 200ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="sidebar"]:has(
+        > [data-slot="sidebar-container"].app-sidebar-surface
+      )[data-state="expanded"]
+      > [data-slot="sidebar-gap"],
+    [data-slot="sidebar"]:has(
+        > [data-slot="sidebar-container"].app-sidebar-surface
+      )[data-state="expanded"]
+      > [data-slot="sidebar-container"],
+    [data-slot="sidebar"]:has(
+        > [data-slot="sidebar-container"].app-sidebar-surface
+      )[data-state="collapsed"]
+      > [data-slot="sidebar-gap"],
+    [data-slot="sidebar"]:has(
+        > [data-slot="sidebar-container"].app-sidebar-surface
+      )[data-state="collapsed"]
+      > [data-slot="sidebar-container"],
+    .app-sidebar-label,
+    .app-sidebar-hover,
+    .app-sidebar-heading,
+    .app-sidebar-heading * {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+
+  .app-sidebar-label {
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .cn-toast[data-sonner-toast] {

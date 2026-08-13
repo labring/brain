@@ -4,6 +4,7 @@ import {
   AppShellSidebar,
   AppShellView,
 } from "@/features/shell/app-shell";
+import { AppSidebarCookieBridge } from "@/features/shell/app-sidebar-cookie-bridge";
 import AuthBootstrap, {
   DevboxBootstrap,
   SealosSdkBootstrap,
@@ -24,10 +25,12 @@ export default function ProjectLayout({
       <SealosSdkBootstrap />
       <DevboxBootstrap />
       <OnboardingGate />
-      <AppShellSidebar />
-      <AppShellView className="min-w-0 flex-1 basis-0">
-        <ProjectWorkspaceLayout>{children}</ProjectWorkspaceLayout>
-      </AppShellView>
+      <AppSidebarCookieBridge>
+        <AppShellSidebar />
+        <AppShellView className="min-w-0 flex-1 basis-0">
+          <ProjectWorkspaceLayout>{children}</ProjectWorkspaceLayout>
+        </AppShellView>
+      </AppSidebarCookieBridge>
     </AppShellChrome>
   );
 }
