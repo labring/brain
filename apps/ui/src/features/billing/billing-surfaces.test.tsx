@@ -283,6 +283,7 @@ test("Plan keeps Cost Center's section order around the live balance", async () 
   const html = renderToStaticMarkup(
     <BillingPlanSurface
       balance={<span>$3.00</span>}
+      credits={<section>AI Credits</section>}
       currency="usd"
       snapshot={CANCELLING_PLAN}
     />
@@ -290,6 +291,7 @@ test("Plan keeps Cost Center's section order around the live balance", async () 
 
   assertTextOrder(html, [
     "Current Workspace Plan",
+    "AI Credits",
     "Account Balance",
     "Payment method",
     "All Plans",

@@ -579,7 +579,7 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   }),
   // Mirrors the production Hobby plan's MaxResources (the scenarios' current
   // plan) so downgrade checks compare realistic numbers.
-  "/account/v1alpha1/workspace/get-resource-quota": () => ({
+  "/account/v1alpha1/workspace/get-resource-quota": (context) => ({
     quota: {
       hard: {
         "limits.cpu": "4",
@@ -588,6 +588,7 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
         "requests.storage": "20Gi",
         "services.nodeports": "8",
         traffic: "53687091200",
+        ...(context.scenario === "payg" ? {} : { ai_quota: 3_000_000 }),
       },
       used: {
         "limits.cpu": "1500m",
@@ -596,6 +597,7 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
         "requests.storage": "12Gi",
         "services.nodeports": "2",
         traffic: "26843545600",
+        ...(context.scenario === "payg" ? {} : { ai_quota: 1_200_000 }),
       },
     },
   }),

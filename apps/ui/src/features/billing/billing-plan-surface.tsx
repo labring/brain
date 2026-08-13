@@ -14,6 +14,7 @@ import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { PlanBadge } from "@workspace/ui/components/plan-badge";
 import { Separator } from "@workspace/ui/components/separator";
+import { Skeleton } from "@workspace/ui/components/skeleton";
 import { TableCell, TableHead, TableRow } from "@workspace/ui/components/table";
 import {
   TableLayout,
@@ -38,6 +39,11 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
+import {
+  type AiCredits,
+  aiCreditsPercentUsed,
+  formatAiCredits,
+} from "@/features/billing/billing-ai-credits";
 import { formatBillingAmount } from "@/features/billing/billing-amount";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
 import type {
@@ -408,6 +414,85 @@ function BillingPaymentMethod({
   );
 }
 
+function AiCreditsBody({
+  credits,
+  error,
+  isLoading,
+}: {
+  credits: AiCredits | undefined;
+  error: unknown;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return <Skeleton aria-label="Loading AI Credits" className="h-8 w-36" />;
+  }
+  if (error != null) {
+    return (
+      <p className="text-destructive text-sm" role="alert">
+        AI Credits is unavailable.
+      </p>
+    );
+  }
+  if (credits == null) {
+    return null;
+  }
+  const percent = aiCreditsPercentUsed(
+    credits.usedMicroUnits,
+    credits.totalMicroUnits
+  );
+  return (
+    <>
+      <p className="font-semibold text-2xl text-foreground tabular-nums">
+        {`${formatAiCredits(credits.usedMicroUnits)} / ${formatAiCredits(credits.totalMicroUnits)}`}
+      </p>
+      <div
+        aria-label="AI Credits used"
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={percent}
+        className="h-1.5 w-full overflow-hidden rounded-full bg-white/8"
+        role="progressbar"
+      >
+        <div
+          className="h-full rounded-full bg-primary"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </>
+  );
+}
+
+export function BillingAiCreditsSection({
+  credits,
+  error,
+  isLoading,
+  resetAt,
+}: {
+  credits: AiCredits | undefined;
+  error: unknown;
+  isLoading: boolean;
+  resetAt: string;
+}) {
+  if (
+    error == null &&
+    !isLoading &&
+    (credits == null || credits.totalMicroUnits <= 0)
+  ) {
+    return null;
+  }
+
+  return (
+    <section
+      className="flex min-h-24 flex-col justify-center gap-3 rounded-xl bg-input/30 px-6 py-5"
+      data-slot="billing-ai-credits-section"
+    >
+      <span className="text-muted-foreground text-sm">AI Credits</span>
+      <AiCreditsBody credits={credits} error={error} isLoading={isLoading} />
+      <p className="text-muted-foreground text-sm">Resets: {resetAt}</p>
+    </section>
+  );
+}
+
 function BillingBalanceSection({
   balance,
   variant = "panel",
@@ -613,6 +698,7 @@ interface BillingPlanSurfaceProps {
   actionPending?: SubscriptionLifecycleAction | null;
   balance: ReactNode;
   cardManagementPending?: boolean;
+  credits?: ReactNode;
   currency: BillingCurrency;
   invoiceCancellationPending?: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
@@ -628,6 +714,7 @@ export function BillingPlanSurface({
   actionPending = null,
   balance,
   cardManagementPending = false,
+  credits = null,
   currency,
   invoiceCancellationPending = false,
   onCancelInvoice,
@@ -794,6 +881,8 @@ export function BillingPlanSurface({
       />
 
       {planSummary}
+
+      {credits}
 
       {current.isPayg ? null : <BillingBalanceSection balance={balance} />}
 

@@ -14,6 +14,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
     "/api/billing/workspace-quota": {
       quota: {
         hard: {
+          ai_quota: 20_000_000,
           "limits.cpu": "4",
           "limits.memory": "8Gi",
           "limits.nvidia.com/gpu": "2",
@@ -22,6 +23,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
           traffic: "100Gi",
         },
         used: {
+          ai_quota: 12_000_000,
           "limits.cpu": "1500m",
           "limits.memory": "3Gi",
           "limits.nvidia.com/gpu": "1",

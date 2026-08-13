@@ -1,6 +1,8 @@
 import { Quantity } from "@workspace/shared";
 import { z } from "zod";
 
+import { formatAiCredits } from "./billing-ai-credits";
+
 const resourceValueSchema = z.union([z.string(), z.number()]);
 
 export const billingPlanSchema = z.object({
@@ -138,9 +140,9 @@ export function normalizeBillingPlan(
   });
   if (plan.AIQuota > 0) {
     resources.push({
-      label: "AI quota",
+      label: "AI Credits",
       type: "ai",
-      value: String(plan.AIQuota),
+      value: formatAiCredits(plan.AIQuota),
     });
   }
   if (plan.MaxSeats > 1) {

@@ -608,6 +608,12 @@ The metered cost of resource usage recorded by the platform's billing pipeline, 
 
 _Avoid_: recharge history, usage quota, bill (ambiguous).
 
+### AI Credits
+
+The workspace's consumable AI-usage allowance, granted by its Workspace Subscription each billing cycle and burned down as AI calls are charged. Account-service tracks it as money in micro-units and reports a single total/used pair per workspace; users see it at the platform's fixed rate of 1 AI Credit = 0.01 currency units. AI Credits are workspace-scoped and subscription-only — a PAYG workspace has none, its AI usage settles against Account Balance. They are not Account Balance, not Free Chat Turns, and not a quota: a quota is a capacity ceiling that frees up when usage stops, AI Credits are a balance that stays spent.
+
+_Avoid_: AI quota (backend field name, never user-facing), AI balance, credits (unqualified), tokens, points.
+
 ### Stripe Checkout Round-Trip
 
 The escape-and-return journey of a subscription payment: Brain leaves the desktop iframe to Stripe-hosted checkout (top-level redirect, or a new tab for upgrades while the original iframe polls the pending transaction) and returns through the desktop's Stripe callback, which routes back into Brain's Billing Area using the originating-app identifier the payment request declared. The return is a trusted redirect parameter, not a payment-status verification.

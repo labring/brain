@@ -38,7 +38,7 @@ const RESPONSES: Record<string, unknown> = {
         UpgradePlanList: ["Pro", "Team"],
       },
       {
-        AIQuota: 10,
+        AIQuota: 20_000_000,
         Description: "For growing workloads",
         DowngradePlanList: ["Starter"],
         ID: "plan-pro",
@@ -55,7 +55,7 @@ const RESPONSES: Record<string, unknown> = {
         UpgradePlanList: ["Team"],
       },
       {
-        AIQuota: 40,
+        AIQuota: 40_000_000,
         Description: "For larger teams",
         DowngradePlanList: ["Starter", "Pro"],
         ID: "plan-team",

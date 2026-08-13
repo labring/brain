@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadAccountBalance } from "../../account-balance";
+import { loadAiCredits } from "../../billing-ai-credits";
 import { loadBillingCosts } from "../../billing-costs-data";
 import type { BillingFetch } from "../../billing-data-client";
 import { loadBillingPlanSnapshot } from "../../billing-plan-data";
@@ -103,7 +104,7 @@ function loadPlanForScenario(scenario: string) {
 test("every scenario passes every loader's schemas", async () => {
   for (const scenario of BILLING_DEV_SCENARIOS) {
     const mockFetch = mockFetchFor(scenario);
-    const [plan, usage, pricing, costs, balance] = await Promise.all([
+    const [plan, usage, pricing, costs, balance, credits] = await Promise.all([
       loadBillingPlanSnapshot(CREDENTIALS, { fetch: mockFetch }),
       loadBillingUsage(CREDENTIALS, { fetch: mockFetch }),
       loadBillingPricing(CREDENTIALS, { fetch: mockFetch }),
@@ -126,6 +127,7 @@ test("every scenario passes every loader's schemas", async () => {
         },
         mockFetch
       ),
+      loadAiCredits(CREDENTIALS, mockFetch),
     ]);
     assert.equal(plan.plans.length, 9, `${scenario}: plan catalog loads`);
     assert.ok(usage.rows.length >= 5, `${scenario}: usage rows load`);
@@ -136,6 +138,23 @@ test("every scenario passes every loader's schemas", async () => {
       Number.isFinite(balance.microUnits),
       `${scenario}: balance loads`
     );
+    assert.ok(
+      Number.isFinite(credits.usedMicroUnits) &&
+        Number.isFinite(credits.totalMicroUnits),
+      `${scenario}: AI Credits load`
+    );
+    if (scenario === "payg") {
+      assert.equal(
+        credits.totalMicroUnits,
+        0,
+        `${scenario}: PAYG has no AI Credits`
+      );
+    } else {
+      assert.ok(
+        credits.totalMicroUnits > 0,
+        `${scenario}: subscription includes AI Credits`
+      );
+    }
   }
 });
 

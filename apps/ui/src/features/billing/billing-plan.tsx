@@ -27,7 +27,9 @@ import {
   formatAccountBalance,
   loadAccountBalance,
 } from "@/features/billing/account-balance";
+import { loadAiCredits } from "@/features/billing/billing-ai-credits";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
+import { formatBillingDateTime } from "@/features/billing/billing-datetime";
 import { BillingPlanChangeDialog } from "@/features/billing/billing-plan-change-dialog";
 import {
   type BillingPlanSnapshot,
@@ -39,7 +41,10 @@ import {
   type SubscriptionLifecycleOutcome,
   updateSubscriptionLifecycle,
 } from "@/features/billing/billing-plan-data";
-import { BillingPlanSurface } from "@/features/billing/billing-plan-surface";
+import {
+  BillingAiCreditsSection,
+  BillingPlanSurface,
+} from "@/features/billing/billing-plan-surface";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
@@ -54,6 +59,7 @@ interface BillingPlanWorkflowProps {
   balance: ReactNode;
   cardManagementPending?: boolean;
   credentials: BillingCredentials;
+  credits?: ReactNode;
   currency: BillingCurrency;
   gpuEnabled: boolean;
   initialMode?: "upgrade" | null;
@@ -85,6 +91,7 @@ export function BillingPlanWorkflow({
   balance,
   cardManagementPending = false,
   credentials,
+  credits = null,
   currency,
   gpuEnabled,
   initialMode = null,
@@ -198,6 +205,7 @@ export function BillingPlanWorkflow({
         actionPending={actionPending}
         balance={balance}
         cardManagementPending={cardManagementPending}
+        credits={credits}
         currency={currency}
         invoiceCancellationPending={invoiceCancellationPending}
         onCancelInvoice={onCancelInvoice}
@@ -292,18 +300,19 @@ function accountBalanceContent(input: {
   );
 }
 
-export default function BillingPlan({
+export function BillingPlan({
   currency,
   gpuEnabled,
   initialMode = null,
+  replaceUrl,
   stripeReturn = null,
 }: {
   currency: BillingCurrency;
   gpuEnabled: boolean;
   initialMode?: "upgrade" | null;
+  replaceUrl: (url: string) => void;
   stripeReturn?: BillingStripeReturn | null;
 }) {
-  const router = useRouter();
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const workspace = useAtomValue(namespaceAtom).trim();
@@ -336,6 +345,17 @@ export default function BillingPlan({
       ? (["billing-plan-snapshot", workspace, kubeconfig, appToken] as const)
       : null,
     () => loadBillingPlanSnapshot({ appToken, kubeconfig, workspace }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  const {
+    data: credits,
+    error: creditsError,
+    isLoading: creditsLoading,
+  } = useSWR(
+    credentialsReady
+      ? (["billing-ai-credits", workspace, kubeconfig, appToken] as const)
+      : null,
+    () => loadAiCredits({ appToken, kubeconfig, workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
@@ -498,12 +518,6 @@ export default function BillingPlan({
     },
     [appToken, kubeconfig, refreshSnapshot, workspace]
   );
-  const replaceUrl = useCallback(
-    (url: string) => {
-      router.replace(url, { scroll: false });
-    },
-    [router]
-  );
 
   if (!credentialsReady || snapshotLoading) {
     return (
@@ -549,6 +563,20 @@ export default function BillingPlan({
       }
       cardManagementPending={cardManagementPending}
       credentials={{ appToken, kubeconfig }}
+      credits={
+        snapshot.current.isPayg ? null : (
+          <BillingAiCreditsSection
+            credits={credits}
+            error={creditsError}
+            isLoading={creditsLoading}
+            resetAt={
+              snapshot.current.cancelAtPeriodEnd
+                ? "-"
+                : formatBillingDateTime(snapshot.current.currentPeriodEndAt)
+            }
+          />
+        )
+      }
       currency={currency}
       gpuEnabled={gpuEnabled}
       initialMode={initialMode}
@@ -561,6 +589,31 @@ export default function BillingPlan({
       renewalPending={renewalPending}
       replaceUrl={replaceUrl}
       snapshot={snapshot}
+      stripeReturn={stripeReturn}
+    />
+  );
+}
+
+export default function BillingPlanRoute({
+  currency,
+  gpuEnabled,
+  initialMode = null,
+  stripeReturn = null,
+}: {
+  currency: BillingCurrency;
+  gpuEnabled: boolean;
+  initialMode?: "upgrade" | null;
+  stripeReturn?: BillingStripeReturn | null;
+}) {
+  const router = useRouter();
+  return (
+    <BillingPlan
+      currency={currency}
+      gpuEnabled={gpuEnabled}
+      initialMode={initialMode}
+      replaceUrl={(url) => {
+        router.replace(url, { scroll: false });
+      }}
       stripeReturn={stripeReturn}
     />
   );

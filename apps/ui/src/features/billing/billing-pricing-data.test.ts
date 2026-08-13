@@ -27,7 +27,7 @@ test("loads plan and metered pricing for the current PAYG workspace", async () =
           Traffic: 100,
         },
         {
-          AIQuota: 10,
+          AIQuota: 20_000_000,
           Description: "For personal projects",
           ID: "plan-starter",
           MaxResources: '{"cpu":"2","memory":"4Gi"}',
@@ -104,7 +104,7 @@ test("loads plan and metered pricing for the current PAYG workspace", async () =
         monthlyPriceMicroUnits: 5_000_000,
         monthlyOriginalPriceMicroUnits: 0,
         name: "Starter",
-        resources: ["CPU", "Memory", "Traffic", "AI quota"],
+        resources: ["CPU", "Memory", "Traffic", "AI Credits"],
         tags: [],
       },
       {
@@ -115,6 +115,10 @@ test("loads plan and metered pricing for the current PAYG workspace", async () =
         tags: ["more"],
       },
     ]
+  );
+  assert.deepEqual(
+    snapshot.plans[0]?.resources.find((resource) => resource.type === "ai"),
+    { label: "AI Credits", type: "ai", value: "2,000" }
   );
   assert.deepEqual(
     snapshot.prices.map((price) => ({
