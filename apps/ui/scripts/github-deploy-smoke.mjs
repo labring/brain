@@ -486,12 +486,20 @@ async function assertLocalServer(baseUrl) {
   }
 }
 
-function parseFlowResult(stdout) {
-  const markerIndex = stdout.lastIndexOf(RESULT_MARKER);
+export function parseFlowResult(stdout) {
+  const trimmed = stdout.trim();
+  let output = trimmed;
+  if (trimmed.startsWith('"')) {
+    const decoded = JSON.parse(trimmed);
+    if (typeof decoded === "string") {
+      output = decoded;
+    }
+  }
+  const markerIndex = output.lastIndexOf(RESULT_MARKER);
   if (markerIndex < 0) {
     throw new Error("Playwright flow did not return a smoke result.");
   }
-  const afterMarker = stdout.slice(markerIndex + RESULT_MARKER.length);
+  const afterMarker = output.slice(markerIndex + RESULT_MARKER.length);
   const firstLine = afterMarker.split(LINE_BREAK_RE, 1)[0]?.trim();
   if (!firstLine) {
     throw new Error("Playwright flow returned an empty smoke result.");

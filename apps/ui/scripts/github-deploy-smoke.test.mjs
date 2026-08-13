@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildGithubDeploySmokeFlow,
   normalizedLocalBaseUrl,
+  parseFlowResult,
   parseGithubDeploySmokeArgs,
 } from "./github-deploy-smoke.mjs";
 
@@ -75,4 +76,20 @@ test("generated Playwright flow is a single function with no module syntax", () 
   assert.match(flow, TIMELINE_RE);
   assert.doesNotMatch(flow, MODULE_SYNTAX_RE);
   assert.equal(typeof Function(`return (${flow})`)(), "function");
+});
+
+test("flow result parser accepts Playwright CLI raw string output", () => {
+  const result = parseFlowResult(
+    '"BRAIN_GITHUB_DEPLOY_SMOKE_RESULT:{\\"ok\\":true,\\"code\\":\\"form_ready\\"}"\n'
+  );
+
+  assert.deepEqual(result, { code: "form_ready", ok: true });
+});
+
+test("flow result parser accepts an unquoted marker result", () => {
+  const result = parseFlowResult(
+    'prefix\nBRAIN_GITHUB_DEPLOY_SMOKE_RESULT:{"ok":false,"code":"failed"}\n'
+  );
+
+  assert.deepEqual(result, { code: "failed", ok: false });
 });
