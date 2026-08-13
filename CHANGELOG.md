@@ -2,6 +2,56 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.6] - 2026-08-13
+
+### Changed
+
+- Removed unused dependencies and dead React Scan wiring across the workspace.
+- Moved the remaining formatting path to Biome and tidied Go module dependencies.
+
+### Security
+
+- Removed public operational guidance and production snapshots that exposed
+  actionable internal details while retaining safe rollback guidance.
+
+### Upgrade Notes
+
+- No database migration is required. Roll out the API and UI images for this
+  release.
+
+## [2.0.5] - 2026-08-12
+
+### Added
+
+- Added the complete onboarding survey, including stepwise persistence,
+  terminal completion or dismissal, privacy-safe funnel events, and a
+  development preview-step control.
+- Added an administrative Devbox cleanup script and automatic deletion of
+  paused runtimes after 24 hours, with bounded, retryable cleanup claims.
+- Added process-level Kubernetes discovery caching and concurrent credential
+  lookups to reduce repeated API discovery and connection-string latency.
+
+### Changed
+
+- Reworked the onboarding dialog layout and selection states for stable frame
+  height, responsive copy, keyboard focus, scrolling, and accessible validation.
+- Shared personal-resource authorization and HTTP error handling across
+  onboarding, Assistant, and GitHub connection routes.
+- Upgraded shared API schemas to Zod 4 and tightened React Hooks lint
+  compatibility.
+
+### Fixed
+
+- Made Project deletion previews server-authoritative and ordered approval
+  actions correctly.
+- Added busy and error feedback for secret reveal and copy controls, reusing an
+  active reveal without issuing a second request.
+- Prevented terminal onboarding writes from racing or losing confirmed answers.
+
+### Upgrade Notes
+
+- Run UI database migrations `0011` and `0012`.
+
 ## [2.0.4] - 2026-08-04
 
 ### Added
@@ -226,8 +276,10 @@ databases, and day-to-day operations into one Project workspace.
 - Added Project Assistant for understanding the current Project context and
   starting supported operations.
 
-[2.0.3]: https://github.com/labring/brain/compare/v2.0.2...v2.0.3
+[2.0.6]: https://github.com/labring/brain/compare/v2.0.5...v2.0.6
+[2.0.5]: https://github.com/labring/brain/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/labring/brain/compare/v2.0.3...v2.0.4
+[2.0.3]: https://github.com/labring/brain/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/labring/brain/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/labring/brain/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/labring/brain/releases/tag/v2.0.0
