@@ -20,6 +20,10 @@ class MemoryStorage {
   setItem(key: string, value: string) {
     this.values.set(key, value);
   }
+
+  removeItem(key: string) {
+    this.values.delete(key);
+  }
 }
 
 const localStorage = new MemoryStorage();
@@ -82,6 +86,10 @@ test("product attribution keeps a click ID with explicit consent", () => {
   assert.equal(result?.ad_user_data_consent, "granted");
   assert.equal(result?.gclid, "gclid-123");
   assert.equal(result?.first_touch?.campaign, "caf\u00e9-search");
+  assert.equal(
+    result?.attribution_raw,
+    browser.location.href.split("sea_attr=")[1]?.split("&")[0]
+  );
   assert.match(
     localStorage.getItem(ATTRIBUTION_STORAGE_KEY) ?? "",
     TEST_GCLID_RE

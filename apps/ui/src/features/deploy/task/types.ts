@@ -154,6 +154,8 @@ export type CreateDeployTaskInput = z.infer<
 > & {
   /** Server-resolved Workspace Actor; never accepted from the request body. */
   creatingActor?: string;
+  /** Server-resolved global user uid used to bind marketing consent. */
+  marketingConsentSubject?: string;
   /** Server-resolved immutable GitHub credential selection. */
   credentialBinding?: DeploymentCredentialBinding;
 };

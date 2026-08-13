@@ -11,6 +11,7 @@ const ATTRIBUTION_STORAGE_KEYS = ["sealos_attr_v3", "sealos_attr_v2"] as const;
 const CONSENT_TOKEN_STORAGE_KEY = "sealos_marketing_consent_token";
 const ATTRIBUTION_URL_PARAM = "sea_attr";
 const CONSENT_TOKEN_URL_PARAM = "consent_token";
+const ATTRIBUTION_RAW_STORAGE_KEY = "sealos_marketing_attribution_raw_v1";
 const GOOGLE_CLICK_ID_TYPES = ["gclid", "gbraid", "wbraid"] as const;
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -54,6 +55,15 @@ function storedConsentToken(): string | null {
   try {
     const value = window.sessionStorage.getItem(CONSENT_TOKEN_STORAGE_KEY);
     return value?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function storedAttributionRaw(): string | null {
+  try {
+    const value = window.sessionStorage.getItem(ATTRIBUTION_RAW_STORAGE_KEY);
+    return value?.trim() && value.length <= 16384 ? value : null;
   } catch {
     return null;
   }
@@ -142,10 +152,14 @@ export function readMarketingAttribution(): MarketingAttributionSnapshot | null 
   if (typeof window === "undefined") {
     return null;
   }
-  const inboundValue = new URL(window.location.href).searchParams.get(
-    ATTRIBUTION_URL_PARAM
-  );
+  const inboundValue = new URL(window.location.href).searchParams
+    .get(ATTRIBUTION_URL_PARAM)
+    ?.trim();
   const inbound = inboundValue ? decodeAttributionState(inboundValue) : null;
+  const attributionRaw =
+    inbound != null && (inbound.version === 2 || inbound.version === 3)
+      ? inboundValue
+      : storedAttributionRaw();
   const stored = storedAttributionState();
   const params = new URL(window.location.href).searchParams;
   const consentToken =
@@ -164,6 +178,16 @@ export function readMarketingAttribution(): MarketingAttributionSnapshot | null 
   if (consentToken != null) {
     try {
       window.sessionStorage.setItem(CONSENT_TOKEN_STORAGE_KEY, consentToken);
+    } catch {
+      // Storage is optional in private browsing contexts.
+    }
+  }
+  if (attributionRaw != null) {
+    try {
+      window.sessionStorage.setItem(
+        ATTRIBUTION_RAW_STORAGE_KEY,
+        attributionRaw
+      );
     } catch {
       // Storage is optional in private browsing contexts.
     }
@@ -197,6 +221,7 @@ export function readMarketingAttribution(): MarketingAttributionSnapshot | null 
       state.ad_personalization as boolean | "granted" | "denied" | "unspecified"
     ),
     ad_user_data_consent: adUserDataConsent,
+    attribution_raw: attributionRaw ?? undefined,
     click_id_candidates: candidateTouches,
     consent_token: consentToken ?? undefined,
     consent_provenance: null,

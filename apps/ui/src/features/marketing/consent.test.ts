@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { afterEach, test } from "node:test";
 
 import { SignJWT } from "jose";
@@ -7,6 +8,7 @@ import { normalizeMarketingAttribution } from "./consent";
 import type { MarketingAttributionSnapshot } from "./types";
 
 const SIGNING_KEY = "brain-test-marketing-consent-signing-key";
+const RAW_ATTRIBUTION = "encoded-attribution-state";
 const previousSigningKey = process.env.MARKETING_CONSENT_SIGNING_KEY;
 
 const touch = {
@@ -23,13 +25,17 @@ const touch = {
   ts: "2026-08-06T08:00:00.000Z",
 };
 
-function snapshot(token?: string): MarketingAttributionSnapshot {
+function snapshot(
+  token?: string,
+  attributionRaw = RAW_ATTRIBUTION
+): MarketingAttributionSnapshot {
   return {
     ad_personalization: "granted",
     ad_user_data_consent: "granted",
     click_id_candidates: [touch],
     consent_provenance: null,
     ...(token == null ? {} : { consent_token: token }),
+    attribution_raw: attributionRaw,
     first_touch: touch,
     gbraid: "gbraid-test",
     gclid: "gclid-test",
@@ -39,11 +45,17 @@ function snapshot(token?: string): MarketingAttributionSnapshot {
   };
 }
 
-async function consentToken(subject: string): Promise<string> {
+async function consentToken(
+  subject: string,
+  attributionRaw = RAW_ATTRIBUTION
+): Promise<string> {
   const issuedAt = Math.floor(Date.now() / 1000);
   return await new SignJWT({
     ad_personalization: "granted",
     ad_user_data_consent: "granted",
+    attribution_hash: createHash("sha256")
+      .update(attributionRaw)
+      .digest("hex"),
     consent_source: "desktop_oauth",
     region: "global",
   })
@@ -92,5 +104,19 @@ test("unsigned or subject-mismatched consent redacts click IDs", async () => {
   assert.equal(result?.gbraid, null);
   assert.equal(result?.wbraid, null);
   assert.equal(result?.first_touch?.click_id_value, "");
+  assert.equal(result?.consent_provenance, null);
+});
+
+test("attribution tampering invalidates an otherwise valid consent token", async () => {
+  process.env.MARKETING_CONSENT_SIGNING_KEY = SIGNING_KEY;
+  const token = await consentToken("user-1");
+
+  const result = await normalizeMarketingAttribution(
+    snapshot(token, "tampered-attribution-state"),
+    "user-1"
+  );
+
+  assert.equal(result?.ad_user_data_consent, "unspecified");
+  assert.equal(result?.gclid, null);
   assert.equal(result?.consent_provenance, null);
 });

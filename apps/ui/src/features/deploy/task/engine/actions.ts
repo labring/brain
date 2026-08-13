@@ -246,7 +246,7 @@ async function resolveCreateInputs(
       ? (predecessor?.marketingAttribution ?? undefined)
       : await normalizeMarketingAttribution(
           input.create.marketingAttribution,
-          input.create.creatingActor
+          input.create.marketingConsentSubject ?? input.create.creatingActor
         );
   const create: CreateDeployTaskInput = {
     createdFrom: input.create.createdFrom,

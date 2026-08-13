@@ -14,6 +14,7 @@ export async function recordMarketingLifecycleEvent(
     {
       ad_personalization: event.ad_personalization,
       ad_user_data_consent: event.ad_user_data_consent,
+      attribution_raw: event.attribution_raw,
       click_id_candidates: event.click_id_candidates,
       consent_provenance: event.consent_provenance,
       consent_token: event.consent_token,
@@ -72,20 +73,11 @@ export async function recordMarketingLifecycleEvent(
       if (subjectId == null) {
         continue;
       }
-      try {
-        await tx.execute(sql`
-          SELECT "sealai_marketing"."upsert_attribution_subject"(
-            ${subjectType}, ${subjectId}, ${attribution}::jsonb
-          )
-        `);
-      } catch (error) {
-        console.warn("[marketing] attribution subject repair queued", {
-          error,
-          eventId: event.event_id,
-          subjectId,
-          subjectType,
-        });
-      }
+      await tx.execute(sql`
+        SELECT "sealai_marketing"."upsert_attribution_subject"(
+          ${subjectType}, ${subjectId}, ${attribution}::jsonb
+        )
+      `);
     }
     return "created";
   });

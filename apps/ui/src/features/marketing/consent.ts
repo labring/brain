@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { jwtVerify } from "jose";
 
 import {
@@ -15,6 +16,7 @@ const CONSENT_TOKEN_AUDIENCE = "brain-marketing-attribution";
 interface VerifiedConsentToken {
   ad_personalization: MarketingConsentState;
   ad_user_data_consent: MarketingConsentState;
+  attribution_hash: string;
   issued_at: string;
   issuer: string;
   jti: string;
@@ -82,6 +84,8 @@ export async function verifyMarketingConsentToken(
       payload.region.trim() === "" ||
       typeof payload.ad_user_data_consent !== "string" ||
       typeof payload.ad_personalization !== "string" ||
+      typeof payload.attribution_hash !== "string" ||
+      !/^[a-f0-9]{64}$/.test(payload.attribution_hash) ||
       !MARKETING_CONSENT_STATES.includes(
         payload.ad_user_data_consent as MarketingConsentState
       ) ||
@@ -109,6 +113,7 @@ export async function verifyMarketingConsentToken(
     return {
       ad_personalization: adPersonalization,
       ad_user_data_consent: adUserDataConsent,
+      attribution_hash: payload.attribution_hash,
       issued_at: issuedAt,
       issuer: CONSENT_TOKEN_ISSUER,
       jti: payload.jti,
@@ -119,6 +124,15 @@ export async function verifyMarketingConsentToken(
   } catch {
     return null;
   }
+}
+
+function attributionHashMatches(
+  raw: string | undefined,
+  expected: string
+): boolean {
+  return (
+    raw != null && createHash("sha256").update(raw).digest("hex") === expected
+  );
 }
 
 function redactTouch(touch: MarketingTouch | null): MarketingTouch | null {
@@ -158,8 +172,13 @@ export async function normalizeMarketingAttribution(
     supplied.consent_token,
     expectedSubject
   );
-  const consentState = verified?.ad_user_data_consent ?? "unspecified";
-  const personalizationState = verified?.ad_personalization ?? "unspecified";
+  const trusted =
+    verified != null &&
+    attributionHashMatches(supplied.attribution_raw, verified.attribution_hash)
+      ? verified
+      : null;
+  const consentState = trusted?.ad_user_data_consent ?? "unspecified";
+  const personalizationState = trusted?.ad_personalization ?? "unspecified";
   const consentGranted = consentState === "granted";
   const candidates = consentGranted
     ? supplied.click_id_candidates
@@ -170,15 +189,15 @@ export async function normalizeMarketingAttribution(
     ad_user_data_consent: consentState,
     click_id_candidates: candidates,
     consent_provenance:
-      verified == null
+      trusted == null
         ? null
         : {
-            issuer: verified.issuer,
-            issued_at: verified.issued_at,
-            jti: verified.jti,
-            region: verified.region,
-            source: verified.source,
-            subject_id: verified.subject_id,
+            issuer: trusted.issuer,
+            issued_at: trusted.issued_at,
+            jti: trusted.jti,
+            region: trusted.region,
+            source: trusted.source,
+            subject_id: trusted.subject_id,
           },
     first_touch: consentGranted
       ? supplied.first_touch

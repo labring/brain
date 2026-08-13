@@ -43,7 +43,7 @@ test("GitHub-source creation attaches the app token", async () => {
   assert.deepEqual(headers, ["app-token"]);
 });
 
-test("namespace-shared source creation never carries the app token", async () => {
+test("namespace-shared sources keep the app token private without attribution", async () => {
   const headers = captureAppTokenHeaders();
   await createDeploymentTaskFromApi({
     appToken: "app-token",

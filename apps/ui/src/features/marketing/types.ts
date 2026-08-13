@@ -60,6 +60,7 @@ const attributionFieldsSchema = z.object({
     .nullable()
     .default(null),
   consent_token: z.string().trim().min(1).max(8192).optional(),
+  attribution_raw: z.string().trim().min(1).max(16384).optional(),
   first_touch: marketingTouchSchema.nullable(),
   gbraid: z.string().trim().max(2048).nullable(),
   gclid: z.string().trim().max(2048).nullable(),
