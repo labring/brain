@@ -347,14 +347,16 @@ export function BillingPlan({
     () => loadBillingPlanSnapshot({ appToken, kubeconfig, workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
+  const creditsKey =
+    credentialsReady && snapshot != null && !snapshot.current.isPayg
+      ? (["billing-ai-credits", workspace, kubeconfig, appToken] as const)
+      : null;
   const {
     data: credits,
     error: creditsError,
     isLoading: creditsLoading,
   } = useSWR(
-    credentialsReady
-      ? (["billing-ai-credits", workspace, kubeconfig, appToken] as const)
-      : null,
+    creditsKey,
     () => loadAiCredits({ appToken, kubeconfig, workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
@@ -569,6 +571,9 @@ export function BillingPlan({
             credits={credits}
             error={creditsError}
             isLoading={creditsLoading}
+            planIncludesCredits={snapshot.current.resources.some(
+              (resource) => resource.label === "AI Credits"
+            )}
             resetAt={
               snapshot.current.cancelAtPeriodEnd
                 ? "-"

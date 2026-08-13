@@ -440,16 +440,18 @@ function AiCreditsBody({
     credits.usedMicroUnits,
     credits.totalMicroUnits
   );
+  const usedTotal = `${formatAiCredits(credits.usedMicroUnits)} / ${formatAiCredits(credits.totalMicroUnits)}`;
   return (
     <>
       <p className="font-semibold text-2xl text-foreground tabular-nums">
-        {`${formatAiCredits(credits.usedMicroUnits)} / ${formatAiCredits(credits.totalMicroUnits)}`}
+        {usedTotal}
       </p>
       <div
         aria-label="AI Credits used"
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={percent}
+        aria-valuetext={usedTotal}
         className="h-1.5 w-full overflow-hidden rounded-full bg-white/8"
         role="progressbar"
       >
@@ -466,23 +468,28 @@ export function BillingAiCreditsSection({
   credits,
   error,
   isLoading,
+  planIncludesCredits,
   resetAt,
 }: {
   credits: AiCredits | undefined;
   error: unknown;
   isLoading: boolean;
+  planIncludesCredits: boolean;
   resetAt: string;
 }) {
+  const readyWithAllowance = credits != null && credits.totalMicroUnits > 0;
   if (
-    error == null &&
-    !isLoading &&
-    (credits == null || credits.totalMicroUnits <= 0)
+    !(
+      readyWithAllowance ||
+      (planIncludesCredits && (isLoading || error != null))
+    )
   ) {
     return null;
   }
 
   return (
     <section
+      aria-live="polite"
       className="flex min-h-24 flex-col justify-center gap-3 rounded-xl bg-input/30 px-6 py-5"
       data-slot="billing-ai-credits-section"
     >

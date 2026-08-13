@@ -323,6 +323,7 @@ test("subscription Plan shows converted AI Credits used, total, bar, and reset d
       assert.equal(bar?.getAttribute("aria-valuenow"), "60");
       assert.equal(bar?.getAttribute("aria-valuemin"), "0");
       assert.equal(bar?.getAttribute("aria-valuemax"), "100");
+      assert.equal(bar?.getAttribute("aria-valuetext"), "1,200 / 2,000");
     } finally {
       await restore();
     }
