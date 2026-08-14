@@ -2,7 +2,7 @@
  * Dev tweaks panel — always-dark, self-owned skin on `--dtp-*` variables.
  * The package ships its own tokens and never reads host theme tokens; the
  * only host bridges are optional overrides passed down as CSS variables:
- * `--dtp-font-sans`, `--dtp-font-mono`, `--dtp-card-bg`, `--dtp-card-ring`.
+ * `--dtp-font-sans`, `--dtp-font-mono`, `--dtp-card-ring`.
  *
  * Palette + restraint: vercel.com/design.md (Geist dark grays, monochrome,
  * color only for meaning — amber = mock, blue = focus).
@@ -33,21 +33,63 @@
   --dtp-mono: var(--dtp-font-mono, "Geist Mono", ui-monospace, monospace);
 }
 
-/* ---------- frame chrome (page docked as an inset card) ---------- */
+/* ---------- frame mode (the page's own <body> is the inset card) ---------- */
 
-.dtp-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: rgb(0 0 0 / 0.4);
+/*
+ * Frame mode does not wrap the page in a card — it turns `<body>` into one.
+ *
+ * `contain: layout` is the whole trick. It makes the body the containing
+ * block for every `position: fixed` descendant *and* for everything React
+ * portals into `document.body`, so dialogs, sheets, menus, tooltips and
+ * toasts land inside the card without one line of change in the host's
+ * components. It also makes the body a formatting context root, which stops
+ * the usual body-to-viewport overflow propagation — so `overflow: hidden`
+ * clips at the card's rounded corners instead of at the window edge.
+ *
+ * `<html>` carries the scrim. Without a background of its own the body's
+ * background propagates to the canvas and paints the whole window.
+ *
+ * The card wears whatever background the host already gave its body, so
+ * there is nothing to bridge: the docked page keeps its real surface.
+ *
+ * Nothing the panel renders can live inside a contained body, so the panel
+ * rides the top layer instead — see `.dtp-panel[popover]`.
+ */
+
+.dtp-frame-host {
+  --dtp-frame-gap: 32px;
+  --dtp-frame-panel-w: 384px;
+  --dtp-frame-ms: 300ms;
+  --dtp-frame-radius: 14px;
+  --dtp-frame-scrim: rgb(0 0 0 / 0.4);
+  transition: background-color var(--dtp-frame-ms) ease;
 }
 
-.dtp-card {
-  position: relative;
-  z-index: 1;
+.dtp-frame-host > body {
+  transition:
+    margin var(--dtp-frame-ms) ease,
+    height var(--dtp-frame-ms) ease,
+    border-radius var(--dtp-frame-ms) ease,
+    box-shadow var(--dtp-frame-ms) ease;
+}
+
+.dtp-framed {
+  /* The card measures against the root, so the root needs a definite height. */
+  height: 100%;
+  background-color: var(--dtp-frame-scrim);
+}
+
+.dtp-framed > body {
+  height: calc(100% - var(--dtp-frame-gap) * 2);
+  margin: var(--dtp-frame-gap);
+  margin-right: calc(var(--dtp-frame-gap) * 2 + var(--dtp-frame-panel-w));
+  contain: layout;
   overflow: hidden;
-  background: var(--dtp-card-bg, canvas);
+  border-radius: var(--dtp-frame-radius);
+  /* Ring as a shadow layer — no 1px of layout shift when it appears. */
+  box-shadow:
+    0 0 0 1px var(--dtp-card-ring, #232323),
+    0 24px 64px -24px rgb(0 0 0 / 0.6);
 }
 
 /* ---------- panel ---------- */
@@ -65,6 +107,19 @@
   border: 1px solid var(--dtp-border);
   border-radius: var(--dtp-radius);
   box-shadow: 0 12px 48px -12px rgb(0 0 0 / 0.7);
+}
+
+/*
+ * Top-layer panel. The UA popover rules have to be undone: they force
+ * `inset: 0`, `margin: auto` and fit-content sizing, which would fight the
+ * geometry the panel sets inline.
+ */
+.dtp-panel[popover] {
+  inset: auto;
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
 }
 
 .dtp-panel *:focus-visible {
@@ -867,8 +922,8 @@
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .dtp-backdrop,
-  .dtp-card,
+  .dtp-frame-host,
+  .dtp-frame-host > body,
   .dtp-panel,
   .dtp-panel *,
   .dtp-capsule {

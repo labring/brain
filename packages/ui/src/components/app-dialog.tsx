@@ -37,8 +37,11 @@ function AppDialogContent({
   return (
     <DialogContent
       className={cn(
-        "dark flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden rounded-lg border border-border bg-project-chrome-surface p-0 text-foreground shadow-2xl ring-0 backdrop-blur-[20px]",
-        "max-w-[calc(100vw-2rem)] data-[size=default]:sm:max-w-[502px] data-[size=lg]:sm:max-w-3xl data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-5xl",
+        // Caps are relative to the containing block, not the viewport — same
+        // convention as DialogContent, and it keeps the dialog inside whatever
+        // box it is mounted in.
+        "dark flex max-h-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-lg border border-border bg-project-chrome-surface p-0 text-foreground shadow-2xl ring-0 backdrop-blur-[20px]",
+        "max-w-[calc(100%-2rem)] data-[size=default]:sm:max-w-[502px] data-[size=lg]:sm:max-w-3xl data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-5xl",
         className
       )}
       data-size={size}

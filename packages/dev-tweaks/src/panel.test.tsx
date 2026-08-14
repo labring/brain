@@ -380,6 +380,46 @@ test("indicator shows MOCK ×N for several active mock groups", async () => {
   });
 });
 
+test("frame mode insets the document and leaves nothing behind", async () => {
+  await withScene(async ({ fireEvent, openPanel, renderScene, screen }) => {
+    const { unmount } = await renderScene((surface) => (
+      <surface.DevTweaksProvider>
+        <surface.DevTweaksPanel
+          style={{ "--dtp-card-ring": "#abcabc" } as React.CSSProperties}
+        >
+          <span>page</span>
+        </surface.DevTweaksPanel>
+      </surface.DevTweaksProvider>
+    ));
+
+    const root = document.documentElement;
+    // The page is never wrapped: frame mode insets `<body>` itself, so the
+    // old card element must not come back.
+    assert.equal(document.querySelector(".dtp-card"), null);
+    // Bridge variables land on the root, the one ancestor both the card
+    // (`<body>`) and the top-layer panel share.
+    assert.equal(root.style.getPropertyValue("--dtp-card-ring"), "#abcabc");
+    assert.ok(root.classList.contains("dtp-frame-host"));
+    assert.equal(root.classList.contains("dtp-framed"), false);
+
+    await openPanel();
+    assert.ok(root.classList.contains("dtp-framed"));
+    assert.equal(root.style.getPropertyValue("--dtp-frame-panel-w"), "384px");
+    assert.equal(root.style.getPropertyValue("--dtp-frame-gap"), "32px");
+
+    await actAndDrain(() => {
+      fireEvent.click(screen.getByLabelText("Switch to floating window"));
+    });
+    assert.equal(root.classList.contains("dtp-framed"), false);
+
+    await actAndDrain(() => {
+      unmount();
+    });
+    assert.equal(root.classList.contains("dtp-frame-host"), false);
+    assert.equal(root.style.getPropertyValue("--dtp-card-ring"), "");
+  });
+});
+
 test("demo entry: alwaysVisible keeps the capsule present when clean", async () => {
   await withScene(async ({ renderScene, screen }) => {
     const scene = (surface: PackageSurface) => (
