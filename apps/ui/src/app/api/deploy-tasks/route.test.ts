@@ -8,6 +8,7 @@ import type {
   GithubConnectionOwnerIdentity,
   VerifiedGithubConnectionActor,
 } from "@/features/deploy/github/owner-identity";
+import { redeployDeploymentTask } from "@/features/deploy/task/client";
 import { DEPLOY_TASK_ENGINE_CADENCE } from "@/features/deploy/task/engine/constants";
 import type { DeployTaskEngineContext } from "@/features/deploy/task/engine/context";
 import type { DeployTaskHandle } from "@/features/deploy/task/engine/handle";
@@ -785,6 +786,84 @@ test("POST creates a redeploy from a non-GitHub predecessor without consulting t
   } finally {
     // A red assertion may fire while an unexpectedly created task is still
     // mid-transition; closing PGlite with a query in flight hangs the run.
+    await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
+test("client collaboratively redeploys an attributed Template with workspace-safe attribution", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  authorizedWorkspaceActor = "bob-cr";
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  try {
+    const predecessor = await insertTaskRow(harness.db, {
+      completedAt: new Date(),
+      creatingActor: "alice-cr",
+      namespace: "namespace-b",
+      source: { kind: "template", templateName: "attributed-template" },
+      status: "failed",
+    });
+    await harness.db
+      .update(deployTasks)
+      .set({
+        marketingAttribution: {
+          ad_personalization: "granted",
+          ad_user_data_consent: "granted",
+          click_id_candidates: [],
+          consent_provenance: {
+            issuer: "sealos-desktop",
+            issued_at: "2026-08-14T00:00:00.000Z",
+            jti: "template-redeploy-jti",
+            region: "region-a",
+            source: "desktop_oauth",
+            subject_id: "uid-alice",
+          },
+          first_touch: null,
+          gbraid: null,
+          gclid: "template-redeploy-gclid",
+          last_touch: null,
+          version: 3,
+          wbraid: null,
+        },
+      })
+      .where(eq(deployTasks.id, predecessor.id));
+    const { POST } = await import("./route");
+    globalThis.window = {
+      location: { origin: "https://brain.test" },
+    } as unknown as Window & typeof globalThis;
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) =>
+      POST(new Request(input, init))) as unknown as typeof fetch;
+
+    const result = await redeployDeploymentTask({
+      appToken: "app-token-bob",
+      kubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+      namespace: "namespace-b",
+      predecessorTaskId: predecessor.id,
+    });
+    assert.ok(runDone);
+    await runDone;
+
+    assert.equal(result.conflict, false);
+    assert.equal(result.task?.retriedFromTaskId, predecessor.id);
+    assert.deepEqual(authorizeCalls, [
+      {
+        appToken: "app-token-bob",
+        encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+        expectedNamespace: "namespace-b",
+      },
+    ]);
+    const [stored] = await harness.db
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.retriedFromTaskId, predecessor.id));
+    assert.equal(stored?.marketingAttribution?.consent_provenance, null);
+    assert.equal(stored?.marketingAttribution?.gclid, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
     await runDone?.catch(() => undefined);
     clearHarness();
     await harness.close();

@@ -242,13 +242,25 @@ async function resolveCreateInputs(
       message: "Deploy task creation requires source, runner, and target.",
     };
   }
-  const marketingAttribution =
-    input.create.marketingAttribution == null
-      ? (predecessor?.marketingAttribution ?? undefined)
-      : await normalizeMarketingAttribution(
-          input.create.marketingAttribution,
-          input.create.marketingConsentSubject
-        );
+  const inheritedAttribution = predecessor?.marketingAttribution ?? undefined;
+  let marketingAttribution: DeployTaskRow["marketingAttribution"] | undefined;
+  if (input.create.marketingAttribution != null) {
+    marketingAttribution = await normalizeMarketingAttribution(
+      input.create.marketingAttribution,
+      input.create.marketingConsentSubject
+    );
+  } else if (
+    inheritedAttribution?.consent_provenance == null ||
+    inheritedAttribution.consent_provenance.subject_id ===
+      input.create.marketingConsentSubject
+  ) {
+    marketingAttribution = inheritedAttribution;
+  } else {
+    marketingAttribution = await normalizeMarketingAttribution(
+      inheritedAttribution,
+      undefined
+    );
+  }
   const create: CreateDeployTaskInput = {
     createdFrom: input.create.createdFrom,
     creatingActor: input.create.creatingActor,

@@ -18,6 +18,7 @@ import {
   marketingLifecycleEvents,
 } from "@/features/marketing/schema";
 import { onboardingProfiles } from "@/features/onboarding/schema";
+import { rekeyCanonicalIdentityUids } from "@/lib/identity-uid-canonicalization";
 
 /**
  * Identity Fingerprints (ADR-0059): the authorization layer's region-local
@@ -224,11 +225,17 @@ async function rekeyPersonalResources(
   connectionsRekeyed: number;
   conversations: number;
   deployAttributionProvenanceRekeyed: number;
+  identityUidCanonicalizationsRekeyed: number;
   installSessionsRekeyed: number;
   lifecycleEventsRekeyed: number;
   profilesReleased: number;
   profilesRekeyed: number;
 }> {
+  const identityUidCanonicalizationsRekeyed = await rekeyCanonicalIdentityUids(
+    tx,
+    input
+  );
+
   // Pending authorization sessions are swept BEFORE connections: the OAuth
   // callback consumes its session row under a row lock and writes the
   // connection in that same transaction, with no crName left to re-check.
@@ -274,7 +281,19 @@ async function rekeyPersonalResources(
   // uploaded rows. Already-uploaded Google Ads records remain immutable.
   const rekeyedLifecycleEvents = await tx
     .update(marketingLifecycleEvents)
-    .set({ userId: input.survivorUserUid })
+    .set({
+      consentProvenance: sql`CASE
+        WHEN ${marketingLifecycleEvents.consentProvenance} ->> 'subject_id' = ${input.tombstoneUserUid}
+          THEN jsonb_set(
+            ${marketingLifecycleEvents.consentProvenance},
+            '{subject_id}',
+            to_jsonb(${input.survivorUserUid}::text),
+            false
+          )
+        ELSE ${marketingLifecycleEvents.consentProvenance}
+      END`,
+      userId: input.survivorUserUid,
+    })
     .where(eq(marketingLifecycleEvents.userId, input.tombstoneUserUid))
     .returning({ eventId: marketingLifecycleEvents.eventId });
 
@@ -288,7 +307,19 @@ async function rekeyPersonalResources(
   );
   const rekeyedAttributionSubjects = await tx
     .update(marketingAttributionSubjects)
-    .set({ subjectId: input.survivorUserUid })
+    .set({
+      consentProvenance: sql`CASE
+        WHEN ${marketingAttributionSubjects.consentProvenance} ->> 'subject_id' = ${input.tombstoneUserUid}
+          THEN jsonb_set(
+            ${marketingAttributionSubjects.consentProvenance},
+            '{subject_id}',
+            to_jsonb(${input.survivorUserUid}::text),
+            false
+          )
+        ELSE ${marketingAttributionSubjects.consentProvenance}
+      END`,
+      subjectId: input.survivorUserUid,
+    })
     .where(
       and(
         tombstoneAttributionSubjectWhere,
@@ -391,6 +422,7 @@ async function rekeyPersonalResources(
     conversations: conversations.length,
     deployAttributionProvenanceRekeyed:
       rekeyedDeployAttributionProvenance.length,
+    identityUidCanonicalizationsRekeyed,
     installSessionsRekeyed: rekeyedInstallSessions.length,
     lifecycleEventsRekeyed: rekeyedLifecycleEvents.length,
     profilesReleased: releasedProfiles.length,

@@ -2,13 +2,18 @@ import "server-only";
 
 import { sql } from "drizzle-orm";
 
+import { canonicalIdentityUid } from "@/lib/identity-uid-canonicalization";
 import { normalizeMarketingAttribution } from "./consent";
-import { getMarketingDb } from "./db";
+import { getMarketingDb, type MarketingPgDatabase } from "./db";
 import { marketingLifecycleEvents } from "./schema";
 import type { MarketingLifecycleEventInput } from "./types";
 
 export async function recordMarketingLifecycleEvent(
-  event: MarketingLifecycleEventInput
+  event: MarketingLifecycleEventInput,
+  options: {
+    beforeTransaction?: () => Promise<void>;
+    getDb?: () => MarketingPgDatabase;
+  } = {}
 ): Promise<"created" | "duplicate"> {
   const normalizedAttribution = await normalizeMarketingAttribution(
     {
@@ -30,32 +35,45 @@ export async function recordMarketingLifecycleEvent(
   if (normalizedAttribution == null) {
     throw new Error("Invalid marketing attribution payload.");
   }
+  await options.beforeTransaction?.();
 
-  return await getMarketingDb().transaction(async (tx) => {
+  return await (options.getDb ?? getMarketingDb)().transaction(async (tx) => {
+    const provenance = normalizedAttribution.consent_provenance;
+    let userId: string | null = null;
+    let attribution = normalizedAttribution;
+    if (provenance != null) {
+      userId = await canonicalIdentityUid(tx, provenance.subject_id);
+      if (provenance.subject_id !== userId) {
+        attribution = {
+          ...normalizedAttribution,
+          consent_provenance: { ...provenance, subject_id: userId },
+        };
+      }
+    }
     const inserted = await tx
       .insert(marketingLifecycleEvents)
       .values({
-        adPersonalization: normalizedAttribution.ad_personalization,
-        adUserDataConsent: normalizedAttribution.ad_user_data_consent,
-        clickIdCandidates: normalizedAttribution.click_id_candidates,
-        consentProvenance: normalizedAttribution.consent_provenance,
+        adPersonalization: attribution.ad_personalization,
+        adUserDataConsent: attribution.ad_user_data_consent,
+        clickIdCandidates: attribution.click_id_candidates,
+        consentProvenance: attribution.consent_provenance,
         currency: event.currency,
         deploymentId: event.deployment_id,
         eventId: event.event_id,
         eventName: event.event_name,
-        firstTouch: normalizedAttribution.first_touch,
-        gbraid: normalizedAttribution.gbraid,
-        gclid: normalizedAttribution.gclid,
+        firstTouch: attribution.first_touch,
+        gbraid: attribution.gbraid,
+        gclid: attribution.gclid,
         hashedUserData:
-          normalizedAttribution.ad_user_data_consent === "granted"
+          attribution.ad_user_data_consent === "granted"
             ? event.hashed_user_data
             : undefined,
-        lastTouch: normalizedAttribution.last_touch,
+        lastTouch: attribution.last_touch,
         occurredAt: new Date(event.occurred_at),
         transactionId: event.transaction_id,
-        userId: event.user_id,
+        userId,
         value: event.value == null ? undefined : event.value.toFixed(6),
-        wbraid: normalizedAttribution.wbraid,
+        wbraid: attribution.wbraid,
         workspaceId: event.workspace_id,
       })
       .onConflictDoNothing()
@@ -65,9 +83,9 @@ export async function recordMarketingLifecycleEvent(
       return "duplicate";
     }
 
-    const attribution = JSON.stringify(normalizedAttribution);
+    const attributionJson = JSON.stringify(attribution);
     for (const [subjectType, subjectId] of [
-      ["user", event.user_id],
+      ["user", userId],
       ["workspace", event.workspace_id],
     ] as const) {
       if (subjectId == null) {
@@ -75,7 +93,7 @@ export async function recordMarketingLifecycleEvent(
       }
       await tx.execute(sql`
         SELECT "sealai_marketing"."upsert_attribution_subject"(
-          ${subjectType}, ${subjectId}, ${attribution}::jsonb
+          ${subjectType}, ${subjectId}, ${attributionJson}::jsonb
         )
       `);
     }

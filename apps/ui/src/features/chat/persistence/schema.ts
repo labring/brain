@@ -192,6 +192,20 @@ export const identityFingerprints = ns.table("identity_fingerprints", {
     .notNull(),
 });
 
+/** Durable redirects from merged account UIDs to their current survivor. */
+export const identityUidCanonicalizations = ns.table(
+  "identity_uid_canonicalizations",
+  {
+    userUid: text("user_uid").primaryKey(),
+    canonicalUserUid: text("canonical_user_uid").notNull(),
+  },
+  (table) => [
+    index("identity_uid_canonicalizations_canonical_idx").on(
+      table.canonicalUserUid
+    ),
+  ]
+);
+
 export const githubAppInstallSessions = ns.table(
   "github_app_install_sessions",
   {

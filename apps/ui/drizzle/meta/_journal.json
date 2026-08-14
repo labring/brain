@@ -113,6 +113,13 @@
       "when": 1786610000000,
       "tag": "0015_durable_marketing_writes",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786696979106,
+      "tag": "0016_canonical_marketing_identity",
+      "breakpoints": true
     }
   ]
 }

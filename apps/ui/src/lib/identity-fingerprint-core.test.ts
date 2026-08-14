@@ -17,6 +17,7 @@ import {
   githubConnections,
   githubOauthConnections,
   identityFingerprints,
+  identityUidCanonicalizations,
 } from "@/features/chat/persistence/schema";
 import { deployTasks } from "@/features/deploy/task/schema";
 import {
@@ -256,6 +257,7 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
     (["failed", "pending", "uploaded"] as const).map((status) => ({
       eventId: `merge-marketing-${status}`,
       eventName: "build_started" as const,
+      consentProvenance,
       occurredAt: new Date("2026-08-13T00:00:00.000Z"),
       status,
       userId: "tombstone-uid",
@@ -334,8 +336,26 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
     ["survivor-uid", "survivor-uid", "survivor-uid"]
   );
   assert.deepEqual(
+    (
+      await db
+        .select({
+          consentProvenance: marketingLifecycleEvents.consentProvenance,
+        })
+        .from(marketingLifecycleEvents)
+        .where(
+          inArray(marketingLifecycleEvents.eventId, [
+            "merge-marketing-failed",
+            "merge-marketing-pending",
+            "merge-marketing-uploaded",
+          ])
+        )
+    ).map((event) => event.consentProvenance?.subject_id),
+    ["survivor-uid", "survivor-uid", "survivor-uid"]
+  );
+  assert.deepEqual(
     await db
       .select({
+        consentProvenance: marketingAttributionSubjects.consentProvenance,
         gclid: marketingAttributionSubjects.gclid,
         subjectId: marketingAttributionSubjects.subjectId,
         subjectType: marketingAttributionSubjects.subjectType,
@@ -349,6 +369,10 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
       ),
     [
       {
+        consentProvenance: {
+          ...consentProvenance,
+          subject_id: "survivor-uid",
+        },
         gclid: "tombstone-gclid",
         subjectId: "survivor-uid",
         subjectType: "user",
@@ -358,7 +382,30 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
   assert.equal(telemetry?.attributionSubjectsRekeyed, 1);
   assert.equal(telemetry?.attributionSubjectsReleased, 0);
   assert.equal(telemetry?.deployAttributionProvenanceRekeyed, 1);
+  assert.equal(telemetry?.identityUidCanonicalizationsRekeyed, 1);
   assert.equal(telemetry?.lifecycleEventsRekeyed, 3);
+  assert.deepEqual(
+    await db
+      .select()
+      .from(identityUidCanonicalizations)
+      .where(
+        inArray(identityUidCanonicalizations.userUid, [
+          "tombstone-uid",
+          "survivor-uid",
+        ])
+      )
+      .orderBy(identityUidCanonicalizations.userUid),
+    [
+      {
+        canonicalUserUid: "survivor-uid",
+        userUid: "survivor-uid",
+      },
+      {
+        canonicalUserUid: "survivor-uid",
+        userUid: "tombstone-uid",
+      },
+    ]
+  );
 
   // Replaying the same newer token is a plain match and changes nothing.
   assert.deepEqual(

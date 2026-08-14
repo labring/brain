@@ -1046,6 +1046,7 @@ test("create transaction refuses inherited attribution after the identity bindin
     createDeployTaskAction(ctx, {
       create: {
         creatingActor: "transaction-fence-cr",
+        marketingConsentSubject: "transaction-fence-tombstone",
         namespace: "transaction-fence-ns",
       },
       predecessorTaskId: predecessor.id,
@@ -1065,6 +1066,82 @@ test("create transaction refuses inherited attribution after the identity bindin
     ).length,
     0
   );
+});
+
+test("collaborative redeploy keeps workspace attribution without predecessor user identity", async () => {
+  const ctx = testCtx();
+  const predecessor = await insertTaskRow(harness.db, {
+    completedAt: new Date(),
+    creatingActor: "collaborative-member-a-cr",
+    namespace: "collaborative-attribution-ns",
+    status: "failed",
+  });
+  const touch = {
+    campaign: "collaborative-campaign",
+    channel: "paid_search" as const,
+    click_id_type: "gclid" as const,
+    click_id_value: "collaborative-gclid",
+    content: "redeploy",
+    landing_hostname: "sealos.io",
+    landing_path: "/",
+    medium: "paid",
+    source: "google",
+    term: "deploy",
+    ts: "2026-08-14T00:00:00.000Z",
+  };
+  await harness.db
+    .update(deployTasks)
+    .set({
+      marketingAttribution: {
+        ad_personalization: "granted",
+        ad_user_data_consent: "granted",
+        click_id_candidates: [touch],
+        consent_provenance: {
+          issuer: "sealos-desktop",
+          issued_at: "2026-08-14T00:00:00.000Z",
+          jti: "collaborative-member-a-jti",
+          region: "region-a",
+          source: "desktop_oauth",
+          subject_id: "collaborative-member-a-uid",
+        },
+        first_touch: touch,
+        gbraid: null,
+        gclid: "collaborative-gclid",
+        last_touch: touch,
+        version: 3,
+        wbraid: null,
+      },
+    })
+    .where(eq(deployTasks.id, predecessor.id));
+
+  const result = await createDeployTaskAction(ctx, {
+    create: {
+      creatingActor: "collaborative-member-b-cr",
+      marketingConsentSubject: "collaborative-member-b-uid",
+      namespace: "collaborative-attribution-ns",
+    },
+    predecessorTaskId: predecessor.id,
+    run: async () => {
+      /* the attribution assertion only needs task creation */
+    },
+  });
+
+  assert.equal(result.kind, "created");
+  if (result.kind !== "created") {
+    return;
+  }
+  const stored = await taskById(result.task.id);
+  assert.equal(stored.marketingAttribution?.consent_provenance, null);
+  assert.equal(
+    stored.marketingAttribution?.ad_user_data_consent,
+    "unspecified"
+  );
+  assert.equal(stored.marketingAttribution?.gclid, null);
+  assert.equal(
+    stored.marketingAttribution?.first_touch?.campaign,
+    "collaborative-campaign"
+  );
+  assert.equal(stored.marketingAttribution?.first_touch?.click_id_value, "");
 });
 
 test("clone validation matrix: not-found, conflict on active/completed, unique race", async () => {
