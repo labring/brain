@@ -16,6 +16,8 @@ export function nextFixtureId(prefix = "task"): string {
 }
 
 export interface TaskRowFixtureInput {
+  agentControlTokenHash?: DeployTaskRow["agentControlTokenHash"];
+  agentControlTokenRevokedAt?: DeployTaskRow["agentControlTokenRevokedAt"];
   artifactSummary?: DeployTaskRow["artifactSummary"];
   blockingInputs?: DeployTaskRow["blockingInputs"];
   cancelRequestedAt?: Date | null;

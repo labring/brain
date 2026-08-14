@@ -51,7 +51,9 @@ const requestSchema = createDeployTaskInputSchema
     (value) =>
       value.predecessorTaskId != null ||
       (value.runner != null && value.source != null && value.target != null),
-    { message: "source, target, and runner are required without a predecessor" }
+    {
+      message: "source, target, and runner are required without a predecessor",
+    }
   );
 
 function jsonError(message: string, status: number, code?: string) {

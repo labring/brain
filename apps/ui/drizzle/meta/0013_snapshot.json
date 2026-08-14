@@ -1,5 +1,5 @@
 {
-  "id": "0a53f4b0-f314-4f44-a43d-f12b6a3584c2",
+  "id": "a694efce-a6ee-4d76-9a45-709dc6cef317",
   "prevId": "77542120-84d9-4b1b-8443-74f1cd7f5fc9",
   "version": "7",
   "dialect": "postgresql",
@@ -784,6 +784,169 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "sealai_deployment.deploy_task_agent_calls": {
+      "name": "deploy_task_agent_calls",
+      "schema": "sealai_deployment",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "call_id": {
+          "name": "call_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lease_epoch": {
+          "name": "lease_epoch",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_name": {
+          "name": "tool_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request": {
+          "name": "request",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_hash": {
+          "name": "request_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "claim_owner": {
+          "name": "claim_owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_expires_at": {
+          "name": "claim_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "response": {
+          "name": "response",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "deploy_task_agent_calls_pending_idx": {
+          "name": "deploy_task_agent_calls_pending_idx",
+          "columns": [
+            {
+              "expression": "task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"sealai_deployment\".\"deploy_task_agent_calls\".\"state\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "deploy_task_agent_calls_task_id_deploy_tasks_id_fk": {
+          "name": "deploy_task_agent_calls_task_id_deploy_tasks_id_fk",
+          "tableFrom": "deploy_task_agent_calls",
+          "tableTo": "deploy_tasks",
+          "schemaTo": "sealai_deployment",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "deploy_task_agent_calls_pk": {
+          "name": "deploy_task_agent_calls_pk",
+          "columns": ["task_id", "call_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "deploy_task_agent_calls_lease_epoch_nonnegative": {
+          "name": "deploy_task_agent_calls_lease_epoch_nonnegative",
+          "value": "\"sealai_deployment\".\"deploy_task_agent_calls\".\"lease_epoch\" >= 0"
+        },
+        "deploy_task_agent_calls_tool_name_valid": {
+          "name": "deploy_task_agent_calls_tool_name_valid",
+          "value": "\"sealai_deployment\".\"deploy_task_agent_calls\".\"tool_name\" IN ('template_ready', 'deployment_completed')"
+        },
+        "deploy_task_agent_calls_state_valid": {
+          "name": "deploy_task_agent_calls_state_valid",
+          "value": "\"sealai_deployment\".\"deploy_task_agent_calls\".\"state\" IN ('pending', 'running', 'succeeded', 'failed')"
+        },
+        "deploy_task_agent_calls_request_hash_valid": {
+          "name": "deploy_task_agent_calls_request_hash_valid",
+          "value": "char_length(\"sealai_deployment\".\"deploy_task_agent_calls\".\"request_hash\") = 64"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "sealai_deployment.deploy_task_events": {
       "name": "deploy_task_events",
       "schema": "sealai_deployment",
@@ -1006,12 +1169,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "marketing_attribution": {
-          "name": "marketing_attribution",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "credential_binding": {
           "name": "credential_binding",
           "type": "jsonb",
@@ -1139,6 +1296,63 @@
           "primaryKey": false,
           "notNull": false
         },
+        "agent_turn_count": {
+          "name": "agent_turn_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "agent_protocol": {
+          "name": "agent_protocol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'mcp-v1'"
+        },
+        "agent_control_token_hash": {
+          "name": "agent_control_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_control_token_revoked_at": {
+          "name": "agent_control_token_revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_template_digest": {
+          "name": "agent_template_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_input_schema_digest": {
+          "name": "agent_input_schema_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_checkpoint_id": {
+          "name": "agent_checkpoint_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "agent_input_revision": {
+          "name": "agent_input_revision",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "agent_completion_receipt": {
+          "name": "agent_completion_receipt",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "failure_details": {
           "name": "failure_details",
           "type": "jsonb",
@@ -1255,6 +1469,22 @@
         }
       },
       "indexes": {
+        "deploy_tasks_agent_control_token_hash_idx": {
+          "name": "deploy_tasks_agent_control_token_hash_idx",
+          "columns": [
+            {
+              "expression": "agent_control_token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"sealai_deployment\".\"deploy_tasks\".\"agent_control_token_hash\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "deploy_tasks_namespace_updated_at_idx": {
           "name": "deploy_tasks_namespace_updated_at_idx",
           "columns": [
@@ -1409,7 +1639,24 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "deploy_tasks_agent_turn_count_nonnegative": {
+          "name": "deploy_tasks_agent_turn_count_nonnegative",
+          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_turn_count\" >= 0"
+        },
+        "deploy_tasks_agent_input_revision_nonnegative": {
+          "name": "deploy_tasks_agent_input_revision_nonnegative",
+          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_input_revision\" >= 0"
+        },
+        "deploy_tasks_agent_protocol_valid": {
+          "name": "deploy_tasks_agent_protocol_valid",
+          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_protocol\" IN ('mcp-v1')"
+        },
+        "deploy_tasks_agent_control_token_hash_valid": {
+          "name": "deploy_tasks_agent_control_token_hash_valid",
+          "value": "\"sealai_deployment\".\"deploy_tasks\".\"agent_control_token_hash\" IS NULL OR char_length(\"sealai_deployment\".\"deploy_tasks\".\"agent_control_token_hash\") = 64"
+        }
+      },
       "isRLSEnabled": false
     },
     "sealai_onboarding.onboarding_profiles": {
@@ -1498,306 +1745,6 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "sealai_marketing.attribution_subjects": {
-      "name": "attribution_subjects",
-      "schema": "sealai_marketing",
-      "columns": {
-        "subject_type": {
-          "name": "subject_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject_id": {
-          "name": "subject_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "first_touch": {
-          "name": "first_touch",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_touch": {
-          "name": "last_touch",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gclid": {
-          "name": "gclid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gbraid": {
-          "name": "gbraid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "wbraid": {
-          "name": "wbraid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ad_personalization": {
-          "name": "ad_personalization",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'unspecified'"
-        },
-        "ad_user_data_consent": {
-          "name": "ad_user_data_consent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'unspecified'"
-        },
-        "click_id_candidates": {
-          "name": "click_id_candidates",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consent_provenance": {
-          "name": "consent_provenance",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "attribution_subjects_pk": {
-          "name": "attribution_subjects_pk",
-          "columns": ["subject_type", "subject_id"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "sealai_marketing.lifecycle_events": {
-      "name": "lifecycle_events",
-      "schema": "sealai_marketing",
-      "columns": {
-        "event_id": {
-          "name": "event_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "event_name": {
-          "name": "event_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deployment_id": {
-          "name": "deployment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "first_touch": {
-          "name": "first_touch",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_touch": {
-          "name": "last_touch",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gclid": {
-          "name": "gclid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gbraid": {
-          "name": "gbraid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "wbraid": {
-          "name": "wbraid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ad_personalization": {
-          "name": "ad_personalization",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'unspecified'"
-        },
-        "ad_user_data_consent": {
-          "name": "ad_user_data_consent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'unspecified'"
-        },
-        "click_id_candidates": {
-          "name": "click_id_candidates",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consent_provenance": {
-          "name": "consent_provenance",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hashed_user_data": {
-          "name": "hashed_user_data",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "transaction_id": {
-          "name": "transaction_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "value": {
-          "name": "value",
-          "type": "numeric(24, 6)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "upload_error": {
-          "name": "upload_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "upload_request_id": {
-          "name": "upload_request_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "uploaded_at": {
-          "name": "uploaded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "lifecycle_events_pending_idx": {
-          "name": "lifecycle_events_pending_idx",
-          "columns": [
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"sealai_marketing\".\"lifecycle_events\".\"status\" = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "lifecycle_events_action_transaction_idx": {
-          "name": "lifecycle_events_action_transaction_idx",
-          "columns": [
-            {
-              "expression": "event_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "transaction_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"sealai_marketing\".\"lifecycle_events\".\"transaction_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -2356,7 +2303,6 @@
     "sealai_assistant": "sealai_assistant",
     "sealai_deployment": "sealai_deployment",
     "sealai_onboarding": "sealai_onboarding",
-    "sealai_marketing": "sealai_marketing",
     "sealai_project": "sealai_project"
   },
   "sequences": {

@@ -10,6 +10,7 @@ import {
   marketingLifecycleEvents,
 } from "@/features/marketing/schema";
 import {
+  deployTaskAgentCalls,
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,
@@ -21,6 +22,7 @@ import {
 } from "../notify";
 
 const deploymentTaskSchema = {
+  deployTaskAgentCalls,
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,

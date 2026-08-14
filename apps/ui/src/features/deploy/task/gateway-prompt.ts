@@ -1,9 +1,10 @@
 import type { DeployTaskRow } from "./schema";
 
-const SEALOS_TEMPLATE_PROJECT_OWNERSHIP_PROMPT_LINES = [
-  "Do not add projectId under spec for Kubernetes native resources such as Deployment, Service, Ingress, StatefulSet, ConfigMap, Secret, or Job.",
-  "Project ownership is applied later by Brain as metadata.labels.brain.io/project-id; the Devbox agent does not need to encode the project id in generated YAML.",
-];
+export type ManagedDeployResumeMode =
+  | "initial"
+  | "input-submitted"
+  | "repair"
+  | "completion-required";
 
 function gatewaySourcePromptLines(task: DeployTaskRow): string[] {
   switch (task.source.kind) {
@@ -26,65 +27,44 @@ function gatewaySourcePromptLines(task: DeployTaskRow): string[] {
   }
 }
 
-export function buildGatewayPrompt(task: DeployTaskRow): string {
+export function buildManagedGatewayPrompt(input: {
+  repairFindings?: readonly string[];
+  resumeMode: ManagedDeployResumeMode;
+  task: DeployTaskRow;
+}): string {
   return [
-    "You are running inside a SealAI deployment Devbox.",
-    "Work in /home/devbox/project.",
-    ...gatewaySourcePromptLines(task),
-    "",
-    "Run the sealos-deploy skill to completion:",
-    "/sealos-deploy using /home/devbox/project as the deployment workspace.",
-    "",
-    "Proceed automatically through all phases without stopping to ask for confirmation or input.",
-    "Do not replace the skill workflow with your own ad-hoc deployment format.",
-    "If a build is required, read /home/devbox/project/.sealos/build-runtime.json and use its DevBox S3 contract to create the kaniko Job.",
-    "Set the kaniko Job spec.activeDeadlineSeconds from build-runtime.json buildDeadlineSeconds.",
-    "Do not invent S3 endpoints or inline DevBox secret values; use the secretKeyRef from build-runtime.json.",
-    "",
-    "When complete, ensure these output files exist:",
-    "- /home/devbox/project/.sealos/build-runtime.json when the source needs an image build",
-    "- /home/devbox/project/.sealos/delivery-manifest.json",
-    "- /home/devbox/project/.sealos/build-result.json",
-    "- /home/devbox/project/.sealos/template/index.yaml",
-    "",
-    "The final YAML must be an app.sealos.io/v1 Template multi-document artifact, not a Brain AP YAML.",
-    ...SEALOS_TEMPLATE_PROJECT_OWNERSHIP_PROMPT_LINES,
-    'When the image build succeeds, write /home/devbox/project/.sealos/build-result.json with status "succeeded", image.image_ref, and image.digest.',
-    'Use only these build-result status values: "succeeded", "failed", or "skipped".',
-    'If the image build fails, write /home/devbox/project/.sealos/build-result.json with status "failed" and an actionable error field.',
-    "Before ending, verify with: test -s /home/devbox/project/.sealos/delivery-manifest.json && test -s /home/devbox/project/.sealos/build-result.json && test -s /home/devbox/project/.sealos/template/index.yaml",
-    "",
-    `Namespace: ${task.namespace}`,
-    task.prompt ? `User request: ${task.prompt}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-export function buildGatewayRepairPrompt(task: DeployTaskRow): string {
-  return [
-    "The previous turn completed, but required Sealos deployment output files were missing or empty.",
-    "Fix this now by running /sealos-deploy to completion in /home/devbox/project.",
-    "Do not ask a question and do not stop after a prose answer.",
-    "If a build is required, read /home/devbox/project/.sealos/build-runtime.json and use its DevBox S3 contract. Do not invent endpoints or inline DevBox secret values.",
-    "Set the kaniko Job spec.activeDeadlineSeconds from build-runtime.json buildDeadlineSeconds.",
-    "Required files:",
-    "- /home/devbox/project/.sealos/delivery-manifest.json",
-    "- /home/devbox/project/.sealos/build-result.json",
-    "- /home/devbox/project/.sealos/template/index.yaml",
-    "The final YAML must be an app.sealos.io/v1 Template multi-document artifact, not a Brain AP YAML.",
-    ...SEALOS_TEMPLATE_PROJECT_OWNERSHIP_PROMPT_LINES,
-    'When the image build succeeds, write build-result.json with status "succeeded", image.image_ref, and image.digest.',
-    'Use only these build-result status values: "succeeded", "failed", or "skipped".',
-    'If deployment cannot succeed, write build-result.json with status "failed" and an actionable error field.',
-    task.source.kind === "github"
-      ? `Repository: ${task.source.repo.fullName}`
+    "You are the sole execution owner of this SealAI deployment. Brain is only the task control plane and final Workload Ready gate.",
+    "Work in /home/devbox/project and run the sealos-deploy skill in managed mode.",
+    `Resume mode: ${input.resumeMode}`,
+    "Read task identity and limits only from SEALAI_DEPLOY_TASK_ID, SEALAI_PROJECT_ID, SEALAI_DEPLOY_LABELS_JSON, SEALAI_NAMESPACE, SEALAI_INPUTS_PATH, and SEALAI_TURN_DEADLINE_AT. Do not enumerate the environment or read/print the control capability token. Brain owns the namespace; Sealos and the Skill own the actual Instance name.",
+    "Use the injected kubeconfig directly. You own build, kubectl apply, observation, logs, diagnosis, repair, re-apply, and runtime verification. Brain will not execute Kubernetes mutations for you.",
+    "This managed task is non-interactive and already authorizes Kubernetes mutations within the allocated namespace and deployment identity, including a delete that is strictly required for convergence. Do not pause for confirmation. Never delete unrelated resources, protected platform resources, PVCs, databases, or external data unless the deployment plan explicitly owns them and the repair cannot converge safely without it.",
+    "Do not create control.json, inputs-required.json, turn-report.json, verify-report.json, or any file-based RPC signal.",
+    "Generate the canonical Sealos Template at /home/devbox/project/.sealos/template/index.yaml, compute its lowercase SHA-256, then call the template_ready MCP tool with only sha256. The platform provides ownership labels through SEALAI_DEPLOY_LABELS_JSON; preserve them and let the sealos-deploy skill pass them to the Template API as extraLabels. Do not fabricate deployment-name or template-name labels, and do not use an Instance name supplied by Brain.",
+    "If template_ready returns awaiting_user, stop this turn without applying resources. Brain will render the form from Template spec.inputs and resume this same Codex Thread after writing values to SEALAI_INPUTS_PATH.",
+    "If template_ready returns continue, proceed autonomously. On input-submitted resume, and on any later repair turn when the file exists, have the deploy helper reuse the fixed SEALAI_INPUTS_PATH before build/apply; never echo values into the prompt, tool arguments, logs, or persistent control artifacts.",
+    input.resumeMode === "input-submitted"
+      ? `Input revision: ${input.task.agentInputRevision + 1}. Read values only from SEALAI_INPUTS_PATH.`
       : null,
-    task.source.kind === "prompt"
-      ? `Deployment request: ${task.source.text}`
+    input.resumeMode === "repair"
+      ? "This is an in-place repair of the deployment this task already created, not a new deployment. Use SEALAI_PROJECT_ID, the previous Template API result, existing .sealos state, and live project-labeled resources to identify the original Instance. Preserve its concrete app name, random suffix, public host, databases, PVCs, and other resource identities. If SEALAI_INPUTS_PATH exists, reuse it only through the deploy helper; do not ask for or invent replacement values. Do not call the raw Template API to create another Instance, restart the fresh DEPLOY pipeline, or re-evaluate identity-bearing random() defaults. Rebuild images and use kubectl apply, patch, or rollout operations to converge the existing resources. If you cannot identify exactly one original deployment, keep diagnosing and fail this task rather than create a replacement deployment."
       : null,
-    task.prompt ? `User request: ${task.prompt}` : null,
-    "Before ending, verify with: test -s /home/devbox/project/.sealos/delivery-manifest.json && test -s /home/devbox/project/.sealos/build-result.json && test -s /home/devbox/project/.sealos/template/index.yaml",
+    input.resumeMode === "completion-required"
+      ? "The previous turn ended without a Brain control notification. Continue this same deployment Thread now; do not restart source analysis, create another Instance, or finish with a text response. Inspect the deployment work already performed, run the required runtime checks, and call deployment_completed with the actual workload references. Keep working until Brain returns accepted_stop or repair."
+      : null,
+    "After apply, perform real readiness and runtime-truth checks yourself. If anything fails, inspect Pod status, Events, describe output, and logs; fix it, re-apply, and verify again as many times as needed. The single hard limit is SEALAI_TURN_DEADLINE_AT; there is no per-turn or per-repair limit.",
+    input.repairFindings?.length
+      ? `Brain final readiness findings from the previous turn: ${JSON.stringify(input.repairFindings.slice(0, 64))}`
+      : null,
+    "Only after your own deployment checks pass, call deployment_completed with the actual workload resource references you just deployed (apiVersion, kind, name, namespace). When the deployment exposes a public URL, include it as publicUrl. Brain treats the references only as lookup targets, performs a small Ready check, and probes publicUrl for a 2xx response when provided. If Brain returns repair, use its findings as evidence, diagnose and repair yourself, then call deployment_completed again. If Brain returns accepted_stop, end the turn successfully.",
+    "The only Brain control tools you may call are template_ready and deployment_completed. A control-tool error is recoverable: diagnose the reported error, retry the same control step, and do not end the turn until the required control notification succeeds. Do not ask Brain to apply, patch, delete, exec, read logs, or debug.",
+    input.resumeMode === "initial"
+      ? "Start from the source repository and run /sealos-deploy to completion."
+      : "Resume from the existing workspace and Thread. Preserve completed work and the actual resources already created; do not restart source analysis.",
+    "",
+    ...gatewaySourcePromptLines(input.task),
+    `Namespace: ${input.task.namespace}`,
+    input.task.prompt ? `User request: ${input.task.prompt}` : null,
   ]
     .filter(Boolean)
     .join("\n");

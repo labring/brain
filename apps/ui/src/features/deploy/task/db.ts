@@ -7,9 +7,15 @@ import {
   marketingLifecycleEvents,
 } from "@/features/marketing/schema";
 import { getAppPostgresPool } from "@/lib/app-postgres/db";
-import { deployTaskEvents, deployTaskMessages, deployTasks } from "./schema";
+import {
+  deployTaskAgentCalls,
+  deployTaskEvents,
+  deployTaskMessages,
+  deployTasks,
+} from "./schema";
 
 const deploymentTaskSchema = {
+  deployTaskAgentCalls,
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,

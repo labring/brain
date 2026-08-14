@@ -279,13 +279,11 @@
      single dot. */
   @media (prefers-reduced-motion: no-preference) {
     [data-status-heartbeat="a"] .status-heartbeat-ping {
-      animation: status-heartbeat-ping-a var(--status-heartbeat-pulse, 1s)
-        cubic-bezier(0, 0, 0.2, 1) forwards;
+      animation: status-heartbeat-ping-a 1s cubic-bezier(0, 0, 0.2, 1) forwards;
     }
 
     [data-status-heartbeat="b"] .status-heartbeat-ping {
-      animation: status-heartbeat-ping-b var(--status-heartbeat-pulse, 1s)
-        cubic-bezier(0, 0, 0.2, 1) forwards;
+      animation: status-heartbeat-ping-b 1s cubic-bezier(0, 0, 0.2, 1) forwards;
     }
   }
 

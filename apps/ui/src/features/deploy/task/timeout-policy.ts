@@ -1,53 +1,65 @@
 const SECOND_MS = 1000;
 const MINUTE_MS = 60 * SECOND_MS;
 
-/**
- * One code-owned timeout policy for deployment execution. Phase budgets are
- * ceilings inside the overall run deadline; callers always clamp child work
- * to both the phase deadline and the remaining task time.
- */
-export const DEPLOY_TIMEOUT_POLICY = {
-  applyMs: 5 * MINUTE_MS,
+const COMMON_DEPLOY_TIMEOUT_POLICY = {
   devboxReadyMs: 5 * MINUTE_MS,
   finalizeMs: 2 * MINUTE_MS,
   gatewayCleanupMs: 5 * SECOND_MS,
-  gatewayInitialTurnMs: 35 * MINUTE_MS,
   gatewayPollMs: 2500,
-  gatewayRepairTurnMs: 10 * MINUTE_MS,
   gatewayRequestMs: 60 * SECOND_MS,
   gatewayStartupMs: 60 * SECOND_MS,
-  generateMs: 45 * MINUTE_MS,
   imageBuildSeconds: 30 * 60,
   outputPollMs: 15 * SECOND_MS,
   outputReadMs: 30 * SECOND_MS,
   overallMs: 70 * MINUTE_MS,
   prepareMs: 8 * MINUTE_MS,
-  readinessMs: 10 * MINUTE_MS,
   repositoryCloneMs: 5 * MINUTE_MS,
   skillInstallMs: 3 * MINUTE_MS,
 } as const;
 
+/** Shared task infrastructure plus direct/template apply and readiness limits. */
+export const DEPLOY_TIMEOUT_POLICY = {
+  ...COMMON_DEPLOY_TIMEOUT_POLICY,
+  applyMs: 5 * MINUTE_MS,
+  readinessMs: 10 * MINUTE_MS,
+} as const;
+
+/**
+ * Agent-owned execution and Brain verification policy.
+ *
+ * The only hard deadline is `overallMs` (70 minutes) from the lease start.
+ * Once the task is handed to Codex, no single turn or repair round has its
+ * own limit; the whole Agent execution window (`agentExecutionMs`) is one
+ * unsegmented budget and every Gateway turn runs against its remaining time.
+ */
+export const AGENT_DEPLOY_TIMEOUT_POLICY = {
+  ...COMMON_DEPLOY_TIMEOUT_POLICY,
+  /** Codex execution window: analysis, build, apply, and unlimited repairs. */
+  agentExecutionMs: 44 * MINUTE_MS,
+  operationalSlackMs: 6 * MINUTE_MS,
+  verifyMs: 10 * MINUTE_MS,
+} as const;
+
 function assertTimeoutPolicy(): void {
-  const policy = DEPLOY_TIMEOUT_POLICY;
-  const phaseTotalMs =
-    policy.prepareMs +
-    policy.generateMs +
-    policy.applyMs +
-    policy.readinessMs +
-    policy.finalizeMs;
-  if (phaseTotalMs !== policy.overallMs) {
-    throw new Error("Deployment phase budgets must equal the overall timeout.");
+  const agent = AGENT_DEPLOY_TIMEOUT_POLICY;
+  const agentPhaseTotalMs =
+    agent.prepareMs +
+    agent.agentExecutionMs +
+    agent.verifyMs +
+    agent.finalizeMs +
+    agent.operationalSlackMs;
+  if (agentPhaseTotalMs !== agent.overallMs) {
+    throw new Error(
+      "Agent deployment phase budgets must equal the overall timeout."
+    );
   }
   if (
-    policy.gatewayInitialTurnMs + policy.gatewayRepairTurnMs >
-    policy.generateMs
+    DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs >
+    DEPLOY_TIMEOUT_POLICY.gatewayRequestMs
   ) {
-    throw new Error("Gateway turn budgets exceed the generation budget.");
-  }
-  if (policy.gatewayCleanupMs > policy.gatewayRequestMs) {
     throw new Error("Gateway cleanup timeout exceeds the request timeout.");
   }
-  if (policy.imageBuildSeconds * SECOND_MS > policy.generateMs) {
+  if (agent.imageBuildSeconds * SECOND_MS > agent.agentExecutionMs) {
     throw new Error("Image build timeout exceeds the generation budget.");
   }
 }

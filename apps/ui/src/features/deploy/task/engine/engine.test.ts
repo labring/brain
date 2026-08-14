@@ -32,8 +32,10 @@ import type {
 } from "./context";
 import {
   DeployTaskRunCancelledError,
+  DeployTaskRunSupersededError,
   DeployTaskRunTimeoutError,
 } from "./errors";
+import { createDeployTaskHandle } from "./handle";
 import { runDeployTaskReaperSweep } from "./reaper";
 import {
   getActiveDeployTaskHandle,
@@ -185,6 +187,27 @@ test("transitions reject illegal moves and stale statuses", async () => {
   assert.equal((await taskById(row.id)).status, "completed");
 });
 
+test("terminal transitions revoke an active Agent control capability", async () => {
+  const ctx = testCtx();
+  const row = await insertTaskRow(harness.db, {
+    agentControlTokenHash: "a".repeat(64),
+    leaseEpoch: 1,
+    leaseOwner: "test-proc",
+    status: "running",
+  });
+
+  const failed = await transitionDeployTask(ctx, {
+    expectedLeaseEpoch: 1,
+    from: ["running"],
+    set: { error: "test failure" },
+    taskId: row.id,
+    to: "failed",
+  });
+
+  assert.ok(failed);
+  assert.ok((await taskById(row.id)).agentControlTokenRevokedAt != null);
+});
+
 test("the status writer rejects blocked transitions without inputs", async () => {
   const ctx = testCtx();
   const row = await insertTaskRow(harness.db, {
@@ -234,6 +257,45 @@ test("stale lease epoch fences writes to no-ops", async () => {
   assert.equal(fencedEvent, null);
   assert.equal((await eventsFor(row.id)).length, 0);
   assert.equal((await taskById(row.id)).status, "running");
+});
+
+test("agent execution counters default safely and use fenced state writes", async () => {
+  const ctx = testCtx();
+  const row = await insertTaskRow(harness.db, {
+    leaseEpoch: 2,
+    leaseOwner: "test-proc",
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+    status: "running",
+  });
+
+  assert.equal(row.agentTurnCount, 0);
+  assert.equal(row.agentProtocol, "mcp-v1");
+
+  const active = createDeployTaskHandle(ctx, {
+    controller: new AbortController(),
+    leaseEpoch: 2,
+    namespace: row.namespace,
+    taskId: row.id,
+  });
+  await active.setState({
+    agentTurnCount: 2,
+  });
+
+  const stored = await taskById(row.id);
+  assert.equal(stored.agentTurnCount, 2);
+  assert.equal(stored.agentProtocol, "mcp-v1");
+
+  const stale = createDeployTaskHandle(ctx, {
+    controller: new AbortController(),
+    leaseEpoch: 1,
+    namespace: row.namespace,
+    taskId: row.id,
+  });
+  await assert.rejects(
+    stale.setState({ agentTurnCount: 3 }),
+    DeployTaskRunSupersededError
+  );
+  assert.equal((await taskById(row.id)).agentTurnCount, 2);
 });
 
 test("lease renewal is fenced by epoch, owner, and status", async () => {
@@ -2114,6 +2176,30 @@ test("deadline transition CAS defines cancel-versus-timeout boundary priority", 
   }
 });
 
+test("persisted cancel intent wins over completion", async () => {
+  const ctx = testCtx();
+  const row = await insertTaskRow(harness.db, {
+    leaseClaimedAt: new Date(),
+    leaseEpoch: 6,
+    leaseExpiresAt: new Date(Date.now() + 60_000),
+    leaseOwner: ctx.processId,
+    status: "applying",
+  });
+  const handle = createDeployTaskHandle(ctx, {
+    controller: new AbortController(),
+    leaseEpoch: 6,
+    namespace: row.namespace,
+    taskId: row.id,
+  });
+
+  assert.ok(await recordDeployTaskCancelRequest(ctx, { taskId: row.id }));
+  await assert.rejects(handle.complete(), DeployTaskRunSupersededError);
+  assert.equal((await taskById(row.id)).status, "applying");
+
+  await handle.acknowledgeCancel();
+  assert.equal((await taskById(row.id)).status, "cancelled");
+});
+
 test("reaper pauses terminal-task devboxes and deletes only runtimes after retention", async () => {
   const ctx = testCtx({ devboxDeleteAfterPauseMs: 60_000 });
 
@@ -2123,6 +2209,27 @@ test("reaper pauses terminal-task devboxes and deletes only runtimes after reten
     runtimeProvider: "devbox",
     runtimeState: "Running",
     status: "failed",
+  });
+  const cleanupFailed = await insertTaskRow(harness.db, {
+    completedAt: new Date(Date.now() - 1000),
+    runtimeName: "devbox-secret-cleanup",
+    runtimeProvider: "devbox",
+    runtimeState: "cleanup-failed",
+    status: "failed",
+  });
+  const cleanupPending = await insertTaskRow(harness.db, {
+    completedAt: new Date(Date.now() - 1000),
+    runtimeName: "devbox-input-cleanup-pending",
+    runtimeProvider: "devbox",
+    runtimeState: "input-cleanup-pending",
+    status: "failed",
+  });
+  const cleanupComplete = await insertTaskRow(harness.db, {
+    completedAt: new Date(Date.now() - 1000),
+    runtimeName: "devbox-input-cleanup-complete",
+    runtimeProvider: "devbox",
+    runtimeState: "input-cleanup-complete",
+    status: "completed",
   });
   const deleteDue = await insertTaskRow(harness.db, {
     completedAt: new Date(Date.now() - 120_000),
@@ -2141,6 +2248,18 @@ test("reaper pauses terminal-task devboxes and deletes only runtimes after reten
   const pausedTask = await taskById(failedWithDevbox.id);
   assert.equal(pausedTask.runtimeState, "paused");
   assert.ok(pausedTask.runtimePausedAt);
+
+  assert.ok(devbox.deleted.includes("ns-test/devbox-secret-cleanup"));
+  assert.ok(!devbox.paused.includes("ns-test/devbox-secret-cleanup"));
+  assert.equal((await taskById(cleanupFailed.id)).runtimeState, "deleted");
+
+  assert.ok(devbox.deleted.includes("ns-test/devbox-input-cleanup-pending"));
+  assert.ok(!devbox.paused.includes("ns-test/devbox-input-cleanup-pending"));
+  assert.equal((await taskById(cleanupPending.id)).runtimeState, "deleted");
+
+  assert.ok(devbox.paused.includes("ns-test/devbox-input-cleanup-complete"));
+  assert.ok(!devbox.deleted.includes("ns-test/devbox-input-cleanup-complete"));
+  assert.equal((await taskById(cleanupComplete.id)).runtimeState, "paused");
 
   assert.ok(devbox.deleted.includes("ns-test/devbox-b"));
   assert.equal((await taskById(deleteDue.id)).runtimeState, "deleted");

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  AGENT_DEPLOY_TIMEOUT_POLICY,
   DEPLOY_TIMEOUT_POLICY,
   deploymentPhaseDeadlineAt,
   deployTaskDeadlineAt,
@@ -11,16 +12,27 @@ import {
 const MINUTE_MS = 60_000;
 
 describe("deployment timeout policy", () => {
-  it("allocates the full 70 minute execution budget", () => {
-    expect(
-      DEPLOY_TIMEOUT_POLICY.prepareMs +
-        DEPLOY_TIMEOUT_POLICY.generateMs +
-        DEPLOY_TIMEOUT_POLICY.applyMs +
-        DEPLOY_TIMEOUT_POLICY.readinessMs +
-        DEPLOY_TIMEOUT_POLICY.finalizeMs
-    ).toBe(70 * MINUTE_MS);
+  it("keeps shared task and direct apply budgets stable", () => {
     expect(DEPLOY_TIMEOUT_POLICY.overallMs).toBe(70 * MINUTE_MS);
     expect(DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs).toBe(5000);
+    expect(DEPLOY_TIMEOUT_POLICY.prepareMs).toBe(8 * MINUTE_MS);
+    expect(DEPLOY_TIMEOUT_POLICY.applyMs).toBe(5 * MINUTE_MS);
+    expect(DEPLOY_TIMEOUT_POLICY.readinessMs).toBe(10 * MINUTE_MS);
+    expect(DEPLOY_TIMEOUT_POLICY.finalizeMs).toBe(2 * MINUTE_MS);
+  });
+
+  it("keeps Agent execution, verification, and slack within the overall timeout", () => {
+    expect(
+      AGENT_DEPLOY_TIMEOUT_POLICY.prepareMs +
+        AGENT_DEPLOY_TIMEOUT_POLICY.agentExecutionMs +
+        AGENT_DEPLOY_TIMEOUT_POLICY.verifyMs +
+        AGENT_DEPLOY_TIMEOUT_POLICY.finalizeMs +
+        AGENT_DEPLOY_TIMEOUT_POLICY.operationalSlackMs
+    ).toBe(70 * MINUTE_MS);
+    expect(AGENT_DEPLOY_TIMEOUT_POLICY.agentExecutionMs).toBe(44 * MINUTE_MS);
+    expect(AGENT_DEPLOY_TIMEOUT_POLICY.verifyMs).toBe(10 * MINUTE_MS);
+    expect(AGENT_DEPLOY_TIMEOUT_POLICY.finalizeMs).toBe(2 * MINUTE_MS);
+    expect(AGENT_DEPLOY_TIMEOUT_POLICY.operationalSlackMs).toBe(6 * MINUTE_MS);
   });
 
   it("derives the task deadline from the run start", () => {
