@@ -12,7 +12,10 @@ import {
   DEFAULT_PLAN_CHANGE_SERVICES,
   planOperator,
 } from "@/features/billing/billing-plan-checkout-dialog";
-import type { BillingPlanSnapshot } from "@/features/billing/billing-plan-data";
+import {
+  type BillingPlanSnapshot,
+  subscriptionLifecycleAllowsBillingActions,
+} from "@/features/billing/billing-plan-data";
 import { BillingPlanPicker } from "@/features/billing/billing-plan-picker";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
@@ -97,7 +100,12 @@ export function BillingPlanChangeDialog({
         </div>
         <AppDialog.Body className="px-8 pt-6 pb-8">
           <BillingPlanPicker
-            actionable={snapshot.current.canManage}
+            actionable={
+              snapshot.current.canManage &&
+              subscriptionLifecycleAllowsBillingActions(
+                snapshot.current.lifecycle
+              )
+            }
             currency={currency}
             gpuEnabled={gpuEnabled}
             inDebt={inDebt}

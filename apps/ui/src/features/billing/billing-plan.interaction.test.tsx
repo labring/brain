@@ -17,6 +17,11 @@ import { formatBillingDateTime } from "./billing-datetime";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 
 const SNAPSHOT: BillingPlanSnapshot = {
+  availability: {
+    card: "available",
+    transaction: "available",
+    workspaces: "available",
+  },
   card: { brand: "visa", last4: "4242" },
   current: {
     canManage: true,

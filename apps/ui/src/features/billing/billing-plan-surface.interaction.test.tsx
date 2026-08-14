@@ -14,6 +14,11 @@ const CANCELLING_BANNER_PATTERN = /Your subscription is cancelled/;
 const EXPIRED_BANNER_PATTERN = /Your subscription has expired/;
 
 const CANCELLING_PLAN: BillingPlanSnapshot = {
+  availability: {
+    card: "available",
+    transaction: "available",
+    workspaces: "available",
+  },
   card: { brand: "visa", last4: "4242" },
   current: {
     canManage: true,

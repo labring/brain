@@ -38,6 +38,7 @@ import {
   loadBillingPlanSnapshot,
   type SubscriptionLifecycleAction,
   type SubscriptionLifecycleOutcome,
+  subscriptionLifecycleAllowsBillingActions,
   updateSubscriptionLifecycle,
 } from "@/features/billing/billing-plan-data";
 import {
@@ -356,7 +357,11 @@ export function BillingPlan({
   const updateLifecycle = async (
     operator: SubscriptionLifecycleAction
   ): Promise<SubscriptionLifecycleOutcome> => {
-    if (snapshot == null || actionPending != null) {
+    if (
+      snapshot == null ||
+      actionPending != null ||
+      !subscriptionLifecycleAllowsBillingActions(snapshot.current.lifecycle)
+    ) {
       return { ok: false, message: "The subscription could not be updated." };
     }
 
@@ -396,7 +401,11 @@ export function BillingPlan({
 
   const manageCard = async () => {
     const current = snapshot?.current;
-    if (cardManagementPending || current == null) {
+    if (
+      cardManagementPending ||
+      current == null ||
+      !subscriptionLifecycleAllowsBillingActions(current.lifecycle)
+    ) {
       return;
     }
 
@@ -435,7 +444,11 @@ export function BillingPlan({
 
   const cancelInvoice = async (invoiceId: string) => {
     const current = snapshot?.current;
-    if (invoiceCancellationPending || current == null) {
+    if (
+      invoiceCancellationPending ||
+      current == null ||
+      !subscriptionLifecycleAllowsBillingActions(current.lifecycle)
+    ) {
       return;
     }
 

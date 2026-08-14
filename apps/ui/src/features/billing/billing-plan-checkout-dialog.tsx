@@ -17,6 +17,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import {
+  AlertTriangle,
   ArrowUpRight,
   CircleCheck,
   CircleCheckBig,
@@ -42,11 +43,13 @@ import {
   createSubscriptionPlanPayment,
   loadSubscriptionTransactionStatus,
   loadSubscriptionUpgradeQuote,
+  type PendingSubscriptionUpgrade,
   type SubscriptionDowngradeCheck,
   type SubscriptionPlanCheckout,
   SubscriptionPromotionCodeError,
   type SubscriptionTransactionStatus,
   type SubscriptionUpgradeQuote,
+  type SubscriptionUpgradeQuoteResult,
 } from "@/features/billing/billing-plan-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { errorDescription } from "@/lib/toast-utils";
@@ -92,7 +95,7 @@ interface BillingPlanChangeServices {
   ) => Promise<SubscriptionTransactionStatus | null>;
   loadUpgradeQuote: (
     input: UpgradeQuoteInput
-  ) => Promise<SubscriptionUpgradeQuote>;
+  ) => Promise<SubscriptionUpgradeQuoteResult>;
   openCheckoutUrl: (url: string) => void;
   openCheckoutWindow: () => CheckoutWindowHandle | null;
   redirectTop: (url: string) => void;
@@ -128,7 +131,7 @@ function scheduleBrowserPoll(callback: () => void, delay: number): () => void {
   return () => window.clearTimeout(timer);
 }
 
-type CheckoutStage = "downgrade" | "quote" | "waiting";
+type CheckoutStage = "downgrade" | "quote" | "recovery" | "waiting";
 type SnapshotPlan = BillingPlanSnapshot["plans"][number];
 type PlanChangeOperator = "created" | "downgraded" | "upgraded";
 
@@ -169,7 +172,7 @@ interface WaitingStageProps {
   error: string | null;
   onCancel: () => Promise<void>;
   onReopen: () => void;
-  status: "cancelling" | "polling" | "timed-out";
+  status: "cancelling" | "failed" | "polling" | "timed-out";
 }
 
 function WaitingStage({
@@ -179,22 +182,33 @@ function WaitingStage({
   status,
 }: WaitingStageProps) {
   const timedOut = status === "timed-out";
+  const failed = status === "failed";
   const cancelling = status === "cancelling";
+  let description =
+    "Complete payment in the Stripe tab. This page will update automatically.";
+  let title = "Waiting for payment";
+  if (failed) {
+    description =
+      "Stripe reported that this payment did not complete. Reopen the payment page or cancel this invoice.";
+    title = "Payment failed";
+  } else if (timedOut) {
+    description =
+      "Payment was not confirmed within 10 minutes. Reopen Stripe or cancel this invoice.";
+    title = "Payment timed out";
+  }
 
   return (
     <>
       <AppDialog.Header>
         <AppDialog.Icon>
-          <LoaderCircle aria-hidden className="animate-spin" />
+          {failed ? (
+            <AlertTriangle aria-hidden />
+          ) : (
+            <LoaderCircle aria-hidden className="animate-spin" />
+          )}
         </AppDialog.Icon>
-        <AppDialog.Title>
-          {timedOut ? "Payment timed out" : "Waiting for payment"}
-        </AppDialog.Title>
-        <AppDialog.Description>
-          {timedOut
-            ? "Payment was not confirmed within 10 minutes. Reopen Stripe or cancel this invoice."
-            : "Complete payment in the Stripe tab. This page will update automatically."}
-        </AppDialog.Description>
+        <AppDialog.Title>{title}</AppDialog.Title>
+        <AppDialog.Description>{description}</AppDialog.Description>
       </AppDialog.Header>
       {error == null ? null : (
         <AppDialog.Body>
@@ -212,6 +226,61 @@ function WaitingStage({
         </AppButton>
         <AppButton disabled={cancelling} onClick={onReopen}>
           Reopen payment page
+        </AppButton>
+      </AppDialog.Footer>
+    </>
+  );
+}
+
+interface RecoveryStageProps {
+  cancelling: boolean;
+  error: string | null;
+  onCancel: () => Promise<void>;
+  onContinue: () => void;
+  pendingUpgrade: PendingSubscriptionUpgrade;
+}
+
+function RecoveryStage({
+  cancelling,
+  error,
+  onCancel,
+  onContinue,
+  pendingUpgrade,
+}: RecoveryStageProps) {
+  return (
+    <>
+      <AppDialog.Header>
+        <AppDialog.Icon>
+          <AlertTriangle aria-hidden />
+        </AppDialog.Icon>
+        <AppDialog.Title>Payment already in progress</AppDialog.Title>
+        <AppDialog.Description>
+          Complete the existing payment or cancel it before starting another
+          checkout.
+        </AppDialog.Description>
+      </AppDialog.Header>
+      <AppDialog.Body className="pt-0">
+        <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-2 text-sm">
+          <dt className="text-muted-foreground">Pending plan</dt>
+          <dd className="min-w-0 truncate text-right font-medium text-foreground">
+            {pendingUpgrade.planName}
+          </dd>
+        </dl>
+        {error == null ? null : (
+          <p className="mt-4 text-destructive text-sm" role="alert">
+            {error}
+          </p>
+        )}
+      </AppDialog.Body>
+      <AppDialog.Footer>
+        <AppButton disabled={cancelling} onClick={onCancel} variant="quiet">
+          {cancelling ? (
+            <LoaderCircle aria-hidden className="animate-spin" />
+          ) : null}
+          {cancelling ? "Cancelling..." : "Cancel and choose another plan"}
+        </AppButton>
+        <AppButton disabled={cancelling} onClick={onContinue}>
+          Continue payment
         </AppButton>
       </AppDialog.Footer>
     </>
@@ -654,9 +723,61 @@ function QuoteStage({
 type PaymentPollResult =
   | { kind: "completed" }
   | { error: string | null; kind: "continue" }
+  | { kind: "failed" }
   | { kind: "timed-out" };
 
-async function pollUpgradePayment({
+async function checkUpgradePayment({
+  checkoutPayId,
+  credentials,
+  onSubscriptionChanged,
+  regionDomain,
+  services,
+  workspace,
+}: {
+  checkoutPayId: string | null | undefined;
+  credentials: BillingCredentials;
+  onSubscriptionChanged: () => Promise<void>;
+  regionDomain: string;
+  services: BillingPlanChangeServices;
+  workspace: string;
+}): Promise<Exclude<PaymentPollResult, { kind: "timed-out" }>> {
+  try {
+    const transaction = await services.loadTransaction({
+      ...credentials,
+      regionDomain,
+      workspace,
+    });
+    const matchesCheckout =
+      checkoutPayId != null && transaction?.payId === checkoutPayId;
+    if (!matchesCheckout) {
+      return { error: null, kind: "continue" };
+    }
+
+    const status = transaction.status.trim().toLowerCase();
+    if (status === "completed") {
+      await onSubscriptionChanged();
+      return { kind: "completed" };
+    }
+    if (
+      status === "failed" ||
+      status === "cancelled" ||
+      status === "canceled"
+    ) {
+      return { kind: "failed" };
+    }
+    return { error: null, kind: "continue" };
+  } catch (cause) {
+    return {
+      error: errorDescription(
+        cause,
+        "Payment status could not be checked. Polling will continue."
+      ),
+      kind: "continue",
+    };
+  }
+}
+
+function pollUpgradePayment({
   checkoutPayId,
   credentials,
   elapsedMs,
@@ -676,31 +797,17 @@ async function pollUpgradePayment({
   workspace: string;
 }): Promise<PaymentPollResult> {
   if (elapsedMs >= paymentTimeoutMs) {
-    return { kind: "timed-out" };
+    return Promise.resolve({ kind: "timed-out" });
   }
 
-  try {
-    const transaction = await services.loadTransaction({
-      ...credentials,
-      regionDomain,
-      workspace,
-    });
-    const matchesCheckout =
-      checkoutPayId != null && transaction?.payId === checkoutPayId;
-    if (transaction?.status === "completed" && matchesCheckout) {
-      await onSubscriptionChanged();
-      return { kind: "completed" };
-    }
-    return { error: null, kind: "continue" };
-  } catch (cause) {
-    return {
-      error: errorDescription(
-        cause,
-        "Payment status could not be checked. Polling will continue."
-      ),
-      kind: "continue",
-    };
-  }
+  return checkUpgradePayment({
+    checkoutPayId,
+    credentials,
+    onSubscriptionChanged,
+    regionDomain,
+    services,
+    workspace,
+  });
 }
 
 interface BillingPlanCheckoutDialogProps {
@@ -713,8 +820,8 @@ interface BillingPlanCheckoutDialogProps {
    */
   nested?: boolean;
   now?: () => number;
-  /** The flow finished (payment confirmed, downgrade applied, or invoice
-   *  cancelled) — close the whole plan-change surface. */
+  /** The flow finished (payment confirmed, downgrade applied, or a waiting
+   *  payment cancelled) — close the whole plan-change surface. */
   onClose: () => void;
   /** The user backed out of the stage (Esc, outside press, close button). */
   onDismiss: () => void;
@@ -754,6 +861,8 @@ export function BillingPlanCheckoutDialog({
     operator === "downgraded" ? "downgrade" : "quote"
   );
   const [quote, setQuote] = useState<SubscriptionUpgradeQuote | null>(null);
+  const [pendingUpgrade, setPendingUpgrade] =
+    useState<PendingSubscriptionUpgrade | null>(null);
   const [checkout, setCheckout] = useState<SubscriptionPlanCheckout | null>(
     null
   );
@@ -765,7 +874,7 @@ export function BillingPlanCheckoutDialog({
   const [promotionPending, setPromotionPending] = useState(false);
   const [waitingStartedAt, setWaitingStartedAt] = useState<number | null>(null);
   const [waitingStatus, setWaitingStatus] = useState<
-    "cancelling" | "polling" | "timed-out"
+    "cancelling" | "failed" | "polling" | "timed-out"
   >("polling");
   const [submitting, setSubmitting] = useState(false);
 
@@ -777,6 +886,7 @@ export function BillingPlanCheckoutDialog({
       setPromotionCode("");
       setPromotionError(null);
       setPromotionPending(false);
+      setPendingUpgrade(null);
       setQuote(null);
       setStage("quote");
       setSubmitting(false);
@@ -838,9 +948,16 @@ export function BillingPlanCheckoutDialog({
         regionDomain: snapshot.current.regionDomain,
         workspace: snapshot.current.workspace,
       })
-      .then((nextQuote) => {
-        if (active) {
-          setQuote(nextQuote);
+      .then((result) => {
+        if (!active) {
+          return;
+        }
+        if (result.kind === "pending-upgrade") {
+          setPendingUpgrade(result.pendingUpgrade);
+          setStage("recovery");
+        } else {
+          setPendingUpgrade(null);
+          setQuote(result.quote);
         }
       })
       .catch((cause: unknown) => {
@@ -926,7 +1043,7 @@ export function BillingPlanCheckoutDialog({
     setPromotionError(null);
     setPromotionPending(true);
     try {
-      const nextQuote = await services.loadUpgradeQuote({
+      const result = await services.loadUpgradeQuote({
         appToken,
         kubeconfig,
         operator,
@@ -935,8 +1052,13 @@ export function BillingPlanCheckoutDialog({
         regionDomain: snapshot.current.regionDomain,
         workspace: snapshot.current.workspace,
       });
-      setQuote(nextQuote);
-      setPromotionCode(nextQuote.promotionCode || code);
+      if (result.kind === "pending-upgrade") {
+        setPendingUpgrade(result.pendingUpgrade);
+        setStage("recovery");
+      } else {
+        setQuote(result.quote);
+        setPromotionCode(result.quote.promotionCode || code);
+      }
     } catch (cause) {
       setPromotionError(
         cause instanceof SubscriptionPromotionCodeError
@@ -945,6 +1067,100 @@ export function BillingPlanCheckoutDialog({
       );
     } finally {
       setPromotionPending(false);
+    }
+  };
+
+  const continuePendingUpgrade = () => {
+    if (pendingUpgrade == null) {
+      return;
+    }
+    const planIsAvailable = snapshot.plans.some(
+      (candidate) => candidate.name === pendingUpgrade.planName
+    );
+    if (!planIsAvailable) {
+      setError(
+        `Plan ${pendingUpgrade.planName} is no longer available. Cancel this payment to choose another plan.`
+      );
+      return;
+    }
+
+    services.openCheckoutUrl(pendingUpgrade.paymentUrl);
+    setCheckout({
+      invoiceId: pendingUpgrade.invoiceId,
+      payId: pendingUpgrade.paymentId,
+      redirectUrl: pendingUpgrade.paymentUrl,
+      success: true,
+    });
+    setError(null);
+    setWaitingStartedAt(now());
+    setWaitingStatus("polling");
+    setStage("waiting");
+  };
+
+  const cancelPendingUpgrade = async () => {
+    if (
+      pendingUpgrade == null ||
+      plan == null ||
+      (operator !== "created" && operator !== "upgraded") ||
+      submitting
+    ) {
+      return;
+    }
+
+    setError(null);
+    setSubmitting(true);
+    try {
+      await services.cancelInvoice({
+        appToken,
+        invoiceId: pendingUpgrade.invoiceId,
+        kubeconfig,
+        regionDomain: snapshot.current.regionDomain,
+        workspace: snapshot.current.workspace,
+      });
+    } catch (cause) {
+      setError(
+        errorDescription(
+          cause,
+          "The unpaid upgrade invoice could not be cancelled."
+        )
+      );
+      setSubmitting(false);
+      return;
+    }
+
+    setPendingUpgrade(null);
+    setQuote(null);
+    setStage("quote");
+    try {
+      const [, result] = await Promise.all([
+        onSubscriptionChanged(),
+        services.loadUpgradeQuote({
+          appToken,
+          kubeconfig,
+          operator,
+          planName: plan.name,
+          ...(promotionCode.trim() === ""
+            ? {}
+            : { promotionCode: promotionCode.trim() }),
+          regionDomain: snapshot.current.regionDomain,
+          workspace: snapshot.current.workspace,
+        }),
+      ]);
+      if (result.kind === "pending-upgrade") {
+        setPendingUpgrade(result.pendingUpgrade);
+        setStage("recovery");
+      } else {
+        setQuote(result.quote);
+      }
+    } catch (cause) {
+      setError(
+        errorDescription(
+          cause,
+          "The prorated upgrade amount could not be calculated."
+        )
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1022,6 +1238,11 @@ export function BillingPlanCheckoutDialog({
         onClose();
         return;
       }
+      if (result.kind === "failed") {
+        setError(null);
+        setWaitingStatus("failed");
+        return;
+      }
       if (result.error != null) {
         setError(result.error);
       }
@@ -1073,22 +1294,38 @@ export function BillingPlanCheckoutDialog({
       await onSubscriptionChanged();
       onClose();
     } catch (cause) {
-      setError(
-        errorDescription(
-          cause,
-          "The unpaid upgrade invoice could not be cancelled."
-        )
+      const cancellationError = errorDescription(
+        cause,
+        "The unpaid upgrade invoice could not be cancelled."
       );
-      setWaitingStatus("timed-out");
+      const result = await checkUpgradePayment({
+        checkoutPayId: checkout?.payId,
+        credentials: { appToken, kubeconfig },
+        onSubscriptionChanged,
+        regionDomain: snapshot.current.regionDomain,
+        services,
+        workspace: snapshot.current.workspace,
+      });
+      if (result.kind === "completed") {
+        onClose();
+        return;
+      }
+      if (result.kind === "failed") {
+        setError(cancellationError);
+        setWaitingStatus("failed");
+        return;
+      }
+      setError(result.error ?? cancellationError);
+      setWaitingStatus("polling");
     }
   };
 
   return (
     <AppDialog.Root
       onOpenChange={(nextOpen) => {
-        // Payment must resolve through the waiting stage's own actions, so
-        // user dismissal (Esc / outside press) is ignored while polling.
-        if (!nextOpen && stage !== "waiting") {
+        // Recovery and payment waiting must resolve through their own
+        // actions, so Esc and outside presses cannot abandon the invoice.
+        if (!nextOpen && stage !== "recovery" && stage !== "waiting") {
           onDismiss();
         }
       }}
@@ -1108,9 +1345,23 @@ export function BillingPlanCheckoutDialog({
             onReopen={() => {
               if (checkout?.redirectUrl != null) {
                 services.openCheckoutUrl(checkout.redirectUrl);
+                if (waitingStatus !== "polling") {
+                  setError(null);
+                  setWaitingStartedAt(now());
+                  setWaitingStatus("polling");
+                }
               }
             }}
             status={waitingStatus}
+          />
+        ) : null}
+        {stage === "recovery" && pendingUpgrade != null ? (
+          <RecoveryStage
+            cancelling={submitting}
+            error={error}
+            onCancel={cancelPendingUpgrade}
+            onContinue={continuePendingUpgrade}
+            pendingUpgrade={pendingUpgrade}
           />
         ) : null}
         {stage === "downgrade" && plan != null ? (

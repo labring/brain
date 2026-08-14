@@ -14,9 +14,14 @@ export interface AccountServiceActorBinding {
   userUid: string;
 }
 
+export type AccountServiceErrorPayloadMapper = (
+  payload: unknown
+) => Record<string, unknown> | null;
+
 export interface AccountServiceRequest {
   actor: AccountServiceActorBinding;
   init?: RequestInit;
+  mapErrorPayload?: AccountServiceErrorPayloadMapper;
   pathname: string;
 }
 
@@ -90,7 +95,8 @@ function upstreamErrorMessage(payload: unknown): string {
 }
 
 async function mapAccountServiceResponse(
-  response: Response
+  response: Response,
+  mapErrorPayload?: AccountServiceErrorPayloadMapper
 ): Promise<Response> {
   if (response.ok) {
     return response;
@@ -102,8 +108,9 @@ async function mapAccountServiceResponse(
   } catch {
     payload = null;
   }
+  const mappedPayload = mapErrorPayload?.(payload);
   return Response.json(
-    { error: upstreamErrorMessage(payload) },
+    mappedPayload ?? { error: upstreamErrorMessage(payload) },
     { status: response.status }
   );
 }
@@ -115,7 +122,7 @@ export function createAccountServiceClient(
   const nowSeconds =
     dependencies.nowSeconds ?? (() => Math.floor(Date.now() / 1000));
 
-  return async ({ actor, init, pathname }) => {
+  return async ({ actor, init, mapErrorPayload, pathname }) => {
     const verifiedActor = accountServiceActorFromBinding(actor);
     if (verifiedActor == null) {
       throw new Error(
@@ -149,6 +156,6 @@ export function createAccountServiceClient(
         { status: 502 }
       );
     }
-    return await mapAccountServiceResponse(response);
+    return await mapAccountServiceResponse(response, mapErrorPayload);
   };
 }

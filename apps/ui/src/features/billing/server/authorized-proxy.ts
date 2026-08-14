@@ -1,6 +1,9 @@
 import type { z } from "zod";
 
-import type { AccountServiceClient } from "@/lib/account-service/client-core";
+import type {
+  AccountServiceClient,
+  AccountServiceErrorPayloadMapper,
+} from "@/lib/account-service/client-core";
 import { appTokenFromRequest } from "@/lib/app-token";
 import {
   encodedKubeconfigFromRequest,
@@ -19,6 +22,7 @@ export interface BillingProxyDependencies {
 
 export interface BillingProxyConfig {
   invalidRequestMessage?: string;
+  mapAccountServiceError?: AccountServiceErrorPayloadMapper;
   mapRequestBody?: (
     data: unknown,
     context: BillingProxyRequestContext
@@ -123,6 +127,7 @@ export function createAuthorizedBillingProxy(
     return await requestAccountService({
       actor: { userId, userUid },
       init: { body: JSON.stringify(body), method: "POST" },
+      mapErrorPayload: config.mapAccountServiceError,
       pathname: config.pathname,
     });
   };

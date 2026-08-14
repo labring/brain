@@ -571,12 +571,33 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   "/account/v1alpha1/workspace-subscription/plan-list": () => ({
     plans: PLAN_CATALOG,
   }),
-  "/account/v1alpha1/workspace-subscription/upgrade-amount": () => ({
-    amount: 103_000_000,
-    has_discount: false,
-    original_amount: 103_000_000,
-    promotion_code: "",
-  }),
+  "/account/v1alpha1/workspace-subscription/upgrade-amount": ({ scenario }) => {
+    if (scenario === "pending-upgrade") {
+      return Response.json(
+        {
+          error: "An unpaid upgrade to Pro already exists.",
+          pending_upgrade: {
+            amount_due: 78_000_000,
+            created_at: Math.floor(Date.now() / 1000),
+            currency: "usd",
+            invoice_id: "inv-123",
+            payment_id: "pay-mock-upgrade",
+            payment_url:
+              "https://billing.example.com/invoice/mock-pending-upgrade",
+            plan_name: "Pro",
+            status: "open",
+          },
+        },
+        { status: 409 }
+      );
+    }
+    return {
+      amount: 103_000_000,
+      has_discount: false,
+      original_amount: 103_000_000,
+      promotion_code: "",
+    };
+  },
   // Mirrors the production Hobby plan's MaxResources (the scenarios' current
   // plan) so downgrade checks compare realistic numbers.
   "/account/v1alpha1/workspace/get-resource-quota": (context) => ({
@@ -771,5 +792,8 @@ export async function billingDevMockResponse(
       { status: 501 }
     );
   }
-  return Response.json(fixture(context));
+  const fixtureResponse = fixture(context);
+  return fixtureResponse instanceof Response
+    ? fixtureResponse
+    : Response.json(fixtureResponse);
 }

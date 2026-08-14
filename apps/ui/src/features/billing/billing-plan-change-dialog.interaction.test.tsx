@@ -11,6 +11,11 @@ import {
 } from "./billing-plan-data";
 
 const SNAPSHOT: BillingPlanSnapshot = {
+  availability: {
+    card: "available",
+    transaction: "available",
+    workspaces: "available",
+  },
   card: { brand: "visa", last4: "4242" },
   current: {
     canManage: true,
@@ -106,11 +111,14 @@ test("plan picker continues into the selected upgrade workflow", async () => {
             loadTransaction: () => Promise.resolve(null),
             loadUpgradeQuote: () =>
               Promise.resolve({
-                amountMicroUnits: 9_000_000,
-                discountMicroUnits: 0,
-                hasDiscount: false,
-                originalAmountMicroUnits: 9_000_000,
-                promotionCode: "",
+                kind: "quote" as const,
+                quote: {
+                  amountMicroUnits: 9_000_000,
+                  discountMicroUnits: 0,
+                  hasDiscount: false,
+                  originalAmountMicroUnits: 9_000_000,
+                  promotionCode: "",
+                },
               }),
             openCheckoutUrl: () => undefined,
             openCheckoutWindow: () => null,
@@ -223,11 +231,14 @@ test("Free payment-due subscribes to a paid plan with the created operator", asy
             loadUpgradeQuote: (input) => {
               quoteOperators.push(input.operator);
               return Promise.resolve({
-                amountMicroUnits: 20_000_000,
-                discountMicroUnits: 0,
-                hasDiscount: false,
-                originalAmountMicroUnits: 20_000_000,
-                promotionCode: "",
+                kind: "quote" as const,
+                quote: {
+                  amountMicroUnits: 20_000_000,
+                  discountMicroUnits: 0,
+                  hasDiscount: false,
+                  originalAmountMicroUnits: 20_000_000,
+                  promotionCode: "",
+                },
               });
             },
             openCheckoutUrl: () => undefined,
@@ -303,11 +314,14 @@ test("upgrade confirmation shows the quote before reserving checkout at click ti
       loadTransaction: () => Promise.resolve(null),
       loadUpgradeQuote: () =>
         Promise.resolve({
-          amountMicroUnits: 7_500_000,
-          discountMicroUnits: 1_500_000,
-          hasDiscount: true,
-          originalAmountMicroUnits: 9_000_000,
-          promotionCode: "SAVE20",
+          kind: "quote" as const,
+          quote: {
+            amountMicroUnits: 7_500_000,
+            discountMicroUnits: 1_500_000,
+            hasDiscount: true,
+            originalAmountMicroUnits: 9_000_000,
+            promotionCode: "SAVE20",
+          },
         }),
       openCheckoutUrl: () => undefined,
       openCheckoutWindow: () => {
@@ -426,11 +440,14 @@ test("upgrade confirmation shows distinct promotion-code errors", async () => {
                   );
                 }
                 return Promise.resolve({
-                  amountMicroUnits: 9_000_000,
-                  discountMicroUnits: 0,
-                  hasDiscount: false,
-                  originalAmountMicroUnits: 9_000_000,
-                  promotionCode: "",
+                  kind: "quote" as const,
+                  quote: {
+                    amountMicroUnits: 9_000_000,
+                    discountMicroUnits: 0,
+                    hasDiscount: false,
+                    originalAmountMicroUnits: 9_000_000,
+                    promotionCode: "",
+                  },
                 });
               },
               openCheckoutUrl: () => undefined,
@@ -623,6 +640,303 @@ test("an allowed downgrade keeps the top-level single-tab checkout", async () =>
   });
 });
 
+test("a pending subscription upgrade continues its existing payment without creating another", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    const events: string[] = [];
+    let paymentRequests = 0;
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanChangeDialog
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onOpenChange={(nextOpen) => events.push(`open:${String(nextOpen)}`)}
+            onSubscriptionChanged={() => Promise.resolve()}
+            open
+            schedulePoll={() => () => undefined}
+            selectedPlanId="team"
+            services={{
+              cancelInvoice: () => Promise.resolve(),
+              checkDowngrade: () =>
+                Promise.resolve({ allowed: true, exceededResources: [] }),
+              createPayment: () => {
+                paymentRequests += 1;
+                return Promise.reject(new Error("must not create payment"));
+              },
+              loadTransaction: () => Promise.resolve(null),
+              loadUpgradeQuote: () =>
+                Promise.resolve({
+                  kind: "pending-upgrade" as const,
+                  pendingUpgrade: {
+                    amountDueMicroUnits: 7_500_000,
+                    createdAtSeconds: 1_753_600_000,
+                    currency: "usd",
+                    invoiceId: "invoice-1",
+                    paymentId: "payment-1",
+                    paymentUrl: "https://checkout.stripe.test/existing-invoice",
+                    planName: "Team",
+                    status: "open",
+                  },
+                }),
+              openCheckoutUrl: (url) => events.push(`open-url:${url}`),
+              openCheckoutWindow: () => null,
+              redirectTop: () => undefined,
+            }}
+            snapshot={SNAPSHOT}
+          />
+        );
+      });
+
+      const recoveryText = rendered?.baseElement.textContent ?? "";
+      assert.ok(recoveryText.includes("Payment already in progress"));
+      assert.ok(recoveryText.includes("Team"));
+
+      await act(() => {
+        fireEvent.keyDown(document, { key: "Escape" });
+      });
+      assert.equal(events.includes("open:false"), false);
+
+      await act(() => {
+        const continuePayment = rendered?.getByRole("button", {
+          name: "Continue payment",
+        });
+        if (continuePayment != null) {
+          fireEvent.click(continuePayment);
+        }
+      });
+
+      assert.equal(paymentRequests, 0);
+      assert.ok(
+        events.includes(
+          "open-url:https://checkout.stripe.test/existing-invoice"
+        )
+      );
+      assert.ok(
+        (rendered?.baseElement.textContent ?? "").includes(
+          "Waiting for payment"
+        )
+      );
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a pending upgrade for a removed plan can only be cancelled", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    const openedUrls: string[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanChangeDialog
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onOpenChange={() => undefined}
+            onSubscriptionChanged={() => Promise.resolve()}
+            open
+            selectedPlanId="team"
+            services={{
+              cancelInvoice: () => Promise.resolve(),
+              checkDowngrade: () =>
+                Promise.resolve({ allowed: true, exceededResources: [] }),
+              createPayment: () => Promise.reject(new Error("not used")),
+              loadTransaction: () => Promise.resolve(null),
+              loadUpgradeQuote: () =>
+                Promise.resolve({
+                  kind: "pending-upgrade" as const,
+                  pendingUpgrade: {
+                    amountDueMicroUnits: 7_500_000,
+                    createdAtSeconds: 1_753_600_000,
+                    currency: "usd",
+                    invoiceId: "invoice-legacy",
+                    paymentId: "payment-legacy",
+                    paymentUrl: "https://checkout.stripe.test/legacy-invoice",
+                    planName: "Legacy",
+                    status: "open",
+                  },
+                }),
+              openCheckoutUrl: (url) => openedUrls.push(url),
+              openCheckoutWindow: () => null,
+              redirectTop: () => undefined,
+            }}
+            snapshot={SNAPSHOT}
+          />
+        );
+      });
+
+      await act(() => {
+        const continuePayment = rendered?.getByRole("button", {
+          name: "Continue payment",
+        });
+        if (continuePayment != null) {
+          fireEvent.click(continuePayment);
+        }
+      });
+
+      assert.deepEqual(openedUrls, []);
+      assert.ok(
+        (rendered?.baseElement.textContent ?? "").includes(
+          "Plan Legacy is no longer available"
+        )
+      );
+      assert.ok(
+        rendered?.getByRole("button", {
+          name: "Cancel and choose another plan",
+        })
+      );
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("cancelling a pending subscription upgrade reloads the selected quote and promotion", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    const events: string[] = [];
+    const quotePromotions: Array<string | undefined> = [];
+    let paymentRequests = 0;
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanChangeDialog
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onOpenChange={() => undefined}
+            onSubscriptionChanged={() => {
+              events.push("refresh");
+              return Promise.resolve();
+            }}
+            open
+            selectedPlanId="team"
+            services={{
+              cancelInvoice: ({ invoiceId }) => {
+                events.push(`cancel:${invoiceId}`);
+                return Promise.resolve();
+              },
+              checkDowngrade: () =>
+                Promise.resolve({ allowed: true, exceededResources: [] }),
+              createPayment: () => {
+                paymentRequests += 1;
+                return Promise.reject(new Error("must not create payment"));
+              },
+              loadTransaction: () => Promise.resolve(null),
+              loadUpgradeQuote: ({ promotionCode }) => {
+                quotePromotions.push(promotionCode);
+                if (quotePromotions.length === 2) {
+                  return Promise.resolve({
+                    kind: "pending-upgrade" as const,
+                    pendingUpgrade: {
+                      amountDueMicroUnits: 7_500_000,
+                      createdAtSeconds: 1_753_600_000,
+                      currency: "usd",
+                      invoiceId: "invoice-1",
+                      paymentId: "payment-1",
+                      paymentUrl:
+                        "https://checkout.stripe.test/existing-invoice",
+                      planName: "Team",
+                      promotionCode: "SPRING15",
+                      status: "open",
+                    },
+                  });
+                }
+                return Promise.resolve({
+                  kind: "quote" as const,
+                  quote: {
+                    amountMicroUnits:
+                      quotePromotions.length === 1 ? 9_000_000 : 6_000_000,
+                    discountMicroUnits:
+                      quotePromotions.length === 1 ? 0 : 3_000_000,
+                    hasDiscount: quotePromotions.length !== 1,
+                    originalAmountMicroUnits: 9_000_000,
+                    promotionCode: promotionCode ?? "",
+                  },
+                });
+              },
+              openCheckoutUrl: () => undefined,
+              openCheckoutWindow: () => null,
+              redirectTop: () => undefined,
+            }}
+            snapshot={SNAPSHOT}
+          />
+        );
+      });
+
+      await act(() => {
+        const reveal = rendered?.getByRole("button", {
+          name: "Have a promo code?",
+        });
+        if (reveal != null) {
+          fireEvent.click(reveal);
+        }
+      });
+      await act(() => {
+        const input = rendered?.getByLabelText("Promotion code");
+        if (input != null) {
+          fireEvent.focus(input);
+          fireEvent.input(input, { target: { value: "SAVE20" } });
+          fireEvent.keyUp(input, { key: "0" });
+        }
+      });
+      await act(() => {
+        const apply = rendered?.getByRole("button", { name: "Apply code" });
+        if (apply != null) {
+          fireEvent.click(apply);
+        }
+      });
+
+      assert.ok(
+        (rendered?.baseElement.textContent ?? "").includes(
+          "Payment already in progress"
+        )
+      );
+      await act(() => {
+        const cancel = rendered?.getByRole("button", {
+          name: "Cancel and choose another plan",
+        });
+        if (cancel != null) {
+          fireEvent.click(cancel);
+        }
+      });
+
+      assert.equal(paymentRequests, 0);
+      assert.deepEqual(events, ["cancel:invoice-1", "refresh"]);
+      assert.deepEqual(quotePromotions, [undefined, "SAVE20", "SAVE20"]);
+      const quoteText = rendered?.baseElement.textContent ?? "";
+      assert.equal(quoteText.includes("Payment already in progress"), false);
+      assert.ok(quoteText.includes("$6.00"));
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("upgrade waiting ignores other payments, polls, times out, reopens, and cancels", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanChangeDialog } = await import(
@@ -682,11 +996,14 @@ test("upgrade waiting ignores other payments, polls, times out, reopens, and can
               },
               loadUpgradeQuote: () =>
                 Promise.resolve({
-                  amountMicroUnits: 7_500_000,
-                  discountMicroUnits: 0,
-                  hasDiscount: false,
-                  originalAmountMicroUnits: 7_500_000,
-                  promotionCode: "",
+                  kind: "quote" as const,
+                  quote: {
+                    amountMicroUnits: 7_500_000,
+                    discountMicroUnits: 0,
+                    hasDiscount: false,
+                    originalAmountMicroUnits: 7_500_000,
+                    promotionCode: "",
+                  },
                 }),
               openCheckoutUrl: (url) => events.push(`reopen:${url}`),
               openCheckoutWindow: () => ({
@@ -740,6 +1057,204 @@ test("upgrade waiting ignores other payments, polls, times out, reopens, and can
       assert.ok(events.includes("cancel:invoice-1"));
       assert.ok(events.includes("refresh"));
       assert.ok(events.includes("open:false"));
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("upgrade waiting stops immediately for the matching failed payment", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    const scheduledDelays: number[] = [];
+    let transactionChecks = 0;
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanChangeDialog
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onOpenChange={() => undefined}
+            onSubscriptionChanged={() => Promise.resolve()}
+            open
+            schedulePoll={(_callback, delay) => {
+              scheduledDelays.push(delay);
+              return () => undefined;
+            }}
+            selectedPlanId="team"
+            services={{
+              cancelInvoice: () => Promise.resolve(),
+              checkDowngrade: () =>
+                Promise.resolve({ allowed: true, exceededResources: [] }),
+              createPayment: () =>
+                Promise.resolve({
+                  invoiceId: "invoice-1",
+                  payId: "payment-1",
+                  redirectUrl: "https://checkout.stripe.test/invoice-1",
+                  success: true,
+                }),
+              loadTransaction: () => {
+                transactionChecks += 1;
+                return Promise.resolve({
+                  id: "transaction-1",
+                  payId: "payment-1",
+                  planName: "Team",
+                  status: transactionChecks === 1 ? "failed" : "pending",
+                });
+              },
+              loadUpgradeQuote: () =>
+                Promise.resolve({
+                  kind: "quote" as const,
+                  quote: {
+                    amountMicroUnits: 7_500_000,
+                    discountMicroUnits: 0,
+                    hasDiscount: false,
+                    originalAmountMicroUnits: 7_500_000,
+                    promotionCode: "",
+                  },
+                }),
+              openCheckoutUrl: () => undefined,
+              openCheckoutWindow: () => ({
+                close: () => undefined,
+                navigate: () => undefined,
+              }),
+              redirectTop: () => undefined,
+            }}
+            snapshot={SNAPSHOT}
+          />
+        );
+      });
+      await act(() => {
+        const confirm = rendered?.getByRole("button", {
+          name: "Subscribe & Pay",
+        });
+        if (confirm != null) {
+          fireEvent.click(confirm);
+        }
+      });
+
+      assert.ok(
+        (rendered?.baseElement.textContent ?? "").includes("Payment failed")
+      );
+      assert.deepEqual(scheduledDelays, []);
+
+      await act(() => {
+        const reopen = rendered?.getByRole("button", {
+          name: "Reopen payment page",
+        });
+        if (reopen != null) {
+          fireEvent.click(reopen);
+        }
+      });
+      assert.equal(transactionChecks, 2);
+      assert.deepEqual(scheduledDelays, [3000]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("cancel failure resolves a concurrently completed payment", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    const events: string[] = [];
+    let transactionChecks = 0;
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanChangeDialog
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onOpenChange={(open) => events.push(`open:${String(open)}`)}
+            onSubscriptionChanged={() => {
+              events.push("refresh");
+              return Promise.resolve();
+            }}
+            open
+            schedulePoll={() => () => undefined}
+            selectedPlanId="team"
+            services={{
+              cancelInvoice: () => Promise.reject(new Error("invoice paid")),
+              checkDowngrade: () =>
+                Promise.resolve({ allowed: true, exceededResources: [] }),
+              createPayment: () =>
+                Promise.resolve({
+                  invoiceId: "invoice-1",
+                  payId: "payment-1",
+                  redirectUrl: "https://checkout.stripe.test/invoice-1",
+                  success: true,
+                }),
+              loadTransaction: () => {
+                transactionChecks += 1;
+                return Promise.resolve({
+                  id: "transaction-1",
+                  payId: "payment-1",
+                  planName: "Team",
+                  status: transactionChecks === 1 ? "pending" : "completed",
+                });
+              },
+              loadUpgradeQuote: () =>
+                Promise.resolve({
+                  kind: "quote" as const,
+                  quote: {
+                    amountMicroUnits: 7_500_000,
+                    discountMicroUnits: 0,
+                    hasDiscount: false,
+                    originalAmountMicroUnits: 7_500_000,
+                    promotionCode: "",
+                  },
+                }),
+              openCheckoutUrl: () => undefined,
+              openCheckoutWindow: () => ({
+                close: () => undefined,
+                navigate: () => undefined,
+              }),
+              redirectTop: () => undefined,
+            }}
+            snapshot={SNAPSHOT}
+          />
+        );
+      });
+      await act(() => {
+        const confirm = rendered?.getByRole("button", {
+          name: "Subscribe & Pay",
+        });
+        if (confirm != null) {
+          fireEvent.click(confirm);
+        }
+      });
+      await act(() => {
+        const cancel = rendered?.getByRole("button", {
+          name: "Cancel payment",
+        });
+        if (cancel != null) {
+          fireEvent.click(cancel);
+        }
+      });
+
+      assert.equal(transactionChecks, 2);
+      assert.ok(events.includes("refresh"));
+      assert.ok(events.includes("open:false"));
+      assert.equal(
+        (rendered?.baseElement.textContent ?? "").includes("Payment timed out"),
+        false
+      );
     } finally {
       await act(() => rendered?.unmount());
     }
@@ -801,11 +1316,14 @@ test("a PAYG workspace subscribes to a plan with the created operator", async ()
             loadUpgradeQuote: (input) => {
               quoteOperators.push(input.operator);
               return Promise.resolve({
-                amountMicroUnits: 20_000_000,
-                discountMicroUnits: 0,
-                hasDiscount: false,
-                originalAmountMicroUnits: 20_000_000,
-                promotionCode: "",
+                kind: "quote" as const,
+                quote: {
+                  amountMicroUnits: 20_000_000,
+                  discountMicroUnits: 0,
+                  hasDiscount: false,
+                  originalAmountMicroUnits: 20_000_000,
+                  promotionCode: "",
+                },
               });
             },
             openCheckoutUrl: () => undefined,

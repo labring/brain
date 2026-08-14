@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { BillingRequestError } from "./billing-data-client";
 import {
   cancelSubscriptionInvoice,
   checkSubscriptionDowngrade,
@@ -275,6 +276,86 @@ test("expiry statuses outrank a pending cancellation", async () => {
   assert.equal(snapshot.current.resourceDeletionAt, "2026-08-03T00:00:00.000Z");
 });
 
+test("keeps core Plan data available when auxiliary requests fail", async () => {
+  const unavailablePaths = new Set([
+    "/api/billing/card",
+    "/api/billing/subscription/last-transaction",
+    "/api/billing/subscriptions",
+    "/api/billing/workspaces",
+  ]);
+
+  const snapshot = await loadBillingPlanSnapshot(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) => {
+        const url = input.toString();
+        if (unavailablePaths.has(url)) {
+          return Promise.resolve(
+            Response.json({ error: "temporarily unavailable" }, { status: 503 })
+          );
+        }
+        return Promise.resolve(Response.json(RESPONSES[url]));
+      },
+      now: () => NOW,
+    }
+  );
+
+  assert.equal(snapshot.current.planName, "Pro");
+  assert.equal(snapshot.current.lifecycle, "cancelling");
+  assert.deepEqual(snapshot.availability, {
+    card: "unavailable",
+    transaction: "unavailable",
+    workspaces: "unavailable",
+  });
+  assert.equal(snapshot.card, null);
+  assert.equal(snapshot.pendingDowngrade, null);
+  assert.equal(snapshot.pendingUpgrade, null);
+  assert.deepEqual(snapshot.workspaces, []);
+});
+
+test("fails closed for deleted and unknown subscription statuses", async () => {
+  for (const [status, lifecycle] of [
+    ["DELETED", "deleted"],
+    ["PAUSED_BY_PROVIDER", "unavailable"],
+  ] as const) {
+    const responses: Record<string, unknown> = {
+      ...RESPONSES,
+      "/api/billing/subscription": {
+        subscription: {
+          ...(
+            RESPONSES["/api/billing/subscription"] as {
+              subscription: Record<string, unknown>;
+            }
+          ).subscription,
+          CancelAtPeriodEnd: false,
+          Status: status,
+        },
+      },
+    };
+    const snapshot = await loadBillingPlanSnapshot(
+      {
+        appToken: "desktop-app-token",
+        kubeconfig: "apiVersion: v1",
+        workspace: "workspace-a",
+      },
+      {
+        fetch: (input) =>
+          Promise.resolve(Response.json(responses[input.toString()])),
+        now: () => NOW,
+      }
+    );
+
+    assert.equal(snapshot.current.lifecycle, lifecycle);
+    assert.ok(
+      snapshot.plans.every((plan) => plan.isCurrent || plan.changeKind == null)
+    );
+  }
+});
+
 test("plans outside the transition lists stay selectable as upgrades", async () => {
   const plansResponse = RESPONSES["/api/billing/plans"] as {
     plans: Record<string, unknown>[];
@@ -474,11 +555,14 @@ test("loads the exact prorated upgrade amount with a promotion code", async () =
   );
 
   assert.deepEqual(quote, {
-    amountMicroUnits: 7_500_000,
-    discountMicroUnits: 1_500_000,
-    hasDiscount: true,
-    originalAmountMicroUnits: 9_000_000,
-    promotionCode: "SAVE20",
+    kind: "quote",
+    quote: {
+      amountMicroUnits: 7_500_000,
+      discountMicroUnits: 1_500_000,
+      hasDiscount: true,
+      originalAmountMicroUnits: 9_000_000,
+      promotionCode: "SAVE20",
+    },
   });
   assert.equal(request?.url, "/api/billing/subscription/upgrade-amount");
   assert.equal(request?.init?.method, "POST");
@@ -491,6 +575,99 @@ test("loads the exact prorated upgrade amount with a promotion code", async () =
     regionDomain: "us.example.test",
     workspace: "workspace-a",
   });
+});
+
+test("returns a pending subscription upgrade with and without a promotion code", async () => {
+  for (const promotionCode of [undefined, "SAVE20"] as const) {
+    const result = await loadSubscriptionUpgradeQuote(
+      {
+        appToken: "desktop-app-token",
+        kubeconfig: "apiVersion: v1",
+        planName: "Team",
+        promotionCode,
+        regionDomain: "us.example.test",
+        workspace: "workspace-a",
+      },
+      {
+        fetch: () =>
+          Promise.resolve(
+            Response.json(
+              {
+                error: "An unpaid upgrade already exists.",
+                pending_upgrade: {
+                  amount_due: 7_500_000,
+                  created_at: 1_753_600_000,
+                  currency: "usd",
+                  discount_amount: 1_500_000,
+                  has_discount: true,
+                  invoice_id: "invoice-1",
+                  original_amount: 9_000_000,
+                  payment_id: "payment-1",
+                  payment_url: "https://checkout.stripe.test/invoice-1",
+                  plan_name: "Team",
+                  promotion_code: "SPRING15",
+                  status: "open",
+                  total_amount: 7_500_000,
+                },
+              },
+              { status: 409 }
+            )
+          ),
+      }
+    );
+
+    assert.deepEqual(result, {
+      kind: "pending-upgrade",
+      pendingUpgrade: {
+        amountDueMicroUnits: 7_500_000,
+        createdAtSeconds: 1_753_600_000,
+        currency: "usd",
+        discountMicroUnits: 1_500_000,
+        hasDiscount: true,
+        invoiceId: "invoice-1",
+        originalAmountMicroUnits: 9_000_000,
+        paymentId: "payment-1",
+        paymentUrl: "https://checkout.stripe.test/invoice-1",
+        planName: "Team",
+        promotionCode: "SPRING15",
+        status: "open",
+        totalAmountMicroUnits: 7_500_000,
+      },
+    });
+  }
+});
+
+test("does not classify invalid pending recovery as an exhausted promotion code", async () => {
+  await assert.rejects(
+    loadSubscriptionUpgradeQuote(
+      {
+        appToken: "desktop-app-token",
+        kubeconfig: "apiVersion: v1",
+        planName: "Team",
+        promotionCode: "SAVE20",
+        regionDomain: "us.example.test",
+        workspace: "workspace-a",
+      },
+      {
+        fetch: () =>
+          Promise.resolve(
+            Response.json(
+              {
+                code: "invalid_pending_upgrade",
+                error:
+                  "The existing subscription payment could not be recovered.",
+              },
+              { status: 409 }
+            )
+          ),
+      }
+    ),
+    (error) =>
+      error instanceof BillingRequestError &&
+      error.status === 409 &&
+      error.message ===
+        "The existing subscription payment could not be recovered."
+  );
 });
 
 test("distinguishes unknown, expired, and exhausted promotion codes", async () => {

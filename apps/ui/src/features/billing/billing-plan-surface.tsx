@@ -46,12 +46,13 @@ import {
 } from "@/features/billing/billing-ai-credits";
 import { formatBillingAmount } from "@/features/billing/billing-amount";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
-import type {
-  BillingPlanSnapshot,
-  SubscriptionLifecycle,
-  SubscriptionLifecycleAction,
-  SubscriptionLifecycleOutcome,
-  SubscriptionWarningStage,
+import {
+  type BillingPlanSnapshot,
+  type SubscriptionLifecycle,
+  type SubscriptionLifecycleAction,
+  type SubscriptionLifecycleOutcome,
+  type SubscriptionWarningStage,
+  subscriptionLifecycleAllowsBillingActions,
 } from "@/features/billing/billing-plan-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
@@ -164,8 +165,10 @@ function formatDateTime(value: string | null): string {
 const LIFECYCLE_METADATA = {
   active: null,
   cancelling: { label: "Cancelling", variant: "secondary" },
+  deleted: { label: "Deleted", variant: "destructive" },
   "payment-due": { label: "Plan Expired", variant: "destructive" },
   "pending-upgrade": null,
+  unavailable: { label: "Status unavailable", variant: "secondary" },
 } as const satisfies Record<
   SubscriptionLifecycle,
   {
@@ -173,6 +176,18 @@ const LIFECYCLE_METADATA = {
     variant: "destructive" | "secondary";
   } | null
 >;
+
+function WorkspaceLifecycleBadge({
+  lifecycle,
+}: {
+  lifecycle: SubscriptionLifecycle;
+}) {
+  const metadata = LIFECYCLE_METADATA[lifecycle];
+  if (metadata == null) {
+    return null;
+  }
+  return <Badge variant={metadata.variant}>{metadata.label}</Badge>;
+}
 
 function cardBrand(brand: string): string {
   const normalized = brand.trim().toLowerCase();
@@ -257,20 +272,57 @@ function BillingPlanNotices({
   invoiceCancellationPending,
   onCancelInvoice,
   pendingDowngrade,
+  transactionAvailability,
 }: {
   current: BillingPlanSnapshot["current"];
   invoiceCancellationPending: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
   pendingDowngrade: BillingPlanSnapshot["pendingDowngrade"];
+  transactionAvailability: BillingPlanSnapshot["availability"]["transaction"];
 }) {
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
   const invoiceId = current.invoiceId;
+  const billingActionsAllowed = subscriptionLifecycleAllowsBillingActions(
+    current.lifecycle
+  );
 
   return (
     <div className="flex flex-col gap-3" data-slot="billing-plan-notices">
+      {current.lifecycle === "deleted" ? (
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden />
+          <AlertTitle>Subscription ended</AlertTitle>
+          <AlertDescription>
+            This subscription can no longer be changed.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {current.lifecycle === "unavailable" ? (
+        <Alert>
+          <AlertCircle aria-hidden />
+          <AlertTitle>Subscription status unavailable</AlertTitle>
+          <AlertDescription>
+            Plan changes are disabled until the subscription status can be
+            confirmed.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <SubscriptionWarningBanner current={current} />
 
-      {current.invoicePaymentUrl == null ||
+      {transactionAvailability === "unavailable" ? (
+        <Alert>
+          <Info aria-hidden />
+          <AlertTitle>Recent plan changes unavailable</AlertTitle>
+          <AlertDescription>
+            Refresh the page to check pending upgrades or downgrades.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {!billingActionsAllowed ||
+      current.invoicePaymentUrl == null ||
       current.warningStage != null ? null : (
         <Alert
           className="has-data-[slot=alert-action]:pr-4 sm:has-data-[slot=alert-action]:pr-18"
@@ -349,16 +401,41 @@ function cardExpiryLabel(card: NonNullable<BillingPlanSnapshot["card"]>) {
 }
 
 function BillingPaymentMethod({
+  availability,
   canManage,
   card,
   isPending,
   onManageCard,
 }: {
+  availability: BillingPlanSnapshot["availability"]["card"];
   canManage: boolean;
   card: BillingPlanSnapshot["card"];
   isPending: boolean;
   onManageCard?: () => void;
 }) {
+  if (availability === "unavailable") {
+    return (
+      <section
+        className="flex min-h-20 items-center gap-3 rounded-xl bg-input/30 p-4"
+        data-slot="billing-payment-method-section"
+        role="status"
+      >
+        <CreditCard
+          aria-hidden
+          className="size-5 shrink-0 text-muted-foreground"
+          strokeWidth={1.75}
+        />
+        <div className="flex flex-col gap-1">
+          <h2 className="font-medium text-foreground text-sm">
+            Payment method unavailable
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            Card details could not be loaded.
+          </p>
+        </div>
+      </section>
+    );
+  }
   if (card == null) {
     return null;
   }
@@ -671,7 +748,12 @@ function BillingPlanActions({
   onLifecycleAction?: LifecycleActionHandler;
   onPlanChange?: (planId: string | null) => void;
 }) {
-  if (!current.canManage) {
+  if (
+    !(
+      current.canManage &&
+      subscriptionLifecycleAllowsBillingActions(current.lifecycle)
+    )
+  ) {
     return null;
   }
 
@@ -754,6 +836,9 @@ export function BillingPlanSurface({
   snapshot,
 }: BillingPlanSurfaceProps) {
   const { current } = snapshot;
+  const billingActionsAllowed =
+    current.canManage &&
+    subscriptionLifecycleAllowsBillingActions(current.lifecycle);
   const lifecycleMetadata = LIFECYCLE_METADATA[current.lifecycle];
   const summaryRecipe =
     current.warningStage == null
@@ -904,6 +989,7 @@ export function BillingPlanSurface({
         invoiceCancellationPending={invoiceCancellationPending}
         onCancelInvoice={onCancelInvoice}
         pendingDowngrade={snapshot.pendingDowngrade}
+        transactionAvailability={snapshot.availability.transaction}
       />
 
       {planSummary}
@@ -913,7 +999,8 @@ export function BillingPlanSurface({
       {current.isPayg ? null : <BillingBalanceSection balance={balance} />}
 
       <BillingPaymentMethod
-        canManage={current.canManage}
+        availability={snapshot.availability.card}
+        canManage={billingActionsAllowed}
         card={snapshot.card}
         isPending={cardManagementPending}
         onManageCard={onManageCard}
@@ -927,56 +1014,62 @@ export function BillingPlanSurface({
           <Dock aria-hidden className="size-4" strokeWidth={1.75} />
           All Plans
         </h2>
-        <TableLayout>
-          <TableLayoutCaption className="font-medium">
-            {current.regionDomain}
-          </TableLayoutCaption>
-          <TableLayoutContent>
-            <TableLayoutHeadRow>
-              <TableHead>Workspace</TableHead>
-              <TableHead>Plan</TableHead>
-              <TableHead>Renewal Time</TableHead>
-              <TableHead className="text-right">Price</TableHead>
-            </TableLayoutHeadRow>
-            <TableLayoutBody>
-              {snapshot.workspaces.map((workspace) => (
-                <TableRow key={workspace.id}>
-                  <TableCell className="h-14">
-                    <div className="flex items-center gap-2.5">
-                      <WorkspaceAvatar workspaceId={workspace.id} />
-                      <span>{workspace.name}</span>
-                      {workspace.isCurrent ? (
-                        <Badge variant="secondary">Current</Badge>
-                      ) : null}
-                      {workspace.lifecycle === "payment-due" ? (
-                        <Badge variant="destructive">Plan Expired</Badge>
-                      ) : null}
-                      {workspace.lifecycle === "cancelling" ? (
-                        <Badge variant="secondary">Cancelling</Badge>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <PlanBadge planName={workspace.planName} />
-                  </TableCell>
-                  <TableCell>
-                    {workspace.lifecycle === "cancelling"
-                      ? "-"
-                      : formatDateTime(workspace.renewalAt)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {workspace.priceMicroUnits == null
-                      ? "—"
-                      : formatBillingAmount(
-                          workspace.priceMicroUnits,
-                          currency
-                        )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableLayoutBody>
-          </TableLayoutContent>
-        </TableLayout>
+        {snapshot.availability.workspaces === "unavailable" ? (
+          <p
+            className="py-6 text-center text-muted-foreground text-sm"
+            role="status"
+          >
+            Workspace plans unavailable
+          </p>
+        ) : (
+          <TableLayout>
+            <TableLayoutCaption className="font-medium">
+              {current.regionDomain}
+            </TableLayoutCaption>
+            <TableLayoutContent>
+              <TableLayoutHeadRow>
+                <TableHead>Workspace</TableHead>
+                <TableHead>Plan</TableHead>
+                <TableHead>Renewal Time</TableHead>
+                <TableHead className="text-right">Price</TableHead>
+              </TableLayoutHeadRow>
+              <TableLayoutBody>
+                {snapshot.workspaces.map((workspace) => (
+                  <TableRow key={workspace.id}>
+                    <TableCell className="h-14">
+                      <div className="flex items-center gap-2.5">
+                        <WorkspaceAvatar workspaceId={workspace.id} />
+                        <span>{workspace.name}</span>
+                        {workspace.isCurrent ? (
+                          <Badge variant="secondary">Current</Badge>
+                        ) : null}
+                        <WorkspaceLifecycleBadge
+                          lifecycle={workspace.lifecycle}
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <PlanBadge planName={workspace.planName} />
+                    </TableCell>
+                    <TableCell>
+                      {workspace.lifecycle === "cancelling"
+                        ? "-"
+                        : formatDateTime(workspace.renewalAt)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {workspace.priceMicroUnits == null
+                        ? "—"
+                        : formatBillingAmount(
+                            workspace.priceMicroUnits,
+                            currency
+                          )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableLayoutBody>
+            </TableLayoutContent>
+          </TableLayout>
+        )}
       </section>
     </div>
   );

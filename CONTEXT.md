@@ -584,6 +584,12 @@ The account-service-owned binding of one workspace to its current Subscription P
 
 _Avoid_: account subscription, user subscription, namespace plan, workspace plan record, in debt (as a user-facing label), cancelled (as a lifecycle distinct from cancelling).
 
+### Pending Subscription Upgrade
+
+An accepted Workspace Subscription upgrade backed by one unpaid invoice. Until the invoice is paid or cancelled, its target plan and checkout are authoritative and prevent creation of another upgrade payment; a newly selected plan becomes actionable only after cancellation. Continuing payment also requires the target plan to remain in the current Subscription Plan catalog; otherwise cancellation is the only recovery.
+
+_Avoid_: pending upgrade response, pending quote, new checkout.
+
 ### Workspace Subscription Renewal
 
 Recovery for a payment-due Workspace Subscription that exits the Deletion Countdown by choosing an available priced Subscription Plan and creating a replacement subscription. It may keep the same paid plan, but an unpriced Free Subscription Plan is not a renewal target.

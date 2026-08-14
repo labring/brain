@@ -8,6 +8,11 @@ import {
   createBillingJsonRequester,
 } from "./billing-data-client";
 import {
+  invalidPendingSubscriptionUpgradeErrorSchema,
+  type PendingSubscriptionUpgradePayload,
+  pendingSubscriptionUpgradeErrorSchema,
+} from "./billing-pending-upgrade";
+import {
   type BillingPlanResourceType,
   billingPlansResponseSchema,
   normalizeBillingPlan,
@@ -16,8 +21,18 @@ import {
 export type SubscriptionLifecycle =
   | "active"
   | "cancelling"
+  | "deleted"
   | "payment-due"
-  | "pending-upgrade";
+  | "pending-upgrade"
+  | "unavailable";
+
+export type BillingDataAvailability = "available" | "unavailable";
+
+export function subscriptionLifecycleAllowsBillingActions(
+  lifecycle: SubscriptionLifecycle
+): boolean {
+  return lifecycle !== "deleted" && lifecycle !== "unavailable";
+}
 
 /**
  * Escalation stage of the destructive subscription warning, following the
@@ -38,6 +53,11 @@ export interface BillingPlanResource {
 }
 
 export interface BillingPlanSnapshot {
+  availability: {
+    card: BillingDataAvailability;
+    transaction: BillingDataAvailability;
+    workspaces: BillingDataAvailability;
+  };
   card: {
     brand: string;
     expMonth?: number | null;
@@ -231,13 +251,25 @@ function normalizedPayMethod(value: string): "balance" | "stripe" {
 function subscriptionLifecycle(input: {
   cancelAtPeriodEnd: boolean;
   hasPendingUpgrade?: boolean;
+  isPayg?: boolean;
   planName: string;
   status: string;
 }): SubscriptionLifecycle {
+  if (input.isPayg) {
+    return "active";
+  }
+  const status = input.status.trim().toLowerCase();
   // Expiry outranks a pending cancellation: once the platform starts the
   // deletion pipeline, "cancelling" would hide the countdown.
-  if (DEBT_STATUSES.has(input.status.trim().toLowerCase())) {
+  if (DEBT_STATUSES.has(status)) {
     return "payment-due";
+  }
+  if (status === "deleted") {
+    return "deleted";
+  }
+  // Payment actions fail closed for statuses the client does not understand.
+  if (status !== "normal") {
+    return "unavailable";
   }
   if (
     input.cancelAtPeriodEnd &&
@@ -297,6 +329,46 @@ function pendingTransactionFromOperator(
   };
 }
 
+interface OptionalBillingResponse<T> {
+  availability: BillingDataAvailability;
+  value: T | null;
+}
+
+async function optionalBillingResponse<T>(
+  request: Promise<unknown>,
+  schema: z.ZodType<T>
+): Promise<OptionalBillingResponse<T>> {
+  try {
+    return {
+      availability: "available",
+      value: schema.parse(await request),
+    };
+  } catch {
+    return { availability: "unavailable", value: null };
+  }
+}
+
+function availableWorkspaceData(
+  subscriptionsAvailability: BillingDataAvailability,
+  workspacesResponse: OptionalBillingResponse<
+    z.infer<typeof workspacesResponseSchema>
+  >
+): {
+  availability: BillingDataAvailability;
+  workspaces: z.infer<typeof workspacesResponseSchema>["data"];
+} {
+  if (
+    subscriptionsAvailability === "unavailable" ||
+    workspacesResponse.availability === "unavailable"
+  ) {
+    return { availability: "unavailable", workspaces: [] };
+  }
+  return {
+    availability: "available",
+    workspaces: workspacesResponse.value?.data ?? [],
+  };
+}
+
 export async function loadBillingPlanSnapshot(
   credentials: BillingCredentials & { workspace: string },
   dependencies: BillingPlanLoaderDependencies = {}
@@ -331,40 +403,56 @@ export async function loadBillingPlanSnapshot(
   };
 
   const [
-    plansPayload,
-    subscriptionPayload,
-    transactionPayload,
-    subscriptionsPayload,
-    workspacesPayload,
-    cardPayload,
+    plansResponse,
+    subscriptionResponse,
+    transactionResponse,
+    subscriptionsResponse,
+    workspacesResponse,
+    cardResponse,
   ] = await Promise.all([
-    requestBillingJson("/api/billing/plans"),
-    requestBillingJson("/api/billing/subscription", workspaceRequest),
-    requestBillingJson(
-      "/api/billing/subscription/last-transaction",
-      workspaceRequest
+    requestBillingJson("/api/billing/plans").then((payload) =>
+      billingPlansResponseSchema.parse(payload)
     ),
-    requestBillingJson("/api/billing/subscriptions"),
-    requestBillingJson("/api/billing/workspaces", {
-      endTime,
-      startTime,
-      type: 0,
-    }),
-    requestBillingJson("/api/billing/card", workspaceRequest),
+    requestBillingJson("/api/billing/subscription", workspaceRequest).then(
+      (payload) => subscriptionResponseSchema.parse(payload)
+    ),
+    optionalBillingResponse(
+      requestBillingJson(
+        "/api/billing/subscription/last-transaction",
+        workspaceRequest
+      ),
+      transactionResponseSchema
+    ),
+    optionalBillingResponse(
+      requestBillingJson("/api/billing/subscriptions"),
+      subscriptionsResponseSchema
+    ),
+    optionalBillingResponse(
+      requestBillingJson("/api/billing/workspaces", {
+        endTime,
+        startTime,
+        type: 0,
+      }),
+      workspacesResponseSchema
+    ),
+    optionalBillingResponse(
+      requestBillingJson("/api/billing/card", workspaceRequest),
+      cardResponseSchema
+    ),
   ]);
 
-  const plans = billingPlansResponseSchema
-    .parse(plansPayload)
-    .plans.map(normalizeBillingPlan)
+  const plans = plansResponse.plans
+    .map(normalizeBillingPlan)
     .sort((left, right) => left.order - right.order);
-  const subscription =
-    subscriptionResponseSchema.parse(subscriptionPayload).subscription;
-  const transaction =
-    transactionResponseSchema.parse(transactionPayload).transaction;
-  const subscriptions =
-    subscriptionsResponseSchema.parse(subscriptionsPayload).subscriptions;
-  const workspaces = workspacesResponseSchema.parse(workspacesPayload).data;
-  const paymentMethod = cardResponseSchema.parse(cardPayload).payment_method;
+  const subscription = subscriptionResponse.subscription;
+  const transaction = transactionResponse.value?.transaction;
+  const subscriptions = subscriptionsResponse.value?.subscriptions ?? [];
+  const workspaceData = availableWorkspaceData(
+    subscriptionsResponse.availability,
+    workspacesResponse
+  );
+  const workspaces = workspaceData.workspaces;
+  const paymentMethod = cardResponse.value?.payment_method ?? null;
   const pendingUpgrade = pendingTransactionFromOperator(
     transaction,
     "upgraded"
@@ -377,6 +465,7 @@ export async function loadBillingPlanSnapshot(
   const lifecycle = subscriptionLifecycle({
     cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
     hasPendingUpgrade: pendingUpgrade != null,
+    isPayg: subscription.type === "PAYG",
     planName: subscription.PlanName,
     status: subscription.Status,
   });
@@ -392,6 +481,11 @@ export async function loadBillingPlanSnapshot(
   );
 
   return {
+    availability: {
+      card: cardResponse.availability,
+      transaction: transactionResponse.availability,
+      workspaces: workspaceData.availability,
+    },
     card:
       paymentMethod == null
         ? null
@@ -429,6 +523,8 @@ export async function loadBillingPlanSnapshot(
     pendingUpgrade,
     plans: plans.map((plan) => {
       const isCurrent = plan.name === subscription.PlanName;
+      const planChangesAvailable =
+        lifecycle !== "deleted" && lifecycle !== "unavailable";
       // Mirrors the legacy costcenter decision tree: PAYG (no matching
       // current plan) treats every plan as a fresh subscription, the
       // catalog's transition lists label upgrades/downgrades, Enterprise
@@ -437,7 +533,7 @@ export async function loadBillingPlanSnapshot(
       // authority that rejects illegal moves.
       let changeKind: "contact" | "downgrade" | "subscribe" | "upgrade" | null =
         null;
-      if (!isCurrent) {
+      if (!isCurrent && planChangesAvailable) {
         if (currentPlan == null) {
           changeKind = "subscribe";
         } else if (currentPlan.upgradePlanNames?.includes(plan.name)) {
@@ -477,6 +573,7 @@ export async function loadBillingPlanSnapshot(
         isCurrent: id === credentials.workspace,
         lifecycle: subscriptionLifecycle({
           cancelAtPeriodEnd: item?.CancelAtPeriodEnd ?? false,
+          isPayg: item == null,
           planName,
           status: item?.Status ?? "",
         }),
@@ -520,6 +617,31 @@ export interface SubscriptionUpgradeQuote {
   promotionCode: string;
 }
 
+export interface PendingSubscriptionUpgrade {
+  amountDueMicroUnits: number;
+  createdAtSeconds: number;
+  currency: string;
+  discountMicroUnits?: number;
+  hasDiscount?: boolean;
+  invoiceId: string;
+  originalAmountMicroUnits?: number;
+  originalPlan?: {
+    period: string;
+    planName: string;
+    priceMicroUnits: number;
+  };
+  paymentId: string;
+  paymentUrl: string;
+  planName: string;
+  promotionCode?: string;
+  status: string;
+  totalAmountMicroUnits?: number;
+}
+
+export type SubscriptionUpgradeQuoteResult =
+  | { kind: "pending-upgrade"; pendingUpgrade: PendingSubscriptionUpgrade }
+  | { kind: "quote"; quote: SubscriptionUpgradeQuote };
+
 export type SubscriptionPromotionCodeErrorKind =
   | "exhausted"
   | "expired"
@@ -542,6 +664,45 @@ export class SubscriptionPromotionCodeError extends Error {
     this.name = "SubscriptionPromotionCodeError";
     this.kind = kind;
   }
+}
+
+function pendingSubscriptionUpgradeFromPayload(
+  payload: PendingSubscriptionUpgradePayload
+): PendingSubscriptionUpgrade {
+  return {
+    amountDueMicroUnits: payload.amount_due,
+    createdAtSeconds: payload.created_at,
+    currency: payload.currency,
+    ...(payload.discount_amount == null
+      ? {}
+      : { discountMicroUnits: payload.discount_amount }),
+    ...(payload.has_discount == null
+      ? {}
+      : { hasDiscount: payload.has_discount }),
+    invoiceId: payload.invoice_id,
+    ...(payload.original_amount == null
+      ? {}
+      : { originalAmountMicroUnits: payload.original_amount }),
+    ...(payload.original_plan == null
+      ? {}
+      : {
+          originalPlan: {
+            period: payload.original_plan.period,
+            planName: payload.original_plan.plan_name,
+            priceMicroUnits: payload.original_plan.price,
+          },
+        }),
+    paymentId: payload.payment_id,
+    paymentUrl: payload.payment_url,
+    planName: payload.plan_name,
+    ...(payload.promotion_code == null
+      ? {}
+      : { promotionCode: payload.promotion_code }),
+    status: payload.status,
+    ...(payload.total_amount == null
+      ? {}
+      : { totalAmountMicroUnits: payload.total_amount }),
+  };
 }
 
 export interface SubscriptionPlanCheckout {
@@ -735,7 +896,7 @@ export async function loadSubscriptionUpgradeQuote(
     promotionCode?: string;
   },
   dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
-): Promise<SubscriptionUpgradeQuote> {
+): Promise<SubscriptionUpgradeQuoteResult> {
   const requestBillingJson = createBillingJsonRequester({
     credentials: { appToken: input.appToken, kubeconfig: input.kubeconfig },
     fallbackErrorMessage: "Could not calculate the prorated upgrade amount.",
@@ -758,6 +919,25 @@ export async function loadSubscriptionUpgradeQuote(
       }
     );
   } catch (error) {
+    if (error instanceof BillingRequestError && error.status === 409) {
+      const pendingUpgrade = pendingSubscriptionUpgradeErrorSchema.safeParse(
+        error.payload
+      );
+      if (pendingUpgrade.success) {
+        return {
+          kind: "pending-upgrade",
+          pendingUpgrade: pendingSubscriptionUpgradeFromPayload(
+            pendingUpgrade.data.pending_upgrade
+          ),
+        };
+      }
+      if (
+        invalidPendingSubscriptionUpgradeErrorSchema.safeParse(error.payload)
+          .success
+      ) {
+        throw error;
+      }
+    }
     if (input.promotionCode != null && error instanceof BillingRequestError) {
       const kind = {
         404: "unknown",
@@ -773,13 +953,16 @@ export async function loadSubscriptionUpgradeQuote(
   const quote = upgradeAmountResponseSchema.parse(payload);
 
   return {
-    amountMicroUnits: quote.amount,
-    discountMicroUnits: quote.has_discount
-      ? Math.max(0, quote.original_amount - quote.amount)
-      : 0,
-    hasDiscount: quote.has_discount,
-    originalAmountMicroUnits: quote.original_amount,
-    promotionCode: quote.promotion_code,
+    kind: "quote",
+    quote: {
+      amountMicroUnits: quote.amount,
+      discountMicroUnits: quote.has_discount
+        ? Math.max(0, quote.original_amount - quote.amount)
+        : 0,
+      hasDiscount: quote.has_discount,
+      originalAmountMicroUnits: quote.original_amount,
+      promotionCode: quote.promotion_code,
+    },
   };
 }
 

@@ -1,13 +1,16 @@
-import { billingSubscriptionUpgradeAmountRequestSchema } from "@/features/billing/billing-request-schemas";
 import { BILLING_ROUTES } from "@/features/billing/server/billing-route-table";
-import { createBillingRoute } from "@/features/billing/server/create-billing-route";
+import { withBillingDevMock } from "@/features/billing/server/create-billing-route";
+import { requestAccountService } from "@/lib/account-service/client";
+import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
+import { createBillingSubscriptionUpgradeAmountHandler } from "./handler";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export const POST = createBillingRoute(
+export const POST = withBillingDevMock(
   BILLING_ROUTES.subscriptionUpgradeAmount,
-  {
-    requestSchema: billingSubscriptionUpgradeAmountRequestSchema,
-  }
+  createBillingSubscriptionUpgradeAmountHandler({
+    authorizeWorkspaceActor,
+    requestAccountService,
+  })
 );

@@ -46,6 +46,7 @@ import {
 import {
   type BillingPlanSnapshot,
   loadBillingPlanSnapshot,
+  subscriptionLifecycleAllowsBillingActions,
 } from "@/features/billing/billing-plan-data";
 import { BillingPlanPicker } from "@/features/billing/billing-plan-picker";
 import {
@@ -103,7 +104,12 @@ export function BillingPlanCatalogSection({
   if (planSnapshot != null) {
     content = (
       <BillingPlanPicker
-        actionable={planSnapshot.current.canManage}
+        actionable={
+          planSnapshot.current.canManage &&
+          subscriptionLifecycleAllowsBillingActions(
+            planSnapshot.current.lifecycle
+          )
+        }
         currency={currency}
         gpuEnabled={gpuEnabled}
         inDebt={planSnapshot.current.lifecycle === "payment-due"}

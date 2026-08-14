@@ -19,7 +19,7 @@ async function loadSurfaceModules() {
       { formatBillingDateTime },
       { BillingPlanPicker },
       { BillingPlanSurface },
-      { BillingPriceTable, BillingPricingSurface },
+      { BillingPlanCatalogSection, BillingPriceTable, BillingPricingSurface },
       { BillingNavigationFrame },
       { BillingUsageSurface },
     ] = await Promise.all([
@@ -37,6 +37,7 @@ async function loadSurfaceModules() {
       BillingCostCharts,
       BillingCostsSurface,
       BillingNavigationFrame,
+      BillingPlanCatalogSection,
       BillingPlanPicker,
       BillingPlanSurface,
       BillingPriceTable,
@@ -179,6 +180,11 @@ const PRICING_SNAPSHOT = {
 } satisfies BillingPricingSnapshot;
 
 const CANCELLING_PLAN = {
+  availability: {
+    card: "available",
+    transaction: "available",
+    workspaces: "available",
+  },
   card: { brand: "visa", expMonth: 12, expYear: 2028, last4: "4242" },
   current: {
     canManage: true,
@@ -343,6 +349,97 @@ test("Plan renders lifecycle notices, card facts, and workspace plan rows", asyn
   // bare lifecycle badge and the "Plan Cancelled" wording are retired.
   assert.equal(html.includes(">Pending upgrade<"), false);
   assert.equal(html.includes("Plan Cancelled"), false);
+});
+
+test("Plan renders local fallbacks when auxiliary billing data is unavailable", async () => {
+  const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
+  const snapshot: BillingPlanSnapshot = {
+    ...CANCELLING_PLAN,
+    availability: {
+      card: "unavailable",
+      transaction: "unavailable",
+      workspaces: "unavailable",
+    },
+    card: null,
+    pendingDowngrade: null,
+    pendingUpgrade: null,
+    workspaces: [],
+  };
+  const html = renderToStaticMarkup(
+    <BillingPlanSurface
+      balance={<span>$3.00</span>}
+      currency="usd"
+      snapshot={snapshot}
+    />
+  );
+
+  assertIncludes(html, "Pro Plan");
+  assertIncludes(html, "Recent plan changes unavailable");
+  assertIncludes(html, "Payment method unavailable");
+  assertIncludes(html, "Workspace plans unavailable");
+});
+
+test("Plan disables changes for deleted and unavailable subscription states", async () => {
+  const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
+  for (const [lifecycle, notice] of [
+    ["deleted", "Subscription ended"],
+    ["unavailable", "Subscription status unavailable"],
+  ] as const) {
+    const snapshot: BillingPlanSnapshot = {
+      ...CANCELLING_PLAN,
+      current: {
+        ...CANCELLING_PLAN.current,
+        cancelAtPeriodEnd: false,
+        lifecycle,
+        resourceDeletionAt: null,
+        warningStage: null,
+      },
+      pendingUpgrade: null,
+    };
+    const html = renderToStaticMarkup(
+      <BillingPlanSurface
+        balance={<span>$3.00</span>}
+        currency="usd"
+        snapshot={snapshot}
+      />
+    );
+
+    assertIncludes(html, notice);
+    assert.equal(html.includes("Cancel Plan"), false);
+    assert.equal(html.includes("Upgrade Plan"), false);
+    assert.equal(html.includes(">Renew<"), false);
+    assert.equal(html.includes("Pay invoice"), false);
+    assert.equal(html.includes("Cancel invoice"), false);
+    assert.equal(html.includes("Manage Card Info"), false);
+  }
+});
+
+test("Pricing disables plan selection for closed subscription states", async () => {
+  const { BillingPlanCatalogSection, renderToStaticMarkup } =
+    await surfaceModules();
+  for (const lifecycle of ["deleted", "unavailable"] as const) {
+    const snapshot: BillingPlanSnapshot = {
+      ...CANCELLING_PLAN,
+      current: {
+        ...CANCELLING_PLAN.current,
+        lifecycle,
+      },
+      plans: CANCELLING_PLAN.plans.map((plan) => ({
+        ...plan,
+        changeKind: plan.isCurrent ? null : ("upgrade" as const),
+      })),
+    };
+    const html = renderToStaticMarkup(
+      <BillingPlanCatalogSection
+        currency="usd"
+        gpuEnabled
+        planSnapshot={snapshot}
+      />
+    );
+
+    assertIncludes(html, "Team");
+    assert.equal(html.includes(">Upgrade<"), false);
+  }
 });
 
 test("Plan renders the compact PAYG summary next to the balance", async () => {

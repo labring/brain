@@ -4,7 +4,10 @@ import { loadAccountBalance } from "../../account-balance";
 import { loadAiCredits } from "../../billing-ai-credits";
 import { loadBillingCosts } from "../../billing-costs-data";
 import type { BillingFetch } from "../../billing-data-client";
-import { loadBillingPlanSnapshot } from "../../billing-plan-data";
+import {
+  loadBillingPlanSnapshot,
+  loadSubscriptionUpgradeQuote,
+} from "../../billing-plan-data";
 import { loadBillingPricing } from "../../billing-pricing-data";
 import { loadBillingUsage } from "../../billing-usage-data";
 import {
@@ -249,6 +252,24 @@ test("pending-upgrade derives the queued plan change", async () => {
   const plan = await loadPlanForScenario("pending-upgrade");
   assert.equal(plan.current.lifecycle, "pending-upgrade");
   assert.equal(plan.pendingUpgrade?.planName, "Pro");
+});
+
+test("pending-upgrade quote recovers the mock unpaid invoice", async () => {
+  const result = await loadSubscriptionUpgradeQuote(
+    {
+      ...CREDENTIALS,
+      planName: "Team",
+      regionDomain: "mock.sealos.run",
+    },
+    { fetch: mockFetchFor("pending-upgrade") }
+  );
+
+  assert.equal(result.kind, "pending-upgrade");
+  if (result.kind === "pending-upgrade") {
+    assert.equal(result.pendingUpgrade.invoiceId, "inv-123");
+    assert.equal(result.pendingUpgrade.paymentId, "pay-mock-upgrade");
+    assert.equal(result.pendingUpgrade.planName, "Pro");
+  }
 });
 
 test("mixed-workspaces spreads lifecycles across the workspace list", async () => {
