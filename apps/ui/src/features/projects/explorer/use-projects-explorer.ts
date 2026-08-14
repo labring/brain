@@ -17,6 +17,7 @@ import {
   brainProjectsToExplorerProjects,
   isProjectDisplayNameTaken,
 } from "@/features/projects/brain-projects";
+import { useDemoProjectsMock } from "@/features/projects/demo/use-demo-projects-mock";
 import type {
   ProjectDeleteReason,
   ProjectExplorerActions,
@@ -120,6 +121,8 @@ interface ProjectsExplorerReadModel {
     aps: K8sGetResponse | undefined;
     dbs: K8sGetResponse | undefined;
   };
+  /** True while the demo mock replaces remote data (dev tweaks "Mock data"). */
+  demoActive: boolean;
   /** Revalidate the projects list (e.g. after creating a project). */
   refreshProjects: () => Promise<unknown>;
   states: ProjectExplorerStates;
@@ -130,19 +133,28 @@ interface ProjectsExplorerResult extends ProjectsExplorerReadModel {
 }
 
 function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
-  const kubeconfig = options.kubeconfig.trim();
-  const ns = options.ns;
-  const hasKubeconfig = kubeconfig !== "";
+  // While the demo mock is on it replaces every remote read with the
+  // generated dataset. Real credentials may exist (the desktop iframe injects
+  // them), so the mock must win explicitly: blanking kubeconfig/ns keeps
+  // every SWR key below null and no request ever fires.
+  const demo = useDemoProjectsMock();
+  const kubeconfig = demo === null ? options.kubeconfig.trim() : "";
+  const ns = demo === null ? options.ns : "";
+  const hasKubeconfig = demo !== null || kubeconfig !== "";
   const credentialKey = useMemo(
     () => kubeconfigCredentialKey(kubeconfig),
     [kubeconfig]
   );
   const {
     limit: pinnedProjectLimit,
-    pinnedProjectIds,
+    pinnedProjectIds: remotePinnedProjectIds,
     prunePinnedProjects,
-    togglePinnedProject,
+    togglePinnedProject: toggleRemotePinnedProject,
   } = usePinnedProjects({ kubeconfig, namespace: ns });
+  const pinnedProjectIds =
+    demo === null ? remotePinnedProjectIds : demo.pinnedProjectIds;
+  const togglePinnedProject =
+    demo === null ? toggleRemotePinnedProject : demo.togglePinnedProject;
 
   const projectsQuery = useMemo(() => ({ namespace: ns }), [ns]);
 
@@ -190,7 +202,7 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
     ]);
   }, [apsData, dbsData]);
 
-  const projectShortcutIconKeys = useMemo(
+  const remoteProjectShortcutIconKeys = useMemo(
     () =>
       projectShortcutIconKeysFromWorkloads({
         aps: apsData,
@@ -198,11 +210,18 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
       }),
     [apsData, dbsData]
   );
+  const projectShortcutIconKeys =
+    demo === null
+      ? remoteProjectShortcutIconKeys
+      : demo.projectShortcutIconKeys;
   useProjectShortcutIconPreload(projectShortcutIconKeys);
 
   const projects = useMemo<ProjectExplorerProject[]>(
-    () => brainProjectsToExplorerProjects(rawProjects, statusByProjectId),
-    [rawProjects, statusByProjectId]
+    () =>
+      demo === null
+        ? brainProjectsToExplorerProjects(rawProjects, statusByProjectId)
+        : demo.projects,
+    [demo, rawProjects, statusByProjectId]
   );
 
   useEffect(() => {
@@ -246,6 +265,7 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
 
   return {
     data,
+    demoActive: demo !== null,
     hasKubeconfig,
     kubeconfig,
     mutate,
@@ -260,10 +280,11 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
 export function useProjectsExplorerReadModel(
   options: ProjectsExplorerReadModelOptions
 ): ProjectsExplorerReadModel {
-  const { data, mutate, states } = useProjectsExplorerModel(options);
+  const { data, demoActive, mutate, states } =
+    useProjectsExplorerModel(options);
   return useMemo(
-    () => ({ data, refreshProjects: mutate, states }),
-    [data, mutate, states]
+    () => ({ data, demoActive, refreshProjects: mutate, states }),
+    [data, demoActive, mutate, states]
   );
 }
 
@@ -274,6 +295,7 @@ export function useProjectsExplorer(
   const onNewProjectOverride = options.onNewProject;
   const {
     data,
+    demoActive,
     hasKubeconfig,
     kubeconfig,
     mutate,
@@ -292,12 +314,16 @@ export function useProjectsExplorer(
   );
 
   const onNewProject = useCallback(() => {
+    if (demoActive) {
+      toast.info("Demo mode — project creation is disabled.");
+      return;
+    }
     if (onNewProjectOverride) {
       onNewProjectOverride();
       return;
     }
     openAssistantPane();
-  }, [onNewProjectOverride]);
+  }, [demoActive, onNewProjectOverride]);
 
   const onProjectUpdate = useCallback(
     async (
@@ -408,22 +434,28 @@ export function useProjectsExplorer(
     [hasKubeconfig, pinnedProjectLimit, togglePinnedProject]
   );
 
-  const actions = useMemo(
-    (): ProjectExplorerActions => ({
+  const actions = useMemo((): ProjectExplorerActions => {
+    // The demo mock keeps pinning as the only row interaction: mock project
+    // ids have no real page or backend record, and the list hides the
+    // affordances whose handlers are absent (open, edit, delete).
+    if (demoActive) {
+      return { onNewProject, onProjectPinToggle };
+    }
+    return {
       onNewProject,
       onProjectClick,
       onProjectDelete,
       onProjectPinToggle,
       onProjectUpdate,
-    }),
-    [
-      onNewProject,
-      onProjectClick,
-      onProjectDelete,
-      onProjectPinToggle,
-      onProjectUpdate,
-    ]
-  );
+    };
+  }, [
+    demoActive,
+    onNewProject,
+    onProjectClick,
+    onProjectDelete,
+    onProjectPinToggle,
+    onProjectUpdate,
+  ]);
 
-  return { actions, data, states, refreshProjects: mutate };
+  return { actions, data, demoActive, states, refreshProjects: mutate };
 }
