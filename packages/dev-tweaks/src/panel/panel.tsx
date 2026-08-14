@@ -495,13 +495,13 @@ function CollapsibleSection({
             onClick={() => setCollapsed((previous) => !previous)}
             type="button"
           >
-            <span className="dtp-chevron">
-              <IconChevron size={10} />
-            </span>
             {title}
             {count === undefined ? null : (
               <span className="dtp-count">{count}</span>
             )}
+            <span className="dtp-chevron">
+              <IconChevron size={12} />
+            </span>
           </button>
         </h3>
         <div className="dtp-groupbody">
@@ -573,14 +573,14 @@ function GroupSection({
           title={group.def.note}
           type="button"
         >
-          <span className="dtp-chevron">
-            <IconChevron />
-          </span>
           <span className="dtp-grouptitle">{group.def.title}</span>
           <span className="dtp-tag">{group.def.feature}</span>
           {group.def.kind === "mock" ? (
             <span className="dtp-mocktag">MOCK</span>
           ) : null}
+          <span className="dtp-chevron">
+            <IconChevron />
+          </span>
         </button>
         {dirty ? (
           <button
