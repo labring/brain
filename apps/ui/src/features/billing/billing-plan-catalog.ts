@@ -49,6 +49,7 @@ export type BillingPlanResourceType =
 export interface NormalizedBillingPlan {
   description: string;
   downgradePlanNames?: string[];
+  hasMonthlyPrice: boolean;
   id: string;
   limits?: Partial<Record<BillingPlanResourceType, string>>;
   monthlyOriginalPriceMicroUnits: number;
@@ -162,17 +163,16 @@ export function normalizeBillingPlan(
       )
       .map(({ type, value }) => [type, value])
   ) as Partial<Record<BillingPlanResourceType, string>>;
+  const monthlyPrice = plan.Prices.find((price) => price.BillingCycle === "1m");
 
   return {
     description: plan.Description,
     downgradePlanNames: plan.DowngradePlanList ?? undefined,
+    hasMonthlyPrice: monthlyPrice != null,
     id: plan.ID,
     limits,
-    monthlyOriginalPriceMicroUnits:
-      plan.Prices.find((price) => price.BillingCycle === "1m")?.OriginalPrice ??
-      0,
-    monthlyPriceMicroUnits:
-      plan.Prices.find((price) => price.BillingCycle === "1m")?.Price ?? 0,
+    monthlyOriginalPriceMicroUnits: monthlyPrice?.OriginalPrice ?? 0,
+    monthlyPriceMicroUnits: monthlyPrice?.Price ?? 0,
     name: plan.Name,
     order: plan.Order,
     primaryPriceMicroUnits: plan.Prices[0]?.Price ?? 0,

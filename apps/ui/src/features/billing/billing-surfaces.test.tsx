@@ -135,6 +135,7 @@ const PRICING_SNAPSHOT = {
   plans: [
     {
       description: "For personal projects",
+      hasMonthlyPrice: true,
       id: "plan-starter",
       monthlyOriginalPriceMicroUnits: 0,
       monthlyPriceMicroUnits: 5_000_000,

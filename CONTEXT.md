@@ -584,6 +584,12 @@ The account-service-owned binding of one workspace to its current Subscription P
 
 _Avoid_: account subscription, user subscription, namespace plan, workspace plan record, in debt (as a user-facing label), cancelled (as a lifecycle distinct from cancelling).
 
+### Workspace Subscription Renewal
+
+Recovery for a payment-due Workspace Subscription that exits the Deletion Countdown by choosing an available priced Subscription Plan and creating a replacement subscription. It may keep the same paid plan, but an unpriced Free Subscription Plan is not a renewal target.
+
+_Avoid_: Free renewal, direct renewal charge.
+
 ### Deletion Countdown
 
 The platform's fixed grace timeline that starts the moment a Workspace Subscription expires: the workspace is suspended immediately, the warning escalates as the countdown runs, and the workspace's resources are permanently deleted when it ends. Both roads into expiry — failed renewal payment and cancelled-then-lapsed — join the same countdown. The Billing Area surfaces it as a destructive warning carrying the deletion date; renewing (or resuming, before expiry) exits the countdown.

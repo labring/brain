@@ -68,6 +68,7 @@ export interface BillingPlanSnapshot {
   plans: Array<{
     changeKind?: "contact" | "downgrade" | "subscribe" | "upgrade" | null;
     description: string;
+    hasMonthlyPrice?: boolean;
     id: string;
     isCurrent: boolean;
     limits?: SubscriptionPlanLimits;
@@ -452,6 +453,7 @@ export async function loadBillingPlanSnapshot(
       return {
         changeKind,
         description: plan.description,
+        hasMonthlyPrice: plan.hasMonthlyPrice,
         id: plan.id,
         isCurrent,
         limits: plan.limits ?? {},

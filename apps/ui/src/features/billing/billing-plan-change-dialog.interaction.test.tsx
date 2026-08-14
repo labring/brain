@@ -150,6 +150,136 @@ test("plan picker continues into the selected upgrade workflow", async () => {
   });
 });
 
+test("Free payment-due subscribes to a paid plan with the created operator", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    const quoteOperators: Array<string | undefined> = [];
+    const paymentOperators: string[] = [];
+    const snapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        currentPeriodEndAt: "2026-07-08T02:49:00Z",
+        expireAt: "2026-07-08T02:49:00Z",
+        lifecycle: "payment-due",
+        planName: "Free",
+        priceMicroUnits: 0,
+        resourceDeletionAt: "2026-07-22T02:49:00Z",
+        warningStage: "expired",
+      },
+      plans: [
+        {
+          changeKind: null,
+          description: "Free workspace plan",
+          hasMonthlyPrice: false,
+          id: "free",
+          isCurrent: true,
+          limits: { cpu: "4" },
+          name: "Free",
+          order: 0,
+          priceMicroUnits: 0,
+          resources: [{ label: "CPU", value: "4" }],
+          tags: ["more"],
+        },
+        ...SNAPSHOT.plans.map((plan) => ({
+          ...plan,
+          changeKind: "upgrade" as const,
+          isCurrent: false,
+        })),
+      ],
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    function FreeRenewalHarness() {
+      const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+      return (
+        <BillingPlanChangeDialog
+          credentials={{
+            appToken: "desktop-app-token",
+            kubeconfig: "apiVersion: v1",
+          }}
+          currency="usd"
+          gpuEnabled
+          onOpenChange={() => undefined}
+          onSelectedPlanChange={setSelectedPlanId}
+          onSubscriptionChanged={() => Promise.resolve()}
+          open
+          selectedPlanId={selectedPlanId}
+          services={{
+            cancelInvoice: () => Promise.resolve(),
+            checkDowngrade: () => Promise.reject(new Error("not used")),
+            createPayment: (input) => {
+              paymentOperators.push(input.operator);
+              return Promise.resolve({
+                invoiceId: "invoice-1",
+                payId: "payment-1",
+                redirectUrl: "https://checkout.stripe.test/subscribe-1",
+                success: true,
+              });
+            },
+            loadTransaction: () => Promise.resolve(null),
+            loadUpgradeQuote: (input) => {
+              quoteOperators.push(input.operator);
+              return Promise.resolve({
+                amountMicroUnits: 20_000_000,
+                discountMicroUnits: 0,
+                hasDiscount: false,
+                originalAmountMicroUnits: 20_000_000,
+                promotionCode: "",
+              });
+            },
+            openCheckoutUrl: () => undefined,
+            openCheckoutWindow: () => ({
+              close: () => undefined,
+              navigate: () => undefined,
+            }),
+            redirectTop: () => undefined,
+          }}
+          snapshot={snapshot}
+        />
+      );
+    }
+
+    try {
+      await act(() => {
+        rendered = render(<FreeRenewalHarness />);
+      });
+
+      assert.equal(
+        (rendered?.baseElement.textContent ?? "").includes("Free"),
+        false
+      );
+      await act(() => {
+        const proCard = rendered
+          ?.getByRole("heading", { name: "Pro" })
+          .closest("article");
+        const subscribePro =
+          proCard == null
+            ? null
+            : within(proCard).getByRole("button", { name: "Subscribe" });
+        if (subscribePro != null) {
+          fireEvent.click(subscribePro);
+        }
+      });
+
+      assert.deepEqual(quoteOperators, ["created"]);
+      await act(() => {
+        const confirm = rendered?.getByRole("button", {
+          name: "Subscribe & Pay",
+        });
+        if (confirm != null) {
+          fireEvent.click(confirm);
+        }
+      });
+      assert.deepEqual(paymentOperators, ["created"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("upgrade confirmation shows the quote before reserving checkout at click time", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanChangeDialog } = await import(

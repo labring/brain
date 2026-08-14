@@ -665,15 +665,11 @@ function BillingPlanActions({
   current,
   onLifecycleAction,
   onPlanChange,
-  onRenew,
-  renewalPending,
 }: {
   actionPending: SubscriptionLifecycleAction | null;
   current: BillingPlanSnapshot["current"];
   onLifecycleAction?: LifecycleActionHandler;
   onPlanChange?: (planId: string | null) => void;
-  onRenew?: () => void;
-  renewalPending: boolean;
 }) {
   if (!current.canManage) {
     return null;
@@ -681,7 +677,8 @@ function BillingPlanActions({
 
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
   // One "Renew" button covers both warning roads: before expiry it revokes
-  // the cancellation (no payment), after expiry it re-opens checkout.
+  // the cancellation; after expiry it opens the plan picker so the user can
+  // create a replacement subscription, matching the legacy costcenter flow.
   const canResume = current.lifecycle === "cancelling";
   const canRenew = current.lifecycle === "payment-due";
   const canCancel =
@@ -709,11 +706,11 @@ function BillingPlanActions({
       ) : null}
       {canRenew ? (
         <AppButton
-          disabled={renewalPending || actionPending != null}
-          onClick={onRenew}
+          disabled={actionPending != null}
+          onClick={() => onPlanChange?.(null)}
         >
           <Sparkles aria-hidden data-icon="inline-start" />
-          {renewalPending ? "Opening..." : "Renew"}
+          Renew
         </AppButton>
       ) : null}
       {canResume || canRenew ? null : (
@@ -740,8 +737,6 @@ interface BillingPlanSurfaceProps {
   onLifecycleAction?: LifecycleActionHandler;
   onManageCard?: () => void;
   onPlanChange?: (planId: string | null) => void;
-  onRenew?: () => void;
-  renewalPending?: boolean;
   snapshot: BillingPlanSnapshot;
 }
 
@@ -756,8 +751,6 @@ export function BillingPlanSurface({
   onLifecycleAction,
   onManageCard,
   onPlanChange,
-  onRenew,
-  renewalPending = false,
   snapshot,
 }: BillingPlanSurfaceProps) {
   const { current } = snapshot;
@@ -852,8 +845,6 @@ export function BillingPlanSurface({
             current={current}
             onLifecycleAction={onLifecycleAction}
             onPlanChange={onPlanChange}
-            onRenew={onRenew}
-            renewalPending={renewalPending}
           />
         </div>
 

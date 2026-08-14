@@ -190,10 +190,10 @@ test("an unpaid invoice can be cancelled from its Plan banner", async () => {
   });
 });
 
-test("a payment-due subscription exposes the renewal action", async () => {
+test("a payment-due subscription opens the plan picker for renewal", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanSurface } = await import("./billing-plan-surface");
-    let renewalRequests = 0;
+    const selections: Array<string | null> = [];
     const snapshot: BillingPlanSnapshot = {
       ...CANCELLING_PLAN,
       current: {
@@ -213,9 +213,7 @@ test("a payment-due subscription exposes the renewal action", async () => {
           <BillingPlanSurface
             balance={<span>$3.00</span>}
             currency="usd"
-            onRenew={() => {
-              renewalRequests += 1;
-            }}
+            onPlanChange={(planId) => selections.push(planId)}
             snapshot={snapshot}
           />
         );
@@ -247,7 +245,7 @@ test("a payment-due subscription exposes the renewal action", async () => {
         }
       });
 
-      assert.equal(renewalRequests, 1);
+      assert.deepEqual(selections, [null]);
     } finally {
       await act(() => rendered?.unmount());
     }

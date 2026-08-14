@@ -25,6 +25,7 @@ type SnapshotPlan = BillingPlanSnapshot["plans"][number];
 function selectionCardPlan(plan: SnapshotPlan): NormalizedBillingPlan {
   return {
     description: plan.description,
+    hasMonthlyPrice: plan.hasMonthlyPrice ?? plan.priceMicroUnits > 0,
     id: plan.id,
     limits: plan.limits,
     monthlyOriginalPriceMicroUnits: plan.originalPriceMicroUnits ?? 0,
@@ -202,18 +203,21 @@ export function BillingPlanPicker({
   pendingDowngradePlanName,
   plans,
 }: BillingPlanPickerProps) {
-  // The legacy costcenter split: plans without the "more" tag are the card
-  // row (Free stays uncardable), "more" plans live in the selector row —
-  // Customized included.
-  const cardPlans = plans
-    .filter(
-      (plan) =>
-        !(plan.tags ?? []).includes("more") &&
-        plan.name.trim().toLowerCase() !== "free"
-    )
+  // The legacy costcenter excludes Free and unpriced plans from checkout. The
+  // current API always pays monthly, so require that exact cycle instead of
+  // accepting any unrelated catalog price.
+  const checkoutPlans = plans.filter(
+    (plan) =>
+      plan.name.trim().toLowerCase() !== "free" &&
+      (plan.hasMonthlyPrice ?? plan.priceMicroUnits > 0)
+  );
+  // Plans without the "more" tag are the card row; "more" plans live in the
+  // selector row — Customized included.
+  const cardPlans = checkoutPlans
+    .filter((plan) => !(plan.tags ?? []).includes("more"))
     .slice()
     .sort((left, right) => left.order - right.order);
-  const morePlans = plans
+  const morePlans = checkoutPlans
     .filter((plan) => (plan.tags ?? []).includes("more"))
     .slice()
     .sort((left, right) => left.order - right.order);

@@ -104,6 +104,81 @@ test("upgrade mode opens the plan workflow and is consumed from the URL", async 
   });
 });
 
+test("Free payment-due renewal opens the paid plan picker", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanWorkflow } = await import("./billing-plan");
+    const snapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        currentPeriodEndAt: "2026-07-08T02:49:00Z",
+        expireAt: "2026-07-08T02:49:00Z",
+        lifecycle: "payment-due",
+        planName: "Free",
+        priceMicroUnits: 0,
+        resourceDeletionAt: "2026-07-22T02:49:00Z",
+        warningStage: "expired",
+      },
+      plans: [
+        {
+          changeKind: null,
+          description: "Free workspace plan",
+          hasMonthlyPrice: false,
+          id: "free",
+          isCurrent: true,
+          limits: { cpu: "4" },
+          name: "Free",
+          order: 0,
+          priceMicroUnits: 0,
+          resources: [{ label: "CPU", value: "4" }],
+          tags: ["more"],
+        },
+        ...SNAPSHOT.plans.map((plan) => ({
+          ...plan,
+          changeKind: "upgrade" as const,
+          isCurrent: false,
+        })),
+      ],
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanWorkflow
+            balance={<span>$3.00</span>}
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onRefreshSnapshot={() => Promise.resolve(snapshot)}
+            replaceUrl={() => undefined}
+            snapshot={snapshot}
+          />
+        );
+      });
+
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      await act(() => {
+        const renew = rendered?.getByRole("button", { name: "Renew" });
+        if (renew != null) {
+          fireEvent.click(renew);
+        }
+      });
+
+      const dialog = rendered?.getByRole("dialog", {
+        name: "Choose Your Workspace Plan",
+      });
+      assert.ok(dialog?.textContent?.includes("Pro"));
+      assert.equal(dialog?.textContent?.includes("Free"), false);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("Stripe return refreshes before congratulations and clears on close", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanWorkflow } = await import("./billing-plan");

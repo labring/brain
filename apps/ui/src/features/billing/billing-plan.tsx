@@ -35,7 +35,6 @@ import {
   type BillingPlanSnapshot,
   cancelSubscriptionInvoice,
   createBillingCardManagementSession,
-  createSubscriptionPlanPayment,
   loadBillingPlanSnapshot,
   type SubscriptionLifecycleAction,
   type SubscriptionLifecycleOutcome,
@@ -70,8 +69,6 @@ interface BillingPlanWorkflowProps {
   ) => Promise<SubscriptionLifecycleOutcome> | undefined;
   onManageCard?: () => void;
   onRefreshSnapshot: (workspaceId?: string) => Promise<BillingPlanSnapshot>;
-  onRenew?: () => void;
-  renewalPending?: boolean;
   replaceUrl: (url: string) => void;
   snapshot: BillingPlanSnapshot;
   stripeReturn?: BillingStripeReturn | null;
@@ -100,9 +97,7 @@ export function BillingPlanWorkflow({
   onLifecycleAction,
   onManageCard,
   onRefreshSnapshot,
-  onRenew,
   replaceUrl,
-  renewalPending = false,
   snapshot,
   stripeReturn = null,
 }: BillingPlanWorkflowProps) {
@@ -212,8 +207,6 @@ export function BillingPlanWorkflow({
         onLifecycleAction={onLifecycleAction}
         onManageCard={onManageCard}
         onPlanChange={handlePlanChange}
-        onRenew={onRenew}
-        renewalPending={renewalPending}
         snapshot={snapshot}
       />
       <BillingPlanChangeDialog
@@ -321,7 +314,6 @@ export function BillingPlan({
   const [cardManagementPending, setCardManagementPending] = useState(false);
   const [invoiceCancellationPending, setInvoiceCancellationPending] =
     useState(false);
-  const [renewalPending, setRenewalPending] = useState(false);
   const credentialsReady =
     appToken.trim() !== "" && kubeconfig.trim() !== "" && workspace !== "";
   const {
@@ -468,41 +460,6 @@ export function BillingPlan({
     }
   };
 
-  const renewSubscription = async () => {
-    const current = snapshot?.current;
-    if (renewalPending || current == null) {
-      return;
-    }
-
-    setRenewalPending(true);
-    try {
-      const checkout = await createSubscriptionPlanPayment({
-        appToken,
-        kubeconfig,
-        operator: "renewed",
-        planName: current.planName,
-        regionDomain: current.regionDomain,
-        workspace: current.workspace,
-      });
-      if (checkout.redirectUrl != null) {
-        window.parent.location.href = checkout.redirectUrl;
-        return;
-      }
-      if (!checkout.success) {
-        throw new Error("The billing service did not accept the renewal.");
-      }
-      await refreshSnapshot();
-      toast.success("Subscription renewed.");
-    } catch (error) {
-      toastErrorDetail(
-        "Could not renew the subscription.",
-        errorDescription(error, "The renewal could not be started.")
-      );
-    } finally {
-      setRenewalPending(false);
-    }
-  };
-
   const refreshPlanSnapshot = useCallback(
     async (targetWorkspace?: string) => {
       const nextSnapshot =
@@ -590,8 +547,6 @@ export function BillingPlan({
       onLifecycleAction={updateLifecycle}
       onManageCard={manageCard}
       onRefreshSnapshot={refreshPlanSnapshot}
-      onRenew={renewSubscription}
-      renewalPending={renewalPending}
       replaceUrl={replaceUrl}
       snapshot={snapshot}
       stripeReturn={stripeReturn}
