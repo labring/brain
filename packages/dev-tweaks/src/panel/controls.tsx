@@ -21,6 +21,29 @@ interface ControlInputProps<D extends DevTweaksControlDef> {
   value: DevTweaksValue;
 }
 
+/** A range this coarse gets one tick per step; anything finer gets a 10% grid. */
+const COARSE_STEP_LIMIT = 10;
+const FINE_TICK_COUNT = 9;
+
+/** Tick offsets as percentages of the track, excluding both end caps. */
+function sliderTicks(def: DevTweaksSliderDef): number[] {
+  const span = def.max - def.min;
+  if (span <= 0) {
+    return [];
+  }
+  const steps = Math.round(span / (def.step ?? 1));
+  if (steps > COARSE_STEP_LIMIT) {
+    return Array.from(
+      { length: FINE_TICK_COUNT },
+      (_, index) => (index + 1) * 10
+    );
+  }
+  return Array.from(
+    { length: Math.max(steps - 1, 0) },
+    (_, index) => ((index + 1) / steps) * 100
+  );
+}
+
 function SliderControl({
   def,
   onChange,
@@ -43,6 +66,15 @@ function SliderControl({
       >
         <Slider.Control className="dtp-slider-control">
           <Slider.Track className="dtp-slider-track">
+            <span aria-hidden className="dtp-slider-ticks">
+              {sliderTicks(def).map((offset) => (
+                <span
+                  className="dtp-slider-tick"
+                  key={offset}
+                  style={{ left: `${offset}%` }}
+                />
+              ))}
+            </span>
             <Slider.Indicator className="dtp-slider-indicator" />
             <Slider.Thumb aria-label={def.label} className="dtp-slider-thumb" />
           </Slider.Track>

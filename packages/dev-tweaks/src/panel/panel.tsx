@@ -5,6 +5,7 @@ import {
   type ReactNode,
   type RefObject,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -19,6 +20,7 @@ import type {
   DevTweaksValue,
 } from "../types";
 import { ControlRow } from "./controls";
+import { useFrameMode } from "./frame";
 import {
   IconChevron,
   IconClose,
@@ -49,11 +51,12 @@ const SNAP_MS = 200;
 const HIGHLIGHT_MS = 1400;
 
 export interface DevTweaksPanelProps {
-  /** The host app — in frame mode it docks into an inset card. */
+  /** The host app — in frame mode its own `<body>` becomes the inset card. */
   children?: ReactNode;
   /**
    * Host bridge variables (`--dtp-font-sans`, `--dtp-font-mono`,
-   * `--dtp-card-bg`, `--dtp-card-ring`) — applied to all panel chrome.
+   * `--dtp-card-ring`). Frame mode is a document-level effect, so these are
+   * forwarded to `<html>` rather than to a wrapper element.
    */
   style?: CSSProperties;
 }
@@ -120,43 +123,19 @@ function PanelChrome({
   const mode: PanelMode = narrow ? "float" : prefs.mode;
   const framed = open && mode === "frame";
   const slideMs = open ? OPEN_MS : CLOSE_MS;
-  const frameTransition = (properties: string[]) =>
-    properties
-      .map((property) => `${property} ${reducedMotion ? 0 : slideMs}ms ease`)
-      .join(", ");
 
-  const cardStyle: CSSProperties = {
-    // Ring via shadow (no 1px layout shift) + soft elevation; both states
-    // keep the same two-layer list shape so the browser interpolates.
-    borderRadius: framed ? 14 : 0,
-    boxShadow: framed
-      ? "0 0 0 1px var(--dtp-card-ring, var(--dtp-border)), 0 24px 64px -24px rgb(0 0 0 / 0.6)"
-      : "0 0 0 0 var(--dtp-card-ring, var(--dtp-border)), 0 24px 64px -24px rgb(0 0 0 / 0)",
-    height: framed ? `calc(100dvh - ${2 * FRAME_GAP}px)` : "100dvh",
-    margin: framed
-      ? `${FRAME_GAP}px ${FRAME_GAP + PANEL_W + FRAME_GAP}px ${FRAME_GAP}px ${FRAME_GAP}px`
-      : "0px",
-    transition: frameTransition([
-      "margin",
-      "height",
-      "border-radius",
-      "box-shadow",
-    ]),
-  };
+  // The card is the host's own `<body>` — nothing here wraps the children.
+  useFrameMode({
+    durationMs: reducedMotion ? 0 : slideMs,
+    framed,
+    gap: FRAME_GAP,
+    panelWidth: PANEL_W,
+    vars: style,
+  });
 
   return (
-    <div style={{ display: "contents", ...style }}>
-      <div
-        aria-hidden
-        className="dtp-skin dtp-backdrop"
-        style={{
-          opacity: framed ? 1 : 0,
-          transition: frameTransition(["opacity"]),
-        }}
-      />
-      <div className="dtp-skin dtp-card" style={cardStyle}>
-        {children}
-      </div>
+    <>
+      {children}
       <PanelAside
         key={mode}
         mode={mode}
@@ -170,7 +149,7 @@ function PanelChrome({
         store={store}
         updatePrefs={updatePrefs}
       />
-    </div>
+    </>
   );
 }
 
@@ -255,6 +234,30 @@ function floatAsideStyle({
   };
 }
 
+/**
+ * Keeps the element in the top layer for its whole life. Frame mode contains
+ * the body, and a contained body is the containing block for its `position:
+ * fixed` children — the top layer is the only place left that still measures
+ * against the viewport. The popover stays open throughout: showing and hiding
+ * the panel is still opacity and transform, so the transitions are untouched.
+ *
+ * No-op where the platform has no popover support (the test DOM).
+ */
+function useTopLayer(ref: RefObject<HTMLElement | null>): void {
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!(element && "showPopover" in element)) {
+      return;
+    }
+    element.showPopover();
+    return () => {
+      if (element.isConnected) {
+        element.hidePopover();
+      }
+    };
+  }, [ref]);
+}
+
 function PanelAside({
   mode,
   narrow,
@@ -266,6 +269,7 @@ function PanelAside({
   updatePrefs,
 }: PanelAsideProps) {
   const panelRef = useRef<HTMLElement | null>(null);
+  useTopLayer(panelRef);
   // Mount flag — lets the first open play an entrance transition even when
   // the aside just remounted (hard mode handoff).
   const [entered, setEntered] = useState(false);
@@ -311,6 +315,7 @@ function PanelAside({
       className="dtp-skin dtp-panel"
       data-mode={mode}
       inert={!open}
+      popover="manual"
       ref={panelRef}
       style={geometry}
     >
@@ -490,13 +495,13 @@ function CollapsibleSection({
             onClick={() => setCollapsed((previous) => !previous)}
             type="button"
           >
-            <span className="dtp-chevron">
-              <IconChevron size={10} />
-            </span>
             {title}
             {count === undefined ? null : (
               <span className="dtp-count">{count}</span>
             )}
+            <span className="dtp-chevron">
+              <IconChevron size={12} />
+            </span>
           </button>
         </h3>
         <div className="dtp-groupbody">
@@ -568,14 +573,14 @@ function GroupSection({
           title={group.def.note}
           type="button"
         >
-          <span className="dtp-chevron">
-            <IconChevron />
-          </span>
           <span className="dtp-grouptitle">{group.def.title}</span>
           <span className="dtp-tag">{group.def.feature}</span>
           {group.def.kind === "mock" ? (
             <span className="dtp-mocktag">MOCK</span>
           ) : null}
+          <span className="dtp-chevron">
+            <IconChevron />
+          </span>
         </button>
         {dirty ? (
           <button
