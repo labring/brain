@@ -422,7 +422,7 @@ export async function loadBillingPlanSnapshot(
         currentPlan?.resources.map(({ label, value }) => ({ label, value })) ??
         [],
       warningStage,
-      workspace: subscription.Workspace,
+      workspace: subscription.Workspace.trim() || credentials.workspace.trim(),
     },
     pendingDowngrade,
     pendingUpgrade,

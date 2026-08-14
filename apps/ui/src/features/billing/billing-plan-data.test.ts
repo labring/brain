@@ -364,6 +364,7 @@ test("a PAYG workspace treats every plan as a fresh subscription", async () => {
 
   assert.equal(snapshot.current.isPayg, true);
   assert.equal(snapshot.current.canManage, true);
+  assert.equal(snapshot.current.workspace, "workspace-a");
   assert.deepEqual(
     snapshot.plans.map((plan) => [plan.name, plan.isCurrent, plan.changeKind]),
     [
