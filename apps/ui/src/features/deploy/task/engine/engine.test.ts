@@ -3,10 +3,12 @@ import { after, afterEach, before, test } from "node:test";
 
 import { and, eq } from "drizzle-orm";
 
+import { identityFingerprints } from "@/features/chat/persistence/schema";
 import {
   marketingAttributionSubjects,
   marketingLifecycleEvents,
 } from "@/features/marketing/schema";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 
 import { deploymentFailureMessage } from "../failure-summary";
 import {
@@ -578,24 +580,33 @@ test("deployment transitions persist attribution and enqueue lifecycle events", 
     lifecycleEvents.map((event) => event.eventName),
     ["build_started", "deploy_success"]
   );
+  assert.deepEqual(
+    lifecycleEvents.map((event) => event.userId),
+    [null, null]
+  );
   assert.equal(lifecycleEvents[0]?.gclid, null);
   assert.equal(lifecycleEvents[0]?.adUserDataConsent, "unspecified");
 
-  const subjects = await harness.db
+  const userSubjects = await harness.db
     .select()
     .from(marketingAttributionSubjects)
     .where(
       and(
-        eq(marketingAttributionSubjects.gclid, "test-gclid-123"),
-        eq(marketingAttributionSubjects.adUserDataConsent, "granted")
+        eq(marketingAttributionSubjects.subjectType, "user"),
+        eq(marketingAttributionSubjects.subjectId, "marketing-test-user")
       )
     );
-  assert.deepEqual(
-    subjects
-      .map((subject) => `${subject.subjectType}:${subject.subjectId}`)
-      .sort(),
-    []
-  );
+  assert.equal(userSubjects.length, 0);
+  const [workspaceSubject] = await harness.db
+    .select()
+    .from(marketingAttributionSubjects)
+    .where(
+      and(
+        eq(marketingAttributionSubjects.subjectType, "workspace"),
+        eq(marketingAttributionSubjects.subjectId, "marketing-test-workspace")
+      )
+    );
+  assert.equal(workspaceSubject?.subjectId, "marketing-test-workspace");
 
   await harness.pglite.query(
     `UPDATE "sealai_deployment"."deploy_tasks"
@@ -634,12 +645,35 @@ test("deployment transitions persist attribution and enqueue lifecycle events", 
     "build_started",
     "deploy_success",
   ]);
+  assert.deepEqual(
+    repairedEvents.map((event) => event.userId),
+    [null, null]
+  );
   assert.equal(repairedEvents[0]?.adUserDataConsent, "granted");
-  const [repairedSubject] = await harness.db
+  const [repairedWorkspaceSubject] = await harness.db
     .select()
     .from(marketingAttributionSubjects)
-    .where(eq(marketingAttributionSubjects.subjectId, "marketing-test-user"));
-  assert.equal(repairedSubject?.gclid, "legacy-repair-gclid");
+    .where(
+      and(
+        eq(marketingAttributionSubjects.subjectType, "workspace"),
+        eq(marketingAttributionSubjects.subjectId, "marketing-test-workspace")
+      )
+    );
+  assert.equal(repairedWorkspaceSubject?.gclid, "legacy-repair-gclid");
+  assert.equal(
+    (
+      await harness.db
+        .select()
+        .from(marketingAttributionSubjects)
+        .where(
+          and(
+            eq(marketingAttributionSubjects.subjectType, "user"),
+            eq(marketingAttributionSubjects.subjectId, "marketing-test-user")
+          )
+        )
+    ).length,
+    0
+  );
 
   const trustedProvenance = {
     issuer: "sealos-desktop",
@@ -649,6 +683,48 @@ test("deployment transitions persist attribution and enqueue lifecycle events", 
     source: "desktop_oauth",
     subject_id: "marketing-test-user",
   } as const;
+  await harness.pglite.query(
+    `UPDATE "sealai_deployment"."deploy_tasks"
+     SET "marketing_attribution" = $1::jsonb
+     WHERE "id" = $2`,
+    [
+      JSON.stringify({
+        ad_personalization: "granted",
+        ad_user_data_consent: "granted",
+        consent_provenance: trustedProvenance,
+        gclid: "trusted-repair-gclid",
+        version: 3,
+      }),
+      result.task.id,
+    ]
+  );
+  await harness.pglite.query(
+    'DELETE FROM "sealai_marketing"."lifecycle_events" WHERE "deployment_id" = $1',
+    [result.task.id]
+  );
+  await harness.pglite.query(
+    'SELECT "sealai_marketing"."reconcile_deploy_marketing_attribution"($1)',
+    [100]
+  );
+  const trustedEvents = await harness.db
+    .select()
+    .from(marketingLifecycleEvents)
+    .where(eq(marketingLifecycleEvents.deploymentId, result.task.id));
+  assert.deepEqual(
+    trustedEvents.map((event) => event.userId),
+    ["marketing-test-user", "marketing-test-user"]
+  );
+  const [trustedSubject] = await harness.db
+    .select()
+    .from(marketingAttributionSubjects)
+    .where(
+      and(
+        eq(marketingAttributionSubjects.subjectType, "user"),
+        eq(marketingAttributionSubjects.subjectId, "marketing-test-user")
+      )
+    );
+  assert.equal(trustedSubject?.gclid, "trusted-repair-gclid");
+
   await harness.pglite.query(
     'SELECT "sealai_marketing"."upsert_attribution_subject"($1, $2, $3::jsonb)',
     [
@@ -864,6 +940,69 @@ test("create strips sensitive template args from every persisted form (ADR 0037)
   });
   assert.ok(!persisted.includes("s3cret-value"));
   assert.ok(!persisted.includes("also-s3cret"));
+});
+
+test("create transaction refuses inherited attribution after the identity binding changes", async () => {
+  const ctx = testCtx();
+  const predecessor = await insertTaskRow(harness.db, {
+    completedAt: new Date(),
+    creatingActor: "transaction-fence-cr",
+    namespace: "transaction-fence-ns",
+    status: "failed",
+  });
+  await harness.db
+    .update(deployTasks)
+    .set({
+      marketingAttribution: {
+        ad_personalization: "granted",
+        ad_user_data_consent: "granted",
+        click_id_candidates: [],
+        consent_provenance: {
+          issuer: "sealos-desktop",
+          issued_at: "2026-08-13T00:00:00.000Z",
+          jti: "transaction-fence-jti",
+          region: "region-a",
+          source: "desktop_oauth",
+          subject_id: "transaction-fence-tombstone",
+        },
+        first_touch: null,
+        gbraid: null,
+        gclid: null,
+        last_touch: null,
+        version: 3,
+        wbraid: null,
+      },
+    })
+    .where(eq(deployTasks.id, predecessor.id));
+  await harness.db.insert(identityFingerprints).values({
+    crName: "transaction-fence-cr",
+    mintedAt: 2,
+    userUid: "transaction-fence-survivor",
+  });
+
+  await assert.rejects(
+    createDeployTaskAction(ctx, {
+      create: {
+        creatingActor: "transaction-fence-cr",
+        namespace: "transaction-fence-ns",
+      },
+      predecessorTaskId: predecessor.id,
+      run: async () => {
+        /* a superseded binding never launches */
+      },
+    }),
+    IdentityBindingSupersededError
+  );
+
+  assert.equal(
+    (
+      await harness.db
+        .select()
+        .from(deployTasks)
+        .where(eq(deployTasks.retriedFromTaskId, predecessor.id))
+    ).length,
+    0
+  );
 });
 
 test("clone validation matrix: not-found, conflict on active/completed, unique race", async () => {

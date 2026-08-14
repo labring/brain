@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
+import { identityFingerprints } from "@/features/chat/persistence/schema";
 import type {
   GithubConnectionOwnerIdentity,
   VerifiedGithubConnectionActor,
@@ -28,6 +29,7 @@ let testDb: DeployTaskTestHarness["db"] | undefined;
 let testEngineContext: DeployTaskEngineContext | undefined;
 let runDone: Promise<void> | undefined;
 let authorizedWorkspaceActor: string | undefined = "alice-cr";
+let afterAuthorize: (() => Promise<void>) | undefined;
 let activeGithubConnection: {
   accountLogin: string;
   accountType: string;
@@ -86,13 +88,13 @@ mock.module("@/lib/request-kubeconfig-auth", () => ({
    * test kubeconfig so route tests prove the header value reaches the
    * authorization input; anything else falls through to the real function.
    */
-  authorizeWorkspaceActor: (
+  authorizeWorkspaceActor: async (
     input: Parameters<
       typeof actualRequestKubeconfigAuth.authorizeWorkspaceActor
     >[0]
   ) => {
     if (input.encodedKubeconfig !== AUTHORIZED_ENCODED_KUBECONFIG) {
-      return actualRequestKubeconfigAuth.authorizeWorkspaceActor(input);
+      return await actualRequestKubeconfigAuth.authorizeWorkspaceActor(input);
     }
     authorizeCalls.push({
       appToken: input.appToken,
@@ -100,40 +102,54 @@ mock.module("@/lib/request-kubeconfig-auth", () => ({
       expectedNamespace: input.expectedNamespace,
     });
     if (authorizedWorkspaceActor == null) {
-      return Promise.resolve({
+      return {
         code: "workspace_actor_required" as const,
         message: "A verified Workspace Actor is required.",
         ok: false as const,
         status: 403,
-      });
+      };
     }
     const tokenActor = APP_TOKENS[input.appToken ?? ""];
     if (tokenActor == null) {
-      return Promise.resolve({
+      return {
         code: "app_token_required" as const,
         message: "Authentication is required.",
         ok: false as const,
         status: 401,
-      });
+      };
     }
     if (tokenActor !== authorizedWorkspaceActor) {
-      return Promise.resolve({
+      return {
         code: "app_token_mismatch" as const,
         message: "App token does not match the authenticated actor.",
         ok: false as const,
         status: 403,
-      });
+      };
     }
-    return Promise.resolve({
+    assert.ok(testDb);
+    const userUid = USER_UIDS[authorizedWorkspaceActor] ?? "uid-unknown";
+    await testDb
+      .insert(identityFingerprints)
+      .values({
+        crName: authorizedWorkspaceActor,
+        mintedAt: 1,
+        userUid,
+      })
+      .onConflictDoUpdate({
+        set: { mintedAt: 1, userUid },
+        target: identityFingerprints.crName,
+      });
+    await afterAuthorize?.();
+    return {
       actorBinding: {
         crName: authorizedWorkspaceActor,
         mintedAt: null,
-        userUid: USER_UIDS[authorizedWorkspaceActor] ?? "uid-unknown",
+        userUid,
       },
       namespace: "namespace-b",
       ok: true as const,
       workspaceActor: authorizedWorkspaceActor,
-    });
+    };
   },
 }));
 mock.module("@/features/deploy/github/connection-service", () => ({
@@ -204,6 +220,7 @@ function useHarness(harness: DeployTaskTestHarness): void {
 function clearHarness(): void {
   activeGithubConnection = null;
   adoptionCalls = [];
+  afterAuthorize = undefined;
   authorizeCalls = [];
   authorizedWorkspaceActor = "alice-cr";
   connectionLookups = [];
@@ -769,6 +786,86 @@ test("POST creates a redeploy from a non-GitHub predecessor without consulting t
     // A red assertion may fire while an unexpectedly created task is still
     // mid-transition; closing PGlite with a query in flight hangs the run.
     await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
+test("POST rejects inherited attribution when the identity changes after authorization", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  try {
+    const predecessor = await insertTaskRow(harness.db, {
+      completedAt: new Date(),
+      creatingActor: "alice-cr",
+      namespace: "namespace-b",
+      status: "failed",
+    });
+    await harness.db
+      .update(deployTasks)
+      .set({
+        marketingAttribution: {
+          ad_personalization: "granted",
+          ad_user_data_consent: "granted",
+          click_id_candidates: [],
+          consent_provenance: {
+            issuer: "sealos-desktop",
+            issued_at: "2026-08-13T00:00:00.000Z",
+            jti: "route-inherited-attribution-jti",
+            region: "region-a",
+            source: "desktop_oauth",
+            subject_id: "uid-alice",
+          },
+          first_touch: null,
+          gbraid: null,
+          gclid: null,
+          last_touch: null,
+          version: 3,
+          wbraid: null,
+        },
+      })
+      .where(eq(deployTasks.id, predecessor.id));
+    afterAuthorize = async () => {
+      await harness.db
+        .update(identityFingerprints)
+        .set({ mintedAt: 2, userUid: "uid-bob" })
+        .where(eq(identityFingerprints.crName, "alice-cr"));
+    };
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      deployTaskRequest(
+        {
+          encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+          namespace: "namespace-b",
+          predecessorTaskId: predecessor.id,
+        },
+        "app-token-alice"
+      )
+    );
+
+    assert.deepEqual(
+      { body: await response.json(), status: response.status },
+      {
+        body: {
+          code: "app_token_superseded",
+          error: "Authentication is required.",
+        },
+        status: 401,
+      }
+    );
+    assert.deepEqual(authorizeCalls, [
+      {
+        appToken: "app-token-alice",
+        encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+        expectedNamespace: "namespace-b",
+      },
+    ]);
+    assert.deepEqual(
+      (await harness.db.select().from(deployTasks)).map((task) => task.id),
+      [predecessor.id]
+    );
+  } finally {
     clearHarness();
     await harness.close();
   }

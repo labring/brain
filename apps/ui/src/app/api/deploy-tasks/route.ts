@@ -61,6 +61,17 @@ function jsonError(message: string, status: number, code?: string) {
   );
 }
 
+function identityBindingFailureResponse(error: unknown): NextResponse {
+  if (error instanceof IdentityBindingSupersededError) {
+    return jsonError(
+      "Authentication is required.",
+      401,
+      "app_token_superseded"
+    );
+  }
+  throw error;
+}
+
 /**
  * Marketing attribution needs the same app-token identity binding as GitHub
  * credentials. The regional workspace actor remains the deployment actor;
@@ -225,13 +236,18 @@ export async function POST(request: Request) {
     }
   }
   const effectiveSource = parsed.data.source ?? predecessor?.source;
+  const inheritedMarketingAttribution =
+    parsed.data.marketingAttribution == null
+      ? predecessor?.marketingAttribution
+      : null;
   const creatingActor = namespaceResolved.workspaceActor;
   const bindingResolution = await resolveCredentialBinding({
     appToken: appTokenFromRequest(request),
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     namespace: taskNamespace,
     requiresMarketingIdentity:
-      parsed.data.marketingAttribution?.consent_token != null,
+      parsed.data.marketingAttribution?.consent_token != null ||
+      inheritedMarketingAttribution?.consent_provenance != null,
     sourceKind: effectiveSource?.kind,
   });
   if ("response" in bindingResolution) {
@@ -240,30 +256,35 @@ export async function POST(request: Request) {
   const { credentialBinding, marketingConsentSubject } = bindingResolution;
 
   const { encodedKubeconfig, predecessorTaskId, ...taskInput } = parsed.data;
-  const result = await createDeployTaskAction(getDeployTaskEngineContext(), {
-    create: {
-      ...taskInput,
-      createdFrom: "ui",
-      ...(creatingActor == null ? {} : { creatingActor }),
-      ...(credentialBinding == null ? {} : { credentialBinding }),
-      ...(marketingConsentSubject == null ? {} : { marketingConsentSubject }),
-      namespace: taskNamespace,
-    },
-    predecessorTaskId,
-    resolveTarget: resolveDeployTaskTargetForCreate,
-    run: (handle, task) =>
-      runDeployTask(handle, {
-        encodedKubeconfig,
-        // Full template args from the request body: the engine persists a
-        // stripped copy, so sensitive values reach the runner only through
-        // this in-memory hand-off (ADR 0037).
-        sourceArgValues:
-          parsed.data.source?.kind === "template"
-            ? parsed.data.source.args
-            : undefined,
-        taskId: task.id,
-      }),
-  });
+  let result: Awaited<ReturnType<typeof createDeployTaskAction>>;
+  try {
+    result = await createDeployTaskAction(getDeployTaskEngineContext(), {
+      create: {
+        ...taskInput,
+        createdFrom: "ui",
+        ...(creatingActor == null ? {} : { creatingActor }),
+        ...(credentialBinding == null ? {} : { credentialBinding }),
+        ...(marketingConsentSubject == null ? {} : { marketingConsentSubject }),
+        namespace: taskNamespace,
+      },
+      predecessorTaskId,
+      resolveTarget: resolveDeployTaskTargetForCreate,
+      run: (handle, task) =>
+        runDeployTask(handle, {
+          encodedKubeconfig,
+          // Full template args from the request body: the engine persists a
+          // stripped copy, so sensitive values reach the runner only through
+          // this in-memory hand-off (ADR 0037).
+          sourceArgValues:
+            parsed.data.source?.kind === "template"
+              ? parsed.data.source.args
+              : undefined,
+          taskId: task.id,
+        }),
+    });
+  } catch (error) {
+    return identityBindingFailureResponse(error);
+  }
 
   switch (result.kind) {
     case "created":

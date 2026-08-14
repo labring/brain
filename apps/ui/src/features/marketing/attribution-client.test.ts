@@ -8,9 +8,15 @@ const TEST_GCLID_RE = /gclid-123/;
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
+  private writeError: Error | null = null;
 
   clear() {
     this.values.clear();
+    this.writeError = null;
+  }
+
+  failWritesWith(error: Error) {
+    this.writeError = error;
   }
 
   getItem(key: string) {
@@ -18,6 +24,9 @@ class MemoryStorage {
   }
 
   setItem(key: string, value: string) {
+    if (this.writeError != null) {
+      throw this.writeError;
+    }
     this.values.set(key, value);
   }
 
@@ -117,4 +126,17 @@ test("legacy attribution requires a fresh explicit consent signal", () => {
 
   assert.equal(result?.ad_user_data_consent, "unspecified");
   assert.equal(result?.gclid, null);
+});
+
+test("restricted local storage keeps in-memory attribution usable", () => {
+  browser.location.href = `https://cloud.sealos.io/?sea_attr=${encodedState(true)}&consent_token=signed-token`;
+
+  for (const name of ["SecurityError", "QuotaExceededError"]) {
+    localStorage.failWritesWith(new DOMException("Storage unavailable", name));
+
+    const result = readMarketingAttribution();
+
+    assert.equal(result?.ad_user_data_consent, "granted");
+    assert.equal(result?.gclid, "gclid-123");
+  }
 });

@@ -48,6 +48,15 @@ ALTER TABLE "sealai_deployment"."deploy_tasks" ADD COLUMN "marketing_attribution
 CREATE INDEX "lifecycle_events_pending_idx" ON "sealai_marketing"."lifecycle_events" USING btree ("occurred_at") WHERE "sealai_marketing"."lifecycle_events"."status" = 'pending';--> statement-breakpoint
 CREATE UNIQUE INDEX "lifecycle_events_action_transaction_idx" ON "sealai_marketing"."lifecycle_events" USING btree ("event_name","transaction_id") WHERE "sealai_marketing"."lifecycle_events"."transaction_id" IS NOT NULL;
 --> statement-breakpoint
+CREATE FUNCTION "sealai_marketing"."attribution_user_id"(
+	"p_attribution" jsonb
+) RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+	SELECT nullif(btrim("p_attribution" -> 'consent_provenance' ->> 'subject_id'), '');
+$$;
+--> statement-breakpoint
 CREATE FUNCTION "sealai_marketing"."upsert_attribution_subject"(
 	"p_subject_type" text,
 	"p_subject_id" text,
@@ -171,7 +180,9 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
 	PERFORM "sealai_marketing"."upsert_attribution_subject"(
-		'user', NEW."creating_actor", NEW."marketing_attribution"
+		'user', "sealai_marketing"."attribution_user_id"(
+			NEW."marketing_attribution"
+		), NEW."marketing_attribution"
 	);
 	PERFORM "sealai_marketing"."upsert_attribution_subject"(
 		'workspace', NEW."namespace", NEW."marketing_attribution"
@@ -193,6 +204,7 @@ AS $$
 DECLARE
 	"v_event_name" text;
 	"v_occurred_at" timestamp with time zone;
+	"v_user_id" text;
 	"v_ad_personalization" text;
 	"v_ad_user_data_consent" text;
 BEGIN
@@ -205,6 +217,9 @@ BEGIN
 	ELSE
 		RETURN NEW;
 	END IF;
+	"v_user_id" := "sealai_marketing"."attribution_user_id"(
+		NEW."marketing_attribution"
+	);
 
 	"v_ad_user_data_consent" := CASE jsonb_typeof(NEW."marketing_attribution" -> 'ad_user_data_consent')
 		WHEN 'boolean' THEN CASE
@@ -243,7 +258,7 @@ BEGIN
 	) VALUES (
 		v_event_name || ':' || NEW."id",
 		v_event_name,
-		NEW."creating_actor",
+		"v_user_id",
 		NEW."namespace",
 		NEW."id",
 		v_occurred_at,
@@ -278,6 +293,7 @@ AS $$
 DECLARE
 	"v_task" record;
 	"v_repaired" integer := 0;
+	"v_user_id" text;
 	"v_ad_personalization" text;
 	"v_ad_user_data_consent" text;
 BEGIN
@@ -290,6 +306,9 @@ BEGIN
 		LIMIT greatest(coalesce("p_limit", 100), 0)
 	LOOP
 		BEGIN
+			"v_user_id" := "sealai_marketing"."attribution_user_id"(
+				"v_task"."marketing_attribution"
+			);
 			"v_ad_user_data_consent" := CASE jsonb_typeof("v_task"."marketing_attribution" -> 'ad_user_data_consent')
 				WHEN 'boolean' THEN CASE
 					WHEN ("v_task"."marketing_attribution" ->> 'ad_user_data_consent')::boolean THEN 'granted'
@@ -308,7 +327,7 @@ BEGIN
 				ELSE 'unspecified'
 			END;
 			PERFORM "sealai_marketing"."upsert_attribution_subject"(
-				'user', "v_task"."creating_actor", "v_task"."marketing_attribution"
+				'user', "v_user_id", "v_task"."marketing_attribution"
 			);
 			PERFORM "sealai_marketing"."upsert_attribution_subject"(
 				'workspace', "v_task"."namespace", "v_task"."marketing_attribution"
@@ -319,7 +338,7 @@ BEGIN
 				"occurred_at", "first_touch", "last_touch", "gclid", "gbraid", "wbraid",
 				"ad_personalization", "ad_user_data_consent", "click_id_candidates", "consent_provenance"
 			) VALUES (
-				'build_started:' || "v_task"."id", 'build_started', "v_task"."creating_actor",
+				'build_started:' || "v_task"."id", 'build_started', "v_user_id",
 				"v_task"."namespace", "v_task"."id", coalesce("v_task"."started_at", "v_task"."created_at"),
 				"v_task"."marketing_attribution" -> 'first_touch',
 				"v_task"."marketing_attribution" -> 'last_touch',
@@ -339,7 +358,7 @@ BEGIN
 					"occurred_at", "first_touch", "last_touch", "gclid", "gbraid", "wbraid",
 					"ad_personalization", "ad_user_data_consent", "click_id_candidates", "consent_provenance"
 				) VALUES (
-					'deploy_success:' || "v_task"."id", 'deploy_success', "v_task"."creating_actor",
+					'deploy_success:' || "v_task"."id", 'deploy_success', "v_user_id",
 					"v_task"."namespace", "v_task"."id", coalesce("v_task"."completed_at", "v_task"."updated_at"),
 					"v_task"."marketing_attribution" -> 'first_touch',
 					"v_task"."marketing_attribution" -> 'last_touch',

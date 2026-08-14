@@ -202,7 +202,11 @@ export function readMarketingAttribution(): MarketingAttributionSnapshot | null 
       // Storage is optional in private browsing contexts.
     }
   }
-  window.localStorage.setItem("sealos_attr_v3", JSON.stringify(state));
+  try {
+    window.localStorage.setItem("sealos_attr_v3", JSON.stringify(state));
+  } catch {
+    // Storage is optional in private browsing contexts.
+  }
   const firstTouch = normalizedTouch(state.first_touch);
   const lastQualifiedTouch = normalizedTouch(state.last_qualified_touch);
   const lastTouch = normalizedTouch(state.last_touch);

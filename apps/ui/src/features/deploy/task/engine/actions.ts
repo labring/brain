@@ -1,6 +1,7 @@
 import { generateId } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { normalizeMarketingAttribution } from "@/features/marketing/consent";
+import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
 import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
 import { publicDeployTaskBlockingInputs } from "../public-artifact-summary";
@@ -246,7 +247,7 @@ async function resolveCreateInputs(
       ? (predecessor?.marketingAttribution ?? undefined)
       : await normalizeMarketingAttribution(
           input.create.marketingAttribution,
-          input.create.marketingConsentSubject ?? input.create.creatingActor
+          input.create.marketingConsentSubject
         );
   const create: CreateDeployTaskInput = {
     createdFrom: input.create.createdFrom,
@@ -371,41 +372,50 @@ async function insertCreatedDeployTask(
   const persistedSource = persistableDeploymentSource(create.source);
   const inheritedIdentities = cloneInheritedIdentities(create, predecessor);
   try {
-    const [inserted] = await ctx.db
-      .insert(deployTasks)
-      .values({
-        id,
-        actorUserId: null,
-        artifactSummary:
-          inheritedIdentities == null
-            ? {}
-            : { resultIdentities: inheritedIdentities },
-        createdAt: now,
-        createdFrom: create.createdFrom ?? "api",
-        creatingActor: create.creatingActor?.trim() || null,
-        credentialBinding: create.credentialBinding ?? null,
-        marketingAttribution: create.marketingAttribution ?? null,
-        githubConnectionId: null,
-        namespace: create.namespace.trim(),
-        phase: "queued",
-        projectId: resolvedProject?.projectId ?? null,
-        projectName: resolvedProject?.projectName ?? null,
-        prompt: compactOptional(create.prompt) ?? taskTitle(create),
-        retriedFromTaskId: predecessor?.id ?? null,
-        runner: create.runner,
-        source: persistedSource,
-        status: "queued",
-        target: create.target,
-        timelineSnapshot: createDeploymentTaskTimelineForRunner({
+    const [inserted] = await ctx.db.transaction(async (tx) => {
+      const provenance = create.marketingAttribution?.consent_provenance;
+      if (provenance != null) {
+        await requireCurrentIdentityBinding(tx, {
+          crName: create.creatingActor ?? "",
+          userUid: provenance.subject_id,
+        });
+      }
+      return tx
+        .insert(deployTasks)
+        .values({
+          id,
+          actorUserId: null,
+          artifactSummary:
+            inheritedIdentities == null
+              ? {}
+              : { resultIdentities: inheritedIdentities },
+          createdAt: now,
+          createdFrom: create.createdFrom ?? "api",
+          creatingActor: create.creatingActor?.trim() || null,
+          credentialBinding: create.credentialBinding ?? null,
+          marketingAttribution: create.marketingAttribution ?? null,
+          githubConnectionId: null,
+          namespace: create.namespace.trim(),
+          phase: "queued",
+          projectId: resolvedProject?.projectId ?? null,
+          projectName: resolvedProject?.projectName ?? null,
+          prompt: compactOptional(create.prompt) ?? taskTitle(create),
+          retriedFromTaskId: predecessor?.id ?? null,
           runner: create.runner,
           source: persistedSource,
           status: "queued",
-          taskId: id,
-          updatedAt: now.toISOString(),
-        }),
-        updatedAt: now,
-      })
-      .returning();
+          target: create.target,
+          timelineSnapshot: createDeploymentTaskTimelineForRunner({
+            runner: create.runner,
+            source: persistedSource,
+            status: "queued",
+            taskId: id,
+            updatedAt: now.toISOString(),
+          }),
+          updatedAt: now,
+        })
+        .returning();
+    });
     if (inserted == null) {
       throw new Error("Failed to create deploy task.");
     }

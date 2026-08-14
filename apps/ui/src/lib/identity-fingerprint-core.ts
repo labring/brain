@@ -1,4 +1,4 @@
-import { and, eq, notExists } from "drizzle-orm";
+import { and, eq, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import type {
@@ -12,6 +12,11 @@ import {
   identityFingerprints,
 } from "@/features/chat/persistence/schema";
 import { CURRENT_GITHUB_OWNER_IDENTITY_VERSION } from "@/features/deploy/github/owner-identity";
+import { deployTasks } from "@/features/deploy/task/schema";
+import {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
 import { onboardingProfiles } from "@/features/onboarding/schema";
 
 /**
@@ -70,7 +75,7 @@ export class IdentityBindingSupersededError extends Error {
  * binding is refused here.
  */
 export async function requireCurrentIdentityBinding(
-  tx: AssistantPgTransaction,
+  tx: Pick<AssistantPgTransaction, "select">,
   binding: { crName: string; userUid: string }
 ): Promise<void> {
   const crName = binding.crName.trim();
@@ -213,10 +218,14 @@ async function rekeyPersonalResources(
   tx: AssistantPgTransaction,
   input: { survivorUserUid: string; tombstoneUserUid: string }
 ): Promise<{
+  attributionSubjectsRekeyed: number;
+  attributionSubjectsReleased: number;
   connectionsReleased: number;
   connectionsRekeyed: number;
   conversations: number;
+  deployAttributionProvenanceRekeyed: number;
   installSessionsRekeyed: number;
+  lifecycleEventsRekeyed: number;
   profilesReleased: number;
   profilesRekeyed: number;
 }> {
@@ -245,6 +254,62 @@ async function rekeyPersonalResources(
     .set({ workspaceActor: input.survivorUserUid })
     .where(eq(assistantChats.workspaceActor, input.tombstoneUserUid))
     .returning({ id: assistantChats.id });
+
+  const rekeyedDeployAttributionProvenance = await tx
+    .update(deployTasks)
+    .set({
+      marketingAttribution: sql`jsonb_set(
+        ${deployTasks.marketingAttribution},
+        '{consent_provenance,subject_id}',
+        to_jsonb(${input.survivorUserUid}::text),
+        false
+      )`,
+    })
+    .where(
+      sql`${deployTasks.marketingAttribution} -> 'consent_provenance' ->> 'subject_id' = ${input.tombstoneUserUid}`
+    )
+    .returning({ id: deployTasks.id });
+
+  // All local lifecycle rows follow the survivor, including failed and
+  // uploaded rows. Already-uploaded Google Ads records remain immutable.
+  const rekeyedLifecycleEvents = await tx
+    .update(marketingLifecycleEvents)
+    .set({ userId: input.survivorUserUid })
+    .where(eq(marketingLifecycleEvents.userId, input.tombstoneUserUid))
+    .returning({ eventId: marketingLifecycleEvents.eventId });
+
+  const survivorAttributionSubjects = alias(
+    marketingAttributionSubjects,
+    "survivor_attribution_subjects"
+  );
+  const tombstoneAttributionSubjectWhere = and(
+    eq(marketingAttributionSubjects.subjectType, "user"),
+    eq(marketingAttributionSubjects.subjectId, input.tombstoneUserUid)
+  );
+  const rekeyedAttributionSubjects = await tx
+    .update(marketingAttributionSubjects)
+    .set({ subjectId: input.survivorUserUid })
+    .where(
+      and(
+        tombstoneAttributionSubjectWhere,
+        notExists(
+          tx
+            .select({ subjectId: survivorAttributionSubjects.subjectId })
+            .from(survivorAttributionSubjects)
+            .where(
+              and(
+                eq(survivorAttributionSubjects.subjectType, "user"),
+                eq(survivorAttributionSubjects.subjectId, input.survivorUserUid)
+              )
+            )
+        )
+      )
+    )
+    .returning({ subjectId: marketingAttributionSubjects.subjectId });
+  const releasedAttributionSubjects = await tx
+    .delete(marketingAttributionSubjects)
+    .where(tombstoneAttributionSubjectWhere)
+    .returning({ subjectId: marketingAttributionSubjects.subjectId });
 
   // Where the surviving uid already holds a connection in a namespace, that
   // authorization wins (the adoption precedent); the tombstone's row there
@@ -319,10 +384,15 @@ async function rekeyPersonalResources(
     .returning({ userUid: onboardingProfiles.userUid });
 
   return {
+    attributionSubjectsRekeyed: rekeyedAttributionSubjects.length,
+    attributionSubjectsReleased: releasedAttributionSubjects.length,
     connectionsReleased: releasedConnections.length,
     connectionsRekeyed: rekeyedConnections.length,
     conversations: conversations.length,
+    deployAttributionProvenanceRekeyed:
+      rekeyedDeployAttributionProvenance.length,
     installSessionsRekeyed: rekeyedInstallSessions.length,
+    lifecycleEventsRekeyed: rekeyedLifecycleEvents.length,
     profilesReleased: releasedProfiles.length,
     profilesRekeyed: rekeyedProfiles.length,
   };

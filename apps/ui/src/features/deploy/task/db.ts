@@ -1,6 +1,7 @@
 import "server-only";
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { identityFingerprints } from "@/features/chat/persistence/schema";
 import {
   marketingAttributionSubjects,
   marketingLifecycleEvents,
@@ -12,6 +13,7 @@ const deploymentTaskSchema = {
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,
+  identityFingerprints,
   marketingAttributionSubjects,
   marketingLifecycleEvents,
 };

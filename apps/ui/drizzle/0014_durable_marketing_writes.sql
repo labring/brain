@@ -1,23 +1,10 @@
-CREATE OR REPLACE FUNCTION "sealai_marketing"."attribution_user_id"(
-	"p_fallback" text,
-	"p_attribution" jsonb
-) RETURNS text
-LANGUAGE sql
-IMMUTABLE
-AS $$
-	SELECT coalesce(
-		nullif(btrim("p_attribution" -> 'consent_provenance' ->> 'subject_id'), ''),
-		nullif(btrim("p_fallback"), '')
-	);
-$$;
---> statement-breakpoint
 CREATE OR REPLACE FUNCTION "sealai_marketing"."capture_deploy_attribution"() RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
 	PERFORM "sealai_marketing"."upsert_attribution_subject"(
 		'user', "sealai_marketing"."attribution_user_id"(
-			NEW."creating_actor", NEW."marketing_attribution"
+			NEW."marketing_attribution"
 		), NEW."marketing_attribution"
 	);
 	PERFORM "sealai_marketing"."upsert_attribution_subject"(
@@ -47,7 +34,7 @@ BEGIN
 		RETURN NEW;
 	END IF;
 	"v_user_id" := "sealai_marketing"."attribution_user_id"(
-		NEW."creating_actor", NEW."marketing_attribution"
+		NEW."marketing_attribution"
 	);
 
 	"v_ad_user_data_consent" := CASE jsonb_typeof(NEW."marketing_attribution" -> 'ad_user_data_consent')
