@@ -15,6 +15,9 @@ const nextConfig = {
     // NEXT_PUBLIC_* var compiles to a runtime lookup and would keep the
     // panel chunk in the bundle.
     NEXT_PUBLIC_DEV_TWEAKS: process.env.NEXT_PUBLIC_DEV_TWEAKS ?? "",
+    // Same treatment for the demo data mock: inlined so regular builds
+    // compile the mock hook to an inert stub and drop the generators.
+    NEXT_PUBLIC_DEMO_MOCK: process.env.NEXT_PUBLIC_DEMO_MOCK ?? "",
   },
   logging: {
     serverFunctions: false,
