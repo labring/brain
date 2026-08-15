@@ -56,7 +56,7 @@ export function ProjectIndex() {
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const ns = useAtomValue(namespaceAtom);
 
-  const { actions, demoActive, states, refreshProjects } = useProjectsExplorer({
+  const { actions, states, refreshProjects } = useProjectsExplorer({
     kubeconfig,
     ns,
   });
@@ -186,15 +186,9 @@ export function ProjectIndex() {
   );
   useProjectSidePaneSurface(projectListSidePaneSurface);
 
-  // While the demo mock is on, keep the hook's own onNewProject (a "disabled
-  // in demo" toast) instead of opening the creation pane — submitting it
-  // would create a real project that the mock list can never show.
   const explorerActions = useMemo(
-    () =>
-      demoActive
-        ? actions
-        : { ...actions, onNewProject: openProjectCreationPane },
-    [actions, demoActive, openProjectCreationPane]
+    () => ({ ...actions, onNewProject: openProjectCreationPane }),
+    [actions, openProjectCreationPane]
   );
   const creationPaneOpen = creationSideEntry != null;
   const skillsPaneOpen = projectSideRouteEntry?.kind === "skillsWorkflow";
