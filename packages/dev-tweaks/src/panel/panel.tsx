@@ -103,10 +103,13 @@ function PanelChrome({
   const narrow = useMediaQuery("(max-width: 1023px)");
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   // Start from defaults on both server and first client render (hydration
-  // must match); the persisted prefs land right after mount.
+  // must match); the persisted prefs land a frame after mount — same frame as
+  // the aside's `entered` flip, so the closed panel never paints with them
+  // pending.
   const [prefs, setPrefs] = useState<PanelPrefs>(DEFAULT_PANEL_PREFS);
   useEffect(() => {
-    setPrefs(loadPanelPrefs());
+    const raf = requestAnimationFrame(() => setPrefs(loadPanelPrefs()));
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   useTogglesHotkey(store);
@@ -271,10 +274,12 @@ function PanelAside({
   const panelRef = useRef<HTMLElement | null>(null);
   useTopLayer(panelRef);
   // Mount flag — lets the first open play an entrance transition even when
-  // the aside just remounted (hard mode handoff).
+  // the aside just remounted (hard mode handoff). Flipped inside rAF so the
+  // initial styles get a painted frame first and the transition always runs.
   const [entered, setEntered] = useState(false);
   useEffect(() => {
-    setEntered(true);
+    const raf = requestAnimationFrame(() => setEntered(true));
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   const anchoredTop = prefs.corner === "tl" || prefs.corner === "tr";
