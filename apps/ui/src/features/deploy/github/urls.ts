@@ -23,8 +23,8 @@ function isLoopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
-function envPublicAppUrl(): string | null {
-  const raw = process.env.NEXT_PUBLIC_APP_URL?.trim();
+function envAppUrl(): string | null {
+  const raw = process.env.APP_URL?.trim();
   return raw ? stripTrailingSlash(raw) : null;
 }
 
@@ -41,7 +41,7 @@ function originFromRequest(request: Request): string {
  * Canonical app origin for the GitHub App install round-trip.
  */
 export function getCallbackBaseUrl(request: Request): string {
-  const env = envPublicAppUrl();
+  const env = envAppUrl();
   const runtime = stripTrailingSlash(originFromRequest(request));
   if (!env) {
     return runtime;
