@@ -37,10 +37,21 @@ function resolveMigrationsFolder(): string {
  * app-owned Postgres state — there are no runtime CREATE TABLE fallbacks.
  *
  * No `DATABASE_URL` → skipped, so builds and DB-less dev setups still boot.
+ * `APP_POSTGRES_SKIP_MIGRATIONS=1` → skipped, for deployments that point at a
+ * database owned by another release (demo/preview envs sharing the main app's
+ * Postgres) where this build must never apply DDL. The schema then may not
+ * match this build; persistence-backed features can fail at runtime.
  * A failure is rethrown to the caller (instrumentation fails the boot in
  * production rather than serving with a half-migrated schema).
  */
 export async function runAppPostgresMigrations(): Promise<void> {
+  const skip = process.env.APP_POSTGRES_SKIP_MIGRATIONS?.trim().toLowerCase();
+  if (skip === "1" || skip === "true") {
+    console.warn(
+      "[app-postgres] APP_POSTGRES_SKIP_MIGRATIONS is set; skipping schema migrations. The database schema may not match this build."
+    );
+    return;
+  }
   const url = process.env.DATABASE_URL?.trim();
   if (!url) {
     console.warn(
