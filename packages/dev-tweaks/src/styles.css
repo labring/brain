@@ -2,52 +2,101 @@
  * Dev tweaks panel — always-dark, self-owned skin on `--dtp-*` variables.
  * The package ships its own tokens and never reads host theme tokens; the
  * only host bridges are optional overrides passed down as CSS variables:
- * `--dtp-font-sans`, `--dtp-font-mono`, `--dtp-card-bg`, `--dtp-card-ring`.
+ * `--dtp-font-sans`, `--dtp-font-mono`, `--dtp-card-ring`.
  *
- * Palette + restraint: vercel.com/design.md (Geist dark grays, monochrome,
- * color only for meaning — amber = mock, blue = focus).
+ * Material: one lifted gray ground with every surface above it painted as
+ * white at a low alpha, so the panel reads as a single material lit at four
+ * levels rather than five separately mixed grays (dialkit's glass skin).
+ * Color only for meaning — amber = mock, blue = focus.
  * Shape: a tweak-panel row stack — every control is a filled chip of the same
  * height, label left / value right, and a slider paints its fill into the
  * chip itself rather than sitting on a separate track.
  */
 
 .dtp-skin {
-  /* Geist dark scale */
-  --dtp-bg: #0a0a0a;
-  --dtp-bg-raised: #1a1a1a;
-  --dtp-bg-hover: #202020;
-  --dtp-bg-fill: #2e2e2e;
-  --dtp-bg-fill-hover: #3a3a3a;
-  --dtp-border: #232323;
-  --dtp-border-strong: #343434;
-  --dtp-text: #ededed;
-  --dtp-text-dim: #a1a1a1;
-  --dtp-text-faint: #6f6f6f;
+  --dtp-bg: #212121;
+
+  /* Surfaces — white over the ground, not standalone grays. */
+  --dtp-surface: rgb(255 255 255 / 0.05);
+  --dtp-surface-hover: rgb(255 255 255 / 0.1);
+  --dtp-surface-strong: rgb(255 255 255 / 0.11);
+  --dtp-divider: rgb(255 255 255 / 0.06);
+  --dtp-border: rgb(255 255 255 / 0.1);
+  --dtp-border-strong: rgb(255 255 255 / 0.15);
+
+  /* Three levels of text, and one more for anything disabled. */
+  --dtp-text: #fff;
+  --dtp-text-dim: rgb(255 255 255 / 0.7);
+  --dtp-text-faint: rgb(255 255 255 / 0.4);
+  --dtp-text-off: rgb(255 255 255 / 0.18);
+
   --dtp-focus: #0070f3;
   --dtp-mock: #f5a623;
   --dtp-radius: 14px;
   --dtp-radius-s: 8px;
-  --dtp-radius-xs: 5px;
+  --dtp-radius-xs: 6px;
   --dtp-row-h: 36px;
   --dtp-font: var(--dtp-font-sans, Geist, ui-sans-serif, system-ui, sans-serif);
   --dtp-mono: var(--dtp-font-mono, "Geist Mono", ui-monospace, monospace);
 }
 
-/* ---------- frame chrome (page docked as an inset card) ---------- */
+/* ---------- frame mode (the page's own <body> is the inset card) ---------- */
 
-.dtp-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: rgb(0 0 0 / 0.4);
+/*
+ * Frame mode does not wrap the page in a card — it turns `<body>` into one.
+ *
+ * `contain: layout` is the whole trick. It makes the body the containing
+ * block for every `position: fixed` descendant *and* for everything React
+ * portals into `document.body`, so dialogs, sheets, menus, tooltips and
+ * toasts land inside the card without one line of change in the host's
+ * components. It also makes the body a formatting context root, which stops
+ * the usual body-to-viewport overflow propagation — so `overflow: hidden`
+ * clips at the card's rounded corners instead of at the window edge.
+ *
+ * `<html>` carries the scrim. Without a background of its own the body's
+ * background propagates to the canvas and paints the whole window.
+ *
+ * The card wears whatever background the host already gave its body, so
+ * there is nothing to bridge: the docked page keeps its real surface.
+ *
+ * Nothing the panel renders can live inside a contained body, so the panel
+ * rides the top layer instead — see `.dtp-panel[popover]`.
+ */
+
+.dtp-frame-host {
+  --dtp-frame-gap: 32px;
+  --dtp-frame-panel-w: 384px;
+  --dtp-frame-ms: 300ms;
+  --dtp-frame-radius: 14px;
+  --dtp-frame-scrim: rgb(0 0 0 / 0.4);
+  transition: background-color var(--dtp-frame-ms) ease;
 }
 
-.dtp-card {
-  position: relative;
-  z-index: 1;
+.dtp-frame-host > body {
+  transition:
+    margin var(--dtp-frame-ms) ease,
+    height var(--dtp-frame-ms) ease,
+    border-radius var(--dtp-frame-ms) ease,
+    box-shadow var(--dtp-frame-ms) ease;
+}
+
+.dtp-framed {
+  /* The card measures against the root, so the root needs a definite height. */
+  height: 100%;
+  background-color: var(--dtp-frame-scrim);
+}
+
+.dtp-framed > body {
+  height: calc(100% - var(--dtp-frame-gap) * 2);
+  margin: var(--dtp-frame-gap);
+  margin-right: calc(var(--dtp-frame-gap) * 2 + var(--dtp-frame-panel-w));
+  contain: layout;
   overflow: hidden;
-  background: var(--dtp-card-bg, canvas);
+  border-radius: var(--dtp-frame-radius);
+  /* Ring as a shadow layer — no 1px of layout shift when it appears. */
+  box-shadow:
+    0 0 0 1px var(--dtp-card-ring, rgb(255 255 255 / 0.1)),
+    0 24px 64px -24px rgb(0 0 0 / 0.6);
 }
 
 /* ---------- panel ---------- */
@@ -57,14 +106,29 @@
   flex-direction: column;
   overflow: hidden;
   font-family: var(--dtp-font);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--dtp-text);
   color-scheme: dark;
-  background: var(--dtp-bg);
+  /* Held just off opaque so the blur has something to do. */
+  background: color-mix(in srgb, var(--dtp-bg) 92%, transparent);
   border: 1px solid var(--dtp-border);
   border-radius: var(--dtp-radius);
-  box-shadow: 0 12px 48px -12px rgb(0 0 0 / 0.7);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(20px);
+}
+
+/*
+ * Top-layer panel. The UA popover rules have to be undone: they force
+ * `inset: 0`, `margin: auto` and fit-content sizing, which would fight the
+ * geometry the panel sets inline.
+ */
+.dtp-panel[popover] {
+  inset: auto;
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
 }
 
 .dtp-panel *:focus-visible {
@@ -79,9 +143,9 @@
   flex: none;
   gap: 2px;
   align-items: center;
-  height: 48px;
-  padding: 0 10px 0 16px;
-  border-bottom: 1px solid var(--dtp-border);
+  height: 44px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--dtp-divider);
 }
 
 .dtp-panel[data-mode="float"] .dtp-header {
@@ -97,9 +161,9 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
@@ -116,17 +180,17 @@
   border: none;
   border-radius: var(--dtp-radius-xs);
   transition:
-    color 120ms ease,
-    background-color 120ms ease;
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .dtp-iconbtn:hover:not(:disabled) {
   color: var(--dtp-text);
-  background: var(--dtp-bg-raised);
+  background: var(--dtp-surface);
 }
 
 .dtp-iconbtn:disabled {
-  color: #3a3a3a;
+  color: var(--dtp-text-off);
   cursor: default;
 }
 
@@ -136,19 +200,18 @@
   gap: 7px;
   align-items: center;
   height: 40px;
-  padding: 0 10px 0 16px;
-  font-size: 11px;
+  padding: 0 10px 0 14px;
+  font-size: 12px;
   color: var(--dtp-text-faint);
-  border-top: 1px solid var(--dtp-border);
+  border-top: 1px solid var(--dtp-divider);
 }
 
 .dtp-kbd {
   padding: 2px 5px;
   font-family: var(--dtp-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--dtp-text-dim);
-  background: var(--dtp-bg-raised);
-  border: 1px solid var(--dtp-border);
+  background: var(--dtp-surface);
   border-radius: 4px;
 }
 
@@ -157,26 +220,25 @@
   padding: 0 10px;
   margin-left: auto;
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--dtp-text-dim);
   cursor: pointer;
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   border-radius: var(--dtp-radius-xs);
   transition:
-    color 120ms ease,
-    background-color 120ms ease,
-    border-color 120ms ease;
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .dtp-clearall:hover:not(:disabled) {
   color: var(--dtp-text);
-  background: var(--dtp-bg-raised);
-  border-color: var(--dtp-border);
+  background: var(--dtp-surface);
 }
 
 .dtp-clearall:disabled {
-  color: #3a3a3a;
+  color: var(--dtp-text-off);
   cursor: default;
 }
 
@@ -186,8 +248,8 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 22px;
-  padding: 14px 12px 16px;
+  gap: 18px;
+  padding: 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-color: var(--dtp-border-strong) transparent;
@@ -200,66 +262,64 @@
 
 .dtp-body::-webkit-scrollbar-thumb {
   background: var(--dtp-border-strong);
-  border: 2px solid var(--dtp-bg);
+  background-clip: content-box;
+  border: 2px solid transparent;
   border-radius: 4px;
 }
 
+/* Top-level section title — the panel's own voice, above the group titles. */
 .dtp-sectionhead {
   display: flex;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--dtp-text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dtp-text);
+  letter-spacing: -0.01em;
 }
 
-/* Whole-row toggle: the trailing hairline lives inside the button. */
+/* Whole-row toggle; the caret closes the row at its right edge. */
 .dtp-sectiontoggle {
   display: flex;
   flex: 1;
-  gap: 8px;
+  gap: 7px;
   align-items: center;
   min-width: 0;
-  height: 22px;
+  height: 28px;
   padding: 0;
   font: inherit;
   color: inherit;
   text-align: left;
-  text-transform: inherit;
-  letter-spacing: inherit;
   cursor: pointer;
   background: transparent;
   border: none;
   border-radius: var(--dtp-radius-xs);
-  transition: color 120ms ease;
-}
-
-.dtp-sectiontoggle:hover {
-  color: var(--dtp-text-dim);
-}
-
-.dtp-sectiontoggle::after {
-  flex: 1;
-  content: "";
-  border-top: 1px solid var(--dtp-border);
 }
 
 .dtp-sectionhead .dtp-count {
   font-family: var(--dtp-mono);
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--dtp-text-faint);
   letter-spacing: 0;
 }
 
+/* Disclosure caret — shared by section and group headers, pinned right. */
+.dtp-chevron {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+  color: var(--dtp-text-faint);
+  transition: transform 200ms ease;
+}
+
 /* Inner body of a collapsible section — breathing room below the header. */
 .dtp-sectionbody {
-  padding-top: 10px;
+  padding-top: 6px;
 }
 
 .dtp-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   border-radius: var(--dtp-radius-s);
 }
 
@@ -279,9 +339,9 @@
 
 .dtp-empty {
   padding: 12px 14px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--dtp-text-faint);
-  background: var(--dtp-bg-raised);
+  background: var(--dtp-surface);
   border-radius: var(--dtp-radius-s);
 }
 
@@ -299,7 +359,7 @@
   align-items: center;
   min-width: 0;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dtp-text-faint);
 }
 
@@ -323,13 +383,13 @@
   border: none;
   border-radius: var(--dtp-radius-xs);
   transition:
-    color 120ms ease,
-    background-color 120ms ease;
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .dtp-active-x:hover {
   color: var(--dtp-text);
-  background: var(--dtp-bg-hover);
+  background: var(--dtp-surface-hover);
 }
 
 /* ---------- groups ---------- */
@@ -339,21 +399,17 @@
   flex-direction: column;
 }
 
-.dtp-group + .dtp-group {
-  margin-top: 12px;
+/* Groups are separated by a hairline they share, not by a gap. */
+.dtp-sectionbody > .dtp-group + .dtp-group {
+  margin-top: 4px;
+  border-top: 1px solid var(--dtp-divider);
 }
 
 .dtp-grouprow {
   display: flex;
   align-items: center;
-  height: 32px;
-  padding-right: 6px;
-  border-radius: var(--dtp-radius-s);
-  transition: background-color 120ms ease;
-}
-
-.dtp-grouprow:hover {
-  background: var(--dtp-bg-raised);
+  height: var(--dtp-row-h);
+  padding-right: 4px;
 }
 
 .dtp-grouphead {
@@ -363,21 +419,22 @@
   align-items: center;
   min-width: 0;
   height: 100%;
-  padding: 0 8px 0 6px;
+  padding: 0;
   font: inherit;
-  color: var(--dtp-text);
+  color: var(--dtp-text-dim);
   text-align: left;
   cursor: pointer;
   background: transparent;
   border: none;
-  border-radius: var(--dtp-radius-s);
+  transition: color 150ms ease;
 }
 
-.dtp-chevron {
-  display: inline-flex;
-  flex: none;
-  color: var(--dtp-text-faint);
-  transition: transform 200ms ease;
+.dtp-grouphead:hover {
+  color: var(--dtp-text);
+}
+
+.dtp-grouphead .dtp-chevron {
+  padding-left: 6px;
 }
 
 .dtp-group[data-collapsed="true"] .dtp-chevron {
@@ -387,16 +444,17 @@
 .dtp-grouptitle {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
 
 .dtp-tag {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--dtp-text-faint);
   white-space: nowrap;
 }
@@ -408,7 +466,7 @@
   font-size: 9px;
   color: var(--dtp-mock);
   letter-spacing: 0.08em;
-  background: rgb(245 166 35 / 0.1);
+  background: rgb(245 166 35 / 0.12);
   border-radius: 4px;
 }
 
@@ -430,8 +488,8 @@
 .dtp-groupbody-pad {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 5px 0 2px;
+  gap: 6px;
+  padding: 2px 0 12px;
 }
 
 /* ---------- control rows ---------- */
@@ -446,19 +504,14 @@
   gap: 10px;
   align-items: center;
   min-height: var(--dtp-row-h);
-  padding: 0 12px;
-  background: var(--dtp-bg-raised);
+  padding: 0 10px 0 12px;
+  background: var(--dtp-surface);
   border-radius: var(--dtp-radius-s);
-  /* Hairline edge — on a near-black ground the chips need a defined rim. */
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
-  transition:
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+  transition: background-color 150ms ease;
 }
 
 .dtp-row:hover {
-  background: var(--dtp-bg-hover);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+  background: var(--dtp-surface-hover);
 }
 
 .dtp-label {
@@ -471,7 +524,8 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--dtp-text-dim);
   white-space: nowrap;
 }
@@ -497,20 +551,20 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  margin-right: -5px;
+  margin-right: -4px;
   color: var(--dtp-text-faint);
   cursor: pointer;
   background: transparent;
   border: none;
   border-radius: var(--dtp-radius-xs);
   transition:
-    color 120ms ease,
-    background-color 120ms ease;
+    color 150ms ease,
+    background-color 150ms ease;
 }
 
 .dtp-reset:hover {
   color: var(--dtp-text);
-  background: var(--dtp-bg-fill);
+  background: var(--dtp-surface-strong);
 }
 
 .dtp-val {
@@ -518,10 +572,16 @@
   z-index: 1;
   flex: none;
   font-family: var(--dtp-mono);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--dtp-text);
+  color: var(--dtp-text-dim);
   text-align: right;
+}
+
+.dtp-row[data-ov="true"] .dtp-val,
+.dtp-row:hover .dtp-val {
+  color: var(--dtp-text);
 }
 
 .dtp-val i {
@@ -555,6 +615,7 @@
 
 .dtp-slider-track {
   position: relative;
+  display: flex;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -562,34 +623,69 @@
   border-radius: var(--dtp-radius-s);
 }
 
-.dtp-slider-indicator {
+/*
+ * Step ticks, drawn under the fill so the fill swallows them as it passes —
+ * the row keeps its calm until a pointer is on it.
+ */
+.dtp-slider-ticks {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  background: var(--dtp-bg-fill);
-  transition: background-color 120ms ease;
+  inset: 0;
+  pointer-events: none;
 }
 
-.dtp-row:hover .dtp-slider-indicator {
-  background: var(--dtp-bg-fill-hover);
-}
-
-/* Thumb: a hairline marker at the fill edge, not a knob. base-ui positions it
-   inline (start edge + centered translate), so only the shape is ours. */
-.dtp-slider-thumb {
-  width: 2px;
-  height: 100%;
-  background: var(--dtp-text-faint);
-  border-radius: 1px;
+.dtp-slider-tick {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 8px;
+  background: var(--dtp-border-strong);
+  border-radius: 999px;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transform: translate(-50%, -50%);
+  transition: opacity 200ms ease;
+}
+
+.dtp-row:hover .dtp-slider-tick,
+.dtp-slider[data-dragging] .dtp-slider-tick {
+  opacity: 1;
+}
+
+.dtp-slider-indicator {
+  background: var(--dtp-surface-strong);
+  transition: background-color 150ms ease;
+}
+
+.dtp-row:hover .dtp-slider-indicator,
+.dtp-slider[data-dragging] .dtp-slider-indicator {
+  background: var(--dtp-border-strong);
+}
+
+/*
+ * Thumb: a short rounded bar at the fill edge, not a knob. base-ui positions
+ * it with the `translate` property, which leaves `transform` free for the
+ * idle-to-active grow.
+ */
+.dtp-slider-thumb {
+  width: 3px;
+  height: 20px;
+  background: var(--dtp-text);
+  border-radius: 999px;
+  opacity: 0;
+  transform: scaleX(0.25);
+  transition:
+    opacity 150ms ease,
+    transform 250ms cubic-bezier(0.3, 0.8, 0.4, 1);
 }
 
 .dtp-row:hover .dtp-slider-thumb,
-.dtp-slider-thumb[data-dragging],
 .dtp-slider-thumb:focus-visible {
-  opacity: 1;
+  opacity: 0.5;
+  transform: scaleX(1);
+}
+
+.dtp-slider-thumb[data-dragging] {
+  opacity: 0.9;
+  transform: scaleX(1);
 }
 
 /* number (base-ui number field) */
@@ -608,22 +704,27 @@
   height: 24px;
   padding: 0;
   font-family: var(--dtp-mono);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--dtp-text);
+  color: var(--dtp-text-dim);
   text-align: right;
   appearance: textfield;
   background: transparent;
   border: none;
   border-bottom: 1px solid transparent;
-  transition: border-color 120ms ease;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease;
 }
 
 .dtp-row:hover .dtp-num {
+  color: var(--dtp-text);
   border-bottom-color: var(--dtp-border-strong);
 }
 
 .dtp-num:focus {
+  color: var(--dtp-text);
   outline: none;
   border-bottom-color: var(--dtp-text-faint);
 }
@@ -634,7 +735,7 @@
 }
 
 .dtp-unit {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dtp-text-faint);
 }
 
@@ -647,33 +748,31 @@
   flex: none;
   grid-template-columns: 1fr 1fr;
   align-items: center;
-  width: 72px;
-  height: 26px;
-  padding: 0;
-  margin-right: -4px;
+  width: 76px;
+  height: 28px;
+  padding: 2px;
+  margin-right: -6px;
   margin-left: auto;
   font: inherit;
   cursor: pointer;
-  background: rgb(0 0 0 / 0.55);
-  border: 1px solid rgb(255 255 255 / 0.07);
-  border-radius: 7px;
+  background: transparent;
+  border: none;
+  border-radius: var(--dtp-radius-s);
 }
 
+/* The pill is the only filled thing — the track stays open. */
 .dtp-seg-thumb {
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: calc(50% - 3px);
-  height: calc(100% - 6px);
-  background: var(--dtp-bg-fill);
-  border-radius: 4px;
-  transition:
-    transform 160ms cubic-bezier(0.3, 0.8, 0.4, 1),
-    background-color 160ms ease;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
+  background: var(--dtp-surface-strong);
+  border-radius: var(--dtp-radius-xs);
+  transition: transform 200ms cubic-bezier(0.3, 0.8, 0.4, 1);
 }
 
 .dtp-seg[aria-checked="true"] .dtp-seg-thumb {
-  background: var(--dtp-text);
   transform: translateX(100%);
 }
 
@@ -682,20 +781,16 @@
 .dtp-seg-on {
   position: relative;
   z-index: 1;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--dtp-text-faint);
   text-align: center;
-  transition: color 160ms ease;
+  transition: color 200ms ease;
 }
 
 .dtp-seg[aria-checked="false"] .dtp-seg-off,
 .dtp-seg[aria-checked="true"] .dtp-seg-on {
   color: var(--dtp-text);
-}
-
-.dtp-seg[aria-checked="true"] .dtp-seg-on {
-  color: #0a0a0a;
 }
 
 /* select (native) */
@@ -713,8 +808,9 @@
   height: 24px;
   padding: 0 18px 0 4px;
   font-family: var(--dtp-font);
-  font-size: 12px;
-  color: var(--dtp-text);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dtp-text-dim);
   text-align: right;
   text-align-last: right;
   appearance: none;
@@ -722,11 +818,17 @@
   background: transparent;
   border: none;
   border-radius: var(--dtp-radius-xs);
+  transition: color 150ms ease;
+}
+
+.dtp-row:hover .dtp-select,
+.dtp-row[data-ov="true"] .dtp-select {
+  color: var(--dtp-text);
 }
 
 .dtp-select option {
   color: var(--dtp-text);
-  background: var(--dtp-bg-raised);
+  background: var(--dtp-bg);
 }
 
 .dtp-selectwrap svg {
@@ -748,19 +850,21 @@
   position: relative;
   z-index: 1;
   display: flex;
-  gap: 7px;
+  gap: 8px;
   align-items: center;
   margin-left: auto;
 }
 
 .dtp-hex {
   font-family: var(--dtp-mono);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--dtp-text-dim);
   text-transform: uppercase;
 }
 
-.dtp-row[data-ov="true"] .dtp-hex {
+.dtp-row[data-ov="true"] .dtp-hex,
+.dtp-row:hover .dtp-hex {
   color: var(--dtp-text);
 }
 
@@ -807,7 +911,7 @@
   background: var(--dtp-border-strong);
   border-radius: 2px;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity 150ms ease;
 }
 
 .dtp-resize:hover::after {
@@ -827,22 +931,22 @@
   height: 32px;
   padding: 0 13px;
   font-family: var(--dtp-font);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--dtp-text);
   cursor: pointer;
-  background: color-mix(in srgb, var(--dtp-bg-raised) 92%, transparent);
+  background: color-mix(in srgb, var(--dtp-bg) 88%, transparent);
   border: 1px solid var(--dtp-border);
   border-radius: var(--dtp-radius-s);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  backdrop-filter: blur(20px);
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
+    background-color 150ms ease,
+    border-color 150ms ease;
 }
 
 .dtp-capsule:hover {
-  background: var(--dtp-bg-hover);
+  background: var(--dtp-bg);
   border-color: var(--dtp-border-strong);
 }
 
@@ -867,8 +971,8 @@
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .dtp-backdrop,
-  .dtp-card,
+  .dtp-frame-host,
+  .dtp-frame-host > body,
   .dtp-panel,
   .dtp-panel *,
   .dtp-capsule {
