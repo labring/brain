@@ -358,6 +358,75 @@ test("fails closed for deleted and unknown subscription statuses", async () => {
   }
 });
 
+test("treats a paused Free subscription as plan-change ready", async () => {
+  // PAUSED is the healthy state of a no-trial Free workspace; the platform
+  // creates those with CancelAtPeriodEnd already true.
+  const responses: Record<string, unknown> = {
+    ...RESPONSES,
+    "/api/billing/subscription": {
+      subscription: {
+        ...(
+          RESPONSES["/api/billing/subscription"] as {
+            subscription: Record<string, unknown>;
+          }
+        ).subscription,
+        CancelAtPeriodEnd: true,
+        PlanName: "Free",
+        Status: "PAUSED",
+      },
+    },
+    "/api/billing/subscription/last-transaction": {},
+  };
+  const snapshot = await loadBillingPlanSnapshot(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) =>
+        Promise.resolve(Response.json(responses[input.toString()])),
+      now: () => NOW,
+    }
+  );
+
+  assert.equal(snapshot.current.lifecycle, "active");
+  assert.equal(snapshot.current.warningStage, null);
+  assert.ok(snapshot.plans.every((plan) => plan.changeKind != null));
+});
+
+test("keeps a paused subscription's pending upgrade authoritative", async () => {
+  const responses: Record<string, unknown> = {
+    ...RESPONSES,
+    "/api/billing/subscription": {
+      subscription: {
+        ...(
+          RESPONSES["/api/billing/subscription"] as {
+            subscription: Record<string, unknown>;
+          }
+        ).subscription,
+        CancelAtPeriodEnd: true,
+        PlanName: "Free",
+        Status: "PAUSED",
+      },
+    },
+  };
+  const snapshot = await loadBillingPlanSnapshot(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) =>
+        Promise.resolve(Response.json(responses[input.toString()])),
+      now: () => NOW,
+    }
+  );
+
+  assert.equal(snapshot.current.lifecycle, "pending-upgrade");
+});
+
 test("plans outside the transition lists stay selectable as upgrades", async () => {
   const plansResponse = RESPONSES["/api/billing/plans"] as {
     plans: Record<string, unknown>[];

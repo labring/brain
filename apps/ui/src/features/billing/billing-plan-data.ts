@@ -272,8 +272,16 @@ function subscriptionLifecycle(input: {
   if (status === "deleted") {
     return "deleted";
   }
+  // PAUSED is the healthy resting state of a no-trial Free workspace. The
+  // platform creates those with CancelAtPeriodEnd already true, so paused
+  // must resolve before the cancelling branch can misread it as a pending
+  // deletion.
+  if (status === "paused") {
+    return input.hasPendingUpgrade ? "pending-upgrade" : "active";
+  }
   // Payment actions fail closed for statuses the client does not understand.
   if (status !== "normal") {
+    console.warn("[billing] unknown subscription status:", input.status);
     return "unavailable";
   }
   if (
