@@ -13,12 +13,18 @@ export const BILLING_DEV_MOCK_COOKIE = "sealai-billing-dev-mock";
 
 export const BILLING_DEV_SCENARIOS = [
   "payg",
+  "payg-debt",
+  "free",
+  "paused",
   "active",
   "active-balance",
   "cancelling",
   "payment-due",
   "payment-due-deletion",
+  "payment-due-final",
   "pending-upgrade",
+  "deleted",
+  "status-unknown",
   "mixed-workspaces",
 ] as const;
 

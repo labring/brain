@@ -15,8 +15,8 @@ import {
   BILLING_DEV_SCENARIOS,
   formatBillingDevMockCookie,
 } from "../../dev-mock-cookie";
-import { BILLING_ROUTES } from "../billing-route-table";
 import { billingDevMockResponse } from "./index";
+import { scenarioTestFetch } from "./scenario-test-fetch";
 
 /**
  * Pins every dev-mock scenario to the real loaders: each fixture payload must
@@ -24,23 +24,6 @@ import { billingDevMockResponse } from "./index";
  * on the state the scenario name promises. Also pins the write transitions —
  * a successful mutation must move the scenario cookie.
  */
-
-const ROUTE_TO_UPSTREAM = new Map<string, string>(
-  Object.values(BILLING_ROUTES).map((entry) => [
-    entry.apiPath,
-    entry.upstreamPathname,
-  ])
-);
-
-function requestPathname(input: Parameters<BillingFetch>[0]): string {
-  if (typeof input === "string") {
-    return input;
-  }
-  if (input instanceof URL) {
-    return input.pathname;
-  }
-  return new URL(input.url, "http://localhost").pathname;
-}
 
 function mockCookieHeader(scenario: string): string {
   return `${BILLING_DEV_MOCK_COOKIE}=${scenario}`;
@@ -56,19 +39,7 @@ function mockRequest(
   return request;
 }
 
-function mockFetchFor(scenario: string): BillingFetch {
-  return async (input, init) => {
-    const pathname = requestPathname(input);
-    const upstream = ROUTE_TO_UPSTREAM.get(pathname);
-    assert.ok(upstream, `route ${pathname} has an upstream mapping`);
-    const response = await billingDevMockResponse(
-      upstream,
-      mockRequest(pathname, scenario, init ?? undefined)
-    );
-    assert.ok(response, "mock mode answers the request");
-    return response;
-  };
-}
+const mockFetchFor: (scenario: string) => BillingFetch = scenarioTestFetch;
 
 function payRequest(scenario: string, operator: string): Request {
   return mockRequest("/api/billing/subscription/pay", scenario, {
@@ -97,6 +68,8 @@ const DATE_RANGE = {
   endTime: new Date().toISOString(),
   startTime: new Date(Date.now() - 31 * DAY_IN_MILLISECONDS).toISOString(),
 };
+
+const CREDITLESS_SCENARIOS = new Set(["free", "paused", "payg", "payg-debt"]);
 
 function loadPlanForScenario(scenario: string) {
   return loadBillingPlanSnapshot(CREDENTIALS, {
@@ -146,16 +119,16 @@ test("every scenario passes every loader's schemas", async () => {
         Number.isFinite(credits.totalMicroUnits),
       `${scenario}: AI Credits load`
     );
-    if (scenario === "payg") {
+    if (CREDITLESS_SCENARIOS.has(scenario)) {
       assert.equal(
         credits.totalMicroUnits,
         0,
-        `${scenario}: PAYG has no AI Credits`
+        `${scenario}: PAYG modes and Free plans have no AI Credits`
       );
     } else {
       assert.ok(
         credits.totalMicroUnits > 0,
-        `${scenario}: subscription includes AI Credits`
+        `${scenario}: paid subscription includes AI Credits`
       );
     }
   }
@@ -209,6 +182,67 @@ test("active derives an active stripe subscription with a card", async () => {
   assert.equal(plan.current.lifecycle, "active");
   assert.equal(plan.current.payMethod, "stripe");
   assert.equal(plan.card?.last4, "4242");
+  assert.ok(
+    plan.current.expireAt,
+    "ExpireAt carries a real date so the header Renewal Time renders"
+  );
+});
+
+test("payg-debt derives a PAYG workspace inside the debt pipeline", async () => {
+  const plan = await loadPlanForScenario("payg-debt");
+  assert.equal(plan.current.isPayg, true);
+  assert.equal(plan.current.lifecycle, "payment-due");
+  assert.equal(plan.current.warningStage, "expired");
+  assert.equal(
+    plan.current.warningDeadlineAt,
+    null,
+    "no period timestamps exist to derive a deletion date from"
+  );
+  const balance = await loadAccountBalance(
+    { appToken: "t", currency: "usd", kubeconfig: "k" },
+    mockFetchFor("payg-debt")
+  );
+  assert.ok(balance.microUnits < 0, "the account balance sits in debt");
+});
+
+test("free derives an active trial that never reads as cancelling", async () => {
+  const plan = await loadPlanForScenario("free");
+  assert.equal(plan.current.planName, "Free");
+  assert.equal(plan.current.cancelAtPeriodEnd, true);
+  assert.equal(plan.current.lifecycle, "active");
+  assert.equal(plan.current.warningStage, null);
+  assert.equal(plan.current.priceMicroUnits, 0);
+});
+
+test("paused derives a plan-change-ready Free subscription", async () => {
+  const plan = await loadPlanForScenario("paused");
+  assert.equal(plan.current.planName, "Free");
+  assert.equal(plan.current.lifecycle, "active");
+  assert.equal(plan.current.warningStage, null);
+  assert.equal(plan.current.expireAt, null, "no period is running");
+});
+
+test("deleted derives the terminal deleted lifecycle", async () => {
+  const plan = await loadPlanForScenario("deleted");
+  assert.equal(plan.current.lifecycle, "deleted");
+  assert.equal(plan.current.warningStage, null);
+});
+
+test("payment-due-final derives deletion-imminent with a past date", async () => {
+  const plan = await loadPlanForScenario("payment-due-final");
+  assert.equal(plan.current.lifecycle, "payment-due");
+  assert.equal(plan.current.warningStage, "deletion-imminent");
+  assert.ok(plan.current.warningDeadlineAt, "deletion date is derived");
+  assert.ok(
+    new Date(plan.current.warningDeadlineAt ?? "").getTime() < Date.now(),
+    "the derived deletion date is already behind us in the final stage"
+  );
+});
+
+test("status-unknown derives the fail-closed unavailable lifecycle", async () => {
+  const plan = await loadPlanForScenario("status-unknown");
+  assert.equal(plan.current.lifecycle, "unavailable");
+  assert.equal(plan.current.warningStage, null);
 });
 
 test("active-balance derives balance pay without a card", async () => {
@@ -296,11 +330,16 @@ test("mixed-workspaces spreads lifecycles across the workspace list", async () =
 test("pay transitions move the scenario cookie", async () => {
   const transitions: [string, string, string][] = [
     ["payg", "created", "active"],
+    ["payg-debt", "created", "active"],
+    ["deleted", "created", "active"],
     ["payment-due", "renewed", "active"],
     ["payment-due-deletion", "renewed", "active"],
+    ["payment-due-final", "renewed", "active"],
     ["active", "canceled", "cancelling"],
     ["cancelling", "resumed", "active"],
     ["active-balance", "upgraded", "active"],
+    ["free", "upgraded", "active"],
+    ["paused", "upgraded", "active"],
   ];
   for (const [from, operator, to] of transitions) {
     const response = await billingDevMockResponse(

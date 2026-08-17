@@ -44,6 +44,31 @@ const MOCK_WORKSPACES = {
   pro: "ns-mock-pro",
 } as const;
 
+/** Scenarios whose account sits in debt (deductions outrun the balance). */
+const DEBT_SCENARIOS = new Set<BillingDevScenario>([
+  "payg-debt",
+  "payment-due",
+  "payment-due-deletion",
+  "payment-due-final",
+]);
+
+/** Scenarios with no saved card: PAYG modes and never-paid Free plans. */
+const CARDLESS_SCENARIOS = new Set<BillingDevScenario>([
+  "active-balance",
+  "free",
+  "paused",
+  "payg",
+  "payg-debt",
+]);
+
+/** Scenarios with no subscription transaction history. */
+const TRANSACTIONLESS_SCENARIOS = new Set<BillingDevScenario>([
+  "free",
+  "paused",
+  "payg",
+  "payg-debt",
+]);
+
 function daysFromNow(days: number): string {
   return new Date(Date.now() + days * DAY_IN_MILLISECONDS).toISOString();
 }
@@ -59,6 +84,11 @@ function defaultWorkspace(): string {
   }
 }
 
+const MOCK_INVOICE_INFO = {
+  ID: "inv-mock-1",
+  PaymentUrl: "https://billing.example.com/invoice/inv-mock-1",
+};
+
 function subscriptionPayload(
   scenario: BillingDevScenario,
   workspace: string
@@ -67,10 +97,18 @@ function subscriptionPayload(
     // The upstream embeds a nil subscription and serializes only the type.
     return { type: "PAYG" };
   }
+  if (scenario === "payg-debt") {
+    // A PAYG workspace in debt: still no subscription row, so the status
+    // arrives without any period timestamps to derive dates from.
+    return { Status: "DEBT", type: "PAYG" };
+  }
+  // The upstream keeps ExpireAt >= CurrentPeriodEndAt and its Stripe path
+  // sets them equal, so the fixtures mirror that instead of null.
+  const periodEnd = daysFromNow(12);
   const base = {
     CancelAtPeriodEnd: false,
-    CurrentPeriodEndAt: daysFromNow(12),
-    ExpireAt: null,
+    CurrentPeriodEndAt: periodEnd,
+    ExpireAt: periodEnd,
     PayMethod: "stripe",
     PlanName: "Hobby",
     RegionDomain: REGION_DOMAIN,
@@ -84,36 +122,81 @@ function subscriptionPayload(
       return { ...base, PayMethod: "balance" };
     case "cancelling":
       return { ...base, CancelAtPeriodEnd: true };
+    // The platform creates Free subscriptions with CancelAtPeriodEnd already
+    // true; a trial runs a period, a paused (no-trial) Free has none.
+    case "free": {
+      const trialEnd = daysFromNow(10);
+      return {
+        ...base,
+        CancelAtPeriodEnd: true,
+        CurrentPeriodEndAt: trialEnd,
+        ExpireAt: trialEnd,
+        PlanName: "Free",
+      };
+    }
+    case "paused":
+      return {
+        ...base,
+        CancelAtPeriodEnd: true,
+        CurrentPeriodEndAt: "",
+        ExpireAt: null,
+        PlanName: "Free",
+        Status: "PAUSED",
+      };
+    case "deleted": {
+      const endedAt = daysFromNow(-30);
+      return {
+        ...base,
+        CurrentPeriodEndAt: endedAt,
+        ExpireAt: endedAt,
+        Status: "DELETED",
+      };
+    }
+    // The database serializes a NULL status as "" — the shape production
+    // actually produced, and what the client fails closed on.
+    case "status-unknown":
+      return { ...base, Status: "" };
     // Debt scenarios expire in the past: the upstream only reports DEBT*
     // once CurrentPeriodEndAt has passed, and the UI derives the resource
     // deletion date (expiry + 14 days) from it.
-    case "payment-due":
+    case "payment-due": {
+      const expiredAt = daysFromNow(-2);
       return {
         ...base,
-        CurrentPeriodEndAt: daysFromNow(-2),
-        InvoiceInfo: {
-          ID: "inv-mock-1",
-          PaymentUrl: "https://billing.example.com/invoice/inv-mock-1",
-        },
+        CurrentPeriodEndAt: expiredAt,
+        ExpireAt: expiredAt,
+        InvoiceInfo: MOCK_INVOICE_INFO,
         Status: "DEBT",
       };
-    case "payment-due-deletion":
+    }
+    case "payment-due-deletion": {
+      const expiredAt = daysFromNow(-8);
       return {
         ...base,
-        CurrentPeriodEndAt: daysFromNow(-8),
-        InvoiceInfo: {
-          ID: "inv-mock-1",
-          PaymentUrl: "https://billing.example.com/invoice/inv-mock-1",
-        },
+        CurrentPeriodEndAt: expiredAt,
+        ExpireAt: expiredAt,
+        InvoiceInfo: MOCK_INVOICE_INFO,
         Status: "DEBT_PRE_DELETION",
       };
+    }
+    // Past the 14-day grace: the derived deletion date is already behind us.
+    case "payment-due-final": {
+      const expiredAt = daysFromNow(-16);
+      return {
+        ...base,
+        CurrentPeriodEndAt: expiredAt,
+        ExpireAt: expiredAt,
+        InvoiceInfo: MOCK_INVOICE_INFO,
+        Status: "DEBT_FINAL_DELETION",
+      };
+    }
     default:
       return base;
   }
 }
 
 function subscriptionListPayload(context: FixtureContext): unknown[] {
-  if (context.scenario === "payg") {
+  if (context.scenario === "payg" || context.scenario === "payg-debt") {
     return [];
   }
   const current = subscriptionPayload(context.scenario, context.workspace);
@@ -438,10 +521,9 @@ function appCostsPayload(context: FixtureContext): unknown {
 
 const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   "/account/v1alpha1/account": ({ scenario }) => ({
-    account:
-      scenario === "payment-due" || scenario === "payment-due-deletion"
-        ? { Balance: 5_000_000, DeductionBalance: 11_320_000 }
-        : { Balance: 128_000_000, DeductionBalance: 23_450_000 },
+    account: DEBT_SCENARIOS.has(scenario)
+      ? { Balance: 5_000_000, DeductionBalance: 11_320_000 }
+      : { Balance: 128_000_000, DeductionBalance: 23_450_000 },
   }),
   // The production account service maps numbers to app-type codes (not
   // display names); the UI resolves codes to display names and icons.
@@ -513,17 +595,16 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
     ],
   }),
   "/account/v1alpha1/workspace-subscription/card-info": ({ scenario }) => ({
-    payment_method:
-      scenario === "payg" || scenario === "active-balance"
-        ? null
-        : {
-            card: {
-              brand: "visa",
-              exp_month: 12,
-              exp_year: 2030,
-              last4: "4242",
-            },
+    payment_method: CARDLESS_SCENARIOS.has(scenario)
+      ? null
+      : {
+          card: {
+            brand: "visa",
+            exp_month: 12,
+            exp_year: 2030,
+            last4: "4242",
           },
+        },
   }),
   "/account/v1alpha1/workspace-subscription/info": ({
     scenario,
@@ -546,7 +627,7 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
         },
       };
     }
-    if (scenario === "payg") {
+    if (TRANSACTIONLESS_SCENARIOS.has(scenario)) {
       return {};
     }
     // A settled record matching the mock checkout ids: the checkout dialog
@@ -600,29 +681,36 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
     };
   },
   // Mirrors the production Hobby plan's MaxResources (the scenarios' current
-  // plan) so downgrade checks compare realistic numbers.
-  "/account/v1alpha1/workspace/get-resource-quota": (context) => ({
-    quota: {
-      hard: {
-        "limits.cpu": "4",
-        "limits.memory": "4Gi",
-        "limits.nvidia.com/gpu": "0",
-        "requests.storage": "20Gi",
-        "services.nodeports": "8",
-        traffic: "53687091200",
-        ...(context.scenario === "payg" ? {} : { ai_quota: 3_000_000 }),
+  // plan) so downgrade checks compare realistic numbers. PAYG modes have no
+  // ai_quota key at all; Free plans carry one with the plan's zero allowance.
+  "/account/v1alpha1/workspace/get-resource-quota": (context) => {
+    const isPaygMode =
+      context.scenario === "payg" || context.scenario === "payg-debt";
+    const isFreePlan =
+      context.scenario === "free" || context.scenario === "paused";
+    return {
+      quota: {
+        hard: {
+          "limits.cpu": "4",
+          "limits.memory": "4Gi",
+          "limits.nvidia.com/gpu": "0",
+          "requests.storage": "20Gi",
+          "services.nodeports": "8",
+          traffic: "53687091200",
+          ...(isPaygMode ? {} : { ai_quota: isFreePlan ? 0 : 3_000_000 }),
+        },
+        used: {
+          "limits.cpu": "1500m",
+          "limits.memory": "3Gi",
+          "limits.nvidia.com/gpu": "0",
+          "requests.storage": "12Gi",
+          "services.nodeports": "2",
+          traffic: "26843545600",
+          ...(isPaygMode ? {} : { ai_quota: isFreePlan ? 0 : 1_200_000 }),
+        },
       },
-      used: {
-        "limits.cpu": "1500m",
-        "limits.memory": "3Gi",
-        "limits.nvidia.com/gpu": "0",
-        "requests.storage": "12Gi",
-        "services.nodeports": "2",
-        traffic: "26843545600",
-        ...(context.scenario === "payg" ? {} : { ai_quota: 1_200_000 }),
-      },
-    },
-  }),
+    };
+  },
 };
 
 interface WriteFixtureResult {
@@ -696,13 +784,21 @@ const PAY_TRANSITIONS: Record<
     "active-balance": "cancelling",
     "mixed-workspaces": "cancelling",
   },
-  created: { payg: "active" },
-  renewed: { "payment-due": "active", "payment-due-deletion": "active" },
+  // `deleted` is pre-wired for AIM-252: the UI still locks that lifecycle,
+  // but the backend treats DELETED as subscribable-again PAYG.
+  created: { deleted: "active", payg: "active", "payg-debt": "active" },
+  renewed: {
+    "payment-due": "active",
+    "payment-due-deletion": "active",
+    "payment-due-final": "active",
+  },
   resumed: { cancelling: "active" },
   upgraded: {
     active: "active",
     "active-balance": "active",
+    free: "active",
     "mixed-workspaces": "active",
+    paused: "active",
   },
 };
 
