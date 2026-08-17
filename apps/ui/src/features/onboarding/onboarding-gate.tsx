@@ -1,9 +1,9 @@
 "use client";
 
+import { type DevTweaksGroupDef, useDevTweaks } from "@workspace/dev-tweaks";
 import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 
-import { useDevTweaks } from "@/features/dev-tweaks/use-dev-tweaks";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 import {
@@ -31,15 +31,11 @@ import type {
 // dialog up — it cannot be closed from inside; switching the knob off is
 // the only exit. This protects the developer's real sampling state.
 const ONBOARDING_TWEAKS = {
-  note: "Opens the dialog unconditionally; Skip/Submit are inert while forced and the dialog stays open until the knob is switched off, so sampling state stays untouched.",
-  title: "Onboarding · sampling dialog",
-  tweaks: {
+  controls: {
     forceModal: {
-      label: "Force onboarding modal (0 off · 1 on)",
-      max: 1,
-      min: 0,
-      step: 1,
-      value: 0,
+      label: "Force onboarding modal",
+      type: "switch",
+      value: false,
     },
     // Only honored while the modal is forced: preview never redirects a
     // real survey in progress, where the forced-looking step could submit.
@@ -48,10 +44,15 @@ const ONBOARDING_TWEAKS = {
       max: 4,
       min: 0,
       step: 1,
+      type: "slider",
       value: 0,
     },
   },
-} as const;
+  feature: "onboarding",
+  kind: "tweak",
+  note: "Opens the dialog unconditionally; Skip/Submit are inert while forced and the dialog stays open until the knob is switched off, so sampling state stays untouched.",
+  title: "Onboarding · sampling dialog",
+} as const satisfies DevTweaksGroupDef;
 
 /**
  * The Onboarding Gate (ADR-0061): opportunistic and non-blocking. The console
@@ -65,8 +66,7 @@ export function OnboardingGate() {
   const namespace = useAtomValue(namespaceAtom);
   const [openForKey, setOpenForKey] = useState<string | null>(null);
   const { values } = useDevTweaks("onboarding", ONBOARDING_TWEAKS);
-  const forceOpen =
-    process.env.NODE_ENV === "development" && values.forceModal >= 0.5;
+  const forceOpen = process.env.NODE_ENV === "development" && values.forceModal;
   const previewStep =
     forceOpen && values.previewStep >= 1 && values.previewStep <= 4
       ? Math.round(values.previewStep)

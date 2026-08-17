@@ -3,6 +3,7 @@ import "server-only";
 import { fetchOrCreateAiProxyToken } from "./create-token";
 import { aiProxyOpenAiBaseUrl } from "./endpoints";
 import { clusterHostnameFromKubeconfigText } from "./kubeconfig-hostname";
+import { minifyKubeconfigForAiProxy } from "./minify-kubeconfig";
 
 const DEFAULT_AI_PROXY_TOKEN_NAME = "sealos-brain";
 
@@ -34,8 +35,8 @@ export async function resolveUserAiProxyCredentials(options: {
   kubeconfigText: string;
   signal?: AbortSignal;
 }): Promise<ResolveUserAiProxyCredentialsOutcome> {
-  const authorizationEncodedKubeconfig = options.encodedKubeconfig?.trim();
-  if (!authorizationEncodedKubeconfig) {
+  const clientEncodedKubeconfig = options.encodedKubeconfig?.trim();
+  if (!clientEncodedKubeconfig) {
     return { ok: false, reason: "missing-kubeconfig", status: 400 };
   }
 
@@ -46,6 +47,11 @@ export async function resolveUserAiProxyCredentials(options: {
     return { ok: false, reason: "invalid-kubeconfig", status: 400 };
   }
 
+  // The percent-encoded full kubeconfig can exceed the gateway header-size
+  // limit; strip it down to the active context before sending.
+  const authorizationEncodedKubeconfig = encodeURIComponent(
+    minifyKubeconfigForAiProxy(options.kubeconfigText)
+  );
   const configuredName =
     trimmedEnv(process.env.AI_PROXY_TOKEN_NAME) ?? DEFAULT_AI_PROXY_TOKEN_NAME;
   const tokenResult = await fetchOrCreateAiProxyToken({

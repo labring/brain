@@ -41,6 +41,14 @@ export type DeployTaskRunOutcome =
   | "failed";
 
 export interface DeployTaskHandleStateFields {
+  agentCheckpointId?: DeployTaskRow["agentCheckpointId"];
+  agentCompletionReceipt?: DeployTaskRow["agentCompletionReceipt"];
+  agentControlTokenHash?: DeployTaskRow["agentControlTokenHash"];
+  agentControlTokenRevokedAt?: DeployTaskRow["agentControlTokenRevokedAt"];
+  agentInputRevision?: DeployTaskRow["agentInputRevision"];
+  agentInputSchemaDigest?: DeployTaskRow["agentInputSchemaDigest"];
+  agentTemplateDigest?: DeployTaskRow["agentTemplateDigest"];
+  agentTurnCount?: DeployTaskRow["agentTurnCount"];
   artifactSummary?: DeployTaskArtifactSummary;
   blockingInputs?: DeployTaskBlockingInput[];
   canvasProjection?: DeploymentTaskCanvasProjection;
@@ -192,7 +200,10 @@ export function createDeployTaskHandle(
         },
         expectedLeaseEpoch: input.leaseEpoch,
         from: DEPLOY_TASK_LEASED_STATUSES,
-        set: { failureDetails: ack?.failureDetails ?? null },
+        set: {
+          agentControlTokenRevokedAt: new Date(),
+          failureDetails: ack?.failureDetails ?? null,
+        },
         taskId: input.taskId,
         to: "cancelled",
       });
@@ -248,6 +259,7 @@ export function createDeployTaskHandle(
     async complete(completion) {
       assertLive();
       const row = await transitionDeployTask(ctx, {
+        cancelRequest: "absent",
         event: completion?.event ?? {
           kind: "deployment_task.completed",
           message: "Deployment task completed.",

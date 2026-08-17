@@ -1,44 +1,28 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { ReactNode } from "react";
 
-const DevTweaksPane = dynamic(
-  () => import("./dev-tweaks-pane").then((mod) => mod.DevTweaksPane),
-  { ssr: false }
-);
-
-const BillingDevMockSection = dynamic(
-  () =>
-    import("@/features/billing/billing-dev-mock").then(
-      (mod) => mod.BillingDevMockSection
-    ),
-  { ssr: false }
-);
-
-const BillingDevMockBadge = dynamic(
-  () =>
-    import("@/features/billing/billing-dev-mock").then(
-      (mod) => mod.BillingDevMockBadge
-    ),
-  { ssr: false }
-);
+// Both halves of the gate are inlined at build time, so a real production
+// build (no demo flag) statically drops the dynamic import and tree-shakes
+// the whole panel away; `NEXT_PUBLIC_DEV_TWEAKS=1` opens the door for demo
+// deployments.
+const DevTweaksEnabled =
+  process.env.NODE_ENV === "development" ||
+  process.env.NEXT_PUBLIC_DEV_TWEAKS === "1"
+    ? dynamic(() =>
+        import("./dev-tweaks-enabled").then((mod) => mod.DevTweaksEnabled)
+      )
+    : null;
 
 /**
- * Dev-only composition root: mounts the generic dev tweaks pane (⌃⌥T) and
- * composes feature-owned pieces into it — the billing mock section and its
- * always-on badge. Deliberately the only place dev-tweaks meets a feature;
- * the pane itself stays feature-agnostic.
+ * Wraps the app with the dev tweaks provider, panel (frame mode docks the
+ * page into an inset card), and mock indicator. Inert in production: renders
+ * children untouched.
  */
-export function DevTweaks() {
-  if (process.env.NODE_ENV !== "development") {
-    return null;
+export function DevTweaks({ children }: { children: ReactNode }) {
+  if (!DevTweaksEnabled) {
+    return <>{children}</>;
   }
-  return (
-    <>
-      <DevTweaksPane>
-        <BillingDevMockSection />
-      </DevTweaksPane>
-      <BillingDevMockBadge />
-    </>
-  );
+  return <DevTweaksEnabled>{children}</DevTweaksEnabled>;
 }

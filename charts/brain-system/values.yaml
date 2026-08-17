@@ -112,9 +112,9 @@ ui:
     AP_USER_DOMAIN: ""
     AP_USER_DOMAIN_TLS_SECRET_NAME: ""
     API_URL: ""
+    APP_URL: ""
     BILLING_CURRENCY: "usd"
     BILLING_GPU_ENABLED: "false"
-    NEXT_PUBLIC_APP_URL: ""
     GTM_ID: ""
     DATABASE_URL: ""
     JWT_INTERNAL: ""
@@ -134,7 +134,12 @@ ui:
     DEVBOX_RUNTIME_IMAGE: ""
     DEVBOX_JWT_TTL_SECONDS: "14400"
     DEPLOY_DEVBOX_STORAGE_LIMIT: "10Gi"
-    # Optional. Leave empty to use the production brain-deploy skill source.
+    # Devbox-reachable Brain MCP endpoint. Leave empty to default to the UI
+    # public URL + /api/deploy-agent/mcp/v1; set explicitly when the UI is
+    # not publicly reachable from deployment Devboxes.
+    DEPLOY_AGENT_MCP_URL: ""
+    # Optional. Leave empty to use sealos-skills.git#main. Set this to a
+    # branch, tag, or commit ref when selecting another tested Skill source.
     DEPLOY_SKILL_SOURCE: ""
   resources:
     requests:

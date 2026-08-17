@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  type DevTweaksGroupDef,
+  type DevTweaksValues,
+  useDevTweaks,
+} from "@workspace/dev-tweaks";
 import dynamic from "next/dynamic";
 import {
   Component,
@@ -9,11 +14,6 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import type { DevTweaksGroupDef } from "@/features/dev-tweaks/dev-tweaks-store";
-import {
-  type DevTweakValues,
-  useDevTweaks,
-} from "@/features/dev-tweaks/use-dev-tweaks";
 import styles from "./horizon.module.css";
 import type { HorizonWebglPhase } from "./horizon-webgl";
 
@@ -21,14 +21,13 @@ const HorizonWebgl = dynamic(() => import("./horizon-webgl"), { ssr: false });
 
 /** Defaults mirror the `.horizon` custom-property block in horizon.module.css. */
 const HORIZON_TWEAKS = {
-  note: "horizon.module.css → .horizon",
-  title: "Project · horizon glow",
-  tweaks: {
+  controls: {
     bleedX: {
       cssVar: "--horizon-bleed-x",
       label: "Glow horizontal bleed",
       max: 30,
       min: 0,
+      type: "slider",
       unit: "%",
       value: 12,
     },
@@ -37,6 +36,7 @@ const HORIZON_TWEAKS = {
       max: 60,
       min: 6,
       step: 1,
+      type: "slider",
       value: 24,
     },
     canvasScale: {
@@ -44,6 +44,7 @@ const HORIZON_TWEAKS = {
       max: 1,
       min: 0.25,
       step: 0.05,
+      type: "slider",
       value: 0.5,
     },
     engineWebgl: {
@@ -51,6 +52,7 @@ const HORIZON_TWEAKS = {
       max: 1,
       min: 0,
       step: 1,
+      type: "slider",
       value: 1,
     },
     glowCore: {
@@ -58,6 +60,7 @@ const HORIZON_TWEAKS = {
       label: "Glow core intensity",
       max: 100,
       min: 0,
+      type: "slider",
       unit: "%",
       value: 56,
     },
@@ -66,6 +69,7 @@ const HORIZON_TWEAKS = {
       label: "Glow height",
       max: 90,
       min: 10,
+      type: "slider",
       unit: "%",
       value: 31,
     },
@@ -74,6 +78,7 @@ const HORIZON_TWEAKS = {
       label: "Glow mid intensity",
       max: 100,
       min: 0,
+      type: "slider",
       unit: "%",
       value: 38,
     },
@@ -82,6 +87,7 @@ const HORIZON_TWEAKS = {
       label: "Glow outer intensity",
       max: 100,
       min: 0,
+      type: "slider",
       unit: "%",
       value: 13,
     },
@@ -90,6 +96,7 @@ const HORIZON_TWEAKS = {
       label: "Glow width",
       max: 140,
       min: 20,
+      type: "slider",
       unit: "%",
       value: 102,
     },
@@ -98,6 +105,7 @@ const HORIZON_TWEAKS = {
       label: "Glow center Y",
       max: 150,
       min: 90,
+      type: "slider",
       unit: "%",
       value: 110,
     },
@@ -106,6 +114,7 @@ const HORIZON_TWEAKS = {
       label: "Hues blur",
       max: 80,
       min: 0,
+      type: "slider",
       unit: "px",
       value: 30,
     },
@@ -114,6 +123,7 @@ const HORIZON_TWEAKS = {
       label: "Hues cyan intensity",
       max: 100,
       min: 0,
+      type: "slider",
       unit: "%",
       value: 20,
     },
@@ -123,6 +133,7 @@ const HORIZON_TWEAKS = {
       max: 20,
       min: 1,
       step: 0.5,
+      type: "slider",
       unit: "s",
       value: 5,
     },
@@ -131,6 +142,7 @@ const HORIZON_TWEAKS = {
       label: "Hues violet intensity",
       max: 100,
       min: 0,
+      type: "slider",
       unit: "%",
       value: 24,
     },
@@ -140,6 +152,7 @@ const HORIZON_TWEAKS = {
       max: 0.2,
       min: 0,
       step: 0.005,
+      type: "slider",
       value: 0.05,
     },
     surgeBaseOpacity: {
@@ -148,6 +161,7 @@ const HORIZON_TWEAKS = {
       max: 1,
       min: 0,
       step: 0.05,
+      type: "slider",
       value: 0.55,
     },
     surgeCore: {
@@ -155,6 +169,7 @@ const HORIZON_TWEAKS = {
       label: "Surge core intensity",
       max: 100,
       min: 0,
+      type: "slider",
       unit: "%",
       value: 36,
     },
@@ -164,6 +179,7 @@ const HORIZON_TWEAKS = {
       max: 20,
       min: 1,
       step: 0.5,
+      type: "slider",
       unit: "s",
       value: 5,
     },
@@ -172,6 +188,7 @@ const HORIZON_TWEAKS = {
       label: "Surge height",
       max: 90,
       min: 10,
+      type: "slider",
       unit: "%",
       value: 40,
     },
@@ -180,6 +197,7 @@ const HORIZON_TWEAKS = {
       label: "Surge mid intensity",
       max: 100,
       min: 0,
+      type: "slider",
       unit: "%",
       value: 16,
     },
@@ -189,6 +207,7 @@ const HORIZON_TWEAKS = {
       max: 1,
       min: 0,
       step: 0.05,
+      type: "slider",
       value: 0.95,
     },
     surgeOpacityMin: {
@@ -197,6 +216,7 @@ const HORIZON_TWEAKS = {
       max: 1,
       min: 0,
       step: 0.05,
+      type: "slider",
       value: 0.45,
     },
     surgeScaleMax: {
@@ -205,6 +225,7 @@ const HORIZON_TWEAKS = {
       max: 1.8,
       min: 1,
       step: 0.01,
+      type: "slider",
       value: 1.22,
     },
     surgeScaleMin: {
@@ -213,6 +234,7 @@ const HORIZON_TWEAKS = {
       max: 1,
       min: 0.5,
       step: 0.01,
+      type: "slider",
       value: 0.85,
     },
     surgeWidth: {
@@ -220,6 +242,7 @@ const HORIZON_TWEAKS = {
       label: "Surge width",
       max: 160,
       min: 20,
+      type: "slider",
       unit: "%",
       value: 72,
     },
@@ -228,6 +251,7 @@ const HORIZON_TWEAKS = {
       label: "Surge center Y",
       max: 150,
       min: 90,
+      type: "slider",
       unit: "%",
       value: 114,
     },
@@ -237,6 +261,7 @@ const HORIZON_TWEAKS = {
       max: 20,
       min: 1,
       step: 0.5,
+      type: "slider",
       unit: "s",
       value: 6,
     },
@@ -246,6 +271,7 @@ const HORIZON_TWEAKS = {
       max: 1,
       min: 0,
       step: 0.05,
+      type: "slider",
       value: 0.75,
     },
     swellScaleMax: {
@@ -254,6 +280,7 @@ const HORIZON_TWEAKS = {
       max: 1.6,
       min: 1,
       step: 0.01,
+      type: "slider",
       value: 1.12,
     },
     swellScaleMin: {
@@ -262,13 +289,18 @@ const HORIZON_TWEAKS = {
       max: 1,
       min: 0.5,
       step: 0.01,
+      type: "slider",
       value: 0.9,
     },
   },
+  feature: "projects",
+  kind: "tweak",
+  note: "horizon.module.css → .horizon",
+  title: "Project · horizon glow",
 } satisfies DevTweaksGroupDef;
 
-export type HorizonTweakValues = DevTweakValues<
-  (typeof HORIZON_TWEAKS)["tweaks"]
+export type HorizonTweakValues = DevTweaksValues<
+  (typeof HORIZON_TWEAKS)["controls"]
 >;
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";

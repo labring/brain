@@ -90,6 +90,7 @@ export interface DeployTaskTransitionEvent {
 }
 
 export interface DeployTaskTransitionSet {
+  agentControlTokenRevokedAt?: Date | null;
   artifactSummary?: DeployTaskArtifactSummary;
   blockingInputs?: DeployTaskBlockingInput[];
   error?: string | null;
@@ -176,6 +177,13 @@ function transitionSets(
     sets.set("completed_at", sql`"completed_at" = now()`);
     sets.set("lease_owner", sql`"lease_owner" = NULL`);
     sets.set("lease_expires_at", sql`"lease_expires_at" = NULL`);
+    sets.set(
+      "agent_control_token_revoked_at",
+      sql`"agent_control_token_revoked_at" = CASE
+        WHEN "agent_control_token_hash" IS NULL THEN "agent_control_token_revoked_at"
+        ELSE COALESCE("agent_control_token_revoked_at", now())
+      END`
+    );
   } else {
     sets.set("completed_at", sql`"completed_at" = NULL`);
   }
@@ -202,6 +210,12 @@ function transitionSets(
   }
 
   const extra = input.set ?? {};
+  if ("agentControlTokenRevokedAt" in extra) {
+    sets.set(
+      "agent_control_token_revoked_at",
+      sql`"agent_control_token_revoked_at" = ${extra.agentControlTokenRevokedAt ?? null}`
+    );
+  }
   if (extra.phase != null) {
     sets.set("phase", sql`"phase" = ${extra.phase}`);
   }

@@ -368,6 +368,7 @@ async function insertCreatedDeployTask(
       .values({
         id,
         actorUserId: null,
+        agentProtocol: "mcp-v1",
         artifactSummary:
           inheritedIdentities == null
             ? {}
@@ -520,6 +521,7 @@ async function cancelParkedTask(
       },
     },
     from: [from],
+    set: { agentControlTokenRevokedAt: new Date() },
     taskId,
     to: "cancelled",
   });

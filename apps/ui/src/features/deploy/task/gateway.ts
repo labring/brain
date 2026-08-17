@@ -1,7 +1,10 @@
 import "server-only";
 
 import type { DevboxInfo } from "@/lib/devbox/types";
-import { buildGatewayPrompt, buildGatewayRepairPrompt } from "./gateway-prompt";
+import {
+  buildManagedGatewayPrompt,
+  type ManagedDeployResumeMode,
+} from "./gateway-prompt";
 import {
   deployTaskRunSignal,
   recordDeployTaskEvent,
@@ -390,18 +393,90 @@ async function waitForCodexGatewayReady(
 async function createGatewaySession(
   context: GatewayContext,
   deadlineAtMs: number,
-  runSignal: AbortSignal
+  runSignal: AbortSignal,
+  options?: {
+    threadId?: string | null;
+  }
 ): Promise<CodexGatewaySessionResponse> {
   return await gatewayRequest<CodexGatewaySessionResponse>(
     context,
     "/api/sessions",
     {
-      body: JSON.stringify({ model: DEPLOY_GATEWAY_MODEL }),
+      body: JSON.stringify({
+        model: DEPLOY_GATEWAY_MODEL,
+        ...(options?.threadId == null ? {} : { threadId: options.threadId }),
+      }),
       method: "POST",
     },
     deadlineAtMs,
     runSignal
   );
+}
+
+async function resolveGatewaySession(input: {
+  context: GatewayContext;
+  deadlineAtMs: number;
+  existingSessionId?: string | null;
+  existingThreadId?: string | null;
+  runSignal: AbortSignal;
+}): Promise<{
+  created: boolean;
+  sessionId: string;
+  state: CodexGatewayState;
+}> {
+  const requestedSessionId = input.existingSessionId;
+  if (requestedSessionId != null) {
+    const existingSessionId = safeGatewaySessionIdentifier(requestedSessionId);
+    if (existingSessionId == null) {
+      throw new CodexGatewayApiError(
+        "Invalid existing Codex gateway session identifier.",
+        502
+      );
+    }
+    try {
+      const existing = await getGatewaySessionState(
+        input.context,
+        existingSessionId,
+        input.deadlineAtMs,
+        input.runSignal
+      );
+      return {
+        created: false,
+        sessionId: existingSessionId,
+        state: existing.state,
+      };
+    } catch (error) {
+      if (
+        !(error instanceof CodexGatewayApiError) ||
+        (error.status !== 404 && error.status !== 410)
+      ) {
+        throw error;
+      }
+      if (input.existingThreadId == null) {
+        throw new CodexGatewayApiError(
+          "Codex gateway session was lost and no resumable Thread is recorded.",
+          409
+        );
+      }
+    }
+  }
+
+  const session = await createGatewaySession(
+    input.context,
+    input.deadlineAtMs,
+    input.runSignal,
+    {
+      threadId: input.existingThreadId,
+    }
+  );
+  const sessionId = safeGatewaySessionIdentifier(session.sessionId);
+  if (sessionId == null) {
+    throw new CodexGatewayApiError(
+      "Codex gateway returned an invalid session identifier.",
+      502
+    );
+  }
+  return { created: true, sessionId, state: session.state };
 }
 
 async function sendGatewayTurn(
@@ -625,12 +700,16 @@ async function projectGatewayState(input: {
 }): Promise<void> {
   await updateDeployTaskState(input.taskId, {
     gatewayStateSnapshot: gatewayStateSnapshot({ state: input.state }),
+    ...(input.state.threadId == null
+      ? {}
+      : { gatewayThreadId: input.state.threadId }),
   });
 }
 
 async function waitForGatewayTurnCompletion(input: {
   context: GatewayContext;
   deadlineAtMs: number;
+  onPoll?: () => Promise<void>;
   runSignal: AbortSignal;
   sessionId: string;
   taskId: string;
@@ -645,6 +724,7 @@ async function waitForGatewayTurnCompletion(input: {
       input.deadlineAtMs,
       input.runSignal
     );
+    await input.onPoll?.();
     await projectGatewayState({
       state: sessionState.state,
       taskId: input.taskId,
@@ -712,9 +792,16 @@ export async function persistDeployGatewayEvent(input: {
 export async function runDeployTaskGateway(input: {
   context: GatewayContext;
   deadlineAtMs: number;
-  repairOutput?: boolean;
+  existingSessionId?: string | null;
+  onPoll?: () => Promise<void>;
+  repairFindings?: readonly string[];
+  resumeMode: ManagedDeployResumeMode;
   task: DeployTaskRow;
-}): Promise<void> {
+}): Promise<string> {
+  let managedPhase: "apply" | "plan" | "verify" = "plan";
+  if (input.resumeMode === "repair") {
+    managedPhase = "apply";
+  }
   const runSignal = deployTaskRunSignal(input.task.id);
   throwIfDeployTaskAborted(input.task.id);
   const gatewayUrl = safeCodexGatewayUrl(input.context.url);
@@ -723,37 +810,57 @@ export async function runDeployTaskGateway(input: {
   }
   await updateDeployTaskState(input.task.id, {
     gatewayUrl,
-    phase: "plan",
+    phase: managedPhase,
   });
   await recordDeployTaskEvent(input.task.id, {
     kind: "deploy_task.gateway_waiting",
     message: "Waiting for Codex gateway.",
-    phase: "plan",
+    phase: managedPhase,
   });
 
   await waitForCodexGatewayReady(input.context, input.deadlineAtMs, runSignal);
 
-  const session = await createGatewaySession(
-    input.context,
-    input.deadlineAtMs,
-    runSignal
-  );
-  const sessionId = safeGatewaySessionIdentifier(session.sessionId);
-  if (sessionId == null) {
-    throw new CodexGatewayApiError(
-      "Codex gateway returned an invalid session identifier.",
-      502
-    );
-  }
+  const session = await resolveGatewaySession({
+    context: input.context,
+    deadlineAtMs: input.deadlineAtMs,
+    existingSessionId:
+      input.existingSessionId ?? input.task.gatewaySessionId ?? null,
+    existingThreadId: input.task.gatewayThreadId,
+    runSignal,
+  });
+  const { sessionId } = session;
   await updateDeployTaskState(input.task.id, {
     gatewaySessionId: sessionId,
+    gatewayThreadId: session.state.threadId ?? input.task.gatewayThreadId,
   });
   await recordDeployTaskEvent(input.task.id, {
-    kind: "deploy_task.gateway_session_created",
-    message: "Codex gateway session is ready.",
+    kind: session.created
+      ? "deploy_task.gateway_session_created"
+      : "deploy_task.gateway_session_resumed",
+    message: session.created
+      ? "Codex gateway session is ready."
+      : "Codex gateway session was resumed.",
     payload: {},
-    phase: "plan",
+    phase: managedPhase,
   });
+
+  if (!session.created && session.state.activeTurn) {
+    await waitForGatewayTurnCompletion({
+      context: input.context,
+      deadlineAtMs: input.deadlineAtMs,
+      runSignal,
+      sessionId,
+      taskId: input.task.id,
+      onPoll: input.onPoll,
+    });
+    await recordDeployTaskEvent(input.task.id, {
+      kind: "deploy_task.gateway_turn_completed",
+      message: "Recovered Codex gateway turn completed.",
+      payload: {},
+      phase: managedPhase,
+    });
+    return sessionId;
+  }
 
   let turnMayBeActive = false;
   let turnSubmissionConfirmed = false;
@@ -792,12 +899,15 @@ export async function runDeployTaskGateway(input: {
     if (turnBoundarySignal.aborted) {
       interruptOnBoundary();
     }
+    const prompt = buildManagedGatewayPrompt({
+      repairFindings: input.repairFindings,
+      resumeMode: input.resumeMode,
+      task: input.task,
+    });
     const turn = await sendGatewayTurn(
       input.context,
       sessionId,
-      input.repairOutput
-        ? buildGatewayRepairPrompt(input.task)
-        : buildGatewayPrompt(input.task),
+      prompt,
       input.deadlineAtMs,
       runSignal
     );
@@ -809,7 +919,7 @@ export async function runDeployTaskGateway(input: {
       kind: "deploy_task.gateway_turn_sent",
       message: "Codex gateway turn started.",
       payload: {},
-      phase: "plan",
+      phase: managedPhase,
     });
 
     await waitForGatewayTurnCompletion({
@@ -818,6 +928,7 @@ export async function runDeployTaskGateway(input: {
       runSignal,
       sessionId,
       taskId: input.task.id,
+      onPoll: input.onPoll,
     });
     turnMayBeActive = false;
   } catch (error) {
@@ -832,6 +943,7 @@ export async function runDeployTaskGateway(input: {
     kind: "deploy_task.gateway_turn_completed",
     message: "Codex gateway turn completed.",
     payload: {},
-    phase: "generate-artifacts",
+    phase: managedPhase,
   });
+  return sessionId;
 }

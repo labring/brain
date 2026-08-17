@@ -29,10 +29,14 @@ RUN rm -f bun.lock && bun install && bun pm cache rm
 
 COPY --from=pruner /app/out/full/ .
 
-# Client-inlined public env; override at build:
-# docker build --build-arg NEXT_PUBLIC_APP_URL=https://your.app ...
-ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
-ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+# Demo builds (see next.config.mjs `env`): DEV_TWEAKS=1 bakes the dev tweaks
+# panel in, DEMO_MOCK=1 opens with mock project data on. Empty (the default)
+# leaves the normal build unchanged. Builder-stage only — both are inlined
+# into the client bundle; nothing reads them at runtime.
+ARG NEXT_PUBLIC_DEV_TWEAKS=
+ENV NEXT_PUBLIC_DEV_TWEAKS=$NEXT_PUBLIC_DEV_TWEAKS
+ARG NEXT_PUBLIC_DEMO_MOCK=
+ENV NEXT_PUBLIC_DEMO_MOCK=$NEXT_PUBLIC_DEMO_MOCK
 
 # Docker COPY requires the source path even when the app has no public assets.
 RUN mkdir -p apps/ui/public && \
@@ -64,10 +68,7 @@ COPY --from=builder --chown=nodeuser:nodeuser \
 
 EXPOSE 3000
 
-# Same name as builder; server code reads this at runtime (see getCallbackBaseUrl).
-ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 
 CMD ["node", "apps/ui/server.js"]
