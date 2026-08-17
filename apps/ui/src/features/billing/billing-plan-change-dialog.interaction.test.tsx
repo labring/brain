@@ -30,8 +30,8 @@ const SNAPSHOT: BillingPlanSnapshot = {
     planName: "Pro",
     priceMicroUnits: 20_000_000,
     regionDomain: "us.example.test",
-    resourceDeletionAt: null,
     resources: [{ label: "CPU", value: "4" }],
+    warningDeadlineAt: null,
     warningStage: null,
     workspace: "workspace-a",
   },
@@ -285,7 +285,7 @@ test("Free payment-due subscribes to a paid plan with the created operator", asy
         lifecycle: "payment-due",
         planName: "Free",
         priceMicroUnits: 0,
-        resourceDeletionAt: "2026-07-22T02:49:00Z",
+        warningDeadlineAt: "2026-07-22T02:49:00Z",
         warningStage: "expired",
       },
       plans: [

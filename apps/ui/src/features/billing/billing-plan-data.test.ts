@@ -164,8 +164,9 @@ test("loads the verified account's Plan snapshot with workspace plan facts", asy
   assert.equal(snapshot.current.planName, "Pro");
   assert.equal(snapshot.current.lifecycle, "cancelling");
   assert.equal(snapshot.current.warningStage, "cancelling");
-  // Expiry (2026-08-31) plus the platform's 14-day deletion grace.
-  assert.equal(snapshot.current.resourceDeletionAt, "2026-09-14T00:00:00.000Z");
+  // Still inside the paid period, so the deadline is the suspension date —
+  // the period end itself, with no deletion grace added.
+  assert.equal(snapshot.current.warningDeadlineAt, "2026-08-31T00:00:00.000Z");
   assert.equal(snapshot.current.invoiceId, "invoice-1");
   assert.equal(snapshot.current.priceMicroUnits, 20_000_000);
   assert.deepEqual(snapshot.current.resources.slice(0, 3), [
@@ -273,7 +274,8 @@ test("expiry statuses outrank a pending cancellation", async () => {
 
   assert.equal(snapshot.current.lifecycle, "payment-due");
   assert.equal(snapshot.current.warningStage, "deletion-imminent");
-  assert.equal(snapshot.current.resourceDeletionAt, "2026-08-03T00:00:00.000Z");
+  // Expiry (2026-07-20) plus the platform's 14-day deletion grace.
+  assert.equal(snapshot.current.warningDeadlineAt, "2026-08-03T00:00:00.000Z");
 });
 
 test("keeps core Plan data available when auxiliary requests fail", async () => {

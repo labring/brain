@@ -202,26 +202,32 @@ function isNearFutureExpiry(value: string): boolean {
 }
 
 // Copy per warning stage: a scannable title plus a description split around
-// the bolded deletion date. "Expired" (not "payment failed"/"cancelled") is
-// the platform's own wording for the suspended stage: a failed renewal and a
-// cancelled-then-lapsed period both land in the same deletion pipeline.
+// the bolded deadline — the suspension date while cancelling, the derived
+// deletion date once expired. "Expired" (not "payment failed"/"cancelled")
+// is the platform's own wording for the suspended stage: a failed renewal
+// and a cancelled-then-lapsed period both land in the same deletion
+// pipeline. `fallback` voices the deadline when no date could be derived.
 const SUBSCRIPTION_WARNING_COPY: Record<
   SubscriptionWarningStage,
-  { after: string; before: string; title: string }
+  { after: string; before: string; fallback: string; title: string }
 > = {
   cancelling: {
-    after: ". Back up your data or renew to avoid loss.",
-    before: "Resources will be deleted after ",
+    after:
+      " and its resources deleted soon after. Back up your data or renew to avoid loss.",
+    before: "Your workspace will be suspended after ",
+    fallback: "the paid period ends",
     title: "Your subscription is cancelled",
   },
   "deletion-imminent": {
     after: ". Renew now to avoid data loss.",
     before: "All resources will be permanently deleted after ",
+    fallback: "the grace period ends",
     title: "Workspace scheduled for deletion",
   },
   expired: {
     after: ". Renew to avoid loss.",
     before: "Your workspace is suspended and resources will be deleted after ",
+    fallback: "the grace period ends",
     title: "Your subscription has expired",
   },
 };
@@ -257,9 +263,9 @@ function SubscriptionWarningBanner({
       <AlertDescription>
         {copy.before}
         <strong className="font-semibold text-foreground">
-          {current.resourceDeletionAt == null
-            ? "the grace period ends"
-            : formatDate(current.resourceDeletionAt)}
+          {current.warningDeadlineAt == null
+            ? copy.fallback
+            : formatDate(current.warningDeadlineAt)}
         </strong>
         {copy.after}
       </AlertDescription>
@@ -746,7 +752,7 @@ function CancelPlanDialog({
           <AppDialog.Title>We are sorry to see you go</AppDialog.Title>
           <AppDialog.Description className="sr-only">
             Cancelling keeps the plan until the current period ends, after which
-            all workspace resources are deleted.
+            the workspace is suspended and its resources deleted soon after.
           </AppDialog.Description>
         </AppDialog.Header>
         <AppDialog.Body>
@@ -758,7 +764,8 @@ function CancelPlanDialog({
             </span>
             ).{" "}
             <span className="font-medium text-destructive">
-              After that, all workspace resources will be deleted
+              After that, your workspace will be suspended and its resources
+              deleted soon after
             </span>
             . Please backup your work in advance to avoid data loss.
           </p>

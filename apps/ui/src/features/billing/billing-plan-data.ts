@@ -77,9 +77,13 @@ export interface BillingPlanSnapshot {
     planName: string;
     priceMicroUnits: number;
     regionDomain: string;
-    /** When the platform will delete the workspace's resources; set only while `warningStage` is. */
-    resourceDeletionAt: string | null;
     resources: BillingPlanResource[];
+    /**
+     * The warning stage's next deadline: the suspension date (period end)
+     * while cancelling, the derived resource-deletion date once expired.
+     * Set only while `warningStage` is.
+     */
+    warningDeadlineAt: string | null;
     warningStage: SubscriptionWarningStage | null;
     workspace: string;
   };
@@ -230,7 +234,8 @@ const DAYS_31_IN_MILLISECONDS = 31 * 24 * 60 * 60 * 1000;
 
 // Mirror of the platform's workspace-subscription expiry pipeline: resources
 // are finally deleted 14 days after the subscription expires. The upstream
-// does not report a deletion date, so the client derives it from expiry; see
+// does not report a deletion date, so the client derives it from expiry for
+// the post-expiry warning stages; see
 // docs/adr/0062-derive-resource-deletion-dates-client-side.md for when this
 // constant must be replaced by an upstream field.
 const RESOURCE_DELETION_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -295,7 +300,7 @@ function subscriptionWarningStage(input: {
   return input.lifecycle === "cancelling" ? "cancelling" : null;
 }
 
-function resourceDeletionDate(input: {
+function subscriptionWarningDeadline(input: {
   currentPeriodEndAt: string;
   expireAt: string | null;
   stage: SubscriptionWarningStage | null;
@@ -307,6 +312,12 @@ function resourceDeletionDate(input: {
   const expiry = new Date(basis);
   if (Number.isNaN(expiry.getTime())) {
     return null;
+  }
+  // Before expiry the user's real deadline is the suspension date — the
+  // period end itself. The derived deletion date only becomes the headline
+  // once the workspace is already suspended.
+  if (input.stage === "cancelling") {
+    return expiry.toISOString();
   }
   return new Date(expiry.getTime() + RESOURCE_DELETION_GRACE_MS).toISOString();
 }
@@ -508,14 +519,14 @@ export async function loadBillingPlanSnapshot(
       planName: subscription.PlanName,
       priceMicroUnits: currentPlan?.monthlyPriceMicroUnits ?? 0,
       regionDomain: subscription.RegionDomain || region.domain,
-      resourceDeletionAt: resourceDeletionDate({
+      resources:
+        currentPlan?.resources.map(({ label, value }) => ({ label, value })) ??
+        [],
+      warningDeadlineAt: subscriptionWarningDeadline({
         currentPeriodEndAt: subscription.CurrentPeriodEndAt,
         expireAt: subscription.ExpireAt ?? null,
         stage: warningStage,
       }),
-      resources:
-        currentPlan?.resources.map(({ label, value }) => ({ label, value })) ??
-        [],
       warningStage,
       workspace: subscription.Workspace.trim() || credentials.workspace.trim(),
     },

@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { installTestDom } from "@/features/project-canvas/react-test-harness";
+
+// The assertions below compare against calendar-day strings ("Aug 31, 2026")
+// that the surfaces render in the process's local timezone. Pin the timezone
+// before the surface modules are (dynamically) imported and construct their
+// formatters, so the expected day matches on machines in any timezone.
+process.env.TZ = "UTC";
+
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 import type { BillingPricingSnapshot } from "./billing-pricing-data";
 import type { BillingUsageSnapshot } from "./billing-usage-data";
@@ -199,11 +206,12 @@ const CANCELLING_PLAN = {
     planName: "Pro",
     priceMicroUnits: 20_000_000,
     regionDomain: "us.example.test",
-    resourceDeletionAt: "2026-09-14T00:00:00Z",
     resources: [
       { label: "CPU", value: "4" },
       { label: "Memory", value: "8Gi" },
     ],
+    // Cancelling: the deadline is the suspension date (the period end).
+    warningDeadlineAt: "2026-08-31T00:00:00Z",
     warningStage: "cancelling",
     workspace: "workspace-a",
   },
@@ -325,8 +333,8 @@ test("Plan renders lifecycle notices, card facts, and workspace plan rows", asyn
   for (const text of [
     "Pending upgrade to Team",
     "Your subscription is cancelled",
-    "Resources will be deleted after",
-    "Sep 14, 2026",
+    "Your workspace will be suspended after",
+    "Aug 31, 2026",
     "Visa",
     "•••• 4242",
     "EXP: 12/28",
@@ -391,7 +399,7 @@ test("Plan disables changes for deleted and unavailable subscription states", as
         ...CANCELLING_PLAN.current,
         cancelAtPeriodEnd: false,
         lifecycle,
-        resourceDeletionAt: null,
+        warningDeadlineAt: null,
         warningStage: null,
       },
       pendingUpgrade: null,
@@ -481,7 +489,7 @@ test("Plan renders the compact PAYG summary next to the balance", async () => {
       lifecycle: "active",
       planName: "PAYG",
       priceMicroUnits: 0,
-      resourceDeletionAt: null,
+      warningDeadlineAt: null,
       warningStage: null,
     },
     pendingDowngrade: null,
@@ -527,7 +535,7 @@ test("Plan shows the free-plan expiry warning when expiry is within seven days",
       lifecycle: "active",
       planName: "Free",
       priceMicroUnits: 0,
-      resourceDeletionAt: null,
+      warningDeadlineAt: null,
       warningStage: null,
     },
     pendingDowngrade: null,
@@ -562,7 +570,7 @@ test("Plan hides the free-plan expiry warning outside the near-expiry window", a
         lifecycle: "active",
         planName: "Free",
         priceMicroUnits: 0,
-        resourceDeletionAt: null,
+        warningDeadlineAt: null,
         warningStage: null,
       },
       pendingDowngrade: null,
@@ -590,7 +598,7 @@ test("Plan keeps cancellation available while an upgrade is pending", async () =
       invoiceId: null,
       invoicePaymentUrl: null,
       lifecycle: "pending-upgrade",
-      resourceDeletionAt: null,
+      warningDeadlineAt: null,
       warningStage: null,
     },
   };

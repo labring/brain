@@ -17,9 +17,18 @@ object carries only the status string and the expiry timestamps.
 Brain derives the deletion date in the client's snapshot loader: deletion
 date = `CurrentPeriodEndAt` (falling back to `ExpireAt`) plus a single
 `RESOURCE_DELETION_GRACE_MS` constant of 14 days, mirroring the controller's
-`FinalDeletionPeriodHours = 14 * 24`. The derived date drives every warning
-stage, including the pre-expiry cancelled state, so the user sees one
-consistent countdown from the moment they cancel.
+`FinalDeletionPeriodHours = 14 * 24`.
+
+The warning surfaces carry the stage's next deadline, not one fixed date:
+while a cancelled subscription is still inside its paid period, the banner
+and the cancel dialog state the suspension date — `CurrentPeriodEndAt`
+itself — because that is the day the workspace actually stops and the
+user's real deadline to back up or renew; the derived deletion date becomes
+the headline only once expiry has passed. (Revised 2026-08-17: the original
+decision drove every stage, including pre-expiry cancellation, with the
+derived deletion date — a date 14 days past the service cutoff, which
+invited users to act only after their workspace was already suspended, and
+contradicted the cancel dialog's period-end promise.)
 
 All three `DEBT*` statuses map to the `payment-due` lifecycle — collapsing to
 `active` on the unrecognized pre-deletion statuses would hide the warning in

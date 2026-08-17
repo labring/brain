@@ -222,6 +222,12 @@ test("cancelling derives the cancelling lifecycle", async () => {
   const plan = await loadPlanForScenario("cancelling");
   assert.equal(plan.current.lifecycle, "cancelling");
   assert.equal(plan.current.cancelAtPeriodEnd, true);
+  assert.equal(plan.current.warningStage, "cancelling");
+  assert.equal(
+    plan.current.warningDeadlineAt,
+    new Date(plan.current.currentPeriodEndAt).toISOString(),
+    "pre-expiry the deadline is the suspension date, with no grace added"
+  );
 });
 
 test("payment-due derives debt with a payable invoice", async () => {
@@ -229,9 +235,9 @@ test("payment-due derives debt with a payable invoice", async () => {
   assert.equal(plan.current.lifecycle, "payment-due");
   assert.equal(plan.current.warningStage, "expired");
   assert.ok(plan.current.invoicePaymentUrl);
-  assert.ok(plan.current.resourceDeletionAt, "deletion date is derived");
+  assert.ok(plan.current.warningDeadlineAt, "deletion date is derived");
   assert.ok(
-    new Date(plan.current.resourceDeletionAt ?? "").getTime() > Date.now(),
+    new Date(plan.current.warningDeadlineAt ?? "").getTime() > Date.now(),
     "the deletion date is still ahead in the expired stage"
   );
   const balance = await loadAccountBalance(
@@ -245,7 +251,7 @@ test("payment-due-deletion derives the deletion-imminent stage", async () => {
   const plan = await loadPlanForScenario("payment-due-deletion");
   assert.equal(plan.current.lifecycle, "payment-due");
   assert.equal(plan.current.warningStage, "deletion-imminent");
-  assert.ok(plan.current.resourceDeletionAt, "deletion date is derived");
+  assert.ok(plan.current.warningDeadlineAt, "deletion date is derived");
 });
 
 test("pending-upgrade derives the queued plan change", async () => {

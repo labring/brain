@@ -33,8 +33,9 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
     planName: "Pro",
     priceMicroUnits: 20_000_000,
     regionDomain: "us.example.test",
-    resourceDeletionAt: "2099-09-14T00:00:00Z",
     resources: [{ label: "CPU", value: "4" }],
+    // Cancelling: the deadline is the suspension date (the period end).
+    warningDeadlineAt: "2099-08-31T00:00:00Z",
     warningStage: "cancelling",
     workspace: "workspace-a",
   },
@@ -63,7 +64,7 @@ test("resume refreshes the Plan lifecycle state", async () => {
                 ...current.current,
                 cancelAtPeriodEnd: false,
                 lifecycle: "active",
-                resourceDeletionAt: null,
+                warningDeadlineAt: null,
                 warningStage: null,
               },
             }));
@@ -156,7 +157,7 @@ test("an unpaid invoice can be cancelled from its Plan banner", async () => {
         invoiceId: "invoice-1",
         invoicePaymentUrl: "https://payments.example.test/invoice-1",
         lifecycle: "pending-upgrade",
-        resourceDeletionAt: null,
+        warningDeadlineAt: null,
         warningStage: null,
       },
     };
@@ -207,7 +208,7 @@ test("a pending upgrade for a removed plan keeps only invoice cancellation", asy
         invoiceId: "invoice-1",
         invoicePaymentUrl: "https://payments.example.test/invoice-1",
         lifecycle: "pending-upgrade",
-        resourceDeletionAt: null,
+        warningDeadlineAt: null,
         warningStage: null,
       },
       pendingUpgrade: {
@@ -327,7 +328,7 @@ test("plan actions open the change workflow with the selected plan", async () =>
         ...CANCELLING_PLAN.current,
         cancelAtPeriodEnd: false,
         lifecycle: "active",
-        resourceDeletionAt: null,
+        warningDeadlineAt: null,
         warningStage: null,
       },
       plans: [
@@ -415,7 +416,7 @@ test("a PAYG workspace exposes only the subscribe entry point", async () => {
         lifecycle: "active",
         planName: "PAYG",
         priceMicroUnits: 0,
-        resourceDeletionAt: null,
+        warningDeadlineAt: null,
         warningStage: null,
       },
     };
