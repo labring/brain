@@ -4,35 +4,20 @@ import {
   fetchAPImageVersionDetail,
   rollbackAPImageVersion,
   useAPImageVersions,
-  useBrainProductResource,
 } from "@workspace/api/hooks";
 import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-icons";
-import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { AppInput } from "@workspace/ui/components/app-input";
-import { Label } from "@workspace/ui/components/label";
-import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
-import { Spinner } from "@workspace/ui/components/spinner";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
-import { SquarePen, Upload } from "lucide-react";
-import { memo, useCallback, useId, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { memo, useCallback, useState } from "react";
 import YAML from "yaml";
 
 import {
   containerStatesFromNode,
   workloadClaimKindFromStates,
 } from "@/features/project-canvas/flow/container-node-workload";
-import { applyApImage } from "@/features/resource-settings/ap/k8s/ap-json-patch";
-import { readApImage } from "@/features/resource-settings/ap/k8s/ap-spec-access";
-import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
-import {
-  errorDescription,
-  toastErrorDetail,
-  toastPromiseDetail,
-} from "@/lib/toast-utils";
+import { errorDescription, toastPromiseDetail } from "@/lib/toast-utils";
 import {
   CanvasResourcePane,
   type CanvasResourcePaneProps,
@@ -45,6 +30,36 @@ type WorkloadHistoryShellProps = Pick<
   "children" | "onClose" | "subtitle" | "title"
 >;
 
+const IMAGE_VERSIONS_DESCRIPTION = "Retained image versions for rollback.";
+const VERSION_LIMIT = 10;
+
+function formatImageVersionCount(count: number): string {
+  if (count === 1) {
+    return "1 Version";
+  }
+  if (count >= VERSION_LIMIT) {
+    return `Latest ${VERSION_LIMIT}`;
+  }
+  return `${count} Versions`;
+}
+
+export function formatImageVersionsSubtitle({
+  count,
+  state,
+}: {
+  count: number;
+  state: "error" | "loading" | "ready";
+}): string {
+  let status = formatImageVersionCount(count);
+  if (state === "loading") {
+    status = "Loading";
+  }
+  if (state === "error") {
+    status = "Unavailable";
+  }
+  return `${IMAGE_VERSIONS_DESCRIPTION} ${status}`;
+}
+
 function WorkloadHistoryShell({
   children,
   onClose,
@@ -53,7 +68,7 @@ function WorkloadHistoryShell({
 }: WorkloadHistoryShellProps) {
   return (
     <CanvasResourcePane
-      closeAriaLabel="Close workload deployments"
+      closeAriaLabel="Close image versions"
       icon={
         <ProjectSourceDockerIcon
           aria-hidden
@@ -66,125 +81,6 @@ function WorkloadHistoryShell({
     >
       {children}
     </CanvasResourcePane>
-  );
-}
-
-function apImageFromClaimPayload(
-  claimPayload: ReturnType<typeof useBrainProductResource>["data"]
-): string {
-  const body = k8sGetClaimBody(claimPayload);
-  const spec = body?.spec;
-  if (spec == null || typeof spec !== "object" || Array.isArray(spec)) {
-    return "";
-  }
-  return readApImage(spec as Record<string, unknown>) ?? "";
-}
-
-function DeploymentImageSection({
-  claimPayload,
-  kubeconfig,
-  name,
-  namespace,
-  onApplied,
-}: {
-  claimPayload: ReturnType<typeof useBrainProductResource>["data"];
-  kubeconfig: string;
-  name: string;
-  namespace: string;
-  onApplied: () => Promise<unknown>;
-}) {
-  const imageInputId = useId();
-  const claimBody = useMemo(
-    () => k8sGetClaimBody(claimPayload),
-    [claimPayload]
-  );
-  const currentImage = useMemo(
-    () => apImageFromClaimPayload(claimPayload),
-    [claimPayload]
-  );
-  const [draftImage, setDraftImage] = useState(currentImage);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [prevCurrentImage, setPrevCurrentImage] = useState(currentImage);
-  if (prevCurrentImage !== currentImage) {
-    setPrevCurrentImage(currentImage);
-    setDraftImage(currentImage);
-  }
-
-  const trimmedDraft = draftImage.trim();
-  const canUpdate =
-    !isUpdating &&
-    claimBody != null &&
-    kubeconfig.trim() !== "" &&
-    name.trim() !== "" &&
-    namespace.trim() !== "" &&
-    trimmedDraft !== "" &&
-    trimmedDraft !== currentImage.trim();
-
-  const applyImageUpdate = useCallback(async () => {
-    if (!canUpdate || claimBody == null) {
-      return;
-    }
-    setIsUpdating(true);
-    try {
-      await applyApImage(kubeconfig, claimBody, trimmedDraft);
-      toast.success("Image updated.");
-      await onApplied();
-    } catch (error) {
-      toastErrorDetail(
-        "Image update failed.",
-        errorDescription(error, "Image update failed.")
-      );
-    } finally {
-      setIsUpdating(false);
-    }
-  }, [canUpdate, claimBody, kubeconfig, onApplied, trimmedDraft]);
-
-  return (
-    <ResourceSettingsSection icon={SquarePen} title="Image">
-      <div className="flex min-w-0 flex-col gap-4">
-        <div className="flex min-w-0 flex-col gap-2">
-          <Label
-            className="text-foreground text-sm leading-none"
-            htmlFor={imageInputId}
-          >
-            Image
-          </Label>
-          <AppInput
-            aria-label="AP image"
-            disabled={isUpdating}
-            id={imageInputId}
-            onChange={(event) => setDraftImage(event.target.value)}
-            onKeyDown={async (event) => {
-              if (event.key !== "Enter") {
-                return;
-              }
-              event.preventDefault();
-              await applyImageUpdate();
-            }}
-            placeholder="ghcr.io/org/app:1.0.0"
-            title={trimmedDraft === "" ? "No image configured" : trimmedDraft}
-            value={draftImage}
-          />
-        </div>
-        <div className="flex min-w-0 items-center justify-end">
-          <AppButton
-            disabled={!canUpdate}
-            onClick={async () => {
-              await applyImageUpdate();
-            }}
-            type="button"
-            variant="secondary"
-          >
-            {isUpdating ? (
-              <Spinner aria-hidden className="size-4 text-muted-foreground" />
-            ) : (
-              <Upload aria-hidden className="size-4" />
-            )}
-            {isUpdating ? "Updating..." : "Update"}
-          </AppButton>
-        </div>
-      </div>
-    </ResourceSettingsSection>
   );
 }
 
@@ -202,14 +98,8 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const name = states?.name ?? "";
   const ns = states?.namespace?.trim() || namespaceFallback;
   const workloadKind = workloadClaimKindFromStates(states);
-  const title = name === "" ? "Deployments" : `${name} Deployments`;
+  const title = name === "" ? "Image versions" : `${name} Image versions`;
 
-  const claim = useBrainProductResource({
-    kind: workloadKind,
-    kubeconfig,
-    name,
-    namespace: ns,
-  });
   const versions = useAPImageVersions({
     kubeconfig,
     name,
@@ -253,10 +143,6 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const [rollbackBusyVersion, setRollbackBusyVersion] = useState<string | null>(
     null
   );
-  const reloadDeployments = useCallback(
-    () => Promise.all([claim.mutate(), versions.mutate()]),
-    [claim, versions]
-  );
 
   const runRollback = useCallback(
     async (versionHash: string) => {
@@ -266,9 +152,9 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         namespace: ns,
         versionHash,
       });
-      await reloadDeployments();
+      await versions.mutate();
     },
-    [kubeconfig, name, ns, reloadDeployments]
+    [kubeconfig, name, ns, versions]
   );
 
   const confirmRollbackSnapshot = () => {
@@ -290,8 +176,8 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         errorDescription: (e) =>
           errorDescription(e, "Rollback failed unexpectedly."),
         errorTitle: "Rollback failed.",
-        loading: "Rolling back deployment...",
-        success: "AP restored from the selected deployment.",
+        loading: "Rolling back version...",
+        success: "AP restored from the selected version.",
       }
     );
   };
@@ -312,11 +198,22 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         }))
       : [];
 
+  let subtitleState: "error" | "loading" | "ready" = "ready";
+  if (versions.error != null) {
+    subtitleState = "error";
+  } else if (versions.isLoading && versions.data == null) {
+    subtitleState = "loading";
+  }
+  const subtitle = formatImageVersionsSubtitle({
+    count: rows.length,
+    state: subtitleState,
+  });
+
   if (ns === "" || name === "") {
     return (
       <WorkloadHistoryShell
         onClose={onClose}
-        subtitle={workloadKind}
+        subtitle={IMAGE_VERSIONS_DESCRIPTION}
         title={title}
       >
         <p className="text-muted-foreground text-sm">
@@ -330,12 +227,12 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
     return (
       <WorkloadHistoryShell
         onClose={onClose}
-        subtitle={workloadKind}
+        subtitle={IMAGE_VERSIONS_DESCRIPTION}
         title={title}
       >
         <p className="text-muted-foreground text-sm">
-          Deployments apply to AP workloads. Databases use their own lifecycle
-          history.
+          Image versions apply to AP workloads. Databases use their own
+          lifecycle history.
         </p>
       </WorkloadHistoryShell>
     );
@@ -343,11 +240,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
 
   if (versions.error != null) {
     return (
-      <WorkloadHistoryShell
-        onClose={onClose}
-        subtitle={workloadKind}
-        title={title}
-      >
+      <WorkloadHistoryShell onClose={onClose} subtitle={subtitle} title={title}>
         <p className="text-destructive text-sm" role="alert">
           Could not load image versions: {versions.error.message}
         </p>
@@ -355,49 +248,17 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
     );
   }
 
-  if (claim.error != null) {
+  if (versions.isLoading && versions.data == null) {
     return (
-      <WorkloadHistoryShell
-        onClose={onClose}
-        subtitle={workloadKind}
-        title={title}
-      >
-        <p className="text-destructive text-sm" role="alert">
-          Could not load AP image: {claim.error.message}
-        </p>
-      </WorkloadHistoryShell>
-    );
-  }
-
-  if (
-    (versions.isLoading && versions.data == null) ||
-    (claim.isLoading && claim.data == null)
-  ) {
-    return (
-      <WorkloadHistoryShell
-        onClose={onClose}
-        subtitle={workloadKind}
-        title={title}
-      >
-        <p className="text-muted-foreground text-sm">Loading deployments…</p>
+      <WorkloadHistoryShell onClose={onClose} subtitle={subtitle} title={title}>
+        <p className="text-muted-foreground text-sm">Loading image versions…</p>
       </WorkloadHistoryShell>
     );
   }
 
   return (
     <>
-      <WorkloadHistoryShell
-        onClose={onClose}
-        subtitle="This is a introduction placeholder."
-        title={title}
-      >
-        <DeploymentImageSection
-          claimPayload={claim.data}
-          kubeconfig={kubeconfig}
-          name={name}
-          namespace={ns}
-          onApplied={reloadDeployments}
-        />
+      <WorkloadHistoryShell onClose={onClose} subtitle={subtitle} title={title}>
         <ContainerHistoryPane
           className="min-h-0"
           onLoadConfigYaml={onLoadConfigYaml}
@@ -418,7 +279,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         <AppDialog.Content>
           <AppDialog.Header>
             <AppDialog.WarningIcon />
-            <AppDialog.Title>Rollback to this deployment?</AppDialog.Title>
+            <AppDialog.Title>Rollback to this version?</AppDialog.Title>
           </AppDialog.Header>
           <AppDialog.Body>
             <AppDialog.Description>

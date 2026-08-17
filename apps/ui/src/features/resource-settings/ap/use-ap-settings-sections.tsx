@@ -9,6 +9,7 @@ import { SlidingToggle } from "@workspace/ui/components/sliding-toggle";
 import {
   Cpu,
   HardDrive,
+  History,
   MemoryStick,
   Network,
   Plus,
@@ -287,6 +288,8 @@ export interface ApSettingsSectionsProps {
   onEnvResolvedValue?: ApEnvResolvedValueResolver;
   onImageChange: (image: string) => void;
   onNetworkChange?: (network: ApNetwork) => void | Promise<void>;
+  /** Opens the AP Image Versions surface from the Image section. */
+  onOpenImageVersions?: () => void;
   onPendingDbReferencesChange?: (
     references: readonly ApSettingsPendingDbReference[]
   ) => void;
@@ -321,8 +324,6 @@ export interface ApSettingsSectionsProps {
   replicasQuota?: ApSettingsControlledQuotaProps;
   /** Restrict the pane to one AP Settings section for focused entry points. */
   sectionFocus?: "all" | "environment";
-  /** Hide the Image section when image updates belong in a separate deployment surface. */
-  showImageSection?: boolean;
   storage?: readonly ApStorageMount[];
   submissionOwner?: PendingSettingsOwnerIdentity;
   workloadKind?: ApWorkloadKind;
@@ -355,6 +356,7 @@ export function useApSettingsSections({
   onNetworkChange,
   onEnvChange,
   onAddDbDsnReferenceIntentConsumed,
+  onOpenImageVersions,
   onPendingDbReferencesChange,
   cpuQuota,
   memoryQuota,
@@ -372,7 +374,6 @@ export function useApSettingsSections({
   readOnly = false,
   dbDsnReferenceSources = [],
   sectionFocus = "all",
-  showImageSection = true,
   storage = EMPTY_STORAGE_MOUNTS,
   submissionOwner,
   workloadKind = "deployment",
@@ -2269,22 +2270,33 @@ export function useApSettingsSections({
       title: "CPU / Memory",
     });
 
-    if (showImageSection) {
-      sections.push({
-        content: (
-          <ImageSettingsContent
-            imageInputId={imageInputId}
-            onBlur={handleImageBlur}
-            onChange={handleImageChange}
-            readOnly={readOnly}
-            value={displayImage}
-          />
+    sections.push({
+      actions:
+        onOpenImageVersions == null ? undefined : (
+          <AppButton
+            aria-label="Open image versions"
+            className="h-7 px-2 text-xs"
+            onClick={onOpenImageVersions}
+            type="button"
+            variant="quiet"
+          >
+            <History aria-hidden className="size-3.5" />
+            Versions
+          </AppButton>
         ),
-        icon: SquarePen,
-        id: "image",
-        title: "Image",
-      });
-    }
+      content: (
+        <ImageSettingsContent
+          imageInputId={imageInputId}
+          onBlur={handleImageBlur}
+          onChange={handleImageChange}
+          readOnly={readOnly}
+          value={displayImage}
+        />
+      ),
+      icon: SquarePen,
+      id: "image",
+      title: "Image",
+    });
 
     sections.push({
       content: (

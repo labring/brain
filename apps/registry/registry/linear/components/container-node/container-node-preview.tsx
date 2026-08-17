@@ -35,7 +35,7 @@ const demoLifecycleActions = {
 } satisfies ContainerNodeLifecycleActions;
 
 const demoQuickActions = {
-  calendar: demoAction,
+  imageVersions: demoAction,
   terminal: demoAction,
   logs: demoAction,
   metrics: demoAction,

@@ -152,6 +152,7 @@ interface ApSettingsSectionsHookInput {
   onImageChange: ApWorkloadSettingsState["onImageChange"];
   onLaunchContextConsumed?: () => void;
   onNetworkChange: ApWorkloadSettingsState["onNetworkChange"];
+  onOpenImageVersions?: () => void;
   onPendingDbReferencesChange: ApSettingsSectionsInput["onPendingDbReferencesChange"];
   onResourceQuotasCommit: ApWorkloadSettingsState["onResourceQuotasCommit"];
   onSettingsDraftCommit: ApWorkloadSettingsState["onSettingsDraftCommit"];
@@ -179,6 +180,7 @@ function apSettingsSectionsHookProps({
   onImageChange,
   onLaunchContextConsumed,
   onNetworkChange,
+  onOpenImageVersions,
   onPendingDbReferencesChange,
   onResourceQuotasCommit,
   onSettingsDraftCommit,
@@ -227,6 +229,7 @@ function apSettingsSectionsHookProps({
     onEnvResolvedValue: canEditAp ? onEnvResolvedValue : undefined,
     onImageChange: canEditAp ? onImageChange : ignoreImage,
     onNetworkChange: canEditAp ? onNetworkChange : ignoreNetwork,
+    onOpenImageVersions,
     onPendingDbReferencesChange,
     onResourceQuotasCommit: canEditAp ? onResourceQuotasCommit : undefined,
     onSettingsDraftCommit: canEditAp ? onSettingsDraftCommit : undefined,
@@ -243,7 +246,6 @@ function apSettingsSectionsHookProps({
         }
       : undefined,
     sectionFocus: metadata.sectionFocus,
-    showImageSection: false,
     storage: display.storage,
     submissionOwner: settingsOwnerIdentity({
       kubeconfig,
@@ -501,6 +503,7 @@ export function ApSettingsProvider({
   launchContext,
   onLaunchContextConsumed,
   onModelChange,
+  onOpenApImageVersions,
   onRepairSideEntry,
   onUpdated,
   readModelHints,
@@ -551,6 +554,13 @@ export function ApSettingsProvider({
     kubeconfig
   );
   const canEditAp = isApWorkload && !effectiveReadOnly;
+  const onOpenImageVersions = useMemo(
+    () =>
+      apTarget == null || onOpenApImageVersions == null
+        ? undefined
+        : () => onOpenApImageVersions(apTarget),
+    [apTarget, onOpenApImageVersions]
+  );
   const baseSubtitle = workloadSettingsSubtitle({
     image: display.image,
     kind: "Container",
@@ -587,6 +597,7 @@ export function ApSettingsProvider({
           ? undefined
           : onLaunchContextConsumed,
       onNetworkChange,
+      onOpenImageVersions,
       onPendingDbReferencesChange: apSessionEvents?.onPendingDbReferencesChange,
       onResourceQuotasCommit,
       onSettingsDraftCommit,
