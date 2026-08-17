@@ -8,20 +8,25 @@ import type { BillingRouteEntry } from "./billing-route-table";
 
 /**
  * Assembly layer for /api/billing/* routes: wires the real dependencies into
- * the authorized proxy and, in dev builds, lets the billing dev-mock
+ * the authorized proxy and, in dev and demo builds, lets the billing dev-mock
  * dispatcher answer first. This is the only place production routing meets
  * the dev fixtures — the proxy itself knows nothing about mocking, and the
- * NODE_ENV-guarded dynamic import keeps fixtures out of production bundles.
+ * build-time-guarded dynamic import keeps fixtures out of real production
+ * bundles (`NEXT_PUBLIC_DEV_TWEAKS=1` marks a demo image, same gate as the
+ * dev tweaks panel).
  */
 
 type BillingRouteHandler = (request: Request) => Promise<Response>;
 
-/** Lets the dev-mock dispatcher answer for `handler` in dev builds. */
+/** Lets the dev-mock dispatcher answer for `handler` in dev/demo builds. */
 export function withBillingDevMock(
   entry: BillingRouteEntry,
   handler: BillingRouteHandler
 ): BillingRouteHandler {
-  if (process.env.NODE_ENV === "production") {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PUBLIC_DEV_TWEAKS !== "1"
+  ) {
     return handler;
   }
   return async (request) => {

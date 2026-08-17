@@ -8,7 +8,8 @@ import {
 import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 /**
- * Billing dev-mock fixtures (dev builds only, permanent dev infrastructure).
+ * Billing dev-mock fixtures (dev and demo builds only, permanent dev
+ * infrastructure — `NEXT_PUBLIC_DEV_TWEAKS=1` marks a demo image).
  *
  * The dev-tweaks pane (⌃⌥T → "Billing mock") writes a session cookie
  * (`dev-mock-cookie.ts` documents the grammar); while it names a scenario,
@@ -735,7 +736,10 @@ export async function billingDevMockResponse(
   pathname: string,
   request: Request
 ): Promise<Response | null> {
-  if (process.env.NODE_ENV === "production") {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PUBLIC_DEV_TWEAKS !== "1"
+  ) {
     return null;
   }
   const parsed = parseBillingDevMockCookie(mockCookieValue(request));
