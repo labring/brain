@@ -11,10 +11,6 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      next_public_api_url:
-        description: "Build-time NEXT_PUBLIC_API_URL for the UI image"
-        required: false
-        type: string
       next_public_dev_tweaks:
         description: "Set to 1 to bake the dev tweaks panel into the UI image (demo builds)"
         required: false
@@ -93,7 +89,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ inputs.next_public_api_url || 'http://localhost:9000' }}
             NEXT_PUBLIC_DEV_TWEAKS=${{ inputs.next_public_dev_tweaks }}
             NEXT_PUBLIC_DEMO_MOCK=${{ inputs.next_public_demo_mock }}
             VERSION=${{ steps.meta.outputs.version }}
