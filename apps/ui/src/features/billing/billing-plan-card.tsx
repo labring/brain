@@ -81,8 +81,10 @@ export function PlanCheckGradientDefs() {
 export interface BillingPlanCardState {
   changeKind: "contact" | "downgrade" | "subscribe" | "upgrade" | null;
   inDebt: boolean;
+  isBlockedByPendingUpgrade: boolean;
   isCurrent: boolean;
   isPendingDowngradeTarget: boolean;
+  isPendingUpgradeTarget: boolean;
 }
 
 function PlanCardSpec({ children }: { children: ReactNode }) {
@@ -203,6 +205,16 @@ export function planCardAction({
   if (state == null) {
     return null;
   }
+  if (state.isPendingUpgradeTarget) {
+    return (
+      <AppButton
+        className={cn("w-full", className)}
+        onClick={() => onSelectPlan?.(plan.id)}
+      >
+        Recover payment
+      </AppButton>
+    );
+  }
   // Mirrors the legacy costcenter card rules: debt turns the current plan
   // into a clickable Renew, a plan already scheduled by a pending downgrade
   // is locked, Enterprise-outside-the-lists routes to sales, and everything
@@ -221,6 +233,13 @@ export function planCardAction({
     return (
       <AppButton className={cn("w-full", className)} disabled>
         Your current plan
+      </AppButton>
+    );
+  }
+  if (state.isBlockedByPendingUpgrade) {
+    return (
+      <AppButton className={cn("w-full", className)} disabled>
+        Payment in progress
       </AppButton>
     );
   }

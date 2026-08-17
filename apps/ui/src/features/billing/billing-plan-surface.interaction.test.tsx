@@ -195,6 +195,66 @@ test("an unpaid invoice can be cancelled from its Plan banner", async () => {
   });
 });
 
+test("a pending upgrade for a removed plan keeps only invoice cancellation", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanSurface } = await import("./billing-plan-surface");
+    const invoiceIds: string[] = [];
+    const snapshot: BillingPlanSnapshot = {
+      ...CANCELLING_PLAN,
+      current: {
+        ...CANCELLING_PLAN.current,
+        cancelAtPeriodEnd: false,
+        invoiceId: "invoice-1",
+        invoicePaymentUrl: "https://payments.example.test/invoice-1",
+        lifecycle: "pending-upgrade",
+        resourceDeletionAt: null,
+        warningStage: null,
+      },
+      pendingUpgrade: {
+        planName: "Team",
+        startsAt: "2099-08-31T00:00:00Z",
+      },
+      plans: CANCELLING_PLAN.plans.filter((plan) => plan.name !== "Team"),
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanSurface
+            balance={<span>$3.00</span>}
+            currency="usd"
+            onCancelInvoice={(invoiceId) => invoiceIds.push(invoiceId)}
+            snapshot={snapshot}
+          />
+        );
+      });
+
+      assert.ok(
+        (rendered?.container.textContent ?? "").includes(
+          "Plan Team is no longer available"
+        )
+      );
+      assert.equal(
+        rendered?.queryByRole("link", { name: "Pay invoice" }),
+        null
+      );
+      await act(() => {
+        const cancelInvoice = rendered?.getByRole("button", {
+          name: "Cancel invoice",
+        });
+        if (cancelInvoice != null) {
+          fireEvent.click(cancelInvoice);
+        }
+      });
+
+      assert.deepEqual(invoiceIds, ["invoice-1"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("a payment-due subscription opens the plan picker for renewal", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanSurface } = await import("./billing-plan-surface");

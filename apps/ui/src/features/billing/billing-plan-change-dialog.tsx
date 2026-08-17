@@ -64,9 +64,17 @@ export function BillingPlanChangeDialog({
     () => snapshot.plans.find((plan) => plan.id === selectedPlanId) ?? null,
     [selectedPlanId, snapshot.plans]
   );
+  const pendingUpgradePlanName = snapshot.pendingUpgrade?.planName ?? null;
+  const selectedPlanIsPendingUpgradeTarget =
+    pendingUpgradePlanName == null ||
+    (selectedPlan?.name.trim().toLowerCase() ?? "") ===
+      pendingUpgradePlanName.trim().toLowerCase();
   const inDebt = snapshot.current.lifecycle === "payment-due";
   const checkoutPlan =
-    planOperator(selectedPlan, inDebt) == null ? null : selectedPlan;
+    !selectedPlanIsPendingUpgradeTarget ||
+    planOperator(selectedPlan, inDebt) == null
+      ? null
+      : selectedPlan;
 
   // Dismissing the checkout is the "back" gesture: clearing the selection
   // returns to the picker underneath. Without a selection channel the whole
@@ -114,6 +122,7 @@ export function BillingPlanChangeDialog({
             pendingDowngradePlanName={
               snapshot.pendingDowngrade?.planName ?? null
             }
+            pendingUpgradePlanName={pendingUpgradePlanName}
             plans={snapshot.plans}
           />
         </AppDialog.Body>

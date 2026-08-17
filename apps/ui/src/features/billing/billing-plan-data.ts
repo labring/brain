@@ -255,14 +255,14 @@ function subscriptionLifecycle(input: {
   planName: string;
   status: string;
 }): SubscriptionLifecycle {
-  if (input.isPayg) {
-    return "active";
-  }
   const status = input.status.trim().toLowerCase();
   // Expiry outranks a pending cancellation: once the platform starts the
   // deletion pipeline, "cancelling" would hide the countdown.
   if (DEBT_STATUSES.has(status)) {
     return "payment-due";
+  }
+  if (input.isPayg) {
+    return "active";
   }
   if (status === "deleted") {
     return "deleted";

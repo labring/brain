@@ -267,24 +267,103 @@ function SubscriptionWarningBanner({
   );
 }
 
+function BillingInvoiceNotice({
+  current,
+  invoiceCancellationPending,
+  onCancelInvoice,
+  pendingUpgrade,
+  pendingUpgradePlanAvailable,
+}: {
+  current: BillingPlanSnapshot["current"];
+  invoiceCancellationPending: boolean;
+  onCancelInvoice?: (invoiceId: string) => void;
+  pendingUpgrade: BillingPlanSnapshot["pendingUpgrade"];
+  pendingUpgradePlanAvailable: boolean;
+}) {
+  const invoiceId = current.invoiceId;
+  const billingActionsAllowed = subscriptionLifecycleAllowsBillingActions(
+    current.lifecycle
+  );
+  const pendingUpgradeUnavailable =
+    pendingUpgrade != null && !pendingUpgradePlanAvailable;
+  const canPayInvoice =
+    billingActionsAllowed &&
+    current.invoicePaymentUrl != null &&
+    current.warningStage == null &&
+    !pendingUpgradeUnavailable;
+  const canCancelInvoice =
+    billingActionsAllowed &&
+    current.warningStage == null &&
+    current.canManage &&
+    invoiceId != null &&
+    onCancelInvoice != null;
+
+  if (!(canPayInvoice || canCancelInvoice)) {
+    return null;
+  }
+
+  return (
+    <Alert
+      className="has-data-[slot=alert-action]:pr-4 sm:has-data-[slot=alert-action]:pr-18"
+      variant="destructive"
+    >
+      <AlertCircle aria-hidden />
+      <AlertTitle>
+        {pendingUpgradeUnavailable
+          ? "Pending upgrade unavailable"
+          : "You have an unpaid invoice"}
+      </AlertTitle>
+      <AlertDescription>
+        {pendingUpgradeUnavailable && pendingUpgrade != null
+          ? `Plan ${pendingUpgrade.planName} is no longer available. Cancel this payment to choose another plan.`
+          : "Complete payment to keep this workspace active."}
+      </AlertDescription>
+      <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
+        {canPayInvoice && current.invoicePaymentUrl != null ? (
+          <a
+            className={appButtonVariants({ size: "sm", variant: "danger" })}
+            href={current.invoicePaymentUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <ExternalLink aria-hidden data-icon="inline-start" />
+            Pay invoice
+          </a>
+        ) : null}
+        {canCancelInvoice && invoiceId != null && onCancelInvoice != null ? (
+          <AppButton
+            disabled={invoiceCancellationPending}
+            onClick={() => onCancelInvoice(invoiceId)}
+            size="sm"
+            variant="secondary"
+          >
+            <CircleX aria-hidden data-icon="inline-start" />
+            {invoiceCancellationPending ? "Cancelling..." : "Cancel invoice"}
+          </AppButton>
+        ) : null}
+      </AlertAction>
+    </Alert>
+  );
+}
+
 function BillingPlanNotices({
   current,
   invoiceCancellationPending,
   onCancelInvoice,
   pendingDowngrade,
+  pendingUpgrade,
+  pendingUpgradePlanAvailable,
   transactionAvailability,
 }: {
   current: BillingPlanSnapshot["current"];
   invoiceCancellationPending: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
   pendingDowngrade: BillingPlanSnapshot["pendingDowngrade"];
+  pendingUpgrade: BillingPlanSnapshot["pendingUpgrade"];
+  pendingUpgradePlanAvailable: boolean;
   transactionAvailability: BillingPlanSnapshot["availability"]["transaction"];
 }) {
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
-  const invoiceId = current.invoiceId;
-  const billingActionsAllowed = subscriptionLifecycleAllowsBillingActions(
-    current.lifecycle
-  );
 
   return (
     <div className="flex flex-col gap-3" data-slot="billing-plan-notices">
@@ -321,46 +400,13 @@ function BillingPlanNotices({
         </Alert>
       ) : null}
 
-      {!billingActionsAllowed ||
-      current.invoicePaymentUrl == null ||
-      current.warningStage != null ? null : (
-        <Alert
-          className="has-data-[slot=alert-action]:pr-4 sm:has-data-[slot=alert-action]:pr-18"
-          variant="destructive"
-        >
-          <AlertCircle aria-hidden />
-          <AlertTitle>You have an unpaid invoice</AlertTitle>
-          <AlertDescription>
-            Complete payment to keep this workspace active.
-          </AlertDescription>
-          <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
-            <a
-              className={appButtonVariants({ size: "sm", variant: "danger" })}
-              href={current.invoicePaymentUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <ExternalLink aria-hidden data-icon="inline-start" />
-              Pay invoice
-            </a>
-            {current.canManage &&
-            invoiceId != null &&
-            onCancelInvoice != null ? (
-              <AppButton
-                disabled={invoiceCancellationPending}
-                onClick={() => onCancelInvoice(invoiceId)}
-                size="sm"
-                variant="secondary"
-              >
-                <CircleX aria-hidden data-icon="inline-start" />
-                {invoiceCancellationPending
-                  ? "Cancelling..."
-                  : "Cancel invoice"}
-              </AppButton>
-            ) : null}
-          </AlertAction>
-        </Alert>
-      )}
+      <BillingInvoiceNotice
+        current={current}
+        invoiceCancellationPending={invoiceCancellationPending}
+        onCancelInvoice={onCancelInvoice}
+        pendingUpgrade={pendingUpgrade}
+        pendingUpgradePlanAvailable={pendingUpgradePlanAvailable}
+      />
 
       {isFreePlan && isNearFutureExpiry(current.currentPeriodEndAt) ? (
         <Alert>
@@ -836,6 +882,11 @@ export function BillingPlanSurface({
   snapshot,
 }: BillingPlanSurfaceProps) {
   const { current } = snapshot;
+  const pendingUpgradePlanAvailable =
+    snapshot.pendingUpgrade == null ||
+    snapshot.plans.some(
+      (plan) => plan.name === snapshot.pendingUpgrade?.planName
+    );
   const billingActionsAllowed =
     current.canManage &&
     subscriptionLifecycleAllowsBillingActions(current.lifecycle);
@@ -989,6 +1040,8 @@ export function BillingPlanSurface({
         invoiceCancellationPending={invoiceCancellationPending}
         onCancelInvoice={onCancelInvoice}
         pendingDowngrade={snapshot.pendingDowngrade}
+        pendingUpgrade={snapshot.pendingUpgrade}
+        pendingUpgradePlanAvailable={pendingUpgradePlanAvailable}
         transactionAvailability={snapshot.availability.transaction}
       />
 

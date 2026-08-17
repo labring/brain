@@ -84,15 +84,23 @@ function MorePlanSeparator() {
 function morePlanOption({
   currency,
   pendingDowngradePlanName,
+  pendingUpgradePlanName,
   plan,
 }: {
   currency: BillingCurrency;
   pendingDowngradePlanName: string | null;
+  pendingUpgradePlanName: string | null;
   plan: SnapshotPlan;
 }): AppSelectOption {
+  const isPendingUpgradeTarget =
+    pendingUpgradePlanName != null &&
+    pendingUpgradePlanName.trim().toLowerCase() ===
+      plan.name.trim().toLowerCase();
   if (isContactJumpPlan(plan)) {
     return {
-      disabled: planContactUrl(plan) == null,
+      disabled:
+        planContactUrl(plan) == null ||
+        (pendingUpgradePlanName != null && !isPendingUpgradeTarget),
       label: (
         <span className="flex min-w-0 items-center gap-3">
           <span className="shrink-0 font-medium">{plan.name}</span>
@@ -109,6 +117,7 @@ function morePlanOption({
   const spec = planSpecSummary(plan);
   const price = `${formatBillingAmount(plan.priceMicroUnits, currency)}/month`;
   return {
+    disabled: pendingUpgradePlanName != null && !isPendingUpgradeTarget,
     label: (
       <span className="flex w-full min-w-0 items-center gap-3">
         <span className="shrink-0 font-medium">{plan.name}</span>
@@ -184,6 +193,7 @@ interface BillingPlanPickerProps {
   onOpenUrl: (url: string) => void;
   onSelectPlan?: (planId: string) => void;
   pendingDowngradePlanName: string | null;
+  pendingUpgradePlanName?: string | null;
   plans: BillingPlanSnapshot["plans"];
 }
 
@@ -201,8 +211,12 @@ export function BillingPlanPicker({
   onOpenUrl,
   onSelectPlan,
   pendingDowngradePlanName,
+  pendingUpgradePlanName = null,
   plans,
 }: BillingPlanPickerProps) {
+  const normalizedPendingUpgradePlanName = pendingUpgradePlanName?.trim()
+    ? pendingUpgradePlanName.trim().toLowerCase()
+    : null;
   // The legacy costcenter excludes Free and unpriced plans from checkout. The
   // current API always pays monthly, so require that exact cycle instead of
   // accepting any unrelated catalog price.
@@ -240,8 +254,16 @@ export function BillingPlanPicker({
           {
             changeKind: plan.changeKind ?? null,
             inDebt,
+            isBlockedByPendingUpgrade:
+              normalizedPendingUpgradePlanName != null &&
+              normalizedPendingUpgradePlanName !==
+                plan.name.trim().toLowerCase(),
             isCurrent: plan.isCurrent,
             isPendingDowngradeTarget: pendingDowngradePlanName === plan.name,
+            isPendingUpgradeTarget:
+              normalizedPendingUpgradePlanName != null &&
+              normalizedPendingUpgradePlanName ===
+                plan.name.trim().toLowerCase(),
           },
         ])
       )
@@ -291,6 +313,9 @@ export function BillingPlanPicker({
                 return;
               }
               if (isContactJumpPlan(plan)) {
+                if (pendingUpgradePlanName != null) {
+                  return;
+                }
                 const contactUrl = planContactUrl(plan);
                 if (contactUrl != null) {
                   onOpenUrl(contactUrl);
@@ -300,7 +325,12 @@ export function BillingPlanPicker({
               setMorePlanId(plan.id);
             }}
             options={morePlans.map((plan) =>
-              morePlanOption({ currency, pendingDowngradePlanName, plan })
+              morePlanOption({
+                currency,
+                pendingDowngradePlanName,
+                pendingUpgradePlanName: normalizedPendingUpgradePlanName,
+                plan,
+              })
             )}
             placeholder="Select a plan"
             renderValue={(option) => {

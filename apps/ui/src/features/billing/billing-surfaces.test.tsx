@@ -442,6 +442,30 @@ test("Pricing disables plan selection for closed subscription states", async () 
   }
 });
 
+test("Pricing exposes only the pending upgrade recovery target", async () => {
+  const { BillingPlanCatalogSection, renderToStaticMarkup } =
+    await surfaceModules();
+  const snapshot: BillingPlanSnapshot = {
+    ...CANCELLING_PLAN,
+    current: {
+      ...CANCELLING_PLAN.current,
+      lifecycle: "pending-upgrade",
+    },
+  };
+  const html = renderToStaticMarkup(
+    <BillingPlanCatalogSection
+      currency="usd"
+      gpuEnabled
+      planSnapshot={snapshot}
+    />
+  );
+
+  assertIncludes(html, "Recover payment");
+  assertIncludes(html, "Payment in progress");
+  assert.equal(html.includes(">Upgrade<"), false);
+  assert.equal(html.includes(">Downgrade<"), false);
+});
+
 test("Plan renders the compact PAYG summary next to the balance", async () => {
   const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
   const snapshot: BillingPlanSnapshot = {

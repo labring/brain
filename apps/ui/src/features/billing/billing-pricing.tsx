@@ -120,6 +120,7 @@ export function BillingPlanCatalogSection({
         pendingDowngradePlanName={
           planSnapshot.pendingDowngrade?.planName ?? null
         }
+        pendingUpgradePlanName={planSnapshot.pendingUpgrade?.planName ?? null}
         plans={planSnapshot.plans}
       />
     );
@@ -790,7 +791,14 @@ export default function BillingPricing({
     const plan =
       planSnapshot?.plans.find((entry) => entry.id === selectedPlanId) ?? null;
     const inDebt = planSnapshot?.current.lifecycle === "payment-due";
-    return planOperator(plan, inDebt) == null ? null : plan;
+    const pendingUpgradePlanName = planSnapshot?.pendingUpgrade?.planName;
+    const isPendingUpgradeTarget =
+      pendingUpgradePlanName == null ||
+      (plan?.name.trim().toLowerCase() ?? "") ===
+        pendingUpgradePlanName.trim().toLowerCase();
+    return !isPendingUpgradeTarget || planOperator(plan, inDebt) == null
+      ? null
+      : plan;
   }, [planSnapshot, selectedPlanId]);
   const clearSelection = () => setSelectedPlanId(null);
 

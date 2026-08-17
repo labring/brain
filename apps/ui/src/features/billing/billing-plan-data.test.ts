@@ -456,6 +456,45 @@ test("a PAYG workspace treats every plan as a fresh subscription", async () => {
   );
 });
 
+test("PAYG debt statuses enter the payment-due lifecycle", async () => {
+  for (const status of [
+    "DEBT",
+    "DEBT_PRE_DELETION",
+    "DEBT_FINAL_DELETION",
+  ] as const) {
+    const snapshot = await loadBillingPlanSnapshot(
+      {
+        appToken: "desktop-app-token",
+        kubeconfig: "apiVersion: v1",
+        workspace: "workspace-a",
+      },
+      {
+        fetch: (input) => {
+          const url = input.toString();
+          if (url === "/api/billing/subscription") {
+            return Promise.resolve(
+              Response.json({ subscription: { Status: status, type: "PAYG" } })
+            );
+          }
+          if (url === "/api/billing/subscription/last-transaction") {
+            return Promise.resolve(Response.json({}));
+          }
+          return Promise.resolve(Response.json(RESPONSES[url]));
+        },
+        now: () => NOW,
+      }
+    );
+
+    assert.equal(snapshot.current.isPayg, true);
+    assert.equal(snapshot.current.lifecycle, "payment-due", status);
+    assert.equal(
+      snapshot.current.warningStage,
+      status === "DEBT" ? "expired" : "deletion-imminent",
+      status
+    );
+  }
+});
+
 test("a pending downgrade transaction surfaces as pendingDowngrade", async () => {
   const snapshot = await loadBillingPlanSnapshot(
     {
