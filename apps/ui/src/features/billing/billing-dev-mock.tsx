@@ -60,6 +60,23 @@ export const billingDevMockDriver: DevTweaksDriver = {
     document.cookie = `${BILLING_DEV_MOCK_COOKIE}=${value}`;
     mutate(() => true).catch(() => undefined);
   },
+  // The fixture dispatcher rewrites the cookie behind the panel's back (its
+  // Set-Cookie scenario transitions); the Cookie Store API pushes those, the
+  // focus/interval pair is the fallback. The store dedupes unchanged loads.
+  subscribe: (_groupKey, onChange) => {
+    const cookieStore = (window as { cookieStore?: EventTarget }).cookieStore;
+    cookieStore?.addEventListener("change", onChange);
+    window.addEventListener("focus", onChange);
+    const watchTimer =
+      cookieStore == null ? window.setInterval(onChange, 3000) : undefined;
+    return () => {
+      cookieStore?.removeEventListener("change", onChange);
+      window.removeEventListener("focus", onChange);
+      if (watchTimer != null) {
+        window.clearInterval(watchTimer);
+      }
+    };
+  },
 };
 
 const BILLING_MOCK_GROUP = {

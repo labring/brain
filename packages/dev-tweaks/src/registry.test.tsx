@@ -265,6 +265,48 @@ test("refreshes the stored def snapshot when the group remounts", async () => {
   });
 });
 
+test("re-adopts driver values when the driver reports an external change", async () => {
+  await withHarness(async ({ mountProbe }) => {
+    let backing: Record<string, DevTweaksValue> | null = { scenario: "alpha" };
+    let notifyChange: (() => void) | undefined;
+    const driver: DevTweaksDriver = {
+      load: () => backing,
+      persist: (_groupKey, values) => {
+        backing = values;
+      },
+      subscribe: (_groupKey, onChange) => {
+        notifyChange = onChange;
+        return () => {
+          notifyChange = undefined;
+        };
+      },
+    };
+    const def: DevTweaksGroupDef = {
+      ...PROBE_DEF,
+      kind: "mock",
+      persistence: "probe-driver",
+    };
+    const probe = await mountProbe({
+      def,
+      drivers: { "probe-driver": driver },
+    });
+    assert.equal(probe.latest().values.scenario, "alpha");
+
+    // The backing store changes behind the panel's back (e.g. a server
+    // Set-Cookie transition); the store re-loads on the driver's signal.
+    backing = { scenario: "beta" };
+    await actAndDrain(() => notifyChange?.());
+    assert.equal(probe.latest().values.scenario, "beta");
+
+    // A cleared backing store clears the override — values fall back to
+    // the def's defaults.
+    backing = null;
+    await actAndDrain(() => notifyChange?.());
+    assert.equal(probe.latest().values.scenario, "alpha");
+    assert.equal(storedState().groups?.probe, undefined);
+  });
+});
+
 test("overrides survive the owning component unmounting", async () => {
   await withHarness(async ({ mountProbe }) => {
     seedStoredState({
