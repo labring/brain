@@ -11,20 +11,8 @@ function stripTrailingSlash(value: string): string {
   return value.replace(TRAILING_SLASH_RE, "");
 }
 
-function tryParseUrl(value: string): URL | null {
-  try {
-    return new URL(value);
-  } catch {
-    return null;
-  }
-}
-
-function isLoopbackHostname(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1";
-}
-
-function envPublicAppUrl(): string | null {
-  const raw = process.env.NEXT_PUBLIC_APP_URL?.trim();
+function envAppUrl(): string | null {
+  const raw = process.env.APP_URL?.trim();
   return raw ? stripTrailingSlash(raw) : null;
 }
 
@@ -39,25 +27,13 @@ function originFromRequest(request: Request): string {
 
 /**
  * Canonical app origin for the GitHub App install round-trip.
+ *
+ * APP_URL, when set, is authoritative — a misconfigured value must surface as
+ * a visible redirect mismatch, not be repaired from forgeable request headers.
+ * The header-derived origin is the local-development fallback only.
  */
 export function getCallbackBaseUrl(request: Request): string {
-  const env = envPublicAppUrl();
-  const runtime = stripTrailingSlash(originFromRequest(request));
-  if (!env) {
-    return runtime;
-  }
-  const envParsed = tryParseUrl(env);
-  const runtimeParsed = tryParseUrl(runtime);
-  if (!(envParsed && runtimeParsed)) {
-    return env;
-  }
-  if (
-    isLoopbackHostname(envParsed.hostname) &&
-    !isLoopbackHostname(runtimeParsed.hostname)
-  ) {
-    return `${runtimeParsed.protocol}//${runtimeParsed.host}`;
-  }
-  return env;
+  return envAppUrl() ?? stripTrailingSlash(originFromRequest(request));
 }
 
 export function buildInstallPopupCompleteUrl(
