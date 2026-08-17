@@ -1,6 +1,7 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { CANVAS_NODE_DEFAULT_COPIED_FEEDBACK_MS } from "@workspace/ui/components/canvas-node/canvas-node.copyable-row";
 import { ResourceSettingsInset } from "@workspace/ui/components/resource-settings/resource-settings";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
@@ -2273,16 +2274,14 @@ export function useApSettingsSections({
     sections.push({
       actions:
         onOpenImageVersions == null ? undefined : (
-          <AppButton
+          <AppIconButton
             aria-label="Open image versions"
-            className="h-7 px-2 text-xs"
             onClick={onOpenImageVersions}
-            type="button"
-            variant="quiet"
+            size="md"
+            title="Image versions"
           >
-            <History aria-hidden className="size-3.5" />
-            Versions
-          </AppButton>
+            <History aria-hidden />
+          </AppIconButton>
         ),
       content: (
         <ImageSettingsContent
