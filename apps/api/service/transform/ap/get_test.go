@@ -204,7 +204,6 @@ func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T)
 		ingressPath("/admin", "eaglercraft-server-service", 5201),
 		ingressPath("/admin.css", "eaglercraft-server-service", 5201),
 		ingressPath("/admin.js", "eaglercraft-server-service", 5201),
-		ingressPath("/dynmap", "eaglercraft-server-service", 5201),
 	}
 	out := APWithIngressesAndServicesFromList(
 		map[string]interface{}{
@@ -235,6 +234,14 @@ func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T)
 							"host": "eaglercraft-kjmioxdq.staging-usw-1.sealos.io",
 							"http": map[string]interface{}{
 								"paths": paths,
+							},
+						},
+						map[string]interface{}{
+							"host": "eaglercraft-kjmioxdq.staging-usw-1.sealos.io",
+							"http": map[string]interface{}{
+								"paths": []interface{}{
+									ingressPath("/dynmap", "eaglercraft-server-service", 5200),
+								},
 							},
 						},
 					},

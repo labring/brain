@@ -285,16 +285,7 @@ func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, s
 	if len(publicAddressRowsFromValue(networkCopy["publicAddresses"])) > 0 {
 		return
 	}
-	serviceNames := make(map[string]bool, len(services))
-	servicePorts := make(map[string]observedServicePorts, len(services))
-	for _, service := range services {
-		name := strings.TrimSpace(getString(service, "metadata", "name"))
-		if name == "" {
-			continue
-		}
-		serviceNames[name] = true
-		servicePorts[name] = observedServicePortsFromService(service)
-	}
+	serviceNames, servicePorts := observedServiceLookup(services)
 	rows := observedPublicAddressRows(ingresses, serviceNames, servicePorts)
 	if len(rows) == 0 {
 		return
@@ -311,10 +302,23 @@ type observedServicePorts struct {
 type observedIngressEndpoint struct {
 	host       string
 	key        string
-	path       string
 	port       int
 	scheme     string
 	serviceKey string
+}
+
+func observedServiceLookup(services []map[string]interface{}) (map[string]bool, map[string]observedServicePorts) {
+	serviceNames := make(map[string]bool, len(services))
+	servicePorts := make(map[string]observedServicePorts, len(services))
+	for _, service := range services {
+		name := strings.TrimSpace(getString(service, "metadata", "name"))
+		if name == "" {
+			continue
+		}
+		serviceNames[name] = true
+		servicePorts[name] = observedServicePortsFromService(service)
+	}
+	return serviceNames, servicePorts
 }
 
 func observedServicePortsFromService(service map[string]interface{}) observedServicePorts {
@@ -363,6 +367,7 @@ func (ports observedServicePorts) hasPort(port int) bool {
 func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []observedIngressEndpoint {
 	endpoints := []observedIngressEndpoint{}
 	includeAllServices := len(serviceNames) == 0
+	seenHosts := map[string]bool{}
 	for _, ingress := range ingresses {
 		spec, _ := ingress["spec"].(map[string]interface{})
 		if spec == nil {
@@ -381,6 +386,10 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 				host = lbHost
 			}
 			if host == "" || isPlaceholderIngressHost(host) {
+				continue
+			}
+			hostKey := strings.ToLower(host)
+			if seenHosts[hostKey] {
 				continue
 			}
 			paths, _ := getSlice(rule, "http", "paths")
@@ -404,21 +413,14 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 					continue
 				}
 				pickedFirst = true
-				pathValue := strings.TrimSpace(getString(path, "path"))
-				if pathValue == "" {
-					pathValue = "/"
-				}
-				if !strings.HasPrefix(pathValue, "/") {
-					pathValue = "/" + pathValue
-				}
 				scheme := "http"
 				if tlsHosts[host] {
 					scheme = "https"
 				}
+				seenHosts[hostKey] = true
 				endpoints = append(endpoints, observedIngressEndpoint{
 					host:       host,
 					key:        fmt.Sprintf("%s|%s|%d", host, serviceName, port),
-					path:       pathValue,
 					port:       port,
 					scheme:     scheme,
 					serviceKey: serviceName + ":" + strconv.Itoa(port),
@@ -431,19 +433,14 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 
 func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []map[string]interface{} {
 	rows := []map[string]interface{}{}
-	seen := map[string]bool{}
 	for _, endpoint := range observedIngressEndpoints(ingresses, serviceNames, servicePorts) {
-		if seen[endpoint.key] {
-			continue
-		}
-		seen[endpoint.key] = true
 		rows = append(rows, map[string]interface{}{
 			"host":   endpoint.host,
 			"id":     "observed-" + stablePlatformAddressHostLabel(endpoint.key, 12),
 			"port":   endpoint.port,
 			"status": "accessible",
 			"type":   "observed",
-			"url":    fmt.Sprintf("%s://%s%s", endpoint.scheme, endpoint.host, endpoint.path),
+			"url":    fmt.Sprintf("%s://%s/", endpoint.scheme, endpoint.host),
 		})
 	}
 	return rows
@@ -994,7 +991,7 @@ func buildConnectionRows(ap map[string]interface{}, ingresses, services []map[st
 	if apNamespace == "" {
 		return nil
 	}
-	externalBySvcPort := buildExternalAddressMap(ingresses)
+	externalBySvcPort := buildExternalAddressMap(ingresses, services)
 
 	var rows []map[string]interface{}
 	seen := make(map[string]bool)
@@ -1139,10 +1136,11 @@ func getPorts(svc map[string]interface{}) []int {
 	return ports
 }
 
-func buildExternalAddressMap(ingresses []map[string]interface{}) map[string]string {
+func buildExternalAddressMap(ingresses, services []map[string]interface{}) map[string]string {
 	result := make(map[string]string)
-	for _, endpoint := range observedIngressEndpoints(ingresses, map[string]bool{}, map[string]observedServicePorts{}) {
-		addr := fmt.Sprintf("%s://%s%s", endpoint.scheme, endpoint.host, endpoint.path)
+	serviceNames, servicePorts := observedServiceLookup(services)
+	for _, endpoint := range observedIngressEndpoints(ingresses, serviceNames, servicePorts) {
+		addr := fmt.Sprintf("%s://%s/", endpoint.scheme, endpoint.host)
 		if _, exists := result[endpoint.serviceKey]; !exists {
 			result[endpoint.serviceKey] = addr
 		}
