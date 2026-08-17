@@ -37,15 +37,10 @@ CREATE TABLE "sealai_marketing"."lifecycle_events" (
 	"transaction_id" text,
 	"currency" text,
 	"value" numeric(24, 6),
-	"status" text DEFAULT 'pending' NOT NULL,
-	"upload_error" text,
-	"upload_request_id" text,
-	"uploaded_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "sealai_deployment"."deploy_tasks" ADD COLUMN "marketing_attribution" jsonb;--> statement-breakpoint
-CREATE INDEX "lifecycle_events_pending_idx" ON "sealai_marketing"."lifecycle_events" USING btree ("occurred_at") WHERE "sealai_marketing"."lifecycle_events"."status" = 'pending';--> statement-breakpoint
 CREATE UNIQUE INDEX "lifecycle_events_action_transaction_idx" ON "sealai_marketing"."lifecycle_events" USING btree ("event_name","transaction_id") WHERE "sealai_marketing"."lifecycle_events"."transaction_id" IS NOT NULL;
 --> statement-breakpoint
 CREATE FUNCTION "sealai_marketing"."attribution_user_id"(
@@ -55,6 +50,26 @@ LANGUAGE sql
 IMMUTABLE
 AS $$
 	SELECT nullif(btrim("p_attribution" -> 'consent_provenance' ->> 'subject_id'), '');
+$$;
+--> statement-breakpoint
+CREATE FUNCTION "sealai_marketing"."normalize_consent_state"(
+	"p_value" jsonb
+) RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+	SELECT CASE jsonb_typeof("p_value")
+		WHEN 'boolean' THEN CASE
+			WHEN ("p_value" #>> '{}')::boolean THEN 'granted'
+			ELSE 'denied'
+		END
+		WHEN 'string' THEN CASE lower("p_value" #>> '{}')
+			WHEN 'granted' THEN 'granted'
+			WHEN 'denied' THEN 'denied'
+			ELSE 'unspecified'
+		END
+		ELSE 'unspecified'
+	END;
 $$;
 --> statement-breakpoint
 CREATE FUNCTION "sealai_marketing"."upsert_attribution_subject"(
@@ -72,23 +87,12 @@ BEGIN
 		RETURN;
 	END IF;
 
-	v_ad_user_data_consent := CASE jsonb_typeof(p_attribution -> 'ad_user_data_consent')
-		WHEN 'boolean' THEN CASE
-			WHEN (p_attribution ->> 'ad_user_data_consent')::boolean THEN 'granted'
-			ELSE 'denied'
-		END
-		WHEN 'string' THEN CASE lower(p_attribution ->> 'ad_user_data_consent')
-			WHEN 'granted' THEN 'granted'
-			WHEN 'denied' THEN 'denied'
-			ELSE 'unspecified'
-		END
-		ELSE 'unspecified'
-	END;
-	v_ad_personalization := CASE lower(coalesce(p_attribution ->> 'ad_personalization', 'unspecified'))
-		WHEN 'granted' THEN 'granted'
-		WHEN 'denied' THEN 'denied'
-		ELSE 'unspecified'
-	END;
+	v_ad_user_data_consent := "sealai_marketing"."normalize_consent_state"(
+		p_attribution -> 'ad_user_data_consent'
+	);
+	v_ad_personalization := "sealai_marketing"."normalize_consent_state"(
+		p_attribution -> 'ad_personalization'
+	);
 
 	INSERT INTO "sealai_marketing"."attribution_subjects" (
 		"subject_type",
@@ -221,23 +225,12 @@ BEGIN
 		NEW."marketing_attribution"
 	);
 
-	"v_ad_user_data_consent" := CASE jsonb_typeof(NEW."marketing_attribution" -> 'ad_user_data_consent')
-		WHEN 'boolean' THEN CASE
-			WHEN (NEW."marketing_attribution" ->> 'ad_user_data_consent')::boolean THEN 'granted'
-			ELSE 'denied'
-		END
-		WHEN 'string' THEN CASE lower(NEW."marketing_attribution" ->> 'ad_user_data_consent')
-			WHEN 'granted' THEN 'granted'
-			WHEN 'denied' THEN 'denied'
-			ELSE 'unspecified'
-		END
-		ELSE 'unspecified'
-	END;
-	"v_ad_personalization" := CASE lower(coalesce(NEW."marketing_attribution" ->> 'ad_personalization', 'unspecified'))
-		WHEN 'granted' THEN 'granted'
-		WHEN 'denied' THEN 'denied'
-		ELSE 'unspecified'
-	END;
+	"v_ad_user_data_consent" := "sealai_marketing"."normalize_consent_state"(
+		NEW."marketing_attribution" -> 'ad_user_data_consent'
+	);
+	"v_ad_personalization" := "sealai_marketing"."normalize_consent_state"(
+		NEW."marketing_attribution" -> 'ad_personalization'
+	);
 
 	INSERT INTO "sealai_marketing"."lifecycle_events" (
 		"event_id",
@@ -309,23 +302,12 @@ BEGIN
 			"v_user_id" := "sealai_marketing"."attribution_user_id"(
 				"v_task"."marketing_attribution"
 			);
-			"v_ad_user_data_consent" := CASE jsonb_typeof("v_task"."marketing_attribution" -> 'ad_user_data_consent')
-				WHEN 'boolean' THEN CASE
-					WHEN ("v_task"."marketing_attribution" ->> 'ad_user_data_consent')::boolean THEN 'granted'
-					ELSE 'denied'
-				END
-				WHEN 'string' THEN CASE lower("v_task"."marketing_attribution" ->> 'ad_user_data_consent')
-					WHEN 'granted' THEN 'granted'
-					WHEN 'denied' THEN 'denied'
-					ELSE 'unspecified'
-				END
-				ELSE 'unspecified'
-			END;
-			"v_ad_personalization" := CASE lower(coalesce("v_task"."marketing_attribution" ->> 'ad_personalization', 'unspecified'))
-				WHEN 'granted' THEN 'granted'
-				WHEN 'denied' THEN 'denied'
-				ELSE 'unspecified'
-			END;
+			"v_ad_user_data_consent" := "sealai_marketing"."normalize_consent_state"(
+				"v_task"."marketing_attribution" -> 'ad_user_data_consent'
+			);
+			"v_ad_personalization" := "sealai_marketing"."normalize_consent_state"(
+				"v_task"."marketing_attribution" -> 'ad_personalization'
+			);
 			PERFORM "sealai_marketing"."upsert_attribution_subject"(
 				'user', "v_user_id", "v_task"."marketing_attribution"
 			);

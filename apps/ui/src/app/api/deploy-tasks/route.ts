@@ -238,18 +238,13 @@ export async function POST(request: Request) {
     }
   }
   const effectiveSource = parsed.data.source ?? predecessor?.source;
-  const inheritedMarketingAttribution =
-    parsed.data.marketingAttribution == null
-      ? predecessor?.marketingAttribution
-      : null;
   const creatingActor = namespaceResolved.workspaceActor;
   const bindingResolution = await resolveCredentialBinding({
     appToken: appTokenFromRequest(request),
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     namespace: taskNamespace,
     requiresMarketingIdentity:
-      parsed.data.marketingAttribution?.consent_token != null ||
-      inheritedMarketingAttribution?.consent_provenance != null,
+      parsed.data.marketingAttribution?.consent_token != null,
     sourceKind: effectiveSource?.kind,
   });
   if ("response" in bindingResolution) {

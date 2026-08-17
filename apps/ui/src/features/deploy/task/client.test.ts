@@ -23,13 +23,26 @@ function captureAppTokenHeaders(): (string | null)[] {
   return headers;
 }
 
-test("every redeploy attaches the app token", async () => {
+test("GitHub redeploy attaches the app token", async () => {
   const headers = captureAppTokenHeaders();
   await redeployDeploymentTask({
     appToken: "app-token",
     kubeconfig: "encoded-kubeconfig",
     namespace: "shared",
+    predecessorSourceKind: "github",
     predecessorTaskId: "task-1",
   });
   assert.deepEqual(headers, ["app-token"]);
+});
+
+test("namespace-shared redeploy keeps the app token private", async () => {
+  const headers = captureAppTokenHeaders();
+  await redeployDeploymentTask({
+    appToken: "app-token",
+    kubeconfig: "encoded-kubeconfig",
+    namespace: "shared",
+    predecessorSourceKind: "template",
+    predecessorTaskId: "task-1",
+  });
+  assert.deepEqual(headers, [null]);
 });

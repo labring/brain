@@ -1317,7 +1317,9 @@ export function DeploymentTaskTimelineActions({
             disabled={redeployPending}
             onClick={() => {
               overwriteGate.gate(() => {
-                actions.redeploy(task.id).catch(() => undefined);
+                actions
+                  .redeploy(task.id, task.source.kind)
+                  .catch(() => undefined);
               });
             }}
             type="button"

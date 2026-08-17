@@ -8,6 +8,7 @@ import type {
   DeploymentTaskProjectionStreamServerEvent,
 } from "./projection";
 import type {
+  DeploymentTaskSource,
   DeploymentTaskTimelineSnapshotDTO,
   DeploymentTaskTimelineStreamEvent,
   DeploymentTaskTimelineStreamServerEvent,
@@ -354,13 +355,15 @@ export async function cancelDeploymentTask(input: {
  * A 409 carries the already-active recovery attempt (or the non-terminal
  * predecessor); callers reconcile from that snapshot.
  *
- * Redeploy carries the app token because source credentials and inherited
- * attribution can both require the initiating member's verified identity.
+ * Redeploy of a GitHub predecessor proves the initiator for its personal
+ * credential binding. Namespace-shared predecessors keep the token-free
+ * redeploy contract and redact inherited personal attribution server-side.
  */
 export async function redeployDeploymentTask(input: {
   appToken: string;
   kubeconfig: string;
   namespace: string;
+  predecessorSourceKind: DeploymentTaskSource["kind"];
   predecessorTaskId: string;
 }): Promise<DeployTaskActionResult> {
   const url = new URL(DEPLOY_TASKS_API_PATH, window.location.origin);
@@ -374,7 +377,9 @@ export async function redeployDeploymentTask(input: {
       headers: {
         Authorization: kubeconfigBearerHeader(input.kubeconfig),
         "Content-Type": "application/json",
-        ...appTokenRequestHeaders(input.appToken),
+        ...(input.predecessorSourceKind === "github"
+          ? appTokenRequestHeaders(input.appToken)
+          : {}),
       },
       method: "POST",
     }),

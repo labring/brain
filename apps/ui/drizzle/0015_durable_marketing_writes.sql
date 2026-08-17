@@ -11,6 +11,9 @@ BEGIN
 		'workspace', NEW."namespace", NEW."marketing_attribution"
 	);
 	RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+	RAISE WARNING '[marketing] attribution capture failed for deploy task %: %', NEW."id", SQLERRM;
+	RETURN NEW;
 END;
 $$;
 --> statement-breakpoint
@@ -37,23 +40,12 @@ BEGIN
 		NEW."marketing_attribution"
 	);
 
-	"v_ad_user_data_consent" := CASE jsonb_typeof(NEW."marketing_attribution" -> 'ad_user_data_consent')
-		WHEN 'boolean' THEN CASE
-			WHEN (NEW."marketing_attribution" ->> 'ad_user_data_consent')::boolean THEN 'granted'
-			ELSE 'denied'
-		END
-		WHEN 'string' THEN CASE lower(NEW."marketing_attribution" ->> 'ad_user_data_consent')
-			WHEN 'granted' THEN 'granted'
-			WHEN 'denied' THEN 'denied'
-			ELSE 'unspecified'
-		END
-		ELSE 'unspecified'
-	END;
-	"v_ad_personalization" := CASE lower(coalesce(NEW."marketing_attribution" ->> 'ad_personalization', 'unspecified'))
-		WHEN 'granted' THEN 'granted'
-		WHEN 'denied' THEN 'denied'
-		ELSE 'unspecified'
-	END;
+	"v_ad_user_data_consent" := "sealai_marketing"."normalize_consent_state"(
+		NEW."marketing_attribution" -> 'ad_user_data_consent'
+	);
+	"v_ad_personalization" := "sealai_marketing"."normalize_consent_state"(
+		NEW."marketing_attribution" -> 'ad_personalization'
+	);
 
 	INSERT INTO "sealai_marketing"."lifecycle_events" (
 		"event_id", "event_name", "user_id", "workspace_id", "deployment_id",

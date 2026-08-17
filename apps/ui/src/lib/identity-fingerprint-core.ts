@@ -277,8 +277,7 @@ async function rekeyPersonalResources(
     )
     .returning({ id: deployTasks.id });
 
-  // All local lifecycle rows follow the survivor, including failed and
-  // uploaded rows. Already-uploaded Google Ads records remain immutable.
+  // All local lifecycle rows follow the survivor.
   const rekeyedLifecycleEvents = await tx
     .update(marketingLifecycleEvents)
     .set({

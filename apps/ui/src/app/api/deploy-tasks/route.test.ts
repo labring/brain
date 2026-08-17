@@ -841,6 +841,7 @@ test("client collaboratively redeploys an attributed Template with workspace-saf
       appToken: "app-token-bob",
       kubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
       namespace: "namespace-b",
+      predecessorSourceKind: "template",
       predecessorTaskId: predecessor.id,
     });
     assert.ok(runDone);
@@ -848,13 +849,7 @@ test("client collaboratively redeploys an attributed Template with workspace-saf
 
     assert.equal(result.conflict, false);
     assert.equal(result.task?.retriedFromTaskId, predecessor.id);
-    assert.deepEqual(authorizeCalls, [
-      {
-        appToken: "app-token-bob",
-        encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
-        expectedNamespace: "namespace-b",
-      },
-    ]);
+    assert.deepEqual(authorizeCalls, []);
     const [stored] = await harness.db
       .select()
       .from(deployTasks)
@@ -873,11 +868,13 @@ test("client collaboratively redeploys an attributed Template with workspace-saf
 test("POST rejects inherited attribution when the identity changes after authorization", async () => {
   const harness = await createDeployTaskTestHarness();
   useHarness(harness);
+  activeGithubConnection = githubConnection("connection-alice", "alice");
   try {
     const predecessor = await insertTaskRow(harness.db, {
       completedAt: new Date(),
       creatingActor: "alice-cr",
       namespace: "namespace-b",
+      source: githubCreateBody().source as never,
       status: "failed",
     });
     await harness.db

@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  index,
   jsonb,
   numeric,
   pgSchema,
@@ -20,7 +19,6 @@ export const MARKETING_DB_SCHEMA = "sealai_marketing";
 export const ns = pgSchema(MARKETING_DB_SCHEMA);
 
 export type MarketingAttributionSubjectType = "user" | "workspace";
-export type MarketingLifecycleEventStatus = "failed" | "pending" | "uploaded";
 
 export const marketingAttributionSubjects = ns.table(
   "attribution_subjects",
@@ -109,21 +107,11 @@ export const marketingLifecycleEvents = ns.table(
     transactionId: text("transaction_id"),
     currency: text("currency"),
     value: numeric("value", { precision: 24, scale: 6 }),
-    status: text("status")
-      .notNull()
-      .$type<MarketingLifecycleEventStatus>()
-      .default("pending"),
-    uploadError: text("upload_error"),
-    uploadRequestId: text("upload_request_id"),
-    uploadedAt: timestamp("uploaded_at", { mode: "date", withTimezone: true }),
     createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
       .defaultNow()
       .notNull(),
   },
   (table) => [
-    index("lifecycle_events_pending_idx")
-      .on(table.occurredAt)
-      .where(sql`${table.status} = 'pending'`),
     uniqueIndex("lifecycle_events_action_transaction_idx")
       .on(table.eventName, table.transactionId)
       .where(sql`${table.transactionId} IS NOT NULL`),

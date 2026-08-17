@@ -254,12 +254,11 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
     target: { kind: "existingProject", projectId: "merge-marketing" },
   });
   await db.insert(marketingLifecycleEvents).values(
-    (["failed", "pending", "uploaded"] as const).map((status) => ({
-      eventId: `merge-marketing-${status}`,
+    (["one", "two", "three"] as const).map((suffix) => ({
+      eventId: `merge-marketing-${suffix}`,
       eventName: "build_started" as const,
       consentProvenance,
       occurredAt: new Date("2026-08-13T00:00:00.000Z"),
-      status,
       userId: "tombstone-uid",
     }))
   );
@@ -320,18 +319,16 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
     (
       await db
         .select({
-          status: marketingLifecycleEvents.status,
           userId: marketingLifecycleEvents.userId,
         })
         .from(marketingLifecycleEvents)
         .where(
           inArray(marketingLifecycleEvents.eventId, [
-            "merge-marketing-failed",
-            "merge-marketing-pending",
-            "merge-marketing-uploaded",
+            "merge-marketing-one",
+            "merge-marketing-two",
+            "merge-marketing-three",
           ])
         )
-        .orderBy(marketingLifecycleEvents.status)
     ).map((event) => event.userId),
     ["survivor-uid", "survivor-uid", "survivor-uid"]
   );
@@ -344,9 +341,9 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
         .from(marketingLifecycleEvents)
         .where(
           inArray(marketingLifecycleEvents.eventId, [
-            "merge-marketing-failed",
-            "merge-marketing-pending",
-            "merge-marketing-uploaded",
+            "merge-marketing-one",
+            "merge-marketing-two",
+            "merge-marketing-three",
           ])
         )
     ).map((event) => event.consentProvenance?.subject_id),

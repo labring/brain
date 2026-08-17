@@ -1,6 +1,6 @@
 {
   "id": "67332fdf-15e9-467a-aecf-25706210e908",
-  "prevId": "bc6b4aa3-b14d-4c5c-a558-c44e1aeaa92f",
+  "prevId": "dcd15815-1e05-472b-8c5b-ab851901d641",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2019,31 +2019,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "upload_error": {
-          "name": "upload_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "upload_request_id": {
-          "name": "upload_request_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "uploaded_at": {
-          "name": "uploaded_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2053,22 +2028,6 @@
         }
       },
       "indexes": {
-        "lifecycle_events_pending_idx": {
-          "name": "lifecycle_events_pending_idx",
-          "columns": [
-            {
-              "expression": "occurred_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"sealai_marketing\".\"lifecycle_events\".\"status\" = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "lifecycle_events_action_transaction_idx": {
           "name": "lifecycle_events_action_transaction_idx",
           "columns": [
