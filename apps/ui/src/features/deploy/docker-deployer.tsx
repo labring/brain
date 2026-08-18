@@ -14,9 +14,9 @@ import {
   Plus,
   Rocket,
   ScrollText,
-  Settings2,
   TerminalSquare,
   Trash2,
+  Variable,
 } from "lucide-react";
 import type {
   ComponentProps,
@@ -438,9 +438,9 @@ function DockerDeployerFields({
             Add
           </AppButton>
         }
-        description="Set direct environment variables for startup."
-        icon={<Settings2 aria-hidden className="size-4" />}
-        title="Runtime"
+        description="Passed to the container process at startup."
+        icon={<Variable aria-hidden className="size-4" />}
+        title="Environment Variables"
       >
         {envRows.length === 0 ? null : (
           <div

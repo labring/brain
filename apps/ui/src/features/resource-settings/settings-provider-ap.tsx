@@ -1,7 +1,7 @@
 "use client";
 
 import { useAPPublicAddressReadiness } from "@workspace/api/hooks";
-import { Router, Settings2, SquarePen } from "lucide-react";
+import { Router, Settings2, Variable } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectApTarget } from "@/features/panes/target-identity";
@@ -431,7 +431,7 @@ function publicAddressesApSettingsModel({
 function apSettingsSectionMetadata(resolvedView: string) {
   const environmentView = resolvedView === AP_SETTINGS_ENVIRONMENT_VIEW;
   return {
-    icon: environmentView ? SquarePen : Settings2,
+    icon: environmentView ? Variable : Settings2,
     id: environmentView ? "environment" : "ap-settings",
     sectionFocus: environmentView ? "environment" : "all",
     title: environmentView ? "Environment Variables" : "AP Settings",

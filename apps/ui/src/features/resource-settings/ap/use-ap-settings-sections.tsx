@@ -11,10 +11,12 @@ import {
   HardDrive,
   MemoryStick,
   Network,
+  Package,
   Plus,
   Save,
-  SquarePen,
-  Terminal,
+  ScrollText,
+  TerminalSquare,
+  Variable,
   X,
 } from "lucide-react";
 import {
@@ -2278,7 +2280,7 @@ export function useApSettingsSections({
           value={displayImage}
         />
       ),
-      icon: SquarePen,
+      icon: Package,
       id: "image",
       title: "Image",
     });
@@ -2297,7 +2299,7 @@ export function useApSettingsSections({
           readOnly={readOnly}
         />
       ),
-      icon: Terminal,
+      icon: TerminalSquare,
       id: "launch-command",
       title: "Launch Command",
     });
@@ -2318,7 +2320,7 @@ export function useApSettingsSections({
           submitBlocked={configSubmitBlocked}
         />
       ),
-      icon: SquarePen,
+      icon: ScrollText,
       id: "config-files",
       title: "Configuration Files",
     });
@@ -2405,7 +2407,7 @@ export function useApSettingsSections({
         )}
       </>
     ),
-    icon: SquarePen,
+    icon: Variable,
     id: "environment",
     title: "Environment Variables",
   });
