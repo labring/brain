@@ -266,6 +266,98 @@ test("pending upgrade keeps other plans clickable and exposes its recovery targe
   });
 });
 
+test("a pending upgrade routes a conflicting plan selection into recovery", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    let paymentRequests = 0;
+    let rendered: ReturnType<typeof render> | undefined;
+    const snapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        lifecycle: "pending-upgrade",
+      },
+      pendingUpgrade: {
+        planName: "Starter",
+        startsAt: "2026-08-31T00:00:00Z",
+      },
+    };
+
+    function ConflictingSelectionHarness() {
+      const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+      return (
+        <BillingPlanChangeDialog
+          credentials={{
+            appToken: "desktop-app-token",
+            kubeconfig: "apiVersion: v1",
+          }}
+          currency="usd"
+          gpuEnabled
+          onOpenChange={() => undefined}
+          onSelectedPlanChange={setSelectedPlanId}
+          onSubscriptionChanged={() => Promise.resolve()}
+          open
+          selectedPlanId={selectedPlanId}
+          services={{
+            cancelInvoice: () => Promise.resolve(),
+            checkDowngrade: () =>
+              Promise.resolve({ allowed: true, exceededResources: [] }),
+            createPayment: () => {
+              paymentRequests += 1;
+              return Promise.reject(new Error("must not create payment"));
+            },
+            loadTransaction: () => Promise.resolve(null),
+            loadUpgradeQuote: () =>
+              Promise.resolve({
+                kind: "pending-upgrade" as const,
+                pendingUpgrade: {
+                  amountDueMicroUnits: 2_500_000,
+                  createdAtSeconds: 1_753_600_000,
+                  currency: "usd",
+                  invoiceId: "invoice-1",
+                  paymentId: "payment-1",
+                  paymentUrl: "https://checkout.stripe.test/invoice-1",
+                  planName: "Starter",
+                  status: "open",
+                },
+              }),
+            openCheckoutUrl: () => undefined,
+            openCheckoutWindow: () => null,
+            redirectTop: () => undefined,
+          }}
+          snapshot={snapshot}
+        />
+      );
+    }
+
+    try {
+      await act(() => {
+        rendered = render(<ConflictingSelectionHarness />);
+      });
+
+      // Team is not the pending-upgrade target, but its card stays live and
+      // the selection must reach checkout, whose quote lands in recovery.
+      await act(() => {
+        const upgrade = rendered?.getByRole("button", { name: "Upgrade" });
+        if (upgrade != null) {
+          fireEvent.click(upgrade);
+        }
+      });
+
+      assert.ok(
+        (rendered?.baseElement.textContent ?? "").includes(
+          "Payment already in progress"
+        )
+      );
+      assert.equal(paymentRequests, 0);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("Free payment-due subscribes to a paid plan with the created operator", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanChangeDialog } = await import(

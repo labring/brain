@@ -791,14 +791,9 @@ export default function BillingPricing({
     const plan =
       planSnapshot?.plans.find((entry) => entry.id === selectedPlanId) ?? null;
     const inDebt = planSnapshot?.current.lifecycle === "payment-due";
-    const pendingUpgradePlanName = planSnapshot?.pendingUpgrade?.planName;
-    const isPendingUpgradeTarget =
-      pendingUpgradePlanName == null ||
-      (plan?.name.trim().toLowerCase() ?? "") ===
-        pendingUpgradePlanName.trim().toLowerCase();
-    return !isPendingUpgradeTarget || planOperator(plan, inDebt) == null
-      ? null
-      : plan;
+    // A pending upgrade never blocks selection: picking a conflicting plan
+    // still opens checkout, whose quote request 409s into the recovery stage.
+    return planOperator(plan, inDebt) == null ? null : plan;
   }, [planSnapshot, selectedPlanId]);
   const clearSelection = () => setSelectedPlanId(null);
 

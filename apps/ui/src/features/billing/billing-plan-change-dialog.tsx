@@ -65,16 +65,11 @@ export function BillingPlanChangeDialog({
     [selectedPlanId, snapshot.plans]
   );
   const pendingUpgradePlanName = snapshot.pendingUpgrade?.planName ?? null;
-  const selectedPlanIsPendingUpgradeTarget =
-    pendingUpgradePlanName == null ||
-    (selectedPlan?.name.trim().toLowerCase() ?? "") ===
-      pendingUpgradePlanName.trim().toLowerCase();
   const inDebt = snapshot.current.lifecycle === "payment-due";
+  // A pending upgrade never blocks selection: picking a conflicting plan
+  // still opens checkout, whose quote request 409s into the recovery stage.
   const checkoutPlan =
-    !selectedPlanIsPendingUpgradeTarget ||
-    planOperator(selectedPlan, inDebt) == null
-      ? null
-      : selectedPlan;
+    planOperator(selectedPlan, inDebt) == null ? null : selectedPlan;
 
   // Dismissing the checkout is the "back" gesture: clearing the selection
   // returns to the picker underneath. Without a selection channel the whole

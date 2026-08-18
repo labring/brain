@@ -84,23 +84,15 @@ function MorePlanSeparator() {
 function morePlanOption({
   currency,
   pendingDowngradePlanName,
-  pendingUpgradePlanName,
   plan,
 }: {
   currency: BillingCurrency;
   pendingDowngradePlanName: string | null;
-  pendingUpgradePlanName: string | null;
   plan: SnapshotPlan;
 }): AppSelectOption {
-  const isPendingUpgradeTarget =
-    pendingUpgradePlanName != null &&
-    pendingUpgradePlanName.trim().toLowerCase() ===
-      plan.name.trim().toLowerCase();
   if (isContactJumpPlan(plan)) {
     return {
-      disabled:
-        planContactUrl(plan) == null ||
-        (pendingUpgradePlanName != null && !isPendingUpgradeTarget),
+      disabled: planContactUrl(plan) == null,
       label: (
         <span className="flex min-w-0 items-center gap-3">
           <span className="shrink-0 font-medium">{plan.name}</span>
@@ -117,7 +109,6 @@ function morePlanOption({
   const spec = planSpecSummary(plan);
   const price = `${formatBillingAmount(plan.priceMicroUnits, currency)}/month`;
   return {
-    disabled: pendingUpgradePlanName != null && !isPendingUpgradeTarget,
     label: (
       <span className="flex w-full min-w-0 items-center gap-3">
         <span className="shrink-0 font-medium">{plan.name}</span>
@@ -309,9 +300,6 @@ export function BillingPlanPicker({
                 return;
               }
               if (isContactJumpPlan(plan)) {
-                if (pendingUpgradePlanName != null) {
-                  return;
-                }
                 const contactUrl = planContactUrl(plan);
                 if (contactUrl != null) {
                   onOpenUrl(contactUrl);
@@ -324,7 +312,6 @@ export function BillingPlanPicker({
               morePlanOption({
                 currency,
                 pendingDowngradePlanName,
-                pendingUpgradePlanName: normalizedPendingUpgradePlanName,
                 plan,
               })
             )}
