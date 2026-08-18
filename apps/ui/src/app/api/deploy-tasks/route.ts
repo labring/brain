@@ -32,6 +32,7 @@ import {
   createDeployTaskInputSchema,
   deployTaskStatusSchema,
 } from "@/features/deploy/task/types";
+import { marketingAttributionSnapshotSchema } from "@/features/marketing/types";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
@@ -40,10 +41,15 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const requestSchema = createDeployTaskInputSchema
-  .omit({ createdFrom: true })
+  .omit({ createdFrom: true, marketingAttribution: true })
   .partial({ runner: true, source: true, target: true })
   .extend({
     encodedKubeconfig: z.string().optional(),
+    /**
+     * Validated separately after parsing: a malformed attribution snapshot
+     * degrades to an unattributed deploy instead of rejecting the request.
+     */
+    marketingAttribution: z.unknown().optional(),
     /** Redeploy: clone this failed/cancelled predecessor (ADR 0038). */
     predecessorTaskId: z.string().trim().min(1).max(128).optional(),
   })
@@ -102,6 +108,14 @@ async function resolveCredentialBinding(input: {
     normalizeNamespace: normalizeAssistantNamespace,
   });
   if (!authorization.ok) {
+    // Marketing identity is best-effort for namespace-shared sources: an
+    // unverifiable actor (missing or stale app token) degrades to an
+    // unattributed user — the normalizer scrubs unverified consent — instead
+    // of blocking the deploy. GitHub stays fail-closed: it needs the actor
+    // for credentials, not just attribution.
+    if (input.sourceKind !== "github") {
+      return {};
+    }
     return {
       response: jsonError(
         authorization.message,
@@ -239,12 +253,22 @@ export async function POST(request: Request) {
   }
   const effectiveSource = parsed.data.source ?? predecessor?.source;
   const creatingActor = namespaceResolved.workspaceActor;
+  // Attribution never blocks a deploy: a snapshot that fails validation is
+  // dropped here and the task proceeds unattributed.
+  const attributionParse =
+    parsed.data.marketingAttribution == null
+      ? null
+      : marketingAttributionSnapshotSchema.safeParse(
+          parsed.data.marketingAttribution
+        );
+  const marketingAttribution = attributionParse?.success
+    ? attributionParse.data
+    : undefined;
   const bindingResolution = await resolveCredentialBinding({
     appToken: appTokenFromRequest(request),
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     namespace: taskNamespace,
-    requiresMarketingIdentity:
-      parsed.data.marketingAttribution?.consent_token != null,
+    requiresMarketingIdentity: marketingAttribution?.consent_token != null,
     sourceKind: effectiveSource?.kind,
   });
   if ("response" in bindingResolution) {
@@ -252,7 +276,12 @@ export async function POST(request: Request) {
   }
   const { credentialBinding, marketingConsentSubject } = bindingResolution;
 
-  const { encodedKubeconfig, predecessorTaskId, ...taskInput } = parsed.data;
+  const {
+    encodedKubeconfig,
+    marketingAttribution: _rawMarketingAttribution,
+    predecessorTaskId,
+    ...taskInput
+  } = parsed.data;
   let result: Awaited<ReturnType<typeof createDeployTaskAction>>;
   try {
     result = await createDeployTaskAction(getDeployTaskEngineContext(), {
@@ -261,6 +290,7 @@ export async function POST(request: Request) {
         createdFrom: "ui",
         ...(creatingActor == null ? {} : { creatingActor }),
         ...(credentialBinding == null ? {} : { credentialBinding }),
+        ...(marketingAttribution == null ? {} : { marketingAttribution }),
         ...(marketingConsentSubject == null ? {} : { marketingConsentSubject }),
         namespace: taskNamespace,
       },

@@ -75,7 +75,11 @@ $$;
 CREATE FUNCTION "sealai_marketing"."upsert_attribution_subject"(
 	"p_subject_type" text,
 	"p_subject_id" text,
-	"p_attribution" jsonb
+	"p_attribution" jsonb,
+	-- Missing-only mode creates a row when none exists and never touches an
+	-- existing one: repair paths replay historical snapshots, which must not
+	-- overwrite consent a subject has changed since.
+	"p_missing_only" boolean DEFAULT false
 ) RETURNS void
 LANGUAGE plpgsql
 AS $$
@@ -93,6 +97,36 @@ BEGIN
 	v_ad_personalization := "sealai_marketing"."normalize_consent_state"(
 		p_attribution -> 'ad_personalization'
 	);
+
+	IF p_missing_only THEN
+		INSERT INTO "sealai_marketing"."attribution_subjects" (
+			"subject_type",
+			"subject_id",
+			"first_touch",
+			"last_touch",
+			"gclid",
+			"gbraid",
+			"wbraid",
+			"ad_personalization",
+			"ad_user_data_consent",
+			"click_id_candidates",
+			"consent_provenance"
+		) VALUES (
+			p_subject_type,
+			p_subject_id,
+			p_attribution -> 'first_touch',
+			p_attribution -> 'last_touch',
+			nullif(p_attribution ->> 'gclid', ''),
+			nullif(p_attribution ->> 'gbraid', ''),
+			nullif(p_attribution ->> 'wbraid', ''),
+			v_ad_personalization,
+			v_ad_user_data_consent,
+			p_attribution -> 'click_id_candidates',
+			p_attribution -> 'consent_provenance'
+		)
+		ON CONFLICT ("subject_type", "subject_id") DO NOTHING;
+		RETURN;
+	END IF;
 
 	INSERT INTO "sealai_marketing"."attribution_subjects" (
 		"subject_type",
@@ -291,11 +325,27 @@ DECLARE
 	"v_ad_user_data_consent" text;
 BEGIN
 	FOR "v_task" IN
+		-- Only tasks with a dropped lifecycle event qualify: repaired rows
+		-- leave this scan, so successive limited runs make progress instead
+		-- of replaying the same oldest rows forever.
 		SELECT *
-		FROM "sealai_deployment"."deploy_tasks"
-		WHERE "marketing_attribution" IS NOT NULL
-			AND "status" IN ('running', 'completed')
-		ORDER BY "updated_at"
+		FROM "sealai_deployment"."deploy_tasks" "t"
+		WHERE "t"."marketing_attribution" IS NOT NULL
+			AND "t"."status" IN ('running', 'completed')
+			AND (
+				NOT EXISTS (
+					SELECT 1 FROM "sealai_marketing"."lifecycle_events" "e"
+					WHERE "e"."event_id" = 'build_started:' || "t"."id"
+				)
+				OR (
+					"t"."status" = 'completed'
+					AND NOT EXISTS (
+						SELECT 1 FROM "sealai_marketing"."lifecycle_events" "e"
+						WHERE "e"."event_id" = 'deploy_success:' || "t"."id"
+					)
+				)
+			)
+		ORDER BY "t"."updated_at"
 		LIMIT greatest(coalesce("p_limit", 100), 0)
 	LOOP
 		BEGIN
@@ -308,11 +358,14 @@ BEGIN
 			"v_ad_personalization" := "sealai_marketing"."normalize_consent_state"(
 				"v_task"."marketing_attribution" -> 'ad_personalization'
 			);
+			-- Missing-only: the task snapshot is historical, so it may create a
+			-- subject row the capture trigger dropped but never overwrite consent
+			-- the subject has changed since.
 			PERFORM "sealai_marketing"."upsert_attribution_subject"(
-				'user', "v_user_id", "v_task"."marketing_attribution"
+				'user', "v_user_id", "v_task"."marketing_attribution", true
 			);
 			PERFORM "sealai_marketing"."upsert_attribution_subject"(
-				'workspace', "v_task"."namespace", "v_task"."marketing_attribution"
+				'workspace', "v_task"."namespace", "v_task"."marketing_attribution", true
 			);
 
 			INSERT INTO "sealai_marketing"."lifecycle_events" (

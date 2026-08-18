@@ -792,6 +792,97 @@ test("POST creates a redeploy from a non-GitHub predecessor without consulting t
   }
 });
 
+test("POST drops a malformed attribution snapshot instead of rejecting the deploy", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  try {
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      deployTaskRequest({
+        // Unknown version + overlong click id: fails the snapshot schema.
+        marketingAttribution: {
+          click_id_candidates: [],
+          gclid: "x".repeat(4096),
+          version: 1,
+        },
+        namespace: "namespace-b",
+        runner: { kind: "template" },
+        source: { kind: "template", templateName: "attribution-garbage" },
+        target: { kind: "existingProject", projectId: "project-test" },
+      })
+    );
+    const body = (await response.json()) as { task: { id: string } };
+    assert.ok(runDone);
+    await runDone;
+
+    assert.equal(response.status, 201);
+    assert.equal(authorizeCalls.length, 0);
+    const [stored] = await harness.db
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, body.task.id));
+    assert.equal(stored?.marketingAttribution, null);
+  } finally {
+    await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
+test("POST degrades an unverifiable consent token to scrubbed attribution instead of 401", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  try {
+    const { POST } = await import("./route");
+
+    // No app token on a Template create: attribution identity cannot be
+    // verified, but the deploy must proceed with consent-safe scrubbing.
+    const response = await POST(
+      deployTaskRequest({
+        encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+        marketingAttribution: {
+          ad_personalization: "granted",
+          ad_user_data_consent: "granted",
+          click_id_candidates: [],
+          consent_provenance: null,
+          consent_token: "stale-or-unverifiable-token",
+          first_touch: null,
+          gbraid: null,
+          gclid: "degrade-gclid",
+          last_touch: null,
+          version: 3,
+          wbraid: null,
+        },
+        namespace: "namespace-b",
+        runner: { kind: "template" },
+        source: { kind: "template", templateName: "attribution-degrade" },
+        target: { kind: "existingProject", projectId: "project-test" },
+      })
+    );
+    const body = (await response.json()) as { task: { id: string } };
+    assert.ok(runDone);
+    await runDone;
+
+    assert.equal(response.status, 201);
+    assert.equal(authorizeCalls.length, 1);
+    const [stored] = await harness.db
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, body.task.id));
+    assert.equal(
+      stored?.marketingAttribution?.ad_user_data_consent,
+      "unspecified"
+    );
+    assert.equal(stored?.marketingAttribution?.consent_provenance, null);
+    assert.equal(stored?.marketingAttribution?.gclid, null);
+  } finally {
+    await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
 test("client collaboratively redeploys an attributed Template with workspace-safe attribution", async () => {
   const harness = await createDeployTaskTestHarness();
   useHarness(harness);

@@ -1,6 +1,7 @@
 "use client";
 
 import { readMarketingAttribution } from "@/features/marketing/attribution-client";
+import { marketingAttributionSnapshotSchema } from "@/features/marketing/types";
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import type {
   DeploymentTargetPipelineAdapters,
@@ -69,7 +70,17 @@ export async function createDeploymentTaskFromApi({
   encodedKubeconfig: string;
   input: DeploymentTaskCreateInput;
 }): Promise<DeploymentTaskCreateResult> {
-  const marketingAttribution = readMarketingAttribution() ?? undefined;
+  // Attribution never blocks a deploy: stored state that no longer passes
+  // the server schema (oversized inbound params, stale shapes) is dropped
+  // instead of poisoning every create with a 400.
+  const storedAttribution = readMarketingAttribution();
+  const attributionParse =
+    storedAttribution == null
+      ? null
+      : marketingAttributionSnapshotSchema.safeParse(storedAttribution);
+  const marketingAttribution = attributionParse?.success
+    ? attributionParse.data
+    : undefined;
   const requiresIdentityToken =
     input.source.kind === "github" ||
     marketingAttribution?.consent_token != null;
