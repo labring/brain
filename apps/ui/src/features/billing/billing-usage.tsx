@@ -193,8 +193,15 @@ export default function BillingUsage({ gpuEnabled }: { gpuEnabled: boolean }) {
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const currentWorkspace = useAtomValue(namespaceAtom).trim();
-  const [selectedWorkspace, setSelectedWorkspace] = useState(currentWorkspace);
-  const credentialsReady = appToken.trim() !== "" && kubeconfig.trim() !== "";
+  // Follow the namespace atom until the user picks explicitly: the atom is
+  // still "" at mount and hydrates later from the SDK bootstrap, so a
+  // one-time snapshot would silently load the account's first workspace.
+  const [pickedWorkspace, setPickedWorkspace] = useState<string | null>(null);
+  const selectedWorkspace = pickedWorkspace ?? currentWorkspace;
+  const credentialsReady =
+    appToken.trim() !== "" &&
+    kubeconfig.trim() !== "" &&
+    selectedWorkspace !== "";
   const { data, error, isLoading } = useSWR(
     credentialsReady
       ? ["billing-usage", selectedWorkspace, appToken, kubeconfig]
@@ -213,7 +220,7 @@ export default function BillingUsage({ gpuEnabled }: { gpuEnabled: boolean }) {
       error={error}
       gpuEnabled={gpuEnabled}
       isLoading={!credentialsReady || isLoading}
-      onWorkspaceChange={setSelectedWorkspace}
+      onWorkspaceChange={setPickedWorkspace}
       snapshot={data}
     />
   );
