@@ -195,3 +195,34 @@ test("loads plan and metered pricing for the current PAYG workspace", async () =
     );
   }
 });
+
+test("a DELETED subscription record prices as Pay-As-You-Go", async () => {
+  // The plan loader normalizes DELETED records to the PAYG shape; Pricing
+  // must reach the same verdict or the two tabs disagree about one workspace.
+  const responses: Record<string, unknown> = {
+    "/api/billing/plans": { plans: [] },
+    "/api/billing/properties": { data: { properties: [] } },
+    "/api/billing/regions": {
+      regions: [{ domain: "us.example.test", uid: "region-us" }],
+    },
+    "/api/billing/subscription": {
+      subscription: { Status: "DELETED", type: "SUBSCRIPTION" },
+    },
+  };
+
+  const snapshot = await loadBillingPricing(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) => {
+        const url = new URL(input.toString(), "https://brain.example.test");
+        return Promise.resolve(Response.json(responses[url.pathname]));
+      },
+    }
+  );
+
+  assert.equal(snapshot.isPayg, true);
+});

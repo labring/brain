@@ -270,7 +270,7 @@ function normalizedPayMethod(value: string): "balance" | "stripe" {
 // workspace as Pay-As-You-Go that may subscribe anew. Callers normalize such
 // records to the PAYG shape before deriving a lifecycle; an unnormalized
 // deleted status would fail closed as an unknown one.
-function isDeletedSubscriptionRecord(status: string): boolean {
+export function isDeletedSubscriptionRecord(status: string): boolean {
   return status.trim().toLowerCase() === "deleted";
 }
 

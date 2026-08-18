@@ -10,6 +10,7 @@ import {
   type NormalizedBillingPlan,
   normalizeBillingPlan,
 } from "./billing-plan-catalog";
+import { isDeletedSubscriptionRecord } from "./billing-plan-data";
 
 export type BillingPriceType =
   | "cpu"
@@ -58,6 +59,7 @@ const regionsResponseSchema = z.object({
 });
 const subscriptionResponseSchema = z.object({
   subscription: z.object({
+    Status: z.string().default(""),
     type: z.enum(["PAYG", "SUBSCRIPTION"]).optional(),
   }),
 });
@@ -200,7 +202,11 @@ export async function loadBillingPricing(
   const subscription = subscriptionResponseSchema.parse(subscriptionPayload);
 
   return {
-    isPayg: subscription.subscription.type === "PAYG",
+    // A DELETED record is not a Workspace Subscription — the plan loader
+    // normalizes it to PAYG, and Pricing must agree about the same workspace.
+    isPayg:
+      subscription.subscription.type === "PAYG" ||
+      isDeletedSubscriptionRecord(subscription.subscription.Status),
     plans,
     prices: normalizePrices(properties.data.properties),
   };
