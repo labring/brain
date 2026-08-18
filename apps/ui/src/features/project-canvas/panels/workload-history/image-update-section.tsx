@@ -7,7 +7,6 @@ import {
 } from "@workspace/ui/components/alert";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppInput } from "@workspace/ui/components/app-input";
-import { Badge } from "@workspace/ui/components/badge";
 import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { CircleAlert, Package } from "lucide-react";
@@ -48,18 +47,7 @@ export function ImageUpdateSection({
   const shownImage = value.trim() === "" ? "No image configured" : value;
 
   return (
-    <ResourceSettingsSection
-      actions={
-        status?.kind === "applying" ? (
-          <Badge variant="secondary">
-            <Spinner aria-hidden />
-            Applying changes
-          </Badge>
-        ) : null
-      }
-      icon={Package}
-      title="Image"
-    >
+    <ResourceSettingsSection icon={Package} title="Image">
       <form
         className="flex min-w-0 items-center gap-2"
         onSubmit={(event) => {

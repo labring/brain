@@ -42,14 +42,15 @@ test("image update section keeps Update disabled until the draft is dirty", () =
   assert.doesNotMatch(section({ dirty: true }), UPDATE_DISABLED_RE);
 });
 
-test("image update section shows the applying badge while a launch update is pending", () => {
+test("image update section stays quiet while a launch update is applying", () => {
   const html = section({
     status: { kind: "applying", targetImage: "ghcr.io/acme/api:1.1.0" },
     value: "ghcr.io/acme/api:1.1.0",
   });
 
-  assert.match(html, APPLYING_BADGE_RE);
+  assert.doesNotMatch(html, APPLYING_BADGE_RE);
   assert.doesNotMatch(html, DIVERGED_TITLE_RE);
+  assert.doesNotMatch(html, INPUT_DISABLED_RE);
 });
 
 test("image update section presents the divergence two-way choice inline", () => {
