@@ -197,7 +197,6 @@ const CANCELLING_PLAN = {
     canManage: true,
     cancelAtPeriodEnd: true,
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
-    expireAt: "2026-08-31T00:00:00Z",
     invoiceId: "invoice-1",
     invoicePaymentUrl: "https://payments.example.test/invoice-1",
     isPayg: false,

@@ -1023,7 +1023,9 @@ export function BillingPlanSurface({
         <div className="flex flex-col gap-2">
           <dt className="text-muted-foreground text-sm">Renewal Time</dt>
           <dd className="font-semibold text-foreground tabular-nums">
-            {formatDateTime(current.expireAt)}
+            {current.cancelAtPeriodEnd
+              ? "-"
+              : formatDateTime(current.currentPeriodEndAt)}
           </dd>
         </div>
       </dl>

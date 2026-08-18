@@ -24,7 +24,6 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
     canManage: true,
     cancelAtPeriodEnd: true,
     currentPeriodEndAt: "2099-08-31T00:00:00Z",
-    expireAt: "2099-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
     isPayg: false,

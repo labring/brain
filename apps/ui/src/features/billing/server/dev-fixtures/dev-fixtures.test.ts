@@ -183,8 +183,8 @@ test("active derives an active stripe subscription with a card", async () => {
   assert.equal(plan.current.payMethod, "stripe");
   assert.equal(plan.card?.last4, "4242");
   assert.ok(
-    plan.current.expireAt,
-    "ExpireAt carries a real date so the header Renewal Time renders"
+    plan.current.currentPeriodEndAt,
+    "CurrentPeriodEndAt carries a real date so the header Renewal Time renders"
   );
 });
 
@@ -219,7 +219,7 @@ test("paused derives a plan-change-ready Free subscription", async () => {
   assert.equal(plan.current.planName, "Free");
   assert.equal(plan.current.lifecycle, "active");
   assert.equal(plan.current.warningStage, null);
-  assert.equal(plan.current.expireAt, null, "no period is running");
+  assert.equal(plan.current.currentPeriodEndAt, "", "no period is running");
 });
 
 test("deleted derives the subscribable-again PAYG shape", async () => {

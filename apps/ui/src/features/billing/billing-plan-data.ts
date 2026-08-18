@@ -67,7 +67,6 @@ export interface BillingPlanSnapshot {
     canManage: boolean;
     cancelAtPeriodEnd: boolean;
     currentPeriodEndAt: string;
-    expireAt: string | null;
     invoiceId: string | null;
     invoicePaymentUrl: string | null;
     isPayg: boolean;
@@ -544,7 +543,6 @@ export async function loadBillingPlanSnapshot(
           : subscription.role === "OWNER",
       cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
       currentPeriodEndAt: subscription.CurrentPeriodEndAt,
-      expireAt: subscription.ExpireAt ?? null,
       invoiceId: subscription.InvoiceInfo?.ID ?? null,
       invoicePaymentUrl: subscription.InvoiceInfo?.PaymentUrl ?? null,
       isPayg: subscription.type === "PAYG",

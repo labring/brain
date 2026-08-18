@@ -602,6 +602,12 @@ Recovery for a payment-due Workspace Subscription that exits the Deletion Countd
 
 _Avoid_: Free renewal, direct renewal charge.
 
+### Renewal Time
+
+The scheduled moment a Workspace Subscription's current paid period ends and the next automatic charge occurs — always the current period's end, wherever the label appears. It only exists while a renewal is actually coming: a cancelling subscription has none (its period end is a suspension date, voiced by the Deletion Countdown), and a payment-due subscription's Renewal Time lies in the past — the renewal that never happened. Distinct from Workspace Subscription Renewal, which names the recovery flow for a payment-due subscription, not this scheduled moment.
+
+_Avoid_: expiry time (for the renewal moment), renewal (bare, for this moment), access-expiry timestamps as its source.
+
 ### Deletion Countdown
 
 The platform's fixed grace timeline that starts the moment a Workspace Subscription expires: the workspace is suspended immediately, the warning escalates as the countdown runs, and the workspace's resources are permanently deleted when it ends. Both roads into expiry — failed renewal payment and cancelled-then-lapsed — join the same countdown. The Billing Area surfaces it as a destructive warning carrying the stage's next deadline — the suspension date while a cancelled subscription's paid period still runs, the deletion date once expiry has passed; renewing (or resuming, before expiry) exits the countdown.

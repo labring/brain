@@ -119,3 +119,36 @@ test("payg-debt keeps the Subscribe action under a subscription-worded banner", 
     assert.ok(rendered.queryByRole("button", { name: "Subscribe Plan" }));
   });
 });
+
+// AIM-255: the header's Renewal Time reads the same period-end field as the
+// workspaces table, and blanks under the same no-renewal states.
+function headerRenewalTime(
+  rendered: Parameters<Parameters<typeof renderScenario>[1]>[0]
+): string | null {
+  const label = Array.from(rendered.container.querySelectorAll("dt")).find(
+    (node) => node.textContent === "Renewal Time"
+  );
+  return label?.nextElementSibling?.textContent ?? null;
+}
+
+test("active renders the period end as the header Renewal Time", async () => {
+  await renderScenario("active", (rendered) => {
+    const value = headerRenewalTime(rendered);
+    assert.ok(
+      value != null && value !== "-",
+      "the header Renewal Time carries the period-end date"
+    );
+  });
+});
+
+test("cancelling blanks the header Renewal Time like the workspaces table", async () => {
+  await renderScenario("cancelling", (rendered) => {
+    assert.equal(headerRenewalTime(rendered), "-");
+  });
+});
+
+test("paused blanks the header Renewal Time without a running period", async () => {
+  await renderScenario("paused", (rendered) => {
+    assert.equal(headerRenewalTime(rendered), "-");
+  });
+});

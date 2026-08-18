@@ -27,7 +27,6 @@ const SNAPSHOT: BillingPlanSnapshot = {
     canManage: true,
     cancelAtPeriodEnd: false,
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
-    expireAt: "2026-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
     isPayg: false,
@@ -165,7 +164,6 @@ test("Free payment-due renewal opens the paid plan picker", async () => {
       current: {
         ...SNAPSHOT.current,
         currentPeriodEndAt: "2026-07-08T02:49:00Z",
-        expireAt: "2026-07-08T02:49:00Z",
         lifecycle: "payment-due",
         planName: "Free",
         priceMicroUnits: 0,
