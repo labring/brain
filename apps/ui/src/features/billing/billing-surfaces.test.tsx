@@ -387,67 +387,60 @@ test("Plan renders local fallbacks when auxiliary billing data is unavailable", 
   assertIncludes(html, "Workspace plans unavailable");
 });
 
-test("Plan disables changes for deleted and unavailable subscription states", async () => {
+test("Plan disables changes for the unavailable subscription state", async () => {
   const { BillingPlanSurface, renderToStaticMarkup } = await surfaceModules();
-  for (const [lifecycle, notice] of [
-    ["deleted", "Subscription ended"],
-    ["unavailable", "Subscription status unavailable"],
-  ] as const) {
-    const snapshot: BillingPlanSnapshot = {
-      ...CANCELLING_PLAN,
-      current: {
-        ...CANCELLING_PLAN.current,
-        cancelAtPeriodEnd: false,
-        lifecycle,
-        warningDeadlineAt: null,
-        warningStage: null,
-      },
-      pendingUpgrade: null,
-    };
-    const html = renderToStaticMarkup(
-      <BillingPlanSurface
-        balance={<span>$3.00</span>}
-        currency="usd"
-        snapshot={snapshot}
-      />
-    );
+  const snapshot: BillingPlanSnapshot = {
+    ...CANCELLING_PLAN,
+    current: {
+      ...CANCELLING_PLAN.current,
+      cancelAtPeriodEnd: false,
+      lifecycle: "unavailable",
+      warningDeadlineAt: null,
+      warningStage: null,
+    },
+    pendingUpgrade: null,
+  };
+  const html = renderToStaticMarkup(
+    <BillingPlanSurface
+      balance={<span>$3.00</span>}
+      currency="usd"
+      snapshot={snapshot}
+    />
+  );
 
-    assertIncludes(html, notice);
-    assert.equal(html.includes("Cancel Plan"), false);
-    assert.equal(html.includes("Upgrade Plan"), false);
-    assert.equal(html.includes(">Renew<"), false);
-    assert.equal(html.includes("Pay invoice"), false);
-    assert.equal(html.includes("Cancel invoice"), false);
-    assert.equal(html.includes("Manage Card Info"), false);
-  }
+  assertIncludes(html, "Subscription status unavailable");
+  assert.equal(html.includes("Cancel Plan"), false);
+  assert.equal(html.includes("Upgrade Plan"), false);
+  assert.equal(html.includes(">Renew<"), false);
+  assert.equal(html.includes("Pay invoice"), false);
+  assert.equal(html.includes("Cancel invoice"), false);
+  assert.equal(html.includes("Manage Card Info"), false);
 });
 
-test("Pricing disables plan selection for closed subscription states", async () => {
+test("Pricing disables plan selection for the unavailable subscription state", async () => {
   const { BillingPlanCatalogSection, renderToStaticMarkup } =
     await surfaceModules();
-  for (const lifecycle of ["deleted", "unavailable"] as const) {
-    const snapshot: BillingPlanSnapshot = {
-      ...CANCELLING_PLAN,
-      current: {
-        ...CANCELLING_PLAN.current,
-        lifecycle,
-      },
-      plans: CANCELLING_PLAN.plans.map((plan) => ({
-        ...plan,
-        changeKind: plan.isCurrent ? null : ("upgrade" as const),
-      })),
-    };
-    const html = renderToStaticMarkup(
-      <BillingPlanCatalogSection
-        currency="usd"
-        gpuEnabled
-        planSnapshot={snapshot}
-      />
-    );
+  const snapshot: BillingPlanSnapshot = {
+    ...CANCELLING_PLAN,
+    current: {
+      ...CANCELLING_PLAN.current,
+      lifecycle: "unavailable",
+    },
+    plans: CANCELLING_PLAN.plans.map((plan) => ({
+      ...plan,
+      changeKind: plan.isCurrent ? null : ("upgrade" as const),
+    })),
+  };
+  const html = renderToStaticMarkup(
+    <BillingPlanCatalogSection
+      currency="usd"
+      gpuEnabled
+      planSnapshot={snapshot}
+    />
+  );
 
-    assertIncludes(html, "Team");
-    assert.equal(html.includes(">Upgrade<"), false);
-  }
+  assertIncludes(html, "Team");
+  assert.equal(html.includes(">Upgrade<"), false);
 });
 
 test("Pricing keeps other plans actionable next to the pending upgrade recovery target", async () => {

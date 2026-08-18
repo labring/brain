@@ -222,10 +222,19 @@ test("paused derives a plan-change-ready Free subscription", async () => {
   assert.equal(plan.current.expireAt, null, "no period is running");
 });
 
-test("deleted derives the terminal deleted lifecycle", async () => {
+test("deleted derives the subscribable-again PAYG shape", async () => {
+  // AIM-252: a DELETED record is not a Workspace Subscription — the
+  // workspace is PAYG and may subscribe anew.
   const plan = await loadPlanForScenario("deleted");
-  assert.equal(plan.current.lifecycle, "deleted");
+  assert.equal(plan.current.lifecycle, "active");
+  assert.equal(plan.current.isPayg, true);
+  assert.equal(plan.current.planName, "PAYG");
   assert.equal(plan.current.warningStage, null);
+  assert.equal(plan.current.invoiceId, null);
+  assert.ok(
+    plan.plans.every((entry) => entry.changeKind === "subscribe"),
+    "every catalog plan offers a fresh subscription"
+  );
 });
 
 test("payment-due-final derives deletion-imminent with a past date", async () => {

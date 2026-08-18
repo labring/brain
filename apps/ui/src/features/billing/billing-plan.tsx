@@ -108,8 +108,14 @@ export function BillingPlanWorkflow({
     key: string;
     request: Promise<BillingPlanSnapshot>;
   } | null>(null);
+  // A deep link must not open a picker whose cards carry no actions — the
+  // same gate the dialog's own entry points use. The mode parameter is
+  // consumed either way.
+  const planDialogActionable =
+    snapshot.current.canManage &&
+    subscriptionLifecycleAllowsBillingActions(snapshot.current.lifecycle);
   const [planDialogOpen, setPlanDialogOpen] = useState(
-    initialMode === "upgrade"
+    initialMode === "upgrade" && planDialogActionable
   );
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [congratulationsSnapshot, setCongratulationsSnapshot] =
@@ -124,10 +130,12 @@ export function BillingPlanWorkflow({
       return;
     }
     modeConsumedRef.current = true;
-    setSelectedPlanId(null);
-    setPlanDialogOpen(true);
+    if (planDialogActionable) {
+      setSelectedPlanId(null);
+      setPlanDialogOpen(true);
+    }
     replaceUrl(currentUrlWithout(["mode"]));
-  }, [initialMode, replaceUrl]);
+  }, [initialMode, planDialogActionable, replaceUrl]);
 
   useEffect(() => {
     if (stripeReturn == null) {

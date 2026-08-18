@@ -109,6 +109,54 @@ test("upgrade mode opens the plan workflow and is consumed from the URL", async 
   });
 });
 
+test("upgrade mode is consumed without a dialog when billing actions are locked", async () => {
+  // A deep link must not open a picker whose cards carry no actions
+  // (AIM-252's secondary finding): the unavailable lifecycle keeps the user
+  // on the Plan view, where the status notice explains the lock.
+  await withTestDom(async (act) => {
+    const { BillingPlanWorkflow } = await import("./billing-plan");
+    const replacements: string[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+
+    window.history.replaceState({}, "", "/billing?mode=upgrade&source=quota");
+
+    const snapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: { ...SNAPSHOT.current, lifecycle: "unavailable" },
+    };
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanWorkflow
+            balance={<span>$3.00</span>}
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            initialMode="upgrade"
+            onRefreshSnapshot={() => Promise.resolve(snapshot)}
+            replaceUrl={(url) => replacements.push(url)}
+            snapshot={snapshot}
+          />
+        );
+      });
+
+      assert.equal(
+        rendered?.queryByRole("dialog", {
+          name: "Choose Your Workspace Plan",
+        }),
+        null
+      );
+      assert.deepEqual(replacements, ["/billing?source=quota"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("Free payment-due renewal opens the paid plan picker", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanWorkflow } = await import("./billing-plan");

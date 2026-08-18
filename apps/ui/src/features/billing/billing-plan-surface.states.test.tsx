@@ -17,7 +17,6 @@ import { scenarioTestFetch } from "./server/dev-fixtures/scenario-test-fetch";
 
 const DELETED_BADGE_PATTERN = /Deleted/;
 const DELETED_NOTICE_PATTERN = /Subscription ended/;
-const DELETED_LOCKED_PATTERN = /can no longer be changed/;
 const UNAVAILABLE_BADGE_PATTERN = /Status unavailable/;
 const UNAVAILABLE_NOTICE_PATTERN = /Subscription status unavailable/;
 const UNAVAILABLE_LOCKED_PATTERN =
@@ -70,18 +69,15 @@ async function renderScenario(
   });
 }
 
-test("deleted renders the ended notice and offers no actions", async () => {
+test("deleted renders the subscribable-again PAYG surface", async () => {
+  // AIM-252: a DELETED record is not a Workspace Subscription — the surface
+  // presents the plain PAYG state with a working Subscribe entry point.
   await renderScenario("deleted", (rendered) => {
     const text = rendered.container.textContent ?? "";
-    assert.match(text, DELETED_BADGE_PATTERN);
-    assert.match(text, DELETED_NOTICE_PATTERN);
-    assert.match(text, DELETED_LOCKED_PATTERN);
-    // AIM-252 baseline: every billing entry point is locked today.
-    assert.equal(
-      rendered.queryByRole("button", { name: "Upgrade Plan" }),
-      null
-    );
-    assert.equal(rendered.queryByRole("button", { name: "Renew" }), null);
+    assert.match(text, PAYG_HEADING_PATTERN);
+    assert.doesNotMatch(text, DELETED_BADGE_PATTERN);
+    assert.doesNotMatch(text, DELETED_NOTICE_PATTERN);
+    assert.ok(rendered.queryByRole("button", { name: "Subscribe Plan" }));
     assert.equal(rendered.queryByRole("button", { name: "Cancel Plan" }), null);
   });
 });

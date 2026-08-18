@@ -165,7 +165,6 @@ function formatDateTime(value: string | null): string {
 const LIFECYCLE_METADATA = {
   active: null,
   cancelling: { label: "Cancelling", variant: "secondary" },
-  deleted: { label: "Deleted", variant: "destructive" },
   "payment-due": { label: "Plan Expired", variant: "destructive" },
   "pending-upgrade": null,
   unavailable: { label: "Status unavailable", variant: "secondary" },
@@ -374,16 +373,6 @@ function BillingPlanNotices({
 
   return (
     <div className="flex flex-col gap-3" data-slot="billing-plan-notices">
-      {current.lifecycle === "deleted" ? (
-        <Alert variant="destructive">
-          <AlertCircle aria-hidden />
-          <AlertTitle>Subscription ended</AlertTitle>
-          <AlertDescription>
-            This subscription can no longer be changed.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
       {current.lifecycle === "unavailable" ? (
         <Alert>
           <AlertCircle aria-hidden />

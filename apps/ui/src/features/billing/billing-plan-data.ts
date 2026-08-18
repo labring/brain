@@ -21,7 +21,6 @@ import {
 export type SubscriptionLifecycle =
   | "active"
   | "cancelling"
-  | "deleted"
   | "payment-due"
   | "pending-upgrade"
   | "unavailable";
@@ -31,7 +30,7 @@ export type BillingDataAvailability = "available" | "unavailable";
 export function subscriptionLifecycleAllowsBillingActions(
   lifecycle: SubscriptionLifecycle
 ): boolean {
-  return lifecycle !== "deleted" && lifecycle !== "unavailable";
+  return lifecycle !== "unavailable";
 }
 
 /**
@@ -253,6 +252,14 @@ function normalizedPayMethod(value: string): "balance" | "stripe" {
   return value.trim().toLowerCase() === "balance" ? "balance" : "stripe";
 }
 
+// A DELETED record is not a Workspace Subscription — the platform treats the
+// workspace as Pay-As-You-Go that may subscribe anew. Callers normalize such
+// records to the PAYG shape before deriving a lifecycle; an unnormalized
+// deleted status would fail closed as an unknown one.
+function isDeletedSubscriptionRecord(status: string): boolean {
+  return status.trim().toLowerCase() === "deleted";
+}
+
 function subscriptionLifecycle(input: {
   cancelAtPeriodEnd: boolean;
   hasPendingUpgrade?: boolean;
@@ -268,9 +275,6 @@ function subscriptionLifecycle(input: {
   }
   if (input.isPayg) {
     return "active";
-  }
-  if (status === "deleted") {
-    return "deleted";
   }
   // PAUSED is the healthy resting state of a no-trial Free workspace. The
   // platform creates those with CancelAtPeriodEnd already true, so paused
@@ -463,7 +467,22 @@ export async function loadBillingPlanSnapshot(
   const plans = plansResponse.plans
     .map(normalizeBillingPlan)
     .sort((left, right) => left.order - right.order);
-  const subscription = subscriptionResponse.subscription;
+  const rawSubscription = subscriptionResponse.subscription;
+  // Present a deleted subscription as the no-subscription PAYG shape: stale
+  // plan, period, and invoice facts must not leak into a workspace that can
+  // simply subscribe again. The record's role survives for `canManage`.
+  const subscription = isDeletedSubscriptionRecord(rawSubscription.Status)
+    ? {
+        ...rawSubscription,
+        CancelAtPeriodEnd: false,
+        CurrentPeriodEndAt: "",
+        ExpireAt: null,
+        InvoiceInfo: undefined,
+        PlanName: "PAYG",
+        Status: "",
+        type: "PAYG" as const,
+      }
+    : rawSubscription;
   const transaction = transactionResponse.value?.transaction;
   const subscriptions = subscriptionsResponse.value?.subscriptions ?? [];
   const workspaceData = availableWorkspaceData(
@@ -515,7 +534,14 @@ export async function loadBillingPlanSnapshot(
             last4: paymentMethod.card.last4,
           },
     current: {
-      canManage: subscription.role === "OWNER" || subscription.type === "PAYG",
+      // Subscription state and payment authority are orthogonal: whenever the
+      // record names a role (including a normalized deleted one), only the
+      // OWNER manages payments; a roleless PAYG record has no membership
+      // facts, so managing stays open.
+      canManage:
+        subscription.role == null
+          ? subscription.type === "PAYG"
+          : subscription.role === "OWNER",
       cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
       currentPeriodEndAt: subscription.CurrentPeriodEndAt,
       expireAt: subscription.ExpireAt ?? null,
@@ -542,8 +568,7 @@ export async function loadBillingPlanSnapshot(
     pendingUpgrade,
     plans: plans.map((plan) => {
       const isCurrent = plan.name === subscription.PlanName;
-      const planChangesAvailable =
-        lifecycle !== "deleted" && lifecycle !== "unavailable";
+      const planChangesAvailable = lifecycle !== "unavailable";
       // Mirrors the legacy costcenter decision tree: PAYG (no matching
       // current plan) treats every plan as a fresh subscription, the
       // catalog's transition lists label upgrades/downgrades, Enterprise
@@ -585,7 +610,13 @@ export async function loadBillingPlanSnapshot(
       };
     }),
     workspaces: workspaces.map(([id, name]) => {
-      const item = subscriptionByWorkspace.get(id);
+      const record = subscriptionByWorkspace.get(id);
+      // A deleted record reports the PAYG billing mode, same as a workspace
+      // with no subscription record at all.
+      const item =
+        record != null && isDeletedSubscriptionRecord(record.Status)
+          ? undefined
+          : record;
       const planName = item?.PlanName ?? "PAYG";
       return {
         id,

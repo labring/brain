@@ -784,8 +784,8 @@ const PAY_TRANSITIONS: Record<
     "active-balance": "cancelling",
     "mixed-workspaces": "cancelling",
   },
-  // `deleted` is pre-wired for AIM-252: the UI still locks that lifecycle,
-  // but the backend treats DELETED as subscribable-again PAYG.
+  // DELETED means subscribable-again PAYG (AIM-252), so `created` succeeds
+  // from `deleted` exactly as it does from the PAYG scenarios.
   created: { deleted: "active", payg: "active", "payg-debt": "active" },
   renewed: {
     "payment-due": "active",

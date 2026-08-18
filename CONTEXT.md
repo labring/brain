@@ -580,9 +580,9 @@ _Avoid_: plan catalog, plan list, plan cards section, Subscription plans tab (as
 
 ### Workspace Subscription
 
-The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade, payment-due) and its most recent transaction. Cancelling means the user has cancelled but the paid period still runs; payment-due means the subscription has expired — a failed renewal charge and a cancelled period reaching its end both land here — and the workspace sits suspended under the Deletion Countdown. Payment-due outranks cancelling when both hold. A workspace has at most one; a workspace without one is Pay-As-You-Go. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
+The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade, payment-due) and its most recent transaction. Cancelling means the user has cancelled but the paid period still runs; payment-due means the subscription has expired — a failed renewal charge and a cancelled period reaching its end both land here — and the workspace sits suspended under the Deletion Countdown. Payment-due outranks cancelling when both hold. A workspace has at most one; a workspace without one is Pay-As-You-Go. An upstream subscription record in DELETED status is not a Workspace Subscription — the workspace is Pay-As-You-Go and may subscribe anew. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
 
-_Avoid_: account subscription, user subscription, namespace plan, workspace plan record, in debt (as a user-facing label), cancelled (as a lifecycle distinct from cancelling).
+_Avoid_: account subscription, user subscription, namespace plan, workspace plan record, in debt (as a user-facing label), cancelled (as a lifecycle distinct from cancelling), deleted (as a client lifecycle).
 
 ### Pending Subscription Upgrade
 

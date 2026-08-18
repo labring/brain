@@ -319,43 +319,124 @@ test("keeps core Plan data available when auxiliary requests fail", async () => 
   assert.deepEqual(snapshot.workspaces, []);
 });
 
-test("fails closed for deleted and unknown subscription statuses", async () => {
-  for (const [status, lifecycle] of [
-    ["DELETED", "deleted"],
-    ["PAUSED_BY_PROVIDER", "unavailable"],
-  ] as const) {
-    const responses: Record<string, unknown> = {
-      ...RESPONSES,
-      "/api/billing/subscription": {
-        subscription: {
-          ...(
-            RESPONSES["/api/billing/subscription"] as {
-              subscription: Record<string, unknown>;
-            }
-          ).subscription,
-          CancelAtPeriodEnd: false,
-          Status: status,
-        },
+function loadSnapshotWithSubscription(
+  overrides: Record<string, unknown>,
+  extraResponses: Record<string, unknown> = {}
+) {
+  const responses: Record<string, unknown> = {
+    ...RESPONSES,
+    "/api/billing/subscription": {
+      subscription: {
+        ...(
+          RESPONSES["/api/billing/subscription"] as {
+            subscription: Record<string, unknown>;
+          }
+        ).subscription,
+        CancelAtPeriodEnd: false,
+        ...overrides,
       },
-    };
-    const snapshot = await loadBillingPlanSnapshot(
-      {
-        appToken: "desktop-app-token",
-        kubeconfig: "apiVersion: v1",
-        workspace: "workspace-a",
-      },
-      {
-        fetch: (input) =>
-          Promise.resolve(Response.json(responses[input.toString()])),
-        now: () => NOW,
-      }
-    );
+    },
+    ...extraResponses,
+  };
+  return loadBillingPlanSnapshot(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) =>
+        Promise.resolve(Response.json(responses[input.toString()])),
+      now: () => NOW,
+    }
+  );
+}
 
-    assert.equal(snapshot.current.lifecycle, lifecycle);
-    assert.ok(
-      snapshot.plans.every((plan) => plan.isCurrent || plan.changeKind == null)
-    );
-  }
+test("fails closed for unknown subscription statuses", async () => {
+  const snapshot = await loadSnapshotWithSubscription({
+    Status: "PAUSED_BY_PROVIDER",
+  });
+
+  assert.equal(snapshot.current.lifecycle, "unavailable");
+  assert.ok(
+    snapshot.plans.every((plan) => plan.isCurrent || plan.changeKind == null)
+  );
+});
+
+test("presents a deleted subscription as the subscribable-again PAYG shape", async () => {
+  // AIM-252: a DELETED record is not a Workspace Subscription — the
+  // workspace is PAYG and may subscribe anew, with no stale plan, period,
+  // or invoice facts leaking through.
+  const snapshot = await loadSnapshotWithSubscription({ Status: "DELETED" });
+
+  assert.equal(snapshot.current.lifecycle, "active");
+  assert.equal(snapshot.current.isPayg, true);
+  assert.equal(snapshot.current.planName, "PAYG");
+  assert.equal(snapshot.current.canManage, true);
+  assert.equal(snapshot.current.warningStage, null);
+  assert.equal(snapshot.current.invoiceId, null);
+  assert.equal(snapshot.current.invoicePaymentUrl, null);
+  assert.equal(snapshot.current.priceMicroUnits, 0);
+  assert.deepEqual(
+    snapshot.plans.map((plan) => [plan.name, plan.isCurrent, plan.changeKind]),
+    [
+      ["Starter", false, "subscribe"],
+      ["Pro", false, "subscribe"],
+      ["Team", false, "subscribe"],
+    ]
+  );
+});
+
+test("keeps payment authority role-gated for a deleted subscription", async () => {
+  // Subscription state and payment authority are orthogonal: the record's
+  // role survives normalization, so only the OWNER manages payments.
+  const snapshot = await loadSnapshotWithSubscription({
+    Status: "DELETED",
+    role: "DEVELOPER",
+  });
+
+  assert.equal(snapshot.current.lifecycle, "active");
+  assert.equal(snapshot.current.isPayg, true);
+  assert.equal(snapshot.current.canManage, false);
+});
+
+test("reports a deleted workspace row as PAYG in the workspace list", async () => {
+  const snapshot = await loadSnapshotWithSubscription(
+    {},
+    {
+      "/api/billing/subscriptions": {
+        subscriptions: [
+          (
+            RESPONSES["/api/billing/subscriptions"] as {
+              subscriptions: Record<string, unknown>[];
+            }
+          ).subscriptions[0],
+          {
+            CancelAtPeriodEnd: false,
+            CurrentPeriodEndAt: "2026-06-30T00:00:00Z",
+            PayMethod: "stripe",
+            PlanName: "Starter",
+            RegionDomain: "us.example.test",
+            Status: "DELETED",
+            Workspace: "workspace-b",
+          },
+        ],
+      },
+    }
+  );
+
+  const deletedRow = snapshot.workspaces.find(
+    (workspace) => workspace.id === "workspace-b"
+  );
+  assert.deepEqual(deletedRow, {
+    id: "workspace-b",
+    isCurrent: false,
+    lifecycle: "active",
+    name: "Workspace Beta",
+    planName: "PAYG",
+    priceMicroUnits: null,
+    renewalAt: null,
+  });
 });
 
 test("treats a paused Free subscription as plan-change ready", async () => {
