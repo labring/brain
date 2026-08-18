@@ -65,5 +65,8 @@ BEGIN
 	ON CONFLICT ("event_id") DO NOTHING;
 
 	RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+	RAISE WARNING '[marketing] lifecycle enqueue failed for deploy task %: %', NEW."id", SQLERRM;
+	RETURN NEW;
 END;
 $$;

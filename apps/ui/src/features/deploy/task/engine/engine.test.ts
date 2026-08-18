@@ -809,6 +809,77 @@ test("deployment transitions persist attribution and enqueue lifecycle events", 
   assert.deepEqual(preservedSubject?.consentProvenance, trustedProvenance);
 });
 
+test("deployment inserts and status transitions survive unavailable marketing tables", async () => {
+  const ctx = testCtx();
+  const touch = {
+    campaign: "fail-open-campaign",
+    channel: "paid_search",
+    click_id_type: "gclid" as const,
+    click_id_value: "fail-open-gclid",
+    content: "repo-to-url",
+    landing_hostname: "sealos.io",
+    landing_path: "/",
+    medium: "paid",
+    source: "google",
+    term: "deploy github repo",
+    ts: "2026-08-06T08:00:00.000Z",
+  };
+  await harness.pglite.query(
+    'ALTER TABLE "sealai_marketing"."attribution_subjects" RENAME TO "attribution_subjects_offline"'
+  );
+  await harness.pglite.query(
+    'ALTER TABLE "sealai_marketing"."lifecycle_events" RENAME TO "lifecycle_events_offline"'
+  );
+  let taskId: string | undefined;
+  try {
+    const result = await createDeployTaskAction(ctx, {
+      create: {
+        creatingActor: "fail-open-user",
+        marketingAttribution: {
+          ad_personalization: "granted",
+          ad_user_data_consent: true,
+          click_id_candidates: [touch],
+          consent_provenance: null,
+          first_touch: touch,
+          gbraid: null,
+          gclid: "fail-open-gclid",
+          last_touch: touch,
+          version: 3,
+          wbraid: null,
+        },
+        namespace: "fail-open-workspace",
+        runner: { kind: "template" },
+        source: { kind: "template", templateName: "fail-open-demo" },
+        target: { kind: "existingProject", projectId: "fail-open-project" },
+      },
+      run: async (handle) => {
+        await handle.beginApplying();
+        await handle.complete();
+      },
+    });
+    assert.equal(result.kind, "created");
+    if (result.kind === "created") {
+      taskId = result.task.id;
+      await result.launched?.done;
+    }
+  } finally {
+    await harness.pglite.query(
+      'ALTER TABLE "sealai_marketing"."attribution_subjects_offline" RENAME TO "attribution_subjects"'
+    );
+    await harness.pglite.query(
+      'ALTER TABLE "sealai_marketing"."lifecycle_events_offline" RENAME TO "lifecycle_events"'
+    );
+  }
+  assert.ok(taskId, "task should be created despite marketing failures");
+  const row = await taskById(taskId);
+  assert.equal(row.status, "completed");
+  const skippedEvents = await harness.db
+    .select()
+    .from(marketingLifecycleEvents)
+    .where(eq(marketingLifecycleEvents.deploymentId, taskId));
+  assert.equal(skippedEvents.length, 0);
+});
+
 test("payment transaction IDs deduplicate per conversion action", async () => {
   const payment = {
     adUserDataConsent: "denied" as const,
