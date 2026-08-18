@@ -586,9 +586,15 @@ _Avoid_: account subscription, user subscription, namespace plan, workspace plan
 
 ### Pending Subscription Upgrade
 
-An accepted Workspace Subscription upgrade backed by one unpaid invoice. Until the invoice is paid or cancelled, its target plan and checkout are authoritative and prevent creation of another upgrade payment; a newly selected plan becomes actionable only after cancellation. Continuing payment also requires the target plan to remain in the current Subscription Plan catalog; otherwise cancellation is the only recovery.
+An accepted Workspace Subscription upgrade backed by one unpaid invoice. Until the invoice is paid or cancelled, its target plan and checkout are authoritative and prevent creation of another upgrade payment; choosing any other plan routes through recovery — cancel the unpaid invoice, then continue with the newly chosen plan. Continuing payment also requires the upgrade not to be stale (see Stale Pending Upgrade).
 
 _Avoid_: pending upgrade response, pending quote, new checkout.
+
+### Stale Pending Upgrade
+
+A Pending Subscription Upgrade whose target Subscription Plan has left the plan catalog. Its unpaid invoice must not be offered for payment anywhere — cancellation is the only recovery, after which any available plan may be chosen.
+
+_Avoid_: retired-plan upgrade, orphaned upgrade, unavailable pending upgrade.
 
 ### Workspace Subscription Renewal
 

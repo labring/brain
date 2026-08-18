@@ -158,7 +158,7 @@ test("plan picker continues into the selected upgrade workflow", async () => {
   });
 });
 
-test("pending upgrade blocks new plan changes but exposes its recovery target", async () => {
+test("pending upgrade keeps other plans clickable and exposes its recovery target", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanChangeDialog } = await import(
       "./billing-plan-change-dialog"
@@ -235,17 +235,14 @@ test("pending upgrade blocks new plan changes but exposes its recovery target", 
         rendered = render(<PendingUpgradeHarness />);
       });
 
-      const blockedDowngrade = rendered?.getByRole("button", {
-        name: "Payment in progress",
-      });
-      assert.ok(blockedDowngrade);
-      assert.equal((blockedDowngrade as HTMLButtonElement).disabled, true);
-
-      await act(() => {
-        fireEvent.click(blockedDowngrade);
-      });
-      assert.deepEqual(selectedPlanIds, []);
-      assert.equal(paymentRequests, 0);
+      // A pending upgrade no longer locks the other cards.
+      assert.equal(
+        rendered?.queryByRole("button", { name: "Payment in progress" }),
+        null
+      );
+      const downgrade = rendered?.getByRole("button", { name: "Downgrade" });
+      assert.ok(downgrade);
+      assert.equal((downgrade as HTMLButtonElement).disabled, false);
 
       const recover = rendered?.getByRole("button", {
         name: "Recover payment",
@@ -893,15 +890,12 @@ test("a pending upgrade for a removed plan can only be cancelled", async () => {
         );
       });
 
-      await act(() => {
-        const continuePayment = rendered?.getByRole("button", {
-          name: "Continue payment",
-        });
-        if (continuePayment != null) {
-          fireEvent.click(continuePayment);
-        }
-      });
-
+      // A stale pending upgrade never offers payment: the button is absent
+      // (not click-to-error) and the description explains the situation.
+      assert.equal(
+        rendered?.queryByRole("button", { name: "Continue payment" }),
+        null
+      );
       assert.deepEqual(openedUrls, []);
       assert.ok(
         (rendered?.baseElement.textContent ?? "").includes(

@@ -111,6 +111,14 @@
       "formatter": { "enabled": false },
       "linter": { "enabled": false },
       "assist": { "enabled": false }
+    },
+    {
+      // Throwaway self-contained prototypes (from the prototype skill): kept next
+      // to the code they probe but never shipped, so exempt from code quality.
+      "includes": ["**/*.prototype.html"],
+      "formatter": { "enabled": false },
+      "linter": { "enabled": false },
+      "assist": { "enabled": false }
     }
   ]
 }

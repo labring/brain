@@ -147,8 +147,6 @@ test("an unpaid invoice can be cancelled from its Plan banner", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanSurface } = await import("./billing-plan-surface");
     const invoiceIds: string[] = [];
-    // A non-warning lifecycle: the standalone unpaid-invoice alert only
-    // renders while the subscription warning banner is down.
     const snapshot: BillingPlanSnapshot = {
       ...CANCELLING_PLAN,
       current: {
@@ -256,6 +254,70 @@ test("a pending upgrade for a removed plan keeps only invoice cancellation", asy
   });
 });
 
+test("an expired Free trial with a stale pending upgrade still offers invoice cancellation", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanSurface } = await import("./billing-plan-surface");
+    const invoiceIds: string[] = [];
+    // The AIM-253 deadly combination: payment-due + current plan Free (no
+    // picker card of its own) + a pending upgrade whose plan left the
+    // catalog. Cancelling the invoice must stay reachable here.
+    const snapshot: BillingPlanSnapshot = {
+      ...CANCELLING_PLAN,
+      current: {
+        ...CANCELLING_PLAN.current,
+        cancelAtPeriodEnd: false,
+        invoiceId: "invoice-1",
+        invoicePaymentUrl: "https://payments.example.test/invoice-1",
+        lifecycle: "payment-due",
+        planName: "Free",
+        priceMicroUnits: 0,
+        warningStage: "expired",
+      },
+      pendingUpgrade: {
+        planName: "Team",
+        startsAt: "2099-08-31T00:00:00Z",
+      },
+      plans: CANCELLING_PLAN.plans.filter((plan) => plan.name !== "Team"),
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanSurface
+            balance={<span>$3.00</span>}
+            currency="usd"
+            onCancelInvoice={(invoiceId) => invoiceIds.push(invoiceId)}
+            snapshot={snapshot}
+          />
+        );
+      });
+
+      assert.ok(
+        (rendered?.container.textContent ?? "").includes(
+          "Plan Team is no longer available"
+        )
+      );
+      assert.equal(
+        rendered?.queryByRole("link", { name: "Pay invoice" }),
+        null
+      );
+      await act(() => {
+        const cancelInvoice = rendered?.getByRole("button", {
+          name: "Cancel invoice",
+        });
+        if (cancelInvoice != null) {
+          fireEvent.click(cancelInvoice);
+        }
+      });
+
+      assert.deepEqual(invoiceIds, ["invoice-1"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("a payment-due subscription opens the plan picker for renewal", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanSurface } = await import("./billing-plan-surface");
@@ -285,8 +347,9 @@ test("a payment-due subscription opens the plan picker for renewal", async () =>
         );
       });
 
-      // The warning banner replaces the standalone unpaid-invoice alert;
-      // renewal (not invoice payment) is the single call to action.
+      // The warning banner and the unpaid-invoice alert are independent:
+      // payment-due is exactly when the invoice actions matter most, so the
+      // alert stays alongside the renewal call to action.
       assert.match(
         rendered?.container.textContent ?? "",
         EXPIRED_BANNER_PATTERN
@@ -295,12 +358,9 @@ test("a payment-due subscription opens the plan picker for renewal", async () =>
         (rendered?.container.textContent ?? "").includes(
           "You have an unpaid invoice"
         ),
-        false
+        true
       );
-      assert.equal(
-        rendered?.queryByRole("link", { name: "Pay invoice" }),
-        null
-      );
+      assert.ok(rendered?.queryByRole("link", { name: "Pay invoice" }));
 
       await act(() => {
         const renew = rendered?.getByRole("button", {

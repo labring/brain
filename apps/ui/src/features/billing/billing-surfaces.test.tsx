@@ -349,10 +349,10 @@ test("Plan renders lifecycle notices, card facts, and workspace plan rows", asyn
   ]) {
     assertIncludes(html, text);
   }
-  // The warning banner suppresses the lifecycle badge and the standalone
-  // unpaid-invoice alert; it carries no payment link of its own.
-  assert.equal(html.includes("You have an unpaid invoice"), false);
-  assert.equal(html.includes("https://payments.example.test"), false);
+  // The warning banner suppresses the lifecycle badge, but the standalone
+  // unpaid-invoice alert stays: warning stages no longer hide invoice actions.
+  assertIncludes(html, "You have an unpaid invoice");
+  assertIncludes(html, "https://payments.example.test");
   // A pending upgrade is voiced only by the target-naming change badge; the
   // bare lifecycle badge and the "Plan Cancelled" wording are retired.
   assert.equal(html.includes(">Pending upgrade<"), false);
@@ -450,7 +450,7 @@ test("Pricing disables plan selection for closed subscription states", async () 
   }
 });
 
-test("Pricing exposes only the pending upgrade recovery target", async () => {
+test("Pricing keeps other plans actionable next to the pending upgrade recovery target", async () => {
   const { BillingPlanCatalogSection, renderToStaticMarkup } =
     await surfaceModules();
   const snapshot: BillingPlanSnapshot = {
@@ -469,9 +469,10 @@ test("Pricing exposes only the pending upgrade recovery target", async () => {
   );
 
   assertIncludes(html, "Recover payment");
-  assertIncludes(html, "Payment in progress");
-  assert.equal(html.includes(">Upgrade<"), false);
-  assert.equal(html.includes(">Downgrade<"), false);
+  // A pending upgrade no longer locks the other cards: choosing one routes
+  // through recovery (or the backend supersedes the pending payment).
+  assert.equal(html.includes("Payment in progress"), false);
+  assertIncludes(html, ">Upgrade<");
 });
 
 test("Plan renders the compact PAYG summary next to the balance", async () => {

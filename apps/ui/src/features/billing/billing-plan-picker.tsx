@@ -254,10 +254,6 @@ export function BillingPlanPicker({
           {
             changeKind: plan.changeKind ?? null,
             inDebt,
-            isBlockedByPendingUpgrade:
-              normalizedPendingUpgradePlanName != null &&
-              normalizedPendingUpgradePlanName !==
-                plan.name.trim().toLowerCase(),
             isCurrent: plan.isCurrent,
             isPendingDowngradeTarget: pendingDowngradePlanName === plan.name,
             isPendingUpgradeTarget:

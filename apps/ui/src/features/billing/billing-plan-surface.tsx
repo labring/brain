@@ -292,14 +292,15 @@ function BillingInvoiceNotice({
   );
   const pendingUpgradeUnavailable =
     pendingUpgrade != null && !pendingUpgradePlanAvailable;
+  // Deliberately independent of warningStage: payment-due and cancelling are
+  // exactly when the invoice actions matter most (AIM-253). Paying a stale
+  // pending upgrade is the one hard exclusion — the plan no longer exists.
   const canPayInvoice =
     billingActionsAllowed &&
     current.invoicePaymentUrl != null &&
-    current.warningStage == null &&
     !pendingUpgradeUnavailable;
   const canCancelInvoice =
     billingActionsAllowed &&
-    current.warningStage == null &&
     current.canManage &&
     invoiceId != null &&
     onCancelInvoice != null;

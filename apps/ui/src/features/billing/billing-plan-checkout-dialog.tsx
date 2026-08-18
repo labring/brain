@@ -238,6 +238,7 @@ interface RecoveryStageProps {
   onCancel: () => Promise<void>;
   onContinue: () => void;
   pendingUpgrade: PendingSubscriptionUpgrade;
+  planAvailable: boolean;
 }
 
 function RecoveryStage({
@@ -246,6 +247,7 @@ function RecoveryStage({
   onCancel,
   onContinue,
   pendingUpgrade,
+  planAvailable,
 }: RecoveryStageProps) {
   return (
     <>
@@ -255,8 +257,9 @@ function RecoveryStage({
         </AppDialog.Icon>
         <AppDialog.Title>Payment already in progress</AppDialog.Title>
         <AppDialog.Description>
-          Complete the existing payment or cancel it before starting another
-          checkout.
+          {planAvailable
+            ? "Complete the existing payment or cancel it before starting another checkout."
+            : `Plan ${pendingUpgrade.planName} is no longer available. Cancel this payment to continue with your new plan.`}
         </AppDialog.Description>
       </AppDialog.Header>
       <AppDialog.Body className="pt-0">
@@ -273,15 +276,21 @@ function RecoveryStage({
         )}
       </AppDialog.Body>
       <AppDialog.Footer>
-        <AppButton disabled={cancelling} onClick={onCancel} variant="quiet">
+        <AppButton
+          disabled={cancelling}
+          onClick={onCancel}
+          variant={planAvailable ? "quiet" : undefined}
+        >
           {cancelling ? (
             <LoaderCircle aria-hidden className="animate-spin" />
           ) : null}
           {cancelling ? "Cancelling..." : "Cancel and choose another plan"}
         </AppButton>
-        <AppButton disabled={cancelling} onClick={onContinue}>
-          Continue payment
-        </AppButton>
+        {planAvailable ? (
+          <AppButton disabled={cancelling} onClick={onContinue}>
+            Continue payment
+          </AppButton>
+        ) : null}
       </AppDialog.Footer>
     </>
   );
@@ -1362,6 +1371,9 @@ export function BillingPlanCheckoutDialog({
             onCancel={cancelPendingUpgrade}
             onContinue={continuePendingUpgrade}
             pendingUpgrade={pendingUpgrade}
+            planAvailable={snapshot.plans.some(
+              (candidate) => candidate.name === pendingUpgrade.planName
+            )}
           />
         ) : null}
         {stage === "downgrade" && plan != null ? (
