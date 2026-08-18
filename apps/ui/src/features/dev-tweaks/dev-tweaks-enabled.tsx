@@ -21,8 +21,6 @@ const HOST_BRIDGE_STYLE: CSSProperties = {
   "--dtp-font-sans": "var(--font-sans)",
 } as CSSProperties;
 
-const DEMO_BUILD = process.env.NEXT_PUBLIC_DEV_TWEAKS === "1";
-
 /**
  * Dev-only composition root. Mock persistence drivers register here when a
  * feature needs one (e.g. the billing cookie driver once costcenter lands);
@@ -32,12 +30,10 @@ export function DevTweaksEnabled({ children }: { children: ReactNode }) {
   return (
     <DevTweaksProvider>
       <DevTweaksPanel style={HOST_BRIDGE_STYLE}>{children}</DevTweaksPanel>
-      {/* In demo builds the capsule is the only entry to the panel, so it
-          stays present even with nothing active. */}
-      <DevTweaksIndicator
-        alwaysVisible={DEMO_BUILD}
-        style={HOST_BRIDGE_STYLE}
-      />
+      {/* The capsule is a dirty indicator only: hidden until an override is
+          active, in demo builds and local dev alike. The panel opens with
+          ⌃⌥T. */}
+      <DevTweaksIndicator style={HOST_BRIDGE_STYLE} />
     </DevTweaksProvider>
   );
 }
