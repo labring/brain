@@ -202,6 +202,7 @@ const CANCELLING_PLAN = {
     isPayg: false,
     lifecycle: "cancelling",
     payMethod: "stripe",
+    periodEndVoice: "silent",
     planName: "Pro",
     priceMicroUnits: 20_000_000,
     regionDomain: "us.example.test",
@@ -394,6 +395,7 @@ test("Plan disables changes for the unavailable subscription state", async () =>
       ...CANCELLING_PLAN.current,
       cancelAtPeriodEnd: false,
       lifecycle: "unavailable",
+      periodEndVoice: "renewal",
       warningDeadlineAt: null,
       warningStage: null,
     },
@@ -424,6 +426,7 @@ test("Pricing disables plan selection for the unavailable subscription state", a
     current: {
       ...CANCELLING_PLAN.current,
       lifecycle: "unavailable",
+      periodEndVoice: "renewal",
     },
     plans: CANCELLING_PLAN.plans.map((plan) => ({
       ...plan,
@@ -450,6 +453,7 @@ test("Pricing keeps other plans actionable next to the pending upgrade recovery 
     current: {
       ...CANCELLING_PLAN.current,
       lifecycle: "pending-upgrade",
+      periodEndVoice: "renewal",
     },
   };
   const html = renderToStaticMarkup(
@@ -480,6 +484,7 @@ test("Plan renders the compact PAYG summary next to the balance", async () => {
       invoicePaymentUrl: null,
       isPayg: true,
       lifecycle: "active",
+      periodEndVoice: "renewal",
       planName: "PAYG",
       priceMicroUnits: 0,
       warningDeadlineAt: null,
@@ -526,6 +531,7 @@ test("Plan shows the free-plan expiry warning when expiry is within seven days",
       invoiceId: null,
       invoicePaymentUrl: null,
       lifecycle: "active",
+      periodEndVoice: "expiry",
       planName: "Free",
       priceMicroUnits: 0,
       warningDeadlineAt: null,
@@ -561,6 +567,7 @@ test("Plan hides the free-plan expiry warning outside the near-expiry window", a
         invoiceId: null,
         invoicePaymentUrl: null,
         lifecycle: "active",
+        periodEndVoice: "expiry",
         planName: "Free",
         priceMicroUnits: 0,
         warningDeadlineAt: null,
@@ -591,6 +598,7 @@ test("Plan keeps cancellation available while an upgrade is pending", async () =
       invoiceId: null,
       invoicePaymentUrl: null,
       lifecycle: "pending-upgrade",
+      periodEndVoice: "renewal",
       warningDeadlineAt: null,
       warningStage: null,
     },

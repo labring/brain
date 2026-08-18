@@ -186,6 +186,7 @@ test("active derives an active stripe subscription with a card", async () => {
     plan.current.currentPeriodEndAt,
     "CurrentPeriodEndAt carries a real date so the header Renewal Time renders"
   );
+  assert.equal(plan.current.periodEndVoice, "renewal");
 });
 
 test("payg-debt derives a PAYG workspace inside the debt pipeline", async () => {
@@ -212,6 +213,9 @@ test("free derives an active trial that never reads as cancelling", async () => 
   assert.equal(plan.current.lifecycle, "active");
   assert.equal(plan.current.warningStage, null);
   assert.equal(plan.current.priceMicroUnits, 0);
+  // AIM-254: the trial's period end is the plan's expiry, not a reset or a
+  // renewal — and never blanked by the constructed CancelAtPeriodEnd flag.
+  assert.equal(plan.current.periodEndVoice, "expiry");
 });
 
 test("paused derives a plan-change-ready Free subscription", async () => {
@@ -220,6 +224,7 @@ test("paused derives a plan-change-ready Free subscription", async () => {
   assert.equal(plan.current.lifecycle, "active");
   assert.equal(plan.current.warningStage, null);
   assert.equal(plan.current.currentPeriodEndAt, "", "no period is running");
+  assert.equal(plan.current.periodEndVoice, "expiry");
 });
 
 test("deleted derives the subscribable-again PAYG shape", async () => {
@@ -271,12 +276,22 @@ test("cancelling derives the cancelling lifecycle", async () => {
     new Date(plan.current.currentPeriodEndAt).toISOString(),
     "pre-expiry the deadline is the suspension date, with no grace added"
   );
+  assert.equal(
+    plan.current.periodEndVoice,
+    "silent",
+    "the suspension date is voiced by the warning banner, not the date fields"
+  );
 });
 
 test("payment-due derives debt with a payable invoice", async () => {
   const plan = await loadPlanForScenario("payment-due");
   assert.equal(plan.current.lifecycle, "payment-due");
   assert.equal(plan.current.warningStage, "expired");
+  assert.equal(
+    plan.current.periodEndVoice,
+    "silent",
+    "the past period end is noise; the destructive banner owns the dates"
+  );
   assert.ok(plan.current.invoicePaymentUrl);
   assert.ok(plan.current.warningDeadlineAt, "deletion date is derived");
   assert.ok(

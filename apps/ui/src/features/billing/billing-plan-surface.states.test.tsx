@@ -126,13 +126,20 @@ test("payg-debt speaks Account Debt, not subscription expiry", async () => {
 
 // AIM-255: the header's Renewal Time reads the same period-end field as the
 // workspaces table, and blanks under the same no-renewal states.
+function headerField(
+  rendered: Parameters<Parameters<typeof renderScenario>[1]>[0],
+  label: string
+): string | null {
+  const node = Array.from(rendered.container.querySelectorAll("dt")).find(
+    (item) => item.textContent === label
+  );
+  return node?.nextElementSibling?.textContent ?? null;
+}
+
 function headerRenewalTime(
   rendered: Parameters<Parameters<typeof renderScenario>[1]>[0]
 ): string | null {
-  const label = Array.from(rendered.container.querySelectorAll("dt")).find(
-    (node) => node.textContent === "Renewal Time"
-  );
-  return label?.nextElementSibling?.textContent ?? null;
+  return headerField(rendered, "Renewal Time");
 }
 
 test("active renders the period end as the header Renewal Time", async () => {
@@ -153,6 +160,41 @@ test("cancelling blanks the header Renewal Time like the workspaces table", asyn
 
 test("paused blanks the header Renewal Time without a running period", async () => {
   await renderScenario("paused", (rendered) => {
+    assert.equal(headerRenewalTime(rendered), "-");
+  });
+});
+
+// AIM-254: a Free subscription's period end is the plan's expiry — never
+// blanked by the constructed CancelAtPeriodEnd flag, and voiced as an
+// expiry, not a quota reset or a renewal.
+test("free renders the trial end as Expires On, not a reset or renewal", async () => {
+  await renderScenario("free", (rendered) => {
+    const expiresOn = headerField(rendered, "Expires On");
+    assert.ok(
+      expiresOn != null && expiresOn !== "-",
+      "the trial's only meaningful date is visible in the header"
+    );
+    assert.equal(headerField(rendered, "Quota Resets On"), null);
+    assert.equal(headerRenewalTime(rendered), "-");
+  });
+});
+
+test("paused keeps the Expires On label with no date to show", async () => {
+  await renderScenario("paused", (rendered) => {
+    assert.equal(headerField(rendered, "Expires On"), "-");
+    assert.equal(headerField(rendered, "Quota Resets On"), null);
+  });
+});
+
+test("cancelling blanks the quota reset date for the warning banner to voice", async () => {
+  await renderScenario("cancelling", (rendered) => {
+    assert.equal(headerField(rendered, "Quota Resets On"), "-");
+  });
+});
+
+test("payment-due blanks both header dates regardless of cancellation", async () => {
+  await renderScenario("payment-due", (rendered) => {
+    assert.equal(headerField(rendered, "Quota Resets On"), "-");
     assert.equal(headerRenewalTime(rendered), "-");
   });
 });

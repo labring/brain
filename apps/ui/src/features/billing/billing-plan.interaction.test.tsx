@@ -32,6 +32,7 @@ const SNAPSHOT: BillingPlanSnapshot = {
     isPayg: false,
     lifecycle: "active",
     payMethod: "stripe",
+    periodEndVoice: "renewal",
     planName: "Pro",
     priceMicroUnits: 20_000_000,
     regionDomain: "us.example.test",

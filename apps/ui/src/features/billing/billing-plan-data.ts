@@ -27,6 +27,18 @@ export type SubscriptionLifecycle =
 
 export type BillingDataAvailability = "available" | "unavailable";
 
+/**
+ * What the current period end means for this subscription — which decides
+ * how the plan surfaces voice it (AIM-254):
+ * - "renewal": a renewal is coming; the date is the Renewal Time and the
+ *   quota-reset moment.
+ * - "expiry": a Free plan's period end is the plan's expiry — nothing renews
+ *   or resets, so surfaces say "expires"/"ends".
+ * - "silent": the date is a suspension/deletion deadline owned by the
+ *   destructive warning banner; the date fields stay blank.
+ */
+export type PeriodEndVoice = "expiry" | "renewal" | "silent";
+
 export function subscriptionLifecycleAllowsBillingActions(
   lifecycle: SubscriptionLifecycle
 ): boolean {
@@ -72,6 +84,7 @@ export interface BillingPlanSnapshot {
     isPayg: boolean;
     lifecycle: SubscriptionLifecycle;
     payMethod: "balance" | "stripe";
+    periodEndVoice: PeriodEndVoice;
     planName: string;
     priceMicroUnits: number;
     regionDomain: string;
@@ -297,6 +310,20 @@ function subscriptionLifecycle(input: {
     return "pending-upgrade";
   }
   return "active";
+}
+
+// Keyed on the derived lifecycle, not the raw CancelAtPeriodEnd flag: the
+// platform constructs every Free subscription with the flag already true, so
+// the flag alone cannot tell a cancelled paid plan from a healthy Free trial
+// (AIM-254 — the old costcenter carried the same Free exemption).
+function periodEndVoice(input: {
+  lifecycle: SubscriptionLifecycle;
+  planName: string;
+}): PeriodEndVoice {
+  if (input.lifecycle === "cancelling" || input.lifecycle === "payment-due") {
+    return "silent";
+  }
+  return input.planName.trim().toLowerCase() === "free" ? "expiry" : "renewal";
 }
 
 function subscriptionWarningStage(input: {
@@ -548,6 +575,10 @@ export async function loadBillingPlanSnapshot(
       isPayg: subscription.type === "PAYG",
       lifecycle,
       payMethod: normalizedPayMethod(subscription.PayMethod),
+      periodEndVoice: periodEndVoice({
+        lifecycle,
+        planName: subscription.PlanName,
+      }),
       planName: subscription.PlanName,
       priceMicroUnits: currentPlan?.monthlyPriceMicroUnits ?? 0,
       regionDomain: subscription.RegionDomain || region.domain,

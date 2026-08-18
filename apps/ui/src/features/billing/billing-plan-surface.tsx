@@ -661,18 +661,53 @@ function AiCreditsBody({
   );
 }
 
+// The period end speaks with the voice the snapshot derived (AIM-254): a
+// renewal for a healthy paid plan, an expiry for Free, or silence when the
+// destructive warning banner owns the date.
+function BillingPeriodEndFields({
+  current,
+}: {
+  current: BillingPlanSnapshot["current"];
+}) {
+  const { currentPeriodEndAt, periodEndVoice } = current;
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <dt className="text-muted-foreground text-sm">
+          {periodEndVoice === "expiry" ? "Expires On" : "Quota Resets On"}
+        </dt>
+        <dd className="font-semibold text-foreground tabular-nums">
+          {periodEndVoice === "silent"
+            ? "-"
+            : formatDateTime(currentPeriodEndAt)}
+        </dd>
+      </div>
+      <div className="flex flex-col gap-2">
+        <dt className="text-muted-foreground text-sm">Renewal Time</dt>
+        <dd className="font-semibold text-foreground tabular-nums">
+          {periodEndVoice === "renewal"
+            ? formatDateTime(currentPeriodEndAt)
+            : "-"}
+        </dd>
+      </div>
+    </>
+  );
+}
+
 export function BillingAiCreditsSection({
   credits,
   error,
   isLoading,
   planIncludesCredits,
   resetAt,
+  resetLabel = "Resets:",
 }: {
   credits: AiCredits | undefined;
   error: unknown;
   isLoading: boolean;
   planIncludesCredits: boolean;
   resetAt: string;
+  resetLabel?: string;
 }) {
   const readyWithAllowance = credits != null && credits.totalMicroUnits > 0;
   if (
@@ -693,7 +728,7 @@ export function BillingAiCreditsSection({
       <AiCreditsBody credits={credits} error={error} isLoading={isLoading} />
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-muted-foreground text-sm leading-5">
-          {"Resets: "}
+          {`${resetLabel} `}
         </span>
         <span className="font-semibold text-base text-card-foreground tabular-nums leading-none">
           {resetAt}
@@ -1068,22 +1103,7 @@ export function BillingPlanSurface({
             {formatBillingAmount(current.priceMicroUnits, currency)}
           </dd>
         </div>
-        <div className="flex flex-col gap-2">
-          <dt className="text-muted-foreground text-sm">Quota Resets On</dt>
-          <dd className="font-semibold text-foreground tabular-nums">
-            {current.cancelAtPeriodEnd
-              ? "-"
-              : formatDateTime(current.currentPeriodEndAt)}
-          </dd>
-        </div>
-        <div className="flex flex-col gap-2">
-          <dt className="text-muted-foreground text-sm">Renewal Time</dt>
-          <dd className="font-semibold text-foreground tabular-nums">
-            {current.cancelAtPeriodEnd
-              ? "-"
-              : formatDateTime(current.currentPeriodEndAt)}
-          </dd>
-        </div>
+        <BillingPeriodEndFields current={current} />
       </dl>
     </section>
   );

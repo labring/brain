@@ -553,9 +553,12 @@ export function BillingPlan({
               (resource) => resource.label === "AI Credits"
             )}
             resetAt={
-              snapshot.current.cancelAtPeriodEnd
+              snapshot.current.periodEndVoice === "silent"
                 ? "-"
                 : formatBillingDateTime(snapshot.current.currentPeriodEndAt)
+            }
+            resetLabel={
+              snapshot.current.periodEndVoice === "expiry" ? "Ends:" : "Resets:"
             }
           />
         )

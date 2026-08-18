@@ -608,6 +608,12 @@ The scheduled moment a Workspace Subscription's current paid period ends and the
 
 _Avoid_: expiry time (for the renewal moment), renewal (bare, for this moment), access-expiry timestamps as its source.
 
+### Free Plan Expiry
+
+What a Free Subscription Plan's current period end means: the moment the plan and its capacity end — nothing renews, resets, or is charged then, because the platform constructs every Free subscription as cancel-at-period-end. It is the trial's one meaningful date and surfaces say it in expiry terms ("expires", "ends") wherever a paid plan would speak of renewal or quota reset; a Free subscription therefore has no Renewal Time. The constructed cancellation flag alone cannot identify a cancelled subscription — a Free plan carrying it is a healthy trial (or a paused no-trial Free, which runs no period and has no date), not a cancelling one.
+
+_Avoid_: quota reset (for a Free period end), renewal time (for a Free subscription), cancelled/cancelling (for the constructed flag on Free).
+
 ### Deletion Countdown
 
 The platform's fixed grace timeline that starts the moment a Workspace Subscription expires: the workspace is suspended immediately, the warning escalates as the countdown runs, and the workspace's resources are permanently deleted when it ends. Both roads into expiry — failed renewal payment and cancelled-then-lapsed — join the same countdown. The Billing Area surfaces it as a destructive warning carrying the stage's next deadline — the suspension date while a cancelled subscription's paid period still runs, the deletion date once expiry has passed; renewing (or resuming, before expiry) exits the countdown.
