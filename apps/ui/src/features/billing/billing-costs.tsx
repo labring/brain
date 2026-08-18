@@ -192,14 +192,19 @@ export default function BillingCosts({
       shouldRetryOnError: false,
     }
   );
+  // On failure SWR still exposes the previous key's kept data; the error is
+  // authoritative — never render another scope's rows under this scope's
+  // banner.
+  const appOverviewPage =
+    appOverview.error == null ? appOverview.data : undefined;
   const data: BillingCostsSnapshot | undefined =
     costsBase.data == null
       ? undefined
       : {
           ...costsBase.data,
-          appOverviews: appOverview.data?.appOverviews ?? [],
-          totalAppOverviewPages: appOverview.data?.totalAppOverviewPages ?? 1,
-          totalAppOverviews: appOverview.data?.totalAppOverviews ?? 0,
+          appOverviews: appOverviewPage?.appOverviews ?? [],
+          totalAppOverviewPages: appOverviewPage?.totalAppOverviewPages ?? 1,
+          totalAppOverviews: appOverviewPage?.totalAppOverviews ?? 0,
         };
   const error = costsBase.error ?? appOverview.error;
   const isLoading = costsBase.isLoading;
