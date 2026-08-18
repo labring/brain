@@ -43,9 +43,17 @@ const workspaceConsumptionResponseSchema = z.object({
   amount: z.record(z.string(), z.number()),
 });
 const workspacesResponseSchema = z.object({ data: z.array(workspaceSchema) });
+// Upstream marshals slices built by `append` without `omitempty`, so an empty
+// period arrives as JSON null, a normal empty state — not `[]` and not absent.
+const nullableArray = <T extends z.ZodType>(item: T) =>
+  z
+    .array(item)
+    .nullish()
+    .transform((value) => value ?? []);
+
 const appOverviewResponseSchema = z.object({
   data: z.object({
-    overviews: z.array(appOverviewSchema),
+    overviews: nullableArray(appOverviewSchema),
     total: z.number(),
     totalPage: z.number(),
   }),
@@ -76,7 +84,7 @@ const appCostSchema = z.object({
 });
 const appCostsResponseSchema = z.object({
   app_costs: z.object({
-    costs: z.array(appCostSchema).default([]),
+    costs: nullableArray(appCostSchema),
     current_page: z.number().default(1),
     total_pages: z.number().default(1),
     total_records: z.number().default(0),

@@ -217,6 +217,69 @@ test("the selected date range drives every Costs data request", async () => {
   });
 });
 
+test("a period with no settled PAYG app costs is a normal empty state", async () => {
+  const responseByPathname: Record<string, unknown> = {
+    "/api/billing/app-overview": {
+      data: { overviews: null, total: 0, totalPage: 0 },
+    },
+    "/api/billing/app-types": { data: {} },
+    "/api/billing/consumption": { amount: 0 },
+    "/api/billing/costs": { data: { costs: [] } },
+    "/api/billing/payments": { payments: [] },
+    "/api/billing/regions": {
+      regions: [{ domain: "us.example.test", uid: "region-us" }],
+    },
+    "/api/billing/workspace-consumption": { amount: {} },
+    "/api/billing/workspaces": { data: [] },
+  };
+
+  const snapshot = await loadBillingCosts(
+    {
+      appToken: "desktop-app-token",
+      dateRange: DATE_RANGE,
+      kubeconfig: "apiVersion: v1",
+      page: 1,
+      pageSize: 10,
+      workspace: null,
+    },
+    (input) => {
+      const pathname = new URL(input.toString(), "https://brain.test").pathname;
+      return Promise.resolve(Response.json(responseByPathname[pathname]));
+    }
+  );
+
+  assert.deepEqual(snapshot.appOverviews, []);
+  assert.equal(snapshot.totalAppOverviews, 0);
+});
+
+test("an empty per-app drawer page arrives as costs:null", async () => {
+  const page = await loadBillingAppCosts(
+    {
+      appName: "postgres-main",
+      appToken: "desktop-app-token",
+      appType: "5",
+      dateRange: DATE_RANGE,
+      kubeconfig: "apiVersion: v1",
+      namespace: "workspace-a",
+      page: 1,
+      pageSize: 10,
+    },
+    () =>
+      Promise.resolve(
+        Response.json({
+          app_costs: {
+            costs: null,
+            current_page: 1,
+            total_pages: 0,
+            total_records: 0,
+          },
+        })
+      )
+  );
+
+  assert.deepEqual(page.costs, []);
+});
+
 test("monthly trends combine expenditure with paid Subscription Payments", () => {
   const payment = {
     Amount: 2_000_000,
