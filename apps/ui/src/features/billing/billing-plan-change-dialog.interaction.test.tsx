@@ -922,74 +922,85 @@ test("cancelling a pending subscription upgrade reloads the selected quote and p
     let paymentRequests = 0;
     let rendered: ReturnType<typeof render> | undefined;
 
-    try {
-      await act(() => {
-        rendered = render(
-          <BillingPlanChangeDialog
-            credentials={{
-              appToken: "desktop-app-token",
-              kubeconfig: "apiVersion: v1",
-            }}
-            currency="usd"
-            gpuEnabled
-            onOpenChange={() => undefined}
-            onSubscriptionChanged={() => {
-              events.push("refresh");
+    // Mimics the real page: a subscription refresh rebuilds the snapshot (and
+    // every plan object) with fresh identities. The promotion-coded quote
+    // must survive that identity churn.
+    function CancelPendingUpgradeHarness() {
+      const [snapshot, setSnapshot] = useState<BillingPlanSnapshot>(SNAPSHOT);
+      return (
+        <BillingPlanChangeDialog
+          credentials={{
+            appToken: "desktop-app-token",
+            kubeconfig: "apiVersion: v1",
+          }}
+          currency="usd"
+          gpuEnabled
+          onOpenChange={() => undefined}
+          onSubscriptionChanged={() => {
+            events.push("refresh");
+            setSnapshot(
+              (previous) =>
+                JSON.parse(JSON.stringify(previous)) as BillingPlanSnapshot
+            );
+            return Promise.resolve();
+          }}
+          open
+          selectedPlanId="team"
+          services={{
+            cancelInvoice: ({ invoiceId }) => {
+              events.push(`cancel:${invoiceId}`);
               return Promise.resolve();
-            }}
-            open
-            selectedPlanId="team"
-            services={{
-              cancelInvoice: ({ invoiceId }) => {
-                events.push(`cancel:${invoiceId}`);
-                return Promise.resolve();
-              },
-              checkDowngrade: () =>
-                Promise.resolve({ allowed: true, exceededResources: [] }),
-              createPayment: () => {
-                paymentRequests += 1;
-                return Promise.reject(new Error("must not create payment"));
-              },
-              loadTransaction: () => Promise.resolve(null),
-              loadUpgradeQuote: ({ promotionCode }) => {
-                quotePromotions.push(promotionCode);
-                if (quotePromotions.length === 2) {
-                  return Promise.resolve({
-                    kind: "pending-upgrade" as const,
-                    pendingUpgrade: {
-                      amountDueMicroUnits: 7_500_000,
-                      createdAtSeconds: 1_753_600_000,
-                      currency: "usd",
-                      invoiceId: "invoice-1",
-                      paymentId: "payment-1",
-                      paymentUrl:
-                        "https://checkout.stripe.test/existing-invoice",
-                      planName: "Team",
-                      promotionCode: "SPRING15",
-                      status: "open",
-                    },
-                  });
-                }
+            },
+            checkDowngrade: () =>
+              Promise.resolve({ allowed: true, exceededResources: [] }),
+            createPayment: () => {
+              paymentRequests += 1;
+              return Promise.reject(new Error("must not create payment"));
+            },
+            loadTransaction: () => Promise.resolve(null),
+            loadUpgradeQuote: ({ promotionCode }) => {
+              quotePromotions.push(promotionCode);
+              if (quotePromotions.length === 2) {
                 return Promise.resolve({
-                  kind: "quote" as const,
-                  quote: {
-                    amountMicroUnits:
-                      quotePromotions.length === 1 ? 9_000_000 : 6_000_000,
-                    discountMicroUnits:
-                      quotePromotions.length === 1 ? 0 : 3_000_000,
-                    hasDiscount: quotePromotions.length !== 1,
-                    originalAmountMicroUnits: 9_000_000,
-                    promotionCode: promotionCode ?? "",
+                  kind: "pending-upgrade" as const,
+                  pendingUpgrade: {
+                    amountDueMicroUnits: 7_500_000,
+                    createdAtSeconds: 1_753_600_000,
+                    currency: "usd",
+                    invoiceId: "invoice-1",
+                    paymentId: "payment-1",
+                    paymentUrl: "https://checkout.stripe.test/existing-invoice",
+                    planName: "Team",
+                    promotionCode: "SPRING15",
+                    status: "open",
                   },
                 });
-              },
-              openCheckoutUrl: () => undefined,
-              openCheckoutWindow: () => null,
-              redirectTop: () => undefined,
-            }}
-            snapshot={SNAPSHOT}
-          />
-        );
+              }
+              return Promise.resolve({
+                kind: "quote" as const,
+                quote: {
+                  amountMicroUnits:
+                    quotePromotions.length === 1 ? 9_000_000 : 6_000_000,
+                  discountMicroUnits:
+                    quotePromotions.length === 1 ? 0 : 3_000_000,
+                  hasDiscount: quotePromotions.length !== 1,
+                  originalAmountMicroUnits: 9_000_000,
+                  promotionCode: promotionCode ?? "",
+                },
+              });
+            },
+            openCheckoutUrl: () => undefined,
+            openCheckoutWindow: () => null,
+            redirectTop: () => undefined,
+          }}
+          snapshot={snapshot}
+        />
+      );
+    }
+
+    try {
+      await act(() => {
+        rendered = render(<CancelPendingUpgradeHarness />);
       });
 
       await act(() => {

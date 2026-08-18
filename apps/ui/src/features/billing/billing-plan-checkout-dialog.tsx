@@ -26,7 +26,7 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
@@ -887,6 +887,23 @@ export function BillingPlanCheckoutDialog({
   >("polling");
   const [submitting, setSubmitting] = useState(false);
 
+  // Parents pass fresh closures and a snapshot-rebuilt plan object every
+  // render, while a snapshot refresh is part of this dialog's own flows
+  // (payment poll, pending-upgrade cancel). Effects must key on stable
+  // values and reach the latest callbacks/plan through refs, or every
+  // refresh restarts them mid-flight.
+  const planRef = useRef(plan);
+  const onCloseRef = useRef(onClose);
+  const onSubscriptionChangedRef = useRef(onSubscriptionChanged);
+  const servicesRef = useRef(services);
+  useEffect(() => {
+    planRef.current = plan;
+    onCloseRef.current = onClose;
+    onSubscriptionChangedRef.current = onSubscriptionChanged;
+    servicesRef.current = services;
+  });
+  const planName = plan?.name ?? null;
+
   useEffect(() => {
     if (!open) {
       setCheckout(null);
@@ -903,17 +920,16 @@ export function BillingPlanCheckoutDialog({
       setWaitingStatus("polling");
       return;
     }
-    const nextOperator = planOperator(plan, inDebt);
-    if (plan != null && nextOperator === "downgraded") {
+    if (planName != null && operator === "downgraded") {
       let active = true;
       setDowngradeCheck(null);
       setError(null);
       setStage("downgrade");
-      services
+      servicesRef.current
         .checkDowngrade({
           appToken,
           kubeconfig,
-          limits: plan.limits ?? {},
+          limits: planRef.current?.limits ?? {},
           regionDomain: snapshot.current.regionDomain,
           workspace: snapshot.current.workspace,
         })
@@ -937,8 +953,8 @@ export function BillingPlanCheckoutDialog({
       };
     }
     if (
-      plan == null ||
-      (nextOperator !== "created" && nextOperator !== "upgraded")
+      planName == null ||
+      (operator !== "created" && operator !== "upgraded")
     ) {
       return;
     }
@@ -948,12 +964,12 @@ export function BillingPlanCheckoutDialog({
     setPromotionError(null);
     setQuote(null);
     setStage("quote");
-    services
+    servicesRef.current
       .loadUpgradeQuote({
         appToken,
         kubeconfig,
-        operator: nextOperator,
-        planName: plan.name,
+        operator,
+        planName,
         regionDomain: snapshot.current.regionDomain,
         workspace: snapshot.current.workspace,
       })
@@ -984,11 +1000,10 @@ export function BillingPlanCheckoutDialog({
     };
   }, [
     appToken,
-    inDebt,
     kubeconfig,
     open,
-    plan,
-    services,
+    operator,
+    planName,
     snapshot.current.regionDomain,
     snapshot.current.workspace,
   ]);
@@ -1230,10 +1245,10 @@ export function BillingPlanCheckoutDialog({
         checkoutPayId: checkout?.payId,
         credentials: { appToken, kubeconfig },
         elapsedMs: now() - waitingStartedAt,
-        onSubscriptionChanged,
+        onSubscriptionChanged: () => onSubscriptionChangedRef.current(),
         paymentTimeoutMs,
         regionDomain: snapshot.current.regionDomain,
-        services,
+        services: servicesRef.current,
         workspace: snapshot.current.workspace,
       });
       if (!active) {
@@ -1244,7 +1259,7 @@ export function BillingPlanCheckoutDialog({
         return;
       }
       if (result.kind === "completed") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (result.kind === "failed") {
@@ -1270,12 +1285,9 @@ export function BillingPlanCheckoutDialog({
     checkout?.payId,
     kubeconfig,
     now,
-    onClose,
-    onSubscriptionChanged,
     paymentTimeoutMs,
     pollIntervalMs,
     schedulePoll,
-    services,
     snapshot.current.regionDomain,
     snapshot.current.workspace,
     stage,
