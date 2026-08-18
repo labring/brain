@@ -3,6 +3,7 @@ import type {
   DockerDeploymentEnvVar,
   DockerDeploymentSettings,
 } from "@/features/deploy/docker-deployment-settings";
+import { dockerEnvCanonicalRawSource } from "./docker-env-raw";
 import { renderYamlTemplate } from "./render-yaml-template";
 
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
@@ -58,6 +59,30 @@ function directEnvRows(
     .map((row) => ({ name: row.name.trim(), value: row.value }))
     .filter((row) => row.name !== "");
   return env.length === 0 ? undefined : env;
+}
+
+function applyLaunchAndEnvInput(
+  nextInput: Record<string, unknown>,
+  settings: DockerDeploymentSettings
+) {
+  const env = directEnvRows(settings.env);
+  if (env !== undefined) {
+    nextInput.env = env;
+  }
+  // The raw source is canonical for AP environment editing: deliver it with
+  // the derived rows so comments and ordering survive into AP Settings.
+  const envRawSource = dockerEnvCanonicalRawSource(settings);
+  if (envRawSource !== "") {
+    nextInput.envRawSource = envRawSource;
+  }
+  const command = settings.command ?? [];
+  if (command.length > 0) {
+    nextInput.command = command;
+  }
+  const args = settings.args ?? [];
+  if (args.length > 0) {
+    nextInput.args = args;
+  }
 }
 
 function metadataWithRoutingDomain(
@@ -160,6 +185,7 @@ export function renderDockerDeploymentYaml(
         key !== "configMap" &&
         key !== "configMaps" &&
         key !== "env" &&
+        key !== "envRawSource" &&
         key !== "storage"
     )
   );
@@ -195,18 +221,7 @@ export function renderDockerDeploymentYaml(
       ],
     },
   };
-  const env = directEnvRows(options.settings.env);
-  if (env !== undefined) {
-    nextInput.env = env;
-  }
-  const command = options.settings.command ?? [];
-  const args = options.settings.args ?? [];
-  if (command.length > 0) {
-    nextInput.command = command;
-  }
-  if (args.length > 0) {
-    nextInput.args = args;
-  }
+  applyLaunchAndEnvInput(nextInput, options.settings);
   const configMaps = (options.settings.configMaps ?? [])
     .map((row) => ({ path: row.path.trim(), value: row.value }))
     .filter((row) => row.path !== "");

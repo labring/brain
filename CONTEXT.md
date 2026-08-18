@@ -154,7 +154,7 @@ An unsaved AP Environment draft intent to create or update a Database Binding, d
 
 ### AP Environment Raw Source
 
-The canonical AP environment editing model: the complete set of entries as the user can author them in `.env` form, including direct values, AP Environment References, and runtime expansions. Structured environment controls are views or insertion aids over the raw source, not separate saved state.
+The canonical AP environment editing model: the complete set of entries as the user can author them in `.env` form, including direct values, AP Environment References, and runtime expansions. Structured environment controls are views or insertion aids over the raw source, not separate saved state. Authoring can begin before the AP exists: a Docker Deployment Source carries its environment as a raw source and delivers it unchanged to the AP it creates. A deploy-time raw source holds no AP Environment References — references are available only in AP Settings.
 
 ### AP Environment Reference
 

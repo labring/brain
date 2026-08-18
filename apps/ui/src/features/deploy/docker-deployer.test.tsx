@@ -24,6 +24,12 @@ const VALUE_TRUE_RE = /value="true"/;
 const DEFAULT_DOCKER_IMAGE_RE = /value="nginx"/;
 const IMAGE_PLACEHOLDER_RE = /placeholder="image:tag"/;
 const DOCKER_IMAGE_REQUIRED_RE = /Docker image is required\./;
+const ENV_MODE_TOGGLE_RE = /aria-label="Environment editor mode"/;
+const LIST_ENV_EDITOR_RE = /aria-label="List environment editor"/;
+const RAW_ENV_EDITOR_RE = /aria-label="Raw environment editor"/;
+const ENV_RAW_SOURCE_RE = /aria-label="Environment raw source"/;
+const ENV_RAW_FIX_HINT_RE =
+  /Fix the errors above to switch back to the list view\./;
 
 test("DockerDeployer renders Docker Deployment Settings with default network choices", () => {
   const html = renderToStaticMarkup(<DockerDeployer onDeploy={noop} />);
@@ -63,4 +69,44 @@ test("DockerDeployer disables deploy while busy even when settings are valid", (
   assert.match(html, FEATURE_FLAG_RE);
   assert.match(html, VALUE_TRUE_RE);
   assert.match(html, DISABLED_RE);
+});
+
+test("DockerDeployer always shows the List/Raw environment mode toggle", () => {
+  const html = renderToStaticMarkup(<DockerDeployer onDeploy={noop} />);
+
+  assert.match(html, ENV_MODE_TOGGLE_RE);
+  assert.match(html, LIST_ENV_EDITOR_RE);
+  assert.match(html, RAW_ENV_EDITOR_RE);
+  assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
+});
+
+test("DockerDeployer derives list rows from a prefilled raw source", () => {
+  const html = renderToStaticMarkup(
+    <DockerDeployer
+      initialSettings={{
+        envRawSource: "# flags\nFEATURE_FLAG=true",
+        image: "ghcr.io/acme/api:1.2",
+      }}
+      onDeploy={noop}
+    />
+  );
+
+  assert.match(html, FEATURE_FLAG_RE);
+  assert.match(html, VALUE_TRUE_RE);
+  assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
+});
+
+test("DockerDeployer opens in Raw mode when the prefilled raw source has errors", () => {
+  const html = renderToStaticMarkup(
+    <DockerDeployer
+      initialSettings={{
+        envRawSource: "FEATURE_FLAG=true\nbroken line",
+        image: "ghcr.io/acme/api:1.2",
+      }}
+      onDeploy={noop}
+    />
+  );
+
+  assert.match(html, ENV_RAW_SOURCE_RE);
+  assert.match(html, ENV_RAW_FIX_HINT_RE);
 });

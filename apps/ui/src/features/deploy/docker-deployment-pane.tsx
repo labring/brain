@@ -63,6 +63,9 @@ function dockerInitialSettings(
     ...(command == null ? {} : { command }),
     ...(configMaps == null ? {} : { configMaps }),
     ...(env == null ? {} : { env }),
+    ...(typeof raw.envRawSource === "string"
+      ? { envRawSource: raw.envRawSource }
+      : {}),
     ...(typeof raw.image === "string" ? { image: raw.image } : {}),
     ...(storage == null ? {} : { storage }),
   };
@@ -174,6 +177,7 @@ export function DockerDeploymentPane({
           ? "Deploy Docker Image"
           : "Edit & Redeploy Docker Image"
       }
+      width="wide"
     >
       <DockerDeployer.Root
         busy={deploying || currentProject.isLoading}
