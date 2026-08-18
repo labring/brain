@@ -152,7 +152,9 @@ function normalizePrices(
           order: metadata.order,
           sourceName: property.name,
           type: metadata.type,
-          unit: property.unit.trim() || metadata.unit,
+          // The upstream unit ("1m", "1Mi") describes the raw unit_price;
+          // after scaling to per-vCPU/per-GiB it would misread 1000/1024×.
+          unit: metadata.unit,
         },
       ];
     })

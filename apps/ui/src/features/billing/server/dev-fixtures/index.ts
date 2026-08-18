@@ -570,12 +570,14 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   "/account/v1alpha1/properties": () => ({
     data: {
       properties: [
-        { name: "cpu", unit: "", unit_price: 44 },
-        { name: "memory", unit: "", unit_price: 20 },
-        { name: "storage", unit: "", unit_price: 2 },
-        { name: "network", unit: "", unit_price: 780 },
-        { name: "services.nodeports", unit: "", unit_price: 2000 },
-        { name: "traffic", unit: "", unit_price: 0.000_08 },
+        // Real account-service seeds raw granularity units ("1m", "1Mi"),
+        // not display units — keep the fixtures honest about that.
+        { name: "cpu", unit: "1m", unit_price: 44 },
+        { name: "memory", unit: "1Mi", unit_price: 20 },
+        { name: "storage", unit: "1Mi", unit_price: 2 },
+        { name: "network", unit: "1Mi", unit_price: 780 },
+        { name: "services.nodeports", unit: "1", unit_price: 2000 },
+        { name: "traffic", unit: "bytes", unit_price: 0.000_08 },
         {
           alias: "NVIDIA RTX 4090",
           name: "gpu-nvidia-rtx-4090",

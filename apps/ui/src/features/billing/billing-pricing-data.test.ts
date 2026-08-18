@@ -42,18 +42,20 @@ test("loads plan and metered pricing for the current PAYG workspace", async () =
     },
     "/api/billing/properties": {
       data: {
+        // Raw upstream units describe the unit_price granularity ("1m",
+        // "1Mi"); display must use the normalized per-vCPU/per-GiB units.
         properties: [
-          { name: "network", unit: "MiB", unit_price: 2 },
+          { name: "network", unit: "1Mi", unit_price: 2 },
           {
             name: "gpu-a100",
             alias: "NVIDIA A100",
             unit: "gpu",
             unit_price: 750_000,
           },
-          { name: "storage", unit: "GiB", unit_price: 5 },
-          { name: "memory", unit: "GiB", unit_price: 20 },
-          { name: "cpu", unit: "vCPU", unit_price: 10 },
-          { name: "services.nodeports", unit: "port", unit_price: 1000 },
+          { name: "storage", unit: "1Mi", unit_price: 5 },
+          { name: "memory", unit: "1Mi", unit_price: 20 },
+          { name: "cpu", unit: "1m", unit_price: 10 },
+          { name: "services.nodeports", unit: "", unit_price: 1000 },
         ],
       },
     },
