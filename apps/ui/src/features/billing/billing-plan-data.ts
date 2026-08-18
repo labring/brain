@@ -148,7 +148,9 @@ const subscriptionSchema = z.object({
   InvoiceInfo: z
     .object({
       ID: z.string().trim().min(1).optional(),
-      PaymentUrl: z.string().trim().min(1),
+      // Upstream tags every InvoiceInfo field `omitempty` and forwards draft
+      // invoices, where Stripe has not yet minted a hosted payment URL.
+      PaymentUrl: z.string().trim().min(1).optional(),
     })
     .optional(),
   PayMethod: z.string().default("stripe"),

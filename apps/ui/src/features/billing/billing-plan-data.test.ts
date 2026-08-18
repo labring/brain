@@ -238,6 +238,45 @@ test("loads the verified account's Plan snapshot with workspace plan facts", asy
   });
 });
 
+test("a draft invoice without a hosted payment URL keeps the Plan snapshot loadable", async () => {
+  // Stripe mints hosted_invoice_url only at finalization; during the draft
+  // window InvoiceInfo arrives with the URL key absent entirely.
+  const responses: Record<string, unknown> = {
+    ...RESPONSES,
+    "/api/billing/subscription": {
+      subscription: {
+        CancelAtPeriodEnd: false,
+        CurrentPeriodEndAt: "2026-08-31T00:00:00Z",
+        InvoiceInfo: { ID: "invoice-draft" },
+        PayMethod: "stripe",
+        PlanName: "Pro",
+        RegionDomain: "us.example.test",
+        Status: "DEBT",
+        Workspace: "workspace-a",
+        role: "OWNER",
+        type: "SUBSCRIPTION",
+      },
+    },
+  };
+
+  const snapshot = await loadBillingPlanSnapshot(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input) =>
+        Promise.resolve(Response.json(responses[input.toString()])),
+      now: () => NOW,
+    }
+  );
+
+  assert.equal(snapshot.current.invoiceId, "invoice-draft");
+  assert.equal(snapshot.current.invoicePaymentUrl, null);
+  assert.equal(snapshot.current.lifecycle, "payment-due");
+});
+
 test("expiry statuses outrank a pending cancellation", async () => {
   // A cancelled subscription that has since expired: the deletion pipeline
   // must surface as payment-due, not linger on "cancelling".
