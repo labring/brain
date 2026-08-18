@@ -1,5 +1,5 @@
 {
-  "id": "bc6b4aa3-b14d-4c5c-a558-c44e1aeaa92f",
+  "id": "67332fdf-15e9-467a-aecf-25706210e908",
   "prevId": "a694efce-a6ee-4d76-9a45-709dc6cef317",
   "version": "7",
   "dialect": "postgresql",
@@ -777,6 +777,47 @@
         }
       },
       "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "sealai_assistant.identity_uid_canonicalizations": {
+      "name": "identity_uid_canonicalizations",
+      "schema": "sealai_assistant",
+      "columns": {
+        "user_uid": {
+          "name": "user_uid",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "canonical_user_uid": {
+          "name": "canonical_user_uid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "identity_uid_canonicalizations_canonical_idx": {
+          "name": "identity_uid_canonicalizations_canonical_idx",
+          "columns": [
+            {
+              "expression": "canonical_user_uid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
