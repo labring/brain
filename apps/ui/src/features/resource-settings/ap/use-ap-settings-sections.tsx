@@ -1,7 +1,6 @@
 "use client";
 
 import { AppButton } from "@workspace/ui/components/app-button";
-import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { CANVAS_NODE_DEFAULT_COPIED_FEEDBACK_MS } from "@workspace/ui/components/canvas-node/canvas-node.copyable-row";
 import { ResourceSettingsInset } from "@workspace/ui/components/resource-settings/resource-settings";
 import { SettingsSlider } from "@workspace/ui/components/settings-slider/settings-slider";
@@ -10,7 +9,6 @@ import { SlidingToggle } from "@workspace/ui/components/sliding-toggle";
 import {
   Cpu,
   HardDrive,
-  History,
   MemoryStick,
   Network,
   Plus,
@@ -477,7 +475,6 @@ export function useApSettingsSections({
   const [draftArgs, setDraftArgs] = useState<string[]>(() =>
     normalizeCommandDraftLines(initialSettingsDraft.args)
   );
-  const imageInputId = useId();
   const envDraftKeyPrefix = useId();
   const [draftConfigMaps, setDraftConfigMaps] = useState<ApConfigMapMount[]>(
     () => normalizeConfigMapDraftRows(initialSettingsDraft.configMaps)
@@ -2272,22 +2269,11 @@ export function useApSettingsSections({
     });
 
     sections.push({
-      actions:
-        onOpenImageVersions == null ? undefined : (
-          <AppIconButton
-            aria-label="Open image versions"
-            onClick={onOpenImageVersions}
-            size="md"
-            title="Image versions"
-          >
-            <History aria-hidden />
-          </AppIconButton>
-        ),
       content: (
         <ImageSettingsContent
-          imageInputId={imageInputId}
           onBlur={handleImageBlur}
           onChange={handleImageChange}
+          onOpenVersions={onOpenImageVersions}
           readOnly={readOnly}
           value={displayImage}
         />
