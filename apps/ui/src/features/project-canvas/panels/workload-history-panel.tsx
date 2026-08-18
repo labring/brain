@@ -24,6 +24,8 @@ import {
 } from "./canvas-resource-pane";
 import { ContainerHistoryPane } from "./workload-history/container-history-pane";
 import type { ContainerHistorySnapshotRow } from "./workload-history/container-history-pane.types";
+import { ImageUpdateSection } from "./workload-history/image-update-section";
+import { useApImageUpdate } from "./workload-history/use-ap-image-update";
 
 type WorkloadHistoryShellProps = Pick<
   CanvasResourcePaneProps,
@@ -106,6 +108,52 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
     namespace: ns,
   });
 
+  const imageUpdate = useApImageUpdate({
+    enabled: workloadKind === "AP" && name !== "" && ns !== "",
+    kubeconfig,
+    name,
+    namespace: ns,
+  });
+  const [editedImage, setEditedImage] = useState<string | null>(null);
+  const baselineImage = imageUpdate.baselineImage ?? "";
+  const displayImage = editedImage ?? baselineImage;
+  const imageDirty =
+    editedImage != null &&
+    editedImage.trim() !== "" &&
+    editedImage.trim() !== baselineImage;
+
+  const submitImageUpdate = useCallback(() => {
+    const image = displayImage.trim();
+    toastPromiseDetail(
+      (async () => {
+        await imageUpdate.submit(image);
+        setEditedImage(null);
+        await versions.mutate();
+      })(),
+      {
+        errorDescription: (e) => errorDescription(e, "Image update failed."),
+        errorTitle: "Image update failed.",
+        loading: "Submitting image update...",
+        success: "Update accepted. Applying changes.",
+      }
+    );
+  }, [displayImage, imageUpdate, versions]);
+
+  const keepImageTarget = useCallback(() => {
+    toastPromiseDetail(
+      (async () => {
+        await imageUpdate.keepTarget();
+        await versions.mutate();
+      })(),
+      {
+        errorDescription: (e) => errorDescription(e, "Image update failed."),
+        errorTitle: "Image update failed.",
+        loading: "Resubmitting your target image...",
+        success: "Update accepted. Applying changes.",
+      }
+    );
+  }, [imageUpdate, versions]);
+
   const onLoadConfigYaml = useCallback(
     async (versionHash: string) => {
       const version = await fetchAPImageVersionDetail({
@@ -152,9 +200,9 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         namespace: ns,
         versionHash,
       });
-      await versions.mutate();
+      await Promise.all([versions.mutate(), imageUpdate.revalidateObserved()]);
     },
-    [kubeconfig, name, ns, versions]
+    [imageUpdate, kubeconfig, name, ns, versions]
   );
 
   const confirmRollbackSnapshot = () => {
@@ -163,6 +211,9 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
       return;
     }
     setRollbackConfirmVersion(null);
+    // Confirming rollback discards any unsubmitted inline image edit — the
+    // dialog names this whenever the edit exists.
+    setEditedImage(null);
     toastPromiseDetail(
       (async () => {
         setRollbackBusyVersion(versionHash);
@@ -259,6 +310,17 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   return (
     <>
       <WorkloadHistoryShell onClose={onClose} subtitle={subtitle} title={title}>
+        <ImageUpdateSection
+          busy={imageUpdate.submitBusy}
+          dirty={imageDirty}
+          disabled={!imageUpdate.loaded}
+          onChange={setEditedImage}
+          onKeepTarget={keepImageTarget}
+          onSubmit={submitImageUpdate}
+          onUseLatest={imageUpdate.useLatestObserved}
+          status={imageUpdate.status}
+          value={displayImage}
+        />
         <ContainerHistoryPane
           className="min-h-0"
           onLoadConfigYaml={onLoadConfigYaml}
@@ -291,6 +353,11 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
               . Storage rollback still follows Kubernetes constraints: PVCs
               cannot shrink or change mount paths.
             </AppDialog.Description>
+            {imageDirty ? (
+              <AppDialog.Description className="text-foreground">
+                You have an unsubmitted image edit. Continuing discards it.
+              </AppDialog.Description>
+            ) : null}
           </AppDialog.Body>
           <AppDialog.Footer>
             <AppDialog.Cancel type="button">Cancel</AppDialog.Cancel>

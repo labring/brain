@@ -56,7 +56,7 @@ A persistent volume an AP owns at one absolute container path, keeping applicati
 
 ### AP Image Version
 
-A retained record of one AP's previously applied image configuration — the image reference together with the desired-configuration snapshot it shipped with — kept per AP as a bounded set of recent versions for review and rollback. Rollback is a Resource Action restoring the AP's desired configuration from a selected version; it is not a Deployment Task, a Redeploy, or a Settings edit. Changing the image itself is AP Settings work, and an image update produces a new version rather than modifying an existing one.
+A retained record of one AP's previously applied image configuration — the image reference together with the desired-configuration snapshot it shipped with — kept per AP as a bounded set of recent versions for review and rollback. Rollback is a Resource Action restoring the AP's desired configuration from a selected version; it is not a Deployment Task, a Redeploy, or a Settings edit. Changing the image itself is AP Settings work, and an image update produces a new version rather than modifying an existing one. The versions surface may host an entry point for such an update, but the update remains AP Settings work with the same draft, pending, and divergence lifecycle as any settings edit — the surface itself stays a Resource Surface, not a Settings View, and Rollback stays a Resource Action.
 
 _Avoid_: deployment (for an image revision), AP Deployments Pane.
 
