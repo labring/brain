@@ -55,6 +55,7 @@ import {
   subscriptionLifecycleAllowsBillingActions,
 } from "@/features/billing/billing-plan-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
+import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
 const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
@@ -231,6 +232,27 @@ const SUBSCRIPTION_WARNING_COPY: Record<
   },
 };
 
+// Account Debt (a PAYG workspace whose Account Balance is in debt) is the
+// balance pipeline, not the subscription Deletion Countdown: there is no
+// subscription to expire and no timestamps to derive a deadline from, so the
+// copy names the debt and points at a Desktop top-up instead of promising a
+// date. PAYG never reaches the "cancelling" stage — its lifecycle is only
+// ever active or payment-due — hence the partial record.
+const ACCOUNT_DEBT_WARNING_COPY: Partial<
+  Record<SubscriptionWarningStage, { description: string; title: string }>
+> = {
+  "deletion-imminent": {
+    description:
+      "All resources will be permanently deleted soon. Top up your balance now to avoid data loss.",
+    title: "Workspace scheduled for deletion",
+  },
+  expired: {
+    description:
+      "This workspace is suspended. Top up your balance to restore it and avoid data loss.",
+    title: "Your account balance is in debt",
+  },
+};
+
 // Severity escalates with the deletion countdown: a pending cancellation is
 // still a caution (amber), while an expired or deletion-bound workspace is
 // destructive (red). The semantic color stays on the icon and title only —
@@ -246,10 +268,44 @@ function SubscriptionWarningBanner({
 }: {
   current: BillingPlanSnapshot["current"];
 }) {
+  const topUpUrl = useSealosDesktopUrl("system-costcenter");
   const stage = current.warningStage;
   if (stage == null) {
     return null;
   }
+
+  const accountDebtCopy = current.isPayg
+    ? ACCOUNT_DEBT_WARNING_COPY[stage]
+    : undefined;
+  if (accountDebtCopy != null) {
+    return (
+      <Alert
+        className={cn(
+          "border-none has-data-[slot=alert-action]:pr-4",
+          SUBSCRIPTION_WARNING_TONES[stage]
+        )}
+        data-slot="billing-subscription-warning"
+      >
+        <TriangleAlert aria-hidden />
+        <AlertTitle>{accountDebtCopy.title}</AlertTitle>
+        <AlertDescription>{accountDebtCopy.description}</AlertDescription>
+        {topUpUrl == null ? null : (
+          <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
+            <a
+              className={appButtonVariants({ size: "sm", variant: "danger" })}
+              href={topUpUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              <ExternalLink aria-hidden data-icon="inline-start" />
+              Top up in Sealos Desktop
+            </a>
+          </AlertAction>
+        )}
+      </Alert>
+    );
+  }
+
   const copy = SUBSCRIPTION_WARNING_COPY[stage];
 
   return (
@@ -931,7 +987,7 @@ export function BillingPlanSurface({
               {lifecycleBadges}
             </div>
           </div>
-          {current.canManage ? (
+          {billingActionsAllowed ? (
             <AppButton
               disabled={actionPending != null}
               onClick={() => onPlanChange?.(null)}

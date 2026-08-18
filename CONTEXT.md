@@ -620,6 +620,12 @@ The billing mode of a workspace that has no Workspace Subscription: usage is met
 
 _Avoid_: PAYG plan, pay-as-you-go plan, free mode, plan named "PAYG".
 
+### Account Debt
+
+The state of an Account Balance that has fallen below zero: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing.
+
+_Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due (user-facing), negative balance (as the state's name), arrears.
+
 ### Subscription Payment
 
 One recorded charge on the account's payment ledger for workspace subscriptions. Payment history and the Billing Area's income series are Subscription Payment lists filtered to paid records; Brain reads the ledger and never writes it. A Subscription Payment is money movement, distinct from metered Consumption Cost.

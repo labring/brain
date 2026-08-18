@@ -27,6 +27,8 @@ const DELETION_WARNING_FUTURE_TENSE_PATTERN =
 const PAYG_HEADING_PATTERN = /Pay-As-You-Go/;
 const EXPIRED_WARNING_TITLE_PATTERN = /Your subscription has expired/;
 const UNDATED_GRACE_FALLBACK_PATTERN = /the grace period ends/;
+const ACCOUNT_DEBT_TITLE_PATTERN = /Your account balance is in debt/;
+const ACCOUNT_DEBT_TOP_UP_PATTERN = /Top up your balance/;
 
 const CREDENTIALS = {
   appToken: "test-token",
@@ -108,14 +110,16 @@ test("payment-due-final keeps the deletion warning and the Renew action", async 
   });
 });
 
-test("payg-debt keeps the Subscribe action under a subscription-worded banner", async () => {
+test("payg-debt speaks Account Debt, not subscription expiry", async () => {
+  // AIM-257: a PAYG workspace has no subscription, so its debt banner names
+  // the Account Balance, promises no dates, and keeps the Subscribe exit.
   await renderScenario("payg-debt", (rendered) => {
     const text = rendered.container.textContent ?? "";
     assert.match(text, PAYG_HEADING_PATTERN);
-    // AIM-257 baseline: the banner claims an expired subscription (there is
-    // none) and falls back to the undated grace-period wording.
-    assert.match(text, EXPIRED_WARNING_TITLE_PATTERN);
-    assert.match(text, UNDATED_GRACE_FALLBACK_PATTERN);
+    assert.match(text, ACCOUNT_DEBT_TITLE_PATTERN);
+    assert.match(text, ACCOUNT_DEBT_TOP_UP_PATTERN);
+    assert.doesNotMatch(text, EXPIRED_WARNING_TITLE_PATTERN);
+    assert.doesNotMatch(text, UNDATED_GRACE_FALLBACK_PATTERN);
     assert.ok(rendered.queryByRole("button", { name: "Subscribe Plan" }));
   });
 });

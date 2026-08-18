@@ -51,6 +51,7 @@ import {
   type WorkspaceQuotaItem,
 } from "@/features/shell/app-sidebar-upgrade";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
 function ProjectShortcutIcon({
   active,
@@ -117,8 +118,6 @@ function ProjectsShortcutIcon({
 
 const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
-const DESKTOP_DOMAIN_TRAILING_SLASHES_RE = /\/+$/;
-const DESKTOP_DOMAIN_SCHEME_RE = /^https?:\/\//i;
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
@@ -188,45 +187,7 @@ function AppSidebarLinkButton({
 }
 
 function AppSidebarDesktopReturn() {
-  const [desktopUrl, setDesktopUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadDesktopUrl = async () => {
-      if (!sealosApp) {
-        return;
-      }
-
-      try {
-        const hostConfig = await sealosApp.getHostConfig();
-        const domain = hostConfig.cloud.domain
-          .trim()
-          .replace(DESKTOP_DOMAIN_TRAILING_SLASHES_RE, "");
-        if (cancelled || domain === "") {
-          return;
-        }
-
-        const origin = DESKTOP_DOMAIN_SCHEME_RE.test(domain)
-          ? domain
-          : `https://${domain}`;
-        setDesktopUrl(`${origin}/?openapp=`);
-      } catch (error: unknown) {
-        if (!cancelled) {
-          console.warn(
-            "[AppSidebarDesktopReturn] load Desktop host config failed:",
-            error
-          );
-        }
-      }
-    };
-
-    loadDesktopUrl().catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const desktopUrl = useSealosDesktopUrl();
 
   return (
     <Tooltip>
