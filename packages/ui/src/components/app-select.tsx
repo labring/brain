@@ -26,7 +26,7 @@ function optionText(option: AppSelectOption): string {
 }
 
 const triggerClass = cn(
-  "group flex h-9 w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-transparent px-2.5 py-1 text-foreground text-sm outline-none transition-[color,background-color,box-shadow] hover:bg-input/30 disabled:pointer-events-none disabled:opacity-50",
+  "group flex h-9 w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-transparent px-2.5 py-1 text-left text-foreground text-sm outline-none transition-[color,background-color,box-shadow] hover:bg-input/30 disabled:pointer-events-none disabled:opacity-50",
   "focus-visible:border-blue-400 focus-visible:ring-[1px] focus-visible:ring-blue-400/50",
   "data-[popup-open]:border-blue-400 data-[popup-open]:ring-[1px] data-[popup-open]:ring-blue-400/50"
 );
@@ -48,7 +48,7 @@ function OptionContent({ option }: { option: AppSelectOption }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2">
       {option.icon ? <OptionIcon>{option.icon}</OptionIcon> : null}
-      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+      <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
     </span>
   );
 }
@@ -212,23 +212,25 @@ export function AppSelect({
         data-testid={dataTestId}
         id={id}
       >
-        <Combobox.Value>
-          {(selected: string | null) => {
-            const option = selected ? byValue.get(selected) : undefined;
-            if (!option) {
-              return (
-                <span className="min-w-0 truncate text-muted-foreground">
-                  {placeholder}
-                </span>
+        <span className="flex min-w-0 flex-1 items-center text-left">
+          <Combobox.Value>
+            {(selected: string | null) => {
+              const option = selected ? byValue.get(selected) : undefined;
+              if (!option) {
+                return (
+                  <span className="min-w-0 truncate text-left text-muted-foreground">
+                    {placeholder}
+                  </span>
+                );
+              }
+              return renderValue ? (
+                renderValue(option)
+              ) : (
+                <OptionContent option={option} />
               );
-            }
-            return renderValue ? (
-              renderValue(option)
-            ) : (
-              <OptionContent option={option} />
-            );
-          }}
-        </Combobox.Value>
+            }}
+          </Combobox.Value>
+        </span>
         <TriggerChevron />
       </Combobox.Trigger>
       <SelectPopup
