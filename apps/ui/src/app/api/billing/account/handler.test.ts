@@ -58,6 +58,7 @@ test("billing account route calls account-service as the verified Workspace Acto
   assert.deepEqual(accountRequest, {
     actor: { userId: "user-alice", userUid: "uid-alice" },
     init: { body: "{}", method: "POST" },
+    mapErrorPayload: undefined,
     pathname: "/account/v1alpha1/account",
   });
 });
