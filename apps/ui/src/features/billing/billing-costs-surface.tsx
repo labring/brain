@@ -473,7 +473,10 @@ export function BillingCostsSurface({
       ? ""
       : workspaceName(workspaceNames, selectedWorkspace));
   const bannerTitle = scopeCostTitle(scope, regionLabel, workspaceLabel);
-  const allSubscriptionMicroUnits = snapshot.payments
+  // snapshot.payments is already attributed to the Current Region, so this
+  // sum plus the region's PAYG consumption is the Region Cost the workspace
+  // children add up to.
+  const regionSubscriptionMicroUnits = snapshot.payments
     .filter(
       (payment) =>
         isPaidSubscriptionPayment(payment) &&
@@ -481,7 +484,7 @@ export function BillingCostsSurface({
     )
     .reduce((sum, payment) => sum + payment.Amount, 0);
   const regionCostMicroUnits =
-    allSubscriptionMicroUnits + snapshot.totalConsumptionMicroUnits;
+    regionSubscriptionMicroUnits + snapshot.totalConsumptionMicroUnits;
   const bannerCostMicroUnits =
     scope.kind === "workspace"
       ? (selectedCost?.totalMicroUnits ?? 0)

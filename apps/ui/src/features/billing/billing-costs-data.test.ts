@@ -10,6 +10,7 @@ import {
   fixedTrendWindows,
   loadBillingAppCosts,
   loadBillingCosts,
+  loadBillingMonthlyTrend,
   resolveBillingAppType,
   subscriptionPaymentDescription,
 } from "./billing-costs-data";
@@ -456,4 +457,116 @@ test("app type codes resolve to display names but query with the code", () => {
     queryAppType: "9",
     typeName: "App type 9",
   });
+});
+
+test("other regions' Subscription Payments never enter the Costs snapshot", async () => {
+  const payment = {
+    Amount: 25_000_000,
+    ID: "payment-here",
+    Operator: "renewed",
+    PlanName: "Pro",
+    Status: "PAID",
+    Time: "2026-01-20T10:00:00.000Z",
+    Type: "SUBSCRIPTION",
+    Workspace: "workspace-a",
+  };
+  const foreignPayment = {
+    ...payment,
+    ID: "payment-elsewhere",
+    Workspace: "workspace-in-another-region",
+  };
+  const responseByPathname: Record<string, unknown> = {
+    "/api/billing/app-overview": {
+      data: { overviews: [], total: 0, totalPage: 1 },
+    },
+    "/api/billing/app-types": { data: {} },
+    "/api/billing/consumption": { amount: 0 },
+    "/api/billing/costs": { data: { costs: [] } },
+    "/api/billing/payments": { payments: [payment, foreignPayment] },
+    "/api/billing/regions": {
+      current: { domain: "us.example.test", uid: "region-us" },
+    },
+    "/api/billing/workspace-consumption": { amount: {} },
+    "/api/billing/workspaces": { data: [["workspace-a", "Research"]] },
+  };
+
+  const snapshot = await loadBillingCosts(
+    {
+      appToken: "desktop-app-token",
+      dateRange: DATE_RANGE,
+      kubeconfig: "apiVersion: v1",
+      page: 1,
+      pageSize: 10,
+      workspace: null,
+    },
+    (input) => {
+      const pathname = new URL(input.toString(), "https://brain.test").pathname;
+      return Promise.resolve(Response.json(responseByPathname[pathname]));
+    }
+  );
+
+  // The payment ledger is account-global; the snapshot speaks Region Cost.
+  assert.deepEqual(snapshot.payments, [payment]);
+});
+
+test("the monthly trend's income series attributes payments to the Current Region", async () => {
+  const payment = {
+    Amount: 2_000_000,
+    ID: "payment-here",
+    Operator: "renewed",
+    PlanName: "Pro",
+    Status: "PAID",
+    Time: "2026-01-20T10:00:00.000Z",
+    Type: "SUBSCRIPTION",
+    Workspace: "workspace-a",
+  };
+  const requests: Array<{ pathname: string; body: Record<string, unknown> }> =
+    [];
+  const responseByPathname: Record<string, unknown> = {
+    "/api/billing/costs": { data: { costs: [] } },
+    "/api/billing/payments": {
+      payments: [
+        payment,
+        { ...payment, ID: "payment-elsewhere", Workspace: "ws-other-region" },
+      ],
+    },
+    "/api/billing/workspaces": { data: [["workspace-a", "Research"]] },
+  };
+
+  const points = await loadBillingMonthlyTrend(
+    {
+      appToken: "desktop-app-token",
+      dateRange: DATE_RANGE,
+      kubeconfig: "apiVersion: v1",
+    },
+    (input, init) => {
+      const pathname = new URL(input.toString(), "https://brain.test").pathname;
+      const body = init?.body
+        ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+        : {};
+      requests.push({ body, pathname });
+      return Promise.resolve(Response.json(responseByPathname[pathname]));
+    }
+  );
+
+  assert.deepEqual(
+    requests.map(({ pathname }) => pathname).sort(),
+    Object.keys(responseByPathname).sort()
+  );
+  assert.deepEqual(
+    requests.find(({ pathname }) => pathname === "/api/billing/workspaces")
+      ?.body,
+    { endTime: DATE_RANGE.endTime, startTime: DATE_RANGE.startTime, type: 0 }
+  );
+  assert.deepEqual(
+    points.map(({ month, paymentMicroUnits }) => ({
+      month,
+      paymentMicroUnits,
+    })),
+    [
+      { month: "2026-01", paymentMicroUnits: 2_000_000 },
+      { month: "2026-02", paymentMicroUnits: 0 },
+      { month: "2026-03", paymentMicroUnits: 0 },
+    ]
+  );
 });

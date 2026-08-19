@@ -188,6 +188,7 @@ export interface BillingCostsBaseSnapshot {
   costPoints: [number, string | number][];
   /** The Current Region; null only in the pre-load empty snapshot. */
   currentRegion: BillingRegion | null;
+  /** Subscription Payments attributed to the Current Region's workspaces. */
   payments: SubscriptionPayment[];
   totalConsumptionMicroUnits: number;
   workspaceConsumptionMicroUnits: Record<string, number>;
@@ -411,6 +412,22 @@ export function buildMonthlyBillingTrend(input: {
   return points;
 }
 
+/**
+ * Region Cost attribution: the payment ledger is account-global, but every
+ * Subscription Payment belongs to the region of its workspace, so a
+ * region-scoped view must attribute before it aggregates. Membership in the
+ * Current Region's workspace list (billing history plus subscription
+ * workspaces, both region-scoped upstream) is the attribution test; other
+ * regions' payments fall out.
+ */
+export function paymentsForRegionWorkspaces(
+  payments: SubscriptionPayment[],
+  workspaces: BillingWorkspace[]
+): SubscriptionPayment[] {
+  const workspaceIds = new Set(workspaces.map(([id]) => id));
+  return payments.filter((payment) => workspaceIds.has(payment.Workspace));
+}
+
 export function buildWorkspaceCostBreakdown(input: {
   payments: SubscriptionPayment[];
   workspaceConsumptionMicroUnits: Record<string, number>;
@@ -542,7 +559,7 @@ export async function loadBillingMonthlyTrend(
     endTime: input.dateRange.endTime,
     startTime: input.dateRange.startTime,
   };
-  const [costs, payments] = await Promise.all([
+  const [costs, payments, workspaces] = await Promise.all([
     requestBillingCosts(
       "/api/billing/costs",
       costsResponseSchema,
@@ -557,11 +574,18 @@ export async function loadBillingMonthlyTrend(
       fetch,
       range
     ),
+    requestBillingCosts(
+      "/api/billing/workspaces",
+      workspacesResponseSchema,
+      credentials,
+      fetch,
+      { ...range, type: 0 }
+    ),
   ]);
   return buildMonthlyBillingTrend({
     costPoints: costs.data.costs,
     dateRange: input.dateRange,
-    payments: payments.payments,
+    payments: paymentsForRegionWorkspaces(payments.payments, workspaces.data),
   });
 }
 
@@ -640,7 +664,7 @@ export async function loadBillingCostsBase(
     appTypes: appTypes.data,
     costPoints: costs.data.costs,
     currentRegion: regions.current,
-    payments: payments.payments,
+    payments: paymentsForRegionWorkspaces(payments.payments, workspaces.data),
     totalConsumptionMicroUnits: consumption.amount,
     workspaceConsumptionMicroUnits: workspaceConsumption.amount,
     workspaces: workspaces.data,

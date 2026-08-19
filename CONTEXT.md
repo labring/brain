@@ -646,7 +646,13 @@ _Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due
 
 ### Subscription Payment
 
-One recorded charge on the account's payment ledger for workspace subscriptions. Payment history and the Billing Area's income series are Subscription Payment lists filtered to paid records; Brain reads the ledger and never writes it. A Subscription Payment is money movement, distinct from metered Consumption Cost.
+One recorded charge on the account's payment ledger for workspace subscriptions. Payment history and the Billing Area's income series are Subscription Payment lists filtered to paid records; Brain reads the ledger and never writes it. A Subscription Payment is money movement, distinct from metered Consumption Cost. The ledger is account-global, but every Subscription Payment belongs to exactly one region — the Billing Region of the workspace it paid for; a payment ledger read must attribute before it aggregates.
+
+### Region Cost
+
+The Costs view's headline total, scoped to the Current Region: the region's Consumption Cost plus the Subscription Payments attributed to the region's workspaces. Every number in the Costs view — the total, the workspace breakdown, the subscription list, and the trend's income series — speaks this one scope, and the workspace children sum to the parent. Money belonging to other regions' workspaces is out of this view entirely, never blended into a total its breakdown cannot explain.
+
+_Avoid_: total cost (as an account-global figure on the Costs view), all-region total.
 
 _Avoid_: recharge, top-up, charge record.
 
