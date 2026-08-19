@@ -206,7 +206,9 @@ export default function BillingCosts({
           totalAppOverviewPages: appOverviewPage?.totalAppOverviewPages ?? 1,
           totalAppOverviews: appOverviewPage?.totalAppOverviews ?? 0,
         };
-  const error = costsBase.error ?? appOverview.error;
+  // Only the base snapshot (tree, totals, payments) escalates to the
+  // page-level banner; an app-overview failure stays inside the PAYG table.
+  const error = costsBase.error;
   const isLoading = costsBase.isLoading;
   const isAppOverviewLoading = appOverview.isLoading;
   const dailyTrend = useSWR(
@@ -293,6 +295,7 @@ export default function BillingCosts({
   return (
     <>
       <BillingCostsSurfaceView
+        appOverviewError={appOverview.error}
         appPage={appPage}
         appTypeFilter={appTypeFilter}
         currency={currency}

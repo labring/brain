@@ -23,6 +23,7 @@ async function loadSurfaceModules() {
       { renderToStaticMarkup },
       { BillingCostCharts },
       { BillingCostsSurface },
+      { BillingCostsSurface: BillingCostsSurfaceView },
       { formatBillingDateTime },
       { BillingPlanPicker },
       { BillingPlanSurface },
@@ -33,6 +34,7 @@ async function loadSurfaceModules() {
       import("react-dom/server"),
       import("./billing-cost-charts"),
       import("./billing-costs"),
+      import("./billing-costs-surface"),
       import("./billing-datetime"),
       import("./billing-plan-picker"),
       import("./billing-plan-surface"),
@@ -43,6 +45,7 @@ async function loadSurfaceModules() {
     return {
       BillingCostCharts,
       BillingCostsSurface,
+      BillingCostsSurfaceView,
       BillingNavigationFrame,
       BillingPlanCatalogSection,
       BillingPlanPicker,
@@ -655,6 +658,54 @@ test("Costs preserves Cost Center's detail and trend information layers", async 
     "Last 6 Months",
     "Current Region",
   ]);
+});
+
+test("Costs keeps app overview failures inside the PAYG table", async () => {
+  const { BillingCostsSurfaceView, renderToStaticMarkup } =
+    await surfaceModules();
+  const baseProps = {
+    appPage: 1,
+    appTypeFilter: null,
+    currency: "usd",
+    dateFilter: null,
+    dateRange: {
+      endTime: "2026-01-31T23:59:59.999Z",
+      startTime: "2026-01-01T00:00:00.000Z",
+    },
+    isLoading: false,
+    scope: { kind: "region" },
+  } as const;
+
+  // A PAYG-table failure stays local: no page banner, table-scoped notice.
+  const tableFailure = renderToStaticMarkup(
+    <BillingCostsSurfaceView
+      {...baseProps}
+      appOverviewError={new Error("mongo timeout")}
+      error={null}
+    />
+  );
+  assert.equal(tableFailure.includes("Costs are unavailable"), false);
+  assertIncludes(tableFailure, "Consumption costs could not be loaded.");
+  // The failed PAYG table must not pass itself off as a normal empty page;
+  // the one empty state left belongs to the Subscription table.
+  assert.equal(tableFailure.split("No Data Available").length - 1, 1);
+
+  // A base snapshot failure escalates to the page banner.
+  const baseFailure = renderToStaticMarkup(
+    <BillingCostsSurfaceView
+      {...baseProps}
+      error={new Error("mongo timeout")}
+    />
+  );
+  assertIncludes(baseFailure, "Costs are unavailable");
+
+  // No failure and no rows is the plain empty table.
+  const empty = renderToStaticMarkup(
+    <BillingCostsSurfaceView {...baseProps} error={null} />
+  );
+  assert.equal(empty.includes("Costs are unavailable"), false);
+  assert.equal(empty.includes("Consumption costs could not be loaded."), false);
+  assertIncludes(empty, "No Data Available");
 });
 
 test("Usage preserves the quota table's workspace and resource hierarchy", async () => {

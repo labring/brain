@@ -9,11 +9,13 @@ import {
   calendarBillingDateRange,
   fixedTrendWindows,
   loadBillingAppCosts,
+  loadBillingAppOverview,
   loadBillingCosts,
   loadBillingMonthlyTrend,
   resolveBillingAppType,
   subscriptionPaymentDescription,
 } from "./billing-costs-data";
+import { BillingRequestError } from "./billing-data-client";
 
 const DATE_RANGE = {
   endTime: "2026-03-31T23:59:59.999Z",
@@ -249,6 +251,62 @@ test("a period with no settled PAYG app costs is a normal empty state", async ()
 
   assert.deepEqual(snapshot.appOverviews, []);
   assert.equal(snapshot.totalAppOverviews, 0);
+});
+
+test("the upstream no-records rejection is an empty app overview page", async () => {
+  const page = await loadBillingAppOverview(
+    {
+      appToken: "desktop-app-token",
+      appType: null,
+      dateRange: DATE_RANGE,
+      kubeconfig: "apiVersion: v1",
+      page: 1,
+      pageSize: 5,
+      workspace: null,
+    },
+    () =>
+      Promise.resolve(
+        Response.json(
+          {
+            error:
+              "failed to get cost overview : failed to get total app cost: no records found",
+          },
+          { status: 500 }
+        )
+      )
+  );
+
+  assert.deepEqual(page, {
+    appOverviews: [],
+    totalAppOverviews: 0,
+    totalAppOverviewPages: 1,
+  });
+});
+
+test("other app overview failures still reject", async () => {
+  await assert.rejects(
+    loadBillingAppOverview(
+      {
+        appToken: "desktop-app-token",
+        appType: null,
+        dateRange: DATE_RANGE,
+        kubeconfig: "apiVersion: v1",
+        page: 1,
+        pageSize: 5,
+        workspace: null,
+      },
+      () =>
+        Promise.resolve(
+          Response.json(
+            { error: "failed to get cost overview : mongo timeout" },
+            { status: 500 }
+          )
+        )
+    ),
+    (error: unknown) =>
+      error instanceof BillingRequestError &&
+      error.message === "failed to get cost overview : mongo timeout"
+  );
 });
 
 test("an empty per-app drawer page arrives as costs:null", async () => {

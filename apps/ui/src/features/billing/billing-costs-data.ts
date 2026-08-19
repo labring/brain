@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   type BillingCredentials,
   type BillingFetch,
+  BillingRequestError,
   createBillingJsonRequester,
 } from "./billing-data-client";
 
@@ -671,25 +672,48 @@ export async function loadBillingCostsBase(
   };
 }
 
+// account-service answers a period with zero app cost records with a 500
+// whose message ends in "no records found" — the same status a real fault
+// gets. The message is the only signal that this is an empty page, not an
+// outage, so a filtered-out period reads as empty instead of broken.
+function isNoRecordsError(error: unknown): boolean {
+  return (
+    error instanceof BillingRequestError &&
+    error.message.includes("no records found")
+  );
+}
+
 export async function loadBillingAppOverview(
   input: LoadBillingAppOverviewInput,
   fetch: BillingFetch = globalThis.fetch
 ): Promise<BillingAppOverviewPage> {
-  const appOverview = await requestBillingCosts(
-    "/api/billing/app-overview",
-    appOverviewResponseSchema,
-    { appToken: input.appToken, kubeconfig: input.kubeconfig },
-    fetch,
-    {
-      endTime: input.dateRange.endTime,
-      startTime: input.dateRange.startTime,
-      appName: "",
-      appType: input.appType ?? "",
-      namespace: input.workspace ?? "",
-      page: input.page,
-      pageSize: input.pageSize,
+  let appOverview: z.infer<typeof appOverviewResponseSchema>;
+  try {
+    appOverview = await requestBillingCosts(
+      "/api/billing/app-overview",
+      appOverviewResponseSchema,
+      { appToken: input.appToken, kubeconfig: input.kubeconfig },
+      fetch,
+      {
+        endTime: input.dateRange.endTime,
+        startTime: input.dateRange.startTime,
+        appName: "",
+        appType: input.appType ?? "",
+        namespace: input.workspace ?? "",
+        page: input.page,
+        pageSize: input.pageSize,
+      }
+    );
+  } catch (error) {
+    if (isNoRecordsError(error)) {
+      return {
+        appOverviews: [],
+        totalAppOverviews: 0,
+        totalAppOverviewPages: 1,
+      };
     }
-  );
+    throw error;
+  }
   return {
     appOverviews: appOverview.data.overviews,
     totalAppOverviews: appOverview.data.total,

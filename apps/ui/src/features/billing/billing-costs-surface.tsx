@@ -81,12 +81,15 @@ const EMPTY_SNAPSHOT: BillingCostsSnapshot = {
 };
 
 interface BillingCostsSurfaceProps {
+  /** Failure of the PAYG app overview table only — never the page banner. */
+  appOverviewError?: unknown;
   appPage: number;
   appTypeFilter: string | null;
   currency: BillingCurrency;
   dailyTrend?: DailyCostTrend;
   dateFilter: ReactNode;
   dateRange: { endTime: string; startTime: string };
+  /** Failure of the base snapshot (tree, totals, payments): page banner. */
   error: unknown;
   /** Loading state for the paginated app overview table only. */
   isAppOverviewLoading?: boolean;
@@ -153,6 +156,25 @@ function EmptyTableRow({ columns }: { columns: number }) {
         colSpan={columns}
       >
         No Data Available
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function ErrorTableRow({
+  columns,
+  message,
+}: {
+  columns: number;
+  message: string;
+}) {
+  return (
+    <TableRow>
+      <TableCell
+        className="h-24 text-center text-destructive"
+        colSpan={columns}
+      >
+        {message}
       </TableCell>
     </TableRow>
   );
@@ -265,6 +287,7 @@ function ConsumptionCostTable({
   appTypeFilter,
   appTypeOptions,
   currency,
+  hasError,
   isLoading,
   onAppPageChange,
   onAppTypeFilterChange,
@@ -278,6 +301,7 @@ function ConsumptionCostTable({
   appTypeFilter: string | null;
   appTypeOptions: string[];
   currency: BillingCurrency;
+  hasError: boolean;
   isLoading: boolean;
   onAppPageChange?: (page: number) => void;
   onAppTypeFilterChange?: (appType: string | null) => void;
@@ -318,10 +342,16 @@ function ConsumptionCostTable({
                 </TableRow>
               ))
             : null}
-          {!isLoading && rows.length === 0 ? (
+          {!isLoading && hasError ? (
+            <ErrorTableRow
+              columns={4}
+              message="Consumption costs could not be loaded."
+            />
+          ) : null}
+          {!(isLoading || hasError) && rows.length === 0 ? (
             <EmptyTableRow columns={4} />
           ) : null}
-          {isLoading
+          {isLoading || hasError
             ? null
             : rows.map((row) => (
                 <TableRow className="h-14" key={row.key}>
@@ -392,6 +422,7 @@ function ConsumptionCostTable({
 }
 
 export function BillingCostsSurface({
+  appOverviewError = null,
   appPage,
   appTypeFilter,
   currency,
@@ -588,6 +619,7 @@ export function BillingCostsSurface({
                       appTypeFilter={appTypeFilter}
                       appTypeOptions={appTypeOptions}
                       currency={currency}
+                      hasError={appOverviewError != null}
                       isLoading={isAppOverviewLoading}
                       onAppPageChange={onAppPageChange}
                       onAppTypeFilterChange={onAppTypeFilterChange}
