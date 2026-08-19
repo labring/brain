@@ -33,10 +33,19 @@ export function isCurrentDeploymentCredentialBinding(
   );
 }
 
-function requiredBinding(
+/**
+ * An unbound task (ADR-0066) deploys a public repository anonymously, so a
+ * missing binding is a supported state. A binding that exists but is stale
+ * still fails: the initiator did connect GitHub, and silently downgrading to
+ * an anonymous clone would hide a revoked or superseded connection.
+ */
+function optionalBinding(
   task: DeploymentTaskCredentialRecord
-): DeploymentCredentialBinding {
+): DeploymentCredentialBinding | null {
   const binding = task.credentialBinding;
+  if (binding == null) {
+    return null;
+  }
   if (!isCurrentDeploymentCredentialBinding(binding)) {
     throw new Error(
       "A current Deployment Credential Binding is required for GitHub deployment."
@@ -45,7 +54,11 @@ function requiredBinding(
   return binding;
 }
 
-/** Resolve a GitHub runner token exclusively from the task's persisted binding. */
+/**
+ * Resolve a GitHub runner token exclusively from the task's persisted binding.
+ * Returns `null` for an unbound task; the runner then clones anonymously and
+ * runs without registry credentials.
+ */
 export async function resolveGithubTokenForDeploymentTask(
   task: DeploymentTaskCredentialRecord,
   lookup: DeploymentCredentialTokenLookup
@@ -53,7 +66,10 @@ export async function resolveGithubTokenForDeploymentTask(
   if (task.source.kind !== "github") {
     return null;
   }
-  const binding = requiredBinding(task);
+  const binding = optionalBinding(task);
+  if (binding == null) {
+    return null;
+  }
   const token = await lookup({
     connectionRef: binding.connectionRef,
     credentialOwner: binding.credentialOwner,

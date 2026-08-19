@@ -7,6 +7,10 @@ import {
 } from "@/features/deploy/github/connection-service";
 import { verifiedGithubConnectionActor } from "@/features/deploy/github/owner-identity";
 import {
+  checkGithubRepoPublicAccess,
+  GITHUB_REPO_NOT_PUBLIC_ERROR,
+} from "@/features/deploy/github/repo-public-access";
+import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/features/deploy/task/api-auth";
@@ -90,7 +94,7 @@ async function resolveCredentialBinding(input: {
   encodedKubeconfig?: string;
   namespace: string;
   requiresMarketingIdentity: boolean;
-  sourceKind?: DeploymentTaskSource["kind"];
+  source?: DeploymentTaskSource;
 }): Promise<
   | {
       credentialBinding?: DeploymentCredentialBinding;
@@ -98,7 +102,7 @@ async function resolveCredentialBinding(input: {
     }
   | { response: NextResponse }
 > {
-  if (input.sourceKind !== "github" && !input.requiresMarketingIdentity) {
+  if (input.source?.kind !== "github" && !input.requiresMarketingIdentity) {
     return {};
   }
   const authorization = await authorizeWorkspaceActor({
@@ -111,9 +115,9 @@ async function resolveCredentialBinding(input: {
     // Marketing identity is best-effort for namespace-shared sources: an
     // unverifiable actor (missing or stale app token) degrades to an
     // unattributed user — the normalizer scrubs unverified consent — instead
-    // of blocking the deploy. GitHub stays fail-closed: it needs the actor
-    // for credentials, not just attribution.
-    if (input.sourceKind !== "github") {
+    // of blocking the deploy. GitHub stays fail-closed because even an
+    // unbound public-repository task requires a verified creator.
+    if (input.source?.kind !== "github") {
       return {};
     }
     return {
@@ -125,7 +129,7 @@ async function resolveCredentialBinding(input: {
     };
   }
   const marketingConsentSubject = authorization.actorBinding.userUid;
-  if (input.sourceKind !== "github") {
+  if (input.source?.kind !== "github") {
     return { marketingConsentSubject };
   }
   const actor = verifiedGithubConnectionActor(authorization);
@@ -147,13 +151,21 @@ async function resolveCredentialBinding(input: {
   }
   const connection = await getGithubConnectionStatusForOwner(actor.owner);
   if (connection == null) {
-    return {
-      response: jsonError(
-        "Connect GitHub before creating this deployment task.",
-        409,
-        "github_connection_required"
-      ),
-    };
+    // ADR-0066: an initiator without a connection may still deploy a public
+    // repository. The task runs unbound: anonymous clone, no registry push.
+    const access = await checkGithubRepoPublicAccess({
+      fullName: input.source.repo.fullName,
+    });
+    if (access.checked && !access.accessible) {
+      return {
+        response: jsonError(
+          GITHUB_REPO_NOT_PUBLIC_ERROR,
+          409,
+          "github_repo_private"
+        ),
+      };
+    }
+    return { marketingConsentSubject };
   }
   return {
     credentialBinding: {
@@ -269,7 +281,7 @@ export async function POST(request: Request) {
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     namespace: taskNamespace,
     requiresMarketingIdentity: marketingAttribution?.consent_token != null,
-    sourceKind: effectiveSource?.kind,
+    source: effectiveSource,
   });
   if ("response" in bindingResolution) {
     return bindingResolution.response;

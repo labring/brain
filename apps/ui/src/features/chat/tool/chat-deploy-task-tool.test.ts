@@ -155,6 +155,7 @@ test("chat getDeployTaskStatus returns the safe task timeline snapshot", async (
       kubeconfig: "test-kubeconfig",
       kubernetesNamespace: "ns-test",
       workspaceActor: "alice",
+      workspaceUserUid: "uid-alice",
     },
     {
       getDeployTaskTimelineSnapshot: (
@@ -193,6 +194,7 @@ test("chat submitDeployTaskInput preserves the active blocker keys", async () =>
       kubeconfig: "test-kubeconfig",
       kubernetesNamespace: "ns-test",
       workspaceActor: "alice",
+      workspaceUserUid: "uid-alice",
     },
     {
       getDeployTaskEngineContext: () => null as never,
@@ -253,4 +255,91 @@ test("chat submitDeployTaskInput preserves the active blocker keys", async () =>
     taskId: "task-1",
   });
   assert.deepEqual(result, { ok: true, task: taskSnapshot.task });
+});
+
+const githubSource = {
+  kind: "github" as const,
+  repo: {
+    fullName: "glpi-project/glpi",
+    name: "glpi",
+    url: "https://github.com/glpi-project/glpi",
+  },
+};
+
+function githubToolOptions() {
+  return {
+    kubeconfig: "test-kubeconfig",
+    kubernetesNamespace: "ns-test",
+    workspaceActor: "alice",
+    workspaceUserUid: "uid-alice",
+  };
+}
+
+test("chat createDeployTask rejects a private repo when the actor has no connection", async () => {
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    adoptLegacyGithubConnectionForOwner: () =>
+      Promise.resolve(undefined as never),
+    checkGithubRepoPublicAccess: () =>
+      Promise.resolve({ accessible: false, checked: true }),
+    getGithubConnectionStatusForOwner: () => Promise.resolve(null),
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the glpi repository",
+      source: githubSource,
+      target: { kind: "newProject", displayName: "glpi" },
+    },
+    { messages: [], toolCallId: "tool-call-3" }
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    error:
+      "This repository is not publicly accessible. Connect GitHub in Settings to deploy it.",
+  });
+});
+
+test("chat createDeployTask creates an unbound task for an accessible public repo", async () => {
+  const createInputs: { credentialBinding?: unknown }[] = [];
+  mock.module("@/features/deploy/task/engine/actions", () => ({
+    cancelDeployTaskAction: () => Promise.resolve({ kind: "not-found" }),
+    createDeployTaskAction: (
+      _context: unknown,
+      input: { create: { credentialBinding?: unknown } }
+    ) => {
+      createInputs.push(input.create);
+      return Promise.resolve({ kind: "created", task: { id: "task-9" } });
+    },
+    submitDeployTaskInputAction: () => Promise.resolve({ kind: "not-found" }),
+  }));
+
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    adoptLegacyGithubConnectionForOwner: () =>
+      Promise.resolve(undefined as never),
+    checkGithubRepoPublicAccess: () =>
+      Promise.resolve({ accessible: true, checked: true }),
+    getDeployTaskEngineContext: () => null as never,
+    getDeployTaskSnapshot: () => Promise.resolve(null),
+    getGithubConnectionStatusForOwner: () => Promise.resolve(null),
+    runDeployTask: () => Promise.resolve(),
+    toDeployTaskDTO: (task: unknown) => task as never,
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the glpi repository",
+      source: githubSource,
+      target: { kind: "newProject", displayName: "glpi" },
+    },
+    { messages: [], toolCallId: "tool-call-4" }
+  );
+
+  assert.ok(result != null && "ok" in result && result.ok);
+  assert.equal(createInputs.length, 1);
+  assert.equal("credentialBinding" in (createInputs[0] ?? {}), false);
 });

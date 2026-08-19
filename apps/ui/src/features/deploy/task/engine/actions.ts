@@ -287,9 +287,15 @@ function invalidCredentialBinding(
       : "Only GitHub deployment tasks may carry a credential binding.";
   }
   const creatingActor = create.creatingActor?.trim() ?? "";
+  if (creatingActor === "") {
+    return "GitHub deployment requires a verified creator.";
+  }
   const binding = create.credentialBinding;
-  if (creatingActor === "" || binding == null) {
-    return "GitHub deployment requires a verified creator and credential binding.";
+  // ADR-0066: an initiator without a GitHub connection may still create an
+  // unbound task, which clones a public repository anonymously and cannot
+  // push an image. A binding that is present must still be current.
+  if (binding == null) {
+    return null;
   }
   // The binding's owner is the initiator's global userUid, proven by the app
   // token at the route's authorization point (ADR-0059). The per-region

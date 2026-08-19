@@ -4,7 +4,8 @@
 
 Accepted; owner identity and Deployment Task credential binding revised by
 ADR-0056; the owner subject key and identity generation are revised by
-ADR-0059.
+ADR-0059; the requirement that every GitHub Deployment Task carry a binding is
+amended by ADR-0066.
 
 Brain's GitHub deployment path must support repository clone and GHCR image
 push from the DevBox/Kaniko runner. GitHub App installation tokens can access
