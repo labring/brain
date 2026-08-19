@@ -8,9 +8,6 @@ const NOW = new Date("2026-07-30T12:00:00.000Z");
 test("loads current workspace quota with ordered headroom rows", async () => {
   const requests: Array<{ body: unknown; headers: Headers; url: string }> = [];
   const responses: Record<string, unknown> = {
-    "/api/billing/regions": {
-      regions: [{ domain: "us.example.test", uid: "region-us" }],
-    },
     "/api/billing/workspace-quota": {
       quota: {
         hard: {
@@ -160,11 +157,6 @@ test("falls back to the first available workspace", async () => {
       fetch: (input) => {
         const pathname = new URL(input.toString(), "https://brain.example.test")
           .pathname;
-        if (pathname === "/api/billing/regions") {
-          return Promise.resolve(
-            Response.json({ regions: [{ uid: "region-us" }] })
-          );
-        }
         if (pathname === "/api/billing/workspaces") {
           return Promise.resolve(
             Response.json({ data: [["workspace-a", ""]] })

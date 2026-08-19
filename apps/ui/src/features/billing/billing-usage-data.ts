@@ -36,9 +36,6 @@ interface BillingUsageDependencies {
 }
 
 const quantityValueSchema = z.union([z.string(), z.number()]);
-const regionsResponseSchema = z.object({
-  regions: z.array(z.object({ uid: z.string().trim().min(1) })),
-});
 const workspacesResponseSchema = z.object({
   data: z.array(z.tuple([z.string().trim().min(1), z.string()])),
 });
@@ -145,18 +142,14 @@ export async function loadBillingUsage(
   ).toISOString();
   const endTime = now.toISOString();
 
-  const [regionsPayload, workspacesPayload] = await Promise.all([
-    requestBillingJson("/api/billing/regions"),
-    requestBillingJson("/api/billing/workspaces", {
+  const workspacesPayload = await requestBillingJson(
+    "/api/billing/workspaces",
+    {
       endTime,
       startTime,
       type: 0,
-    }),
-  ]);
-  const regions = regionsResponseSchema.parse(regionsPayload).regions;
-  if (regions.length === 0) {
-    throw new Error("Billing region is unavailable.");
-  }
+    }
+  );
 
   const workspaces = workspacesResponseSchema
     .parse(workspacesPayload)
