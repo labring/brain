@@ -89,9 +89,12 @@ function WorkloadHistoryShell({
 export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   node,
   onClose,
+  onWorkloadMutation,
 }: {
   node: Node;
   onClose: () => void;
+  /** Refreshes canvas workload lists so node cards reflect the accepted change. */
+  onWorkloadMutation?: () => Promise<unknown>;
 }) {
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespaceFallback = useAtomValue(namespaceAtom).trim();
@@ -128,7 +131,10 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
       (async () => {
         await imageUpdate.submit(image);
         setEditedImage(null);
-        await versions.mutate();
+        await Promise.all([
+          versions.mutate(),
+          onWorkloadMutation?.().catch(() => undefined),
+        ]);
       })(),
       {
         errorDescription: (e) => errorDescription(e, "Image update failed."),
@@ -137,13 +143,16 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         success: "Update accepted. Applying changes.",
       }
     );
-  }, [displayImage, imageUpdate, versions]);
+  }, [displayImage, imageUpdate, onWorkloadMutation, versions]);
 
   const keepImageTarget = useCallback(() => {
     toastPromiseDetail(
       (async () => {
         await imageUpdate.keepTarget();
-        await versions.mutate();
+        await Promise.all([
+          versions.mutate(),
+          onWorkloadMutation?.().catch(() => undefined),
+        ]);
       })(),
       {
         errorDescription: (e) => errorDescription(e, "Image update failed."),
@@ -152,7 +161,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         success: "Update accepted. Applying changes.",
       }
     );
-  }, [imageUpdate, versions]);
+  }, [imageUpdate, onWorkloadMutation, versions]);
 
   const onLoadConfigYaml = useCallback(
     async (versionHash: string) => {
@@ -200,9 +209,13 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         namespace: ns,
         versionHash,
       });
-      await Promise.all([versions.mutate(), imageUpdate.revalidateObserved()]);
+      await Promise.all([
+        versions.mutate(),
+        imageUpdate.revalidateObserved(),
+        onWorkloadMutation?.().catch(() => undefined),
+      ]);
     },
-    [imageUpdate, kubeconfig, name, ns, versions]
+    [imageUpdate, kubeconfig, name, ns, onWorkloadMutation, versions]
   );
 
   const confirmRollbackSnapshot = () => {

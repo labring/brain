@@ -59,6 +59,7 @@ export function renderProjectCanvasResourcePaneContent({
         mode={workloadPaneMode(content.kind)}
         node={content.node}
         onClose={onClose}
+        onWorkloadMutation={onUpdated}
       />
     );
   }
