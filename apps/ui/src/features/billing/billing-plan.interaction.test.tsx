@@ -331,7 +331,7 @@ const PLAN_PAGE_RESPONSES: Record<string, unknown> = {
     ],
   },
   "/api/billing/regions": {
-    regions: [{ domain: "us.example.test", uid: "region-us" }],
+    current: { domain: "us.example.test", uid: "region-us" },
   },
   "/api/billing/subscription": {
     subscription: {

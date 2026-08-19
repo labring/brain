@@ -560,6 +560,18 @@ The product area under the `/billing` URL prefix where users manage the current 
 
 _Avoid_: cost center, billing app, separate billing pages.
 
+### Billing Region
+
+One entry in the platform's global region catalog served by account-service: a cluster identified durably by an opaque uid and addressably by a unique domain. account-service stores each Workspace Subscription under the workspace plus the Billing Region's domain, so every subscription query and payment action is region-addressed. The catalog's order carries no meaning — no position in it designates any particular region.
+
+_Avoid_: cluster (when the billing catalog entry is meant), zone, first region.
+
+### Current Region
+
+The Billing Region this Brain deployment belongs to. It is a deployment-declared fact — stated by configuration and verified against the region catalog, never inferred from catalog order or guessed. If the declaration is missing or matches no catalog entry, the Billing Area refuses to render rather than show another region's answers: a wrong Current Region silently misprices workspaces as Pay-As-You-Go and directs payments at the wrong region.
+
+_Avoid_: first region, default region, regions[0].
+
 ### Account Balance
 
 The user's account-level prepaid funds held by account-service, presented as the net of balance minus accumulated deductions. Account Balance is real money that can offset subscription charges; it is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. It is not a Free Chat Turns count, a quota, or an entitlement counter.

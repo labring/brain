@@ -65,7 +65,9 @@ const costsResponseSchema = z.object({
   message: z.string().optional(),
 });
 const paymentsResponseSchema = z.object({ payments: z.array(paymentSchema) });
-const regionsResponseSchema = z.object({ regions: z.array(regionSchema) });
+// The regions route marks the deployment's own region; the catalog's order
+// carries no meaning, so loaders read `current` and never an index.
+const regionsResponseSchema = z.object({ current: regionSchema });
 const appCostResourceSchema = z.object({
   amount: z.number().default(0),
   app_name: z.string().default(""),
@@ -184,8 +186,9 @@ export interface BillingAppCostsPage {
 export interface BillingCostsBaseSnapshot {
   appTypes: Record<string, string>;
   costPoints: [number, string | number][];
+  /** The Current Region; null only in the pre-load empty snapshot. */
+  currentRegion: BillingRegion | null;
   payments: SubscriptionPayment[];
-  region: BillingRegion | null;
   totalConsumptionMicroUnits: number;
   workspaceConsumptionMicroUnits: Record<string, number>;
   workspaces: BillingWorkspace[];
@@ -519,8 +522,8 @@ export async function loadBillingDailyTrend(
       range
     ),
   ]);
-  const region = regions.regions[0];
-  const regionLabel = region?.name?.en ?? region?.domain ?? "Current region";
+  const region = regions.current;
+  const regionLabel = region.name?.en ?? region.domain;
   return buildDailyCostTrend({
     dateRange: input.dateRange,
     regions: [{ costPoints: costs.data.costs, label: regionLabel }],
@@ -633,16 +636,11 @@ export async function loadBillingCostsBase(
       range
     ),
   ]);
-  const region = regions.regions[0];
-  if (region == null) {
-    throw new Error("Billing region is unavailable.");
-  }
-
   return {
     appTypes: appTypes.data,
     costPoints: costs.data.costs,
+    currentRegion: regions.current,
     payments: payments.payments,
-    region,
     totalConsumptionMicroUnits: consumption.amount,
     workspaceConsumptionMicroUnits: workspaceConsumption.amount,
     workspaces: workspaces.data,

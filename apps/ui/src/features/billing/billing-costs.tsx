@@ -39,6 +39,11 @@ const FIXTURE_SNAPSHOT: BillingCostsSnapshot = {
   ],
   appTypes: { "10": "DEV-BOX" },
   costPoints: [],
+  currentRegion: {
+    domain: "hzh.sealos.run",
+    name: { en: "Hangzhou", zh: "杭州" },
+    uid: "region-hzh",
+  },
   payments: [
     {
       Amount: 5_000_000,
@@ -68,11 +73,6 @@ const FIXTURE_SNAPSHOT: BillingCostsSnapshot = {
       Workspace: "ws-sealos-test",
     },
   ],
-  region: {
-    domain: "hzh.sealos.run",
-    name: { en: "Hangzhou", zh: "杭州" },
-    uid: "region-hzh",
-  },
   totalAppOverviewPages: 1,
   totalAppOverviews: 1,
   totalConsumptionMicroUnits: 3_000_000,

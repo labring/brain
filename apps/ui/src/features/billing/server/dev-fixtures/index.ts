@@ -34,6 +34,11 @@ interface FixtureContext {
 }
 
 const REGION_DOMAIN = "mock.sealos.run";
+const MOCK_REGION = {
+  domain: REGION_DOMAIN,
+  name: { en: "Mock Region", zh: "模拟区域" },
+  uid: "region-mock-1",
+};
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
 const MOCK_CHECKOUT_PAY_ID = "pay-mock-checkout";
 const MOCK_CHECKOUT_INVOICE_ID = "inv-mock-checkout";
@@ -587,14 +592,13 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
       ],
     },
   }),
+  // Unlike the other fixtures this one answers in the ROUTE's response shape,
+  // not the upstream's: the regions route marks the Current Region resolved
+  // from BILLING_LOCAL_REGION_DOMAIN, and the mock stands in for the whole
+  // pipeline of a correctly configured deployment.
   "/account/v1alpha1/regions": () => ({
-    regions: [
-      {
-        domain: REGION_DOMAIN,
-        name: { en: "Mock Region", zh: "模拟区域" },
-        uid: "region-mock-1",
-      },
-    ],
+    current: MOCK_REGION,
+    regions: [MOCK_REGION],
   }),
   "/account/v1alpha1/workspace-subscription/card-info": ({ scenario }) => ({
     payment_method: CARDLESS_SCENARIOS.has(scenario)

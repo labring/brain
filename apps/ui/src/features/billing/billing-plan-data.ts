@@ -230,13 +230,13 @@ const downgradeQuotaResponseSchema = z.object({
   }),
 });
 
+// The regions route marks the deployment's own region; the catalog's order
+// carries no meaning, so loaders read `current` and never an index.
 const regionsResponseSchema = z.object({
-  regions: z.array(
-    z.object({
-      domain: z.string().trim().min(1),
-      uid: z.string().trim().min(1),
-    })
-  ),
+  current: z.object({
+    domain: z.string().trim().min(1),
+    uid: z.string().trim().min(1),
+  }),
 });
 
 const workspacesResponseSchema = z.object({
@@ -436,13 +436,9 @@ export async function loadBillingPlanSnapshot(
     fetch,
   });
 
-  const regions = regionsResponseSchema.parse(
+  const region = regionsResponseSchema.parse(
     await requestBillingJson("/api/billing/regions")
-  ).regions;
-  const region = regions[0];
-  if (region == null) {
-    throw new Error("Billing region is unavailable.");
-  }
+  ).current;
 
   const startTime = new Date(
     now.getTime() - DAYS_31_IN_MILLISECONDS

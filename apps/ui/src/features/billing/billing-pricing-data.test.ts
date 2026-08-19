@@ -60,7 +60,7 @@ test("loads plan and metered pricing for the current PAYG workspace", async () =
       },
     },
     "/api/billing/regions": {
-      regions: [{ domain: "us.example.test", uid: "region-us" }],
+      current: { domain: "us.example.test", uid: "region-us" },
     },
     "/api/billing/subscription": {
       subscription: { type: "PAYG" },
@@ -203,7 +203,7 @@ test("a DELETED subscription record prices as Pay-As-You-Go", async () => {
     "/api/billing/plans": { plans: [] },
     "/api/billing/properties": { data: { properties: [] } },
     "/api/billing/regions": {
-      regions: [{ domain: "us.example.test", uid: "region-us" }],
+      current: { domain: "us.example.test", uid: "region-us" },
     },
     "/api/billing/subscription": {
       subscription: { Status: "DELETED", type: "SUBSCRIPTION" },

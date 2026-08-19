@@ -143,13 +143,11 @@ test("the selected date range drives every Costs data request", async () => {
     },
     "/api/billing/payments": { payments: [] },
     "/api/billing/regions": {
-      regions: [
-        {
-          domain: "us.example.test",
-          name: { en: "United States", zh: "US" },
-          uid: "region-us",
-        },
-      ],
+      current: {
+        domain: "us.example.test",
+        name: { en: "United States", zh: "US" },
+        uid: "region-us",
+      },
     },
     "/api/billing/workspace-consumption": {
       amount: { "workspace-a": 4_000_000 },
@@ -210,7 +208,7 @@ test("the selected date range drives every Costs data request", async () => {
       startTime: DATE_RANGE.startTime,
     }
   );
-  assert.deepEqual(snapshot.region, {
+  assert.deepEqual(snapshot.currentRegion, {
     domain: "us.example.test",
     name: { en: "United States", zh: "US" },
     uid: "region-us",
@@ -227,7 +225,7 @@ test("a period with no settled PAYG app costs is a normal empty state", async ()
     "/api/billing/costs": { data: { costs: [] } },
     "/api/billing/payments": { payments: [] },
     "/api/billing/regions": {
-      regions: [{ domain: "us.example.test", uid: "region-us" }],
+      current: { domain: "us.example.test", uid: "region-us" },
     },
     "/api/billing/workspace-consumption": { amount: {} },
     "/api/billing/workspaces": { data: [] },

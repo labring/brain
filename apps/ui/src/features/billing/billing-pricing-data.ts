@@ -54,8 +54,10 @@ const propertiesResponseSchema = z.object({
     ),
   }),
 });
+// The regions route marks the deployment's own region; the catalog's order
+// carries no meaning, so loaders read `current` and never an index.
 const regionsResponseSchema = z.object({
-  regions: z.array(z.object({ domain: z.string().trim().min(1) })),
+  current: z.object({ domain: z.string().trim().min(1) }),
 });
 const subscriptionResponseSchema = z.object({
   subscription: z.object({
@@ -181,10 +183,7 @@ export async function loadBillingPricing(
   const plansPromise = requestBillingJson("/api/billing/plans");
   const propertiesPromise = requestBillingJson("/api/billing/properties");
   const regionsPayload = await requestBillingJson("/api/billing/regions");
-  const region = regionsResponseSchema.parse(regionsPayload).regions[0];
-  if (region == null) {
-    throw new Error("Billing region is unavailable.");
-  }
+  const region = regionsResponseSchema.parse(regionsPayload).current;
   const subscriptionPromise = requestBillingJson("/api/billing/subscription", {
     regionDomain: region.domain,
     workspace: input.workspace,

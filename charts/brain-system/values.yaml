@@ -115,6 +115,9 @@ ui:
     APP_URL: ""
     BILLING_CURRENCY: "usd"
     BILLING_GPU_ENABLED: "false"
+    # Region domain this deployment belongs to; derived from the platform
+    # cloud domain when left empty.
+    BILLING_LOCAL_REGION_DOMAIN: ""
     GTM_ID: ""
     DATABASE_URL: ""
     # Set to "1" when DATABASE_URL points at a database owned by another

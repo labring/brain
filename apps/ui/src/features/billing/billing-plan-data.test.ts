@@ -71,14 +71,12 @@ const RESPONSES: Record<string, unknown> = {
     ],
   },
   "/api/billing/regions": {
-    regions: [
-      {
-        accountSvc: "account-service.account-system.svc:2333",
-        domain: "us.example.test",
-        name: { en: "United States", zh: "US" },
-        uid: "region-us",
-      },
-    ],
+    current: {
+      accountSvc: "account-service.account-system.svc:2333",
+      domain: "us.example.test",
+      name: { en: "United States", zh: "US" },
+      uid: "region-us",
+    },
   },
   "/api/billing/subscription": {
     subscription: {

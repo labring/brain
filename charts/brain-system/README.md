@@ -88,6 +88,8 @@ When left empty, `ui.env.API_URL` and `ui.env.APP_URL` are derived from the API/
 
 `ui.env.BILLING_CURRENCY` controls the Billing Area's cluster-level display currency and defaults to `usd`. `ui.env.BILLING_GPU_ENABLED` controls GPU quota and pricing rows and defaults to `false`. Both values are read by the UI server at request time.
 
+`ui.env.BILLING_LOCAL_REGION_DOMAIN` declares which region of the platform's region catalog this deployment belongs to; billing verifies it against the catalog and refuses to render when it is missing or unknown. It derives from the platform cloud domain when left empty — set it explicitly only when the two differ.
+
 Install or upgrade:
 
 ```bash

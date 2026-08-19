@@ -71,8 +71,8 @@ const EMPTY_SNAPSHOT: BillingCostsSnapshot = {
   appOverviews: [],
   appTypes: {},
   costPoints: [],
+  currentRegion: null,
   payments: [],
-  region: null,
   totalAppOverviewPages: 1,
   totalAppOverviews: 0,
   totalConsumptionMicroUnits: 0,
@@ -447,7 +447,9 @@ export function BillingCostsSurface({
     (payment) => payment.Type.toUpperCase() === "SUBSCRIPTION"
   );
   const regionLabel =
-    snapshot.region?.name?.en ?? snapshot.region?.domain ?? "Current region";
+    snapshot.currentRegion?.name?.en ??
+    snapshot.currentRegion?.domain ??
+    "Current region";
   const consumptionRows = snapshot.appOverviews.map((app) => {
     const { queryAppType, typeName } = resolveBillingAppType(
       app.appType,
