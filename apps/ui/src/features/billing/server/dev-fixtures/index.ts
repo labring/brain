@@ -753,13 +753,10 @@ const WRITE_FIXTURES: Record<
     if (nextScenario == null) {
       return null;
     }
-    // created/renewed/upgraded run the checkout dialog: it insists on a
+    // created/upgraded run the checkout dialog: it insists on a
     // redirect URL for the checkout window, then polls last-transaction for
     // the returned payID. about:blank skips the Stripe hop.
-    const opensCheckout =
-      operator === "created" ||
-      operator === "renewed" ||
-      operator === "upgraded";
+    const opensCheckout = operator === "created" || operator === "upgraded";
     return {
       nextScenario,
       payload: opensCheckout
@@ -791,9 +788,13 @@ const PAY_TRANSITIONS: Record<
     "mixed-workspaces": "cancelling",
   },
   // DELETED means subscribable-again PAYG (AIM-252), so `created` succeeds
-  // from `deleted` exactly as it does from the PAYG scenarios.
-  created: { deleted: "active", payg: "active", "payg-debt": "active" },
-  renewed: {
+  // from `deleted` exactly as it does from the PAYG scenarios. The debt
+  // "Renew" flow also sends `created` (planOperator returns it for every
+  // plan while in debt), so the payment-due scenarios live here too.
+  created: {
+    deleted: "active",
+    payg: "active",
+    "payg-debt": "active",
     "payment-due": "active",
     "payment-due-deletion": "active",
     "payment-due-final": "active",
