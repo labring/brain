@@ -506,15 +506,19 @@ function DockerDeployerFields({
       <DeploymentSettings.Section
         action={
           <>
-            <SlidingToggle
-              ariaLabel="Environment editor mode"
-              disabled={busy}
-              onValueChange={requestEnvEditorMode}
-              options={ENV_EDITOR_MODE_OPTIONS}
-              size="default"
-              value={envEditorMode}
-              width="auto"
-            />
+            {/* The toggle appears once there is content to toggle between; the
+                Raw-mode clause keeps it in place while the editor is emptied. */}
+            {envEditorMode === "raw" || envRawSource.trim() !== "" ? (
+              <SlidingToggle
+                ariaLabel="Environment editor mode"
+                disabled={busy}
+                onValueChange={requestEnvEditorMode}
+                options={ENV_EDITOR_MODE_OPTIONS}
+                size="default"
+                value={envEditorMode}
+                width="auto"
+              />
+            ) : null}
             <AppButton
               aria-label="Add environment variable"
               disabled={busy}

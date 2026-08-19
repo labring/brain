@@ -71,16 +71,15 @@ test("DockerDeployer disables deploy while busy even when settings are valid", (
   assert.match(html, DISABLED_RE);
 });
 
-test("DockerDeployer always shows the List/Raw environment mode toggle", () => {
+test("DockerDeployer hides the List/Raw toggle while the environment is empty", () => {
   const html = renderToStaticMarkup(<DockerDeployer onDeploy={noop} />);
 
-  assert.match(html, ENV_MODE_TOGGLE_RE);
-  assert.match(html, LIST_ENV_EDITOR_RE);
-  assert.match(html, RAW_ENV_EDITOR_RE);
+  assert.doesNotMatch(html, ENV_MODE_TOGGLE_RE);
+  assert.match(html, ADD_ENVIRONMENT_VARIABLE_RE);
   assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
 });
 
-test("DockerDeployer derives list rows from a prefilled raw source", () => {
+test("DockerDeployer derives list rows from a prefilled raw source and shows the toggle", () => {
   const html = renderToStaticMarkup(
     <DockerDeployer
       initialSettings={{
@@ -93,6 +92,9 @@ test("DockerDeployer derives list rows from a prefilled raw source", () => {
 
   assert.match(html, FEATURE_FLAG_RE);
   assert.match(html, VALUE_TRUE_RE);
+  assert.match(html, ENV_MODE_TOGGLE_RE);
+  assert.match(html, LIST_ENV_EDITOR_RE);
+  assert.match(html, RAW_ENV_EDITOR_RE);
   assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
 });
 
@@ -107,6 +109,7 @@ test("DockerDeployer opens in Raw mode when the prefilled raw source has errors"
     />
   );
 
+  assert.match(html, ENV_MODE_TOGGLE_RE);
   assert.match(html, ENV_RAW_SOURCE_RE);
   assert.match(html, ENV_RAW_FIX_HINT_RE);
 });
