@@ -45,6 +45,11 @@ import {
   BillingAiCreditsSection,
   BillingPlanSurface,
 } from "@/features/billing/billing-plan-surface";
+import {
+  accountBalanceSwrKey,
+  aiCreditsSwrKey,
+  settleSubscriptionChange,
+} from "@/features/billing/billing-subscription-settlement";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
@@ -331,7 +336,7 @@ export function BillingPlan({
     isLoading: balanceLoading,
   } = useSWR(
     credentialsReady
-      ? (["billing-account-balance", currency, kubeconfig, appToken] as const)
+      ? accountBalanceSwrKey({ appToken, currency, kubeconfig })
       : null,
     () => loadAccountBalance({ appToken, currency, kubeconfig }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
@@ -350,7 +355,7 @@ export function BillingPlan({
   );
   const creditsKey =
     credentialsReady && snapshot != null && !snapshot.current.isPayg
-      ? (["billing-ai-credits", workspace, kubeconfig, appToken] as const)
+      ? aiCreditsSwrKey({ appToken, kubeconfig, workspace })
       : null;
   const {
     data: credits,
@@ -360,6 +365,19 @@ export function BillingPlan({
     creditsKey,
     () => loadAiCredits({ appToken, kubeconfig, workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  // Read through refs so refreshPlanSnapshot's identity stays stable across
+  // data updates — the checkout dialog's effects depend on it.
+  const creditsBaselineRef = useRef<number | null>(null);
+  useEffect(() => {
+    creditsBaselineRef.current = credits?.totalMicroUnits ?? null;
+  }, [credits]);
+  const settlementCancelRef = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      settlementCancelRef.current?.();
+    },
+    []
   );
 
   const updateLifecycle = async (
@@ -483,6 +501,7 @@ export function BillingPlan({
 
   const refreshPlanSnapshot = useCallback(
     async (targetWorkspace?: string) => {
+      const settleWorkspace = targetWorkspace ?? workspace;
       const nextSnapshot =
         targetWorkspace == null || targetWorkspace === workspace
           ? await refreshSnapshot()
@@ -494,9 +513,21 @@ export function BillingPlan({
       if (nextSnapshot == null) {
         throw new Error("The refreshed subscription is unavailable.");
       }
+      // Every payment success funnels through here (checkout poll + Stripe
+      // return), so this is the settlement point for the payment-sensitive
+      // caches the snapshot refresh does not cover.
+      settlementCancelRef.current?.();
+      settlementCancelRef.current = settleSubscriptionChange({
+        appToken,
+        baselineTotalMicroUnits:
+          settleWorkspace === workspace ? creditsBaselineRef.current : null,
+        currency,
+        kubeconfig,
+        workspace: settleWorkspace,
+      });
       return nextSnapshot;
     },
-    [appToken, kubeconfig, refreshSnapshot, workspace]
+    [appToken, currency, kubeconfig, refreshSnapshot, workspace]
   );
 
   if (!credentialsReady || snapshotLoading) {

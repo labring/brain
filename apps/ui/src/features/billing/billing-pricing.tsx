@@ -31,7 +31,14 @@ import {
   Network,
   Plus,
 } from "lucide-react";
-import { Fragment, type ReactNode, useMemo, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import useSWR from "swr";
 
 import {
@@ -55,6 +62,7 @@ import {
   type BillingPricingSnapshot,
   loadBillingPricing,
 } from "@/features/billing/billing-pricing-data";
+import { settleSubscriptionChange } from "@/features/billing/billing-subscription-settlement";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { errorDescription } from "@/lib/toast-utils";
@@ -786,6 +794,13 @@ export default function BillingPricing({
     () => loadBillingPlanSnapshot({ appToken, kubeconfig, workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
+  const settlementCancelRef = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      settlementCancelRef.current?.();
+    },
+    []
+  );
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const selectedPlan = useMemo(() => {
     const plan =
@@ -822,6 +837,16 @@ export default function BillingPricing({
           onDismiss={clearSelection}
           onSubscriptionChanged={async () => {
             await Promise.all([refreshPlanSnapshot(), refreshPricing()]);
+            // No AI Credits are shown on this page, but the Plan view reads
+            // the same global caches — settle them so returning there does
+            // not present pre-payment values.
+            settlementCancelRef.current?.();
+            settlementCancelRef.current = settleSubscriptionChange({
+              appToken,
+              currency,
+              kubeconfig,
+              workspace,
+            });
           }}
           open={selectedPlan != null}
           plan={selectedPlan}
