@@ -117,6 +117,10 @@ ui:
     BILLING_GPU_ENABLED: "false"
     GTM_ID: ""
     DATABASE_URL: ""
+    # Set to "1" when DATABASE_URL points at a database owned by another
+    # release (demo/preview envs sharing the main app's Postgres): the UI then
+    # skips its boot-time schema migrations instead of applying DDL there.
+    APP_POSTGRES_SKIP_MIGRATIONS: ""
     JWT_INTERNAL: ""
     GITHUB_APP_ID: ""
     GITHUB_APP_PRIVATE_KEY: ""
