@@ -74,12 +74,17 @@ const CHART_MARGIN = { top: 24 };
 
 const EMPTY_DAILY_TREND: DailyCostTrend = { points: [], series: [] };
 
+// The two charts are fed by independent requests with disjoint failure
+// modes, so each carries its own error/loading pair — one chart failing or
+// lagging must never blank the other.
 interface BillingCostChartsProps {
   currency: BillingCurrency;
   daily?: DailyCostTrend;
-  error?: unknown;
-  isLoading?: boolean;
+  dailyError?: unknown;
+  isDailyLoading?: boolean;
+  isMonthlyLoading?: boolean;
   monthly?: MonthlyBillingTrendPoint[];
+  monthlyError?: unknown;
 }
 
 function currencyAxisLabel(symbol: string) {
@@ -267,9 +272,11 @@ function ChartBody({
 export function BillingCostCharts({
   currency,
   daily = EMPTY_DAILY_TREND,
-  error = null,
-  isLoading = false,
+  dailyError = null,
+  isDailyLoading = false,
+  isMonthlyLoading = false,
   monthly = [],
+  monthlyError = null,
 }: BillingCostChartsProps) {
   const symbol = billingCurrencySymbol(currency);
   const formatAmount = (value: number) => formatBillingAmount(value, currency);
@@ -291,7 +298,7 @@ export function BillingCostCharts({
   return (
     <div className="flex flex-col gap-4" data-slot="billing-cost-charts">
       <ChartCard subtitles={["Last 7 days"]} title="Cost Trends">
-        <ChartBody error={error} isLoading={isLoading}>
+        <ChartBody error={dailyError} isLoading={isDailyLoading}>
           <ChartContainer
             className="aspect-auto h-72 w-full"
             config={dailyChartConfig}
@@ -364,7 +371,7 @@ export function BillingCostCharts({
         subtitles={["Last 6 Months", "Current Region"]}
         title="Monthly Top-ups and Charges"
       >
-        <ChartBody error={error} isLoading={isLoading}>
+        <ChartBody error={monthlyError} isLoading={isMonthlyLoading}>
           <ChartContainer
             className="aspect-auto h-72 w-full"
             config={MONTHLY_CHART_CONFIG}

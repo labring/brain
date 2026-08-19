@@ -88,23 +88,26 @@ interface BillingCostsSurfaceProps {
   appTypeFilter: string | null;
   currency: BillingCurrency;
   dailyTrend?: DailyCostTrend;
+  /** Per-chart pairs: one trend failing must never blank the other chart. */
+  dailyTrendError?: unknown;
   dateFilter: ReactNode;
   dateRange: { endTime: string; startTime: string };
   /** Failure of the base snapshot (tree, totals, payments): page banner. */
   error: unknown;
   /** Loading state for the paginated app overview table only. */
   isAppOverviewLoading?: boolean;
+  isDailyTrendLoading?: boolean;
   /** Loading state for the cost tree, banner totals, and subscription table. */
   isLoading: boolean;
+  isMonthlyTrendLoading?: boolean;
   monthlyTrend?: MonthlyBillingTrendPoint[];
+  monthlyTrendError?: unknown;
   onAppPageChange?: (page: number) => void;
   onAppTypeFilterChange?: (appType: string | null) => void;
   onScopeChange?: (scope: BillingCostScope) => void;
   onSelectApp?: (app: SelectedBillingApp) => void;
   scope: BillingCostScope;
   snapshot?: BillingCostsSnapshot;
-  trendsError?: unknown;
-  trendsLoading?: boolean;
 }
 
 interface ConsumptionRow {
@@ -447,20 +450,22 @@ export function BillingCostsSurface({
   appTypeFilter,
   currency,
   dailyTrend,
+  dailyTrendError = null,
   dateFilter,
   dateRange,
   error,
   isAppOverviewLoading = false,
+  isDailyTrendLoading = false,
   isLoading,
+  isMonthlyTrendLoading = false,
   monthlyTrend,
+  monthlyTrendError = null,
   onAppPageChange,
   onAppTypeFilterChange,
   onScopeChange,
   onSelectApp,
   scope,
   snapshot = EMPTY_SNAPSHOT,
-  trendsError = null,
-  trendsLoading = false,
 }: BillingCostsSurfaceProps) {
   const [view, setView] = useState<BillingCostsView>("details");
   const detailPanelRef = useRef<HTMLDivElement>(null);
@@ -663,9 +668,11 @@ export function BillingCostsSurface({
           <BillingCostCharts
             currency={currency}
             daily={dailyTrend}
-            error={trendsError}
-            isLoading={trendsLoading}
+            dailyError={dailyTrendError}
+            isDailyLoading={isDailyTrendLoading}
+            isMonthlyLoading={isMonthlyTrendLoading}
             monthly={monthlyTrend}
+            monthlyError={monthlyTrendError}
           />
         )}
       </div>

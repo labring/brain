@@ -326,22 +326,22 @@ export default function BillingCosts({
         appTypeFilter={appTypeFilter}
         currency={currency}
         dailyTrend={dailyTrend.data}
+        dailyTrendError={dailyTrend.error}
         dateFilter={dateFilter}
         dateRange={dateRange}
         error={error}
         isAppOverviewLoading={!credentialsReady || isAppOverviewLoading}
+        isDailyTrendLoading={!credentialsReady || dailyTrend.isLoading}
         isLoading={!credentialsReady || isLoading}
+        isMonthlyTrendLoading={!credentialsReady || monthlyTrend.isLoading}
         monthlyTrend={monthlyTrend.data}
+        monthlyTrendError={monthlyTrend.error}
         onAppPageChange={setAppPage}
         onAppTypeFilterChange={selectAppTypeFilter}
         onScopeChange={selectScope}
         onSelectApp={selectApp}
         scope={scope}
         snapshot={data}
-        trendsError={dailyTrend.error ?? monthlyTrend.error}
-        trendsLoading={
-          !credentialsReady || dailyTrend.isLoading || monthlyTrend.isLoading
-        }
       />
       <BillingAppCostDrawer
         appToken={appToken}
