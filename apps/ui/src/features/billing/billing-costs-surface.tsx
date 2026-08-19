@@ -50,6 +50,7 @@ import {
   resolveBillingAppType,
   type SubscriptionPayment,
 } from "@/features/billing/billing-costs-data";
+import { billingTableBodyState } from "@/features/billing/billing-costs-state";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
@@ -182,13 +183,20 @@ function ErrorTableRow({
 
 function SubscriptionCostTable({
   currency,
+  hasError,
   isLoading,
   payments,
 }: {
   currency: BillingCurrency;
+  hasError: boolean;
   isLoading: boolean;
   payments: SubscriptionPayment[];
 }) {
+  const bodyState = billingTableBodyState({
+    hasError,
+    isLoading,
+    rowCount: payments.length,
+  });
   return (
     <TableLayout className="rounded-r-none rounded-l-lg border-r-0 bg-card">
       <TableLayoutCaption className="h-12 py-0">
@@ -201,13 +209,16 @@ function SubscriptionCostTable({
           <TableHead className="w-1/3">Cost</TableHead>
         </TableLayoutHeadRow>
         <TableLayoutBody>
-          {isLoading ? <LoadingTableRow columns={3} /> : null}
-          {!isLoading && payments.length === 0 ? (
-            <EmptyTableRow columns={3} />
+          {bodyState === "loading" ? <LoadingTableRow columns={3} /> : null}
+          {bodyState === "error" ? (
+            <ErrorTableRow
+              columns={3}
+              message="Subscription costs could not be loaded."
+            />
           ) : null}
-          {isLoading
-            ? null
-            : payments.map((payment) => (
+          {bodyState === "empty" ? <EmptyTableRow columns={3} /> : null}
+          {bodyState === "rows"
+            ? payments.map((payment) => (
                 <TableRow className="h-14" key={payment.ID}>
                   <TableCell className="whitespace-nowrap tabular-nums">
                     {formatBillingDateTime(payment.Time)}
@@ -219,7 +230,8 @@ function SubscriptionCostTable({
                     {formatBillingAmount(payment.Amount, currency)}
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+            : null}
         </TableLayoutBody>
       </TableLayoutContent>
     </TableLayout>
@@ -311,6 +323,11 @@ function ConsumptionCostTable({
   totalCount: number;
   totalPages: number;
 }) {
+  const bodyState = billingTableBodyState({
+    hasError,
+    isLoading,
+    rowCount: rows.length,
+  });
   return (
     <TableLayout className="rounded-r-none rounded-l-lg border-r-0 bg-card">
       <TableLayoutCaption className="h-12 py-0">
@@ -333,7 +350,7 @@ function ConsumptionCostTable({
           <TableHead>Action</TableHead>
         </TableLayoutHeadRow>
         <TableLayoutBody>
-          {isLoading
+          {bodyState === "loading"
             ? CONSUMPTION_ROW_KEYS.map((key) => (
                 <TableRow className="h-14" key={`skeleton-${key}`}>
                   <TableCell colSpan={4}>
@@ -342,18 +359,15 @@ function ConsumptionCostTable({
                 </TableRow>
               ))
             : null}
-          {!isLoading && hasError ? (
+          {bodyState === "error" ? (
             <ErrorTableRow
               columns={4}
               message="Consumption costs could not be loaded."
             />
           ) : null}
-          {!(isLoading || hasError) && rows.length === 0 ? (
-            <EmptyTableRow columns={4} />
-          ) : null}
-          {isLoading || hasError
-            ? null
-            : rows.map((row) => (
+          {bodyState === "empty" ? <EmptyTableRow columns={4} /> : null}
+          {bodyState === "rows"
+            ? rows.map((row) => (
                 <TableRow className="h-14" key={row.key}>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -385,8 +399,9 @@ function ConsumptionCostTable({
                     </AppButton>
                   </TableCell>
                 </TableRow>
-              ))}
-          {!isLoading && rows.length > 0
+              ))
+            : null}
+          {bodyState === "rows"
             ? CONSUMPTION_ROW_KEYS.slice(rows.length).map((key) => (
                 <TableRow
                   aria-hidden
@@ -402,7 +417,12 @@ function ConsumptionCostTable({
       <TableLayoutFooter>
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2">
           <div className="flex items-center gap-1 text-muted-foreground">
-            Total: {isLoading ? <Skeleton className="h-4 w-8" /> : totalCount}
+            Total:{" "}
+            {bodyState === "loading" ? (
+              <Skeleton className="h-4 w-8" />
+            ) : (
+              <span>{bodyState === "error" ? "—" : totalCount}</span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <Pagination
@@ -610,17 +630,22 @@ export function BillingCostsSurface({
                   <div className="flex flex-col gap-4 pb-4">
                     <SubscriptionCostTable
                       currency={currency}
+                      hasError={error != null}
                       isLoading={isLoading}
                       payments={subscriptionPayments}
                     />
 
+                    {/* The PAYG rows join the base snapshot with the
+                        app-overview page, so its loading/empty/error state
+                        must be derived from BOTH requests — the overview
+                        resolving first must never read as "No Data". */}
                     <ConsumptionCostTable
                       appPage={appPage}
                       appTypeFilter={appTypeFilter}
                       appTypeOptions={appTypeOptions}
                       currency={currency}
-                      hasError={appOverviewError != null}
-                      isLoading={isAppOverviewLoading}
+                      hasError={error != null || appOverviewError != null}
+                      isLoading={isLoading || isAppOverviewLoading}
                       onAppPageChange={onAppPageChange}
                       onAppTypeFilterChange={onAppTypeFilterChange}
                       onSelectRow={selectApp}
