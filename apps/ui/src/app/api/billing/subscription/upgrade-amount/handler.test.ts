@@ -92,7 +92,11 @@ test("upgrade amount route preserves only validated pending subscription upgrade
   });
 });
 
-test("upgrade amount route preserves validated pending upgrade pricing details", async () => {
+// Mirrors the 409 body account-service actually builds (sealos
+// service/account/api/workspace_subscription.go): `original_plan.period` reads
+// the `old_period` invoice metadata that is never written, so production always
+// sends "" there — the shape the legacy hand-written fixture never exercised.
+test("upgrade amount route recovers the production 409 body and strips original_plan", async () => {
   const requestAccountService = createAccountServiceClient({
     config: {
       baseUrl: "https://account-api.example.test",
@@ -102,24 +106,26 @@ test("upgrade amount route preserves validated pending upgrade pricing details",
       Promise.resolve(
         Response.json(
           {
-            error: "An unpaid upgrade already exists.",
+            code: 409,
+            error:
+              "There is already an unpaid upgrade in progress to plan Team. Please complete the payment before requesting a new upgrade.",
             pending_upgrade: {
               amount_due: 7_500_000,
               created_at: 1_753_600_000,
               currency: "usd",
-              discount_amount: 1_500_000,
-              has_discount: true,
+              discount_amount: 0,
+              has_discount: false,
               invoice_id: "invoice-1",
-              original_amount: 9_000_000,
+              original_amount: 6_000_000,
               original_plan: {
-                period: "1m",
-                plan_name: "Pro",
+                period: "",
+                plan_name: "Hobby",
                 price: 6_000_000,
               },
               payment_id: "payment-1",
               payment_url: "https://checkout.stripe.test/invoice-1",
               plan_name: "Team",
-              promotion_code: "SAVE20",
+              promotion_code: "",
               status: "open",
               total_amount: 7_500_000,
             },
@@ -135,27 +141,74 @@ test("upgrade amount route preserves validated pending upgrade pricing details",
 
   const response = await handler(upgradeAmountRequest());
 
+  assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), {
     error: "An unpaid subscription upgrade already exists.",
     pending_upgrade: {
       amount_due: 7_500_000,
       created_at: 1_753_600_000,
       currency: "usd",
-      discount_amount: 1_500_000,
-      has_discount: true,
+      discount_amount: 0,
+      has_discount: false,
       invoice_id: "invoice-1",
-      original_amount: 9_000_000,
-      original_plan: {
-        period: "1m",
-        plan_name: "Pro",
-        price: 6_000_000,
-      },
+      original_amount: 6_000_000,
       payment_id: "payment-1",
       payment_url: "https://checkout.stripe.test/invoice-1",
       plan_name: "Team",
-      promotion_code: "SAVE20",
+      promotion_code: "",
       status: "open",
       total_amount: 7_500_000,
+    },
+  });
+});
+
+test("upgrade amount route tolerates an empty plan name from legacy invoice metadata", async () => {
+  const requestAccountService = createAccountServiceClient({
+    config: {
+      baseUrl: "https://account-api.example.test",
+      signingSecret: "signing-secret",
+    },
+    fetch: () =>
+      Promise.resolve(
+        Response.json(
+          {
+            code: 409,
+            error:
+              "There is already an unpaid upgrade in progress to plan . Please complete the payment before requesting a new upgrade.",
+            pending_upgrade: {
+              amount_due: 7_500_000,
+              created_at: 1_753_600_000,
+              currency: "usd",
+              invoice_id: "invoice-1",
+              payment_id: "payment-1",
+              payment_url: "https://checkout.stripe.test/invoice-1",
+              plan_name: "",
+              status: "open",
+            },
+          },
+          { status: 409 }
+        )
+      ),
+  });
+  const handler = createBillingSubscriptionUpgradeAmountHandler({
+    authorizeWorkspaceActor: () => Promise.resolve(VERIFIED_ACTOR),
+    requestAccountService,
+  });
+
+  const response = await handler(upgradeAmountRequest());
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: "An unpaid subscription upgrade already exists.",
+    pending_upgrade: {
+      amount_due: 7_500_000,
+      created_at: 1_753_600_000,
+      currency: "usd",
+      invoice_id: "invoice-1",
+      payment_id: "payment-1",
+      payment_url: "https://checkout.stripe.test/invoice-1",
+      plan_name: "",
+      status: "open",
     },
   });
 });

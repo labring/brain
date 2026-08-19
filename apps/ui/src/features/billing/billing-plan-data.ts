@@ -702,11 +702,6 @@ export interface PendingSubscriptionUpgrade {
   hasDiscount?: boolean;
   invoiceId: string;
   originalAmountMicroUnits?: number;
-  originalPlan?: {
-    period: string;
-    planName: string;
-    priceMicroUnits: number;
-  };
   paymentId: string;
   paymentUrl: string;
   planName: string;
@@ -760,15 +755,6 @@ function pendingSubscriptionUpgradeFromPayload(
     ...(payload.original_amount == null
       ? {}
       : { originalAmountMicroUnits: payload.original_amount }),
-    ...(payload.original_plan == null
-      ? {}
-      : {
-          originalPlan: {
-            period: payload.original_plan.period,
-            planName: payload.original_plan.plan_name,
-            priceMicroUnits: payload.original_plan.price,
-          },
-        }),
     paymentId: payload.payment_id,
     paymentUrl: payload.payment_url,
     planName: payload.plan_name,
