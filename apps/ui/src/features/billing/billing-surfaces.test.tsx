@@ -653,7 +653,7 @@ test("Costs preserves Cost Center's detail and trend information layers", async 
     "Last 7 days",
     "Monthly Top-ups and Charges",
     "Last 6 Months",
-    "All Regions",
+    "Current Region",
   ]);
 });
 

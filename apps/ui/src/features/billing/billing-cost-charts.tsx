@@ -361,7 +361,7 @@ export function BillingCostCharts({
       </ChartCard>
 
       <ChartCard
-        subtitles={["Last 6 Months", "All Regions"]}
+        subtitles={["Last 6 Months", "Current Region"]}
         title="Monthly Top-ups and Charges"
       >
         <ChartBody error={error} isLoading={isLoading}>
