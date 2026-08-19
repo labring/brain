@@ -235,9 +235,16 @@ export function BillingAppCostDrawer({
         page,
         pageSize: PAGE_SIZE,
       }),
-    { revalidateOnFocus: false, shouldRetryOnError: false }
+    {
+      keepPreviousData: true,
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    }
   );
-  const tableRows = groupRowsByDay(rowsFromCosts(data?.costs ?? []));
+  // On failure SWR still exposes the previous key's kept data; the error is
+  // authoritative — never render another page's rows or totals as this one's.
+  const costsPage = error == null ? data : undefined;
+  const tableRows = groupRowsByDay(rowsFromCosts(costsPage?.costs ?? []));
   const showSkeleton = isLoading || !credentialsReady;
 
   const applyDrawerRange = (range: { from: Date; to: Date }) => {
@@ -410,14 +417,14 @@ export function BillingAppCostDrawer({
                   {showSkeleton ? (
                     <Skeleton className="h-4 w-8" />
                   ) : (
-                    (data?.totalRecords ?? 0)
+                    (costsPage?.totalRecords ?? 0)
                   )}
                 </div>
                 <div className="flex items-center gap-3">
                   <Pagination
                     currentPage={page}
                     onPageChange={setPage}
-                    totalPages={data?.totalPages ?? 1}
+                    totalPages={costsPage?.totalPages ?? 1}
                   />
                   <span>
                     {PAGE_SIZE}
