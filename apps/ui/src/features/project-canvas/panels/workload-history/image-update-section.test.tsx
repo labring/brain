@@ -11,8 +11,8 @@ const KEEP_TARGET_RE = /Keep my target/;
 const USE_LATEST_RE = /Use latest/;
 const UPDATE_DISABLED_RE = /disabled=""[^>]*aria-label="Update AP image"/;
 const INPUT_DISABLED_RE = /disabled=""[^>]*aria-label="AP image"/;
-const OBSERVED_IMAGE_RE = /ghcr\.io\/acme\/api:2\.0\.0/;
-const TARGET_IMAGE_RE = /ghcr\.io\/acme\/api:1\.1\.0/;
+const OBSERVED_IMAGE = "ghcr.io/acme/api:2.0.0";
+const TARGET_IMAGE = "ghcr.io/acme/api:1.1.0";
 
 const noop = () => {
   /* static render */
@@ -65,8 +65,8 @@ test("image update section presents the divergence two-way choice inline", () =>
   assert.match(html, DIVERGED_TITLE_RE);
   assert.match(html, KEEP_TARGET_RE);
   assert.match(html, USE_LATEST_RE);
-  assert.match(html, OBSERVED_IMAGE_RE);
-  assert.match(html, TARGET_IMAGE_RE);
+  assert.ok(html.includes(OBSERVED_IMAGE));
+  assert.ok(html.includes(TARGET_IMAGE));
 });
 
 test("image update section locks editing while diverged until the user chooses", () => {

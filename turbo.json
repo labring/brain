@@ -4,6 +4,7 @@
   "globalEnv": [
     "AI_PROXY_TOKEN_NAME",
     "API_URL",
+    "APP_POSTGRES_SKIP_MIGRATIONS",
     "APP_URL",
     "AP_USER_DOMAIN",
     "AP_USER_DOMAIN_TLS_SECRET_NAME",
