@@ -1,4 +1,11 @@
 import { Quantity } from "@workspace/shared";
+import type { ApEnvRawSourceDiagnosticType } from "@/features/resource-settings/ap/lib/ap-env-raw-source";
+import {
+  dockerEnvCanonicalRawSource,
+  dockerEnvRawDiagnostics,
+  dockerEnvRowsForSave,
+  dockerEnvRowViews,
+} from "./docker-env-raw";
 
 export const DEFAULT_DOCKER_APP_LISTENING_PORT = 80;
 export const DEFAULT_DOCKER_IMAGE = "nginx";
@@ -23,7 +30,10 @@ export interface DockerDeploymentSettings {
   args?: string[];
   command?: string[];
   configMaps?: DockerDeploymentConfigMap[];
+  /** Derived from `envRawSource` on save; kept for consumers and legacy snapshots. */
   env: DockerDeploymentEnvVar[];
+  /** Canonical AP Environment Raw Source; `env` rows are a view over it. */
+  envRawSource?: string;
   image: string;
   storage?: DockerDeploymentStorageMount[];
 }
@@ -41,15 +51,19 @@ export type DockerDeploymentValidationErrorType =
   | "empty-image"
   | "invalid-config-map-path"
   | "invalid-env-name"
+  | "invalid-env-syntax"
   | "invalid-image"
   | "invalid-port"
   | "invalid-storage-path"
   | "invalid-storage-size"
-  | "missing-env-name";
+  | "missing-env-name"
+  | "unsupported-env-reference";
 
 export interface DockerDeploymentValidationError {
   field: DockerDeploymentValidationField;
   index?: number;
+  /** 1-indexed raw source line, for env errors mapped from raw diagnostics. */
+  line?: number;
   message: string;
   type: DockerDeploymentValidationErrorType;
 }
@@ -60,13 +74,8 @@ export interface DockerDeploymentValidationResult {
 }
 
 const IMAGE_WHITESPACE_RE = /\s/;
-const K8S_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const STORAGE_MIN_SIZE = Quantity.parse("0.1Gi");
 const STORAGE_MAX_SIZE = Quantity.parse("100Gi");
-
-function isKubernetesEnvName(name: string): boolean {
-  return K8S_ENV_NAME_RE.test(name);
-}
 
 function validateImage(image: string): DockerDeploymentValidationError | null {
   const trimmed = image.trim();
@@ -104,46 +113,40 @@ function validateAppListeningPort(
   return null;
 }
 
-function validateEnv(
-  rows: readonly DockerDeploymentEnvVar[]
+const ENV_ERROR_TYPE_BY_DIAGNOSTIC: Record<
+  ApEnvRawSourceDiagnosticType,
+  DockerDeploymentValidationErrorType
+> = {
+  "duplicate-name": "duplicate-env-name",
+  "invalid-name": "invalid-env-name",
+  "missing-name": "missing-env-name",
+  "runtime-compile": "invalid-env-syntax",
+  syntax: "invalid-env-syntax",
+  "unresolved-reference": "unsupported-env-reference",
+};
+
+/**
+ * Env validation runs on the canonical raw source (the single rule set shared
+ * with AP Settings), not on the derived rows. Errors carry the raw source
+ * line, plus the list-view row index when the line renders as a row.
+ */
+function validateEnvRawSource(
+  settings: Pick<DockerDeploymentSettings, "env" | "envRawSource">
 ): DockerDeploymentValidationError[] {
-  const errors: DockerDeploymentValidationError[] = [];
-  const firstIndexByName = new Map<string, number>();
-
-  rows.forEach((row, index) => {
-    const name = row.name.trim();
-    if (name === "") {
-      errors.push({
-        field: "env",
-        index,
-        message: "Environment variable name is required.",
-        type: "missing-env-name",
-      });
-      return;
-    }
-    if (!isKubernetesEnvName(name)) {
-      errors.push({
-        field: "env",
-        index,
-        message:
-          "Use letters, digits, underscores, dots, or hyphens; do not start with a digit.",
-        type: "invalid-env-name",
-      });
-      return;
-    }
-    if (firstIndexByName.has(name)) {
-      errors.push({
-        field: "env",
-        index,
-        message: "Environment variable names must be unique.",
-        type: "duplicate-env-name",
-      });
-      return;
-    }
-    firstIndexByName.set(name, index);
+  const rawSource = dockerEnvCanonicalRawSource(settings);
+  const indexByLine = new Map(
+    dockerEnvRowViews(rawSource).map((view, index) => [view.line, index])
+  );
+  return dockerEnvRawDiagnostics(rawSource).map((diagnostic) => {
+    const index = indexByLine.get(diagnostic.line);
+    return {
+      field: "env",
+      ...(index === undefined ? {} : { index }),
+      line: diagnostic.line,
+      message: diagnostic.message,
+      type: ENV_ERROR_TYPE_BY_DIAGNOSTIC[diagnostic.type],
+    };
   });
-
-  return errors;
 }
 
 function validateConfigMaps(
@@ -238,7 +241,7 @@ export function validateDockerDeploymentSettings(
     validateImage(settings.image),
     validateAppListeningPort(settings.appListeningPort),
     ...validateConfigMaps(settings.configMaps ?? []),
-    ...validateEnv(settings.env ?? []),
+    ...validateEnvRawSource(settings),
     ...validateStorage(settings.storage ?? []),
   ].filter((error): error is DockerDeploymentValidationError => error != null);
 
@@ -248,6 +251,7 @@ export function validateDockerDeploymentSettings(
 export function normalizeDockerDeploymentSettings(
   settings: DockerDeploymentSettings
 ): DockerDeploymentSettings {
+  const envRawSource = dockerEnvCanonicalRawSource(settings);
   return {
     appListeningPort: settings.appListeningPort,
     args: (settings.args ?? []).map((value) => value.trim()).filter(Boolean),
@@ -260,10 +264,8 @@ export function normalizeDockerDeploymentSettings(
         value: row.value,
       }))
       .filter((row) => row.path !== ""),
-    env: (settings.env ?? []).map((row) => ({
-      name: row.name.trim(),
-      value: row.value,
-    })),
+    env: dockerEnvRowsForSave(envRawSource),
+    envRawSource,
     image: settings.image.trim(),
     storage: (settings.storage ?? [])
       .map((row) => ({

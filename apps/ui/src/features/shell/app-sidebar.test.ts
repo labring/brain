@@ -28,6 +28,14 @@ const CLOSE_BRAIN_EVENT_RE = /closeDesktopApp/;
 const DESKTOP_RETURN_BEFORE_UPGRADE_RE =
   /data-slot="app-sidebar-bottom-actions"[\s\S]*<AppSidebarDesktopReturn \/>[\s\S]*<AppSidebarUpgrade \/>/;
 const EMBEDDED_WINDOW_CHECK_RE = /window\.(?:self|top)/;
+const BILLING_ENTRY_RE =
+  /aria-label="Billing"[\s\S]*href="\/billing"[\s\S]*<CreditCard/;
+const BILLING_PREFIX_ACTIVE_RE =
+  /billingActive=\{pathname\.startsWith\("\/billing"\)\}/;
+const BILLING_UPGRADE_LINK_RE =
+  /render=\{<Link href="\/billing\?mode=upgrade" \/>\}/;
+const COSTCENTER_DESKTOP_EVENT_RE =
+  /openCostCenterApp|openDesktopApp|runEvents\(/;
 
 test("app sidebar does not reserve space for the Brain v2 logo", () => {
   assert.doesNotMatch(APP_SIDEBAR_SOURCE, BRAIN_V2_ARIA_LABEL_RE);
@@ -63,4 +71,11 @@ test("app sidebar always renders the Desktop return button above Upgrade", () =>
   assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_BUTTON_RE);
   assert.match(APP_SIDEBAR_SOURCE, DESKTOP_RETURN_BEFORE_UPGRADE_RE);
   assert.doesNotMatch(APP_SIDEBAR_SOURCE, EMBEDDED_WINDOW_CHECK_RE);
+});
+
+test("app sidebar owns one prefix-active Billing entry and keeps Upgrade inside Brain", () => {
+  assert.match(APP_SIDEBAR_SOURCE, BILLING_ENTRY_RE);
+  assert.match(APP_SIDEBAR_SOURCE, BILLING_PREFIX_ACTIVE_RE);
+  assert.match(APP_SIDEBAR_SOURCE, BILLING_UPGRADE_LINK_RE);
+  assert.doesNotMatch(APP_SIDEBAR_SOURCE, COSTCENTER_DESKTOP_EVENT_RE);
 });

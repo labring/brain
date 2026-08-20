@@ -40,8 +40,8 @@ const COMING_UP_TONES: ReadonlySet<string> = new Set([
 
 /**
  * State gates for container quick actions. Observation surfaces (logs,
- * metrics, events, deployments) keep their historical value in every state and
- * are never gated here; only the terminal needs a live pod.
+ * metrics, events, image versions) keep their historical value in every state
+ * and are never gated here; only the terminal needs a live pod.
  */
 export function containerNodeQuickActionAvailability(
   tone: ContainerNodeStatusTone | string | undefined

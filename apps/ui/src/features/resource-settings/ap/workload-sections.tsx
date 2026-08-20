@@ -8,7 +8,7 @@ import { ResourceSettingsDraftFooter } from "@workspace/ui/components/resource-s
 import { Textarea } from "@workspace/ui/components/textarea";
 import { appFieldFocusClass } from "@workspace/ui/lib/field-state";
 import { cn } from "@workspace/ui/lib/utils";
-import { Plus, Save, SquarePen, Trash2, X } from "lucide-react";
+import { History, Plus, Save, SquarePen, Trash2, X } from "lucide-react";
 import type { ComponentProps } from "react";
 import {
   isStorageShrink,
@@ -30,31 +30,25 @@ export interface ApStorageMount {
 export type ApWorkloadKind = "deployment" | "statefulset";
 
 export function ImageSettingsContent({
-  imageInputId,
   onBlur,
   onChange,
+  onOpenVersions,
   readOnly,
   value,
 }: {
-  imageInputId: string;
   onBlur: () => void;
   onChange: (image: string) => void;
+  onOpenVersions?: () => void;
   readOnly: boolean;
   value: string;
 }) {
   const shownImage = value.trim() === "" ? "No image configured" : value;
 
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <Label
-        className="text-foreground text-sm leading-none"
-        htmlFor={imageInputId}
-      >
-        Image
-      </Label>
+    <div className="flex min-w-0 items-center gap-2">
       {readOnly ? (
         <div
-          className="flex h-9 min-w-0 items-center overflow-hidden rounded-md border border-input bg-transparent px-3 py-2 text-muted-foreground text-sm leading-5"
+          className="flex h-9 min-w-0 flex-1 items-center overflow-hidden rounded-md border border-input bg-transparent px-3 py-2 text-muted-foreground text-sm leading-5"
           title={shownImage}
         >
           <span className="min-w-0 truncate">{shownImage}</span>
@@ -62,13 +56,24 @@ export function ImageSettingsContent({
       ) : (
         <AppInput
           aria-label="AP image"
-          id={imageInputId}
+          className="min-w-0 flex-1"
           onBlur={onBlur}
           onChange={(event) => onChange(event.target.value)}
           placeholder="ghcr.io/org/app:1.0.0"
           title={shownImage}
           value={value}
         />
+      )}
+      {onOpenVersions == null ? null : (
+        <AppIconButton
+          aria-label="Open image versions"
+          onClick={onOpenVersions}
+          size="lg"
+          title="Image versions"
+          variant="secondary"
+        >
+          <History aria-hidden />
+        </AppIconButton>
       )}
     </div>
   );

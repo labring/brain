@@ -12,6 +12,7 @@ import { useState } from "react";
 type ReplicaStrategy = "elastic" | "fixed";
 type ScalingTarget = "cpu" | "memory";
 type RuntimeMode = "autoscale" | "manual" | "paused";
+type CostView = "billing" | "trends";
 
 function iconLabel(icon: ReactNode, label: string) {
   return (
@@ -72,11 +73,25 @@ const runtimeOptions = [
   },
 ] as const satisfies readonly SlidingToggleOption<RuntimeMode>[];
 
+const costViewOptions = [
+  {
+    ariaLabel: "Billing details",
+    label: "Billing",
+    value: "billing",
+  },
+  {
+    ariaLabel: "Cost and top-up trends",
+    label: "Cost & Top-up Trends",
+    value: "trends",
+  },
+] as const satisfies readonly SlidingToggleOption<CostView>[];
+
 export default function SlidingTogglePreview() {
   const [replicaStrategy, setReplicaStrategy] =
     useState<ReplicaStrategy>("fixed");
   const [scalingTarget, setScalingTarget] = useState<ScalingTarget>("cpu");
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("manual");
+  const [costView, setCostView] = useState<CostView>("billing");
 
   return (
     <PreviewWrapper className="lg:grid-cols-1">
@@ -99,6 +114,22 @@ export default function SlidingTogglePreview() {
             options={targetOptions}
             size="sm"
             value={scalingTarget}
+            width="auto"
+          />
+        </div>
+      </Preview>
+
+      <Preview title="Fit-width segments">
+        <div className="w-full max-w-xl rounded-lg bg-white/5 p-3">
+          <SlidingToggle
+            ariaLabel="Cost views"
+            className="w-fit border border-border bg-transparent"
+            indicatorClassName="rounded-[calc(var(--radius-lg)-1px)]"
+            itemClassName="!px-4"
+            onValueChange={setCostView}
+            options={costViewOptions}
+            segments="fit"
+            value={costView}
             width="auto"
           />
         </div>

@@ -3,6 +3,10 @@
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInput } from "@workspace/ui/components/app-input";
+import {
+  SlidingToggle,
+  type SlidingToggleOption,
+} from "@workspace/ui/components/sliding-toggle";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { appFieldFocusClass } from "@workspace/ui/lib/field-state";
@@ -14,9 +18,9 @@ import {
   Plus,
   Rocket,
   ScrollText,
-  Settings2,
   TerminalSquare,
   Trash2,
+  Variable,
 } from "lucide-react";
 import type {
   ComponentProps,
@@ -31,28 +35,33 @@ import {
   useMemo,
   useState,
 } from "react";
+import { EnvRawSourceEditor } from "@/features/resource-settings/ap/env-raw-source-editor";
 import { StorageSizeInput } from "@/lib/storage-size-input";
 import { DeploymentSettings } from "./deployment-settings";
 import {
   DEFAULT_DOCKER_APP_LISTENING_PORT,
   DEFAULT_DOCKER_IMAGE,
   type DockerDeploymentConfigMap,
-  type DockerDeploymentEnvVar,
   type DockerDeploymentSettings,
   type DockerDeploymentStorageMount,
   type DockerDeploymentValidationError,
   normalizeDockerDeploymentSettings,
   validateDockerDeploymentSettings,
 } from "./docker-deployment-settings";
+import {
+  appendDockerEnvRow,
+  type DockerEnvRowView,
+  dockerEnvCanonicalRawSource,
+  dockerEnvRawDiagnostics,
+  dockerEnvRowViews,
+  patchDockerEnvRow,
+  removeDockerEnvRow,
+} from "./docker-env-raw";
 
 export type {
   DockerDeploymentEnvVar,
   DockerDeploymentSettings,
 } from "./docker-deployment-settings";
-
-interface DockerDeploymentEnvRowState extends DockerDeploymentEnvVar {
-  id: string;
-}
 
 interface DockerDeploymentConfigMapRowState extends DockerDeploymentConfigMap {
   id: string;
@@ -62,14 +71,8 @@ interface DockerDeploymentStorageRowState extends DockerDeploymentStorageMount {
   id: string;
 }
 
-let envRowIdSequence = 0;
 let configMapRowIdSequence = 0;
 let storageRowIdSequence = 0;
-
-function createEnvRowId(): string {
-  envRowIdSequence += 1;
-  return `docker-env-${envRowIdSequence}`;
-}
 
 function createConfigMapRowId(): string {
   configMapRowIdSequence += 1;
@@ -81,7 +84,14 @@ function createStorageRowId(): string {
   return `docker-storage-${storageRowIdSequence}`;
 }
 
-function nextEnvName(rows: readonly DockerDeploymentEnvRowState[]): string {
+type DockerEnvEditorMode = "list" | "raw";
+
+const ENV_EDITOR_MODE_OPTIONS = [
+  { ariaLabel: "List environment editor", label: "List", value: "list" },
+  { ariaLabel: "Raw environment editor", label: "Raw", value: "raw" },
+] as const satisfies readonly SlidingToggleOption<DockerEnvEditorMode>[];
+
+function nextEnvName(rows: readonly DockerEnvRowView[]): string {
   const used = new Set(rows.map((row) => row.name.trim()).filter(Boolean));
   if (!used.has("NEW_VARIABLE")) {
     return "NEW_VARIABLE";
@@ -134,23 +144,32 @@ function AppTextarea({ className, ...props }: ComponentProps<typeof Textarea>) {
 }
 
 interface DockerDeployerContextValue {
+  addEnvRow: () => void;
   appListeningPort: string;
   argsText: string;
   busy: boolean;
   canDeploy: boolean;
   commandText: string;
   configMapRows: DockerDeploymentConfigMapRowState[];
-  envRows: DockerDeploymentEnvRowState[];
+  envEditorMode: DockerEnvEditorMode;
+  envRawSource: string;
+  envRowViews: DockerEnvRowView[];
   image: string;
+  patchEnvRow: (
+    line: number,
+    patch: Partial<Pick<DockerEnvRowView, "name" | "value">>
+  ) => void;
   portError: DockerDeploymentValidationError | undefined;
+  removeEnvRow: (line: number) => void;
   requestDeploy: () => Promise<void>;
+  requestEnvEditorMode: (mode: DockerEnvEditorMode) => void;
   setAppListeningPort: Dispatch<SetStateAction<string>>;
   setArgsText: Dispatch<SetStateAction<string>>;
   setCommandText: Dispatch<SetStateAction<string>>;
   setConfigMapRows: Dispatch<
     SetStateAction<DockerDeploymentConfigMapRowState[]>
   >;
-  setEnvRows: Dispatch<SetStateAction<DockerDeploymentEnvRowState[]>>;
+  setEnvRawSource: (source: string) => void;
   setImage: Dispatch<SetStateAction<string>>;
   setImageTouched: Dispatch<SetStateAction<boolean>>;
   setStorageRows: Dispatch<SetStateAction<DockerDeploymentStorageRowState[]>>;
@@ -205,12 +224,23 @@ function DockerDeployerRoot({
         id: createConfigMapRowId(),
       })) ?? []
   );
-  const [envRows, setEnvRows] = useState<DockerDeploymentEnvRowState[]>(
-    () =>
-      initialSettings?.env?.map((row) => ({
-        ...row,
-        id: createEnvRowId(),
-      })) ?? []
+  const [envRawSource, setEnvRawSource] = useState(() =>
+    dockerEnvCanonicalRawSource({
+      env: initialSettings?.env,
+      envRawSource: initialSettings?.envRawSource,
+    })
+  );
+  // The list view only opens over a valid raw source; a prefilled source with
+  // errors starts (and stays) in Raw until the errors are fixed.
+  const [envEditorMode, setEnvEditorMode] = useState<DockerEnvEditorMode>(() =>
+    dockerEnvRawDiagnostics(
+      dockerEnvCanonicalRawSource({
+        env: initialSettings?.env,
+        envRawSource: initialSettings?.envRawSource,
+      })
+    ).length === 0
+      ? "list"
+      : "raw"
   );
   const [appListeningPort, setAppListeningPort] = useState(
     String(
@@ -227,6 +257,10 @@ function DockerDeployerRoot({
       })) ?? []
   );
 
+  const envRowViews = useMemo(
+    () => dockerEnvRowViews(envRawSource),
+    [envRawSource]
+  );
   const settings = useMemo<DockerDeploymentSettings>(
     () => ({
       appListeningPort: Number(appListeningPort),
@@ -236,7 +270,8 @@ function DockerDeployerRoot({
         path: row.path,
         value: row.value,
       })),
-      env: envRows.map((row) => ({ name: row.name, value: row.value })),
+      env: envRowViews.map((row) => ({ name: row.name, value: row.value })),
+      envRawSource,
       image,
       storage: storageRows.map((row) => ({ path: row.path, size: row.size })),
     }),
@@ -245,7 +280,8 @@ function DockerDeployerRoot({
       argsText,
       commandText,
       configMapRows,
-      envRows,
+      envRawSource,
+      envRowViews,
       image,
       storageRows,
     ]
@@ -253,6 +289,36 @@ function DockerDeployerRoot({
   const validation = useMemo(
     () => validateDockerDeploymentSettings(settings),
     [settings]
+  );
+  const envHasErrors = useMemo(
+    () => validation.errors.some((error) => error.field === "env"),
+    [validation]
+  );
+  const addEnvRow = useCallback(() => {
+    setEnvRawSource((source) =>
+      appendDockerEnvRow(source, nextEnvName(dockerEnvRowViews(source)))
+    );
+  }, []);
+  const patchEnvRow = useCallback(
+    (
+      line: number,
+      patch: Partial<Pick<DockerEnvRowView, "name" | "value">>
+    ) => {
+      setEnvRawSource((source) => patchDockerEnvRow(source, line, patch));
+    },
+    []
+  );
+  const removeEnvRow = useCallback((line: number) => {
+    setEnvRawSource((source) => removeDockerEnvRow(source, line));
+  }, []);
+  const requestEnvEditorMode = useCallback(
+    (mode: DockerEnvEditorMode) => {
+      if (mode === "list" && envHasErrors) {
+        return;
+      }
+      setEnvEditorMode(mode);
+    },
+    [envHasErrors]
   );
   const imageError = validation.errors.find((error) => error.field === "image");
   const visibleImageError =
@@ -270,21 +336,27 @@ function DockerDeployerRoot({
 
   const value = useMemo<DockerDeployerContextValue>(
     () => ({
+      addEnvRow,
       appListeningPort,
       argsText,
       busy,
       canDeploy,
       commandText,
       configMapRows,
-      envRows,
+      envEditorMode,
+      envRawSource,
+      envRowViews,
       image,
+      patchEnvRow,
       portError,
+      removeEnvRow,
       requestDeploy,
+      requestEnvEditorMode,
       setAppListeningPort,
       setArgsText,
       setCommandText,
       setConfigMapRows,
-      setEnvRows,
+      setEnvRawSource,
       setImage,
       setImageTouched,
       setStorageRows,
@@ -293,16 +365,22 @@ function DockerDeployerRoot({
       visibleImageError,
     }),
     [
+      addEnvRow,
       appListeningPort,
       argsText,
       busy,
       canDeploy,
       commandText,
       configMapRows,
-      envRows,
+      envEditorMode,
+      envRawSource,
+      envRowViews,
       image,
+      patchEnvRow,
       portError,
+      removeEnvRow,
       requestDeploy,
+      requestEnvEditorMode,
       storageRows,
       validation,
       visibleImageError,
@@ -325,19 +403,25 @@ function DockerDeployerFields({
   className?: string;
 }) {
   const {
+    addEnvRow,
     appListeningPort,
     argsText,
     busy,
     commandText,
     configMapRows,
-    envRows,
+    envEditorMode,
+    envRawSource,
+    envRowViews,
     image,
+    patchEnvRow,
     portError,
+    removeEnvRow,
+    requestEnvEditorMode,
     setAppListeningPort,
     setArgsText,
     setCommandText,
     setConfigMapRows,
-    setEnvRows,
+    setEnvRawSource,
     setImage,
     setImageTouched,
     setStorageRows,
@@ -345,6 +429,21 @@ function DockerDeployerFields({
     validation,
     visibleImageError,
   } = useDockerDeployer();
+  const envDiagnostics = useMemo(
+    () => dockerEnvRawDiagnostics(envRawSource),
+    [envRawSource]
+  );
+  // Locked to Raw while the source has errors: the List option is disabled
+  // (mirroring AP Settings), and `requestEnvEditorMode` guards as backstop.
+  const envEditorModeOptions = useMemo(
+    () =>
+      ENV_EDITOR_MODE_OPTIONS.map((option) =>
+        option.value === "list"
+          ? { ...option, disabled: envDiagnostics.length > 0 }
+          : option
+      ),
+    [envDiagnostics]
+  );
 
   return (
     <div
@@ -417,84 +516,96 @@ function DockerDeployerFields({
 
       <DeploymentSettings.Section
         action={
-          <AppButton
-            aria-label="Add environment variable"
-            disabled={busy}
-            onClick={() =>
-              setEnvRows((rows) => [
-                ...rows,
-                {
-                  id: createEnvRowId(),
-                  name: nextEnvName(rows),
-                  value: "",
-                },
-              ])
-            }
-            size="default"
-            type="button"
-            variant="secondary"
-          >
-            <Plus aria-hidden />
-            Add
-          </AppButton>
+          <>
+            {/* The toggle appears once there is content to toggle between; the
+                Raw-mode clause keeps it in place while the editor is emptied. */}
+            {envEditorMode === "raw" || envRawSource.trim() !== "" ? (
+              <SlidingToggle
+                ariaLabel="Environment editor mode"
+                disabled={busy}
+                onValueChange={requestEnvEditorMode}
+                options={envEditorModeOptions}
+                size="default"
+                value={envEditorMode}
+                width="auto"
+              />
+            ) : null}
+            <AppButton
+              aria-label="Add environment variable"
+              disabled={busy}
+              onClick={addEnvRow}
+              size="default"
+              type="button"
+              variant="secondary"
+            >
+              <Plus aria-hidden />
+              Add
+            </AppButton>
+          </>
         }
-        description="Set direct environment variables for startup."
-        icon={<Settings2 aria-hidden className="size-4" />}
-        title="Runtime"
+        description="Passed to the container process at startup."
+        icon={<Variable aria-hidden className="size-4" />}
+        title="Environment Variables"
       >
-        {envRows.length === 0 ? null : (
+        {envEditorMode === "raw" ? (
+          <div
+            className="flex min-w-0 flex-col gap-2"
+            data-slot="docker-env-raw"
+          >
+            <EnvRawSourceEditor
+              diagnostic={envDiagnostics[0]}
+              onChange={setEnvRawSource}
+              readOnly={busy}
+              value={envRawSource}
+            />
+            {envDiagnostics.length > 0 ? (
+              <p className="text-muted-foreground text-xs leading-4">
+                Fix the errors above to switch back to the list view.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {envEditorMode === "list" && envRowViews.length > 0 ? (
           <div
             className="flex min-w-0 flex-col gap-2"
             data-slot="docker-env-rows"
           >
-            {envRows.map((row, index) => {
+            {envRowViews.map((row, index) => {
               const rowError = envErrorForIndex(validation, index);
               return (
                 <div
                   className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.25rem] gap-2.5"
-                  key={row.id}
+                  // Line keys keep input focus stable: a row edit reparses the
+                  // raw source but the row keeps its line.
+                  key={row.line}
                 >
                   <AppInput
                     aria-invalid={rowError ? true : undefined}
                     aria-label={`Environment variable ${index + 1} name`}
                     disabled={busy}
-                    onChange={(event) => {
-                      const nextName = event.currentTarget.value;
-                      setEnvRows((rows) =>
-                        rows.map((current, rowIndex) =>
-                          rowIndex === index
-                            ? { ...current, name: nextName }
-                            : current
-                        )
-                      );
-                    }}
+                    onChange={(event) =>
+                      patchEnvRow(row.line, {
+                        name: event.currentTarget.value,
+                      })
+                    }
                     placeholder="NAME"
                     value={row.name}
                   />
                   <AppInput
                     aria-label={`Environment variable ${index + 1} value`}
                     disabled={busy}
-                    onChange={(event) => {
-                      const nextValue = event.currentTarget.value;
-                      setEnvRows((rows) =>
-                        rows.map((current, rowIndex) =>
-                          rowIndex === index
-                            ? { ...current, value: nextValue }
-                            : current
-                        )
-                      );
-                    }}
+                    onChange={(event) =>
+                      patchEnvRow(row.line, {
+                        value: event.currentTarget.value,
+                      })
+                    }
                     placeholder="value"
                     value={row.value}
                   />
                   <AppIconButton
                     aria-label="Remove environment variable"
                     disabled={busy}
-                    onClick={() =>
-                      setEnvRows((rows) =>
-                        rows.filter((_, rowIndex) => rowIndex !== index)
-                      )
-                    }
+                    onClick={() => removeEnvRow(row.line)}
                     size="lg"
                     type="button"
                     variant="danger"
@@ -510,7 +621,7 @@ function DockerDeployerFields({
               );
             })}
           </div>
-        )}
+        ) : null}
       </DeploymentSettings.Section>
 
       <DeploymentSettings.Section
