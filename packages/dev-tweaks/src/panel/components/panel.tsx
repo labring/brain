@@ -12,6 +12,8 @@ interface PanelProps {
   defaultOpen?: boolean;
   /** Root variant only: fill the parent instead of sizing to content (frame posture). */
   fill?: boolean;
+  /** Root variant only: chrome controls rendered in the title row. */
+  headerActions?: ReactNode;
   inline?: boolean;
   onOpenChange?: (open: boolean) => void;
   /** Root variant only: controlled open state. */
@@ -25,6 +27,7 @@ export function Panel({
   panel,
   defaultOpen = true,
   fill = false,
+  headerActions,
   inline = false,
   onOpenChange,
   open,
@@ -230,6 +233,7 @@ export function Panel({
       <Folder
         defaultOpen={defaultOpen}
         fill={fill}
+        headerActions={headerActions}
         inline={inline}
         isRoot={true}
         onOpenChange={handleOpenChange}

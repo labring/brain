@@ -5,11 +5,15 @@
  */
 
 export type PanelPosture = "float" | "frame";
+/** Header theme toggle choice; null until the user has picked one. */
+export type PanelThemeChoice = "dark" | "light";
 
 export interface PanelUiPrefs {
   /** Bubble drag offset (viewport px), restored across sessions. */
   floatOffset: { x: number; y: number } | null;
   posture: PanelPosture;
+  /** Explicit theme override; null falls back to the mount-time prop. */
+  theme: PanelThemeChoice | null;
 }
 
 const PREFS_KEY = "dev-tweaks.ui.v2";
@@ -17,9 +21,11 @@ const PREFS_KEY = "dev-tweaks.ui.v2";
 export const DEFAULT_PANEL_UI_PREFS: PanelUiPrefs = {
   floatOffset: null,
   posture: "frame",
+  theme: null,
 };
 
 const POSTURES: readonly PanelPosture[] = ["float", "frame"];
+const THEME_CHOICES: readonly PanelThemeChoice[] = ["dark", "light"];
 
 function isOffset(value: unknown): value is { x: number; y: number } {
   if (typeof value !== "object" || value === null) {
@@ -49,6 +55,9 @@ export function loadPanelUiPrefs(): PanelUiPrefs {
       posture: POSTURES.includes(parsed.posture as PanelPosture)
         ? (parsed.posture as PanelPosture)
         : DEFAULT_PANEL_UI_PREFS.posture,
+      theme: THEME_CHOICES.includes(parsed.theme as PanelThemeChoice)
+        ? (parsed.theme as PanelThemeChoice)
+        : null,
     };
   } catch {
     return DEFAULT_PANEL_UI_PREFS;

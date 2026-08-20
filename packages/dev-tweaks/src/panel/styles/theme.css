@@ -268,6 +268,51 @@
   opacity: 0.6;
 }
 
+/* Header chrome controls (theme / posture / close) in the title row */
+.dev-tweaks-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  align-items: center;
+}
+
+.dev-tweaks-header-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--dial-text-label);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: var(--dial-radius);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.dev-tweaks-header-button:hover {
+  color: var(--dial-text-focus);
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-header-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.dev-tweaks-header-button:disabled:hover {
+  color: var(--dial-text-label);
+  background: transparent;
+}
+
+.dev-tweaks-header-button svg {
+  width: 15px;
+  height: 15px;
+}
+
 /* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
 .dev-tweaks-panel-icon {
   position: absolute;
@@ -333,12 +378,6 @@
 .dev-tweaks-panel[data-multiple="true"]
   .dev-tweaks-panel-inner:not([data-collapsed="true"]) {
   padding: 0 12px;
-}
-
-.dev-tweaks-panel[data-multiple="true"]
-  .dev-tweaks-panel-inner:not([data-collapsed="true"])
-  .dev-tweaks-panel-icon {
-  top: 14px;
 }
 
 .dev-tweaks-panel[data-multiple="true"]
@@ -2327,7 +2366,7 @@
 
 .dev-tweaks-frame-host {
   --dev-tweaks-frame-gap: 32px;
-  --dev-tweaks-frame-panel-w: 280px;
+  --dev-tweaks-frame-panel-w: 340px;
   --dev-tweaks-frame-ms: 300ms;
   --dev-tweaks-frame-radius: 14px;
   --dev-tweaks-frame-scrim: rgb(0 0 0 / 0.4);
@@ -2400,12 +2439,13 @@
   right: var(--dev-tweaks-frame-gap, 32px);
   bottom: var(--dev-tweaks-frame-gap, 32px);
   left: auto;
-  width: var(--dev-tweaks-frame-panel-w, 280px);
+  width: var(--dev-tweaks-frame-panel-w, 340px);
   max-height: none;
   animation: dev-tweaks-frame-panel-in var(--dev-tweaks-frame-ms, 300ms) ease;
 }
 
 .dev-tweaks-panel[data-posture="frame"] .dev-tweaks-panel-wrapper {
+  width: 100%;
   height: 100%;
 }
 

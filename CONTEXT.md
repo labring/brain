@@ -557,3 +557,23 @@ _Avoid_: raw answer text, display label, derived segment column, business intent
 An internal catalog for reusable UI components in the product design system — not complete product surfaces, panes, or workflows. A Registry Component may carry product vocabulary but must be driven by a host surface and must not own a complete product workflow or settings lifecycle.
 
 _Avoid_: Pane Registry, Flow Registry.
+
+## Dev Tweaks
+
+### Panel Posture
+
+How the open dev tweaks panel occupies the viewport: **float** (a draggable corner card) or **frame** (the page docks as an inset card and the panel fills the freed strip). A user preference remembered across sessions. Not the same axis as Panel Mode.
+
+_Avoid_: panel mode (for float/frame), docked mode.
+
+### Panel Mode
+
+How the dev tweaks panel is mounted by the host: **popover** (a top-layer overlay toggled with a hotkey) or **inline** (rendered in place as ordinary page content, always open, with no posture). A mount-time choice, not a user preference.
+
+_Avoid_: posture (for popover/inline).
+
+### Launcher
+
+The collapsed bubble that stands in for the closed dev tweaks panel in popover mode. It can be pinned always-visible or shown only while some tweak deviates from its default (dirty indicator).
+
+_Avoid_: indicator capsule, FAB.

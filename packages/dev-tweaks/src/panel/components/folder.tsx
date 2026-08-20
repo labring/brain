@@ -7,6 +7,8 @@ interface FolderProps {
   defaultOpen?: boolean;
   /** Root folder only: fill the parent instead of sizing to content (frame posture). */
   fill?: boolean;
+  /** Root folder only: chrome controls rendered in the title row while open. */
+  headerActions?: ReactNode;
   inline?: boolean;
   isRoot?: boolean;
   onOpenChange?: (isOpen: boolean) => void;
@@ -23,6 +25,7 @@ export function Folder({
   children,
   defaultOpen = true,
   fill = false,
+  headerActions,
   isRoot = false,
   inline = false,
   onOpenChange,
@@ -104,7 +107,7 @@ export function Folder({
               <span className="dev-tweaks-folder-title">{title}</span>
             </div>
           )}
-          {isRoot && !inline && (
+          {isRoot && !inline && !isOpen && (
             <svg
               aria-hidden="true"
               className="dev-tweaks-panel-icon"
@@ -124,6 +127,17 @@ export function Folder({
                 />
               ))}
             </svg>
+          )}
+          {isRoot && isOpen && headerActions && (
+            // biome-ignore lint/a11y/noStaticElementInteractions: click handler only stops propagation to the folder header; not an interactive control
+            // biome-ignore lint/a11y/noNoninteractiveElementInteractions: click handler only stops propagation to the folder header; not an interactive control
+            // biome-ignore lint/a11y/useKeyWithClickEvents: click handler only stops propagation to the folder header; not an interactive control
+            <div
+              className="dev-tweaks-header-actions"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {headerActions}
+            </div>
           )}
           {!isRoot && (
             <motion.svg

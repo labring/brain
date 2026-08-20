@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useFrameMode } from "../frame-mode";
+import { ICON_CLOSE, ICON_MOON, ICON_SUN } from "../icons";
 import {
   blockPanelDragClick,
   getPanelDragHandle,
@@ -24,6 +25,7 @@ import {
   DEFAULT_PANEL_UI_PREFS,
   loadPanelUiPrefs,
   type PanelPosture,
+  type PanelThemeChoice,
   savePanelUiPrefs,
 } from "../ui-prefs";
 import { useMediaQuery } from "../use-media-query";
@@ -55,7 +57,7 @@ interface DevTweaksRootProps {
 /** Card inset on every side in frame posture, px. */
 const FRAME_GAP = 32;
 /** Width of the docked panel strip the card makes room for, px. */
-const FRAME_PANEL_W = 280;
+const FRAME_PANEL_W = 340;
 const FRAME_OPEN_MS = 300;
 const FRAME_CLOSE_MS = 225;
 
@@ -130,7 +132,7 @@ export function DevTweaksRoot({
   defaultOpen = true,
   launcher = "always",
   mode = "popover",
-  theme = "system",
+  theme = "dark",
   onOpenChange,
 }: DevTweaksRootProps) {
   const [panels, setPanels] = useState<PanelConfig[]>([]);
@@ -157,13 +159,16 @@ export function DevTweaksRoot({
   }, [applyRootOpen]);
   useToggleHotkey(!inline, toggleRootOpen);
 
-  // Panel chrome prefs (posture + dragged bubble position), localStorage.
+  // Panel chrome prefs (posture + theme choice + dragged bubble position),
+  // localStorage.
   const [posture, setPosture] = useState<PanelPosture>(
     DEFAULT_PANEL_UI_PREFS.posture
   );
+  const [themeChoice, setThemeChoice] = useState<PanelThemeChoice | null>(null);
   const prefsLoadedRef = useRef(false);
   const narrow = useMediaQuery("(max-width: 1023px)");
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const systemDark = useMediaQuery("(prefers-color-scheme: dark)");
 
   // Drag state
   const rootRef = useRef<HTMLDivElement>(null);
@@ -188,6 +193,7 @@ export function DevTweaksRoot({
     const prefs = loadPanelUiPrefs();
     prefsLoadedRef.current = true;
     setPosture(prefs.posture);
+    setThemeChoice(prefs.theme);
     if (prefs.floatOffset) {
       lastDragOffset.current = prefs.floatOffset;
       setDragOffset(prefs.floatOffset);
@@ -202,8 +208,19 @@ export function DevTweaksRoot({
     savePanelUiPrefs({
       floatOffset: dragOffset ?? lastDragOffset.current,
       posture,
+      theme: themeChoice,
     });
-  }, [posture, dragOffset]);
+  }, [posture, themeChoice, dragOffset]);
+
+  // Theme: the prop is only the mount-time default; a header-toggle choice
+  // wins and persists. "system" can only arrive via the prop, so the toggle
+  // resolves it against the media query before flipping to the other side.
+  const effectiveTheme = themeChoice ?? theme;
+  const darkAppearance =
+    effectiveTheme === "dark" || (effectiveTheme === "system" && systemDark);
+  const toggleTheme = useCallback(() => {
+    setThemeChoice(darkAppearance ? "light" : "dark");
+  }, [darkAppearance]);
 
   // Narrow viewports force float; the remembered posture returns with width.
   const effectivePosture: PanelPosture = narrow ? "float" : posture;
@@ -371,6 +388,48 @@ export function DevTweaksRoot({
   const hasMultiplePanels = panels.length > 1;
   const timelineToggle = timelineCount > 0 ? <TimelineToggleButton /> : null;
 
+  // Header chrome controls: theme → posture → close. Posture and close hang
+  // off the popover surface, so inline keeps only the theme toggle.
+  const themeToggleTitle = darkAppearance
+    ? "Switch to light theme"
+    : "Switch to dark theme";
+  const themeToggle = (
+    <button
+      aria-label={themeToggleTitle}
+      className="dev-tweaks-header-button"
+      onClick={toggleTheme}
+      title={themeToggleTitle}
+      type="button"
+    >
+      {darkAppearance ? (
+        <svg
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+        >
+          {ICON_SUN.map((d) => (
+            <path d={d} key={d} />
+          ))}
+        </svg>
+      ) : (
+        <svg
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+        >
+          <path d={ICON_MOON} />
+        </svg>
+      )}
+    </button>
+  );
+
   let postureToggleTitle: string;
   if (narrow) {
     postureToggleTitle = "Docking needs a wider viewport";
@@ -382,7 +441,7 @@ export function DevTweaksRoot({
   const postureToggle = inline ? null : (
     <button
       aria-label={postureToggleTitle}
-      className="dev-tweaks-toolbar-add"
+      className="dev-tweaks-header-button"
       disabled={narrow}
       onClick={() =>
         setPosture((prev) => (prev === "frame" ? "float" : "frame"))
@@ -408,12 +467,36 @@ export function DevTweaksRoot({
       </svg>
     </button>
   );
-  const rootToolbar = (
+
+  const closeButton = inline ? null : (
+    <button
+      aria-label="Close panel"
+      className="dev-tweaks-header-button"
+      onClick={() => applyRootOpen(false)}
+      title="Close (⌃⌥T)"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+        viewBox="0 0 24 24"
+      >
+        <path d={ICON_CLOSE} />
+      </svg>
+    </button>
+  );
+
+  const headerActions = (
     <>
+      {themeToggle}
       {postureToggle}
-      {timelineToggle}
+      {closeButton}
     </>
   );
+  const rootToolbar = timelineToggle;
 
   const controlledOpen = inline ? undefined : rootOpen;
   // Dirty-only launcher: while closed and clean, the chrome disappears
@@ -433,6 +516,7 @@ export function DevTweaksRoot({
         <Folder
           defaultOpen={inline || defaultOpen}
           fill={framed}
+          headerActions={headerActions}
           inline={inline}
           isRoot={true}
           onOpenChange={applyRootOpen}
@@ -451,6 +535,7 @@ export function DevTweaksRoot({
         <Folder
           defaultOpen={inline || defaultOpen}
           fill={framed}
+          headerActions={headerActions}
           inline={inline}
           isRoot={true}
           onOpenChange={applyRootOpen}
@@ -475,6 +560,7 @@ export function DevTweaksRoot({
       <Panel
         defaultOpen={inline || defaultOpen}
         fill={framed}
+        headerActions={headerActions}
         inline={inline}
         key={panel.id}
         onOpenChange={applyRootOpen}
@@ -490,7 +576,7 @@ export function DevTweaksRoot({
       <div
         className="dev-tweaks-root"
         data-mode={mode}
-        data-theme={theme}
+        data-theme={effectiveTheme}
         popover={inline ? undefined : "manual"}
         ref={rootRef}
       >
