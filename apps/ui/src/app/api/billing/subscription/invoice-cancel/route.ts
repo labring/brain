@@ -1,0 +1,13 @@
+import { billingSubscriptionInvoiceCancelRequestSchema } from "@/features/billing/billing-request-schemas";
+import { BILLING_ROUTES } from "@/features/billing/server/billing-route-table";
+import { createBillingRoute } from "@/features/billing/server/create-billing-route";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export const POST = createBillingRoute(
+  BILLING_ROUTES.subscriptionInvoiceCancel,
+  {
+    requestSchema: billingSubscriptionInvoiceCancelRequestSchema,
+  }
+);

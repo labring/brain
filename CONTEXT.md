@@ -556,6 +556,136 @@ stored.
 
 _Avoid_: raw answer text, display label, derived segment column, business intent field.
 
+## Account & Subscription
+
+Account-level money and workspace subscriptions, owned by the platform's account-service and presented read-mostly in the Billing Area. This is a different concept space from Assistant & Billing above: Free Chat Turns are a platform-funded assistant allowance and Chat Billing Mode decides who pays for one assistant turn, while the terms here describe real money and plan commitments. Brain reads and operates on these facts through account-service; it stores no billing state of its own.
+
+### Billing Area
+
+The product area under the `/billing` URL prefix where users manage the current workspace's Workspace Subscription and inspect costs, usage quota, and pricing. It is entered from a single App Sidebar entry and presented as one surface with Plan, Costs, Usage, and Pricing tabs; the Plan view is the area's index and the landing point of a Stripe Checkout Round-Trip.
+
+_Avoid_: cost center, billing app, separate billing pages.
+
+### Billing Region
+
+One entry in the platform's global region catalog served by account-service: a cluster identified durably by an opaque uid and addressably by a unique domain. account-service stores each Workspace Subscription under the workspace plus the Billing Region's domain, so every subscription query and payment action is region-addressed. The catalog's order carries no meaning — no position in it designates any particular region.
+
+_Avoid_: cluster (when the billing catalog entry is meant), zone, first region.
+
+### Current Region
+
+The Billing Region this Brain deployment belongs to. It is a deployment-declared fact — stated by configuration and verified against the region catalog, never inferred from catalog order or guessed. If the declaration is missing or matches no catalog entry, the Billing Area refuses to render rather than show another region's answers: a wrong Current Region silently misprices workspaces as Pay-As-You-Go and directs payments at the wrong region.
+
+_Avoid_: first region, default region, regions[0].
+
+### Account Balance
+
+The user's account-level prepaid funds held by account-service, presented as the net of balance minus accumulated deductions. Account Balance is real money that can offset subscription charges; it is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. It is not a Free Chat Turns count, a quota, or an entitlement counter.
+
+_Avoid_: credits, wallet, free balance, top-up balance.
+
+### Subscription Plan
+
+A platform-defined subscription offering — name, price, cycle, and included resource quotas — served by account-service's plan catalog. Subscription Plans are shared catalog facts; a workspace's committed choice of one is its Workspace Subscription. Chat Billing Mode deliberately avoids the word "plan": Free Chat Turns are not a Subscription Plan benefit.
+
+_Avoid_: tier, package, chat plan, pricing row.
+
+### Plan Picker
+
+The plan selection surface: Subscription Plan cards plus the additional-plans selector, shown identically wherever the user chooses a plan — the Pricing view's plans area and the Plan view's plan-change dialog render the same picker. Choosing an actionable plan hands off to checkout — either the quote or the downgrade confirmation; the picker itself never takes payment. Payment wait is not a third destination: the quote surface enters it in place once the user confirms, keeping the order summary and payment method on screen while the payment settles. On Pricing, the plans area may sit under a multi-option view switcher (for example when metered price table and calculator are available) or be the only Pricing content with no switcher chrome.
+
+_Avoid_: plan catalog, plan list, plan cards section, Subscription plans tab (as the name of the surface).
+
+### Workspace Subscription
+
+The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade, payment-due) and its most recent transaction. Cancelling means the user has cancelled but the paid period still runs; payment-due means the subscription has expired — a failed renewal charge and a cancelled period reaching its end both land here — and the workspace sits suspended under the Deletion Countdown. Payment-due outranks cancelling when both hold. A workspace has at most one; a workspace without one is Pay-As-You-Go. An upstream subscription record in DELETED status is not a Workspace Subscription — the workspace is Pay-As-You-Go and may subscribe anew. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
+
+_Avoid_: account subscription, user subscription, namespace plan, workspace plan record, in debt (as a user-facing label), cancelled (as a lifecycle distinct from cancelling), deleted (as a client lifecycle).
+
+### Pending Subscription Upgrade
+
+An accepted Workspace Subscription upgrade backed by one unpaid invoice. Until the invoice is paid or cancelled, its target plan and checkout are authoritative and prevent creation of another upgrade payment; choosing any other plan routes through recovery — cancel the unpaid invoice, then continue with the newly chosen plan. Continuing payment also requires the upgrade not to be stale (see Stale Pending Upgrade).
+
+_Avoid_: pending upgrade response, pending quote, new checkout.
+
+### Stale Pending Upgrade
+
+A Pending Subscription Upgrade whose target Subscription Plan has left the plan catalog. Its unpaid invoice must not be offered for payment anywhere — cancellation is the only recovery, after which any available plan may be chosen.
+
+_Avoid_: retired-plan upgrade, orphaned upgrade, unavailable pending upgrade.
+
+### Workspace Subscription Renewal
+
+Recovery for a payment-due Workspace Subscription that exits the Deletion Countdown by choosing an available priced Subscription Plan and creating a replacement subscription. It may keep the same paid plan, but an unpriced Free Subscription Plan is not a renewal target.
+
+_Avoid_: Free renewal, direct renewal charge.
+
+### Renewal Time
+
+The scheduled moment a Workspace Subscription's current paid period ends and the next automatic charge occurs — always the current period's end, wherever the label appears. It only exists while a renewal is actually coming: a cancelling subscription has none (its period end is a suspension date, voiced by the Deletion Countdown), and a payment-due subscription's Renewal Time lies in the past — the renewal that never happened. Distinct from Workspace Subscription Renewal, which names the recovery flow for a payment-due subscription, not this scheduled moment.
+
+_Avoid_: expiry time (for the renewal moment), renewal (bare, for this moment), access-expiry timestamps as its source.
+
+### Free Plan Expiry
+
+What a Free Subscription Plan's current period end means: the moment the plan and its capacity end — nothing renews, resets, or is charged then, because the platform constructs every Free subscription as cancel-at-period-end. It is the trial's one meaningful date and surfaces say it in expiry terms ("expires", "ends") wherever a paid plan would speak of renewal or quota reset; a Free subscription therefore has no Renewal Time. The constructed cancellation flag alone cannot identify a cancelled subscription — a Free plan carrying it is a healthy trial (or a paused no-trial Free, which runs no period and has no date), not a cancelling one.
+
+_Avoid_: quota reset (for a Free period end), renewal time (for a Free subscription), cancelled/cancelling (for the constructed flag on Free).
+
+### Deletion Countdown
+
+The platform's fixed grace timeline that starts the moment a Workspace Subscription expires: the workspace is suspended immediately, the warning escalates as the countdown runs, and the workspace's resources are permanently deleted when it ends. Both roads into expiry — failed renewal payment and cancelled-then-lapsed — join the same countdown. The Billing Area surfaces it as a destructive warning carrying the stage's next deadline — the suspension date while a cancelled subscription's paid period still runs, the deletion date once expiry has passed; renewing (or resuming, before expiry) exits the countdown.
+
+_Avoid_: grace period (as the user-facing name), debt period, deletion schedule.
+
+### Pay-As-You-Go (PAYG)
+
+The billing mode of a workspace that has no Workspace Subscription: usage is metered and settled against Account Balance instead of a plan commitment. PAYG is orthogonal to the plan catalog — it is not a Subscription Plan and never appears in one; the platform merely reports it as the workspace's subscription type when no subscription exists. Surfaces that list workspaces rather than plans (such as a workspace subscription overview) may report PAYG as a workspace's billing state — that is reporting the mode, not a catalog entry. A PAYG workspace leaves this mode by subscribing to a plan, which is a new subscription — not an upgrade or a downgrade.
+
+_Avoid_: PAYG plan, pay-as-you-go plan, free mode, plan named "PAYG".
+
+### Account Debt
+
+The state of an Account Balance that has fallen below zero: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing.
+
+_Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due (user-facing), negative balance (as the state's name), arrears.
+
+### Subscription Payment
+
+One recorded charge on the account's payment ledger for workspace subscriptions. Payment history and the Billing Area's income series are Subscription Payment lists filtered to paid records; Brain reads the ledger and never writes it. A Subscription Payment is money movement, distinct from metered Consumption Cost. The ledger is account-global, but every Subscription Payment belongs to exactly one region — the Billing Region of the workspace it paid for; a payment ledger read must attribute before it aggregates.
+
+### Region Cost
+
+The Costs view's headline total, scoped to the Current Region: the region's Consumption Cost plus the Subscription Payments attributed to the region's workspaces. Every number in the Costs view — the total, the workspace breakdown, the subscription list, and the trend's income series — speaks this one scope, and the workspace children sum to the parent. Money belonging to other regions' workspaces is out of this view entirely, never blended into a total its breakdown cannot explain.
+
+_Avoid_: total cost (as an account-global figure on the Costs view), all-region total.
+
+_Avoid_: recharge, top-up, charge record.
+
+### Consumption Cost
+
+The metered cost of resource usage recorded by the platform's billing pipeline, read per workspace, per app, or as a trend series. Consumption Cost is usage-derived spending presented in the Costs view; it is not a Subscription Payment and not a quota.
+
+_Avoid_: recharge history, usage quota, bill (ambiguous).
+
+### AI Credits
+
+The workspace's consumable AI-usage allowance, granted by its Workspace Subscription each billing cycle and burned down as AI calls are charged. Account-service tracks it as money in micro-units and reports a single total/used pair per workspace; users see it at the platform's fixed rate of 1 AI Credit = 0.01 currency units. AI Credits are workspace-scoped and subscription-only — a PAYG workspace has none, its AI usage settles against Account Balance. They are not Account Balance, not Free Chat Turns, and not a quota: a quota is a capacity ceiling that frees up when usage stops, AI Credits are a balance that stays spent.
+
+_Avoid_: AI quota (backend field name, never user-facing), AI balance, credits (unqualified), tokens, points.
+
+### Stripe Checkout Round-Trip
+
+The escape-and-return journey of a subscription payment: Brain leaves the desktop iframe to Stripe-hosted checkout (top-level redirect, or a new tab for upgrades while the original iframe polls the pending transaction) and returns through the desktop's Stripe callback, which routes back into Brain's Billing Area using the originating-app identifier the payment request declared. The return is a trusted redirect parameter, not a payment-status verification.
+
+_Avoid_: payment popup, in-place payment, webhook return.
+
+### Billing Currency
+
+The cluster-level display currency for the Billing Area, delivered server-side per request rather than baked into the client bundle at build time, so per-cluster configuration takes effect at runtime.
+
+_Avoid_: user currency preference, build-time currency.
+
 ## Design System
 
 ### Component Registry
@@ -563,3 +693,9 @@ _Avoid_: raw answer text, display label, derived segment column, business intent
 An internal catalog for reusable UI components in the product design system — not complete product surfaces, panes, or workflows. A Registry Component may carry product vocabulary but must be driven by a host surface and must not own a complete product workflow or settings lifecycle.
 
 _Avoid_: Pane Registry, Flow Registry.
+
+### Canvas Glow
+
+The dark material shared by immersive product surfaces: a near-black canvas base with a soft blue luminous wash floating above the surface's content. A surface or overlay adopts Canvas Glow as its material — "surface" itself always names a place, never a look. Carried by the Billing Area, its app cost drawer, and its plan-change dialog, and by the canvas action surface.
+
+_Avoid_: surface style (when meaning the material), canvas material, glow overlay.

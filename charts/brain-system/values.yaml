@@ -108,10 +108,16 @@ ui:
     - id: pa_uistaging2
       port: 3000
   env:
+    ACCOUNT_API_BASE_URL: ""
     AP_USER_DOMAIN: ""
     AP_USER_DOMAIN_TLS_SECRET_NAME: ""
     API_URL: ""
     APP_URL: ""
+    BILLING_CURRENCY: "usd"
+    BILLING_GPU_ENABLED: "false"
+    # Region domain this deployment belongs to; derived from the platform
+    # cloud domain when left empty.
+    BILLING_LOCAL_REGION_DOMAIN: ""
     GTM_ID: ""
     DATABASE_URL: ""
     # Set to "1" when DATABASE_URL points at a database owned by another

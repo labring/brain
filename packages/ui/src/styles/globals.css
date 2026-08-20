@@ -11,6 +11,9 @@
   --scrollbar-thumb: var(--border);
   --scrollbar-track: transparent;
   --scrollbar-width: 0.5rem;
+  /* Strong ease-out for on-screen UI movement (sliding indicators, panels);
+     same family as --project-surface-motion-ease. */
+  --ease-out-strong: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @theme inline {
@@ -47,6 +50,23 @@
   --color-brand-primary-hover: var(--sealai-brand-primary-hover);
   --color-brand-primary-foreground: var(--sealai-brand-primary-foreground);
   --color-brand-primary: var(--sealai-brand-primary);
+  --color-tier-free-from: var(--sealai-tier-free-from);
+  --color-tier-free-to: var(--sealai-tier-free-to);
+  --color-tier-hobby-from: var(--sealai-tier-hobby-from);
+  --color-tier-hobby-to: var(--sealai-tier-hobby-to);
+  --color-tier-starter-from: var(--sealai-tier-starter-from);
+  --color-tier-starter-to: var(--sealai-tier-starter-to);
+  --color-tier-pro-from: var(--sealai-tier-pro-from);
+  --color-tier-pro-to: var(--sealai-tier-pro-to);
+  --color-tier-enterprise-from: var(--sealai-tier-enterprise-from);
+  --color-tier-enterprise-to: var(--sealai-tier-enterprise-to);
+  --color-tier-team-from: var(--sealai-tier-team-from);
+  --color-tier-team-to: var(--sealai-tier-team-to);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-project-chrome-surface: var(--project-chrome-surface);
   --color-onboarding-heading-accent: var(--onboarding-heading-accent);
   --color-db-access-sticky-header-surface: var(
@@ -100,6 +120,27 @@
   );
   --sealai-brand-primary-hover: var(--color-blue-500);
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
+
+  /** Chart categorical series palette (Brain V2.0 dataviz); theme-invariant. */
+  --chart-1: #49aeff;
+  --chart-2: #00d1b5;
+  --chart-3: var(--color-violet-400);
+  --chart-4: var(--color-amber-500);
+  --chart-5: var(--color-cyan-400);
+
+  /** SealAI plan-tier gradients (Brain V2.0 badge palette). */
+  --sealai-tier-free-from: #d4d4d4;
+  --sealai-tier-free-to: #a1a1a1;
+  --sealai-tier-hobby-from: #e5e476;
+  --sealai-tier-hobby-to: #81cbfc;
+  --sealai-tier-starter-from: #81cbfc;
+  --sealai-tier-starter-to: #519ff5;
+  --sealai-tier-pro-from: #fc81d9;
+  --sealai-tier-pro-to: #519ff5;
+  --sealai-tier-enterprise-from: #fc9581;
+  --sealai-tier-enterprise-to: #5177f5;
+  --sealai-tier-team-from: #9581fc;
+  --sealai-tier-team-to: #5177f5;
 
   /** Canvas component tokens. */
   --color-canvas-surface: var(--color-neutral-950);
@@ -690,5 +731,33 @@
 
   .main-action-surface-body-background {
     background-color: transparent;
+  }
+
+  /* Canvas Glow material (see CONTEXT.md): same canvas base + glow as
+     .main-action-surface-background, but the glow renders above the surface's
+     content: content layers must stay below z-20. */
+  .canvas-glow-overlay {
+    overflow: hidden;
+    background-color: var(--color-canvas-surface);
+    isolation: isolate;
+  }
+
+  .canvas-glow-overlay::after {
+    position: absolute;
+    top: 46%;
+    left: 50%;
+    z-index: 20;
+    width: 110vw;
+    aspect-ratio: 1929 / 1255;
+    pointer-events: none;
+    content: "";
+    background: radial-gradient(
+      ellipse closest-side at center,
+      var(--color-canvas-glow) 0%,
+      transparent 100%
+    );
+    mix-blend-mode: screen;
+    opacity: 0.175;
+    transform: translate(-50%, -50%);
   }
 }

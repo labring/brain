@@ -35,6 +35,7 @@ const MULTI_OPTIONS = [
 ] satisfies readonly AppMultiSelectOption[];
 
 const COMBOBOX_ROLE_RE = /role="combobox"/;
+const TRIGGER_TAG_RE = /<[^>]*data-slot="app-select-trigger"[^>]*>/;
 const MYSQL_RE = /MySQL/;
 const SELECTED_COUNT_RE = /2 selected/;
 const SINGLE_ARIA_RE = /aria-label="Database engine"/;
@@ -71,6 +72,11 @@ test("AppSelect renders the selected option in the trigger", () => {
   assert.match(html, SINGLE_DESCRIPTION_RE);
   assert.match(html, MYSQL_RE);
   assert.match(html, COMBOBOX_ROLE_RE);
+  const triggerTag = html.match(TRIGGER_TAG_RE)?.[0];
+  assert.ok(
+    triggerTag?.includes("text-left"),
+    "trigger should left-align selected text"
+  );
 });
 
 test("AppSelect renders an empty state without a combobox trigger", () => {

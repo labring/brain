@@ -71,6 +71,20 @@ function isGroupDefLike(value: unknown): value is DevTweaksGroupDef {
   );
 }
 
+function shallowEqualValues(
+  a: Readonly<Record<string, DevTweaksValue>> | undefined,
+  b: Readonly<Record<string, DevTweaksValue>>
+): boolean {
+  if (!a) {
+    return false;
+  }
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => a[key] === b[key])
+  );
+}
+
 /** Keeps only override values that a def snapshot can still render. */
 function sanitizeValues(
   def: DevTweaksGroupDef,
@@ -104,6 +118,8 @@ export class DevTweaksStore {
   private activeSnapshotDirty = false;
   private atCounter = 1;
   private readonly drivers: Record<string, DevTweaksDriver>;
+  /** Group keys whose driver is being watched — one subscription per group. */
+  private readonly driverSubscriptions = new Set<string>();
   /** Bumped by requestActiveFocus so the panel can scroll + highlight. */
   private focusActiveCounter = 0;
   private readonly groups = new Map<string, MountedGroup>();
@@ -210,6 +226,7 @@ export class DevTweaksStore {
     }
     this.refreshOverrideSnapshot(key, def);
     this.adoptDriverValues(key, def);
+    this.watchDriver(key, def);
     this.groupsSnapshotDirty = true;
     this.activeSnapshotDirty = true;
     this.notify();
@@ -297,6 +314,66 @@ export class DevTweaksStore {
     }
     this.overrides.set(key, { at, def, values });
     this.persistSession();
+  }
+
+  /**
+   * Re-adopts a watched driver's values after it reports an external change
+   * (e.g. the server rewrote a mock cookie). Unchanged values are a no-op so
+   * the driver's own `persist` echoes never cause render churn.
+   */
+  private refreshFromDriver(key: string): void {
+    const def = this.overrides.get(key)?.def ?? this.groups.get(key)?.def;
+    if (!def) {
+      return;
+    }
+    const driver = this.resolveDriver(def);
+    if (!driver) {
+      return;
+    }
+    const { values } = sanitizeValues(def, driver.load(key));
+    const entry = this.overrides.get(key);
+    if (Object.keys(values).length === 0) {
+      if (!entry) {
+        return;
+      }
+      this.overrides.delete(key);
+    } else {
+      if (shallowEqualValues(entry?.values, values)) {
+        return;
+      }
+      const at: Record<string, number> = {};
+      for (const controlKey of Object.keys(values)) {
+        const existing = entry?.at[controlKey];
+        if (existing === undefined) {
+          at[controlKey] = this.atCounter;
+          this.atCounter += 1;
+        } else {
+          at[controlKey] = existing;
+        }
+      }
+      this.overrides.set(key, { at, def, values });
+    }
+    this.persistSession();
+    this.activeSnapshotDirty = true;
+    this.notify();
+  }
+
+  /**
+   * Starts the driver's external-change watch for a group, once per group
+   * key. Deliberately never unsubscribed: like the sessionStorage layer, a
+   * driver-backed group stays editable from the "Active" section while its
+   * owning component is unmounted, so the watch must outlive the mount.
+   */
+  private watchDriver(key: string, def: DevTweaksGroupDef): void {
+    if (this.driverSubscriptions.has(key) || typeof window === "undefined") {
+      return;
+    }
+    const driver = this.resolveDriver(def);
+    if (!driver?.subscribe) {
+      return;
+    }
+    this.driverSubscriptions.add(key);
+    driver.subscribe(key, () => this.refreshFromDriver(key));
   }
 
   private ensureLoaded(): void {
@@ -445,5 +522,6 @@ export class DevTweaksStore {
       this.atCounter = Math.max(this.atCounter, at[controlKey] + 1);
     }
     this.overrides.set(groupKey, { at, def, values });
+    this.watchDriver(groupKey, def);
   }
 }

@@ -109,6 +109,13 @@ export interface DevTweaksDriver {
     groupKey: string,
     values: Record<string, DevTweaksValue> | null
   ): void;
+  /**
+   * Optional: watch the backing store for changes made behind the panel's
+   * back (e.g. a server response rewriting a mock cookie). Called once per
+   * group; on `onChange` the store re-`load`s and replaces the group's
+   * overrides. Returns an unsubscribe function.
+   */
+  subscribe?(groupKey: string, onChange: () => void): () => void;
 }
 
 /** One override row for the "Active" section, flattened per control. */
