@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import type { DialConfig } from "./vendor/dialkit/store/DialStore";
+import type { DialConfig } from "./dialkit/store/dial-store";
 
 /** CSS custom property (and optional unit) driven by one control key. */
 export interface CssVarBinding {

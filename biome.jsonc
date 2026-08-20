@@ -111,14 +111,6 @@
       "formatter": { "enabled": false },
       "linter": { "enabled": false },
       "assist": { "enabled": false }
-    },
-    {
-      // Vendored DialKit core + React (see packages/dev-tweaks/src/vendor/dialkit/VENDOR.md);
-      // kept as upstream wrote it, so exclude from formatting, linting, and assists.
-      "includes": ["packages/dev-tweaks/src/vendor/**"],
-      "formatter": { "enabled": false },
-      "linter": { "enabled": false },
-      "assist": { "enabled": false }
     }
   ]
 }

@@ -1,19 +1,18 @@
 /**
- * Integration coverage for the vendored DialKit surface through the package
+ * Integration coverage for the DialKit surface through the package
  * entry: hook value resolution, store → hook subscription, DialRoot panel
  * rendering, and the package's own cssVarOverrides bridge.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
+import type { DialConfig } from "./dialkit/store/dial-store";
 import {
   actAndDrain,
   installTestDom,
   restoreActEnvironment,
   setActEnvironment,
 } from "./test/harness";
-import type { DialConfig } from "./vendor/dialkit/store/DialStore";
 
 // DialKit tuples are mutable, so `satisfies` (not `as const`) keeps the
 // config assignable while preserving inference for ResolvedValues.
