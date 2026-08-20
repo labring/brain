@@ -296,8 +296,11 @@ function DialRootImpl({
   }, [inline, dragOffset, position]);
 
   // The whole chrome rides the top layer so frame posture's contained body
-  // cannot trap it.
-  useTopLayer(rootRef, !inline && mounted);
+  // cannot trap it. `hasSurfaces` is part of the switch because the root
+  // renders null until a panel registers — the effect must re-run once the
+  // popover element actually exists.
+  const hasSurfaces = panels.length > 0 || timelineCount > 0;
+  useTopLayer(rootRef, !inline && mounted && hasSurfaces);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const panel = panelRef.current;
