@@ -13,7 +13,7 @@ import {
   withTestDom,
 } from "@/features/project-canvas/react-test-harness";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
-import { formatBillingDateTime } from "./billing-datetime";
+import { formatBillingDate, formatBillingDateTime } from "./billing-datetime";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 
 const SNAPSHOT: BillingPlanSnapshot = {
@@ -279,16 +279,20 @@ test("Stripe return refreshes before congratulations and clears on close", async
       });
 
       assert.deepEqual(events, ["refresh:workspace-a"]);
+      // The redirect leg concludes in the same dialog as the polling leg —
+      // the plan is the subject, and it returns without a prorated charge.
+      assert.ok(rendered?.getByRole("dialog", { name: "Team" }));
+      const congratulations = rendered?.baseElement.textContent ?? "";
+      assert.ok(congratulations.includes("workspace-a"));
+      assert.ok(congratulations.includes("12"));
+      assert.ok(congratulations.includes("CPU"));
       assert.ok(
-        rendered?.getByRole("dialog", {
-          name: "Congratulations!",
-        })
-      );
-      assert.ok(
-        (rendered?.baseElement.textContent ?? "").includes(
-          "workspace-a is now on Team"
+        congratulations.includes(
+          `Billed monthly from ${formatBillingDate("2026-08-31T00:00:00Z")}`
         )
       );
+      assert.ok(congratulations.includes("$50.00"));
+      assert.equal(congratulations.includes("Charged today"), false);
       assert.deepEqual(replacements, []);
 
       await act(() => {
@@ -299,6 +303,136 @@ test("Stripe return refreshes before congratulations and clears on close", async
       });
 
       assert.deepEqual(replacements, ["/billing?source=stripe"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a settled poll closes the checkout and picker into congratulations", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanWorkflow } = await import("./billing-plan");
+    const scheduled: Array<() => void> = [];
+    const refreshedSnapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        planName: "Team",
+        priceMicroUnits: 50_000_000,
+        resources: [{ label: "CPU", value: "12" }],
+      },
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    window.history.replaceState({}, "", "/billing?mode=upgrade");
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanWorkflow
+            balance={<span>$3.00</span>}
+            checkoutServices={{
+              cancelInvoice: () => Promise.resolve(),
+              checkDowngrade: () =>
+                Promise.resolve({ allowed: true, exceededResources: [] }),
+              createPayment: () =>
+                Promise.resolve({
+                  invoiceId: "invoice-1",
+                  payId: "payment-1",
+                  redirectUrl: "https://checkout.stripe.test/invoice-1",
+                  success: true,
+                }),
+              loadTransaction: () =>
+                Promise.resolve({
+                  id: "transaction-1",
+                  payId: "payment-1",
+                  planName: "Team",
+                  status: "completed",
+                }),
+              loadUpgradeQuote: () =>
+                Promise.resolve({
+                  kind: "quote" as const,
+                  quote: {
+                    amountMicroUnits: 31_694_000,
+                    discountMicroUnits: 0,
+                    hasDiscount: false,
+                    originalAmountMicroUnits: 31_694_000,
+                    promotionCode: "",
+                  },
+                }),
+              openCheckoutUrl: () => undefined,
+              openCheckoutWindow: () => ({
+                close: () => undefined,
+                navigate: () => undefined,
+              }),
+              redirectTop: () => undefined,
+            }}
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            initialMode="upgrade"
+            onRefreshSnapshot={() => Promise.resolve(refreshedSnapshot)}
+            replaceUrl={() => undefined}
+            schedulePoll={(run) => {
+              scheduled.push(run);
+              return () => undefined;
+            }}
+            snapshot={SNAPSHOT}
+          />
+        );
+      });
+
+      await act(() => {
+        const upgrade = rendered?.getByRole("button", { name: "Upgrade" });
+        if (upgrade != null) {
+          fireEvent.click(upgrade);
+        }
+      });
+      await act(() => {
+        const confirm = rendered?.getByRole("button", {
+          name: "Subscribe & Pay",
+        });
+        if (confirm != null) {
+          fireEvent.click(confirm);
+        }
+      });
+
+      assert.ok(
+        (rendered?.baseElement.textContent ?? "").includes("Payment successful")
+      );
+      await act(() => scheduled.at(-1)?.());
+
+      // Both the checkout and the picker beneath it have gone, and the
+      // conclusion carries the refreshed plan plus what was charged today.
+      assert.equal(
+        rendered?.queryByRole("dialog", {
+          name: "Choose Your Workspace Plan",
+        }),
+        null
+      );
+      assert.ok(rendered?.getByRole("dialog", { name: "Team" }));
+      const congratulations = rendered?.baseElement.textContent ?? "";
+      assert.ok(congratulations.includes("workspace-a"));
+      assert.ok(congratulations.includes("12"));
+      assert.ok(congratulations.includes("Charged today"));
+      assert.ok(congratulations.includes("$31.69"));
+      assert.ok(
+        congratulations.includes(
+          `Billed monthly from ${formatBillingDate("2026-08-31T00:00:00Z")}`
+        )
+      );
+      assert.ok(congratulations.includes("$50.00"));
+
+      await act(() => {
+        const done = rendered?.getByRole("button", { name: "Done" });
+        if (done != null) {
+          fireEvent.click(done);
+        }
+      });
+      assert.equal(rendered?.queryByRole("dialog", { name: "Team" }), null);
     } finally {
       await act(() => rendered?.unmount());
     }

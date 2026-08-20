@@ -22,11 +22,12 @@ import {
   CircleCheck,
   CircleCheckBig,
   CircleHelp,
+  Clock,
   CreditCard,
   LoaderCircle,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
@@ -168,67 +169,163 @@ function planOperator(
 const NESTED_DIALOG_OVERLAY =
   "bg-transparent backdrop-blur-none supports-backdrop-filter:backdrop-blur-none";
 
-interface WaitingStageProps {
+/** The payment-wait sub-state of the quote surface. */
+type PaymentWaitStatus =
+  | "cancelling"
+  | "failed"
+  | "polling"
+  | "succeeded"
+  | "timed-out";
+
+/** How long the success state holds before the checkout hands off. */
+const PAYMENT_SUCCESS_HOLD_MS = 1500;
+
+/** What a settled checkout payment reports back to the surface it ran on. */
+interface SettledPayment {
+  /**
+   * The prorated amount that actually left the card. `null` when the surface
+   * has no quote to read it from — the top-level redirect leg of the Stripe
+   * Checkout Round-Trip returns without one.
+   */
+  chargedMicroUnits: number | null;
+}
+
+interface PaymentStatusCopy {
+  /** The failure line is the only one carrying the destructive colour. */
+  destructive?: boolean;
+  icon: ReactNode;
+  line: string;
+  title: string;
+}
+
+// One block whose icon, heading and line vary by state — a new state never
+// means a new layout. Cancelling keeps the waiting copy; only the buttons
+// below it change.
+function paymentStatusCopy(status: PaymentWaitStatus): PaymentStatusCopy {
+  if (status === "failed") {
+    return {
+      destructive: true,
+      icon: (
+        <AlertTriangle
+          aria-hidden
+          className="size-10 text-destructive"
+          strokeWidth={1.5}
+        />
+      ),
+      line: "This payment did not complete.",
+      title: "Payment failed",
+    };
+  }
+  if (status === "timed-out") {
+    return {
+      icon: (
+        <Clock
+          aria-hidden
+          className="size-10 text-yellow-400"
+          strokeWidth={1.5}
+        />
+      ),
+      line: "Payment was not confirmed within 10 minutes.",
+      title: "Payment timed out",
+    };
+  }
+  if (status === "succeeded") {
+    return {
+      icon: (
+        <CircleCheck
+          aria-hidden
+          className="size-10 text-emerald-400"
+          strokeWidth={1.5}
+        />
+      ),
+      line: "Your plan is now active.",
+      title: "Payment successful",
+    };
+  }
+  return {
+    icon: (
+      <LoaderCircle
+        aria-hidden
+        className="size-10 animate-spin text-blue-400 motion-reduce:[animation-duration:3s]"
+        strokeWidth={1.5}
+      />
+    ),
+    line: "Complete payment in the Stripe tab.",
+    title: "Waiting for payment",
+  };
+}
+
+interface CheckoutPaymentStatusProps {
   error: string | null;
   onCancel: () => Promise<void>;
   onReopen: () => void;
-  status: "cancelling" | "failed" | "polling" | "timed-out";
+  status: PaymentWaitStatus;
 }
 
-function WaitingStage({
+/**
+ * Replaces the confirm button in place while the payment settles. The text
+ * centres in whatever vertical space the payment-method block leaves, while
+ * the buttons stay pinned to the bottom edge — the line the confirm button
+ * sat on, so the primary action never moves as the state changes.
+ */
+function CheckoutPaymentStatus({
   error,
   onCancel,
   onReopen,
   status,
-}: WaitingStageProps) {
-  const timedOut = status === "timed-out";
-  const failed = status === "failed";
+}: CheckoutPaymentStatusProps) {
   const cancelling = status === "cancelling";
-  let description =
-    "Complete payment in the Stripe tab. This page will update automatically.";
-  let title = "Waiting for payment";
-  if (failed) {
-    description =
-      "Stripe reported that this payment did not complete. Reopen the payment page or cancel this invoice.";
-    title = "Payment failed";
-  } else if (timedOut) {
-    description =
-      "Payment was not confirmed within 10 minutes. Reopen Stripe or cancel this invoice.";
-    title = "Payment timed out";
-  }
+  const { destructive = false, icon, line, title } = paymentStatusCopy(status);
 
   return (
-    <>
-      <AppDialog.Header>
-        <AppDialog.Icon>
-          {failed ? (
-            <AlertTriangle aria-hidden />
-          ) : (
-            <LoaderCircle aria-hidden className="animate-spin" />
+    <div className="flex flex-1 flex-col gap-3.5">
+      <div
+        aria-live="polite"
+        className="flex flex-1 flex-col items-center justify-center gap-2 text-center"
+        role="status"
+      >
+        {icon}
+        <span className="font-semibold text-base/6 text-foreground">
+          {title}
+        </span>
+        <span
+          className={cn(
+            "max-w-2xs text-sm/5",
+            destructive ? "text-destructive" : "text-muted-foreground"
           )}
-        </AppDialog.Icon>
-        <AppDialog.Title>{title}</AppDialog.Title>
-        <AppDialog.Description>{description}</AppDialog.Description>
-      </AppDialog.Header>
-      {error == null ? null : (
-        <AppDialog.Body>
-          <p className="text-destructive text-sm" role="alert">
-            {error}
-          </p>
-        </AppDialog.Body>
+        >
+          {line}
+        </span>
+        {error == null ? null : (
+          <span className="max-w-2xs text-destructive text-sm/5">{error}</span>
+        )}
+      </div>
+      {status === "succeeded" ? null : (
+        <div className="flex flex-col gap-2">
+          <AppButton
+            className="w-full"
+            disabled={cancelling}
+            onClick={onReopen}
+          >
+            Reopen payment page
+          </AppButton>
+          <AppButton
+            className="w-full"
+            disabled={cancelling}
+            onClick={onCancel}
+            variant="quiet"
+          >
+            {cancelling ? (
+              <LoaderCircle
+                aria-hidden
+                className="animate-spin motion-reduce:[animation-duration:3s]"
+              />
+            ) : null}
+            {cancelling ? "Cancelling..." : "Cancel payment"}
+          </AppButton>
+        </div>
       )}
-      <AppDialog.Footer>
-        <AppButton disabled={cancelling} onClick={onCancel} variant="quiet">
-          {cancelling ? (
-            <LoaderCircle aria-hidden className="animate-spin" />
-          ) : null}
-          {cancelling ? "Cancelling..." : "Cancel payment"}
-        </AppButton>
-        <AppButton disabled={cancelling} onClick={onReopen}>
-          Reopen payment page
-        </AppButton>
-      </AppDialog.Footer>
-    </>
+    </div>
   );
 }
 
@@ -395,6 +492,9 @@ interface QuoteStageProps {
   onConfirm: () => Promise<void>;
   onManageCard?: () => void;
   onPromotionCodeChange: (value: string) => void;
+  /** Non-null once the payment is in flight: the confirm action is replaced
+   *  in place and the surface's dismissals are withdrawn. */
+  payment: CheckoutPaymentStatusProps | null;
   plan: SnapshotPlan;
   promotionCode: string;
   promotionError: string | null;
@@ -425,6 +525,8 @@ function cardExpiryLabel(
 interface PromotionCodeFieldProps {
   code: string;
   currency: BillingCurrency;
+  /** The invoice is open and the price committed — the code cannot change. */
+  disabled: boolean;
   error: string | null;
   onApply: () => Promise<void>;
   onCodeChange: (value: string) => void;
@@ -438,6 +540,7 @@ interface PromotionCodeFieldProps {
 function PromotionCodeField({
   code,
   currency,
+  disabled,
   error,
   onApply,
   onCodeChange,
@@ -467,6 +570,7 @@ function PromotionCodeField({
     return (
       <AppButton
         className="h-auto self-start p-0 text-blue-400 hover:text-blue-400"
+        disabled={disabled}
         onClick={() => setOpen(true)}
         variant="link"
       >
@@ -478,7 +582,7 @@ function PromotionCodeField({
     <div className="flex items-end gap-2">
       <AppInputField
         className="min-w-0 flex-1"
-        disabled={pending || submitting}
+        disabled={disabled || pending || submitting}
         error={error}
         id="billing-promotion-code"
         label="Promotion code"
@@ -487,7 +591,7 @@ function PromotionCodeField({
         value={code}
       />
       <AppButton
-        disabled={code.trim() === "" || pending || submitting}
+        disabled={disabled || code.trim() === "" || pending || submitting}
         onClick={onApply}
         variant="secondary"
       >
@@ -540,6 +644,7 @@ function QuoteStage({
   onConfirm,
   onManageCard,
   onPromotionCodeChange,
+  payment,
   plan,
   promotionCode,
   promotionError,
@@ -566,12 +671,24 @@ function QuoteStage({
         <AppDialog.Description className="sr-only">
           Review the prorated amount before opening Stripe Checkout.
         </AppDialog.Description>
-        <DialogClose
-          aria-label="Close"
-          className="-m-2 shrink-0 cursor-pointer rounded-md p-2 text-muted-foreground outline-none transition-colors hover:bg-input/30 hover:text-foreground focus-visible:ring-[1px] focus-visible:ring-blue-400/50"
-        >
-          <X aria-hidden className="size-4" />
-        </DialogClose>
+        {payment == null ? (
+          <DialogClose
+            aria-label="Close"
+            className="-m-2 shrink-0 cursor-pointer rounded-md p-2 text-muted-foreground outline-none transition-colors hover:bg-input/30 hover:text-foreground focus-visible:ring-[1px] focus-visible:ring-blue-400/50"
+          >
+            <X aria-hidden className="size-4" />
+          </DialogClose>
+        ) : (
+          /* Leaving the flow must cancel the invoice, so the only exit is the
+             explicit cancel action: the close control stays in place but goes
+             inert, unfocusable and visibly unavailable. */
+          <span
+            aria-hidden
+            className="-m-2 shrink-0 cursor-not-allowed rounded-md p-2 text-muted-foreground opacity-30"
+          >
+            <X aria-hidden className="size-4" />
+          </span>
+        )}
       </div>
 
       <AppDialog.Body className="px-6 pt-4 pb-6">
@@ -630,6 +747,7 @@ function QuoteStage({
               <PromotionCodeField
                 code={promotionCode}
                 currency={currency}
+                disabled={payment != null}
                 error={promotionError}
                 onApply={onApplyPromotion}
                 onCodeChange={onPromotionCodeChange}
@@ -705,22 +823,30 @@ function QuoteStage({
                 </AppButton>
               ) : null}
             </div>
-            <div className="flex flex-col gap-2">
-              {error == null ? null : (
-                <p className="text-destructive text-sm" role="alert">
-                  {error}
-                </p>
+            {/* The slot takes every pixel the payment-method block leaves,
+                so whatever it holds ends up on the same bottom line. */}
+            <div className="flex flex-1 flex-col justify-end gap-2">
+              {payment == null ? (
+                <>
+                  {error == null ? null : (
+                    <p className="text-destructive text-sm" role="alert">
+                      {error}
+                    </p>
+                  )}
+                  <AppButton
+                    className="w-full"
+                    disabled={quote == null || submitting}
+                    onClick={onConfirm}
+                  >
+                    {submitting ? (
+                      <LoaderCircle aria-hidden className="animate-spin" />
+                    ) : null}
+                    {submitting ? "Opening checkout..." : "Subscribe & Pay"}
+                  </AppButton>
+                </>
+              ) : (
+                <CheckoutPaymentStatus {...payment} />
               )}
-              <AppButton
-                className="w-full"
-                disabled={quote == null || submitting}
-                onClick={onConfirm}
-              >
-                {submitting ? (
-                  <LoaderCircle aria-hidden className="animate-spin" />
-                ) : null}
-                {submitting ? "Opening checkout..." : "Subscribe & Pay"}
-              </AppButton>
             </div>
           </div>
         </div>
@@ -835,6 +961,12 @@ interface BillingPlanCheckoutDialogProps {
   /** The user backed out of the stage (Esc, outside press, close button). */
   onDismiss: () => void;
   onManageCard?: () => void;
+  /**
+   * The payment settled and the subscription-changed refresh has resolved.
+   * Fired once the success state has been held, together with `onClose` — the
+   * dialog reports the outcome and each surface decides what follows.
+   */
+  onPaymentSuccess?: (result: SettledPayment) => void;
   onSubscriptionChanged: () => Promise<void>;
   open: boolean;
   paymentTimeoutMs?: number;
@@ -877,6 +1009,7 @@ export function BillingPlanCheckoutDialog({
   onClose,
   onDismiss,
   onManageCard,
+  onPaymentSuccess,
   onSubscriptionChanged,
   open,
   paymentTimeoutMs = 10 * 60 * 1000,
@@ -909,9 +1042,8 @@ export function BillingPlanCheckoutDialog({
   const [promotionError, setPromotionError] = useState<string | null>(null);
   const [promotionPending, setPromotionPending] = useState(false);
   const [waitingStartedAt, setWaitingStartedAt] = useState<number | null>(null);
-  const [waitingStatus, setWaitingStatus] = useState<
-    "cancelling" | "failed" | "polling" | "timed-out"
-  >("polling");
+  const [waitingStatus, setWaitingStatus] =
+    useState<PaymentWaitStatus>("polling");
   const [submitting, setSubmitting] = useState(false);
 
   // Parents pass fresh closures and a snapshot-rebuilt plan object every
@@ -921,12 +1053,16 @@ export function BillingPlanCheckoutDialog({
   // refresh restarts them mid-flight.
   const planRef = useRef(plan);
   const onCloseRef = useRef(onClose);
+  const onPaymentSuccessRef = useRef(onPaymentSuccess);
   const onSubscriptionChangedRef = useRef(onSubscriptionChanged);
+  const quoteRef = useRef(quote);
   const servicesRef = useRef(services);
   useEffect(() => {
     planRef.current = plan;
     onCloseRef.current = onClose;
+    onPaymentSuccessRef.current = onPaymentSuccess;
     onSubscriptionChangedRef.current = onSubscriptionChanged;
+    quoteRef.current = quote;
     servicesRef.current = services;
   });
   const planName = plan?.name ?? null;
@@ -1292,7 +1428,8 @@ export function BillingPlanCheckoutDialog({
         return;
       }
       if (result.kind === "completed") {
-        onCloseRef.current();
+        setError(null);
+        setWaitingStatus("succeeded");
         return;
       }
       if (result.kind === "failed") {
@@ -1328,6 +1465,20 @@ export function BillingPlanCheckoutDialog({
     waitingStatus,
   ]);
 
+  // The success state is seen to conclude rather than seen to vanish: it
+  // holds briefly, then the checkout closes and reports the outcome. The
+  // subscription-changed refresh already resolved before the state was set.
+  useEffect(() => {
+    if (stage !== "waiting" || waitingStatus !== "succeeded") {
+      return;
+    }
+    return schedulePoll(() => {
+      const chargedMicroUnits = quoteRef.current?.amountMicroUnits ?? null;
+      onCloseRef.current();
+      onPaymentSuccessRef.current?.({ chargedMicroUnits });
+    }, PAYMENT_SUCCESS_HOLD_MS);
+  }, [schedulePoll, stage, waitingStatus]);
+
   const cancelWaitingPayment = async () => {
     if (waitingStatus === "cancelling") {
       return;
@@ -1361,7 +1512,10 @@ export function BillingPlanCheckoutDialog({
         workspace,
       });
       if (result.kind === "completed") {
-        onClose();
+        // The invoice was paid while the cancellation was in flight: the
+        // surface concludes the same way any other settled payment does.
+        setError(null);
+        setWaitingStatus("succeeded");
         return;
       }
       if (result.kind === "failed") {
@@ -1373,6 +1527,22 @@ export function BillingPlanCheckoutDialog({
       setWaitingStatus("polling");
     }
   };
+
+  const reopenCheckout = () => {
+    if (checkout?.redirectUrl == null) {
+      return;
+    }
+    services.openCheckoutUrl(checkout.redirectUrl);
+    if (waitingStatus !== "polling") {
+      setError(null);
+      setWaitingStartedAt(now());
+      setWaitingStatus("polling");
+    }
+  };
+
+  // The quote surface and its payment wait are one rendering at one size —
+  // confirming never resizes the dialog.
+  const onQuoteSurface = stage === "quote" || stage === "waiting";
 
   return (
     <AppDialog.Root
@@ -1387,28 +1557,11 @@ export function BillingPlanCheckoutDialog({
     >
       <AppDialog.Content
         className={
-          stage === "quote" ? "data-[size=lg]:sm:max-w-[868px]" : undefined
+          onQuoteSurface ? "data-[size=lg]:sm:max-w-[868px]" : undefined
         }
         overlayClassName={nested ? NESTED_DIALOG_OVERLAY : undefined}
-        size={stage === "quote" ? "lg" : "default"}
+        size={onQuoteSurface ? "lg" : "default"}
       >
-        {stage === "waiting" ? (
-          <WaitingStage
-            error={error}
-            onCancel={cancelWaitingPayment}
-            onReopen={() => {
-              if (checkout?.redirectUrl != null) {
-                services.openCheckoutUrl(checkout.redirectUrl);
-                if (waitingStatus !== "polling") {
-                  setError(null);
-                  setWaitingStartedAt(now());
-                  setWaitingStatus("polling");
-                }
-              }
-            }}
-            status={waitingStatus}
-          />
-        ) : null}
         {stage === "recovery" && pendingUpgrade != null ? (
           <RecoveryStage
             cancelling={submitting}
@@ -1430,7 +1583,7 @@ export function BillingPlanCheckoutDialog({
             submitting={submitting}
           />
         ) : null}
-        {stage === "quote" && plan != null ? (
+        {onQuoteSurface && plan != null ? (
           <QuoteStage
             card={snapshot.card}
             currency={currency}
@@ -1443,6 +1596,16 @@ export function BillingPlanCheckoutDialog({
               setPromotionCode(value);
               setPromotionError(null);
             }}
+            payment={
+              stage === "waiting"
+                ? {
+                    error,
+                    onCancel: cancelWaitingPayment,
+                    onReopen: reopenCheckout,
+                    status: waitingStatus,
+                  }
+                : null
+            }
             plan={plan}
             promotionCode={promotionCode}
             promotionError={promotionError}
@@ -1460,5 +1623,6 @@ export type {
   BillingPlanChangeServices,
   BillingPlanCheckoutDialogProps,
   CheckoutWindowHandle,
+  SettledPayment,
 };
 export { DEFAULT_PLAN_CHANGE_SERVICES, planOperator };

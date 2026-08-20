@@ -11,6 +11,7 @@ import {
   BillingPlanCheckoutDialog,
   DEFAULT_PLAN_CHANGE_SERVICES,
   planOperator,
+  type SettledPayment,
 } from "@/features/billing/billing-plan-checkout-dialog";
 import {
   type BillingPlanSnapshot,
@@ -26,6 +27,9 @@ interface BillingPlanChangeDialogProps {
   now?: () => number;
   onManageCard?: () => void;
   onOpenChange: (open: boolean) => void;
+  /** The payment settled: the checkout has closed and the surface decides
+   *  what follows (the Plan view opens the congratulations dialog). */
+  onPaymentSuccess?: (result: SettledPayment) => void;
   onSelectedPlanChange?: (planId: string | null) => void;
   onSubscriptionChanged: () => Promise<void>;
   open: boolean;
@@ -50,6 +54,7 @@ export function BillingPlanChangeDialog({
   now,
   onManageCard,
   onOpenChange,
+  onPaymentSuccess,
   onSelectedPlanChange,
   onSubscriptionChanged,
   open,
@@ -131,6 +136,7 @@ export function BillingPlanChangeDialog({
           onClose={() => onOpenChange(false)}
           onDismiss={dismissSelection}
           onManageCard={onManageCard}
+          onPaymentSuccess={onPaymentSuccess}
           onSubscriptionChanged={onSubscriptionChanged}
           open={open && checkoutPlan != null}
           paymentTimeoutMs={paymentTimeoutMs}

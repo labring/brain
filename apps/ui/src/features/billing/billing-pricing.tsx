@@ -39,10 +39,16 @@ import {
   formatPreciseBillingAmount,
   formatPreciseBillingNumber,
 } from "@/features/billing/billing-amount";
+import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import {
+  type BillingPlanChangeServices,
   BillingPlanCheckoutDialog,
   planOperator,
 } from "@/features/billing/billing-plan-checkout-dialog";
+import {
+  BillingPlanCongratulationsDialog,
+  useSettledPaymentCongratulations,
+} from "@/features/billing/billing-plan-congratulations-dialog";
 import {
   type BillingPlanSnapshot,
   loadBillingPlanSnapshot,
@@ -751,6 +757,81 @@ export function BillingPricingSurface({
   );
 }
 
+interface BillingPricingCheckoutProps {
+  credentials: BillingCredentials;
+  currency: BillingCurrency;
+  gpuEnabled: boolean;
+  onClearSelection: () => void;
+  /**
+   * Refreshes the page's data and resolves with the new subscription, or
+   * `null` when the refresh produced none — never rejects, because the
+   * checkout's poll reads a rejection as "keep waiting".
+   */
+  onSubscriptionChanged: () => Promise<BillingPlanSnapshot | null>;
+  planSnapshot: BillingPlanSnapshot;
+  /** Injected by tests; production uses the checkout dialog's own defaults. */
+  schedulePoll?: (callback: () => void, delay: number) => () => void;
+  selectedPlanId: string | null;
+  services?: BillingPlanChangeServices;
+}
+
+/**
+ * The Pricing page's plans area is itself the Plan Picker, so a card's
+ * Upgrade/Downgrade opens the checkout dialog alone — no picker dialog
+ * stacked underneath. A settled payment ends in the same congratulations
+ * dialog the Plan view shows, so the entry point never changes the ending.
+ */
+export function BillingPricingCheckout({
+  credentials,
+  currency,
+  gpuEnabled,
+  onClearSelection,
+  onSubscriptionChanged,
+  planSnapshot,
+  schedulePoll,
+  selectedPlanId,
+  services,
+}: BillingPricingCheckoutProps) {
+  const congratulations = useSettledPaymentCongratulations();
+  // No memo: the result is a reference into `planSnapshot.plans`, never a new
+  // object, so the checkout dialog below sees a stable `plan` for as long as
+  // the snapshot itself is stable.
+  const candidatePlan =
+    planSnapshot.plans.find((entry) => entry.id === selectedPlanId) ?? null;
+  const inDebt = planSnapshot.current.lifecycle === "payment-due";
+  // A pending upgrade never blocks selection: picking a conflicting plan
+  // still opens checkout, whose quote request 409s into the recovery stage.
+  const selectedPlan =
+    planOperator(candidatePlan, inDebt) == null ? null : candidatePlan;
+
+  return (
+    <>
+      <BillingPlanCheckoutDialog
+        credentials={credentials}
+        currency={currency}
+        gpuEnabled={gpuEnabled}
+        onClose={onClearSelection}
+        onDismiss={onClearSelection}
+        onPaymentSuccess={congratulations.onPaymentSuccess}
+        onSubscriptionChanged={async () => {
+          congratulations.recordSettledSnapshot(await onSubscriptionChanged());
+        }}
+        open={selectedPlan != null}
+        plan={selectedPlan}
+        schedulePoll={schedulePoll}
+        services={services}
+        snapshot={planSnapshot}
+      />
+      <BillingPlanCongratulationsDialog
+        chargedMicroUnits={congratulations.chargedMicroUnits}
+        currency={currency}
+        onClose={congratulations.dismiss}
+        snapshot={congratulations.snapshot}
+      />
+    </>
+  );
+}
+
 export default function BillingPricing({
   currency,
   gpuEnabled,
@@ -795,17 +876,6 @@ export default function BillingPricing({
     []
   );
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  // No memo: the result is a reference into `planSnapshot.plans`, never a new
-  // object, so the checkout dialog below sees a stable `plan` for as long as
-  // the snapshot itself is stable.
-  const candidatePlan =
-    planSnapshot?.plans.find((entry) => entry.id === selectedPlanId) ?? null;
-  const inDebt = planSnapshot?.current.lifecycle === "payment-due";
-  // A pending upgrade never blocks selection: picking a conflicting plan
-  // still opens checkout, whose quote request 409s into the recovery stage.
-  const selectedPlan =
-    planOperator(candidatePlan, inDebt) == null ? null : candidatePlan;
-  const clearSelection = () => setSelectedPlanId(null);
 
   return (
     <>
@@ -820,18 +890,17 @@ export default function BillingPricing({
         planSnapshotLoading={!credentialsReady || planSnapshotLoading}
         snapshot={data}
       />
-      {/* The Pricing page's plans area is itself the Plan Picker, so a card's
-          Upgrade/Downgrade opens the checkout dialog alone — no picker dialog
-          stacked underneath. */}
       {planSnapshot == null ? null : (
-        <BillingPlanCheckoutDialog
+        <BillingPricingCheckout
           credentials={{ appToken, kubeconfig }}
           currency={currency}
           gpuEnabled={gpuEnabled}
-          onClose={clearSelection}
-          onDismiss={clearSelection}
+          onClearSelection={() => setSelectedPlanId(null)}
           onSubscriptionChanged={async () => {
-            await Promise.all([refreshPlanSnapshot(), refreshPricing()]);
+            const [nextSnapshot] = await Promise.all([
+              refreshPlanSnapshot(),
+              refreshPricing(),
+            ]);
             // No AI Credits are shown on this page, but the Plan view reads
             // the same global caches — settle them so returning there does
             // not present pre-payment values.
@@ -842,10 +911,10 @@ export default function BillingPricing({
               kubeconfig,
               workspace,
             });
+            return nextSnapshot ?? null;
           }}
-          open={selectedPlan != null}
-          plan={selectedPlan}
-          snapshot={planSnapshot}
+          planSnapshot={planSnapshot}
+          selectedPlanId={selectedPlanId}
         />
       )}
     </>

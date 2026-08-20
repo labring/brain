@@ -1375,6 +1375,7 @@ test("cancel failure resolves a concurrently completed payment", async () => {
       "./billing-plan-change-dialog"
     );
     const events: string[] = [];
+    const scheduled: Array<() => void> = [];
     let transactionChecks = 0;
     let rendered: ReturnType<typeof render> | undefined;
 
@@ -1394,7 +1395,10 @@ test("cancel failure resolves a concurrently completed payment", async () => {
               return Promise.resolve();
             }}
             open
-            schedulePoll={() => () => undefined}
+            schedulePoll={(run) => {
+              scheduled.push(run);
+              return () => undefined;
+            }}
             selectedPlanId="team"
             services={{
               cancelInvoice: () => Promise.reject(new Error("invoice paid")),
@@ -1457,6 +1461,12 @@ test("cancel failure resolves a concurrently completed payment", async () => {
 
       assert.equal(transactionChecks, 2);
       assert.ok(events.includes("refresh"));
+      // The paid invoice concludes like any other settled payment: the
+      // success state holds, then the surface closes.
+      assert.ok(
+        (rendered?.baseElement.textContent ?? "").includes("Payment successful")
+      );
+      await act(() => scheduled.at(-1)?.());
       assert.ok(events.includes("open:false"));
       assert.equal(
         (rendered?.baseElement.textContent ?? "").includes("Payment timed out"),
@@ -1585,6 +1595,216 @@ test("a PAYG workspace subscribes to a plan with the created operator", async ()
         }
       });
       assert.deepEqual(paymentOperators, ["created"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("payment waiting keeps the quote surface and disables its dismissals", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanChangeDialog
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onOpenChange={() => undefined}
+            onSubscriptionChanged={() => Promise.resolve()}
+            open
+            schedulePoll={() => () => undefined}
+            selectedPlanId="team"
+            services={{
+              cancelInvoice: () => Promise.resolve(),
+              checkDowngrade: () =>
+                Promise.resolve({ allowed: true, exceededResources: [] }),
+              createPayment: () =>
+                Promise.resolve({
+                  invoiceId: "invoice-1",
+                  payId: "payment-1",
+                  redirectUrl: "https://checkout.stripe.test/invoice-1",
+                  success: true,
+                }),
+              loadTransaction: () =>
+                Promise.resolve({
+                  id: "transaction-1",
+                  payId: "payment-1",
+                  planName: "Team",
+                  status: "pending",
+                }),
+              loadUpgradeQuote: () =>
+                Promise.resolve({
+                  kind: "quote" as const,
+                  quote: {
+                    amountMicroUnits: 7_500_000,
+                    discountMicroUnits: 0,
+                    hasDiscount: false,
+                    originalAmountMicroUnits: 7_500_000,
+                    promotionCode: "",
+                  },
+                }),
+              openCheckoutUrl: () => undefined,
+              openCheckoutWindow: () => ({
+                close: () => undefined,
+                navigate: () => undefined,
+              }),
+              redirectTop: () => undefined,
+            }}
+            snapshot={SNAPSHOT}
+          />
+        );
+      });
+
+      const promoBefore = rendered?.getByRole("button", {
+        name: "Have a promo code?",
+      }) as HTMLButtonElement | undefined;
+      assert.equal(promoBefore?.disabled, false);
+
+      await act(() => {
+        const confirm = rendered?.getByRole("button", {
+          name: "Subscribe & Pay",
+        });
+        if (confirm != null) {
+          fireEvent.click(confirm);
+        }
+      });
+
+      // The order summary and the card the user is paying with stay readable.
+      const text = rendered?.baseElement.textContent ?? "";
+      assert.ok(text.includes("Order summary"));
+      assert.ok(text.includes("Due today"));
+      assert.ok(text.includes("$7.50"));
+      assert.ok(text.includes("Payment method"));
+      assert.ok(text.includes("•••• 4242"));
+      assert.ok(text.includes("Waiting for payment"));
+      assert.ok(text.includes("Complete payment in the Stripe tab."));
+
+      // Only the confirm action is replaced, and neither dismissal is offered.
+      assert.equal(
+        rendered?.queryByRole("button", { name: "Subscribe & Pay" }),
+        null
+      );
+      assert.equal(rendered?.queryByRole("button", { name: "Close" }), null);
+      const promoDuring = rendered?.getByRole("button", {
+        name: "Have a promo code?",
+      }) as HTMLButtonElement | undefined;
+      assert.equal(promoDuring?.disabled, true);
+
+      assert.ok(rendered?.getByRole("button", { name: "Reopen payment page" }));
+      assert.ok(rendered?.getByRole("button", { name: "Cancel payment" }));
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a completed payment confirms in place before the checkout hands off", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanChangeDialog } = await import(
+      "./billing-plan-change-dialog"
+    );
+    const events: string[] = [];
+    const scheduled: Array<{ delay: number; run: () => void }> = [];
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanChangeDialog
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onOpenChange={(open) => events.push(`open:${String(open)}`)}
+            onPaymentSuccess={({ chargedMicroUnits }) =>
+              events.push(`success:${String(chargedMicroUnits)}`)
+            }
+            onSubscriptionChanged={() => {
+              events.push("refresh");
+              return Promise.resolve();
+            }}
+            open
+            schedulePoll={(run, delay) => {
+              scheduled.push({ delay, run });
+              return () => undefined;
+            }}
+            selectedPlanId="team"
+            services={{
+              cancelInvoice: () => Promise.resolve(),
+              checkDowngrade: () =>
+                Promise.resolve({ allowed: true, exceededResources: [] }),
+              createPayment: () =>
+                Promise.resolve({
+                  invoiceId: "invoice-1",
+                  payId: "payment-1",
+                  redirectUrl: "https://checkout.stripe.test/invoice-1",
+                  success: true,
+                }),
+              loadTransaction: () =>
+                Promise.resolve({
+                  id: "transaction-1",
+                  payId: "payment-1",
+                  planName: "Team",
+                  status: "completed",
+                }),
+              loadUpgradeQuote: () =>
+                Promise.resolve({
+                  kind: "quote" as const,
+                  quote: {
+                    amountMicroUnits: 7_500_000,
+                    discountMicroUnits: 0,
+                    hasDiscount: false,
+                    originalAmountMicroUnits: 7_500_000,
+                    promotionCode: "",
+                  },
+                }),
+              openCheckoutUrl: () => undefined,
+              openCheckoutWindow: () => ({
+                close: () => undefined,
+                navigate: () => undefined,
+              }),
+              redirectTop: () => undefined,
+            }}
+            snapshot={SNAPSHOT}
+          />
+        );
+      });
+      await act(() => {
+        const confirm = rendered?.getByRole("button", {
+          name: "Subscribe & Pay",
+        });
+        if (confirm != null) {
+          fireEvent.click(confirm);
+        }
+      });
+
+      // The success state is seen before anything closes, and the refresh has
+      // already resolved by the time it appears.
+      const text = rendered?.baseElement.textContent ?? "";
+      assert.ok(text.includes("Payment successful"));
+      assert.ok(text.includes("Your plan is now active."));
+      assert.ok(text.includes("Order summary"));
+      assert.deepEqual(events, ["refresh"]);
+      assert.equal(
+        rendered?.queryByRole("button", { name: "Cancel payment" }),
+        null
+      );
+
+      const hold = scheduled.at(-1);
+      assert.equal(hold?.delay, 1500);
+      await act(() => hold?.run());
+      assert.deepEqual(events, ["refresh", "open:false", "success:7500000"]);
     } finally {
       await act(() => rendered?.unmount());
     }

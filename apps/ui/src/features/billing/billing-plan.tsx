@@ -1,17 +1,7 @@
 "use client";
 
-import { AppButton } from "@workspace/ui/components/app-button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@workspace/ui/components/dialog";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useAtomValue } from "jotai";
-import { CircleCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   type ReactNode,
@@ -30,7 +20,14 @@ import {
 import { loadAiCredits } from "@/features/billing/billing-ai-credits";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
-import { BillingPlanChangeDialog } from "@/features/billing/billing-plan-change-dialog";
+import {
+  BillingPlanChangeDialog,
+  type BillingPlanChangeServices,
+} from "@/features/billing/billing-plan-change-dialog";
+import {
+  BillingPlanCongratulationsDialog,
+  useSettledPaymentCongratulations,
+} from "@/features/billing/billing-plan-congratulations-dialog";
 import {
   type BillingPlanSnapshot,
   cancelSubscriptionInvoice,
@@ -63,6 +60,8 @@ interface BillingPlanWorkflowProps {
   actionPending?: SubscriptionLifecycleAction | null;
   balance: ReactNode;
   cardManagementPending?: boolean;
+  /** Injected by tests; production uses the checkout dialog's own defaults. */
+  checkoutServices?: BillingPlanChangeServices;
   credentials: BillingCredentials;
   credits?: ReactNode;
   currency: BillingCurrency;
@@ -76,6 +75,7 @@ interface BillingPlanWorkflowProps {
   onManageCard?: () => void;
   onRefreshSnapshot: (workspaceId?: string) => Promise<BillingPlanSnapshot>;
   replaceUrl: (url: string) => void;
+  schedulePoll?: (callback: () => void, delay: number) => () => void;
   snapshot: BillingPlanSnapshot;
   stripeReturn?: BillingStripeReturn | null;
 }
@@ -93,6 +93,7 @@ export function BillingPlanWorkflow({
   actionPending = null,
   balance,
   cardManagementPending = false,
+  checkoutServices,
   credentials,
   credits = null,
   currency,
@@ -104,6 +105,7 @@ export function BillingPlanWorkflow({
   onManageCard,
   onRefreshSnapshot,
   replaceUrl,
+  schedulePoll,
   snapshot,
   stripeReturn = null,
 }: BillingPlanWorkflowProps) {
@@ -122,8 +124,12 @@ export function BillingPlanWorkflow({
     initialMode === "upgrade" && planDialogActionable
   );
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [congratulationsSnapshot, setCongratulationsSnapshot] =
-    useState<BillingPlanSnapshot | null>(null);
+  const congratulations = useSettledPaymentCongratulations();
+  const {
+    dismiss: dismissCongratulations,
+    open: openCongratulations,
+    recordSettledSnapshot,
+  } = congratulations;
 
   // The mode parameter is consumed once per arrival: the state above handles
   // the deep-link mount, and this handles a later client-side navigation back
@@ -171,7 +177,9 @@ export function BillingPlanWorkflow({
           // hands off to the congratulations one without a bright gap.
           setPlanDialogOpen(false);
           setSelectedPlanId(null);
-          setCongratulationsSnapshot(nextSnapshot);
+          // The redirect leg carries no quote, so it concludes without a
+          // charged-today row.
+          openCongratulations(nextSnapshot, null);
         }
       })
       .catch((error: unknown) => {
@@ -190,7 +198,7 @@ export function BillingPlanWorkflow({
     return () => {
       active = false;
     };
-  }, [onRefreshSnapshot, stripeReturn]);
+  }, [onRefreshSnapshot, openCongratulations, stripeReturn]);
 
   const handlePlanDialogOpenChange = useCallback((open: boolean) => {
     setPlanDialogOpen(open);
@@ -203,12 +211,12 @@ export function BillingPlanWorkflow({
     setPlanDialogOpen(true);
   }, []);
   const handleSubscriptionChanged = useCallback(async () => {
-    await onRefreshSnapshot();
-  }, [onRefreshSnapshot]);
+    recordSettledSnapshot(await onRefreshSnapshot());
+  }, [onRefreshSnapshot, recordSettledSnapshot]);
   const handleCongratulationsClose = useCallback(() => {
-    setCongratulationsSnapshot(null);
+    dismissCongratulations();
     replaceUrl(currentUrlWithout(["stripeState", "payId", "workspaceId"]));
-  }, [replaceUrl]);
+  }, [dismissCongratulations, replaceUrl]);
 
   return (
     <>
@@ -231,52 +239,21 @@ export function BillingPlanWorkflow({
         gpuEnabled={gpuEnabled}
         onManageCard={onManageCard}
         onOpenChange={handlePlanDialogOpenChange}
+        onPaymentSuccess={congratulations.onPaymentSuccess}
         onSelectedPlanChange={setSelectedPlanId}
         onSubscriptionChanged={handleSubscriptionChanged}
         open={planDialogOpen}
+        schedulePoll={schedulePoll}
         selectedPlanId={selectedPlanId}
+        services={checkoutServices}
         snapshot={snapshot}
       />
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) {
-            handleCongratulationsClose();
-          }
-        }}
-        open={congratulationsSnapshot != null}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader className="items-center text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <CircleCheck aria-hidden className="size-7" />
-            </div>
-            <DialogTitle>Congratulations!</DialogTitle>
-            <DialogDescription>
-              {congratulationsSnapshot == null
-                ? ""
-                : `${congratulationsSnapshot.current.workspace} is now on ${congratulationsSnapshot.current.planName}.`}
-            </DialogDescription>
-          </DialogHeader>
-          {congratulationsSnapshot == null ? null : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {congratulationsSnapshot.current.resources.map((resource) => (
-                <div
-                  className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm"
-                  key={resource.label}
-                >
-                  <CircleCheck aria-hidden className="size-4 text-primary" />
-                  <span>
-                    {resource.label}: {resource.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          <DialogFooter>
-            <AppButton onClick={handleCongratulationsClose}>Done</AppButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BillingPlanCongratulationsDialog
+        chargedMicroUnits={congratulations.chargedMicroUnits}
+        currency={currency}
+        onClose={handleCongratulationsClose}
+        snapshot={congratulations.snapshot}
+      />
     </>
   );
 }

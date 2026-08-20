@@ -592,7 +592,7 @@ _Avoid_: tier, package, chat plan, pricing row.
 
 ### Plan Picker
 
-The plan selection surface: Subscription Plan cards plus the additional-plans selector, shown identically wherever the user chooses a plan — the Pricing view's plans area and the Plan view's plan-change dialog render the same picker. Choosing an actionable plan hands off to checkout (quote, downgrade confirmation, or payment wait); the picker itself never takes payment. On Pricing, the plans area may sit under a multi-option view switcher (for example when metered price table and calculator are available) or be the only Pricing content with no switcher chrome.
+The plan selection surface: Subscription Plan cards plus the additional-plans selector, shown identically wherever the user chooses a plan — the Pricing view's plans area and the Plan view's plan-change dialog render the same picker. Choosing an actionable plan hands off to checkout — either the quote or the downgrade confirmation; the picker itself never takes payment. Payment wait is not a third destination: the quote surface enters it in place once the user confirms, keeping the order summary and payment method on screen while the payment settles. On Pricing, the plans area may sit under a multi-option view switcher (for example when metered price table and calculator are available) or be the only Pricing content with no switcher chrome.
 
 _Avoid_: plan catalog, plan list, plan cards section, Subscription plans tab (as the name of the surface).
 
