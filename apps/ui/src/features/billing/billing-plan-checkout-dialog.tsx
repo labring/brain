@@ -845,6 +845,29 @@ interface BillingPlanCheckoutDialogProps {
   snapshot: BillingPlanSnapshot;
 }
 
+/**
+ * Identity of one checkout attempt. A closed dialog has no attempt; reopening
+ * it, or aiming it at another plan, operator or workspace, starts a new one.
+ */
+function checkoutAttemptKey({
+  open,
+  operator,
+  planName,
+  regionDomain,
+  workspace,
+}: {
+  open: boolean;
+  operator: PlanChangeOperator | null;
+  planName: string | null;
+  regionDomain: string;
+  workspace: string;
+}): string | null {
+  if (!open) {
+    return null;
+  }
+  return [operator ?? "", planName ?? "", workspace, regionDomain].join("|");
+}
+
 export function BillingPlanCheckoutDialog({
   credentials,
   currency,
@@ -864,6 +887,10 @@ export function BillingPlanCheckoutDialog({
   snapshot,
 }: BillingPlanCheckoutDialogProps) {
   const { appToken, kubeconfig } = credentials;
+  // The snapshot object is rebuilt on every refresh, so the two fields the
+  // requests below key on are read out once: effects depend on the values,
+  // not on the identity of the snapshot carrying them.
+  const { regionDomain, workspace } = snapshot.current;
   const inDebt = snapshot.current.lifecycle === "payment-due";
   const operator = planOperator(plan, inDebt);
   const [stage, setStage] = useState<CheckoutStage>(
@@ -904,34 +931,52 @@ export function BillingPlanCheckoutDialog({
   });
   const planName = plan?.name ?? null;
 
+  // Every field above belongs to one checkout attempt — a plan, an operator
+  // and the workspace it is billed to. Reset on the transition into a new
+  // attempt, during render: a reopened dialog never paints the previous
+  // attempt's stage, and closing no longer rewrites the body while it is
+  // still animating out. A credential refresh alone re-runs the request
+  // below without disturbing a flow already in progress.
+  const attemptKey = checkoutAttemptKey({
+    open,
+    operator,
+    planName,
+    regionDomain,
+    workspace,
+  });
+  const [startedAttempt, setStartedAttempt] = useState(attemptKey);
+  const startingAttempt = attemptKey != null && attemptKey !== startedAttempt;
+  if (attemptKey !== startedAttempt) {
+    setStartedAttempt(attemptKey);
+  }
+  if (startingAttempt) {
+    setCheckout(null);
+    setDowngradeCheck(null);
+    setError(null);
+    setPromotionCode("");
+    setPromotionError(null);
+    setPromotionPending(false);
+    setPendingUpgrade(null);
+    setQuote(null);
+    setStage(operator === "downgraded" ? "downgrade" : "quote");
+    setSubmitting(false);
+    setWaitingStartedAt(null);
+    setWaitingStatus("polling");
+  }
+
   useEffect(() => {
     if (!open) {
-      setCheckout(null);
-      setDowngradeCheck(null);
-      setError(null);
-      setPromotionCode("");
-      setPromotionError(null);
-      setPromotionPending(false);
-      setPendingUpgrade(null);
-      setQuote(null);
-      setStage("quote");
-      setSubmitting(false);
-      setWaitingStartedAt(null);
-      setWaitingStatus("polling");
       return;
     }
     if (planName != null && operator === "downgraded") {
       let active = true;
-      setDowngradeCheck(null);
-      setError(null);
-      setStage("downgrade");
       servicesRef.current
         .checkDowngrade({
           appToken,
           kubeconfig,
           limits: planRef.current?.limits ?? {},
-          regionDomain: snapshot.current.regionDomain,
-          workspace: snapshot.current.workspace,
+          regionDomain,
+          workspace,
         })
         .then((nextCheck) => {
           if (active) {
@@ -960,18 +1005,14 @@ export function BillingPlanCheckoutDialog({
     }
 
     let active = true;
-    setError(null);
-    setPromotionError(null);
-    setQuote(null);
-    setStage("quote");
     servicesRef.current
       .loadUpgradeQuote({
         appToken,
         kubeconfig,
         operator,
         planName,
-        regionDomain: snapshot.current.regionDomain,
-        workspace: snapshot.current.workspace,
+        regionDomain,
+        workspace,
       })
       .then((result) => {
         if (!active) {
@@ -998,15 +1039,7 @@ export function BillingPlanCheckoutDialog({
     return () => {
       active = false;
     };
-  }, [
-    appToken,
-    kubeconfig,
-    open,
-    operator,
-    planName,
-    snapshot.current.regionDomain,
-    snapshot.current.workspace,
-  ]);
+  }, [appToken, kubeconfig, open, operator, planName, regionDomain, workspace]);
 
   const confirmUpgrade = async () => {
     if (
@@ -1028,8 +1061,8 @@ export function BillingPlanCheckoutDialog({
         operator,
         planName: plan.name,
         promotionCode: quote.promotionCode || undefined,
-        regionDomain: snapshot.current.regionDomain,
-        workspace: snapshot.current.workspace,
+        regionDomain,
+        workspace,
       });
       if (nextCheckout.redirectUrl == null) {
         checkoutWindow?.close();
@@ -1073,8 +1106,8 @@ export function BillingPlanCheckoutDialog({
         operator,
         planName: plan.name,
         promotionCode: code,
-        regionDomain: snapshot.current.regionDomain,
-        workspace: snapshot.current.workspace,
+        regionDomain,
+        workspace,
       });
       if (result.kind === "pending-upgrade") {
         setPendingUpgrade(result.pendingUpgrade);
@@ -1138,8 +1171,8 @@ export function BillingPlanCheckoutDialog({
         appToken,
         invoiceId: pendingUpgrade.invoiceId,
         kubeconfig,
-        regionDomain: snapshot.current.regionDomain,
-        workspace: snapshot.current.workspace,
+        regionDomain,
+        workspace,
       });
     } catch (cause) {
       setError(
@@ -1166,8 +1199,8 @@ export function BillingPlanCheckoutDialog({
           ...(promotionCode.trim() === ""
             ? {}
             : { promotionCode: promotionCode.trim() }),
-          regionDomain: snapshot.current.regionDomain,
-          workspace: snapshot.current.workspace,
+          regionDomain,
+          workspace,
         }),
       ]);
       if (result.kind === "pending-upgrade") {
@@ -1204,8 +1237,8 @@ export function BillingPlanCheckoutDialog({
         kubeconfig,
         operator: "downgraded",
         planName: plan.name,
-        regionDomain: snapshot.current.regionDomain,
-        workspace: snapshot.current.workspace,
+        regionDomain,
+        workspace,
       });
       if (nextCheckout.redirectUrl != null) {
         services.redirectTop(nextCheckout.redirectUrl);
@@ -1247,9 +1280,9 @@ export function BillingPlanCheckoutDialog({
         elapsedMs: now() - waitingStartedAt,
         onSubscriptionChanged: () => onSubscriptionChangedRef.current(),
         paymentTimeoutMs,
-        regionDomain: snapshot.current.regionDomain,
+        regionDomain,
         services: servicesRef.current,
-        workspace: snapshot.current.workspace,
+        workspace,
       });
       if (!active) {
         return;
@@ -1288,8 +1321,8 @@ export function BillingPlanCheckoutDialog({
     paymentTimeoutMs,
     pollIntervalMs,
     schedulePoll,
-    snapshot.current.regionDomain,
-    snapshot.current.workspace,
+    regionDomain,
+    workspace,
     stage,
     waitingStartedAt,
     waitingStatus,
@@ -1308,8 +1341,8 @@ export function BillingPlanCheckoutDialog({
           appToken,
           invoiceId: checkout.invoiceId,
           kubeconfig,
-          regionDomain: snapshot.current.regionDomain,
-          workspace: snapshot.current.workspace,
+          regionDomain,
+          workspace,
         });
       }
       await onSubscriptionChanged();
@@ -1323,9 +1356,9 @@ export function BillingPlanCheckoutDialog({
         checkoutPayId: checkout?.payId,
         credentials: { appToken, kubeconfig },
         onSubscriptionChanged,
-        regionDomain: snapshot.current.regionDomain,
+        regionDomain,
         services,
-        workspace: snapshot.current.workspace,
+        workspace,
       });
       if (result.kind === "completed") {
         onClose();

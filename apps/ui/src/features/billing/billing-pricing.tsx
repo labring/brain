@@ -31,14 +31,7 @@ import {
   Network,
   Plus,
 } from "lucide-react";
-import {
-  Fragment,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 
 import {
@@ -802,14 +795,16 @@ export default function BillingPricing({
     []
   );
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const selectedPlan = useMemo(() => {
-    const plan =
-      planSnapshot?.plans.find((entry) => entry.id === selectedPlanId) ?? null;
-    const inDebt = planSnapshot?.current.lifecycle === "payment-due";
-    // A pending upgrade never blocks selection: picking a conflicting plan
-    // still opens checkout, whose quote request 409s into the recovery stage.
-    return planOperator(plan, inDebt) == null ? null : plan;
-  }, [planSnapshot, selectedPlanId]);
+  // No memo: the result is a reference into `planSnapshot.plans`, never a new
+  // object, so the checkout dialog below sees a stable `plan` for as long as
+  // the snapshot itself is stable.
+  const candidatePlan =
+    planSnapshot?.plans.find((entry) => entry.id === selectedPlanId) ?? null;
+  const inDebt = planSnapshot?.current.lifecycle === "payment-due";
+  // A pending upgrade never blocks selection: picking a conflicting plan
+  // still opens checkout, whose quote request 409s into the recovery stage.
+  const selectedPlan =
+    planOperator(candidatePlan, inDebt) == null ? null : candidatePlan;
   const clearSelection = () => setSelectedPlanId(null);
 
   return (

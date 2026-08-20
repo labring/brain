@@ -301,6 +301,29 @@ interface TreeEdge {
   id: string;
 }
 
+/**
+ * Re-measuring produces a fresh array every time. Only publish it when a path
+ * actually moved, so a pan or a data refresh that leaves the layout alone
+ * does not re-render the whole edge layer.
+ */
+function sameEdges(
+  previous: readonly TreeEdge[],
+  next: readonly TreeEdge[]
+): boolean {
+  return (
+    previous.length === next.length &&
+    previous.every((edge, index) => {
+      const candidate = next[index];
+      return (
+        candidate != null &&
+        edge.id === candidate.id &&
+        edge.d === candidate.d &&
+        edge.highlighted === candidate.highlighted
+      );
+    })
+  );
+}
+
 function edgeAnchors(
   wrapperRect: DOMRect,
   scale: number,
@@ -347,11 +370,13 @@ function CostNodesCanvas({
     new Map()
   );
   // Stable per-node ref callbacks so re-renders do not loop on ref identity.
-  const nodeRefCallbacks = useRef(
-    new Map<string, RefCallback<HTMLDivElement>>()
+  // The cache is created once and only ever read during render, so it lives
+  // in state rather than a ref.
+  const [nodeRefCallbacks] = useState(
+    () => new Map<string, RefCallback<HTMLDivElement>>()
   );
-  const getRefForNode = useCallback((id: string) => {
-    let callback = nodeRefCallbacks.current.get(id);
+  const getRefForNode = (id: string) => {
+    let callback = nodeRefCallbacks.get(id);
     if (!callback) {
       callback = (element) => {
         setNodeElements((previous) => {
@@ -368,27 +393,35 @@ function CostNodesCanvas({
           return next;
         });
       };
-      nodeRefCallbacks.current.set(id, callback);
+      nodeRefCallbacks.set(id, callback);
     }
     return callback;
-  }, []);
+  };
 
   useEffect(() => {
     onNodesChange(nodeElements);
   }, [nodeElements, onNodesChange]);
 
   // Old Cost Center behavior: workspace cards appear once a region is chosen.
-  const visibleWorkspaces = scope.kind === "total" ? [] : workspaces;
+  const visibleWorkspaces = useMemo(
+    () => (scope.kind === "total" ? [] : workspaces),
+    [scope.kind, workspaces]
+  );
   const selectedWorkspace = scope.kind === "workspace" ? scope.workspace : null;
 
-  const edges = useMemo(() => {
-    const collected: TreeEdge[] = [];
+  // Edges are measured from the laid-out cards, so they are computed after
+  // commit rather than during render: the first pass paints the cards, the
+  // layout effect measures them and the second pass draws the connectors.
+  const [edges, setEdges] = useState<TreeEdge[]>([]);
+  const scale = transformContext.transformState.scale;
+  useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) {
-      return collected;
+      setEdges([]);
+      return;
     }
+    const collected: TreeEdge[] = [];
     const wrapperRect = wrapper.getBoundingClientRect();
-    const scale = transformContext.transformState.scale;
     const totalElement = nodeElements.get(TOTAL_NODE_ID);
     const regionElement = nodeElements.get(REGION_NODE_ID);
     if (totalElement && regionElement) {
@@ -425,14 +458,10 @@ function CostNodesCanvas({
         });
       }
     }
-    return collected;
-  }, [
-    nodeElements,
-    scope.kind,
-    selectedWorkspace,
-    transformContext.transformState.scale,
-    visibleWorkspaces,
-  ]);
+    setEdges((previous) =>
+      sameEdges(previous, collected) ? previous : collected
+    );
+  }, [nodeElements, scale, scope.kind, selectedWorkspace, visibleWorkspaces]);
 
   return (
     <div className="relative h-px w-px" ref={wrapperRef}>
@@ -820,16 +849,19 @@ export function BillingCostTree({
     };
   }, [applyFit, panelRightInset, viewportSize.height, viewportSize.width]);
 
-  useEffect(() => {
-    return () => {
-      if (programmaticClearTimerRef.current != null) {
-        clearTimeout(programmaticClearTimerRef.current);
-      }
-      if (resizeTimerRef.current != null) {
-        clearTimeout(resizeTimerRef.current);
-      }
-    };
+  // Both timers are armed from callbacks, not from an effect, so unmount is
+  // the only place left to cancel whichever one is still pending.
+  const clearPendingTimers = useCallback(() => {
+    if (programmaticClearTimerRef.current != null) {
+      clearTimeout(programmaticClearTimerRef.current);
+      programmaticClearTimerRef.current = null;
+    }
+    if (resizeTimerRef.current != null) {
+      clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = null;
+    }
   }, []);
+  useEffect(() => clearPendingTimers, [clearPendingTimers]);
 
   return (
     <div

@@ -5,7 +5,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { Calculator, ChartPie, Dock, ReceiptText, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useSyncExternalStore } from "react";
 
 import { readBillingReturnRoute } from "./billing-return-route";
 
@@ -35,16 +35,25 @@ export function billingTabFromPathname(pathname: string): BillingTab | null {
   return tab?.value ?? null;
 }
 
+// The entry point is recorded once per navigation into /billing and never
+// changes while the Billing Area is mounted, so the store has nothing to
+// publish after the initial read.
+const subscribeToNothing = () => () => {
+  // no-op unsubscribe
+};
+
 /**
  * Close returns to the in-app route the user entered the Billing Area from.
- * The stored route is read after hydration so server and client render the
- * same href; the recorded entry point only exists in the browser.
+ * The server snapshot is the home fallback so server and client render the
+ * same href; the recorded entry point only exists in the browser and lands
+ * on the first client render after hydration.
  */
 function BillingCloseButton() {
-  const [returnHref, setReturnHref] = useState("/");
-  useEffect(() => {
-    setReturnHref(readBillingReturnRoute());
-  }, []);
+  const returnHref = useSyncExternalStore(
+    subscribeToNothing,
+    readBillingReturnRoute,
+    () => "/"
+  );
   return (
     <AppIconButton
       aria-label="Close billing"

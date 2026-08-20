@@ -2,7 +2,7 @@
 
 import { DateRangePicker } from "@workspace/ui/components/date-range-picker";
 import { useAtomValue } from "jotai";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 
 import {
@@ -145,7 +145,6 @@ export default function BillingCosts({
     null
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const selectedWorkspace = scope.kind === "workspace" ? scope.workspace : null;
   const credentialsReady = appToken.trim() !== "" && kubeconfig.trim() !== "";
   // Tree / totals / payments only depend on the date range. Paging the app
   // overview table must not re-fetch or re-skeleton the cost tree.
@@ -167,6 +166,25 @@ export default function BillingCosts({
       }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
+  // The workspace list and app-type catalog are scoped to the date range, so
+  // after a range change the scope/filter can point at entries the new
+  // snapshot no longer lists. Reconcile during render, ahead of the request
+  // that keys on them (never mid-flight): an orphaned workspace scope
+  // silently falls back to the region card, an orphaned type filter to "All".
+  const baseSnapshot = costsBase.data;
+  if (baseSnapshot != null) {
+    const nextScope = reconcileCostScope(scope, baseSnapshot.workspaces);
+    const nextAppTypeFilter = reconcileAppTypeFilter(
+      appTypeFilter,
+      baseSnapshot.appTypes
+    );
+    if (nextScope !== scope || nextAppTypeFilter !== appTypeFilter) {
+      setScope(nextScope);
+      setAppTypeFilter(nextAppTypeFilter);
+      setAppPage(1);
+    }
+  }
+  const selectedWorkspace = scope.kind === "workspace" ? scope.workspace : null;
   const appOverview = useSWR(
     credentialsReady
       ? [
@@ -210,28 +228,6 @@ export default function BillingCosts({
           totalAppOverviewPages: appOverviewPage?.totalAppOverviewPages ?? 1,
           totalAppOverviews: appOverviewPage?.totalAppOverviews ?? 0,
         };
-  // The workspace list and app-type catalog are scoped to the date range, so
-  // after a range change the scope/filter can point at entries the new
-  // snapshot no longer lists. Reconcile once the snapshot resolves (never
-  // mid-flight): an orphaned workspace scope silently falls back to the
-  // region card, an orphaned type filter back to "All".
-  const baseSnapshot = costsBase.data;
-  useEffect(() => {
-    if (baseSnapshot == null) {
-      return;
-    }
-    const nextScope = reconcileCostScope(scope, baseSnapshot.workspaces);
-    const nextAppTypeFilter = reconcileAppTypeFilter(
-      appTypeFilter,
-      baseSnapshot.appTypes
-    );
-    if (nextScope === scope && nextAppTypeFilter === appTypeFilter) {
-      return;
-    }
-    setScope(nextScope);
-    setAppTypeFilter(nextAppTypeFilter);
-    setAppPage(1);
-  }, [appTypeFilter, baseSnapshot, scope]);
   // Only the base snapshot (tree, totals, payments) escalates to the
   // page-level banner; an app-overview failure stays inside the PAYG table.
   const error = costsBase.error;

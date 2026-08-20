@@ -107,7 +107,6 @@ export function BillingPlanWorkflow({
   snapshot,
   stripeReturn = null,
 }: BillingPlanWorkflowProps) {
-  const modeConsumedRef = useRef(false);
   const stripeAcknowledgedKeyRef = useRef<string | null>(null);
   const stripeRefreshRef = useRef<{
     key: string;
@@ -126,21 +125,24 @@ export function BillingPlanWorkflow({
   const [congratulationsSnapshot, setCongratulationsSnapshot] =
     useState<BillingPlanSnapshot | null>(null);
 
-  useEffect(() => {
-    if (initialMode !== "upgrade") {
-      modeConsumedRef.current = false;
-      return;
-    }
-    if (modeConsumedRef.current) {
-      return;
-    }
-    modeConsumedRef.current = true;
-    if (planDialogActionable) {
+  // The mode parameter is consumed once per arrival: the state above handles
+  // the deep-link mount, and this handles a later client-side navigation back
+  // to ?mode=upgrade. Opening during render keeps the picker from painting a
+  // frame without it. Stripping the parameter is a URL side effect, so it
+  // stays in an effect — and runs whether or not the picker opened.
+  const [consumedMode, setConsumedMode] = useState(initialMode);
+  if (consumedMode !== initialMode) {
+    setConsumedMode(initialMode);
+    if (initialMode === "upgrade" && planDialogActionable) {
       setSelectedPlanId(null);
       setPlanDialogOpen(true);
     }
-    replaceUrl(currentUrlWithout(["mode"]));
-  }, [initialMode, planDialogActionable, replaceUrl]);
+  }
+  useEffect(() => {
+    if (initialMode === "upgrade") {
+      replaceUrl(currentUrlWithout(["mode"]));
+    }
+  }, [initialMode, replaceUrl]);
 
   useEffect(() => {
     if (stripeReturn == null) {
