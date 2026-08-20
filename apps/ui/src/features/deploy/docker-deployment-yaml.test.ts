@@ -13,6 +13,7 @@ function dockerSettings(overrides: {
   command?: string[];
   configMaps?: Array<{ path: string; value: string }>;
   env?: Array<{ name: string; value: string }>;
+  envRawSource?: string;
   image?: string;
   storage?: Array<{ path: string; size: string }>;
 }) {
@@ -22,6 +23,9 @@ function dockerSettings(overrides: {
     command: overrides.command ?? [],
     configMaps: overrides.configMaps ?? [],
     env: overrides.env ?? [],
+    ...(overrides.envRawSource === undefined
+      ? {}
+      : { envRawSource: overrides.envRawSource }),
     image: overrides.image ?? "nginx:latest",
     storage: overrides.storage ?? [],
   };
@@ -87,6 +91,29 @@ test("renderDockerDeploymentYaml omits empty environment variables", () => {
   );
 
   assert.equal(out.spec.input.env, undefined);
+  assert.equal(out.spec.input.envRawSource, undefined);
+});
+
+test("renderDockerDeploymentYaml delivers the raw env source alongside derived rows", () => {
+  const envRawSource = "# flags\nFEATURE_FLAG=true";
+  const out = YAML.parse(
+    renderDockerDeploymentYaml({
+      name: "project-a-api",
+      namespace: "ns-admin",
+      platformAddressId: "pa_abc123",
+      projectName: "project-a",
+      routingDomain: "apps.example.com",
+      settings: dockerSettings({
+        env: [{ name: "FEATURE_FLAG", value: "true" }],
+        envRawSource,
+      }),
+    })
+  );
+
+  assert.equal(out.spec.input.envRawSource, envRawSource);
+  assert.deepEqual(out.spec.input.env, [
+    { name: "FEATURE_FLAG", value: "true" },
+  ]);
 });
 
 test("renderDockerDeploymentYaml removes template workload when storage is empty", () => {

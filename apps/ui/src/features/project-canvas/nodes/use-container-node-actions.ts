@@ -135,9 +135,9 @@ export function useCanvasContainerNodeActions({
           };
     const quickActions = {
       ...(base.quickActions ?? {}),
-      calendar: containerQuickAction("calendar"),
-      logs: containerQuickAction("logs"),
       events: containerQuickAction("events"),
+      imageVersions: containerQuickAction("imageVersions"),
+      logs: containerQuickAction("logs"),
       metrics: containerQuickAction("metrics"),
       terminal: containerQuickAction("terminal"),
     };

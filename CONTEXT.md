@@ -54,6 +54,12 @@ An AP-owned configuration file mounted into the application runtime through AP S
 
 A persistent volume an AP owns at one absolute container path, keeping application-written data across restarts and redeploys. Mount paths are unique and fixed once created; capacity can grow but never shrink. Distinct from an AP Configuration File, which mounts user-authored content.
 
+### AP Image Version
+
+A retained record of one AP's previously applied image configuration — the image reference together with the desired-configuration snapshot it shipped with — kept per AP as a bounded set of recent versions for review and rollback. Rollback is a Resource Action restoring the AP's desired configuration from a selected version; it is not a Deployment Task, a Redeploy, or a Settings edit. Changing the image itself is AP Settings work, and an image update produces a new version rather than modifying an existing one. The versions surface may host an entry point for such an update, but the update remains AP Settings work with the same pending and divergence lifecycle as any settings edit — the surface itself stays a Resource Surface, not a Settings View, and Rollback stays a Resource Action.
+
+_Avoid_: deployment (for an image revision), AP Deployments Pane.
+
 ## AP Networking & Public Access
 
 ### App Listening Port
@@ -148,7 +154,7 @@ An unsaved AP Environment draft intent to create or update a Database Binding, d
 
 ### AP Environment Raw Source
 
-The canonical AP environment editing model: the complete set of entries as the user can author them in `.env` form, including direct values, AP Environment References, and runtime expansions. Structured environment controls are views or insertion aids over the raw source, not separate saved state.
+The canonical AP environment editing model: the complete set of entries as the user can author them in `.env` form, including direct values, AP Environment References, and runtime expansions. Structured environment controls are views or insertion aids over the raw source, not separate saved state. Authoring can begin before the AP exists: a Docker Deployment Source carries its environment as a raw source and delivers it unchanged to the AP it creates. A deploy-time raw source holds no AP Environment References — references are available only in AP Settings.
 
 ### AP Environment Reference
 
@@ -408,7 +414,7 @@ _Avoid_: Canvas Action, node action.
 
 ### Resource Surface Intent
 
-A user-triggered intent to open a resource-focused project surface for an existing AP or DB — Resource Logs, AP Terminal, DB Terminal, DB Access, or a Settings View. It belongs to surface orchestration, not the resource lifecycle; it is not a Resource Action because no resource state changes.
+A user-triggered intent to open a resource-focused project surface for an existing AP or DB — Resource Logs, AP Terminal, DB Terminal, DB Access, AP Image Versions, or a Settings View. It belongs to surface orchestration, not the resource lifecycle; it is not a Resource Action because no resource state changes.
 
 ### Resource Affordance
 

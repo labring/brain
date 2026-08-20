@@ -127,6 +127,50 @@ test("pending settings store applies one owner identity policy for list, replace
   assert.deepEqual(store.list(ownerWithUid), []);
 });
 
+test("pending settings store clears every domain for one owner and nothing else", () => {
+  const storage = new MemoryStorage();
+  const store = createPendingSettingsStore({ now: () => 1000, storage });
+  const owner = {
+    clusterFingerprint: "sha256:cluster",
+    kind: "ap" as const,
+    name: "api",
+    namespace: "demo",
+    uid: "ap-uid-1",
+  };
+  const otherOwner = { ...owner, name: "web", uid: "ap-uid-2" };
+
+  store.replaceDirtyDomains({
+    owner,
+    updates: [
+      {
+        domain: "launch",
+        submittedAgainst: { image: "ghcr.io/acme/api:v1" },
+        target: { image: "ghcr.io/acme/api:v2" },
+      },
+      {
+        domain: "resources",
+        submittedAgainst: { cpuCores: 1 },
+        target: { cpuCores: 2 },
+      },
+    ],
+  });
+  store.replaceDirtyDomains({
+    owner: otherOwner,
+    updates: [
+      {
+        domain: "launch",
+        submittedAgainst: { image: "ghcr.io/acme/web:v1" },
+        target: { image: "ghcr.io/acme/web:v2" },
+      },
+    ],
+  });
+
+  store.clearOwner(owner);
+
+  assert.deepEqual(store.list(owner), []);
+  assert.equal(store.list(otherOwner).length, 1);
+});
+
 test("pending settings store drops persisted entries without complete domain targets", () => {
   const storage = new MemoryStorage();
   storage.setItem(
