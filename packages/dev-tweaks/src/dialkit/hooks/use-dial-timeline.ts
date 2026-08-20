@@ -40,7 +40,7 @@ export function useDialTimeline<T extends TimelineConfig>(
   options?: UseDialTimelineOptions
 ): DialTimelineValues<T> {
   const _serializedConfig = useSerialized(config);
-   
+
   const parsed = useMemo(() => parseTimelineConfig(config), [config]);
 
   // Clip values live in DialStore under the timeline's panel id, so presets,

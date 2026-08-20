@@ -5,9 +5,13 @@ import { ICON_CHEVRON, ICON_PANEL } from "../icons";
 interface FolderProps {
   children: ReactNode;
   defaultOpen?: boolean;
+  /** Root folder only: fill the parent instead of sizing to content (frame posture). */
+  fill?: boolean;
   inline?: boolean;
   isRoot?: boolean;
   onOpenChange?: (isOpen: boolean) => void;
+  /** Controlled open state; leave undefined for the internal default-open state. */
+  open?: boolean;
   panelHeightOffset?: number;
   title: string;
   toolbar?: ReactNode;
@@ -18,14 +22,17 @@ export function Folder({
   title,
   children,
   defaultOpen = true,
+  fill = false,
   isRoot = false,
   inline = false,
   onOpenChange,
+  open,
   toolbar,
   panelHeightOffset = 0,
 }: FolderProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-  const [isCollapsed, setIsCollapsed] = useState(!defaultOpen);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const isOpen = open ?? internalOpen;
+  const isCollapsed = !isOpen;
   const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number | undefined>(
     undefined
@@ -64,11 +71,8 @@ export function Folder({
       return;
     }
     const next = !isOpen;
-    setIsOpen(next);
-    if (next) {
-      setIsCollapsed(false);
-    } else {
-      setIsCollapsed(true);
+    if (open === undefined) {
+      setInternalOpen(next);
     }
     onOpenChange?.(next);
   };
@@ -186,13 +190,22 @@ export function Folder({
       );
     }
 
+    let openHeight: number | "auto" | "100%";
+    if (fill) {
+      openHeight = "100%";
+    } else if (contentHeight === undefined) {
+      openHeight = "auto";
+    } else {
+      openHeight = Math.min(
+        contentHeight + panelHeightOffset,
+        windowHeight - 32
+      );
+    }
+
     const panelStyle = isOpen
       ? {
-          width: 280,
-          height:
-            contentHeight === undefined
-              ? ("auto" as const)
-              : Math.min(contentHeight + panelHeightOffset, windowHeight - 32),
+          width: fill ? ("100%" as const) : 280,
+          height: openHeight,
           borderRadius: 14,
           boxShadow: "var(--dial-shadow)",
           cursor: undefined as string | undefined,

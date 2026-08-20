@@ -2297,3 +2297,112 @@
     min-width: 0;
   }
 }
+
+/* ---------- frame posture (the page's own <body> is the inset card) ---------- */
+
+/*
+ * Frame posture does not wrap the page in a card — it turns `<body>` into one.
+ *
+ * `contain: layout` is the whole trick. It makes the body the containing
+ * block for every `position: fixed` descendant *and* for everything React
+ * portals into `document.body`, so dialogs, sheets, menus, tooltips and
+ * toasts land inside the card without one line of change in the host's
+ * components. It also makes the body a formatting context root, which stops
+ * the usual body-to-viewport overflow propagation — so `overflow: hidden`
+ * clips at the card's rounded corners instead of at the window edge.
+ *
+ * `<html>` carries the scrim. Without a background of its own the body's
+ * background propagates to the canvas and paints the whole window.
+ *
+ * The card wears whatever background the host already gave its body, so
+ * there is nothing to bridge: the docked page keeps its real surface.
+ *
+ * Nothing the panel renders can live inside a contained body, so the chrome
+ * rides the top layer instead — see `.dialkit-root[popover]`.
+ */
+
+.dialkit-frame-host {
+  --dialkit-frame-gap: 32px;
+  --dialkit-frame-panel-w: 280px;
+  --dialkit-frame-ms: 300ms;
+  --dialkit-frame-radius: 14px;
+  --dialkit-frame-scrim: rgb(0 0 0 / 0.4);
+  --dialkit-frame-ring: rgb(255 255 255 / 0.1);
+  transition: background-color var(--dialkit-frame-ms) ease;
+}
+
+.dialkit-frame-host > body {
+  transition:
+    margin var(--dialkit-frame-ms) ease,
+    height var(--dialkit-frame-ms) ease,
+    border-radius var(--dialkit-frame-ms) ease,
+    box-shadow var(--dialkit-frame-ms) ease;
+}
+
+.dialkit-framed {
+  /* The card measures against the root, so the root needs a definite height. */
+  height: 100%;
+  background-color: var(--dialkit-frame-scrim);
+}
+
+.dialkit-framed > body {
+  height: calc(100% - var(--dialkit-frame-gap) * 2);
+  margin: var(--dialkit-frame-gap);
+  margin-right: calc(
+    var(--dialkit-frame-gap) *
+    2 +
+    var(--dialkit-frame-panel-w)
+  );
+  contain: layout;
+  overflow: hidden;
+  border-radius: var(--dialkit-frame-radius);
+  /* Ring as a shadow layer — no 1px of layout shift when it appears. */
+  box-shadow:
+    0 0 0 1px var(--dialkit-frame-ring),
+    0 24px 64px -24px rgb(0 0 0 / 0.6);
+}
+
+/* Top layer: the chrome is a manual popover for its whole life, so the frame
+ * card's `contain: layout` can never trap it. Undo the UA popover box. */
+.dialkit-root[popover] {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+  pointer-events: none;
+  background: transparent;
+  border: none;
+}
+
+.dialkit-root[popover] .dialkit-panel {
+  pointer-events: auto;
+}
+
+/* The docked strip: full-height at the right edge, sliding in on the same
+ * timeline as the card inset. */
+.dialkit-panel[data-posture="frame"] {
+  top: var(--dialkit-frame-gap, 32px);
+  right: var(--dialkit-frame-gap, 32px);
+  bottom: var(--dialkit-frame-gap, 32px);
+  left: auto;
+  width: var(--dialkit-frame-panel-w, 280px);
+  max-height: none;
+  animation: dialkit-frame-panel-in var(--dialkit-frame-ms, 300ms) ease;
+}
+
+.dialkit-panel[data-posture="frame"] .dialkit-panel-wrapper {
+  height: 100%;
+}
+
+@keyframes dialkit-frame-panel-in {
+  from {
+    transform: translateX(calc(100% + var(--dialkit-frame-gap, 32px)));
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}

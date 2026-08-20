@@ -63,7 +63,7 @@ export function useDialKitController<T extends DialConfig>(
 
   const values = useMemo(
     () => resolveDialValues(configRef.current, flatValues),
-     
+
     [flatValues]
   );
 

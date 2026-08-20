@@ -16,7 +16,8 @@ const DevTweaksEnabled =
     : null;
 
 /**
- * Mounts the DialKit dev tweaks panel (floating popover) next to the app.
+ * Mounts the DialKit dev tweaks panel (⌃⌥T; docks the page or floats) next
+ * to the app.
  * Inert in production: renders children untouched.
  */
 export function DevTweaks({ children }: { children: ReactNode }) {

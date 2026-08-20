@@ -5,7 +5,12 @@ export { ButtonGroup } from "./components/button-group";
 export { ColorControl } from "./components/color-control";
 // Individual components (for advanced usage)
 export { ControlRenderer } from "./components/control-renderer";
-export type { DialMode, DialPosition, DialTheme } from "./components/dial-root";
+export type {
+  DialLauncher,
+  DialMode,
+  DialPosition,
+  DialTheme,
+} from "./components/dial-root";
 // Root component (user mounts once)
 export { DialRoot } from "./components/dial-root";
 export { EasingVisualization } from "./components/easing-visualization";
@@ -70,3 +75,4 @@ export type {
 } from "./store/timeline-store";
 export { TimelineStore } from "./store/timeline-store";
 export { formatClock } from "./timeline-core";
+export type { PanelPosture, PanelUiPrefs } from "./ui-prefs";

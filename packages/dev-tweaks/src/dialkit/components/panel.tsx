@@ -10,8 +10,12 @@ import { PresetManager } from "./preset-manager";
 
 interface PanelProps {
   defaultOpen?: boolean;
+  /** Root variant only: fill the parent instead of sizing to content (frame posture). */
+  fill?: boolean;
   inline?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Root variant only: controlled open state. */
+  open?: boolean;
   panel: PanelConfig;
   toolbarExtra?: ReactNode;
   variant?: "root" | "section";
@@ -20,8 +24,10 @@ interface PanelProps {
 export function Panel({
   panel,
   defaultOpen = true,
+  fill = false,
   inline = false,
   onOpenChange,
+  open,
   variant = "root",
   toolbarExtra,
 }: PanelProps) {
@@ -207,9 +213,11 @@ export function Panel({
     <div className="dialkit-panel-wrapper">
       <Folder
         defaultOpen={defaultOpen}
+        fill={fill}
         inline={inline}
         isRoot={true}
         onOpenChange={handleOpenChange}
+        open={open}
         title={panel.name}
         toolbar={toolbar}
       >

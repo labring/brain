@@ -93,7 +93,6 @@ export function useDialStorePanel(
         kind: optionsRef.current.kind,
       }
     );
-     
   }, [hasStableId, panelId, name]);
 
   const subscribe = useCallback(

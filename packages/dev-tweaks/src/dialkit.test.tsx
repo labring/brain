@@ -102,6 +102,121 @@ test("DialRoot renders a registered panel", async () => {
   }
 });
 
+function pressToggleHotkey() {
+  window.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      altKey: true,
+      cancelable: true,
+      code: "KeyT",
+      ctrlKey: true,
+    })
+  );
+}
+
+test("⌃⌥T toggles the panel, and frame posture insets the document", async () => {
+  const dom = installTestDom();
+  const previousAct = setActEnvironment(true);
+  try {
+    const { DialRoot, useDialKit } = await import("./index");
+    const { cleanup, render } = await import("@testing-library/react/pure");
+
+    function Probe() {
+      useDialKit("Card", CARD_CONFIG, { id: "test-card-hotkey" });
+      return null;
+    }
+
+    const collapsed = () =>
+      document
+        .querySelector(".dialkit-panel-inner")
+        ?.getAttribute("data-collapsed");
+    const framed = () =>
+      document.documentElement.classList.contains("dialkit-framed");
+
+    await actAndDrain(() => {
+      render(
+        <>
+          <Probe />
+          <DialRoot defaultOpen={false} productionEnabled />
+        </>
+      );
+    });
+    assert.equal(collapsed(), "true");
+    assert.equal(framed(), false);
+    assert.ok(
+      document.documentElement.classList.contains("dialkit-frame-host")
+    );
+
+    await actAndDrain(() => {
+      pressToggleHotkey();
+    });
+    assert.equal(collapsed(), "false");
+    assert.equal(framed(), true, "open panel docks the page (frame default)");
+
+    await actAndDrain(() => {
+      pressToggleHotkey();
+    });
+    assert.equal(collapsed(), "true");
+    assert.equal(framed(), false);
+
+    await actAndDrain(() => {
+      cleanup();
+    });
+    assert.equal(
+      document.documentElement.classList.contains("dialkit-frame-host"),
+      false,
+      "unmount leaves nothing behind"
+    );
+  } finally {
+    restoreActEnvironment(previousAct);
+    await dom.restore();
+  }
+});
+
+test("dirty-only launcher hides the closed bubble until a value deviates", async () => {
+  const dom = installTestDom();
+  const previousAct = setActEnvironment(true);
+  try {
+    const { DialRoot, DialStore, useDialKit } = await import("./index");
+    const { cleanup, render } = await import("@testing-library/react/pure");
+
+    function Probe() {
+      useDialKit("Card", CARD_CONFIG, { id: "test-card-dirty" });
+      return null;
+    }
+
+    const panelDisplay = () =>
+      (document.querySelector(".dialkit-panel") as HTMLElement | null)?.style
+        .display;
+
+    await actAndDrain(() => {
+      render(
+        <>
+          <Probe />
+          <DialRoot defaultOpen={false} launcher="dirty" productionEnabled />
+        </>
+      );
+    });
+    assert.equal(panelDisplay(), "none", "clean and closed → no chrome");
+
+    await actAndDrain(() => {
+      DialStore.updateValue("test-card-dirty", "blur", 42);
+    });
+    assert.notEqual(panelDisplay(), "none", "override lights the bubble");
+
+    await actAndDrain(() => {
+      DialStore.resetValues("test-card-dirty");
+    });
+    assert.equal(panelDisplay(), "none", "reset hides it again");
+
+    await actAndDrain(() => {
+      cleanup();
+    });
+  } finally {
+    restoreActEnvironment(previousAct);
+    await dom.restore();
+  }
+});
+
 test("cssVarOverrides writes only overridden values, with units", async () => {
   const { cssVarOverrides } = await import("./css-vars");
   const style = cssVarOverrides(

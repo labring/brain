@@ -706,6 +706,22 @@ class DialStoreClass {
     return this.snapshots.get(panelId) ?? EMPTY_VALUES;
   }
 
+  /** Any current value deviates from the config default — the panel carries
+   * a live override. Drives the launcher bubble's dirty-only visibility. */
+  isPanelDirty(panelId: string): boolean {
+    const panel = this.panels.get(panelId);
+    const defaults = this.defaultValues.get(panelId);
+    if (!(panel && defaults)) {
+      return false;
+    }
+    for (const [path, value] of Object.entries(panel.values)) {
+      if (JSON.stringify(value) !== JSON.stringify(defaults[path])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   getPanels(kind?: "panel" | "timeline"): PanelConfig[] {
     // Stable reference between global notifications: getSnapshot-style
     // consumers (React useSyncExternalStore, Solid `from`) compare by

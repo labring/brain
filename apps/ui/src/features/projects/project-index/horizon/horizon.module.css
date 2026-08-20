@@ -1,5 +1,5 @@
 .horizon {
-  /* Tunable via the dev tweaks panel (floating DialKit bubble in dev). These
+  /* Tunable via the dev tweaks panel (⌃⌥T in dev). These
      defaults are the source of truth; project-index-horizon.tsx mirrors them
      for the panel. */
   --horizon-glow-core: 56%;
