@@ -249,7 +249,7 @@ const DAYS_31_IN_MILLISECONDS = 31 * 24 * 60 * 60 * 1000;
 // are finally deleted 14 days after the subscription expires. The upstream
 // does not report a deletion date, so the client derives it from expiry for
 // the post-expiry warning stages; see
-// docs/adr/0062-derive-resource-deletion-dates-client-side.md for when this
+// docs/adr/0063-derive-resource-deletion-dates-client-side.md for when this
 // constant must be replaced by an upstream field.
 const RESOURCE_DELETION_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
 

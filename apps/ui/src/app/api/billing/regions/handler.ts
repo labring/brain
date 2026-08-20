@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Marks the Current Region in the upstream region catalog (ADR 0063). The
+ * Marks the Current Region in the upstream region catalog (ADR 0064). The
  * catalog's order carries no meaning, so the deployment declares which region
  * it belongs to via BILLING_LOCAL_REGION_DOMAIN (the same deployment-declared
  * fact account-service itself calls LocalRegionDomain) and this route verifies
