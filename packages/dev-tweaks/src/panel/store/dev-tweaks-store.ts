@@ -175,6 +175,7 @@ interface PersistedPanelState {
 
 // Stable empty object for unregistered panels (React 19 useSyncExternalStore requirement)
 const EMPTY_VALUES: Record<string, DevTweaksValue> = Object.freeze({});
+const EMPTY_PRESETS: Preset[] = [];
 
 export function resolveDevTweaksValues<T extends DevTweaksConfig>(
   config: T,
@@ -854,7 +855,9 @@ class DevTweaksStoreClass {
   }
 
   getPresets(panelId: string): Preset[] {
-    return this.presets.get(panelId) ?? [];
+    // Stable EMPTY_PRESETS: this is a useSyncExternalStore snapshot, and a
+    // fresh array on every call makes React loop.
+    return this.presets.get(panelId) ?? EMPTY_PRESETS;
   }
 
   getActivePresetId(panelId: string): string | null {

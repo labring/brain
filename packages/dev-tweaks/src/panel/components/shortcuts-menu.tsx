@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { getDevTweaksPortalRoot } from "../dropdown-position";
 import { DevTweaksStore, type ShortcutConfig } from "../store/dev-tweaks-store";
 
 interface ShortcutsMenuProps {
@@ -48,15 +49,28 @@ export function ShortcutsMenu({ panelId }: ShortcutsMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [pos, setPos] = useState({ top: 0, right: 0 });
+
+  // Portal into the dev-tweaks root: it rides the top layer, so a body
+  // portal would paint underneath it (and the framed body clips portals).
+  useEffect(() => {
+    setPortalTarget(
+      getDevTweaksPortalRoot(triggerRef.current) ?? document.body
+    );
+  }, []);
 
   const open = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) {
-      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    if (rect && portalTarget) {
+      const rootRect = portalTarget.getBoundingClientRect();
+      setPos({
+        top: rect.bottom - rootRect.top + 4,
+        right: rootRect.right - rect.right,
+      });
+      setIsOpen(true);
     }
-    setIsOpen(true);
-  }, []);
+  }, [portalTarget]);
 
   const close = useCallback(() => setIsOpen(false), []);
 
@@ -151,49 +165,55 @@ export function ShortcutsMenu({ panelId }: ShortcutsMenuProps) {
         </svg>
       </motion.button>
 
-      {createPortal(
-        <AnimatePresence>
-          {isOpen && (
-            <motion.div
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="dev-tweaks-root dev-tweaks-shortcuts-dropdown"
-              exit={{
-                opacity: 0,
-                y: 4,
-                scale: 0.97,
-                pointerEvents: "none",
-              }}
-              initial={{ opacity: 0, y: 4, scale: 0.97 }}
-              ref={dropdownRef}
-              style={{ position: "fixed", top: pos.top, right: pos.right }}
-              transition={{ type: "spring", visualDuration: 0.15, bounce: 0 }}
-            >
-              <div className="dev-tweaks-shortcuts-title">
-                Keyboard Shortcuts
-              </div>
-              <div className="dev-tweaks-shortcuts-list">
-                {rows.map((row) => (
-                  <div className="dev-tweaks-shortcuts-row" key={row.path}>
-                    <span className="dev-tweaks-shortcuts-row-key">
-                      {formatShortcutKey(row.shortcut)}
-                    </span>
-                    <span className="dev-tweaks-shortcuts-row-label">
-                      {row.label}
-                    </span>
-                    <span className="dev-tweaks-shortcuts-row-mode">
-                      {formatInteraction(row.shortcut)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="dev-tweaks-shortcuts-hint">
-                See pill badges on controls for keys
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body
-      )}
+      {portalTarget &&
+        createPortal(
+          <AnimatePresence>
+            {isOpen && (
+              <motion.div
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                className="dev-tweaks-shortcuts-dropdown"
+                exit={{
+                  opacity: 0,
+                  y: 4,
+                  scale: 0.97,
+                  pointerEvents: "none",
+                }}
+                initial={{ opacity: 0, y: 4, scale: 0.97 }}
+                ref={dropdownRef}
+                style={{
+                  position: "absolute",
+                  top: pos.top,
+                  right: pos.right,
+                  transformOrigin: "top right",
+                }}
+                transition={{ type: "spring", visualDuration: 0.15, bounce: 0 }}
+              >
+                <div className="dev-tweaks-shortcuts-title">
+                  Keyboard Shortcuts
+                </div>
+                <div className="dev-tweaks-shortcuts-list">
+                  {rows.map((row) => (
+                    <div className="dev-tweaks-shortcuts-row" key={row.path}>
+                      <span className="dev-tweaks-shortcuts-row-key">
+                        {formatShortcutKey(row.shortcut)}
+                      </span>
+                      <span className="dev-tweaks-shortcuts-row-label">
+                        {row.label}
+                      </span>
+                      <span className="dev-tweaks-shortcuts-row-mode">
+                        {formatInteraction(row.shortcut)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="dev-tweaks-shortcuts-hint">
+                  See pill badges on controls for keys
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          portalTarget
+        )}
     </>
   );
 }

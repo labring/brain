@@ -2385,6 +2385,14 @@
   pointer-events: auto;
 }
 
+/* Dropdowns portal directly into the root (not the panel), so they need
+ * their own pointer-events re-enable to stay clickable in popover mode. */
+.dev-tweaks-root[popover] .dev-tweaks-select-dropdown,
+.dev-tweaks-root[popover] .dev-tweaks-preset-dropdown,
+.dev-tweaks-root[popover] .dev-tweaks-shortcuts-dropdown {
+  pointer-events: auto;
+}
+
 /* The docked strip: full-height at the right edge, sliding in on the same
  * timeline as the card inset. */
 .dev-tweaks-panel[data-posture="frame"] {

@@ -46,8 +46,24 @@ export function Panel({
   // Subscribe to panel value changes
   const values = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  const presets = DevTweaksStore.getPresets(panel.id);
-  const activePresetId = DevTweaksStore.getActivePresetId(panel.id);
+  const getPresetsSnapshot = useCallback(
+    () => DevTweaksStore.getPresets(panel.id),
+    [panel.id]
+  );
+  const getActivePresetIdSnapshot = useCallback(
+    () => DevTweaksStore.getActivePresetId(panel.id),
+    [panel.id]
+  );
+  const presets = useSyncExternalStore(
+    subscribe,
+    getPresetsSnapshot,
+    getPresetsSnapshot
+  );
+  const activePresetId = useSyncExternalStore(
+    subscribe,
+    getActivePresetIdSnapshot,
+    getActivePresetIdSnapshot
+  );
 
   const handleAddPreset = () => {
     const nextNum = presets.length + 2;
