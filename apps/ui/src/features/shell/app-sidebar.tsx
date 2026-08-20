@@ -131,6 +131,7 @@ function isWorkspaceQuotaItem(value: unknown): value is WorkspaceQuotaItem {
     (item.type === "cpu" ||
       item.type === "memory" ||
       item.type === "storage" ||
+      item.type === "pod" ||
       item.type === "nodeport") &&
     typeof item.used === "number" &&
     typeof item.limit === "number"
@@ -139,11 +140,10 @@ function isWorkspaceQuotaItem(value: unknown): value is WorkspaceQuotaItem {
 
 async function loadWorkspaceQuotaRows(): Promise<AppSidebarUpgradeUsageRow[]> {
   const snapshot = await sealosApp.getWorkspaceQuota();
-  return formatWorkspaceQuotaRows(
-    Array.isArray(snapshot.quota)
-      ? snapshot.quota.filter(isWorkspaceQuotaItem)
-      : []
-  );
+  const rawQuota: readonly unknown[] = Array.isArray(snapshot.quota)
+    ? snapshot.quota
+    : [];
+  return formatWorkspaceQuotaRows(rawQuota.filter(isWorkspaceQuotaItem));
 }
 
 async function openCostCenterApp() {
