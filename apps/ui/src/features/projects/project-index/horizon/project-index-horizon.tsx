@@ -1,15 +1,18 @@
 "use client";
 
 import {
-  type DevTweaksGroupDef,
-  type DevTweaksValues,
-  useDevTweaks,
+  type CssVarBinding,
+  cssVarOverrides,
+  type DialConfig,
+  type ResolvedValues,
+  useDialKit,
 } from "@workspace/dev-tweaks";
 import dynamic from "next/dynamic";
 import {
   Component,
   type ReactNode,
   useCallback,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -19,289 +22,80 @@ import type { HorizonWebglPhase } from "./horizon-webgl";
 
 const HorizonWebgl = dynamic(() => import("./horizon-webgl"), { ssr: false });
 
-/** Defaults mirror the `.horizon` custom-property block in horizon.module.css. */
+/**
+ * Defaults mirror the `.horizon` custom-property block in horizon.module.css.
+ * DialKit tuples are [default, min, max, step]. Steps are explicit —
+ * DialKit's auto-inferred step can be coarser than a default (e.g. 102 with
+ * step 5), and its sliders snap values onto the step grid.
+ */
 const HORIZON_TWEAKS = {
-  controls: {
-    bleedX: {
-      cssVar: "--horizon-bleed-x",
-      label: "Glow horizontal bleed",
-      max: 30,
-      min: 0,
-      type: "slider",
-      unit: "%",
-      value: 12,
-    },
-    canvasFps: {
-      label: "Canvas frame cap",
-      max: 60,
-      min: 6,
-      step: 1,
-      type: "slider",
-      value: 24,
-    },
-    canvasScale: {
-      label: "Canvas render scale",
-      max: 1,
-      min: 0.25,
-      step: 0.05,
-      type: "slider",
-      value: 0.5,
-    },
-    engineWebgl: {
-      label: "Engine (0 static · 1 WebGL)",
-      max: 1,
-      min: 0,
-      step: 1,
-      type: "slider",
-      value: 1,
-    },
-    glowCore: {
-      cssVar: "--horizon-glow-core",
-      label: "Glow core intensity",
-      max: 100,
-      min: 0,
-      type: "slider",
-      unit: "%",
-      value: 56,
-    },
-    glowHeight: {
-      cssVar: "--horizon-glow-h",
-      label: "Glow height",
-      max: 90,
-      min: 10,
-      type: "slider",
-      unit: "%",
-      value: 31,
-    },
-    glowMid: {
-      cssVar: "--horizon-glow-mid",
-      label: "Glow mid intensity",
-      max: 100,
-      min: 0,
-      type: "slider",
-      unit: "%",
-      value: 38,
-    },
-    glowOuter: {
-      cssVar: "--horizon-glow-outer",
-      label: "Glow outer intensity",
-      max: 100,
-      min: 0,
-      type: "slider",
-      unit: "%",
-      value: 13,
-    },
-    glowWidth: {
-      cssVar: "--horizon-glow-w",
-      label: "Glow width",
-      max: 140,
-      min: 20,
-      type: "slider",
-      unit: "%",
-      value: 102,
-    },
-    glowY: {
-      cssVar: "--horizon-glow-y",
-      label: "Glow center Y",
-      max: 150,
-      min: 90,
-      type: "slider",
-      unit: "%",
-      value: 110,
-    },
-    huesBlur: {
-      cssVar: "--horizon-hues-blur",
-      label: "Hues blur",
-      max: 80,
-      min: 0,
-      type: "slider",
-      unit: "px",
-      value: 30,
-    },
-    huesCyan: {
-      cssVar: "--horizon-hues-cyan",
-      label: "Hues cyan intensity",
-      max: 100,
-      min: 0,
-      type: "slider",
-      unit: "%",
-      value: 20,
-    },
-    huesDuration: {
-      cssVar: "--horizon-hues-dur",
-      label: "Hues period",
-      max: 20,
-      min: 1,
-      step: 0.5,
-      type: "slider",
-      unit: "s",
-      value: 5,
-    },
-    huesViolet: {
-      cssVar: "--horizon-hues-violet",
-      label: "Hues violet intensity",
-      max: 100,
-      min: 0,
-      type: "slider",
-      unit: "%",
-      value: 24,
-    },
-    noiseOpacity: {
-      cssVar: "--horizon-noise-opacity",
-      label: "Noise opacity",
-      max: 0.2,
-      min: 0,
-      step: 0.005,
-      type: "slider",
-      value: 0.05,
-    },
-    surgeBaseOpacity: {
-      cssVar: "--horizon-surge-base-opacity",
-      label: "Surge base opacity",
-      max: 1,
-      min: 0,
-      step: 0.05,
-      type: "slider",
-      value: 0.55,
-    },
-    surgeCore: {
-      cssVar: "--horizon-surge-core",
-      label: "Surge core intensity",
-      max: 100,
-      min: 0,
-      type: "slider",
-      unit: "%",
-      value: 36,
-    },
-    surgeDuration: {
-      cssVar: "--horizon-surge-dur",
-      label: "Surge period",
-      max: 20,
-      min: 1,
-      step: 0.5,
-      type: "slider",
-      unit: "s",
-      value: 5,
-    },
-    surgeHeight: {
-      cssVar: "--horizon-surge-h",
-      label: "Surge height",
-      max: 90,
-      min: 10,
-      type: "slider",
-      unit: "%",
-      value: 40,
-    },
-    surgeMid: {
-      cssVar: "--horizon-surge-mid",
-      label: "Surge mid intensity",
-      max: 100,
-      min: 0,
-      type: "slider",
-      unit: "%",
-      value: 16,
-    },
-    surgeOpacityMax: {
-      cssVar: "--horizon-surge-op-max",
-      label: "Surge opacity max",
-      max: 1,
-      min: 0,
-      step: 0.05,
-      type: "slider",
-      value: 0.95,
-    },
-    surgeOpacityMin: {
-      cssVar: "--horizon-surge-op-min",
-      label: "Surge opacity min",
-      max: 1,
-      min: 0,
-      step: 0.05,
-      type: "slider",
-      value: 0.45,
-    },
-    surgeScaleMax: {
-      cssVar: "--horizon-surge-scale-max",
-      label: "Surge scale max",
-      max: 1.8,
-      min: 1,
-      step: 0.01,
-      type: "slider",
-      value: 1.22,
-    },
-    surgeScaleMin: {
-      cssVar: "--horizon-surge-scale-min",
-      label: "Surge scale min",
-      max: 1,
-      min: 0.5,
-      step: 0.01,
-      type: "slider",
-      value: 0.85,
-    },
-    surgeWidth: {
-      cssVar: "--horizon-surge-w",
-      label: "Surge width",
-      max: 160,
-      min: 20,
-      type: "slider",
-      unit: "%",
-      value: 72,
-    },
-    surgeY: {
-      cssVar: "--horizon-surge-y",
-      label: "Surge center Y",
-      max: 150,
-      min: 90,
-      type: "slider",
-      unit: "%",
-      value: 114,
-    },
-    swellDuration: {
-      cssVar: "--horizon-swell-dur",
-      label: "Swell period",
-      max: 20,
-      min: 1,
-      step: 0.5,
-      type: "slider",
-      unit: "s",
-      value: 6,
-    },
-    swellOpacityMin: {
-      cssVar: "--horizon-swell-op-min",
-      label: "Swell opacity min",
-      max: 1,
-      min: 0,
-      step: 0.05,
-      type: "slider",
-      value: 0.75,
-    },
-    swellScaleMax: {
-      cssVar: "--horizon-swell-scale-max",
-      label: "Swell scale max",
-      max: 1.6,
-      min: 1,
-      step: 0.01,
-      type: "slider",
-      value: 1.12,
-    },
-    swellScaleMin: {
-      cssVar: "--horizon-swell-scale-min",
-      label: "Swell scale min",
-      max: 1,
-      min: 0.5,
-      step: 0.01,
-      type: "slider",
-      value: 0.9,
-    },
-  },
-  feature: "projects",
-  kind: "tweak",
-  note: "horizon.module.css → .horizon",
-  title: "Project · horizon glow",
-} satisfies DevTweaksGroupDef;
+  bleedX: [12, 0, 30, 1],
+  canvasFps: [24, 6, 60, 1],
+  canvasScale: [0.5, 0.25, 1, 0.05],
+  // 0 static · 1 WebGL
+  engineWebgl: [1, 0, 1, 1],
+  glowCore: [56, 0, 100, 1],
+  glowHeight: [31, 10, 90, 1],
+  glowMid: [38, 0, 100, 1],
+  glowOuter: [13, 0, 100, 1],
+  glowWidth: [102, 20, 140, 1],
+  glowY: [110, 90, 150, 1],
+  huesBlur: [30, 0, 80, 1],
+  huesCyan: [20, 0, 100, 1],
+  huesDuration: [5, 1, 20, 0.5],
+  huesViolet: [24, 0, 100, 1],
+  noiseOpacity: [0.05, 0, 0.2, 0.005],
+  surgeBaseOpacity: [0.55, 0, 1, 0.05],
+  surgeCore: [36, 0, 100, 1],
+  surgeDuration: [5, 1, 20, 0.5],
+  surgeHeight: [40, 10, 90, 1],
+  surgeMid: [16, 0, 100, 1],
+  surgeOpacityMax: [0.95, 0, 1, 0.05],
+  surgeOpacityMin: [0.45, 0, 1, 0.05],
+  surgeScaleMax: [1.22, 1, 1.8, 0.01],
+  surgeScaleMin: [0.85, 0.5, 1, 0.01],
+  surgeWidth: [72, 20, 160, 1],
+  surgeY: [114, 90, 150, 1],
+  swellDuration: [6, 1, 20, 0.5],
+  swellOpacityMin: [0.75, 0, 1, 0.05],
+  swellScaleMax: [1.12, 1, 1.6, 0.01],
+  swellScaleMin: [0.9, 0.5, 1, 0.01],
+} satisfies DialConfig;
 
-export type HorizonTweakValues = DevTweaksValues<
-  (typeof HORIZON_TWEAKS)["controls"]
->;
+/** CSS custom properties (horizon.module.css → `.horizon`) driven per knob. */
+const HORIZON_CSS_VARS: Partial<
+  Record<keyof typeof HORIZON_TWEAKS, CssVarBinding>
+> = {
+  bleedX: { cssVar: "--horizon-bleed-x", unit: "%" },
+  glowCore: { cssVar: "--horizon-glow-core", unit: "%" },
+  glowHeight: { cssVar: "--horizon-glow-h", unit: "%" },
+  glowMid: { cssVar: "--horizon-glow-mid", unit: "%" },
+  glowOuter: { cssVar: "--horizon-glow-outer", unit: "%" },
+  glowWidth: { cssVar: "--horizon-glow-w", unit: "%" },
+  glowY: { cssVar: "--horizon-glow-y", unit: "%" },
+  huesBlur: { cssVar: "--horizon-hues-blur", unit: "px" },
+  huesCyan: { cssVar: "--horizon-hues-cyan", unit: "%" },
+  huesDuration: { cssVar: "--horizon-hues-dur", unit: "s" },
+  huesViolet: { cssVar: "--horizon-hues-violet", unit: "%" },
+  noiseOpacity: { cssVar: "--horizon-noise-opacity" },
+  surgeBaseOpacity: { cssVar: "--horizon-surge-base-opacity" },
+  surgeCore: { cssVar: "--horizon-surge-core", unit: "%" },
+  surgeDuration: { cssVar: "--horizon-surge-dur", unit: "s" },
+  surgeHeight: { cssVar: "--horizon-surge-h", unit: "%" },
+  surgeMid: { cssVar: "--horizon-surge-mid", unit: "%" },
+  surgeOpacityMax: { cssVar: "--horizon-surge-op-max" },
+  surgeOpacityMin: { cssVar: "--horizon-surge-op-min" },
+  surgeScaleMax: { cssVar: "--horizon-surge-scale-max" },
+  surgeScaleMin: { cssVar: "--horizon-surge-scale-min" },
+  surgeWidth: { cssVar: "--horizon-surge-w", unit: "%" },
+  surgeY: { cssVar: "--horizon-surge-y", unit: "%" },
+  swellDuration: { cssVar: "--horizon-swell-dur", unit: "s" },
+  swellOpacityMin: { cssVar: "--horizon-swell-op-min" },
+  swellScaleMax: { cssVar: "--horizon-swell-scale-max" },
+  swellScaleMin: { cssVar: "--horizon-swell-scale-min" },
+};
+
+export type HorizonTweakValues = ResolvedValues<typeof HORIZON_TWEAKS>;
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
@@ -354,12 +148,16 @@ class HorizonCanvasBoundary extends Component<
  * Ambient glow behind the project index. The WebGL engine (default) renders
  * the animated layers at a capped frame rate; the DOM gradient layers are
  * the static fallback for reduced-motion, canvas load, WebGL-init failure,
- * context loss, and the ⌃⌥T engine knob's 0 position (AIM-77).
+ * context loss, and the dev-tweaks engine knob's 0 position (AIM-77).
  */
 export function ProjectIndexHorizon() {
-  const { style, values } = useDevTweaks(
-    "project-index-horizon",
-    HORIZON_TWEAKS
+  const values = useDialKit("Project · horizon glow", HORIZON_TWEAKS, {
+    id: "project-index-horizon",
+    persist: { storage: "sessionStorage" },
+  });
+  const style = useMemo(
+    () => cssVarOverrides(HORIZON_TWEAKS, values, HORIZON_CSS_VARS),
+    [values]
   );
   const reducedMotion = usePrefersReducedMotion();
   const [canvasPhase, setCanvasPhase] = useState<"active" | "failed" | "idle">(

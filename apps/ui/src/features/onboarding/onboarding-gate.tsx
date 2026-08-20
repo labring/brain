@@ -1,6 +1,6 @@
 "use client";
 
-import { type DevTweaksGroupDef, useDevTweaks } from "@workspace/dev-tweaks";
+import { type DialConfig, useDialKit } from "@workspace/dev-tweaks";
 import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 
@@ -30,29 +30,13 @@ import type {
 // While forced, every write is inert and `open || forceOpen` keeps the
 // dialog up — it cannot be closed from inside; switching the knob off is
 // the only exit. This protects the developer's real sampling state.
+// `previewStep` (0 follows the survey · 1-4 force a step) is only honored
+// while the modal is forced: preview never redirects a real survey in
+// progress, where the forced-looking step could submit.
 const ONBOARDING_TWEAKS = {
-  controls: {
-    forceModal: {
-      label: "Force onboarding modal",
-      type: "switch",
-      value: false,
-    },
-    // Only honored while the modal is forced: preview never redirects a
-    // real survey in progress, where the forced-looking step could submit.
-    previewStep: {
-      label: "Preview step (0 follows the survey · 1-4 force)",
-      max: 4,
-      min: 0,
-      step: 1,
-      type: "slider",
-      value: 0,
-    },
-  },
-  feature: "onboarding",
-  kind: "tweak",
-  note: "Opens the dialog unconditionally; Skip/Submit are inert while forced and the dialog stays open until the knob is switched off, so sampling state stays untouched.",
-  title: "Onboarding · sampling dialog",
-} as const satisfies DevTweaksGroupDef;
+  forceModal: false,
+  previewStep: [0, 0, 4, 1],
+} satisfies DialConfig;
 
 /**
  * The Onboarding Gate (ADR-0061): opportunistic and non-blocking. The console
@@ -65,7 +49,10 @@ export function OnboardingGate() {
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
   const [openForKey, setOpenForKey] = useState<string | null>(null);
-  const { values } = useDevTweaks("onboarding", ONBOARDING_TWEAKS);
+  const values = useDialKit("Onboarding · sampling dialog", ONBOARDING_TWEAKS, {
+    id: "onboarding",
+    persist: { storage: "sessionStorage" },
+  });
   const forceOpen = process.env.NODE_ENV === "development" && values.forceModal;
   const previewStep =
     forceOpen && values.previewStep >= 1 && values.previewStep <= 4

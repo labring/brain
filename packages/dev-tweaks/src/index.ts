@@ -1,18 +1,7 @@
-// Public surface of @workspace/dev-tweaks.
-// biome-ignore lint/performance/noBarrelFile: package entry point re-exporting the panel API.
-export {
-  DevTweaksIndicator,
-  type DevTweaksIndicatorProps,
-} from "./indicator";
-export { DevTweaksPanel, type DevTweaksPanelProps } from "./panel/panel";
-export { DevTweaksProvider, type DevTweaksProviderProps } from "./provider";
-export type {
-  DevTweaksActiveEntry,
-  DevTweaksControlDef,
-  DevTweaksControlValue,
-  DevTweaksDriver,
-  DevTweaksGroupDef,
-  DevTweaksValue,
-  DevTweaksValues,
-} from "./types";
-export { useDevTweaks } from "./use-dev-tweaks";
+"use client";
+
+// Public surface of @workspace/dev-tweaks: the vendored DialKit React API
+// (see ./vendor/dialkit/VENDOR.md) plus the package's own CSS-var bridge.
+// biome-ignore lint/performance/noBarrelFile: package entry point re-exporting the vendored API.
+export { type CssVarBinding, cssVarOverrides } from "./css-vars";
+export * from "./vendor/dialkit/index";

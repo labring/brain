@@ -46,8 +46,8 @@ export default function RootLayout({
             <ThemeProvider>
               <TooltipProvider>
                 <Toaster />
-                {/* DevTweaks wraps the app so frame mode can dock the page
-                    into an inset card. */}
+                {/* DevTweaks mounts the dev-only DialKit panel next to the
+                    app; in production it renders children untouched. */}
                 <DevTweaks>
                   <Suspense fallback={null}>{children}</Suspense>
                 </DevTweaks>

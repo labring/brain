@@ -16,9 +16,8 @@ const DevTweaksEnabled =
     : null;
 
 /**
- * Wraps the app with the dev tweaks provider, panel (frame mode docks the
- * page into an inset card), and mock indicator. Inert in production: renders
- * children untouched.
+ * Mounts the DialKit dev tweaks panel (floating popover) next to the app.
+ * Inert in production: renders children untouched.
  */
 export function DevTweaks({ children }: { children: ReactNode }) {
   if (!DevTweaksEnabled) {
