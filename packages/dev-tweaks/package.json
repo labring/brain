@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "description": "Dev tweaks panel (dev/demo only): forked DialKit core + React — live parameter panel, presets, shortcuts, timeline — plus a CSS-var override bridge.",
+  "description": "Dev tweaks panel (dev/demo only): live parameter panel plus a CSS-var override bridge.",
   "sideEffects": [
     "**/*.css"
   ],
@@ -34,6 +34,6 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./styles.css": "./src/dialkit/styles/theme.css"
+    "./styles.css": "./src/panel/styles/theme.css"
   }
 }

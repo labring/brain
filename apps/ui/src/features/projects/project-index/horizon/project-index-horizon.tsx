@@ -3,9 +3,9 @@
 import {
   type CssVarBinding,
   cssVarOverrides,
-  type DialConfig,
+  type DevTweaksConfig,
   type ResolvedValues,
-  useDialKit,
+  useDevTweaks,
 } from "@workspace/dev-tweaks";
 import dynamic from "next/dynamic";
 import {
@@ -24,8 +24,8 @@ const HorizonWebgl = dynamic(() => import("./horizon-webgl"), { ssr: false });
 
 /**
  * Defaults mirror the `.horizon` custom-property block in horizon.module.css.
- * DialKit tuples are [default, min, max, step]. Steps are explicit —
- * DialKit's auto-inferred step can be coarser than a default (e.g. 102 with
+ * Tweaks tuples are [default, min, max, step]. Steps are explicit —
+ * The panel's auto-inferred step can be coarser than a default (e.g. 102 with
  * step 5), and its sliders snap values onto the step grid.
  */
 const HORIZON_TWEAKS = {
@@ -60,7 +60,7 @@ const HORIZON_TWEAKS = {
   swellOpacityMin: [0.75, 0, 1, 0.05],
   swellScaleMax: [1.12, 1, 1.6, 0.01],
   swellScaleMin: [0.9, 0.5, 1, 0.01],
-} satisfies DialConfig;
+} satisfies DevTweaksConfig;
 
 /** CSS custom properties (horizon.module.css → `.horizon`) driven per knob. */
 const HORIZON_CSS_VARS: Partial<
@@ -151,7 +151,7 @@ class HorizonCanvasBoundary extends Component<
  * context loss, and the dev-tweaks engine knob's 0 position (AIM-77).
  */
 export function ProjectIndexHorizon() {
-  const values = useDialKit("Project · horizon glow", HORIZON_TWEAKS, {
+  const values = useDevTweaks("Project · horizon glow", HORIZON_TWEAKS, {
     id: "project-index-horizon",
     persist: { storage: "sessionStorage" },
   });

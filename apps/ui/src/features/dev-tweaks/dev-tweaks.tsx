@@ -16,7 +16,7 @@ const DevTweaksEnabled =
     : null;
 
 /**
- * Mounts the DialKit dev tweaks panel (⌃⌥T; docks the page or floats) next
+ * Mounts the dev tweaks panel (⌃⌥T; docks the page or floats) next
  * to the app.
  * Inert in production: renders children untouched.
  */

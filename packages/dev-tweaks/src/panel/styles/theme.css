@@ -1,0 +1,2412 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap");
+
+/* Dev tweaks panel theme. */
+.dev-tweaks-root {
+  --dial-surface: rgba(255, 255, 255, 0.05);
+  --dial-surface-hover: rgba(255, 255, 255, 0.1);
+  --dial-surface-active: rgba(255, 255, 255, 0.11);
+  --dial-surface-subtle: rgba(255, 255, 255, 0.06);
+
+  /* Text hierarchy - 3 levels */
+  --dial-text-root: #ffffff; /* Root title */
+  --dial-text-section: rgba(255, 255, 255, 0.7); /* Section titles + carets */
+  --dial-text-label: rgba(255, 255, 255, 0.7); /* Input labels */
+  --dial-text-focus: #ffffff;
+
+  /* Legacy aliases */
+  --dial-text-primary: rgba(255, 255, 255, 0.95);
+  --dial-text-secondary: rgba(255, 255, 255, 0.6);
+  --dial-text-tertiary: rgba(255, 255, 255, 0.4);
+
+  /* Borders */
+  --dial-border: rgba(255, 255, 255, 0.1);
+  --dial-border-hover: rgba(255, 255, 255, 0.15);
+
+  /* Timeline clips are light by default; light themes add a dark tint so
+     their shape stays distinct from the lane without replacing custom hues. */
+  --dev-tweaks-timeline-clip-overlay: transparent;
+
+  /* Glassmorphic panel */
+  --dial-glass-bg: #212121;
+  --dial-dropdown-bg: #2a2a2a;
+  --dial-backdrop-blur: 20px;
+  --dial-radius: 8px;
+  --dial-row-height: 36px;
+  --dial-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --dial-shadow-collapsed: 0 4px 16px rgba(0, 0, 0, 0.25);
+  --dial-shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.4);
+  position: relative;
+
+  /* Fonts */
+  font-family: system-ui, -apple-system, "SF Pro Display", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dev-tweaks-panel {
+  position: fixed;
+  z-index: 9999;
+  max-height: calc(100vh - 32px);
+  overflow: visible;
+}
+
+/* Inline mode */
+.dev-tweaks-root[data-mode="inline"] {
+  max-height: 100%;
+}
+
+.dev-tweaks-panel[data-mode="inline"] {
+  position: static;
+  z-index: auto;
+  height: auto;
+  max-height: inherit;
+  overflow: visible;
+}
+
+.dev-tweaks-panel-inner {
+  padding: 10px 12px;
+  background: var(--dial-glass-bg);
+  border: 1px solid var(--dial-border);
+  border-radius: 14px;
+  -webkit-backdrop-filter: blur(var(--dial-backdrop-blur));
+  backdrop-filter: blur(var(--dial-backdrop-blur));
+  transform: translateZ(0);
+  transform-origin: top right;
+}
+
+.dev-tweaks-panel[data-origin-x="left"] .dev-tweaks-panel-inner {
+  transform-origin: top left;
+}
+
+.dev-tweaks-panel[data-origin-x="right"] .dev-tweaks-panel-inner {
+  transform-origin: top right;
+}
+
+.dev-tweaks-panel[data-position="top-left"] .dev-tweaks-panel-inner {
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  transform-origin: top left;
+}
+
+.dev-tweaks-panel-inner[data-collapsed="true"] {
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 50%;
+}
+
+.dev-tweaks-panel-inner[data-collapsed="true"] .dev-tweaks-panel-header {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.dev-tweaks-panel-inner[data-collapsed="true"] .dev-tweaks-folder-title-row {
+  display: none;
+}
+
+.dev-tweaks-panel-inner[data-collapsed="true"] .dev-tweaks-folder-header-top {
+  justify-content: center;
+  padding: 0;
+}
+
+.dev-tweaks-panel-inner::-webkit-scrollbar {
+  display: none;
+}
+
+.dev-tweaks-panel-inner {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.dev-tweaks-panel-inline {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  max-height: inherit;
+  overflow-y: auto;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.dev-tweaks-panel[data-mode="inline"] .dev-tweaks-panel-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: auto;
+  max-height: inherit;
+}
+
+/* Position variants */
+.dev-tweaks-panel[data-position="top-right"] {
+  top: 16px;
+  right: 16px;
+}
+
+.dev-tweaks-panel[data-position="top-left"] {
+  top: 16px;
+  left: 16px;
+}
+
+.dev-tweaks-panel[data-position="bottom-right"] {
+  right: 16px;
+  bottom: 16px;
+}
+
+.dev-tweaks-panel[data-position="bottom-left"] {
+  bottom: 16px;
+  left: 16px;
+}
+
+/* Folder */
+.dev-tweaks-folder {
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--dial-surface-subtle);
+}
+
+.dev-tweaks-folder:last-child:not(.dev-tweaks-folder-root) {
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+.dev-tweaks-folder-root {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-panel-header {
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--dial-surface-subtle);
+}
+
+.dev-tweaks-panel:not([data-mode="inline"])
+  .dev-tweaks-panel-inner:not([data-collapsed="true"])
+  > .dev-tweaks-folder-root
+  > .dev-tweaks-panel-header {
+  cursor: grab;
+}
+
+.dev-tweaks-panel:not([data-mode="inline"])
+  .dev-tweaks-panel-inner:not([data-collapsed="true"])
+  > .dev-tweaks-folder-root
+  > .dev-tweaks-panel-header:active {
+  cursor: grabbing;
+}
+
+.dev-tweaks-panel:not([data-mode="inline"]) .dev-tweaks-panel-icon {
+  cursor: pointer;
+}
+
+.dev-tweaks-folder-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-folder-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 8px 0;
+}
+
+.dev-tweaks-folder-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dial-text-section);
+  letter-spacing: -0.01em;
+  transform: translateY(-0.5px);
+  transition: color 0.15s;
+}
+
+.dev-tweaks-folder-title-root {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dial-text-root);
+  transform: translateZ(0);
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-folder-title-row {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dev-tweaks-folder-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.dev-tweaks-folder-copy svg {
+  width: 14px;
+  height: 14px;
+  color: var(--dial-text-section);
+}
+
+.dev-tweaks-folder-icon {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  color: var(--dial-text-label);
+  opacity: 0.6;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-panel-icon {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  color: var(--dial-text-focus);
+}
+
+.dev-tweaks-folder-content {
+  will-change: transform;
+}
+
+.dev-tweaks-folder-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
+}
+
+/* Non-root folders - top & bottom HR dividers */
+.dev-tweaks-folder:not(.dev-tweaks-folder-root) {
+  padding-bottom: 0;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  border-top: 1px solid var(--dial-surface-subtle);
+  border-bottom: 1px solid var(--dial-surface-subtle);
+}
+
+.dev-tweaks-folder:not(.dev-tweaks-folder-root):last-child {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+/* Adjacent non-root folders collapse gap and share a single divider */
+.dev-tweaks-folder:not(.dev-tweaks-folder-root)
++ .dev-tweaks-folder:not(.dev-tweaks-folder-root) {
+  margin-top: -10px;
+  border-top: none;
+}
+
+/* Non-root folder header - match row height */
+.dev-tweaks-folder:not(.dev-tweaks-folder-root) > .dev-tweaks-folder-header {
+  height: var(--dial-row-height);
+  padding: 0;
+}
+
+.dev-tweaks-folder:not(.dev-tweaks-folder-root)
+  > .dev-tweaks-folder-header
+  > .dev-tweaks-folder-header-top {
+  height: 100%;
+  padding: 0;
+}
+
+/* Root folder inner needs no extra bottom padding */
+.dev-tweaks-folder-root > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner {
+  padding-bottom: 0;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-panel-inner:not([data-collapsed="true"]) {
+  padding: 0 12px;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-panel-inner:not([data-collapsed="true"])
+  .dev-tweaks-panel-icon {
+  top: 14px;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-panel-header {
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-panel-header
+  > .dev-tweaks-folder-header-top,
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner
+  > .dev-tweaks-folder
+  > .dev-tweaks-folder-header
+  > .dev-tweaks-folder-header-top {
+  height: 44px;
+  padding: 0;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner
+  > .dev-tweaks-folder
+  > .dev-tweaks-folder-header {
+  height: 44px;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner {
+  gap: 0;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner
+  > .dev-tweaks-folder {
+  padding-bottom: 0;
+  margin: 0;
+  border-top: 1px solid var(--dial-surface-subtle);
+  border-bottom: none;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner
+  > .dev-tweaks-folder
+  > .dev-tweaks-folder-header
+  .dev-tweaks-folder-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--dial-text-root);
+  transform: translateZ(0);
+}
+
+.dev-tweaks-panel[data-multiple="true"] .dev-tweaks-folder-title-root {
+  line-height: 20px;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner
+  > .dev-tweaks-folder:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner
+  > .dev-tweaks-folder
+  + .dev-tweaks-folder {
+  margin-top: 0;
+}
+
+.dev-tweaks-panel[data-multiple="true"]
+  .dev-tweaks-folder-root
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner
+  > .dev-tweaks-folder
+  > .dev-tweaks-folder-content
+  > .dev-tweaks-folder-inner {
+  padding-top: 4px;
+  padding-bottom: 12px;
+}
+
+/* Content spacing handled by folder-inner gap */
+
+/* Slider */
+.dev-tweaks-slider-wrapper {
+  position: relative;
+  height: var(--dial-row-height);
+}
+
+.dev-tweaks-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+  background: var(--dial-surface);
+  border-radius: var(--dial-radius);
+}
+
+.dev-tweaks-slider-hashmarks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.dev-tweaks-slider-hashmark {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0);
+  border-radius: 999px;
+  transform: translateX(-50%) translateY(-50%);
+  transition: background 200ms;
+}
+
+.dev-tweaks-slider-active .dev-tweaks-slider-hashmark {
+  background: var(--dial-border-hover);
+}
+
+.dev-tweaks-slider-active .dev-tweaks-slider-value {
+  color: var(--dial-text-focus);
+}
+
+.dev-tweaks-slider-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  background: var(--dial-surface-active);
+  transition: background 0.15s;
+}
+
+.dev-tweaks-slider-active .dev-tweaks-slider-fill {
+  background: var(--dial-border-hover);
+}
+
+.dev-tweaks-slider-handle {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 20px;
+  pointer-events: none;
+  background: var(--dial-text-primary);
+  border-radius: 999px;
+}
+
+.dev-tweaks-slider-label {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  pointer-events: none;
+  transform: translateY(calc(-50% - 0.5px));
+  transition: color 0.15s;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-slider-value {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  padding-bottom: 1px;
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  pointer-events: auto;
+  border-bottom: 1px solid transparent;
+  transform: translateY(calc(-50% + 0.5px));
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.dev-tweaks-slider-value-editable {
+  border-bottom-color: var(--dial-text-label);
+}
+
+.dev-tweaks-slider-input {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 4ch;
+  min-width: 3ch;
+  max-width: 6ch;
+  padding: 0 0 1px 0;
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  text-align: right;
+  outline: none;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--dial-text-label);
+  transform: translateY(-50%);
+}
+
+.dev-tweaks-slider-input:focus {
+  color: var(--dial-text-focus);
+}
+
+/* Segmented Control */
+.dev-tweaks-segmented {
+  position: relative;
+  display: flex;
+  padding: 2px;
+  background: transparent;
+  border-radius: var(--dial-radius);
+}
+
+.dev-tweaks-segmented-pill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--dial-surface-active);
+  border-radius: 6px;
+}
+
+.dev-tweaks-segmented-button {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  transition: color 0.15s;
+}
+
+.dev-tweaks-segmented-button[data-active="true"] {
+  color: var(--dial-text-primary);
+}
+
+.dev-tweaks-segmented-button[data-active="false"] {
+  color: var(--dial-text-label);
+}
+
+/* Toggle */
+.dev-tweaks-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--dial-surface);
+  border-radius: var(--dial-radius);
+  transition: background 0.15s;
+}
+
+.dev-tweaks-toggle:hover {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-toggle-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  transition: color 0.15s;
+}
+
+.dev-tweaks-toggle[data-checked="true"] .dev-tweaks-toggle-label {
+  color: var(--dial-text-primary);
+}
+
+.dev-tweaks-toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--dial-surface-active);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.dev-tweaks-toggle[data-checked="true"] .dev-tweaks-toggle-track {
+  background: var(--dial-border-hover);
+}
+
+.dev-tweaks-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--dial-text-primary);
+  border-radius: 8px;
+}
+
+/* Button Group */
+.dev-tweaks-button-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dev-tweaks-button {
+  flex: 1;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-secondary);
+  cursor: pointer;
+  background: var(--dial-surface);
+  border: none;
+  border-radius: var(--dial-radius);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.dev-tweaks-button:hover {
+  color: var(--dial-text-primary);
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-button:active {
+  background: var(--dial-surface-active);
+}
+
+/* Labeled Control Row (label + control side by side) */
+.dev-tweaks-labeled-control {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--dial-row-height);
+  padding: 2px 10px 2px 12px;
+  background: var(--dial-surface);
+  border-radius: var(--dial-radius);
+}
+
+.dev-tweaks-labeled-control-label {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 17px;
+  color: var(--dial-text-label);
+}
+
+.dev-tweaks-labeled-control .dev-tweaks-segmented {
+  flex-shrink: 0;
+  margin-right: -6px;
+}
+
+.dev-tweaks-action-button {
+  flex-shrink: 0;
+  width: 160px;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-secondary);
+  cursor: pointer;
+  background: var(--dial-surface);
+  border: none;
+  border-radius: var(--dial-radius);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.dev-tweaks-action-button:hover {
+  color: var(--dial-text-primary);
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-action-button:active {
+  background: var(--dial-surface-active);
+}
+
+.dev-tweaks-actions-group {
+  align-items: flex-start;
+}
+
+.dev-tweaks-actions-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 160px;
+}
+
+/* Spring Visualization */
+.dev-tweaks-spring-viz {
+  width: 100%;
+  overflow: visible;
+  background: var(--dial-surface);
+  border-radius: var(--dial-radius);
+}
+
+.dev-tweaks-easing-viz {
+  width: 100%;
+  aspect-ratio: 256 / 140;
+}
+
+/* Panel Wrapper (contains panel + toolbar) */
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-panel-wrapper {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+/* Panel Toolbar */
+.dev-tweaks-panel-toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  height: var(--dial-row-height);
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+
+.dev-tweaks-panel-section-toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: var(--dial-row-height);
+  overflow: hidden;
+}
+
+.dev-tweaks-toolbar-add {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--dial-row-height);
+  height: var(--dial-row-height);
+  padding: 0;
+  cursor: pointer;
+  background: var(--dial-surface);
+  border: none;
+  border-radius: var(--dial-radius);
+  transition: background 0.15s;
+}
+
+.dev-tweaks-toolbar-add:hover {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-timeline-toolbar-toggle[data-active] {
+  color: var(--dial-text-root);
+  background: var(--dial-surface-active);
+}
+
+.dev-tweaks-toolbar-add svg {
+  width: 16px;
+  height: 16px;
+  color: var(--dial-text-label);
+}
+
+.dev-tweaks-timeline-toolkit-only {
+  display: flex;
+  align-items: center;
+  height: var(--dial-row-height);
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--dial-text-secondary);
+  background: var(--dial-surface-subtle);
+  border-radius: var(--dial-radius);
+}
+
+.dev-tweaks-toolbar-copy {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  align-items: center;
+  height: var(--dial-row-height);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  cursor: pointer;
+  background: var(--dial-surface);
+  border: none;
+  border-radius: var(--dial-radius);
+  transition: background 0.15s;
+}
+
+.dev-tweaks-toolbar-copy:hover {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-toolbar-copy-icon-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.dev-tweaks-toolbar-copy-icon {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 16px;
+}
+
+/* Text Control */
+.dev-tweaks-text-control {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--dial-row-height);
+  padding: 0 12px;
+  background: var(--dial-surface);
+  border-radius: var(--dial-radius);
+}
+
+.dev-tweaks-text-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+}
+
+.dev-tweaks-text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  text-align: right;
+  cursor: text;
+  outline: none;
+  background: transparent;
+  border: none;
+}
+
+.dev-tweaks-text-input:focus {
+  color: var(--dial-text-focus);
+}
+
+.dev-tweaks-text-input::placeholder {
+  color: var(--dial-text-tertiary);
+}
+
+/* Select Control - Full-width row */
+.dev-tweaks-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: var(--dial-row-height);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  cursor: pointer;
+  background: var(--dial-surface);
+  border: none;
+  border-radius: var(--dial-radius);
+  transition: background 0.15s;
+}
+
+.dev-tweaks-select-trigger:hover {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-select-trigger[data-open="true"] {
+  background: var(--dial-surface-active);
+}
+
+.dev-tweaks-select-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  transform: translateY(-0.5px);
+}
+
+.dev-tweaks-select-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.dev-tweaks-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  white-space: nowrap;
+  transform: translateY(-0.5px);
+}
+
+.dev-tweaks-select-chevron {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  opacity: 0.6;
+}
+
+/* Select Dropdown (portaled to body) */
+.dev-tweaks-select-dropdown {
+  z-index: 10000;
+  padding: 4px;
+  background: var(--dial-glass-bg);
+  border: 1px solid var(--dial-border);
+  border-radius: var(--dial-radius);
+  box-shadow: var(--dial-shadow-dropdown);
+}
+
+.dev-tweaks-select-option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.dev-tweaks-select-option:hover {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-select-option[data-selected="true"] {
+  color: var(--dial-text-primary);
+  background: var(--dial-surface-active);
+}
+
+/* Color Control */
+.dev-tweaks-color-control {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--dial-row-height);
+  padding: 0 12px;
+  background: var(--dial-surface);
+  border-radius: var(--dial-radius);
+}
+
+.dev-tweaks-color-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  transform: translateY(-0.5px);
+}
+
+.dev-tweaks-color-inputs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.dev-tweaks-color-hex {
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  cursor: text;
+  transform: translateY(-0.5px);
+}
+
+.dev-tweaks-color-hex-input {
+  width: 7ch;
+  padding: 0;
+  font-family: "Geist Mono", monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  text-transform: uppercase;
+  outline: none;
+  background: transparent;
+  border: none;
+  transform: translateY(-0.5px);
+}
+
+.dev-tweaks-color-hex-input:focus {
+  color: var(--dial-text-focus);
+}
+
+.dev-tweaks-color-swatch {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  border: 1px solid var(--dial-border-hover);
+  border-radius: 4px;
+  transition: transform 0.15s;
+}
+
+.dev-tweaks-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.dev-tweaks-color-picker-native {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Preset Manager */
+.dev-tweaks-preset-manager {
+  position: relative;
+  flex: 1;
+}
+
+.dev-tweaks-preset-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: var(--dial-row-height);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  cursor: pointer;
+  background: var(--dial-surface);
+  border: none;
+  border-radius: var(--dial-radius);
+  transition: background 0.15s;
+}
+
+.dev-tweaks-preset-trigger:hover {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-preset-trigger[data-disabled="true"] {
+  cursor: default;
+}
+
+.dev-tweaks-preset-trigger[data-disabled="true"]:hover {
+  background: var(--dial-surface);
+}
+
+.dev-tweaks-preset-trigger[data-open="true"] {
+  background: var(--dial-surface-active);
+}
+
+.dev-tweaks-preset-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-tweaks-preset-dropdown {
+  z-index: 10000;
+  width: max-content;
+  padding: 4px;
+  background: var(--dial-dropdown-bg);
+  border: 1px solid var(--dial-border);
+  border-radius: 12px;
+  box-shadow: var(--dial-shadow-dropdown);
+}
+
+.dev-tweaks-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--dial-border);
+}
+
+.dev-tweaks-preset-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 8px 10px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.dev-tweaks-preset-item:hover {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-preset-item[data-active="true"] {
+  background: var(--dial-surface-active);
+}
+
+.dev-tweaks-preset-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  white-space: nowrap;
+}
+
+.dev-tweaks-preset-item[data-active="true"] .dev-tweaks-preset-name {
+  color: var(--dial-text-primary);
+}
+
+.dev-tweaks-preset-delete {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.dev-tweaks-preset-item:hover .dev-tweaks-preset-delete {
+  opacity: 0.6;
+}
+
+.dev-tweaks-preset-delete:hover {
+  opacity: 1 !important;
+}
+
+.dev-tweaks-preset-delete svg {
+  width: 14px;
+  height: 14px;
+  color: var(--dial-text-focus);
+  pointer-events: none;
+}
+
+.dev-tweaks-preset-save-btn {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.dev-tweaks-preset-save-btn:hover {
+  color: var(--dial-text-primary);
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-preset-save-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.dev-tweaks-preset-save-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px;
+}
+
+.dev-tweaks-preset-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--dial-text-primary);
+  outline: none;
+  background: var(--dial-surface);
+  border: 1px solid var(--dial-border);
+  border-radius: 6px;
+}
+
+.dev-tweaks-preset-input:focus {
+  border-color: var(--dial-text-label);
+}
+
+.dev-tweaks-preset-input::placeholder {
+  color: var(--dial-text-tertiary);
+}
+
+.dev-tweaks-preset-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  cursor: pointer;
+  background: var(--dial-surface);
+  border: none;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.dev-tweaks-preset-confirm:hover:not(:disabled) {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-preset-confirm:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.dev-tweaks-preset-confirm svg {
+  width: 14px;
+  height: 14px;
+  color: var(--dial-text-label);
+}
+
+/* Shortcut Pill */
+.dev-tweaks-shortcut-pill {
+  display: inline-block;
+  padding: 1px 5px;
+  margin-left: 6px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  vertical-align: middle;
+  color: var(--dial-text-tertiary);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: var(--dial-surface-subtle);
+  border-radius: 4px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.dev-tweaks-shortcut-pill-active {
+  color: var(--dial-text-primary);
+  background: var(--dial-border-hover);
+}
+
+/* Shortcuts Menu Trigger */
+.dev-tweaks-shortcuts-trigger {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--dial-row-height);
+  height: var(--dial-row-height);
+  padding: 0;
+  cursor: pointer;
+  background: var(--dial-surface);
+  border: none;
+  border-radius: var(--dial-radius);
+  transition: background 0.15s;
+}
+
+.dev-tweaks-shortcuts-trigger:hover {
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-shortcuts-trigger svg {
+  width: 16px;
+  height: 16px;
+  color: var(--dial-text-label);
+}
+
+/* Shortcuts Dropdown */
+.dev-tweaks-shortcuts-dropdown {
+  z-index: 10000;
+  min-width: 200px;
+  padding: 8px;
+  background: var(--dial-dropdown-bg);
+  border: 1px solid var(--dial-border);
+  border-radius: 12px;
+  box-shadow: var(--dial-shadow-dropdown);
+}
+
+.dev-tweaks-shortcuts-title {
+  padding: 4px 8px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dial-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dev-tweaks-shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dev-tweaks-shortcuts-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.dev-tweaks-shortcuts-row-key {
+  min-width: 28px;
+  padding: 2px 6px;
+  font-family: ui-monospace, "SF Mono", "Courier New", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dial-text-secondary);
+  text-align: center;
+  background: var(--dial-surface-subtle);
+  border-radius: 4px;
+}
+
+.dev-tweaks-shortcuts-row-label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+}
+
+.dev-tweaks-shortcuts-row-mode {
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 500;
+  color: var(--dial-text-tertiary);
+}
+
+.dev-tweaks-shortcuts-hint {
+  padding: 6px 8px 2px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--dial-text-tertiary);
+  border-top: 1px solid var(--dial-border);
+}
+
+/* ── Light Theme ── */
+.dev-tweaks-root[data-theme="light"] {
+  --dial-surface: rgba(0, 0, 0, 0.04);
+  --dial-surface-hover: rgba(0, 0, 0, 0.08);
+  --dial-surface-active: rgba(0, 0, 0, 0.1);
+  --dial-surface-subtle: rgba(0, 0, 0, 0.06);
+
+  --dial-text-root: #000000;
+  --dial-text-section: rgba(0, 0, 0, 0.65);
+  --dial-text-label: rgba(0, 0, 0, 0.6);
+  --dial-text-focus: #000000;
+
+  --dial-text-primary: rgba(0, 0, 0, 0.9);
+  --dial-text-secondary: rgba(0, 0, 0, 0.55);
+  --dial-text-tertiary: rgba(0, 0, 0, 0.35);
+
+  --dial-border: rgba(0, 0, 0, 0.1);
+  --dial-border-hover: rgba(0, 0, 0, 0.15);
+
+  --dev-tweaks-timeline-clip-overlay: rgba(0, 0, 0, 0.28);
+
+  --dial-glass-bg: #fafafa;
+  --dial-dropdown-bg: #ffffff;
+  --dial-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  --dial-shadow-collapsed: 0 2px 10px rgba(0, 0, 0, 0.06);
+  --dial-shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Light mode: SVG visualization overrides */
+.dev-tweaks-root[data-theme="light"] .dev-tweaks-spring-viz line {
+  stroke: rgba(0, 0, 0, 0.08);
+}
+
+.dev-tweaks-root[data-theme="light"]
+  .dev-tweaks-spring-viz
+  line[stroke-dasharray] {
+  stroke: rgba(0, 0, 0, 0.15);
+}
+
+.dev-tweaks-root[data-theme="light"] .dev-tweaks-spring-viz path {
+  stroke: rgba(0, 0, 0, 0.5);
+}
+
+/* Light mode: toggle thumb needs shadow for definition */
+.dev-tweaks-root[data-theme="light"] .dev-tweaks-toggle-thumb {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* ── System preference: light ── */
+@media (prefers-color-scheme: light) {
+  .dev-tweaks-root[data-theme="system"] {
+    --dial-surface: rgba(0, 0, 0, 0.04);
+    --dial-surface-hover: rgba(0, 0, 0, 0.08);
+    --dial-surface-active: rgba(0, 0, 0, 0.1);
+    --dial-surface-subtle: rgba(0, 0, 0, 0.06);
+
+    --dial-text-root: #000000;
+    --dial-text-section: rgba(0, 0, 0, 0.65);
+    --dial-text-label: rgba(0, 0, 0, 0.6);
+    --dial-text-focus: #000000;
+
+    --dial-text-primary: rgba(0, 0, 0, 0.9);
+    --dial-text-secondary: rgba(0, 0, 0, 0.55);
+    --dial-text-tertiary: rgba(0, 0, 0, 0.35);
+
+    --dial-border: rgba(0, 0, 0, 0.1);
+    --dial-border-hover: rgba(0, 0, 0, 0.15);
+
+    --dev-tweaks-timeline-clip-overlay: rgba(0, 0, 0, 0.28);
+
+    --dial-glass-bg: #fafafa;
+    --dial-dropdown-bg: #ffffff;
+    --dial-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    --dial-shadow-collapsed: 0 2px 10px rgba(0, 0, 0, 0.06);
+    --dial-shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.08);
+  }
+
+  .dev-tweaks-root[data-theme="system"] .dev-tweaks-spring-viz line {
+    stroke: rgba(0, 0, 0, 0.08);
+  }
+
+  .dev-tweaks-root[data-theme="system"]
+    .dev-tweaks-spring-viz
+    line[stroke-dasharray] {
+    stroke: rgba(0, 0, 0, 0.15);
+  }
+
+  .dev-tweaks-root[data-theme="system"] .dev-tweaks-spring-viz path {
+    stroke: rgba(0, 0, 0, 0.5);
+  }
+
+  .dev-tweaks-root[data-theme="system"] .dev-tweaks-toggle-thumb {
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.06),
+      0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* ── Timeline dock ── */
+.dev-tweaks-timeline {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 9998;
+}
+
+.dev-tweaks-timeline[hidden] {
+  display: none;
+}
+
+.dev-tweaks-timeline-dock {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--dial-text-tertiary) transparent;
+  scrollbar-width: thin;
+  background: var(--dial-glass-bg);
+  border: 1px solid var(--dial-border);
+  border-radius: 14px;
+  -webkit-backdrop-filter: blur(var(--dial-backdrop-blur));
+  backdrop-filter: blur(var(--dial-backdrop-blur));
+}
+
+.dev-tweaks-timeline-resize-handle {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  left: 0;
+  z-index: 9;
+  height: 10px;
+  touch-action: none;
+  cursor: ns-resize;
+}
+
+.dev-tweaks-timeline-dock::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dev-tweaks-timeline-dock::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dev-tweaks-timeline-dock::-webkit-scrollbar-thumb {
+  background: var(--dial-text-tertiary);
+  border-radius: 999px;
+}
+
+.dev-tweaks-timeline-section {
+  --dev-tweaks-timeline-label-w: 96px;
+  --dev-tweaks-timeline-actions-w: 284px;
+  --dev-tweaks-timeline-header-h: calc(var(--dial-row-height) + 4px);
+}
+
+.dev-tweaks-timeline-section + .dev-tweaks-timeline-section {
+  padding-top: 10px;
+  border-top: 1px solid var(--dial-border);
+}
+
+.dev-tweaks-timeline-header {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  height: var(--dev-tweaks-timeline-header-h);
+  padding: 4px 0 0;
+  margin: 0;
+  background: var(--dial-glass-bg);
+  -webkit-backdrop-filter: blur(var(--dial-backdrop-blur));
+  backdrop-filter: blur(var(--dial-backdrop-blur));
+}
+
+.dev-tweaks-timeline-header[data-open] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.dev-tweaks-timeline-header:not([data-open]) {
+  grid-template-columns: var(--dev-tweaks-timeline-label-w) minmax(0, 1fr) auto;
+  gap: 0;
+}
+
+.dev-tweaks-timeline-header:not([data-open]) .dev-tweaks-timeline-identity {
+  box-sizing: border-box;
+  width: var(--dev-tweaks-timeline-label-w);
+  padding-right: 10px;
+  overflow: hidden;
+}
+
+.dev-tweaks-timeline-header:not([data-open]) .dev-tweaks-timeline-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dev-tweaks-timeline-header:not([data-open]) .dev-tweaks-timeline-overview {
+  margin-right: 12px;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-timeline-identity {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-timeline-title {
+  display: block;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dial-text-root);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.dev-tweaks-timeline-header[data-open] .dev-tweaks-timeline-identity {
+  width: 100%;
+  overflow: hidden;
+}
+
+.dev-tweaks-timeline-header[data-open] .dev-tweaks-timeline-title {
+  display: inline-block;
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dev-tweaks-timeline-time {
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--dial-text-label);
+  white-space: nowrap;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-timeline-overview {
+  position: relative;
+  min-width: 60px;
+  height: 12px;
+  overflow: hidden;
+  touch-action: none;
+  cursor: col-resize;
+  -webkit-user-select: none;
+  user-select: none;
+  background: var(--dial-surface-subtle);
+  border-radius: 999px;
+}
+
+.dev-tweaks-timeline-overview-viewport {
+  position: absolute;
+  inset-block: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.dev-tweaks-timeline-overview-viewport[data-zoomed] {
+  background: color-mix(in srgb, var(--dial-text-tertiary) 18%, transparent);
+  box-shadow: inset 0 0 0 1px var(--dial-border);
+}
+
+.dev-tweaks-timeline-overview-progress {
+  position: absolute;
+  inset: 0 auto 0 0;
+  pointer-events: none;
+  background: var(--dial-text-tertiary);
+  border-radius: 999px 0 0 999px;
+  opacity: 0.35;
+}
+
+.dev-tweaks-timeline-overview-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  pointer-events: none;
+  background: var(--dial-text-root);
+  border-radius: 2px;
+  transform: translateX(-1px);
+}
+
+.dev-tweaks-timeline-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.dev-tweaks-timeline-header[data-open] .dev-tweaks-timeline-actions {
+  box-sizing: border-box;
+  justify-content: flex-end;
+  width: auto;
+  padding-left: 0;
+}
+
+.dev-tweaks-timeline-actions .dev-tweaks-preset-manager {
+  flex: 0 0 120px;
+  width: 120px;
+}
+
+.dev-tweaks-timeline-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: var(--dial-row-height);
+  padding: 2px;
+  color: var(--dial-text-label);
+  cursor: pointer;
+  background: none;
+  border: none;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.dev-tweaks-timeline-chevron:hover {
+  opacity: 1;
+}
+
+.dev-tweaks-timeline-chevron svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.18s ease;
+}
+
+.dev-tweaks-timeline-chevron[data-open="true"] svg {
+  transform: rotate(180deg);
+}
+
+.dev-tweaks-timeline-body {
+  margin-top: 0;
+  overflow: visible;
+}
+
+.dev-tweaks-timeline-scroll-row {
+  position: sticky;
+  bottom: -10px;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: var(--dev-tweaks-timeline-label-w) minmax(0, 1fr);
+  padding: 4px 0 10px;
+  margin-top: 6px;
+  margin-bottom: -10px;
+  background: var(--dial-glass-bg);
+  -webkit-backdrop-filter: blur(var(--dial-backdrop-blur));
+  backdrop-filter: blur(var(--dial-backdrop-blur));
+}
+
+.dev-tweaks-timeline-horizontal-scroll {
+  min-width: 0;
+  height: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-color: var(--dial-text-tertiary) transparent;
+  scrollbar-width: thin;
+}
+
+.dev-tweaks-timeline-horizontal-scroll > div {
+  height: 1px;
+}
+
+.dev-tweaks-timeline-horizontal-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.dev-tweaks-timeline-horizontal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dev-tweaks-timeline-horizontal-scroll::-webkit-scrollbar-thumb {
+  background: var(--dial-text-tertiary);
+  border-radius: 999px;
+}
+
+.dev-tweaks-timeline-grid {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dev-tweaks-timeline-row {
+  display: grid;
+  grid-template-columns: var(--dev-tweaks-timeline-label-w) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.dev-tweaks-timeline-label {
+  box-sizing: border-box; /* indent padding must not widen the column — every lane starts at the same x */
+  display: flex;
+  flex: 0 0 var(--dev-tweaks-timeline-label-w);
+  gap: 4px;
+  align-items: center;
+  padding-right: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dial-text-label);
+  white-space: nowrap;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.dev-tweaks-timeline-ruler {
+  position: relative;
+  z-index: 5;
+  min-width: 0;
+  height: 28px;
+  overflow: visible;
+  touch-action: none;
+  cursor: col-resize;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.dev-tweaks-timeline-ruler-row {
+  position: sticky;
+  top: var(--dev-tweaks-timeline-header-h);
+  z-index: 6;
+  height: 28px;
+  background: var(--dial-glass-bg);
+  -webkit-backdrop-filter: blur(var(--dial-backdrop-blur));
+  backdrop-filter: blur(var(--dial-backdrop-blur));
+}
+
+.dev-tweaks-timeline-tick {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 100%;
+  pointer-events: none;
+  background: var(--dial-text-tertiary);
+  transform: translateY(-50%);
+}
+
+.dev-tweaks-timeline-tick-medium {
+  height: 16px;
+  background: var(--dial-border-hover);
+}
+
+.dev-tweaks-timeline-tick-fine {
+  height: 8px;
+  background: var(--dial-border);
+}
+
+.dev-tweaks-timeline-tick-label {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  height: 18px;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  color: var(--dial-text-tertiary);
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.dev-tweaks-timeline-row {
+  height: 28px;
+}
+
+/* ── Layer groups ── */
+
+.dev-tweaks-timeline-group-row {
+  height: 22px;
+}
+
+.dev-tweaks-timeline-group-row .dev-tweaks-timeline-label {
+  gap: 4px;
+  font-weight: 600;
+  color: var(--dial-text-root);
+}
+
+.dev-tweaks-timeline-group-row .dev-tweaks-timeline-lane {
+  background: none;
+}
+
+.dev-tweaks-timeline-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-left: -2px;
+  color: var(--dial-text-tertiary);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.dev-tweaks-timeline-group-toggle svg {
+  width: 10px;
+  height: 10px;
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+
+.dev-tweaks-timeline-group-toggle[data-open="true"] svg {
+  transform: rotate(0deg);
+}
+
+.dev-tweaks-timeline-row[data-grouped] .dev-tweaks-timeline-label {
+  padding-left: 14px;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-timeline-lane {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: var(--dial-surface-subtle);
+  border-radius: 8px;
+}
+
+.dev-tweaks-timeline-clip {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 9px;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 999px var(--dev-tweaks-timeline-clip-overlay);
+}
+
+.dev-tweaks-timeline-clip-ghost {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  box-sizing: border-box;
+  display: flex;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  border-radius: 5px;
+  opacity: 0.18;
+}
+
+.dev-tweaks-timeline-clip-ghost-segment {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  height: 100%;
+}
+
+.dev-tweaks-timeline-clip-ghost-segment
+  + .dev-tweaks-timeline-clip-ghost-segment {
+  box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.5);
+}
+
+.dev-tweaks-timeline-loop-infinity {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  z-index: 2;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--dial-text-tertiary);
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transform: translateY(-50%);
+}
+
+.dev-tweaks-timeline-clip[data-dragging] {
+  cursor: grabbing;
+}
+
+.dev-tweaks-timeline-clip[data-selected] {
+  box-shadow:
+    0 0 0 2px var(--dial-text-root),
+    inset 0 0 0 999px var(--dev-tweaks-timeline-clip-overlay);
+}
+
+.dev-tweaks-timeline-clip-duration {
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ── Sequence segments ──
+   A steps clip is one bar sliced into legs; boundaries between legs are
+   drag handles that retime the leg to their left. */
+
+.dev-tweaks-timeline-clip[data-steps] {
+  justify-content: flex-start;
+  padding: 0;
+}
+
+.dev-tweaks-timeline-clip-segment {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  padding: 0 8px;
+  overflow: hidden;
+}
+
+.dev-tweaks-timeline-clip-segment + .dev-tweaks-timeline-clip-segment {
+  box-shadow: inset 1.5px 0 0 rgba(0, 0, 0, 0.25);
+}
+
+.dev-tweaks-timeline-clip-segment:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.dev-tweaks-timeline-clip-segment[data-selected] {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/* ── Property tracks ──
+   A props clip's row is a read-only composite — click to expand. Each
+   property expands into a full track row: a complete clip bar whose
+   position is the track's delay. */
+
+.dev-tweaks-timeline-clip[data-composite] {
+  cursor: pointer;
+}
+
+.dev-tweaks-timeline-track-row .dev-tweaks-timeline-label {
+  padding-left: 26px;
+  font-size: 13px;
+  color: var(--dial-text-tertiary);
+}
+
+.dev-tweaks-timeline-track-row[data-grouped] .dev-tweaks-timeline-label {
+  padding-left: 32px;
+}
+
+.dev-tweaks-timeline-clip-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.dev-tweaks-timeline-clip-handle[data-edge="start"] {
+  left: 0;
+}
+
+.dev-tweaks-timeline-clip-handle[data-edge="end"] {
+  right: 0;
+}
+
+.dev-tweaks-timeline-playhead-control {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  margin-left: -6px;
+  touch-action: none;
+  cursor: ew-resize;
+}
+
+.dev-tweaks-timeline-playhead-anchor {
+  position: sticky;
+  top: calc(var(--dev-tweaks-timeline-header-h) + 14px);
+  z-index: 8;
+  width: 0;
+  height: 0;
+  margin-left: 6px;
+}
+
+.dev-tweaks-timeline-playhead-anchor::before {
+  position: absolute;
+  top: 0;
+  left: -1px;
+  width: 2px;
+  height: 15px;
+  pointer-events: none;
+  content: "";
+  background: var(--dial-text-root);
+}
+
+.dev-tweaks-timeline-playhead-flag {
+  position: absolute;
+  top: 0;
+  left: calc(var(--dev-tweaks-timeline-playhead-flag-offset, 0px) - 26px);
+  z-index: 1;
+  box-sizing: border-box;
+  width: 52px;
+  height: 18px;
+  padding: 0 7px;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  color: #414141;
+  text-align: center;
+  white-space: nowrap;
+  background: #f3f3f3;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  transform: translateY(-50%);
+  transition: top 0.12s ease;
+}
+
+.dev-tweaks-timeline-playhead-stem {
+  position: absolute;
+  top: 27px;
+  bottom: 0;
+  left: 5px;
+  z-index: 5;
+  width: 2px;
+  pointer-events: none;
+  background: var(--dial-text-root);
+}
+
+/* ── Timeline clip popover ── */
+.dev-tweaks-timeline-popover {
+  position: fixed;
+  z-index: 10000;
+  box-sizing: border-box;
+  max-height: 60vh;
+  padding: 10px 12px;
+  overflow-y: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  background: var(--dial-glass-bg);
+  border: 1px solid var(--dial-border);
+  border-radius: 14px;
+  box-shadow: var(--dial-shadow);
+  -webkit-backdrop-filter: blur(var(--dial-backdrop-blur));
+  backdrop-filter: blur(var(--dial-backdrop-blur));
+}
+
+.dev-tweaks-timeline-popover::-webkit-scrollbar {
+  display: none;
+}
+
+.dev-tweaks-timeline-popover-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 2px 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--dial-border);
+}
+
+.dev-tweaks-timeline-popover-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dial-text-root);
+  letter-spacing: -0.01em;
+}
+
+.dev-tweaks-timeline-popover-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 5px;
+  margin-left: auto;
+  color: var(--dial-text-tertiary);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: 6px;
+}
+
+.dev-tweaks-timeline-popover-close:hover {
+  color: var(--dial-text-root);
+  background: var(--dial-surface-hover);
+}
+
+.dev-tweaks-timeline-popover-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dev-tweaks-timeline-popover-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+.dev-tweaks-timeline-popover-body > .dev-tweaks-folder:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+@media (max-width: 720px) {
+  .dev-tweaks-timeline-dock {
+    padding: 0 10px 10px;
+  }
+
+  .dev-tweaks-timeline-header {
+    grid-template-columns: auto minmax(40px, 1fr) auto;
+    gap: 8px;
+  }
+
+  .dev-tweaks-timeline-section {
+    --dev-tweaks-timeline-label-w: 76px;
+    --dev-tweaks-timeline-actions-w: 270px;
+  }
+
+  /* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+  .dev-tweaks-timeline-identity {
+    gap: 7px;
+    overflow: hidden;
+  }
+
+  /* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+  .dev-tweaks-timeline-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+  }
+
+  .dev-tweaks-timeline-time {
+    font-size: 11px;
+  }
+
+  /* biome-ignore lint/style/noDescendingSpecificity: ported DevTweaks stylesheet, selector order kept intact */
+  .dev-tweaks-timeline-overview {
+    height: 12px;
+  }
+
+  .dev-tweaks-timeline-actions {
+    min-width: 0;
+  }
+
+  .dev-tweaks-timeline-actions .dev-tweaks-preset-manager {
+    flex-basis: 100px;
+    width: 100px;
+  }
+
+  .dev-tweaks-timeline-chevron {
+    justify-content: center;
+    width: 26px;
+    height: 28px;
+    padding: 0;
+  }
+
+  .dev-tweaks-timeline-grid {
+    min-width: 0;
+  }
+}
+
+/* ---------- frame posture (the page's own <body> is the inset card) ---------- */
+
+/*
+ * Frame posture does not wrap the page in a card — it turns `<body>` into one.
+ *
+ * `contain: layout` is the whole trick. It makes the body the containing
+ * block for every `position: fixed` descendant *and* for everything React
+ * portals into `document.body`, so dialogs, sheets, menus, tooltips and
+ * toasts land inside the card without one line of change in the host's
+ * components. It also makes the body a formatting context root, which stops
+ * the usual body-to-viewport overflow propagation — so `overflow: hidden`
+ * clips at the card's rounded corners instead of at the window edge.
+ *
+ * `<html>` carries the scrim. Without a background of its own the body's
+ * background propagates to the canvas and paints the whole window.
+ *
+ * The card wears whatever background the host already gave its body, so
+ * there is nothing to bridge: the docked page keeps its real surface.
+ *
+ * Nothing the panel renders can live inside a contained body, so the chrome
+ * rides the top layer instead — see `.dev-tweaks-root[popover]`.
+ */
+
+.dev-tweaks-frame-host {
+  --dev-tweaks-frame-gap: 32px;
+  --dev-tweaks-frame-panel-w: 280px;
+  --dev-tweaks-frame-ms: 300ms;
+  --dev-tweaks-frame-radius: 14px;
+  --dev-tweaks-frame-scrim: rgb(0 0 0 / 0.4);
+  --dev-tweaks-frame-ring: rgb(255 255 255 / 0.1);
+  transition: background-color var(--dev-tweaks-frame-ms) ease;
+}
+
+.dev-tweaks-frame-host > body {
+  transition:
+    margin var(--dev-tweaks-frame-ms) ease,
+    height var(--dev-tweaks-frame-ms) ease,
+    border-radius var(--dev-tweaks-frame-ms) ease,
+    box-shadow var(--dev-tweaks-frame-ms) ease;
+}
+
+.dev-tweaks-framed {
+  /* The card measures against the root, so the root needs a definite height. */
+  height: 100%;
+  background-color: var(--dev-tweaks-frame-scrim);
+}
+
+.dev-tweaks-framed > body {
+  height: calc(100% - var(--dev-tweaks-frame-gap) * 2);
+  margin: var(--dev-tweaks-frame-gap);
+  margin-right: calc(
+    var(--dev-tweaks-frame-gap) *
+    2 +
+    var(--dev-tweaks-frame-panel-w)
+  );
+  contain: layout;
+  overflow: hidden;
+  border-radius: var(--dev-tweaks-frame-radius);
+  /* Ring as a shadow layer — no 1px of layout shift when it appears. */
+  box-shadow:
+    0 0 0 1px var(--dev-tweaks-frame-ring),
+    0 24px 64px -24px rgb(0 0 0 / 0.6);
+}
+
+/* Top layer: the chrome is a manual popover for its whole life, so the frame
+ * card's `contain: layout` can never trap it. Undo the UA popover box. */
+.dev-tweaks-root[popover] {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+  pointer-events: none;
+  background: transparent;
+  border: none;
+}
+
+.dev-tweaks-root[popover] .dev-tweaks-panel {
+  pointer-events: auto;
+}
+
+/* The docked strip: full-height at the right edge, sliding in on the same
+ * timeline as the card inset. */
+.dev-tweaks-panel[data-posture="frame"] {
+  top: var(--dev-tweaks-frame-gap, 32px);
+  right: var(--dev-tweaks-frame-gap, 32px);
+  bottom: var(--dev-tweaks-frame-gap, 32px);
+  left: auto;
+  width: var(--dev-tweaks-frame-panel-w, 280px);
+  max-height: none;
+  animation: dev-tweaks-frame-panel-in var(--dev-tweaks-frame-ms, 300ms) ease;
+}
+
+.dev-tweaks-panel[data-posture="frame"] .dev-tweaks-panel-wrapper {
+  height: 100%;
+}
+
+@keyframes dev-tweaks-frame-panel-in {
+  from {
+    transform: translateX(calc(100% + var(--dev-tweaks-frame-gap, 32px)));
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}

@@ -1,7 +1,11 @@
 "use client";
 
-// Public surface of @workspace/dev-tweaks: the DialKit React API (forked
-// upstream code, see ./dialkit/ORIGIN.md) plus the package's own CSS-var bridge.
-// biome-ignore lint/performance/noBarrelFile: package entry point re-exporting the DialKit API.
+// Public surface of @workspace/dev-tweaks. Implementation origin: ./panel/ORIGIN.md
+// biome-ignore lint/performance/noBarrelFile: package entry point.
 export { type CssVarBinding, cssVarOverrides } from "./css-vars";
-export * from "./dialkit/index";
+export { DevTweaksRoot } from "./panel/components/dev-tweaks-root";
+export { useDevTweaks } from "./panel/hooks/use-dev-tweaks";
+export type {
+  DevTweaksConfig,
+  ResolvedValues,
+} from "./panel/store/dev-tweaks-store";

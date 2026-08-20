@@ -1,6 +1,6 @@
 "use client";
 
-import { type DialConfig, useDialKit } from "@workspace/dev-tweaks";
+import { type DevTweaksConfig, useDevTweaks } from "@workspace/dev-tweaks";
 import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 
@@ -36,7 +36,7 @@ import type {
 const ONBOARDING_TWEAKS = {
   forceModal: false,
   previewStep: [0, 0, 4, 1],
-} satisfies DialConfig;
+} satisfies DevTweaksConfig;
 
 /**
  * The Onboarding Gate (ADR-0061): opportunistic and non-blocking. The console
@@ -49,10 +49,14 @@ export function OnboardingGate() {
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
   const [openForKey, setOpenForKey] = useState<string | null>(null);
-  const values = useDialKit("Onboarding · sampling dialog", ONBOARDING_TWEAKS, {
-    id: "onboarding",
-    persist: { storage: "sessionStorage" },
-  });
+  const values = useDevTweaks(
+    "Onboarding · sampling dialog",
+    ONBOARDING_TWEAKS,
+    {
+      id: "onboarding",
+      persist: { storage: "sessionStorage" },
+    }
+  );
   const forceOpen = process.env.NODE_ENV === "development" && values.forceModal;
   const previewStep =
     forceOpen && values.previewStep >= 1 && values.previewStep <= 4

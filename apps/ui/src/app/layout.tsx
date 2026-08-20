@@ -46,7 +46,7 @@ export default function RootLayout({
             <ThemeProvider>
               <TooltipProvider>
                 <Toaster />
-                {/* DevTweaks mounts the dev-only DialKit panel next to the
+                {/* DevTweaks mounts the dev-only tweaks panel next to the
                     app; in production it renders children untouched. */}
                 <DevTweaks>
                   <Suspense fallback={null}>{children}</Suspense>

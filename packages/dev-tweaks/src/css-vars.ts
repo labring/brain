@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import type { DialConfig } from "./dialkit/store/dial-store";
+import type { DevTweaksConfig } from "./panel/store/dev-tweaks-store";
 
 /** CSS custom property (and optional unit) driven by one control key. */
 export interface CssVarBinding {
@@ -8,8 +8,8 @@ export interface CssVarBinding {
   unit?: string;
 }
 
-/** Config default for one flat control, mirroring DialKit's resolution. */
-function controlDefault(control: DialConfig[string] | undefined): unknown {
+/** Config default for one flat control, mirroring the panel's resolution. */
+function controlDefault(control: DevTweaksConfig[string] | undefined): unknown {
   if (Array.isArray(control)) {
     return control[0];
   }
@@ -28,7 +28,7 @@ function controlDefault(control: DialConfig[string] | undefined): unknown {
  * nothing, so production (always defaults) renders an empty style. Flat
  * configs only.
  */
-export function cssVarOverrides<T extends DialConfig>(
+export function cssVarOverrides<T extends DevTweaksConfig>(
   config: T,
   values: { readonly [K in keyof T]?: unknown },
   bindings: Partial<Record<keyof T & string, CssVarBinding>>
