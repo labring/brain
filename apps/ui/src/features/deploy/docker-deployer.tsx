@@ -433,6 +433,17 @@ function DockerDeployerFields({
     () => dockerEnvRawDiagnostics(envRawSource),
     [envRawSource]
   );
+  // Locked to Raw while the source has errors: the List option is disabled
+  // (mirroring AP Settings), and `requestEnvEditorMode` guards as backstop.
+  const envEditorModeOptions = useMemo(
+    () =>
+      ENV_EDITOR_MODE_OPTIONS.map((option) =>
+        option.value === "list"
+          ? { ...option, disabled: envDiagnostics.length > 0 }
+          : option
+      ),
+    [envDiagnostics]
+  );
 
   return (
     <div
@@ -513,7 +524,7 @@ function DockerDeployerFields({
                 ariaLabel="Environment editor mode"
                 disabled={busy}
                 onValueChange={requestEnvEditorMode}
-                options={ENV_EDITOR_MODE_OPTIONS}
+                options={envEditorModeOptions}
                 size="default"
                 value={envEditorMode}
                 width="auto"

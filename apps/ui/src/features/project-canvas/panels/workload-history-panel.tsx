@@ -149,6 +149,9 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
     toastPromiseDetail(
       (async () => {
         await imageUpdate.keepTarget();
+        // The resubmitted target is the truth now; a draft typed mid-apply
+        // must not keep overlaying it.
+        setEditedImage(null);
         await Promise.all([
           versions.mutate(),
           onWorkloadMutation?.().catch(() => undefined),
@@ -201,6 +204,12 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
     null
   );
 
+  const useLatestImage = useCallback(() => {
+    imageUpdate.adoptLatestObserved();
+    // Adopting the observed image means showing it; drop any stale draft.
+    setEditedImage(null);
+  }, [imageUpdate]);
+
   const runRollback = useCallback(
     async (versionHash: string) => {
       await rollbackAPImageVersion({
@@ -209,6 +218,9 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
         namespace: ns,
         versionHash,
       });
+      // The snapshot is the new desired configuration across every domain;
+      // surviving pending targets would misreport against it (ADR-0062).
+      imageUpdate.clearPendingAfterRollback();
       await Promise.all([
         versions.mutate(),
         imageUpdate.revalidateObserved(),
@@ -330,7 +342,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
           onChange={setEditedImage}
           onKeepTarget={keepImageTarget}
           onSubmit={submitImageUpdate}
-          onUseLatest={imageUpdate.useLatestObserved}
+          onUseLatest={useLatestImage}
           status={imageUpdate.status}
           value={displayImage}
         />

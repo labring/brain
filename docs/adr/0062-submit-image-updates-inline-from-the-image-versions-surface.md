@@ -14,13 +14,20 @@ View.
 
 Submitting from the versions surface creates the same launch-domain
 Pending Settings Update as an image edit made in AP Settings (browser-local
-target per ADR-0030). The input shows the submitted target with an
-applying indicator until the resource catches up, and an Observed Settings
-Divergence resolves inline with the standard two-way choice — keep the
-target (an ordinary resubmission) or adopt the observed configuration
-(forget the local target; no request). Only the gesture is local to the
-surface; the lifecycle never is. There is no second, direct image-update
-path that bypasses pending or divergence.
+target per ADR-0030). While the update applies, the surface stays quiet:
+the input shows the submitted target until the resource catches up, the
+submit toast is the only announcement, and no persistent applying
+indicator is rendered — AP Settings remains the surface that narrates the
+applying state. An Observed Settings Divergence still resolves inline with
+the standard two-way choice — keep the target (an ordinary resubmission)
+or adopt the observed configuration (forget the local target; no request).
+Only the gesture is local to the surface; the lifecycle never is. There is
+no second, direct image-update path that bypasses pending or divergence.
+
+While an earlier launch-domain update is still applying, an inline submit
+merges the new image into that in-flight target and keeps its baseline —
+rebuilding the pending target from the observed configuration would
+silently drop the in-flight changes from the overlay.
 
 ### The surface stays a Resource Surface, not a narrow Settings View
 
@@ -49,6 +56,13 @@ inline editor scopes to the image alone; pull policy and launch command
 remain full-view work. When the inline draft is dirty, a Rollback confirm
 additionally states that the unsubmitted image edit will be discarded, and
 proceeding discards it.
+
+A successful Rollback also clears every browser-local Pending Settings
+Update for the AP — all domains, not just launch. The restored snapshot is
+the new desired configuration; a surviving pending target would replay a
+stale comparison against it and misreport the update as still applying (or
+as a divergence whose keep-the-target choice partially undoes the
+rollback).
 
 ## Considered Options
 

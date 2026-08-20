@@ -17,6 +17,7 @@ import {
 import {
   classifyPendingSettingsEntry,
   getBrowserPendingSettingsStore,
+  type PendingSettingsDomainUpdate,
   type PendingSettingsUpdateEntry,
   usePendingSettingsEntries,
 } from "@/features/resource-settings/pending-settings-updates";
@@ -28,6 +29,29 @@ export type ApImageUpdateStatus =
   | { kind: "applying"; targetImage: string }
   | { kind: "diverged"; observedImage: string; targetImage: string }
   | null;
+
+/**
+ * The launch-domain pending update an image submit produces. The pending
+ * overlay must keep representing the whole intended launch domain: while an
+ * earlier launch update is still in flight, the new image merges into that
+ * target (and keeps its baseline) instead of rebuilding from observed, which
+ * would silently drop the in-flight changes.
+ */
+export function launchPendingUpdateForImage({
+  image,
+  inFlight,
+  observed,
+}: {
+  image: string;
+  inFlight?: PendingSettingsUpdateEntry<ApPendingLaunchTarget>;
+  observed: ApPendingLaunchTarget;
+}): PendingSettingsDomainUpdate<ApPendingLaunchTarget> {
+  return {
+    domain: "launch",
+    submittedAgainst: inFlight?.submittedAgainst ?? observed,
+    target: { ...(inFlight?.target ?? observed), image },
+  };
+}
 
 /**
  * Inline image update lifecycle for the AP Image Versions surface (ADR-0062).
@@ -119,6 +143,16 @@ export function useApImageUpdate({
       observed: observedLaunchTarget,
     });
   }, [launchEntry, observedLaunchTarget]);
+  const inFlightLaunchEntryRef = useRef<
+    PendingSettingsUpdateEntry<ApPendingLaunchTarget> | undefined
+  >(undefined);
+  useEffect(() => {
+    inFlightLaunchEntryRef.current =
+      classification?.status === "applying" ||
+      classification?.status === "attention-needed"
+        ? launchEntry
+        : undefined;
+  }, [classification, launchEntry]);
 
   // The pane may be the only open surface watching this AP while an update
   // applies, so reconciled launch entries clear here as well as in settings.
@@ -169,11 +203,11 @@ export function useApImageUpdate({
         pendingStore?.replaceDirtyDomains({
           owner,
           updates: [
-            {
-              domain: "launch",
-              submittedAgainst: observed,
-              target: { ...observed, image: img },
-            },
+            launchPendingUpdateForImage({
+              image: img,
+              inFlight: inFlightLaunchEntryRef.current,
+              observed,
+            }),
           ],
         });
         await revalidateObserved();
@@ -195,11 +229,21 @@ export function useApImageUpdate({
   }, [launchEntry, submit]);
 
   // Divergence use-latest: forget the local target; no request is sent.
-  const useLatestObserved = useCallback(() => {
+  const adoptLatestObserved = useCallback(() => {
     if (owner == null || pendingStore == null) {
       return;
     }
     pendingStore.clear(owner, "launch");
+  }, [owner, pendingStore]);
+
+  // A successful Rollback replaces the whole desired configuration, so every
+  // local pending target — any domain, not just launch — is stale against the
+  // restored snapshot and would misclassify as applying or diverged.
+  const clearPendingAfterRollback = useCallback(() => {
+    if (owner == null || pendingStore == null) {
+      return;
+    }
+    pendingStore.clearOwner(owner);
   }, [owner, pendingStore]);
 
   return {
@@ -207,12 +251,13 @@ export function useApImageUpdate({
       status?.kind === "applying"
         ? status.targetImage
         : (observedLaunchTarget?.image ?? null),
+    clearPendingAfterRollback,
     keepTarget,
     loaded: observedLaunchTarget != null,
     revalidateObserved,
     status,
     submit,
     submitBusy,
-    useLatestObserved,
+    adoptLatestObserved,
   };
 }
