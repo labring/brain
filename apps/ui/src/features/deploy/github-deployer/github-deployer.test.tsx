@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { render } from "@testing-library/react/pure";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import {
+  actAndDrain,
+  installTestDom,
+  restoreActEnvironment,
+  setActEnvironment,
+} from "@/features/project-canvas/react-test-harness";
 import { GithubDeployer, githubUrlToRepo } from "./github-deployer";
 
 const noop = () => undefined;
@@ -146,6 +153,14 @@ test("githubUrlToRepo rejects GitHub URLs that are not repository roots", () => 
     name: "example",
     url: "https://github.com/sealai/example",
   });
+  assert.equal(
+    githubUrlToRepo("https://token:secret@github.com/sealai/example"),
+    null
+  );
+  assert.equal(
+    githubUrlToRepo("https://github.com/sealai/example?token=secret"),
+    null
+  );
 });
 
 test("GithubDeployer shows authorized empty repository state", () => {
@@ -162,6 +177,68 @@ test("GithubDeployer shows authorized empty repository state", () => {
   assert.doesNotMatch(html, CONFIGURE_BUTTON_RE);
   assert.match(html, REPO_EMPTY_RE);
   assert.doesNotMatch(html, AUTH_BUTTON_RE);
+});
+
+test("GithubDeployer auto deploys a restored GitHub URL only once", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let deployCalls = 0;
+  const onDeploy = () => {
+    deployCalls += 1;
+  };
+  const initialProps = {
+    actions: { onDeploy },
+    autoDeploy: true,
+    initialRepoUrl: "https://github.com/acme/api",
+    states: {
+      isAuthorized: false,
+      repos: [],
+    },
+  } as const;
+  const authorizedProps = {
+    ...initialProps,
+    states: {
+      isAuthorized: true,
+      repos: [],
+    },
+  } as const;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <GithubDeployer.Root {...initialProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(deployCalls, 0);
+
+    await actAndDrain(() => {
+      rendered?.rerender(
+        <GithubDeployer.Root {...authorizedProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(deployCalls, 1);
+
+    await actAndDrain(() => {
+      rendered?.rerender(
+        <GithubDeployer.Root {...authorizedProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(deployCalls, 1);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
 });
 
 test("GithubDeployer shows repository load errors after authorization", () => {
