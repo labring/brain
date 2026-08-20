@@ -24,7 +24,10 @@ import {
   useState,
 } from "react";
 import { DeploymentSettings } from "../deployment-settings";
-import { githubUrlToRepo as parseGithubUrlToRepo } from "../github-repo-url";
+import {
+  normalizeGithubRepoUrl,
+  githubUrlToRepo as parseGithubUrlToRepo,
+} from "../github-repo-url";
 import {
   GithubDeployerContext,
   GithubDeployerRoot,
@@ -136,8 +139,14 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
     states: { deployedRepo, isAuthorized, isLoading, templateOptionsLoading },
   } = useGithubDeployer();
   const [repoUrl, setRepoUrl] = useState(initialRepoUrl);
-  const autoDeployRepoIdRef = useRef<string | null>(null);
+  const autoDeployStateRef = useRef<
+    "cancelled" | "eligible" | "pending" | "triggered"
+  >("pending");
   const parsedRepo = useMemo(() => parseGithubUrlToRepo(repoUrl), [repoUrl]);
+  const requestedRepoUrl = useMemo(
+    () => normalizeGithubRepoUrl(initialRepoUrl),
+    [initialRepoUrl]
+  );
   const showInvalid = repoUrl.trim() !== "" && !parsedRepo;
   const isTemplateMatchingPending = Boolean(
     onDeployTemplate && templateOptionsLoading
@@ -147,20 +156,33 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
   );
 
   useEffect(() => {
+    if (!autoDeploy || parsedRepo == null) {
+      return;
+    }
+    if (autoDeployStateRef.current === "pending") {
+      autoDeployStateRef.current =
+        requestedRepoUrl === parsedRepo.url ? "eligible" : "cancelled";
+    }
     if (
-      !autoDeploy ||
+      autoDeployStateRef.current !== "eligible" ||
       deployedRepo ||
       !isAuthorized ||
       isLoading ||
-      parsedRepo == null ||
-      onDeploy == null ||
-      autoDeployRepoIdRef.current === parsedRepo.id
+      onDeploy == null
     ) {
       return;
     }
-    autoDeployRepoIdRef.current = parsedRepo.id;
+    autoDeployStateRef.current = "triggered";
     onDeploy(parsedRepo);
-  }, [autoDeploy, deployedRepo, isAuthorized, isLoading, onDeploy, parsedRepo]);
+  }, [
+    autoDeploy,
+    deployedRepo,
+    isAuthorized,
+    isLoading,
+    onDeploy,
+    parsedRepo,
+    requestedRepoUrl,
+  ]);
 
   if (deployedRepo || !isAuthorized) {
     return null;
