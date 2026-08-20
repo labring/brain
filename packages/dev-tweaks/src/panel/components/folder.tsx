@@ -15,7 +15,7 @@ interface FolderProps {
   /** Controlled open state; leave undefined for the internal default-open state. */
   open?: boolean;
   panelHeightOffset?: number;
-  title: string;
+  title: ReactNode;
   toolbar?: ReactNode;
 }
 

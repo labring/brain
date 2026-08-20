@@ -574,6 +574,18 @@ _Avoid_: posture (for popover/inline).
 
 ### Launcher
 
-The collapsed bubble that stands in for the closed dev tweaks panel in popover mode. It can be pinned always-visible or shown only while some tweak deviates from its default (dirty indicator).
+The collapsed bubble that stands in for the closed dev tweaks panel in popover mode. It can be pinned always-visible or shown only while some tweak deviates from its default (dirty indicator). An enabled Dev Mock counts as dirty.
 
 _Avoid_: indicator capsule, FAB.
+
+### Dev Mock
+
+A dev/demo-only mode in which one feature's API answers are served from fixtures according to the selected Mock Scenario. Its state lives outside the dev tweaks panel — the panel is only its remote control, never the source of truth — which separates it from a tweak, an override value the panel owns. While a Dev Mock is enabled, the pages it covers show fixture data, not real state.
+
+_Avoid_: mock group, mock tweak, mock override.
+
+### Mock Scenario
+
+The named state one Dev Mock session is in (e.g. a subscription state). Selecting a scenario shapes every answer the mock serves; the serving side may advance the scenario after a successful write so whole flows can be walked through.
+
+_Avoid_: mock preset, mock case.

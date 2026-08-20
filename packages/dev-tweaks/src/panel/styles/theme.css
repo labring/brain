@@ -22,6 +22,10 @@
   --dial-border: rgba(255, 255, 255, 0.1);
   --dial-border-hover: rgba(255, 255, 255, 0.15);
 
+  /* Mock badge accent — amber on both themes */
+  --dial-mock: #f5a623;
+  --dial-mock-bg: rgba(245, 166, 35, 0.12);
+
   /* Timeline clips are light by default; light themes add a dark tint so
      their shape stays distinct from the lane without replacing custom hues. */
   --dev-tweaks-timeline-clip-overlay: transparent;
@@ -1338,6 +1342,25 @@
   width: 14px;
   height: 14px;
   color: var(--dial-text-label);
+}
+
+/* Mock section: badge in the section title, note under the controls */
+.dev-tweaks-mock-badge {
+  flex: none;
+  padding: 2px 5px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--dial-mock);
+  letter-spacing: 0.08em;
+  background: var(--dial-mock-bg);
+  border-radius: 4px;
+}
+
+.dev-tweaks-mock-note {
+  padding: 2px 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dial-text-tertiary);
 }
 
 /* Shortcut Pill */

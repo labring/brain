@@ -31,6 +31,7 @@ export type {
   UseDevTweaksOptions,
 } from "./hooks/use-dev-tweaks";
 export { useDevTweaks, useDevTweaksController } from "./hooks/use-dev-tweaks";
+export { useDevTweaksMock } from "./hooks/use-dev-tweaks-mock";
 export type {
   DevTweaksTimelineValues,
   TimelineClipConfig,
@@ -70,6 +71,13 @@ export type {
 } from "./store/dev-tweaks-store";
 // Store (for advanced usage)
 export { DevTweaksStore } from "./store/dev-tweaks-store";
+export type {
+  DevTweaksMockDef,
+  DevTweaksMockSource,
+  DevTweaksMockState,
+  MockEntry,
+} from "./store/mock-store";
+export { MockStore } from "./store/mock-store";
 export type {
   TimelineClipMeta,
   TimelineClipTrackMeta,

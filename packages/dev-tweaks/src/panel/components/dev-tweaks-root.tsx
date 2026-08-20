@@ -20,6 +20,7 @@ import {
   hasPanelDragMoved,
 } from "../panel-drag";
 import { DevTweaksStore, type PanelConfig } from "../store/dev-tweaks-store";
+import { type MockEntry, MockStore } from "../store/mock-store";
 import { TimelineStore } from "../store/timeline-store";
 import {
   DEFAULT_PANEL_UI_PREFS,
@@ -30,6 +31,7 @@ import {
 } from "../ui-prefs";
 import { useMediaQuery } from "../use-media-query";
 import { Folder } from "./folder";
+import { MockSection } from "./mock-section";
 import { Panel } from "./panel";
 import { ShortcutListener } from "./shortcut-listener";
 import { TimelineToggleButton } from "./timeline/timeline-toggle-button";
@@ -136,6 +138,7 @@ export function DevTweaksRoot({
   onOpenChange,
 }: DevTweaksRootProps) {
   const [panels, setPanels] = useState<PanelConfig[]>([]);
+  const [mocks, setMocks] = useState<MockEntry[]>([]);
   const [timelineCount, setTimelineCount] = useState(0);
   const [mounted, setMounted] = useState(false);
   const inline = mode === "inline";
@@ -241,10 +244,14 @@ export function DevTweaksRoot({
   useEffect(() => {
     setMounted(true);
     setPanels(DevTweaksStore.getPanels("panel"));
+    setMocks(MockStore.getMocks());
     setTimelineCount(TimelineStore.getTimelines().length);
 
     const unsubscribePanels = DevTweaksStore.subscribeGlobal(() => {
       setPanels(DevTweaksStore.getPanels("panel"));
+    });
+    const unsubscribeMocks = MockStore.subscribe(() => {
+      setMocks(MockStore.getMocks());
     });
     const unsubscribeTimelines = TimelineStore.subscribeGlobal(() => {
       setTimelineCount(TimelineStore.getTimelines().length);
@@ -252,11 +259,15 @@ export function DevTweaksRoot({
 
     return () => {
       unsubscribePanels();
+      unsubscribeMocks();
       unsubscribeTimelines();
     };
   }, []);
 
-  const dirty = useAnyPanelDirty(panels);
+  // An enabled mock is dirty state: the page shows fixture data, not the real
+  // thing, and the launcher must say so.
+  const mockEnabled = mocks.some((mock) => mock.state.enabled);
+  const dirty = useAnyPanelDirty(panels) || mockEnabled;
 
   // Watch for panel open/close — snap to corner on open, restore drag position on close
   useEffect(() => {
@@ -306,7 +317,8 @@ export function DevTweaksRoot({
   // cannot trap it. `hasSurfaces` is part of the switch because the root
   // renders null until a panel registers — the effect must re-run once the
   // popover element actually exists.
-  const hasSurfaces = panels.length > 0 || timelineCount > 0;
+  const hasSurfaces =
+    panels.length > 0 || mocks.length > 0 || timelineCount > 0;
   useTopLayer(rootRef, !inline && mounted && hasSurfaces);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -371,7 +383,7 @@ export function DevTweaksRoot({
   }
 
   // Don't render if no editing surfaces are registered.
-  if (panels.length === 0 && timelineCount === 0) {
+  if (!hasSurfaces) {
     return null;
   }
 
@@ -385,7 +397,9 @@ export function DevTweaksRoot({
         }
       : undefined;
   const originX = getPanelOriginX(activePosition, dragOffset);
-  const hasMultiplePanels = panels.length > 1;
+  // Mocks always render as sections under the root folder — they have no
+  // root-panel variant — so any registered mock forces the sectioned layout.
+  const hasMultiplePanels = panels.length > 1 || mocks.length > 0;
   const timelineToggle = timelineCount > 0 ? <TimelineToggleButton /> : null;
 
   // Header chrome controls: theme → posture → close. Posture and close hang
@@ -510,7 +524,7 @@ export function DevTweaksRoot({
   }
 
   let panelsContent: ReactNode;
-  if (panels.length === 0) {
+  if (panels.length === 0 && mocks.length === 0) {
     panelsContent = (
       <div className="dev-tweaks-panel-wrapper">
         <Folder
@@ -544,6 +558,9 @@ export function DevTweaksRoot({
           title="Dev tweaks"
           toolbar={rootToolbar}
         >
+          {mocks.map((mock) => (
+            <MockSection key={mock.key} mock={mock} />
+          ))}
           {panels.map((panel) => (
             <Panel
               defaultOpen={true}
