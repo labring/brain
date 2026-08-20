@@ -37,6 +37,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0062 — Submit Image Updates Inline from the AP Image Versions Surface](0062-submit-image-updates-inline-from-the-image-versions-surface.md) *(supplements ADR-0019 and ADR-0030)*
 - [0063 — Derive Resource-Deletion Dates Client-Side from Subscription Expiry](0063-derive-resource-deletion-dates-client-side.md)
 - [0064 — Pin the Current Billing Region by Deployment-Declared Domain](0064-pin-the-current-billing-region-by-deployment-declared-domain.md)
+- [0065 — Treat Shared Deploy Intents as Untrusted Message-Level Context](0065-treat-shared-deploy-intents-as-untrusted-message-context.md)
 
 ## Conventions
 

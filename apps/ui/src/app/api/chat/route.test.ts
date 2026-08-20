@@ -1364,3 +1364,134 @@ test("drops partial tool input when an errored stream has durable text", async (
   expect(consumeCalls).toBe(0);
   expect(titleCalls).toBe(0);
 });
+
+function templateCatalogResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      code: 200,
+      data: {
+        templates: [
+          {
+            metadata: { name: "glpi" },
+            spec: {
+              categories: [],
+              description: "GLPI helpdesk",
+              gitRepo: "https://github.com/glpi-project/glpi",
+              icon: "",
+              inputs: {},
+              readme: "",
+              title: "GLPI",
+            },
+          },
+        ],
+      },
+    }),
+    {
+      headers: { "content-type": "application/json" },
+      status: 200,
+    }
+  );
+}
+
+test("chat keeps one validated data-deployIntent part on the inbound user message", async () => {
+  const originalProviderUrl = process.env.TEMPLATE_PROVIDER_URL;
+  const originalFetch = globalThis.fetch;
+  process.env.TEMPLATE_PROVIDER_URL = "https://template-provider.test";
+  globalThis.fetch = (async () =>
+    templateCatalogResponse()) as unknown as typeof fetch;
+  try {
+    const message: UIMessage = {
+      id: "user-with-intent",
+      parts: [
+        {
+          type: "data-deployIntent",
+          data: {
+            kind: "template",
+            payload: { templateName: "glpi" },
+            source: "template-site",
+            version: 1,
+          },
+        },
+        { text: "Deploy from a shared link.", type: "text" },
+      ],
+      role: "user",
+    };
+    const response = await POST(chatRequest(message));
+    expect(response.status).toBe(200);
+    await drain(response);
+    const persisted = appendCalls.find(
+      (item) => item.id === "user-with-intent"
+    );
+    expect(persisted).not.toBeUndefined();
+    expect(
+      persisted?.parts.some((part) => part.type === "data-deployIntent")
+    ).toBe(true);
+  } finally {
+    if (originalProviderUrl === undefined) {
+      delete process.env.TEMPLATE_PROVIDER_URL;
+    } else {
+      process.env.TEMPLATE_PROVIDER_URL = originalProviderUrl;
+    }
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("chat drops a malformed data-deployIntent part without blocking the turn", async () => {
+  const message: UIMessage = {
+    id: "user-with-bad-intent",
+    parts: [
+      { type: "data-deployIntent", data: { evil: true } },
+      { text: "hello", type: "text" },
+    ],
+    role: "user",
+  };
+  const response = await POST(chatRequest(message));
+  expect(response.status).toBe(200);
+  await drain(response);
+  const persisted = appendCalls.find(
+    (item) => item.id === "user-with-bad-intent"
+  );
+  expect(persisted).not.toBeUndefined();
+  expect(
+    persisted?.parts.some((part) => part.type === "data-deployIntent")
+  ).toBe(false);
+  expect(persisted?.parts).toEqual([{ text: "hello", type: "text" }]);
+});
+
+test("chat drops a template intent when the catalog is unavailable, keeping the turn", async () => {
+  const originalProviderUrl = process.env.TEMPLATE_PROVIDER_URL;
+  delete process.env.TEMPLATE_PROVIDER_URL;
+  try {
+    const message: UIMessage = {
+      id: "user-with-unverifiable-intent",
+      parts: [
+        {
+          type: "data-deployIntent",
+          data: {
+            kind: "template",
+            payload: { templateName: "glpi" },
+            source: "template-site",
+            version: 1,
+          },
+        },
+        { text: "deploy it", type: "text" },
+      ],
+      role: "user",
+    };
+    const response = await POST(chatRequest(message));
+    expect(response.status).toBe(200);
+    await drain(response);
+    const persisted = appendCalls.find(
+      (item) => item.id === "user-with-unverifiable-intent"
+    );
+    expect(persisted).not.toBeUndefined();
+    expect(
+      persisted?.parts.some((part) => part.type === "data-deployIntent")
+    ).toBe(false);
+    expect(persisted?.parts).toEqual([{ text: "deploy it", type: "text" }]);
+  } finally {
+    if (originalProviderUrl !== undefined) {
+      process.env.TEMPLATE_PROVIDER_URL = originalProviderUrl;
+    }
+  }
+});

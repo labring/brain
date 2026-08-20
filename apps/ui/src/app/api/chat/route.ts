@@ -52,6 +52,8 @@ import {
   type ChatStreamLeaseHeartbeat,
   startChatStreamLeaseHeartbeat,
 } from "@/features/chat/runtime/chat-stream-lease-heartbeat";
+import { withDeployIntentContext } from "@/features/chat/runtime/deploy-intent-context-bridge";
+import { sanitizeDeployIntentParts } from "@/features/chat/runtime/deploy-intent-validation";
 import { jsonError } from "@/features/chat/runtime/errors";
 import { createInjectToolDurationStreamTransform } from "@/features/chat/runtime/inject-tool-duration-stream";
 import {
@@ -559,6 +561,15 @@ async function runChatPipeline(input: {
     if (incoming.response != null) {
       return incoming.response;
     }
+    if (incoming.prepared.type === "user") {
+      // Fail-closed inbound scrub for data-deployIntent parts: at most one
+      // validated intent survives; invalid or forged parts are dropped without
+      // blocking ordinary chat (ADR-0065). The sanitized message is what gets
+      // projected into history, persisted, and shown to the model.
+      incoming.prepared.message = await sanitizeDeployIntentParts(
+        incoming.prepared.message
+      );
+    }
 
     const freeTier = await getFreeTierSnapshot(owner.namespace);
     const systemModelConfigured = isSystemOpenAiConfigured();
@@ -597,7 +608,7 @@ async function runChatPipeline(input: {
     );
     assertCompleteToolHistory(history);
     const modelMessages = await convertToModelMessages(
-      withSelectedResourceContext(history),
+      withDeployIntentContext(withSelectedResourceContext(history)),
       { tools }
     );
 

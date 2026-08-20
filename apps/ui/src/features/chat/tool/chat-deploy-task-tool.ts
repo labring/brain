@@ -9,6 +9,18 @@ import {
   logChatToolIntention,
 } from "@/features/chat/tool/chat-tool-intention";
 import {
+  adoptLegacyGithubConnectionForOwner,
+  getGithubConnectionStatusForOwner,
+} from "@/features/deploy/github/connection-service";
+import {
+  CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+  type VerifiedGithubConnectionActor,
+} from "@/features/deploy/github/owner-identity";
+import {
+  checkGithubRepoPublicAccess,
+  GITHUB_REPO_NOT_PUBLIC_ERROR,
+} from "@/features/deploy/github/repo-public-access";
+import {
   cancelDeployTaskAction,
   createDeployTaskAction,
   submitDeployTaskInputAction,
@@ -18,6 +30,10 @@ import {
   resolveDeployTaskTargetForCreate,
   runDeployTask,
 } from "@/features/deploy/task/runner";
+import {
+  CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
+  type DeploymentCredentialBinding,
+} from "@/features/deploy/task/schema";
 import {
   getDeployTaskSnapshot,
   getDeployTaskTimelineSnapshot,
@@ -76,9 +92,14 @@ export function createDeployTaskTools(
     kubeconfig: string;
     kubernetesNamespace: string;
     workspaceActor: string;
+    workspaceUserUid: string;
   },
   dependencies: {
+    adoptLegacyGithubConnectionForOwner?: typeof adoptLegacyGithubConnectionForOwner;
+    checkGithubRepoPublicAccess?: typeof checkGithubRepoPublicAccess;
+    createDeployTaskAction?: typeof createDeployTaskAction;
     getDeployTaskEngineContext?: typeof getDeployTaskEngineContext;
+    getGithubConnectionStatusForOwner?: typeof getGithubConnectionStatusForOwner;
     getDeployTaskSnapshot?: typeof getDeployTaskSnapshot;
     getDeployTaskTimelineSnapshot?: typeof getDeployTaskTimelineSnapshot;
     runDeployTask?: typeof runDeployTask;
@@ -91,6 +112,8 @@ export function createDeployTaskTools(
   const encodedKubeconfig = encodeURIComponent(options.kubeconfig);
   const engineContext =
     dependencies.getDeployTaskEngineContext ?? getDeployTaskEngineContext;
+  const createTask =
+    dependencies.createDeployTaskAction ?? createDeployTaskAction;
   const readTaskSnapshot =
     dependencies.getDeployTaskSnapshot ?? getDeployTaskSnapshot;
   const readTimelineSnapshot =
@@ -99,11 +122,57 @@ export function createDeployTaskTools(
   const submitTaskInput =
     dependencies.submitDeployTaskInputAction ?? submitDeployTaskInputAction;
   const projectTask = dependencies.toDeployTaskDTO ?? toDeployTaskDTO;
+  const readGithubConnection =
+    dependencies.getGithubConnectionStatusForOwner ??
+    getGithubConnectionStatusForOwner;
+  const readRepoPublicAccess =
+    dependencies.checkGithubRepoPublicAccess ?? checkGithubRepoPublicAccess;
+  const adoptLegacyGithubConnection =
+    dependencies.adoptLegacyGithubConnectionForOwner ??
+    adoptLegacyGithubConnectionForOwner;
+
+  const githubActor: VerifiedGithubConnectionActor = {
+    legacyWorkspaceActor: options.workspaceActor,
+    owner: {
+      namespace: options.kubernetesNamespace,
+      ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+      userUid: options.workspaceUserUid,
+    },
+  };
+
+  /**
+   * Resolve the initiator's binding the same way the deploy-task route does
+   * (ADR-0036/0056/0059). A missing connection is not an error: the task is
+   * created unbound and deploys a public repository anonymously. An existing
+   * but stale binding still fails closed.
+   */
+  async function resolveChatGithubBinding(): Promise<
+    DeploymentCredentialBinding | undefined
+  > {
+    try {
+      await adoptLegacyGithubConnection(githubActor);
+      const connection = await readGithubConnection(githubActor.owner);
+      if (connection == null) {
+        return;
+      }
+      return {
+        connectionRef: connection.id,
+        credentialOwner: githubActor.owner.userUid,
+        version: CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
+      };
+    } catch {
+      // A superseded identity binding races an already-authorized turn. Fall
+      // back to the unbound path rather than failing the tool call; the
+      // public-access check below still guards correctness.
+      return;
+    }
+  }
 
   const createDeployTaskTool = tool({
     description: [
       "Create a long-running Deployment Task in SealAI.",
-      "Use this when the user asks to deploy a Docker image, a database, a template, or a prompt.",
+      "Use this when the user asks to deploy a Docker image, a database, a template, a GitHub repository, or a prompt.",
+      "Deploying a GitHub repository without a connected GitHub account works only for public repositories that already publish a container image; anything needing a source build requires the user to connect GitHub in Settings.",
       "The task resolves or creates its target Project, runs the server-selected Deployment Runner, applies artifacts, and reports progress separately.",
       "Do not provide a runner; Docker and database sources use the Direct Runner, template sources use the Template Runner, and GitHub or prompt sources use the AI Runner.",
       "If the user is already inside a Project, omit target to deploy into the current Project; otherwise provide a newProject target.",
@@ -121,16 +190,22 @@ export function createDeployTaskTools(
             "No deployment target was provided. Use target.kind newProject with a displayName, or open a Project first.",
         };
       }
+      let credentialBinding: DeploymentCredentialBinding | undefined;
       if (input.source.kind === "github") {
-        return {
-          ok: false,
-          error:
-            "GitHub deployment creation is not available in Assistant tools. Use the GitHub deployment pane, which binds the verified Workspace Actor's connection.",
-        };
+        credentialBinding = await resolveChatGithubBinding();
+        if (credentialBinding == null) {
+          const access = await readRepoPublicAccess({
+            fullName: input.source.repo.fullName,
+          });
+          if (access.checked && !access.accessible) {
+            return { ok: false, error: GITHUB_REPO_NOT_PUBLIC_ERROR };
+          }
+        }
       }
 
-      const result = await createDeployTaskAction(engineContext(), {
+      const result = await createTask(engineContext(), {
         create: {
+          ...(credentialBinding == null ? {} : { credentialBinding }),
           createdFrom: "chat",
           creatingActor: actionActor,
           namespace,

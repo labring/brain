@@ -55,6 +55,7 @@ import {
   SELECTED_RESOURCE_CONTEXT_PART_TYPE,
   type SelectedResourceContext,
 } from "@/features/chat/persistence/types";
+import { useDeployIntentConsumer } from "@/features/chat/runtime/use-deploy-intent-consumer";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -596,6 +597,14 @@ function ProjectAssistantChatSession({
         });
       }
     },
+  });
+
+  // Entry-URL deployment intent: convert `?intent=` once into a synthetic
+  // first user message carrying `data-deployIntent`, then drop the param so a
+  // refresh never re-sends it (ADR-0065). The server re-validates fail-closed.
+  useDeployIntentConsumer({
+    chatId,
+    sendMessage: (message) => sendMessage(message),
   });
 
   useInsertionEffect(() => {
