@@ -14,9 +14,9 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Activity,
-  CalendarDays,
   Cpu,
   FileText,
+  History,
   Layers,
   ListTree,
   MemoryStick,
@@ -60,10 +60,10 @@ const QUICK_ACTION_ITEMS = [
   },
   { icon: FileText, key: "logs", label: "Open logs", tooltip: "Logs" },
   {
-    icon: CalendarDays,
-    key: "calendar",
-    label: "Open deployments",
-    tooltip: "Deployments",
+    icon: History,
+    key: "imageVersions",
+    label: "Open image versions",
+    tooltip: "Image versions",
   },
   {
     icon: ListTree,

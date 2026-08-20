@@ -11,6 +11,7 @@ test("formatWorkspaceQuotaRows maps Sealos quota items to sidebar rows", () => {
     { limit: 16_000, type: "cpu", used: 500 },
     { limit: 65_536, type: "memory", used: 1024 },
     { limit: 204_800, type: "storage", used: 3072 },
+    { limit: 20, type: "pod", used: 3 },
     { limit: 10, type: "nodeport", used: 0 },
   ];
 
@@ -18,6 +19,7 @@ test("formatWorkspaceQuotaRows maps Sealos quota items to sidebar rows", () => {
     ["CPU", "0.5C/16C"],
     ["Memory", "1Gi/64Gi"],
     ["Storage", "3Gi/200Gi"],
+    ["Pods", "3/20"],
     ["Ports", "0/10"],
   ]);
 });
@@ -29,6 +31,7 @@ test("formatWorkspaceQuotaRows keeps stable rows for missing quota items", () =>
       ["CPU", "1C/2C"],
       ["Memory", "--/--"],
       ["Storage", "--/--"],
+      ["Pods", "--/--"],
       ["Ports", "--/--"],
     ]
   );

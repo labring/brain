@@ -142,7 +142,7 @@ function planContainerQuickAction({
   { kind: "containerQuickAction" }
 >): ProjectCanvasCommandPlan {
   switch (action) {
-    case "calendar":
+    case "imageVersions":
       return planWithSurface(
         sideSurfacePlan(sideSurfaceForWorkloadPane(target, "history")),
         selection ?? { kind: "resource", target }

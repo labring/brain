@@ -2,7 +2,7 @@ import { BinaryScale, Quantity, Scale } from "@workspace/shared";
 
 export interface WorkspaceQuotaItem {
   limit: number;
-  type: "cpu" | "memory" | "nodeport" | "storage";
+  type: "cpu" | "memory" | "nodeport" | "pod" | "storage";
   used: number;
 }
 
@@ -12,6 +12,7 @@ const WORKSPACE_QUOTA_ROW_DEFINITIONS = [
   { label: "CPU", type: "cpu" },
   { label: "Memory", type: "memory" },
   { label: "Storage", type: "storage" },
+  { label: "Pods", type: "pod" },
   { label: "Ports", type: "nodeport" },
 ] as const;
 
@@ -67,6 +68,7 @@ function formatQuotaValue(item: WorkspaceQuotaItem) {
         item.used
       )}/${formatBinaryQuotaNumberFromMi(item.limit)}`;
     case "nodeport":
+    case "pod":
       return `${formatPortQuotaNumber(item.used)}/${formatPortQuotaNumber(
         item.limit
       )}`;

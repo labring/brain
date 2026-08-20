@@ -8,7 +8,6 @@ const noop = () => undefined;
 const DOCKER_DEPLOYER_SLOT_RE = /data-slot="docker-deployer"/;
 const IMAGE_RE = /Image/;
 const DOCKER_IMAGE_RE = /Docker image/;
-const RUNTIME_RE = /Runtime/;
 const ENVIRONMENT_VARIABLES_RE = /Environment Variables/;
 const ADD_ENVIRONMENT_VARIABLE_RE = /Add environment variable/;
 const NETWORK_RE = /Network/;
@@ -25,6 +24,12 @@ const VALUE_TRUE_RE = /value="true"/;
 const DEFAULT_DOCKER_IMAGE_RE = /value="nginx"/;
 const IMAGE_PLACEHOLDER_RE = /placeholder="image:tag"/;
 const DOCKER_IMAGE_REQUIRED_RE = /Docker image is required\./;
+const ENV_MODE_TOGGLE_RE = /aria-label="Environment editor mode"/;
+const LIST_ENV_EDITOR_RE = /aria-label="List environment editor"/;
+const RAW_ENV_EDITOR_RE = /aria-label="Raw environment editor"/;
+const ENV_RAW_SOURCE_RE = /aria-label="Environment raw source"/;
+const ENV_RAW_FIX_HINT_RE =
+  /Fix the errors above to switch back to the list view\./;
 
 test("DockerDeployer renders Docker Deployment Settings with default network choices", () => {
   const html = renderToStaticMarkup(<DockerDeployer onDeploy={noop} />);
@@ -34,8 +39,7 @@ test("DockerDeployer renders Docker Deployment Settings with default network cho
   assert.match(html, DOCKER_IMAGE_RE);
   assert.match(html, DEFAULT_DOCKER_IMAGE_RE);
   assert.match(html, IMAGE_PLACEHOLDER_RE);
-  assert.match(html, RUNTIME_RE);
-  assert.doesNotMatch(html, ENVIRONMENT_VARIABLES_RE);
+  assert.match(html, ENVIRONMENT_VARIABLES_RE);
   assert.match(html, ADD_ENVIRONMENT_VARIABLE_RE);
   assert.match(html, NETWORK_RE);
   assert.match(html, APP_LISTENING_PORT_RE);
@@ -65,4 +69,47 @@ test("DockerDeployer disables deploy while busy even when settings are valid", (
   assert.match(html, FEATURE_FLAG_RE);
   assert.match(html, VALUE_TRUE_RE);
   assert.match(html, DISABLED_RE);
+});
+
+test("DockerDeployer hides the List/Raw toggle while the environment is empty", () => {
+  const html = renderToStaticMarkup(<DockerDeployer onDeploy={noop} />);
+
+  assert.doesNotMatch(html, ENV_MODE_TOGGLE_RE);
+  assert.match(html, ADD_ENVIRONMENT_VARIABLE_RE);
+  assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
+});
+
+test("DockerDeployer derives list rows from a prefilled raw source and shows the toggle", () => {
+  const html = renderToStaticMarkup(
+    <DockerDeployer
+      initialSettings={{
+        envRawSource: "# flags\nFEATURE_FLAG=true",
+        image: "ghcr.io/acme/api:1.2",
+      }}
+      onDeploy={noop}
+    />
+  );
+
+  assert.match(html, FEATURE_FLAG_RE);
+  assert.match(html, VALUE_TRUE_RE);
+  assert.match(html, ENV_MODE_TOGGLE_RE);
+  assert.match(html, LIST_ENV_EDITOR_RE);
+  assert.match(html, RAW_ENV_EDITOR_RE);
+  assert.doesNotMatch(html, ENV_RAW_SOURCE_RE);
+});
+
+test("DockerDeployer opens in Raw mode when the prefilled raw source has errors", () => {
+  const html = renderToStaticMarkup(
+    <DockerDeployer
+      initialSettings={{
+        envRawSource: "FEATURE_FLAG=true\nbroken line",
+        image: "ghcr.io/acme/api:1.2",
+      }}
+      onDeploy={noop}
+    />
+  );
+
+  assert.match(html, ENV_MODE_TOGGLE_RE);
+  assert.match(html, ENV_RAW_SOURCE_RE);
+  assert.match(html, ENV_RAW_FIX_HINT_RE);
 });

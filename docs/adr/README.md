@@ -34,6 +34,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0059 — Key Personal Resources by the Global User UID](0059-key-personal-resources-by-global-user-uid.md) *(revises ADR-0036, ADR-0047, and ADR-0056)*
 - [0060 — Call account-service with Self-Signed Internal JWTs](0060-call-account-service-with-self-signed-internal-jwts.md)
 - [0061 — Key the Onboarding Profile by the Bare User UID](0061-key-the-onboarding-profile-by-bare-user-uid.md) *(supplements ADR-0059)*
+- [0062 — Submit Image Updates Inline from the AP Image Versions Surface](0062-submit-image-updates-inline-from-the-image-versions-surface.md) *(supplements ADR-0019 and ADR-0030)*
 - [0063 — Derive Resource-Deletion Dates Client-Side from Subscription Expiry](0063-derive-resource-deletion-dates-client-side.md)
 - [0064 — Pin the Current Billing Region by Deployment-Declared Domain](0064-pin-the-current-billing-region-by-deployment-declared-domain.md)
 

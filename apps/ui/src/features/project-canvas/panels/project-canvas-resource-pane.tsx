@@ -9,6 +9,7 @@ import type {
 } from "@/features/project-canvas/surface/rendering-adapter";
 import { SettingsHost } from "@/features/resource-settings/settings-host";
 import type { SettingsLeaveGuardRegistration } from "@/features/resource-settings/settings-leave-guard";
+import type { SettingsProviderProps } from "@/features/resource-settings/settings-types";
 import { DatabaseMetricsPane } from "./database-metrics-pane";
 import { WorkloadResourcePane } from "./workload-resource-pane";
 
@@ -30,6 +31,7 @@ export interface ProjectCanvasResourcePaneContentProps {
   kubeconfig?: string;
   onClose: () => void;
   onLaunchContextConsumed?: () => void;
+  onOpenApImageVersions?: SettingsProviderProps["onOpenApImageVersions"];
   onRepairSideEntry?: (entry: ProjectSideSurfaceEntry | null) => void;
   onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
   onUpdated?: () => Promise<unknown>;
@@ -41,6 +43,7 @@ export function renderProjectCanvasResourcePaneContent({
   kubeconfig,
   onClose,
   onLaunchContextConsumed,
+  onOpenApImageVersions,
   onRepairSideEntry,
   onSettingsLeaveGuardChange,
   onUpdated,
@@ -56,6 +59,7 @@ export function renderProjectCanvasResourcePaneContent({
         mode={workloadPaneMode(content.kind)}
         node={content.node}
         onClose={onClose}
+        onWorkloadMutation={onUpdated}
       />
     );
   }
@@ -79,6 +83,7 @@ export function renderProjectCanvasResourcePaneContent({
         launchContext={content.launchContext}
         onClose={onClose}
         onLaunchContextConsumed={onLaunchContextConsumed}
+        onOpenApImageVersions={onOpenApImageVersions}
         onRepairSideEntry={onRepairSideEntry}
         onSettingsLeaveGuardChange={onSettingsLeaveGuardChange}
         onUpdated={onUpdated}

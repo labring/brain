@@ -11,10 +11,12 @@ export function WorkloadResourcePane({
   mode,
   node,
   onClose,
+  onWorkloadMutation,
 }: {
   mode: string | null | undefined;
   node: Node | null;
   onClose: () => void;
+  onWorkloadMutation?: () => Promise<unknown>;
 }) {
   if (node == null) {
     return null;
@@ -26,7 +28,13 @@ export function WorkloadResourcePane({
     case WORKLOAD_PANE.metrics:
       return <WorkloadMetricsPane node={node} onClose={onClose} />;
     case WORKLOAD_PANE.history:
-      return <WorkloadHistoryPane node={node} onClose={onClose} />;
+      return (
+        <WorkloadHistoryPane
+          node={node}
+          onClose={onClose}
+          onWorkloadMutation={onWorkloadMutation}
+        />
+      );
     default:
       return null;
   }
