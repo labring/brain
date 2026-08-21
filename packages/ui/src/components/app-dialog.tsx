@@ -15,7 +15,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { Loader2, TriangleAlert } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 
-type AppDialogSize = "sm" | "default" | "lg" | "xl";
+type AppDialogSize = "sm" | "default" | "lg" | "xl" | "2xl";
 type AppDialogActionTone = "default" | "destructive";
 
 function AppDialogRoot(props: ComponentProps<typeof Dialog>) {
@@ -30,6 +30,7 @@ function AppDialogContent({
   className,
   overlayClassName,
   size = "default",
+  style,
   ...props
 }: Omit<ComponentProps<typeof DialogContent>, "showCloseButton"> & {
   size?: AppDialogSize;
@@ -41,12 +42,23 @@ function AppDialogContent({
         // convention as DialogContent, and it keeps the dialog inside whatever
         // box it is mounted in.
         "dark flex max-h-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-lg border border-border bg-project-chrome-surface p-0 text-foreground shadow-2xl ring-0 backdrop-blur-[20px]",
-        "max-w-[calc(100%-2rem)] data-[size=default]:sm:max-w-[502px] data-[size=lg]:sm:max-w-3xl data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-5xl",
+        "max-w-[calc(100%-2rem)] data-[size=2xl]:sm:max-w-[1200px] data-[size=default]:sm:max-w-[502px] data-[size=lg]:sm:max-w-3xl data-[size=sm]:sm:max-w-sm data-[size=xl]:sm:max-w-5xl",
+        // Base UI marks this popup while a nested AppDialog is open on top;
+        // recede it card-stack style instead of stacking a second backdrop.
+        "transition-[scale,filter] data-nested-dialog-open:scale-[0.99] data-nested-dialog-open:brightness-75",
         className
       )}
       data-size={size}
       overlayClassName={cn("bg-black/40 backdrop-blur-xs", overlayClassName)}
       showCloseButton={false}
+      // The recede transition runs slower than the popup's own 100ms
+      // enter/exit animation; inline so it deterministically outranks the
+      // shared `duration-100` utility without touching animation timing.
+      style={{
+        transitionDuration: "300ms",
+        transitionTimingFunction: "cubic-bezier(0.32, 0.72, 0, 1)",
+        ...style,
+      }}
       {...props}
     />
   );

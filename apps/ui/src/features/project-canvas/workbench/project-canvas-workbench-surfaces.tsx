@@ -10,6 +10,7 @@ import { GitHubDeploymentPane } from "@/features/deploy/github-deployment-pane";
 import type { DeployTaskDTO } from "@/features/deploy/task/types";
 import { TemplateDeploymentPane } from "@/features/deploy/template-deployment-pane";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
+import type { ProjectApTarget } from "@/features/panes/target-identity";
 import { MainActionSurface } from "@/features/project-canvas/actions/canvas-action-surface";
 import { DatabaseLogsPane } from "@/features/project-canvas/panels/database-logs-pane";
 import { DatabaseTerminalPane } from "@/features/project-canvas/panels/database-terminal-pane";
@@ -37,6 +38,7 @@ export interface ProjectCanvasSurfaceHostActions {
     name: string;
     namespace: string;
   }) => void;
+  openApImageVersions: (target: ProjectApTarget) => void;
   registerSettingsLeaveGuard: SettingsLeaveGuardRegistration;
   repairSide: (entry: ProjectSideSurfaceEntry | null) => void;
 }
@@ -139,6 +141,7 @@ export const ProjectCanvasSurfaceHost = memo(function ProjectCanvasSurfaceHost({
             kubeconfig={kubeconfig}
             onClose={actions.closeResourcePane}
             onLaunchContextConsumed={actions.consumeSettingsLaunchContext}
+            onOpenApImageVersions={actions.openApImageVersions}
             onRepairSideEntry={actions.repairSide}
             onSettingsLeaveGuardChange={actions.registerSettingsLeaveGuard}
             onUpdated={refreshWorkloadLists}

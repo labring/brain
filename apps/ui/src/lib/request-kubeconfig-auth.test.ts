@@ -458,6 +458,7 @@ test("restricts off-cluster kubeconfig transport to safe development endpoints",
 // --- Workspace Actor authorization with the desktop-minted App Token ---
 
 const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
+const APP_TOKEN_USER_ID = "user-123";
 const APP_TOKEN_USER_UID = "6bd90648-b8b9-4a70-9be0-95c8391a0dcb";
 const APP_TOKEN_CONFIG = {
   secret: APP_TOKEN_SECRET,
@@ -490,6 +491,7 @@ function mintAppToken(
 ): Promise<string> {
   const jwt = new SignJWT({
     userCrName: "alice-cr",
+    userId: APP_TOKEN_USER_ID,
     userUid: APP_TOKEN_USER_UID,
     ...overrides.claims,
   })
@@ -523,6 +525,7 @@ test("authorizes the actor when all app-token checks pass", async () => {
     actorBinding: {
       crName: "alice-cr",
       mintedAt: 1_753_600_000,
+      userId: APP_TOKEN_USER_ID,
       userUid: APP_TOKEN_USER_UID,
     },
     namespace: "shared",

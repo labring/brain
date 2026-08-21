@@ -197,6 +197,119 @@ func TestAPTransformProjectsObservedPublicAccessFromIngressService(t *testing.T)
 	}
 }
 
+func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T) {
+	paths := []interface{}{
+		ingressPath("/", "eaglercraft-server-service", 5201),
+		ingressPath("/api", "eaglercraft-server-service", 5201),
+		ingressPath("/admin", "eaglercraft-server-service", 5201),
+		ingressPath("/admin.css", "eaglercraft-server-service", 5201),
+		ingressPath("/admin.js", "eaglercraft-server-service", 5201),
+	}
+	out := APWithIngressesAndServicesFromList(
+		map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name":      "eaglercraft-server-shauji",
+				"namespace": "ns-admin",
+			},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{
+						"appListeningPorts": []interface{}{
+							map[string]interface{}{"port": 5200},
+							map[string]interface{}{"port": 5201},
+						},
+					},
+				},
+			},
+		},
+		[]map[string]interface{}{
+			{
+				"metadata": map[string]interface{}{
+					"name":      "eaglercraft-server-public",
+					"namespace": "ns-admin",
+				},
+				"spec": map[string]interface{}{
+					"rules": []interface{}{
+						map[string]interface{}{
+							"host": "eaglercraft-kjmioxdq.staging-usw-1.sealos.io",
+							"http": map[string]interface{}{
+								"paths": paths,
+							},
+						},
+						map[string]interface{}{
+							"host": "eaglercraft-kjmioxdq.staging-usw-1.sealos.io",
+							"http": map[string]interface{}{
+								"paths": []interface{}{
+									ingressPath("/dynmap", "eaglercraft-server-service", 5200),
+								},
+							},
+						},
+					},
+					"tls": []interface{}{
+						map[string]interface{}{
+							"hosts": []interface{}{"eaglercraft-kjmioxdq.staging-usw-1.sealos.io"},
+						},
+					},
+				},
+			},
+		},
+		[]map[string]interface{}{
+			{
+				"metadata": map[string]interface{}{
+					"name":      "eaglercraft-server-service",
+					"namespace": "ns-admin",
+				},
+				"spec": map[string]interface{}{
+					"ports": []interface{}{
+						map[string]interface{}{"port": 5200},
+						map[string]interface{}{"port": 5201},
+					},
+				},
+			},
+		},
+	)
+	status := out["status"].(map[string]interface{})
+	network := status["network"].(map[string]interface{})
+	addresses := network["publicAddresses"].([]map[string]interface{})
+	if got := len(addresses); got != 1 {
+		t.Fatalf("status.network.publicAddresses count = %d, want 1", got)
+	}
+	row := addresses[0]
+	if got := row["host"]; got != "eaglercraft-kjmioxdq.staging-usw-1.sealos.io" {
+		t.Fatalf("observed public address host = %v, want eaglercraft-kjmioxdq.staging-usw-1.sealos.io", got)
+	}
+	if got := row["url"]; got != "https://eaglercraft-kjmioxdq.staging-usw-1.sealos.io/" {
+		t.Fatalf("observed public address url = %v, want https://eaglercraft-kjmioxdq.staging-usw-1.sealos.io/", got)
+	}
+	if got := row["port"]; got != 5201 {
+		t.Fatalf("observed public address port = %v, want 5201", got)
+	}
+	variables := status["variables"].([]map[string]interface{})
+	externalCount := 0
+	internalCount := 0
+	for _, item := range variables {
+		variable := item
+		name, _ := variable["name"].(string)
+		if name == "port-5200-external" {
+			t.Fatalf("port-5200-external must not be projected from an ingress that routes only port 5201")
+		}
+		switch name {
+		case "port-5200-internal":
+			internalCount++
+		case "port-5201-internal":
+			internalCount++
+		case "port-5201-external":
+			externalCount++
+		}
+	}
+	if got := internalCount; got != 2 {
+		t.Fatalf("internal variable count = %d, want 2", got)
+	}
+	if got := externalCount; got != 1 {
+		t.Fatalf("external variable count = %d, want 1", got)
+	}
+}
+
 func TestAPTransformPreservesExistingPrivateNetworkAddress(t *testing.T) {
 	out := APWithIngressesAndServicesFromList(
 		map[string]interface{}{
@@ -980,6 +1093,18 @@ func ingressRule(host string, serviceName string, port int) map[string]interface
 				},
 			},
 		},
+	}
+}
+
+func ingressPath(path, serviceName string, port int) map[string]interface{} {
+	return map[string]interface{}{
+		"backend": map[string]interface{}{
+			"service": map[string]interface{}{
+				"name": serviceName,
+				"port": map[string]interface{}{"number": port},
+			},
+		},
+		"path": path,
 	}
 }
 

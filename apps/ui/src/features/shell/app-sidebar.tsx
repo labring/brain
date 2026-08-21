@@ -19,7 +19,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
-import { House, PanelsTopLeft, Sparkles } from "lucide-react";
+import { CreditCard, House, PanelsTopLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -33,6 +33,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
@@ -50,6 +51,7 @@ import {
   type WorkspaceQuotaItem,
 } from "@/features/shell/app-sidebar-upgrade";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
 function ProjectShortcutIcon({
   active,
@@ -116,8 +118,6 @@ function ProjectsShortcutIcon({
 
 const APP_SIDEBAR_LINK_CLASS =
   "shrink-0 border-0 text-neutral-50 active:translate-y-0! aria-[current=page]:text-blue-400!";
-const DESKTOP_DOMAIN_TRAILING_SLASHES_RE = /\/+$/;
-const DESKTOP_DOMAIN_SCHEME_RE = /^https?:\/\//i;
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
@@ -131,6 +131,7 @@ function isWorkspaceQuotaItem(value: unknown): value is WorkspaceQuotaItem {
     (item.type === "cpu" ||
       item.type === "memory" ||
       item.type === "storage" ||
+      item.type === "pod" ||
       item.type === "nodeport") &&
     typeof item.used === "number" &&
     typeof item.limit === "number"
@@ -139,32 +140,17 @@ function isWorkspaceQuotaItem(value: unknown): value is WorkspaceQuotaItem {
 
 async function loadWorkspaceQuotaRows(): Promise<AppSidebarUpgradeUsageRow[]> {
   const snapshot = await sealosApp.getWorkspaceQuota();
-  return formatWorkspaceQuotaRows(
-    Array.isArray(snapshot.quota)
-      ? snapshot.quota.filter(isWorkspaceQuotaItem)
-      : []
-  );
-}
-
-async function openCostCenterApp() {
-  await sealosApp.runEvents("openDesktopApp", {
-    appKey: "system-costcenter",
-    pathname: "/",
-    query: {
-      mode: "upgrade",
-    },
-    messageData: {
-      type: "InternalAppCall",
-      mode: "upgrade",
-    },
-  });
+  const rawQuota: readonly unknown[] = Array.isArray(snapshot.quota)
+    ? snapshot.quota
+    : [];
+  return formatWorkspaceQuotaRows(rawQuota.filter(isWorkspaceQuotaItem));
 }
 
 type AppSidebarLinkButtonProps = Pick<
   ComponentProps<typeof AppIconButton>,
   "aria-label" | "children" | "className"
 > &
-  Pick<ComponentProps<typeof Link>, "href"> & {
+  Pick<ComponentProps<typeof Link>, "href" | "onClick"> & {
     active?: boolean;
     tooltip: ReactNode;
   };
@@ -175,6 +161,7 @@ function AppSidebarLinkButton({
   children,
   className,
   href,
+  onClick,
   tooltip,
 }: AppSidebarLinkButtonProps) {
   return (
@@ -186,7 +173,7 @@ function AppSidebarLinkButton({
             aria-label={ariaLabel}
             className={cn(APP_SIDEBAR_LINK_CLASS, className)}
             nativeButton={false}
-            render={<Link href={href} />}
+            render={<Link href={href} onClick={onClick} />}
             size="lg"
             variant="quiet"
           >
@@ -200,45 +187,7 @@ function AppSidebarLinkButton({
 }
 
 function AppSidebarDesktopReturn() {
-  const [desktopUrl, setDesktopUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadDesktopUrl = async () => {
-      if (!sealosApp) {
-        return;
-      }
-
-      try {
-        const hostConfig = await sealosApp.getHostConfig();
-        const domain = hostConfig.cloud.domain
-          .trim()
-          .replace(DESKTOP_DOMAIN_TRAILING_SLASHES_RE, "");
-        if (cancelled || domain === "") {
-          return;
-        }
-
-        const origin = DESKTOP_DOMAIN_SCHEME_RE.test(domain)
-          ? domain
-          : `https://${domain}`;
-        setDesktopUrl(`${origin}/?openapp=`);
-      } catch (error: unknown) {
-        if (!cancelled) {
-          console.warn(
-            "[AppSidebarDesktopReturn] load Desktop host config failed:",
-            error
-          );
-        }
-      }
-    };
-
-    loadDesktopUrl().catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const desktopUrl = useSealosDesktopUrl();
 
   return (
     <Tooltip>
@@ -275,11 +224,6 @@ function AppSidebarUpgrade() {
   const [usageRows, setUsageRows] = useState<AppSidebarUpgradeUsageRow[]>(
     EMPTY_UPGRADE_USAGE_ROWS
   );
-  const handleUpgradeClick = () => {
-    openCostCenterApp().catch((error: unknown) => {
-      console.warn("[AppSidebarUpgrade] open cost center failed:", error);
-    });
-  };
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) {
@@ -332,8 +276,13 @@ function AppSidebarUpgrade() {
 
           <AppButton
             className="w-full"
-            onClick={handleUpgradeClick}
-            type="button"
+            nativeButton={false}
+            render={
+              <Link
+                href="/billing?mode=upgrade"
+                onClick={recordBillingReturnRoute}
+              />
+            }
             variant="secondary"
           >
             <Sparkles
@@ -417,11 +366,13 @@ const AppSidebarProjectShortcuts = memo(function AppSidebarProjectShortcuts({
 });
 
 interface AppSidebarChromeProps {
+  billingActive: boolean;
   currentProjectId: string | undefined;
   projectsActive: boolean;
 }
 
 const AppSidebarChrome = memo(function AppSidebarChrome({
+  billingActive,
   currentProjectId,
   projectsActive,
 }: AppSidebarChromeProps) {
@@ -518,6 +469,15 @@ const AppSidebarChrome = memo(function AppSidebarChrome({
             className="w-9 rounded-full bg-border"
             data-slot="app-sidebar-bottom-separator"
           />
+          <AppSidebarLinkButton
+            active={billingActive}
+            aria-label="Billing"
+            href="/billing"
+            onClick={recordBillingReturnRoute}
+            tooltip="Billing"
+          >
+            <CreditCard aria-hidden className="size-4" strokeWidth={1.8} />
+          </AppSidebarLinkButton>
           <AppSidebarDesktopReturn />
           <AppSidebarUpgrade />
         </div>
@@ -531,6 +491,7 @@ export default function AppSidebar() {
 
   return (
     <AppSidebarChrome
+      billingActive={pathname.startsWith("/billing")}
       currentProjectId={projectIdFromPathname(pathname)}
       projectsActive={pathname === "/project"}
     />

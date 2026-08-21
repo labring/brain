@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import k8s from "@kubernetes/client-node";
 
@@ -15,6 +16,7 @@ const DEFAULT_MAX_CANDIDATES = 200;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_DELETE_TIMEOUT_MS = 60_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const USER_NAMESPACE_PREFIX = "ns-";
 const STANDARD_NAME_RE = /^sealai-(chat|deploy)-([0-9a-f]{20})$/;
 const DEBUG_NAME_RE = /^sealai-debug-[a-z0-9]+$/;
 const DURATION_RE = /^((?:\d+(?:\.\d+)?)(?:d|h|m|s))+$/i;
@@ -24,13 +26,6 @@ const COMPONENT_LABEL = "app.kubernetes.io/component";
 const LIFECYCLE_LABEL = "devbox.sealos.io/lifecycle-scheduled";
 const UPSTREAM_LABEL = "devbox.sealos.io/upstream-id";
 const DEBUG_SOURCE_LABEL = "brain.io/debug-source-task";
-const EXCLUDED_NAMESPACES = new Set([
-  "brain-system",
-  "kube-node-lease",
-  "kube-public",
-  "kube-system",
-  "sealos-system",
-]);
 const PAUSED_AT_ANNOTATION = "devbox.sealos.io/paused-at";
 const ARCHIVE_TRIGGERED_AT_ANNOTATION = "devbox.sealos.io/archive-triggered-at";
 const ARCHIVE_AFTER_ANNOTATION = "devbox.sealos.io/archive-after-pause-time";
@@ -41,8 +36,8 @@ function usage() {
   bun scripts/devbox-admin-cleanup.mjs execute --namespace <ns> --inventory <file> --confirm-fingerprint <sha256> [options]
 
 Options:
-  --kubeconfig <file>       Admin kubeconfig. Defaults to KUBECONFIG/default/in-cluster config.
-  --all-namespaces          Explicitly scan all namespaces instead of --namespace.
+  --kubeconfig <file>       Admin kubeconfig (required).
+  --all-namespaces          Scan all namespaces whose names start with ns-.
   --include-debug           Include sealai-debug-* only when its Brain debug label is present.
   --output <file>           Inventory/audit JSON file. Inventory defaults to stdout.
   --inventory <file>        Inventory file for execute mode.
@@ -136,6 +131,12 @@ function parseArgs(argv) {
   if (options.allNamespaces === (options.namespace != null)) {
     throw new Error("Provide exactly one of --namespace or --all-namespaces");
   }
+  if (options.kubeconfig == null) {
+    throw new Error("--kubeconfig is required");
+  }
+  if (options.namespace != null && !isUserNamespace(options.namespace)) {
+    throw new Error("--namespace must start with ns-");
+  }
   if (options.command === "execute" && options.inventory == null) {
     throw new Error("execute requires --inventory <file>");
   }
@@ -143,6 +144,12 @@ function parseArgs(argv) {
     throw new Error("execute requires --confirm-fingerprint <sha256>");
   }
   return options;
+}
+
+function isUserNamespace(namespace) {
+  return (
+    typeof namespace === "string" && namespace.startsWith(USER_NAMESPACE_PREFIX)
+  );
 }
 
 function positiveInteger(value, flag) {
@@ -162,31 +169,61 @@ function parseDate(value, flag) {
 }
 
 function loadKubeConfig(kubeconfigPath) {
+  if (typeof kubeconfigPath !== "string" || kubeconfigPath.trim() === "") {
+    throw new Error("--kubeconfig is required");
+  }
   const config = new k8s.KubeConfig();
-  if (kubeconfigPath) {
-    config.loadFromFile(path.resolve(kubeconfigPath));
-    return config;
-  }
-  if (process.env.KUBECONFIG) {
-    config.loadFromFile(path.resolve(process.env.KUBECONFIG));
-    return config;
-  }
-  if (process.env.KUBERNETES_SERVICE_HOST) {
-    config.loadFromCluster();
-    return config;
-  }
-  config.loadFromDefault();
+  config.loadFromFile(path.resolve(kubeconfigPath));
   return config;
 }
 
-function apiClient(kubeconfigPath, requestTimeoutMs) {
-  const client = loadKubeConfig(kubeconfigPath).makeApiClient(
-    k8s.CustomObjectsApi
-  );
+function addRequestTimeout(client, requestTimeoutMs) {
   client.addInterceptor((requestOptions) => {
     requestOptions.timeout = requestTimeoutMs;
   });
   return client;
+}
+
+function apiClients(kubeconfigPath, requestTimeoutMs) {
+  const config = loadKubeConfig(kubeconfigPath);
+  const customObjects = addRequestTimeout(
+    config.makeApiClient(k8s.CustomObjectsApi),
+    requestTimeoutMs
+  );
+  const core = addRequestTimeout(
+    config.makeApiClient(k8s.CoreV1Api),
+    requestTimeoutMs
+  );
+  return { core, customObjects };
+}
+
+function apiClient(kubeconfigPath, requestTimeoutMs) {
+  return apiClients(kubeconfigPath, requestTimeoutMs).customObjects;
+}
+
+function listResponseItems(response) {
+  const body = responseBody(response);
+  return Array.isArray(body?.items) ? body.items : [];
+}
+
+async function listUserNamespaces(core) {
+  const namespaces = listResponseItems(await core.listNamespace());
+  const userNamespaces = namespaces
+    .map((item) => metadataOf(item).name)
+    .filter(isUserNamespace);
+  if (userNamespaces.length === 0) {
+    throw new Error("no ns-* user namespaces found");
+  }
+  return userNamespaces;
+}
+
+async function collectInBatches(items, concurrency, mapper) {
+  const results = [];
+  for (let index = 0; index < items.length; index += concurrency) {
+    const batch = items.slice(index, index + concurrency);
+    results.push(...(await Promise.all(batch.map(mapper))));
+  }
+  return results;
 }
 
 function responseBody(response) {
@@ -321,7 +358,7 @@ function labelReasons(object, nameInfo) {
   return reasons;
 }
 
-function metadataSafetyReasons(object, options) {
+function metadataSafetyReasons(object) {
   const metadata = metadataOf(object);
   const reasons = [];
   if (metadata.deletionTimestamp != null) {
@@ -336,9 +373,6 @@ function metadataSafetyReasons(object, options) {
     metadata.resourceVersion.trim() === ""
   ) {
     reasons.push("metadata-identity-missing");
-  }
-  if (options.allNamespaces && EXCLUDED_NAMESPACES.has(metadata.namespace)) {
-    reasons.push("namespace-excluded");
   }
   const ownerReferences = Array.isArray(metadata.ownerReferences)
     ? metadata.ownerReferences
@@ -355,11 +389,8 @@ function metadataSafetyReasons(object, options) {
   return reasons;
 }
 
-function ownershipReasons(object, options, nameInfo) {
-  return [
-    ...labelReasons(object, nameInfo),
-    ...metadataSafetyReasons(object, options),
-  ];
+function ownershipReasons(object, nameInfo) {
+  return [...labelReasons(object, nameInfo), ...metadataSafetyReasons(object)];
 }
 
 function runtimeStateReasons(state) {
@@ -427,7 +458,7 @@ function reasonsFor(object, options) {
   );
   const archiveAfterMs = parseDurationMs(annotations[ARCHIVE_AFTER_ANNOTATION]);
   const reasons = [
-    ...ownershipReasons(object, options, nameInfo),
+    ...ownershipReasons(object, nameInfo),
     ...runtimeStateReasons(state),
     ...lifecycleTimeReasons({
       archiveAfterMs,
@@ -481,17 +512,23 @@ function fingerprint(candidates) {
     .digest("hex");
 }
 
-async function listDevboxes(api, options) {
-  const response = options.allNamespaces
-    ? await api.listClusterCustomObject(GROUP, VERSION, PLURAL)
-    : await api.listNamespacedCustomObject(
-        GROUP,
-        VERSION,
-        options.namespace,
-        PLURAL
-      );
-  const body = responseBody(response);
-  return Array.isArray(body?.items) ? body.items : [];
+async function listNamespacedDevboxes(api, namespace) {
+  return listResponseItems(
+    await api.listNamespacedCustomObject(GROUP, VERSION, namespace, PLURAL)
+  );
+}
+
+async function listDevboxes(api, core, options) {
+  if (!options.allNamespaces) {
+    return listNamespacedDevboxes(api, options.namespace);
+  }
+  const namespaces = await listUserNamespaces(core);
+  const batches = await collectInBatches(
+    namespaces,
+    DEFAULT_CONCURRENCY,
+    (namespace) => listNamespacedDevboxes(api, namespace)
+  );
+  return batches.flat();
 }
 
 async function getDevbox(api, namespace, name) {
@@ -566,8 +603,11 @@ function summaryOf(items) {
 }
 
 async function inventory(options) {
-  const api = apiClient(options.kubeconfig, options.requestTimeoutMs);
-  const objects = await listDevboxes(api, options);
+  const { core, customObjects } = apiClients(
+    options.kubeconfig,
+    options.requestTimeoutMs
+  );
+  const objects = await listDevboxes(customObjects, core, options);
   const snapshots = objects.map((object) => {
     const evaluation = reasonsFor(object, options);
     return safeSnapshot(object, options, evaluation);
@@ -626,6 +666,13 @@ async function execute(options) {
   }
   if (!Array.isArray(inventoryResult.candidates)) {
     throw new Error("inventory candidates must be an array");
+  }
+  if (
+    inventoryResult.candidates.some(
+      (candidate) => !isUserNamespace(candidate?.namespace)
+    )
+  ) {
+    throw new Error("inventory candidates must be in ns-* namespaces");
   }
   if (inventoryResult.candidates.length > options.maxCandidates) {
     throw new Error(
@@ -705,13 +752,24 @@ async function execute(options) {
 }
 
 try {
-  const options = parseArgs(process.argv.slice(2));
-  if (options.command === "inventory") {
-    await inventory(options);
-  } else {
-    await execute(options);
+  if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
+    const options = parseArgs(process.argv.slice(2));
+    if (options.command === "inventory") {
+      await inventory(options);
+    } else {
+      await execute(options);
+    }
   }
 } catch (error) {
   console.error(`devbox-admin-cleanup: ${errorSummary(error)}`);
   process.exitCode = 1;
 }
+
+export {
+  collectInBatches,
+  isUserNamespace,
+  listDevboxes,
+  listUserNamespaces,
+  parseArgs,
+  reasonsFor,
+};

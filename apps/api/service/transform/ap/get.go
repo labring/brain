@@ -285,16 +285,7 @@ func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, s
 	if len(publicAddressRowsFromValue(networkCopy["publicAddresses"])) > 0 {
 		return
 	}
-	serviceNames := make(map[string]bool, len(services))
-	servicePorts := make(map[string]observedServicePorts, len(services))
-	for _, service := range services {
-		name := strings.TrimSpace(getString(service, "metadata", "name"))
-		if name == "" {
-			continue
-		}
-		serviceNames[name] = true
-		servicePorts[name] = observedServicePortsFromService(service)
-	}
+	serviceNames, servicePorts := observedServiceLookup(services)
 	rows := observedPublicAddressRows(ingresses, serviceNames, servicePorts)
 	if len(rows) == 0 {
 		return
@@ -306,6 +297,28 @@ func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, s
 type observedServicePorts struct {
 	numbers map[int]bool
 	names   map[string]int
+}
+
+type observedIngressEndpoint struct {
+	host       string
+	key        string
+	port       int
+	scheme     string
+	serviceKey string
+}
+
+func observedServiceLookup(services []map[string]interface{}) (map[string]bool, map[string]observedServicePorts) {
+	serviceNames := make(map[string]bool, len(services))
+	servicePorts := make(map[string]observedServicePorts, len(services))
+	for _, service := range services {
+		name := strings.TrimSpace(getString(service, "metadata", "name"))
+		if name == "" {
+			continue
+		}
+		serviceNames[name] = true
+		servicePorts[name] = observedServicePortsFromService(service)
+	}
+	return serviceNames, servicePorts
 }
 
 func observedServicePortsFromService(service map[string]interface{}) observedServicePorts {
@@ -351,9 +364,10 @@ func (ports observedServicePorts) hasPort(port int) bool {
 	return ports.numbers[port]
 }
 
-func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []map[string]interface{} {
-	rows := []map[string]interface{}{}
-	seen := map[string]bool{}
+func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []observedIngressEndpoint {
+	endpoints := []observedIngressEndpoint{}
+	includeAllServices := len(serviceNames) == 0
+	seenHosts := map[string]bool{}
 	for _, ingress := range ingresses {
 		spec, _ := ingress["spec"].(map[string]interface{})
 		if spec == nil {
@@ -374,15 +388,23 @@ func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames 
 			if host == "" || isPlaceholderIngressHost(host) {
 				continue
 			}
+			hostKey := strings.ToLower(host)
+			if seenHosts[hostKey] {
+				continue
+			}
 			paths, _ := getSlice(rule, "http", "paths")
+			pickedFirst := false
 			for _, pathItem := range paths {
+				if pickedFirst {
+					break
+				}
 				path, _ := pathItem.(map[string]interface{})
 				if path == nil {
 					continue
 				}
 				service, _ := getMap(path, "backend", "service")
 				serviceName := strings.TrimSpace(getString(service, "name"))
-				if !serviceNames[serviceName] {
+				if !includeAllServices && !serviceNames[serviceName] {
 					continue
 				}
 				ports := servicePorts[serviceName]
@@ -390,32 +412,36 @@ func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames 
 				if port <= 0 || !ports.hasPort(port) {
 					continue
 				}
-				pathValue := strings.TrimSpace(getString(path, "path"))
-				if pathValue == "" {
-					pathValue = "/"
-				}
-				if !strings.HasPrefix(pathValue, "/") {
-					pathValue = "/" + pathValue
-				}
+				pickedFirst = true
 				scheme := "http"
 				if tlsHosts[host] {
 					scheme = "https"
 				}
-				key := fmt.Sprintf("%s|%s|%d|%s", host, serviceName, port, pathValue)
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
-				rows = append(rows, map[string]interface{}{
-					"host":   host,
-					"id":     "observed-" + stablePlatformAddressHostLabel(key, 12),
-					"port":   port,
-					"status": "accessible",
-					"type":   "observed",
-					"url":    fmt.Sprintf("%s://%s%s", scheme, host, pathValue),
+				seenHosts[hostKey] = true
+				endpoints = append(endpoints, observedIngressEndpoint{
+					host:       host,
+					key:        fmt.Sprintf("%s|%s|%d", host, serviceName, port),
+					port:       port,
+					scheme:     scheme,
+					serviceKey: serviceName + ":" + strconv.Itoa(port),
 				})
 			}
 		}
+	}
+	return endpoints
+}
+
+func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []map[string]interface{} {
+	rows := []map[string]interface{}{}
+	for _, endpoint := range observedIngressEndpoints(ingresses, serviceNames, servicePorts) {
+		rows = append(rows, map[string]interface{}{
+			"host":   endpoint.host,
+			"id":     "observed-" + stablePlatformAddressHostLabel(endpoint.key, 12),
+			"port":   endpoint.port,
+			"status": "accessible",
+			"type":   "observed",
+			"url":    fmt.Sprintf("%s://%s/", endpoint.scheme, endpoint.host),
+		})
 	}
 	return rows
 }
@@ -965,7 +991,7 @@ func buildConnectionRows(ap map[string]interface{}, ingresses, services []map[st
 	if apNamespace == "" {
 		return nil
 	}
-	externalBySvcPort := buildExternalAddressMap(ingresses, apNamespace)
+	externalBySvcPort := buildExternalAddressMap(ingresses, services)
 
 	var rows []map[string]interface{}
 	seen := make(map[string]bool)
@@ -1110,97 +1136,13 @@ func getPorts(svc map[string]interface{}) []int {
 	return ports
 }
 
-func buildExternalAddressMap(ingresses []map[string]interface{}, namespace string) map[string]string {
+func buildExternalAddressMap(ingresses, services []map[string]interface{}) map[string]string {
 	result := make(map[string]string)
-	for _, ing := range ingresses {
-		ingNamespace := getString(ing, "metadata", "namespace")
-		if ingNamespace == "" {
-			ingNamespace = namespace
-		}
-		lbHost := getLoadBalancerHost(ing)
-		spec, _ := ing["spec"].(map[string]interface{})
-		if spec == nil {
-			continue
-		}
-		tlsHosts := getTLSHosts(spec)
-		rules, _ := spec["rules"].([]interface{})
-		if rules == nil {
-			continue
-		}
-		for _, r := range rules {
-			rule, _ := r.(map[string]interface{})
-			if rule == nil {
-				continue
-			}
-			host, _ := rule["host"].(string)
-			if host == "" {
-				host = lbHost
-			}
-			if host == "" || isPlaceholderIngressHost(host) {
-				continue
-			}
-			httpRule, _ := rule["http"].(map[string]interface{})
-			if httpRule == nil {
-				continue
-			}
-			paths, _ := httpRule["paths"].([]interface{})
-			if paths == nil {
-				continue
-			}
-			scheme := "http"
-			if tlsHosts[host] {
-				scheme = "https"
-			}
-			for _, p := range paths {
-				pathObj, _ := p.(map[string]interface{})
-				if pathObj == nil {
-					continue
-				}
-				path, _ := pathObj["path"].(string)
-				if path == "" {
-					path = "/"
-				}
-				if path[0] != '/' {
-					path = "/" + path
-				}
-				backend, _ := pathObj["backend"].(map[string]interface{})
-				if backend == nil {
-					continue
-				}
-				svcRef, _ := backend["service"].(map[string]interface{})
-				if svcRef == nil {
-					continue
-				}
-				svcName, _ := svcRef["name"].(string)
-				if svcName == "" {
-					continue
-				}
-				var port int
-				if portObj, ok := svcRef["port"].(map[string]interface{}); ok {
-					switch v := portObj["number"].(type) {
-					case float64:
-						port = int(v)
-					case int:
-						port = v
-					case int64:
-						port = int(v)
-					case int32:
-						port = int(v)
-					case string:
-						if p, err := strconv.Atoi(v); err == nil {
-							port = p
-						}
-					}
-				}
-				if port == 0 {
-					continue
-				}
-				addr := fmt.Sprintf("%s://%s%s", scheme, host, path)
-				key := svcName + ":" + strconv.Itoa(port)
-				if _, exists := result[key]; !exists {
-					result[key] = addr
-				}
-			}
+	serviceNames, servicePorts := observedServiceLookup(services)
+	for _, endpoint := range observedIngressEndpoints(ingresses, serviceNames, servicePorts) {
+		addr := fmt.Sprintf("%s://%s/", endpoint.scheme, endpoint.host)
+		if _, exists := result[endpoint.serviceKey]; !exists {
+			result[endpoint.serviceKey] = addr
 		}
 	}
 	return result

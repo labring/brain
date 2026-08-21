@@ -43,10 +43,14 @@ export function assertProductionAppTokenConfig(
   }
 }
 
-/** The proven `crName → userUid` binding, with the token's minting time. */
+/**
+ * The proven `crName → userUid` binding, its minting time, and the signed
+ * account-service `userId` claim when the desktop token carries one.
+ */
 export interface VerifiedAppTokenBinding {
   crName: string;
   mintedAt: number | null;
+  userId: string | null;
   userUid: string;
 }
 
@@ -100,6 +104,7 @@ export async function verifyAppTokenBinding(input: {
   }
 
   const claims = tokenClaims(payload);
+  const userId = nonEmptyString(claims?.userId);
   const userUid = nonEmptyString(claims?.userUid);
   const userCrName = nonEmptyString(claims?.userCrName);
   if (userUid == null || userCrName == null) {
@@ -115,6 +120,7 @@ export async function verifyAppTokenBinding(input: {
     binding: {
       crName: userCrName,
       mintedAt: typeof issuedAt === "number" ? issuedAt : null,
+      userId,
       userUid,
     },
     expired: typeof expiresAt === "number" && expiresAt * 1000 < Date.now(),

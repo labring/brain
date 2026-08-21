@@ -37,8 +37,11 @@ mock.module("./runner-writes", () => ({
 const {
   CodexGatewayApiError,
   CodexGatewayTimeoutError,
+  DEPLOY_GATEWAY_MODEL,
+  resolveDeployGatewayModel,
   runDeployTaskGateway: runDeployTaskGatewayRaw,
 } = requireModule("./gateway") as typeof import("./gateway");
+const originalCodexGatewayModel = process.env.CODEX_GATEWAY_MODEL;
 
 function runDeployTaskGateway(
   input: Omit<Parameters<typeof runDeployTaskGatewayRaw>[0], "resumeMode"> & {
@@ -177,16 +180,23 @@ describe("deployment Codex gateway interruption", () => {
     recordedEvents.length = 0;
     updateDeployTaskStateImpl = () => Promise.resolve();
     console.warn = () => undefined;
+    delete process.env.CODEX_GATEWAY_MODEL;
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
+    delete process.env.CODEX_GATEWAY_MODEL;
   });
 
   afterAll(() => {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
+    if (originalCodexGatewayModel === undefined) {
+      delete process.env.CODEX_GATEWAY_MODEL;
+    } else {
+      process.env.CODEX_GATEWAY_MODEL = originalCodexGatewayModel;
+    }
     mock.module("./runner-writes", () => ({ ...realRunnerWrites }));
   });
 
@@ -499,9 +509,32 @@ describe("deployment Codex gateway interruption", () => {
     });
 
     expect(sessionBodies).toHaveLength(1);
+    expect(sessionBodies[0]?.model).toBe(DEPLOY_GATEWAY_MODEL);
     expect(sessionBodies[0]?.toolProfile).toBeUndefined();
     expect(sessionBodies[0]?.threadId).toBeUndefined();
     expect(sessionHeaders[0]?.["x-sealai-control-token"]).toBeUndefined();
+  });
+
+  it("uses CODEX_GATEWAY_MODEL for a new session when it is set", async () => {
+    process.env.CODEX_GATEWAY_MODEL = "  gpt-custom-deploy  ";
+    const sessionBodies: Record<string, unknown>[] = [];
+    installGatewayFetch({
+      sessionBodies,
+      stateActive: false,
+    });
+
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: task(),
+    });
+
+    expect(sessionBodies[0]?.model).toBe("gpt-custom-deploy");
+  });
+
+  it("treats a blank CODEX_GATEWAY_MODEL as unset", () => {
+    process.env.CODEX_GATEWAY_MODEL = "   ";
+    expect(resolveDeployGatewayModel()).toBe(DEPLOY_GATEWAY_MODEL);
   });
 
   it("resumes the recorded Codex Thread when a session is lost", async () => {

@@ -17,6 +17,11 @@ export async function register() {
   // ADR-0059: personal-resource authorization must never fall back to a
   // default secret, so a production boot without the config aborts here.
   assertProductionAppTokenConfig();
+  const { assertProductionAccountServiceConfig } = await import(
+    "@/lib/account-service/config"
+  );
+  // ADR-0060: a half-configured billing client must never serve traffic.
+  assertProductionAccountServiceConfig();
   if (appTokenVerificationConfigFromEnv() == null) {
     console.warn(
       "[instrumentation] JWT_INTERNAL is unset; personal-resource routes will fail closed with 401."

@@ -13,9 +13,6 @@ RUN bunx turbo@2.8.17 prune @sealai/registry --docker
 FROM oven/bun:1.3.5 AS builder
 WORKDIR /app
 
-ARG NEXT_PUBLIC_APP_URL=http://localhost:10000
-ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
-
 RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 make g++ && \
     apt-get clean && \
@@ -52,6 +49,5 @@ EXPOSE 10000
 
 ENV NODE_ENV=production
 ENV PORT=10000
-ENV NEXT_PUBLIC_APP_URL=http://localhost:10000
 
 CMD ["node", "apps/registry/server.js"]

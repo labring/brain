@@ -11,10 +11,12 @@ import {
   HardDrive,
   MemoryStick,
   Network,
+  Package,
   Plus,
   Save,
-  SquarePen,
-  Terminal,
+  ScrollText,
+  TerminalSquare,
+  Variable,
   X,
 } from "lucide-react";
 import {
@@ -287,6 +289,8 @@ export interface ApSettingsSectionsProps {
   onEnvResolvedValue?: ApEnvResolvedValueResolver;
   onImageChange: (image: string) => void;
   onNetworkChange?: (network: ApNetwork) => void | Promise<void>;
+  /** Opens the AP Image Versions surface from the Image section. */
+  onOpenImageVersions?: () => void;
   onPendingDbReferencesChange?: (
     references: readonly ApSettingsPendingDbReference[]
   ) => void;
@@ -321,8 +325,6 @@ export interface ApSettingsSectionsProps {
   replicasQuota?: ApSettingsControlledQuotaProps;
   /** Restrict the pane to one AP Settings section for focused entry points. */
   sectionFocus?: "all" | "environment";
-  /** Hide the Image section when image updates belong in a separate deployment surface. */
-  showImageSection?: boolean;
   storage?: readonly ApStorageMount[];
   submissionOwner?: PendingSettingsOwnerIdentity;
   workloadKind?: ApWorkloadKind;
@@ -355,6 +357,7 @@ export function useApSettingsSections({
   onNetworkChange,
   onEnvChange,
   onAddDbDsnReferenceIntentConsumed,
+  onOpenImageVersions,
   onPendingDbReferencesChange,
   cpuQuota,
   memoryQuota,
@@ -372,7 +375,6 @@ export function useApSettingsSections({
   readOnly = false,
   dbDsnReferenceSources = [],
   sectionFocus = "all",
-  showImageSection = true,
   storage = EMPTY_STORAGE_MOUNTS,
   submissionOwner,
   workloadKind = "deployment",
@@ -475,7 +477,6 @@ export function useApSettingsSections({
   const [draftArgs, setDraftArgs] = useState<string[]>(() =>
     normalizeCommandDraftLines(initialSettingsDraft.args)
   );
-  const imageInputId = useId();
   const envDraftKeyPrefix = useId();
   const [draftConfigMaps, setDraftConfigMaps] = useState<ApConfigMapMount[]>(
     () => normalizeConfigMapDraftRows(initialSettingsDraft.configMaps)
@@ -2269,22 +2270,20 @@ export function useApSettingsSections({
       title: "CPU / Memory",
     });
 
-    if (showImageSection) {
-      sections.push({
-        content: (
-          <ImageSettingsContent
-            imageInputId={imageInputId}
-            onBlur={handleImageBlur}
-            onChange={handleImageChange}
-            readOnly={readOnly}
-            value={displayImage}
-          />
-        ),
-        icon: SquarePen,
-        id: "image",
-        title: "Image",
-      });
-    }
+    sections.push({
+      content: (
+        <ImageSettingsContent
+          onBlur={handleImageBlur}
+          onChange={handleImageChange}
+          onOpenVersions={onOpenImageVersions}
+          readOnly={readOnly}
+          value={displayImage}
+        />
+      ),
+      icon: Package,
+      id: "image",
+      title: "Image",
+    });
 
     sections.push({
       content: (
@@ -2300,7 +2299,7 @@ export function useApSettingsSections({
           readOnly={readOnly}
         />
       ),
-      icon: Terminal,
+      icon: TerminalSquare,
       id: "launch-command",
       title: "Launch Command",
     });
@@ -2321,7 +2320,7 @@ export function useApSettingsSections({
           submitBlocked={configSubmitBlocked}
         />
       ),
-      icon: SquarePen,
+      icon: ScrollText,
       id: "config-files",
       title: "Configuration Files",
     });
@@ -2408,7 +2407,7 @@ export function useApSettingsSections({
         )}
       </>
     ),
-    icon: SquarePen,
+    icon: Variable,
     id: "environment",
     title: "Environment Variables",
   });

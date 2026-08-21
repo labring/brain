@@ -10,6 +10,7 @@ import { DbSettingsProvider } from "./settings-provider-db";
 import type {
   SettingsLaunchContext,
   SettingsProvider,
+  SettingsProviderProps,
   SettingsReadModelHints,
   SettingsSessionEvents,
   SettingsViewModel,
@@ -56,6 +57,7 @@ export function SettingsHost({
   launchContext,
   onClose,
   onLaunchContextConsumed,
+  onOpenApImageVersions,
   onRepairSideEntry,
   onSettingsLeaveGuardChange,
   onUpdated,
@@ -68,6 +70,7 @@ export function SettingsHost({
   launchContext?: SettingsLaunchContext;
   onClose: () => void;
   onLaunchContextConsumed?: () => void;
+  onOpenApImageVersions?: SettingsProviderProps["onOpenApImageVersions"];
   onRepairSideEntry?: (entry: ProjectSideSurfaceEntry | null) => void;
   onSettingsLeaveGuardChange?: SettingsLeaveGuardRegistration;
   onUpdated?: () => Promise<unknown>;
@@ -149,6 +152,7 @@ export function SettingsHost({
         onClose={onClose}
         onLaunchContextConsumed={onLaunchContextConsumed}
         onModelChange={setModel}
+        onOpenApImageVersions={onOpenApImageVersions}
         onRepairSideEntry={onRepairSideEntry}
         onUpdated={onUpdated}
         readModelHints={readModelHints}
