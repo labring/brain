@@ -699,3 +699,35 @@ _Avoid_: Pane Registry, Flow Registry.
 The dark material shared by immersive product surfaces: a near-black canvas base with a soft blue luminous wash floating above the surface's content. A surface or overlay adopts Canvas Glow as its material — "surface" itself always names a place, never a look. Carried by the Billing Area, its app cost drawer, and its plan-change dialog, and by the canvas action surface.
 
 _Avoid_: surface style (when meaning the material), canvas material, glow overlay.
+
+## Dev Tweaks
+
+### Panel Posture
+
+How the open dev tweaks panel occupies the viewport: **float** (a draggable corner card) or **frame** (the page docks as an inset card and the panel fills the freed strip). A user preference remembered across sessions. Not the same axis as Panel Mode.
+
+_Avoid_: panel mode (for float/frame), docked mode.
+
+### Panel Mode
+
+How the dev tweaks panel is mounted by the host: **popover** (a top-layer overlay toggled with a hotkey) or **inline** (rendered in place as ordinary page content, always open, with no posture). A mount-time choice, not a user preference.
+
+_Avoid_: posture (for popover/inline).
+
+### Launcher
+
+The collapsed bubble that stands in for the closed dev tweaks panel in popover mode. It can be pinned always-visible or shown only while some tweak deviates from its default (dirty indicator). An enabled Dev Mock counts as dirty.
+
+_Avoid_: indicator capsule, FAB.
+
+### Dev Mock
+
+A dev/demo-only mode in which one feature's API answers are served from fixtures according to the selected Mock Scenario. Its state lives outside the dev tweaks panel — the panel is only its remote control, never the source of truth — which separates it from a tweak, an override value the panel owns. While a Dev Mock is enabled, the pages it covers show fixture data, not real state.
+
+_Avoid_: mock group, mock tweak, mock override.
+
+### Mock Scenario
+
+The named state one Dev Mock session is in (e.g. a subscription state). Selecting a scenario shapes every answer the mock serves; the serving side may advance the scenario after a successful write so whole flows can be walked through.
+
+_Avoid_: mock preset, mock case.

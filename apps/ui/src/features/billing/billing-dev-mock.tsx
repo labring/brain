@@ -1,9 +1,8 @@
 "use client";
 
 import {
-  type DevTweaksDriver,
-  type DevTweaksGroupDef,
-  useDevTweaks,
+  type DevTweaksMockSource,
+  useDevTweaksMock,
 } from "@workspace/dev-tweaks";
 import { mutate } from "swr";
 
@@ -17,15 +16,13 @@ import {
 } from "./dev-mock-cookie";
 
 /**
- * Billing's dev-mock face in the dev tweaks panel: one "mock" group with a
- * single scenario select. An override present means fixtures are being served
- * (the MOCK indicator lights); clearing the group turns the mock off. The
- * session cookie stays the single source of truth — the driver below is the
- * only writer on the client, the fixture dispatcher transitions it on the
- * server.
+ * Billing's Dev Mock: registered with the dev tweaks panel while any
+ * /billing screen is mounted. The session cookie stays the single source of
+ * truth — the source below is the only writer on the client, the fixture
+ * dispatcher transitions it on the server.
  */
 
-export const BILLING_DEV_MOCK_GROUP_KEY = "billing-mock";
+export const BILLING_DEV_MOCK_KEY = "billing-mock";
 
 function readCookieState() {
   const pair = document.cookie
@@ -38,32 +35,32 @@ function readCookieState() {
 }
 
 /**
- * Cookie persistence for the group, registered on the DevTweaksProvider under
- * the group key. `persist` also drops the whole SWR cache: the scenario
- * shapes every /api/billing/* answer, so billing keys must refetch —
+ * Cookie-backed mock source. `set` also drops the whole SWR cache: the
+ * scenario shapes every /api/billing/* answer, so billing keys must refetch —
  * everything else is untouched data-wise.
  */
-export const billingDevMockDriver: DevTweaksDriver = {
+const billingDevMockSource: DevTweaksMockSource = {
   load: () => {
     const parsed = readCookieState();
-    return parsed.kind === "set" && parsed.state.enabled
-      ? { scenario: parsed.state.scenario }
-      : null;
+    return parsed.kind === "set" ? parsed.state : null;
   },
-  persist: (_groupKey, values) => {
-    const scenario = values?.scenario;
-    const value =
-      typeof scenario === "string" && isBillingDevScenario(scenario)
-        ? `${formatBillingDevMockCookie({ enabled: true, scenario })}; path=/; samesite=lax`
-        : "; path=/; max-age=0; samesite=lax";
+  set: (state) => {
+    const scenario = isBillingDevScenario(state.scenario)
+      ? state.scenario
+      : DEFAULT_BILLING_DEV_SCENARIO;
+    const value = formatBillingDevMockCookie({
+      enabled: state.enabled,
+      scenario,
+    });
     // biome-ignore lint/suspicious/noDocumentCookie: the synchronous write must land before the SWR refetches fire; the async Cookie Store API cannot guarantee that.
-    document.cookie = `${BILLING_DEV_MOCK_COOKIE}=${value}`;
+    document.cookie = `${BILLING_DEV_MOCK_COOKIE}=${value}; path=/; samesite=lax`;
     mutate(() => true).catch(() => undefined);
   },
   // The fixture dispatcher rewrites the cookie behind the panel's back (its
   // Set-Cookie scenario transitions); the Cookie Store API pushes those, the
-  // focus/interval pair is the fallback. The store dedupes unchanged loads.
-  subscribe: (_groupKey, onChange) => {
+  // focus/interval pair is the fallback. The mock store dedupes unchanged
+  // loads.
+  watch: (onChange) => {
     const cookieStore = (window as { cookieStore?: EventTarget }).cookieStore;
     cookieStore?.addEventListener("change", onChange);
     window.addEventListener("focus", onChange);
@@ -79,24 +76,14 @@ export const billingDevMockDriver: DevTweaksDriver = {
   },
 };
 
-const BILLING_MOCK_GROUP = {
-  controls: {
-    scenario: {
-      label: "Scenario",
-      options: BILLING_DEV_SCENARIOS,
-      type: "select",
-      value: DEFAULT_BILLING_DEV_SCENARIO,
-    },
-  },
-  feature: "billing",
-  kind: "mock",
-  note: "Serves /api/billing/* from fixtures",
-  persistence: BILLING_DEV_MOCK_GROUP_KEY,
-  title: "Billing mock",
-} as const satisfies DevTweaksGroupDef;
-
-/** Registers the group while any /billing screen is mounted; renders nothing. */
+/** Registers the mock while any /billing screen is mounted; renders nothing. */
 export function BillingDevMockTweaks() {
-  useDevTweaks(BILLING_DEV_MOCK_GROUP_KEY, BILLING_MOCK_GROUP);
+  useDevTweaksMock(BILLING_DEV_MOCK_KEY, {
+    defaultScenario: DEFAULT_BILLING_DEV_SCENARIO,
+    note: "Serves /api/billing/* from fixtures",
+    scenarios: BILLING_DEV_SCENARIOS,
+    source: billingDevMockSource,
+    title: "Billing mock",
+  });
   return null;
 }

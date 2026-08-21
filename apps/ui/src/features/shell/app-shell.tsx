@@ -11,8 +11,8 @@ import AppSidebar from "@/features/shell/app-sidebar";
  */
 export function AppShellChrome({ children }: { children: ReactNode }) {
   return (
-    // Container height (not svh) so dev tweaks frame mode can dock the page
-    // into an inset card; html/body/card all provide a definite height.
+    // Container height (not svh): html/body provide a definite height, so
+    // the shell sizes to whatever container the host puts around it.
     <div className="flex h-full max-h-full min-h-0 overflow-hidden overscroll-x-none">
       {children}
     </div>
