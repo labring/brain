@@ -8,6 +8,10 @@ All notable changes to Brain are documented in this file.
 
 - Added the billing cost center covering plan, usage, invoices, and AI
   credits.
+- Gated free chat turns on the active free trial and blocked on exhaustion.
+- Captured consent-safe marketing lifecycle attribution.
+- Added a GitHub repo deep-link with auto-deploy, and let GitHub Deploy
+  override user AI Proxy credentials via `GITHUB_DEPLOY_OPENAI_*`.
 - Added `APP_POSTGRES_SKIP_MIGRATIONS` to skip boot-time UI database
   migrations.
 - Made the GitHub callback origin runtime-configurable via `APP_URL`.
@@ -32,10 +36,15 @@ All notable changes to Brain are documented in this file.
 
 ### Upgrade Notes
 
-- No new database migrations.
+- Run UI database migration `0014`.
+- Configure `MARKETING_EVENTS_INGEST_SECRET` and
+  `MARKETING_CONSENT_SIGNING_KEY` when enabling marketing lifecycle
+  attribution.
 - New optional environment variables: `APP_POSTGRES_SKIP_MIGRATIONS` (skip
-  boot-time UI migrations), `APP_URL` (GitHub callback origin), and
-  `CODEX_GATEWAY_MODEL` (model override for GitHub deploy sessions).
+  boot-time UI migrations), `APP_URL` (GitHub callback origin),
+  `CODEX_GATEWAY_MODEL` (model override for GitHub deploy sessions), and
+  `GITHUB_DEPLOY_OPENAI_API_KEY` / `GITHUB_DEPLOY_OPENAI_BASE_URL`
+  (dedicated OpenAI-compatible endpoint for GitHub Deploy).
 
 ## [2.0.6] - 2026-08-13
 
