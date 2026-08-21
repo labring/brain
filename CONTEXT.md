@@ -484,13 +484,13 @@ _Avoid_: shared namespace chat, per-namespace chat history.
 
 ### Chat Billing Mode
 
-Who pays for one assistant model call: `free` spends a Free Chat Turn while turns remain and a platform model is configured, otherwise `user` bills the caller's AI Proxy — decided per turn, with the handoff automatic. The mode, not the remaining count, is the reliable signal of being charged: a namespace with no platform model bills `user` from its first turn with turns unspent.
+Who pays for one assistant model call — or whether it happens at all: `free` spends a Free Chat Turn, `user` bills the caller's AI Proxy, and `blocked` refuses the call because an Active Free Trial workspace has exhausted its Free Chat Turns. The server decides per turn and client surfaces render the mode without deriving it; there is no automatic `free`→`user` handoff — exhaustion during the trial blocks instead of billing. The mode, not the remaining count, is the reliable signal of being charged: a namespace with no platform model bills `user` from its first turn with turns unspent, and is never `blocked`.
 
 _Avoid_: subscription tier, plan.
 
 ### Free Chat Turns
 
-A platform-funded allowance of assistant turns per namespace, consumed only after a turn completes successfully. An entitlement counter, not a rate limit — and a shared workspace grant, not a per-user entitlement.
+A platform-funded allowance of assistant turns per namespace (user-visible label: Free assistant messages), spendable only during the workspace's Active Free Trial and consumed only after a turn completes successfully. A lifetime entitlement counter — namespace-shared, never per-user, never reset — not a rate limit; exhausting it blocks further assistant requests rather than falling through to `user` billing.
 
 _Avoid_: free tier, trial credits.
 
@@ -558,7 +558,7 @@ _Avoid_: raw answer text, display label, derived segment column, business intent
 
 ## Account & Subscription
 
-Account-level money and workspace subscriptions, owned by the platform's account-service and presented read-mostly in the Billing Area. This is a different concept space from Assistant & Billing above: Free Chat Turns are a platform-funded assistant allowance and Chat Billing Mode decides who pays for one assistant turn, while the terms here describe real money and plan commitments. Brain reads and operates on these facts through account-service; it stores no billing state of its own.
+Account-level money and workspace subscriptions, owned by the platform's account-service and presented read-mostly in the Billing Area. This is a different concept space from Assistant & Billing above — the terms here describe real money and plan commitments, while Free Chat Turns are counted turns, not money — with exactly one one-way dependency: the assistant's free allowance takes its eligibility from subscription state (the Active Free Trial), never the reverse. Brain reads and operates on these facts through account-service; it stores no billing state of its own.
 
 ### Billing Area
 
@@ -586,7 +586,7 @@ _Avoid_: credits, wallet, free balance, top-up balance.
 
 ### Subscription Plan
 
-A platform-defined subscription offering — name, price, cycle, and included resource quotas — served by account-service's plan catalog. Subscription Plans are shared catalog facts; a workspace's committed choice of one is its Workspace Subscription. Chat Billing Mode deliberately avoids the word "plan": Free Chat Turns are not a Subscription Plan benefit.
+A platform-defined subscription offering — name, price, cycle, and included resource quotas — served by account-service's plan catalog. Subscription Plans are shared catalog facts; a workspace's committed choice of one is its Workspace Subscription. Free Chat Turns ride the Active Free Trial rather than the plan catalog: no Subscription Plan lists them as a quota, and Chat Billing Mode still avoids the word "plan".
 
 _Avoid_: tier, package, chat plan, pricing row.
 
@@ -631,6 +631,12 @@ _Avoid_: expiry time (for the renewal moment), renewal (bare, for this moment), 
 What a Free Subscription Plan's current period end means: the moment the plan and its capacity end — nothing renews, resets, or is charged then, because the platform constructs every Free subscription as cancel-at-period-end. It is the trial's one meaningful date and surfaces say it in expiry terms ("expires", "ends") wherever a paid plan would speak of renewal or quota reset; a Free subscription therefore has no Renewal Time. The constructed cancellation flag alone cannot identify a cancelled subscription — a Free plan carrying it is a healthy trial (or a paused no-trial Free, which runs no period and has no date), not a cancelling one.
 
 _Avoid_: quota reset (for a Free period end), renewal time (for a Free subscription), cancelled/cancelling (for the constructed flag on Free).
+
+### Active Free Trial
+
+The state of a workspace whose Free Subscription Plan is currently running its trial: a Free subscription in normal standing, as opposed to one born paused with no trial (a user's second and later workspaces) or one expired into the same payment-due pipeline as any paid plan. The sole eligibility gate for spending Free Chat Turns and for rendering the Plan view's free-allowance usage block — assistant blocking and its upgrade call-to-action can therefore only ever appear inside a live trial.
+
+_Avoid_: free workspace, trial period (for the state), Free plan (bare, for this state).
 
 ### Deletion Countdown
 
