@@ -75,9 +75,12 @@ function handlerDependencies(
     adoptLegacyConversations: () => Promise.resolve(),
     appTokenConfig: APP_TOKEN_CONFIG,
     bootstrap: () => Promise.reject(new Error("not used")),
+    freeTurnsUsage: () => Promise.resolve({ limit: 5, remaining: 5, used: 0 }),
     list: () => Promise.resolve([]),
     observeFingerprint: () => Promise.resolve({ outcome: "match" }),
     read: () => Promise.resolve(null),
+    resolveFreeTier: () =>
+      Promise.resolve({ billing: "free" as const, limit: 5, remaining: 5 }),
     verify: () => Promise.resolve({ ok: true }),
     ...overrides,
   };
@@ -152,7 +155,6 @@ test("every verified entry request adopts the actor's legacy conversations befor
         calls.push(`bootstrap:${owner.namespace}:${owner.userUid}`);
         return Promise.resolve({
           chatId: "bootstrap-chat",
-          freeTier: { billing: "free" as const, limit: 10, remaining: 7 },
           messages: [],
           threads: [],
         });
@@ -212,13 +214,13 @@ test("an adoption failure surfaces as unavailable persistence without a partial 
   assert.equal(listed, false);
 });
 
-test("conversation bootstrap is scoped to the verified actor", async () => {
+test("conversation bootstrap is scoped to the verified actor and carries the resolved posture", async () => {
+  const postureActors: string[] = [];
   const handlers = createAssistantConversationHandlers(
     handlerDependencies({
       bootstrap: (owner) =>
         Promise.resolve({
           chatId: `${owner.userUid}-chat`,
-          freeTier: { billing: "free", limit: 10, remaining: 7 },
           messages: [
             {
               id: `${owner.userUid}-message`,
@@ -228,6 +230,14 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
           ],
           threads: [],
         }),
+      resolveFreeTier: ({ actor }) => {
+        postureActors.push(`${actor.owner.namespace}:${actor.owner.userUid}`);
+        return Promise.resolve({
+          billing: "free" as const,
+          limit: 10,
+          remaining: 7,
+        });
+      },
     })
   );
 
@@ -251,6 +261,28 @@ test("conversation bootstrap is scoped to the verified actor", async () => {
     ],
     threads: [],
   });
+  assert.deepEqual(postureActors, ["shared:alice-cr-uid"]);
+});
+
+test("free-turns usage is keyed by the verified namespace and never judged", async () => {
+  const usageKeys: string[] = [];
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      freeTurnsUsage: (namespace) => {
+        usageKeys.push(namespace);
+        return Promise.resolve({ limit: 5, remaining: 2, used: 3 });
+      },
+      resolveFreeTier: () => Promise.reject(new Error("not used")),
+    })
+  );
+
+  const response = await handlers.freeTurns(
+    await authorizedRequest("/api/chat/free-turns?namespace=shared", "alice-cr")
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { limit: 5, remaining: 2, used: 3 });
+  assert.deepEqual(usageKeys, ["shared"]);
 });
 
 test("reading another member's conversation is indistinguishable from a missing conversation", async () => {

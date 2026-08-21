@@ -26,6 +26,7 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
     currentPeriodEndAt: "2099-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
+    isActiveFreeTrial: false,
     isPayg: false,
     lifecycle: "cancelling",
     payMethod: "stripe",

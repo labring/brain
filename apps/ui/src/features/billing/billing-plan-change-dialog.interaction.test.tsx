@@ -23,6 +23,7 @@ const SNAPSHOT: BillingPlanSnapshot = {
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
+    isActiveFreeTrial: false,
     isPayg: false,
     lifecycle: "active",
     payMethod: "stripe",

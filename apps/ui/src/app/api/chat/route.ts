@@ -9,14 +9,16 @@ import {
   type UIMessage,
   type UIMessageStreamOnFinishCallback,
 } from "ai";
+import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
 } from "@/features/chat/ai-proxy/resolve-chat-open-ai-connection";
 import {
-  consumeFreeTurnIfAvailable,
   getFreeTierSnapshot,
   isSystemOpenAiConfigured,
+  releaseReservedFreeTurn,
+  reserveFreeTurnIfAvailable,
 } from "@/features/chat/persistence/free-tier";
 import {
   freeTierPosture,
@@ -35,6 +37,7 @@ import {
   releaseOwnedChatStreamLease,
   renewOwnedChatStreamLease,
 } from "@/features/chat/persistence/service";
+import type { FreeTierState } from "@/features/chat/persistence/types";
 import {
   type AssistantConversationOwner,
   buildAssistantContinuationFromPending,
@@ -52,7 +55,10 @@ import {
   type ChatStreamLeaseHeartbeat,
   startChatStreamLeaseHeartbeat,
 } from "@/features/chat/runtime/chat-stream-lease-heartbeat";
-import { jsonError } from "@/features/chat/runtime/errors";
+import {
+  type ChatApiErrorBody,
+  jsonError,
+} from "@/features/chat/runtime/errors";
 import { createInjectToolDurationStreamTransform } from "@/features/chat/runtime/inject-tool-duration-stream";
 import {
   CHAT_MAX_STEPS,
@@ -71,6 +77,36 @@ const CHAT_TITLE_TIMEOUT_MS = 5000;
 
 const INTERRUPTED_TOOL_ERROR =
   "Tool execution was interrupted before a result was available.";
+
+/** The `X-Chat-*` set every chat response carries — the 402 refusal included. */
+function chatBillingHeaders(state: FreeTierState): Record<string, string> {
+  return {
+    "X-Chat-Billing": state.billing,
+    "X-Chat-Free-Remaining": String(state.remaining),
+    "X-Chat-Free-Limit": String(state.limit),
+  };
+}
+
+function freeTurnsExhaustedResponse(state: FreeTierState): Response {
+  return Response.json(
+    {
+      code: "free_chat_turns_exhausted",
+      error:
+        "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
+    } satisfies ChatApiErrorBody,
+    { headers: chatBillingHeaders(state), status: 402 }
+  );
+}
+
+async function releaseReservedFreeTurnQuietly(
+  namespace: string
+): Promise<void> {
+  try {
+    await releaseReservedFreeTurn(namespace);
+  } catch (error) {
+    console.error("[api/chat] release reserved free turn:", error);
+  }
+}
 
 function persistableAssistantResponse(
   responseMessage: UIMessage,
@@ -179,11 +215,13 @@ function incompleteToolHistoryResponse(
       }
       if (part.state === "approval-requested") {
         return jsonError(
+          "tool_approval_pending",
           "A tool approval is pending. Approve or deny it before sending a new message.",
           409
         );
       }
       return jsonError(
+        "incomplete_tool_history",
         "This conversation contains an incomplete tool call that cannot be recovered. Start a new chat to continue.",
         409
       );
@@ -244,10 +282,18 @@ function prepareIncomingChatMessage(
   | { prepared: PreparedIncomingChatMessage; response?: never }
   | { prepared?: never; response: Response } {
   if (!isPersistedUIMessage(message)) {
-    return { response: jsonError("Malformed UI message payload", 400) };
+    return {
+      response: jsonError(
+        "invalid_request",
+        "Malformed UI message payload",
+        400
+      ),
+    };
   }
   if (isReservedChatMessageId(message.id)) {
-    return { response: jsonError("Reserved chat message id", 400) };
+    return {
+      response: jsonError("invalid_request", "Reserved chat message id", 400),
+    };
   }
 
   if (message.role === "user") {
@@ -264,6 +310,7 @@ function prepareIncomingChatMessage(
   if (!isAssistantContinuationMessage(message)) {
     return {
       response: jsonError(
+        "invalid_request",
         "Only user messages or valid assistant continuations accepted.",
         400
       ),
@@ -274,6 +321,7 @@ function prepareIncomingChatMessage(
   if (pending == null) {
     return {
       response: jsonError(
+        "stale_assistant_continuation",
         "Stale assistant continuation for this thread. Reload and retry.",
         409
       ),
@@ -287,6 +335,7 @@ function prepareIncomingChatMessage(
     if (isDeepStrictEqual(pending.parts, candidate.parts)) {
       return {
         response: jsonError(
+          "stale_assistant_continuation",
           "Stale assistant continuation for this thread. Reload and retry.",
           409
         ),
@@ -294,6 +343,7 @@ function prepareIncomingChatMessage(
     }
     return {
       response: jsonError(
+        "invalid_request",
         "Invalid assistant continuation for this thread.",
         400
       ),
@@ -340,12 +390,18 @@ async function commitIncomingChatMessage(
   });
   if (renewedLease == null) {
     return {
-      response: jsonError(
+      response:
         prepared.type === "assistant"
-          ? "Stale assistant continuation for this thread. Reload and retry."
-          : "Assistant thread changed concurrently. Reload and retry.",
-        409
-      ),
+          ? jsonError(
+              "stale_assistant_continuation",
+              "Stale assistant continuation for this thread. Reload and retry.",
+              409
+            )
+          : jsonError(
+              "assistant_thread_conflict",
+              "Assistant thread changed concurrently. Reload and retry.",
+              409
+            ),
     };
   }
 
@@ -401,6 +457,7 @@ async function acquireLeaseForHistory(
   if (lease == null) {
     return {
       response: jsonError(
+        "assistant_turn_in_progress",
         "Another assistant turn is already running. Reload and retry.",
         409
       ),
@@ -414,6 +471,7 @@ async function acquireLeaseForHistory(
   await releaseLeaseQuietly(lease);
   return {
     response: jsonError(
+      "assistant_thread_conflict",
       "Assistant thread changed concurrently. Reload and retry.",
       409
     ),
@@ -432,11 +490,12 @@ function createChatStreamFinishHandler(input: {
 }): UIMessageStreamOnFinishCallback<UIMessage> {
   return async ({ finishReason, isAborted, responseMessage }) => {
     const lease = await input.heartbeat.stop();
-    if (lease == null) {
-      return;
-    }
+    let freeTurnSpent = false;
     let leaseReleased = false;
     try {
+      if (lease == null) {
+        return;
+      }
       const interrupted =
         isAborted || finishReason == null || finishReason === "error";
       const persistable = persistableAssistantResponse(
@@ -464,17 +523,7 @@ function createChatStreamFinishHandler(input: {
       if (interrupted) {
         return;
       }
-      if (input.billing === "free") {
-        const consumed = await consumeFreeTurnIfAvailable(
-          input.owner.namespace
-        );
-        if (!consumed) {
-          console.warn(
-            "[api/chat] free turn not recorded (limit reached concurrently):",
-            input.owner.namespace
-          );
-        }
-      }
+      freeTurnSpent = true;
       await releaseLeaseQuietly(lease);
       leaseReleased = true;
       await maybeAutoTitleThread({
@@ -487,7 +536,13 @@ function createChatStreamFinishHandler(input: {
     } catch (error) {
       console.error("[api/chat] persist assistant turn:", error);
     } finally {
-      if (!leaseReleased) {
+      // A `free` turn arrives here holding its pre-stream reservation; only
+      // a persisted, uninterrupted turn keeps it — an empty or errored
+      // stream, an abort, or a lost lease rolls it back.
+      if (input.billing === "free" && !freeTurnSpent) {
+        await releaseReservedFreeTurnQuietly(input.owner.namespace);
+      }
+      if (lease != null && !leaseReleased) {
         await releaseLeaseQuietly(lease);
       }
     }
@@ -528,8 +583,86 @@ async function cleanUpFailedChatPipeline(input: {
   }
 }
 
+/**
+ * Chat Billing Posture for this turn (ADR-0065), with the free turn already
+ * reserved on the counter when it returns `billing: "free"`. Reserving before
+ * any model execution makes concurrent turns race on the counter itself, so
+ * the allowance can never be overspent; the caller owns rolling the
+ * reservation back on every unsuccessful path.
+ */
+async function settleTurnBillingPosture(input: {
+  accountUserId: string | null;
+  cookieHeader: string | null;
+  owner: AssistantConversationOwner;
+}): Promise<
+  | { response: Response; billing?: never }
+  | {
+      billing: ChatBillingMode;
+      /** Post-turn posture for the `X-Chat-*` response headers. */
+      clientFreeTier: FreeTierState;
+      reserved: boolean;
+      response?: never;
+    }
+> {
+  const { owner } = input;
+  const freeTier = await getFreeTierSnapshot(owner.namespace);
+  const systemModelConfigured = isSystemOpenAiConfigured();
+  const trial =
+    freeTier.limit > 0 && systemModelConfigured
+      ? await judgeActiveFreeTrialForWorkspace({
+          cookieHeader: input.cookieHeader,
+          userId: input.accountUserId,
+          userUid: owner.userUid,
+          workspace: owner.namespace,
+        })
+      : "not-trial";
+  const posture = freeTierPosture(freeTier, systemModelConfigured, trial);
+  if (posture.billing === "blocked") {
+    return { response: freeTurnsExhaustedResponse(posture) };
+  }
+  if (posture.billing !== "free") {
+    return {
+      billing: posture.billing,
+      clientFreeTier: posture,
+      reserved: false,
+    };
+  }
+
+  if (await reserveFreeTurnIfAvailable(owner.namespace)) {
+    // Headers carry the POST-turn posture: the turn spending the last free
+    // turn already reports `blocked`, so the pane flips the moment that
+    // message finishes streaming instead of one composed message later. With
+    // the turn reserved up front, that posture is a fact, not a prediction.
+    return {
+      billing: "free",
+      clientFreeTier: freeTierPostureAfterTurn(
+        freeTier,
+        systemModelConfigured,
+        trial
+      ),
+      reserved: true,
+    };
+  }
+
+  // Lost the counter race to a concurrent turn: re-judge on a fresh
+  // snapshot. A confirmed trial is now exhausted (402); otherwise the turn
+  // degrades to `user`, matching the exhausted fail-open case.
+  const contested = await getFreeTierSnapshot(owner.namespace);
+  const contestedPosture = freeTierPosture(
+    contested,
+    systemModelConfigured,
+    trial
+  );
+  if (contestedPosture.billing === "blocked") {
+    return { response: freeTurnsExhaustedResponse(contestedPosture) };
+  }
+  return { billing: "user", clientFreeTier: contestedPosture, reserved: false };
+}
+
 async function runChatPipeline(input: {
   actor: VerifiedAssistantConversationActor;
+  /** Forwards the billing dev-mock scenario cookie in dev/demo builds. */
+  cookieHeader: string | null;
   kubeconfig: string;
   request: ChatStreamRequest;
   requestAbortSignal: AbortSignal;
@@ -541,31 +674,47 @@ async function runChatPipeline(input: {
   let ownedLease: ChatStreamLease | null = null;
   let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
+  let ownedFreeTurnReservation = false;
   try {
+    // The Active Free Trial is judged live on every turn (ADR-0065). A
+    // confirmed-blocked request is refused before any conversation state
+    // mutates, so a stale tab or scripted client cannot bypass the panel.
+    const settled = await settleTurnBillingPosture({
+      accountUserId: actor.accountUserId ?? null,
+      cookieHeader: input.cookieHeader,
+      owner,
+    });
+    if (settled.response != null) {
+      return settled.response;
+    }
+    const { billing, clientFreeTier } = settled;
+    ownedFreeTurnReservation = settled.reserved;
+
     // Adopt before the thread ensure: continuing a legacy crName-keyed
     // conversation must find the re-keyed row instead of refusing its id.
     await adoptLegacyAssistantConversationsForActor(actor);
 
     const threadReady = await ensureAssistantThreadForOwner(chatId, actor);
     if (!threadReady) {
-      return jsonError("Assistant conversation not found.", 404);
+      return jsonError(
+        "assistant_conversation_not_found",
+        "Assistant conversation not found.",
+        404
+      );
     }
 
     const storedHistory = await loadMessagesForOwner(chatId, owner);
     if (storedHistory == null) {
-      return jsonError("Assistant conversation not found.", 404);
+      return jsonError(
+        "assistant_conversation_not_found",
+        "Assistant conversation not found.",
+        404
+      );
     }
     const incoming = prepareIncomingChatMessage(storedHistory, message);
     if (incoming.response != null) {
       return incoming.response;
     }
-
-    const freeTier = await getFreeTierSnapshot(owner.namespace);
-    const systemModelConfigured = isSystemOpenAiConfigured();
-    const billing: ChatBillingMode = freeTierPosture(
-      freeTier,
-      systemModelConfigured
-    ).billing;
 
     // Complete every fallible runtime preflight before committing an approval
     // or browser-tool continuation. A failed preflight must remain retryable.
@@ -587,7 +736,11 @@ async function runChatPipeline(input: {
       billing,
     });
     if (!openAi.ok) {
-      return jsonError(openAi.message, openAi.status);
+      return jsonError(
+        "ai_connection_unavailable",
+        openAi.message,
+        openAi.status
+      );
     }
     const model = chatLanguageModel(openAi.connection);
     const titleModel = threadTitleLanguageModel(openAi.connection);
@@ -658,18 +811,7 @@ async function runChatPipeline(input: {
       },
     });
 
-    // Headers carry the POST-turn posture: the turn spending the last free
-    // turn already reports `user`, so the pane retires the counter at
-    // exhaustion instead of pinning "Free 0/n" until the next message.
-    const clientFreeTier = freeTierPostureAfterTurn(
-      freeTier,
-      systemModelConfigured
-    );
-    const responseHeaders: Record<string, string> = {
-      "X-Chat-Billing": clientFreeTier.billing,
-      "X-Chat-Free-Remaining": String(clientFreeTier.remaining),
-      "X-Chat-Free-Limit": String(clientFreeTier.limit),
-    };
+    const responseHeaders = chatBillingHeaders(clientFreeTier);
 
     const streamHeartbeat = leaseHeartbeat;
     const response = result.toUIMessageStreamResponse({
@@ -691,6 +833,9 @@ async function runChatPipeline(input: {
     ownedLease = null;
     leaseHeartbeat = null;
     rollbackAssistant = null;
+    // The finish handler owns the reservation from here: it keeps it on a
+    // billable turn and rolls it back on an unsuccessful one.
+    ownedFreeTurnReservation = false;
     return response;
   } catch (error) {
     if (leaseHeartbeat != null) {
@@ -705,25 +850,41 @@ async function runChatPipeline(input: {
     if (error instanceof IdentityBindingSupersededError) {
       // The binding was superseded by an account merge mid-request; the
       // desktop re-login loop re-mints a current token (ADR-0059).
-      return jsonError("Authentication is required.", 401);
+      return jsonError(
+        "app_token_superseded",
+        "Authentication is required.",
+        401
+      );
     }
     console.error("[api/chat] pipeline:", error);
     return jsonError(
+      "assistant_chat_unavailable",
       "Could not handle chat request (DATABASE_URL, schema migrations, or upstream).",
       503
     );
+  } finally {
+    // Covers every exit between reservation and the streaming response —
+    // early refusals (404/409), preflight failures, and thrown errors.
+    if (ownedFreeTurnReservation) {
+      await releaseReservedFreeTurnQuietly(owner.namespace);
+    }
   }
 }
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (body == null) {
-    return jsonError("Invalid JSON body", 400);
+    return jsonError("invalid_request", "Invalid JSON body", 400);
   }
 
   const parsed = chatStreamRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return jsonError("Invalid chat request", 400, parsed.error.flatten());
+    return jsonError(
+      "invalid_request",
+      "Invalid chat request",
+      400,
+      parsed.error.flatten()
+    );
   }
 
   const authorization = await authorizeWorkspaceActor({
@@ -733,16 +894,25 @@ export async function POST(req: Request) {
     normalizeNamespace: normalizeAssistantNamespace,
   });
   if (!authorization.ok) {
-    return jsonError(authorization.message, authorization.status);
+    return jsonError(
+      authorization.code,
+      authorization.message,
+      authorization.status
+    );
   }
   const actor: VerifiedAssistantConversationActor =
     verifiedPersonalResourceActor(authorization);
   const kubeconfig = decodeKubeconfig(parsed.data.encodedKubeconfig);
   if (kubeconfig == null) {
-    return jsonError("Authentication is required.", 401);
+    return jsonError(
+      "authentication_required",
+      "Authentication is required.",
+      401
+    );
   }
   return runChatPipeline({
     actor,
+    cookieHeader: req.headers.get("cookie"),
     kubeconfig,
     request: parsed.data,
     requestAbortSignal: req.signal,

@@ -202,6 +202,7 @@ const CANCELLING_PLAN = {
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
     invoiceId: "invoice-1",
     invoicePaymentUrl: "https://payments.example.test/invoice-1",
+    isActiveFreeTrial: false,
     isPayg: false,
     lifecycle: "cancelling",
     payMethod: "stripe",

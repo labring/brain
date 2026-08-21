@@ -29,6 +29,7 @@ const SNAPSHOT: BillingPlanSnapshot = {
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
+    isActiveFreeTrial: false,
     isPayg: false,
     lifecycle: "active",
     payMethod: "stripe",
@@ -758,6 +759,111 @@ test("Plan renders without waiting for the AI Credits request", async () => {
       assert.ok(text.includes("Account Balance"));
       assert.ok(rendered?.getByLabelText("Loading AI Credits"));
       assert.equal(text.includes("1,200 / 2,000"), false);
+    } finally {
+      await restore();
+    }
+  });
+});
+
+const FREE_TRIAL_SUBSCRIPTION = {
+  subscription: {
+    CancelAtPeriodEnd: true,
+    CurrentPeriodEndAt: "2026-09-01T00:00:00Z",
+    ExpireAt: "2026-09-01T00:00:00Z",
+    PayMethod: "stripe",
+    PlanName: "Free",
+    RegionDomain: "us.example.test",
+    Status: "NORMAL",
+    Workspace: "workspace-a",
+    role: "OWNER" as const,
+    type: "SUBSCRIPTION" as const,
+  },
+};
+
+test("an Active Free Trial renders the allowance card in the credits slot, not AI Credits", async () => {
+  await withTestDom(async (act) => {
+    const responses = planPageResponses({
+      "/api/billing/subscription": FREE_TRIAL_SUBSCRIPTION,
+      "/api/chat/free-turns": { limit: 5, remaining: 3, used: 2 },
+    });
+    const { rendered, restore } = await renderPlanPage(act, (pathname) =>
+      jsonFixtureResponse(responses, pathname)
+    );
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("Free assistant messages"));
+      assert.ok(text.includes("Included with the Free plan"));
+      assert.ok(text.includes("3 of 5 left"));
+      // Same slot and hierarchy as the paid plans' AI Credits section.
+      assertTextOrder(text, [
+        "Current Workspace Plan",
+        "Free assistant messages",
+        "Account Balance",
+      ]);
+      assert.equal(text.includes("AI Credits:"), false);
+      assert.ok(
+        rendered?.getByRole("progressbar", {
+          name: "Free assistant messages used",
+        })
+      );
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a PAUSED Free workspace renders no allowance card and never asks Brain for usage", async () => {
+  await withTestDom(async (act) => {
+    const requestedPaths: string[] = [];
+    const responses = planPageResponses({
+      "/api/billing/subscription": {
+        subscription: {
+          ...FREE_TRIAL_SUBSCRIPTION.subscription,
+          CurrentPeriodEndAt: "",
+          ExpireAt: null,
+          Status: "PAUSED",
+        },
+      },
+      "/api/billing/workspace-quota": {
+        quota: { hard: { ai_quota: 0 }, used: { ai_quota: 0 } },
+      },
+    });
+    const { rendered, restore } = await renderPlanPage(act, (pathname) => {
+      requestedPaths.push(pathname);
+      return jsonFixtureResponse(responses, pathname);
+    });
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.equal(text.includes("Free assistant messages"), false);
+      assert.equal(requestedPaths.includes("/api/chat/free-turns"), false);
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a failed usage lookup degrades the allowance card quietly", async () => {
+  await withTestDom(async (act) => {
+    const responses = planPageResponses({
+      "/api/billing/subscription": FREE_TRIAL_SUBSCRIPTION,
+    });
+    const { rendered, restore } = await renderPlanPage(act, (pathname) =>
+      pathname === "/api/chat/free-turns"
+        ? new Response("brain unavailable", { status: 503 })
+        : jsonFixtureResponse(responses, pathname)
+    );
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("Free assistant messages"));
+      assert.ok(
+        text.includes(
+          "Usage is unavailable right now — your free messages still work."
+        )
+      );
+      assert.equal(text.includes("of 5 left"), false);
     } finally {
       await restore();
     }
