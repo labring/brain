@@ -83,6 +83,14 @@ export function ProjectIndex() {
     }
     return parseTemplateForm(creationSideEntry.templateForm) ?? undefined;
   }, [creationSideEntry]);
+  const creationSideGithubRepo =
+    creationSideEntry?.entryMode === "githubDirect"
+      ? creationSideEntry.githubRepo
+      : undefined;
+  const creationSideAutoDeploy =
+    creationSideEntry?.entryMode === "githubDirect"
+      ? creationSideEntry.autoDeploy
+      : undefined;
 
   const onProjectCreated = useCallback(
     async (projectId: string | undefined, context?: ProjectCreatedContext) => {
@@ -206,6 +214,8 @@ export function ProjectIndex() {
           busy={githubDeployerLoading}
           creatorRootProps={creatorRootProps}
           entryMode={creationPaneEntryMode}
+          githubAutoDeploy={creationSideAutoDeploy}
+          initialGithubRepoUrl={creationSideGithubRepo}
           onActiveSourceChange={onCreationPaneSourceChangeWithTracking}
           onClose={() => closeProjectSideRoute()}
           resetKey={creatorResetKey}
@@ -227,6 +237,8 @@ export function ProjectIndex() {
     githubDeployerLoading,
     onCreationPaneSourceChangeWithTracking,
     skillsPaneOpen,
+    creationSideAutoDeploy,
+    creationSideGithubRepo,
   ]);
 
   return (

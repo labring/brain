@@ -28,7 +28,16 @@ export type ProjectGlobalSidePaneEntry =
   | { kind: "githubDeployment"; projectId: string }
   | {
       kind: "projectCreation";
-      entryMode: Exclude<ProjectCreationPaneEntryMode, "templateDirect">;
+      entryMode: Exclude<
+        ProjectCreationPaneEntryMode,
+        "githubDirect" | "templateDirect"
+      >;
+    }
+  | {
+      autoDeploy?: boolean;
+      entryMode: "githubDirect";
+      githubRepo?: string;
+      kind: "projectCreation";
     }
   | {
       kind: "projectCreation";

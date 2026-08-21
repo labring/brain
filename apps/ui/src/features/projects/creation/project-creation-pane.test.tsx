@@ -31,15 +31,16 @@ const PROJECT_TITLE_RE = /Create New Project/;
 const GITHUB_IMPORT_RE = /GitHub Import/;
 const GITHUB_IMPORT_DESCRIPTION_RE =
   /Import repository from URL or GitHub authorization\./;
-const GITHUB_ACCOUNT_RE = /GitHub Account/;
+const GITHUB_ACCOUNT_RE = /Workspace GitHub/;
 const GITHUB_CONNECTED_RE = /GitHub connected/i;
 const GITHUB_REPO_CARD_RE = /data-slot="github-deployer-repo-card"/;
 const GITHUB_SEARCH_RE = /placeholder="Search"/;
 const GITHUB_URL_INPUT_RE = /data-slot="github-deployer-url-input"/;
-const GITHUB_AUTHORIZE_RE = /Authorize GitHub/;
+const GITHUB_AUTHORIZE_RE = /Connect GitHub/;
+const GITHUB_INITIAL_URL_RE = /value="https:\/\/github\.com\/acme\/api"/;
 const GITHUB_REPOSITORY_URL_RE = /Repository URL/;
 const GITHUB_REPOSITORY_LOCKED_RE =
-  /Please authorize your GitHub account to deploy from a GitHub repository URL\./;
+  /Connect GitHub for this workspace before deploying from a repository URL\./;
 const SCENARIO_RE = /Scenario/;
 const TWO_COLUMN_PICKER_RE = /sm:grid-cols-2/;
 const TRAIL_BACK_RE = />Back</;
@@ -117,6 +118,7 @@ test("project creation pane GitHub direct entry starts at repository selection",
         },
       }}
       entryMode="githubDirect"
+      initialGithubRepoUrl="https://github.com/acme/api"
       onClose={noop}
       resetKey={1}
     />
@@ -133,6 +135,7 @@ test("project creation pane GitHub direct entry starts at repository selection",
   assert.match(html, GITHUB_SEARCH_RE);
   assert.match(html, GITHUB_REPO_CARD_RE);
   assert.match(html, GITHUB_URL_INPUT_RE);
+  assert.match(html, GITHUB_INITIAL_URL_RE);
   assert.doesNotMatch(html, PROJECT_NAME_RE);
   assert.doesNotMatch(html, SCENARIO_RE);
   assert.doesNotMatch(html, TRAIL_BACK_RE);

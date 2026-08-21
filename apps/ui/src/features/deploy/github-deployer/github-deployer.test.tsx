@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { fireEvent, render } from "@testing-library/react/pure";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import {
+  actAndDrain,
+  installTestDom,
+  restoreActEnvironment,
+  setActEnvironment,
+} from "@/features/project-canvas/react-test-harness";
 import { GithubDeployer, githubUrlToRepo } from "./github-deployer";
 
 const noop = () => undefined;
@@ -146,6 +153,14 @@ test("githubUrlToRepo rejects GitHub URLs that are not repository roots", () => 
     name: "example",
     url: "https://github.com/sealai/example",
   });
+  assert.equal(
+    githubUrlToRepo("https://token:secret@github.com/sealai/example"),
+    null
+  );
+  assert.equal(
+    githubUrlToRepo("https://github.com/sealai/example?token=secret"),
+    null
+  );
 });
 
 test("GithubDeployer shows authorized empty repository state", () => {
@@ -162,6 +177,162 @@ test("GithubDeployer shows authorized empty repository state", () => {
   assert.doesNotMatch(html, CONFIGURE_BUTTON_RE);
   assert.match(html, REPO_EMPTY_RE);
   assert.doesNotMatch(html, AUTH_BUTTON_RE);
+});
+
+test("GithubDeployer auto deploys a restored GitHub URL only once", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let deployCalls = 0;
+  const onDeploy = () => {
+    deployCalls += 1;
+  };
+  const initialProps = {
+    actions: { onDeploy },
+    autoDeploy: true,
+    initialRepoUrl: "https://github.com/acme/api",
+    states: {
+      isAuthorized: false,
+      repos: [],
+    },
+  } as const;
+  const authorizedProps = {
+    ...initialProps,
+    states: {
+      isAuthorized: true,
+      repos: [],
+    },
+  } as const;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <GithubDeployer.Root {...initialProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(deployCalls, 0);
+
+    await actAndDrain(() => {
+      rendered?.rerender(
+        <GithubDeployer.Root {...authorizedProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(deployCalls, 1);
+
+    await actAndDrain(() => {
+      rendered?.rerender(
+        <GithubDeployer.Root {...authorizedProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(deployCalls, 1);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+test("GithubDeployer auto deploy stays one-shot after the URL is edited", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let deployCalls = 0;
+  const onDeploy = () => {
+    deployCalls += 1;
+  };
+  const authorizedProps = {
+    actions: { onDeploy },
+    autoDeploy: true,
+    initialRepoUrl: "https://github.com/acme/api",
+    states: {
+      isAuthorized: true,
+      repos: [],
+    },
+  } as const;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <GithubDeployer.Root {...authorizedProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(deployCalls, 1);
+
+    const input = rendered?.container.querySelector('input[type="url"]');
+    if (input == null) {
+      throw new Error("repository URL input is present");
+    }
+    await actAndDrain(() => {
+      fireEvent.change(input, {
+        target: { value: "https://github.com/acme/other" },
+      });
+    });
+    assert.equal(deployCalls, 1);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+test("GithubDeployer auto deploy fails closed for an unrequested repo", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let deployCalls = 0;
+  const onDeploy = () => {
+    deployCalls += 1;
+  };
+  const authorizedProps = {
+    actions: { onDeploy },
+    autoDeploy: true,
+    initialRepoUrl: "https://github.com/acme/api/tree/main",
+    states: {
+      isAuthorized: true,
+      repos: [],
+    },
+  } as const;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <GithubDeployer.Root {...authorizedProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    const input = rendered?.container.querySelector('input[type="url"]');
+    if (input == null) {
+      throw new Error("repository URL input is present");
+    }
+    await actAndDrain(() => {
+      fireEvent.change(input, {
+        target: { value: "https://github.com/acme/api" },
+      });
+    });
+    assert.equal(deployCalls, 0);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
 });
 
 test("GithubDeployer shows repository load errors after authorization", () => {
@@ -184,4 +355,46 @@ test("GithubDeployer shows repository load errors after authorization", () => {
   assert.match(html, REPO_ERROR_RE);
   assert.match(html, BAD_CREDENTIALS_RE);
   assert.doesNotMatch(html, AUTH_BUTTON_RE);
+});
+
+test("GithubDeployer auto deploy fires on authorized first paint while template options still load", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let deployCalls = 0;
+  const onDeploy = () => {
+    deployCalls += 1;
+  };
+  const authorizedProps = {
+    actions: { onDeploy, onDeployTemplate: () => undefined },
+    autoDeploy: true,
+    initialRepoUrl: "https://github.com/acme/api",
+    states: {
+      isAuthorized: true,
+      repos: [],
+      templateOptionsLoading: true,
+    },
+  } as const;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <GithubDeployer.Root {...authorizedProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    // The deep-link auto path deliberately skips the "Use existing template?"
+    // dialog: template matching happens inside the deployment task's Devbox
+    // skill, so an authorized first paint deploys immediately even while the
+    // catalog is still loading.
+    assert.equal(deployCalls, 1);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
 });
