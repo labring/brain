@@ -100,6 +100,8 @@ export type AssistantContextPayload = z.infer<
  * "nothing was selected"; we never backfill a stale target.
  */
 export const selectedResourceContextSchema = z.object({
+  /** Resource Display Name (ADR 0062) — display-only, never a `name` argument. */
+  displayName: z.string().max(512).optional(),
   kind: z.string().max(128).optional(),
   name: z.string().max(512).optional(),
   namespace: z.string().max(256).optional(),

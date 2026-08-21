@@ -105,6 +105,7 @@ import {
   type WorkbenchOrchestrationEvent,
   type WorkbenchOrchestrationStore,
 } from "@/features/project-canvas/workbench/workbench-orchestration";
+import { publishResourceDisplayNames } from "@/features/resource-display-name/resource-display-name-bridge";
 import { useSettingsLeaveGuardController } from "@/features/resource-settings/settings-leave-guard-controller";
 import type {
   SettingsReadModelHints,
@@ -741,6 +742,11 @@ export function useProjectCanvasModule({
     runtimeStore.selectResourceDisplayNames,
     runtimeStore.selectResourceDisplayNames
   );
+  // The chat composer pins the canvas selection outside this store's React
+  // subtree; publish the resolved names so its snapshot can carry them.
+  useEffect(() => {
+    publishResourceDisplayNames(resourceDisplayNames);
+  }, [resourceDisplayNames]);
   const settingsReadModelHints = useMemo<SettingsReadModelHints>(
     () => ({
       ap: {

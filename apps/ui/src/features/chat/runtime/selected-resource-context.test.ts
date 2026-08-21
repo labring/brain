@@ -11,6 +11,7 @@ const { withSelectedResourceContext } = await import(
 );
 
 interface Selection {
+  displayName?: string;
   kind?: string;
   name?: string;
   namespace?: string;
@@ -58,6 +59,59 @@ describe("withSelectedResourceContext", () => {
     expect(text).toContain('namespace="ns-x"');
     // the original user text is preserved after the injected block
     expect(out?.parts.at(-1)).toEqual({ type: "text", text: "deploy this" });
+  });
+
+  it("carries the Resource Display Name next to the Kubernetes name", () => {
+    const [out] = withSelectedResourceContext([
+      userMessage("what is this", {
+        displayName: "My Service",
+        kind: "AP",
+        name: "nginx-xkqjzw",
+        namespace: "ns-x",
+      }),
+    ]);
+
+    const text = firstText(out);
+    expect(text).toContain('displayName="My Service"');
+    expect(text).toContain('name="nginx-xkqjzw"');
+  });
+
+  it("re-emits a full block when only the display name changed", () => {
+    const [, second] = withSelectedResourceContext([
+      userMessage("deploy this", {
+        displayName: "nginx",
+        kind: "AP",
+        name: "nginx-xkqjzw",
+        namespace: "ns-x",
+      }),
+      userMessage("and after the rename?", {
+        displayName: "My Service",
+        kind: "AP",
+        name: "nginx-xkqjzw",
+        namespace: "ns-x",
+      }),
+    ]);
+
+    const text = firstText(second);
+    expect(text).toContain('displayName="My Service"');
+    expect(text).not.toContain('unchanged="true"');
+  });
+
+  it("describes an unchanged selection by its display name", () => {
+    const selection = {
+      displayName: "My Service",
+      kind: "AP",
+      name: "nginx-xkqjzw",
+      namespace: "ns-x",
+    };
+    const [, second] = withSelectedResourceContext([
+      userMessage("deploy this", selection),
+      userMessage("scale it", selection),
+    ]);
+
+    const secondText = firstText(second);
+    expect(secondText).toContain('unchanged="true"');
+    expect(secondText).toContain("still AP My Service");
   });
 
   it("injects nothing when nothing was selected (honest fallback)", () => {
