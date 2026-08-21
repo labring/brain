@@ -117,12 +117,44 @@ test("judges a PAYG payload as not-trial", () => {
   );
 });
 
-test("a subscription with non-string fields judges not-trial, never throws", () => {
+test("a non-SUBSCRIPTION type is confirmed not-trial even with junk fields", () => {
+  assert.equal(
+    judgeFreeTrialFromSubscriptionInfo({
+      subscription: { PlanName: 5, Status: null, type: "PAYG" },
+    }),
+    "not-trial"
+  );
+});
+
+// A SUBSCRIPTION record with drifted PlanName/Status could be a real trial,
+// so it must fail open to "unknown" rather than confirm `user` billing.
+test("a SUBSCRIPTION record with non-string fields judges unknown, never throws", () => {
   assert.equal(
     judgeFreeTrialFromSubscriptionInfo({
       subscription: { PlanName: 5, Status: null, type: "SUBSCRIPTION" },
     }),
-    "not-trial"
+    "unknown"
+  );
+  assert.equal(
+    judgeFreeTrialFromSubscriptionInfo({
+      subscription: { PlanName: "Free", type: "SUBSCRIPTION" },
+    }),
+    "unknown"
+  );
+});
+
+test("a record without a usable type field judges unknown", () => {
+  assert.equal(
+    judgeFreeTrialFromSubscriptionInfo({
+      subscription: { PlanName: "Free", Status: "NORMAL" },
+    }),
+    "unknown"
+  );
+  assert.equal(
+    judgeFreeTrialFromSubscriptionInfo({
+      subscription: { PlanName: "Free", Status: "NORMAL", type: 7 },
+    }),
+    "unknown"
   );
 });
 

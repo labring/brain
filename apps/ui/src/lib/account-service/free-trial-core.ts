@@ -42,15 +42,22 @@ export function isActiveFreeTrialSubscription(
   );
 }
 
-function stringField(record: Record<string, unknown>, key: string): string {
+function stringField(
+  record: Record<string, unknown>,
+  key: string
+): string | null {
   const value = record[key];
-  return typeof value === "string" ? value : "";
+  return typeof value === "string" ? value : null;
 }
 
 /**
  * Judge the raw subscription/info response body. A payload that carries no
- * subscription record at all is `unknown` (fail-open, never blocks); a
- * present record that fails the predicate is a confirmed `not-trial`.
+ * subscription record at all is `unknown` (fail-open, never blocks). A
+ * non-SUBSCRIPTION `type` (PAYG) is a confirmed `not-trial` even without
+ * PlanName/Status — upstream serializes a nil subscription as just
+ * `{"type":"PAYG"}`. A SUBSCRIPTION record whose PlanName or Status is
+ * missing or non-string is schema drift, not a confirmed state: it judges
+ * `unknown` so a real trial never silently degrades to `user` billing.
  */
 export function judgeFreeTrialFromSubscriptionInfo(
   payload: unknown
@@ -63,11 +70,19 @@ export function judgeFreeTrialFromSubscriptionInfo(
     return "unknown";
   }
   const record = subscription as Record<string, unknown>;
-  return isActiveFreeTrialSubscription({
-    planName: stringField(record, "PlanName"),
-    status: stringField(record, "Status"),
-    type: stringField(record, "type"),
-  })
+  const type = stringField(record, "type");
+  if (type == null) {
+    return "unknown";
+  }
+  if (normalized(type) !== "subscription") {
+    return "not-trial";
+  }
+  const planName = stringField(record, "PlanName");
+  const status = stringField(record, "Status");
+  if (planName == null || status == null) {
+    return "unknown";
+  }
+  return isActiveFreeTrialSubscription({ planName, status, type })
     ? "trial"
     : "not-trial";
 }
