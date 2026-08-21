@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/refs -- ported panel render-update patterns kept structurally intact */
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 interface SegmentedControlOption<T extends string> {
   label: string;
@@ -24,26 +24,27 @@ export function SegmentedControl<T extends string>({
     width: number;
   } | null>(null);
 
-  const measure = useCallback(() => {
+  useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) {
       return;
     }
     const activeButton = container.querySelector(
-      '[data-active="true"]'
+      `[data-value="${value}"]`
     ) as HTMLElement | null;
     if (!activeButton) {
       return;
     }
-    setPillStyle({
+    const next = {
       left: activeButton.offsetLeft,
       width: activeButton.offsetWidth,
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    measure();
-  }, [measure]);
+    };
+    setPillStyle((prev) =>
+      prev !== null && prev.left === next.left && prev.width === next.width
+        ? prev
+        : next
+    );
+  }, [value]);
 
   // Enable transition after first render
   const shouldAnimate = hasAnimated.current;
@@ -70,6 +71,7 @@ export function SegmentedControl<T extends string>({
           <button
             className="dev-tweaks-segmented-button"
             data-active={String(isActive)}
+            data-value={option.value}
             key={option.value}
             onClick={() => onChange(option.value)}
             type="button"
