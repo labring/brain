@@ -1162,9 +1162,8 @@ func dbUpdatePlanFromProductPatch(patch []byte, clusterJSON []byte, name string,
 }
 
 // dbDisplayNameMetadataPatch forwards a Resource Display Name change
-// (ADR 0062) from the product patch to the Cluster: a non-empty string sets
-// the annotation, an empty or null value deletes it (merge-patch nil),
-// restoring the derived default. Other metadata fields are never forwarded.
+// (ADR 0062) from the product patch to the Cluster. Other metadata fields
+// are never forwarded.
 func dbDisplayNameMetadataPatch(body map[string]interface{}) map[string]interface{} {
 	metadata, _ := body["metadata"].(map[string]interface{})
 	annotations, _ := metadata["annotations"].(map[string]interface{})
@@ -1175,13 +1174,9 @@ func dbDisplayNameMetadataPatch(body map[string]interface{}) map[string]interfac
 	if !ok {
 		return nil
 	}
-	var patchValue interface{}
-	if value, _ := raw.(string); strings.TrimSpace(value) != "" {
-		patchValue = strings.TrimSpace(value)
-	}
 	return map[string]interface{}{
 		"annotations": map[string]interface{}{
-			orchestration.BrainDisplayNameAnnotation: patchValue,
+			orchestration.BrainDisplayNameAnnotation: orchestration.DisplayNameAnnotationPatchValue(raw),
 		},
 	}
 }

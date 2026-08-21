@@ -8,8 +8,6 @@ import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-ico
 import { useCallback, useEffect, useMemo } from "react";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectDbTarget } from "@/features/panes/target-identity";
-import { projectRuntimeResourceKey } from "@/features/project-canvas/runtime/resource-facts";
-import { applyResourceDisplayName } from "@/features/resource-display-name/apply-resource-display-name";
 import { resolveDbDisplayName } from "@/features/resource-display-name/resource-display-name";
 import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
 import { dbResourceToSettingsData } from "@/features/resource-settings/db/db-settings-resource";
@@ -23,6 +21,7 @@ import type {
   SettingsProviderProps,
   SettingsViewModel,
 } from "./settings-types";
+import { useResourceDisplayNameRename } from "./use-resource-display-name-rename";
 
 const DB_SETTINGS_FULL_VIEW = "full";
 
@@ -114,42 +113,14 @@ export function DbSettingsProvider({
           kubernetesName: dbTarget.name,
           labels: asRecord(resourceMetadata?.labels),
         });
-  const selfResourceKey =
-    dbTarget == null
-      ? null
-      : projectRuntimeResourceKey({
-          kind: "DB",
-          name: dbTarget.name,
-          namespace: dbTarget.namespace,
-        });
-  const hintedDisplayNames = readModelHints?.resourceDisplayNames;
-  const takenDisplayNames = useMemo(
-    () =>
-      (hintedDisplayNames ?? [])
-        .filter((row) => row.key !== selfResourceKey)
-        .map((row) => row.displayName),
-    [hintedDisplayNames, selfResourceKey]
-  );
-  const dbName = dbTarget?.name ?? "";
-  const dbNamespace = dbTarget?.namespace ?? "";
-  const revalidateDbResource = dbResource.mutate;
-  const onRenameResource = useCallback(
-    async (value: string | null) => {
-      const kc = kubeconfig ?? "";
-      if (dbName === "" || dbNamespace === "" || kc.trim() === "") {
-        return;
-      }
-      await applyResourceDisplayName({
-        kind: "DB",
-        kubeconfig: kc,
-        name: dbName,
-        namespace: dbNamespace,
-        value,
-      });
-      await Promise.allSettled([revalidateDbResource(), onUpdated?.()]);
-    },
-    [dbName, dbNamespace, kubeconfig, onUpdated, revalidateDbResource]
-  );
+  const { onRenameResource, takenDisplayNames } = useResourceDisplayNameRename({
+    kind: "DB",
+    kubeconfig: kubeconfig ?? "",
+    onUpdated,
+    resourceDisplayNames: readModelHints?.resourceDisplayNames,
+    revalidate: dbResource.mutate,
+    target: dbTarget,
+  });
   const canRename = data != null && !effectiveReadOnly && authReady;
   const handleSubmitPatch = useCallback(
     (patch: Parameters<typeof updateSettings>[1]) => {

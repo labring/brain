@@ -1333,14 +1333,14 @@ function databaseSettings(
  * degrades to the bare derived name (duplicates are tolerated, as in the
  * lazy read-time chain).
  */
-async function directResourceDisplayName(input: {
+async function directResourceNaming(input: {
   kubeconfig: string;
   projectName: string;
   task: DeployTaskRow;
-}): Promise<string | undefined> {
+}): Promise<{ displayName?: string; sourceName: string }> {
   const base = derivedProjectDisplayNameBase(input.task.source);
   if (base == null) {
-    return undefined;
+    return { sourceName: "" };
   }
   let takenNames: string[] = [];
   try {
@@ -1352,18 +1352,22 @@ async function directResourceDisplayName(input: {
   } catch {
     // Fall through with no numbering rather than blocking the deploy.
   }
-  return uniqueResourceDisplayName(base, takenNames);
+  return {
+    displayName: uniqueResourceDisplayName(base, takenNames),
+    sourceName: base,
+  };
 }
 
 function generateDirectArtifact(input: {
   displayName?: string;
   kubeconfig: string;
   projectName: string;
-  task: DeployTaskRow;
-}): DeploymentArtifact {
   // The Kubernetes name shares the display name's source prefix so kubectl
   // and the canvas roughly agree (`nginx-xkqjzw` next to `nginx`).
-  const sourceName = derivedProjectDisplayNameBase(input.task.source) ?? "";
+  sourceName: string;
+  task: DeployTaskRow;
+}): DeploymentArtifact {
+  const { sourceName } = input;
   switch (input.task.source.kind) {
     case "docker": {
       const settings = dockerSettings(input.task.source.settings);
@@ -2739,8 +2743,8 @@ async function runDirectDeploymentTask(input: {
     phase: "plan",
   });
 
-  const displayName = await directResourceDisplayName(input);
-  const artifact = generateDirectArtifact({ ...input, displayName });
+  const naming = await directResourceNaming(input);
+  const artifact = generateDirectArtifact({ ...input, ...naming });
   await updateDeployTaskState(input.task.id, {
     artifactSummary: { artifacts: [artifact] },
     phase: "generate-artifacts",

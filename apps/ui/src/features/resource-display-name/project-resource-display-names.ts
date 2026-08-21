@@ -1,6 +1,7 @@
 import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
-import { apItemsFromList } from "@workspace/api/lib/ap-list";
+// Generic k8s list unwrapping despite the module name; used for DBs too.
+import { apItemsFromList as k8sItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { ApiUrl } from "@workspace/api/utils";
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
@@ -70,7 +71,7 @@ async function projectResourceList(input: {
       namespace: input.namespace,
     },
   });
-  return apItemsFromList(data);
+  return k8sItemsFromList(data);
 }
 
 /**

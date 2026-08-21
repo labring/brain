@@ -2,11 +2,9 @@
 
 import { useAPPublicAddressReadiness } from "@workspace/api/hooks";
 import { Router, Settings2, SquarePen } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectApTarget } from "@/features/panes/target-identity";
-import { projectRuntimeResourceKey } from "@/features/project-canvas/runtime/resource-facts";
-import { applyResourceDisplayName } from "@/features/resource-display-name/apply-resource-display-name";
 import { resolveApDisplayName } from "@/features/resource-display-name/resource-display-name";
 import { AP_SETTINGS_REPLICA_LIMITS } from "@/features/resource-settings/ap/ap-settings-context";
 import {
@@ -25,6 +23,7 @@ import type {
   SettingsProviderProps,
   SettingsViewModel,
 } from "./settings-types";
+import { useResourceDisplayNameRename } from "./use-resource-display-name-rename";
 
 const AP_SETTINGS_FULL_VIEW = "full";
 const AP_SETTINGS_ENVIRONMENT_VIEW = "environment";
@@ -580,40 +579,14 @@ export function ApSettingsProvider({
           kubernetesName: apTarget.name,
           labels: asRecord(resourceMetadata?.labels),
         });
-  const selfResourceKey =
-    apTarget == null
-      ? null
-      : projectRuntimeResourceKey({
-          kind: "AP",
-          name: apTarget.name,
-          namespace: apTarget.namespace,
-        });
-  const hintedDisplayNames = readModelHints?.resourceDisplayNames;
-  const takenDisplayNames = useMemo(
-    () =>
-      (hintedDisplayNames ?? [])
-        .filter((row) => row.key !== selfResourceKey)
-        .map((row) => row.displayName),
-    [hintedDisplayNames, selfResourceKey]
-  );
-  const apName = apTarget?.name ?? "";
-  const apNamespace = apTarget?.namespace ?? "";
-  const onRenameResource = useCallback(
-    async (value: string | null) => {
-      if (apName === "" || apNamespace === "") {
-        return;
-      }
-      await applyResourceDisplayName({
-        kind: "AP",
-        kubeconfig,
-        name: apName,
-        namespace: apNamespace,
-        value,
-      });
-      await Promise.allSettled([revalidateClaim(), onUpdated?.()]);
-    },
-    [apName, apNamespace, kubeconfig, onUpdated, revalidateClaim]
-  );
+  const { onRenameResource, takenDisplayNames } = useResourceDisplayNameRename({
+    kind: "AP",
+    kubeconfig,
+    onUpdated,
+    resourceDisplayNames: readModelHints?.resourceDisplayNames,
+    revalidate: revalidateClaim,
+    target: apTarget,
+  });
   const titleContent =
     apTarget == null || resolvedView !== AP_SETTINGS_FULL_VIEW ? undefined : (
       <ResourceDisplayNameTitle

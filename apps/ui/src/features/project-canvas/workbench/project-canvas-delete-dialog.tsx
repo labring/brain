@@ -2,6 +2,7 @@
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { type ReactNode, useState } from "react";
+import { resourceNameDetail } from "./resource-name-detail";
 
 export interface ProjectCanvasApDeleteTarget {
   displayName: string;
@@ -134,12 +135,7 @@ function ProjectCanvasApDeleteDialog({
   if (target == null) {
     return null;
   }
-  const resolvedKind = target.kind?.trim();
-  // Destructive confirmations show the Kubernetes name next to the display
-  // name (ADR 0062) so a renamed or duplicated node cannot be mistaken.
-  const detail = [resolvedKind, kubernetesNameDetail(target)]
-    .filter(Boolean)
-    .join(" · ");
+  const detail = resourceNameDetail(target);
 
   return (
     <ProjectCanvasDeleteDialog
@@ -161,13 +157,6 @@ function ProjectCanvasApDeleteDialog({
       from the project.
     </ProjectCanvasDeleteDialog>
   );
-}
-
-function kubernetesNameDetail(target: {
-  displayName: string;
-  name: string;
-}): string | undefined {
-  return target.name === target.displayName ? undefined : target.name;
 }
 
 function ProjectCanvasDbDeleteDialog({
@@ -194,10 +183,10 @@ function ProjectCanvasDbDeleteDialog({
     >
       This will delete{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {kubernetesNameDetail(target) ? (
+      {resourceNameDetail(target) ? (
         <>
           {" "}
-          (<span className="font-mono">{kubernetesNameDetail(target)}</span>)
+          (<span className="font-mono">{resourceNameDetail(target)}</span>)
         </>
       ) : null}{" "}
       from the project. DB resources and stored data may be removed depending on

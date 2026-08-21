@@ -285,9 +285,8 @@ func apUpdateMergePatch(workload apWorkload, raw json.RawMessage, currentConfigM
 }
 
 // applyDisplayNameAnnotationPatch forwards a Resource Display Name change
-// (ADR 0062) from the product patch to the workload: a non-empty string sets
-// the annotation, an empty or null value deletes it (merge-patch nil),
-// restoring the derived default. Other annotation keys are never forwarded.
+// (ADR 0062) from the product patch to the workload. Other annotation keys
+// are never forwarded.
 func applyDisplayNameAnnotationPatch(metadataPatch map[string]interface{}, annotations map[string]interface{}) {
 	annotationPatch, _ := metadataPatch["annotations"].(map[string]interface{})
 	if annotationPatch == nil {
@@ -297,11 +296,7 @@ func applyDisplayNameAnnotationPatch(metadataPatch map[string]interface{}, annot
 	if !ok {
 		return
 	}
-	if value, _ := raw.(string); strings.TrimSpace(value) != "" {
-		annotations[orchestration.BrainDisplayNameAnnotation] = strings.TrimSpace(value)
-		return
-	}
-	annotations[orchestration.BrainDisplayNameAnnotation] = nil
+	annotations[orchestration.BrainDisplayNameAnnotation] = orchestration.DisplayNameAnnotationPatchValue(raw)
 }
 
 func apUpdateMetadataPatch(raw json.RawMessage) (map[string]interface{}, bool) {

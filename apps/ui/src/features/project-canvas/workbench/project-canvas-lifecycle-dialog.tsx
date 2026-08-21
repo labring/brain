@@ -2,6 +2,7 @@
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import type { ReactNode } from "react";
+import { resourceNameDetail } from "./resource-name-detail";
 
 export interface ProjectCanvasApLifecycleTarget {
   displayName: string;
@@ -107,20 +108,13 @@ function ProjectCanvasLifecycleDialog({
   );
 }
 
-// Lifecycle confirmations show the Kubernetes name next to the display name
-// (ADR 0062) so a renamed or duplicated node cannot be mistaken.
 function lifecycleNameDetail(target: {
   displayName: string;
   kind?: string;
   name: string;
 }): ReactNode {
-  const detail = [
-    target.kind?.trim(),
-    target.name === target.displayName ? undefined : target.name,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  if (!detail) {
+  const detail = resourceNameDetail(target);
+  if (detail == null) {
     return null;
   }
   return (
