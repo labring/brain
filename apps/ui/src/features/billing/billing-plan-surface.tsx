@@ -6,10 +6,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@workspace/ui/components/alert";
-import {
-  AppButton,
-  appButtonVariants,
-} from "@workspace/ui/components/app-button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { PlanBadge } from "@workspace/ui/components/plan-badge";
@@ -291,15 +288,17 @@ function SubscriptionWarningBanner({
         <AlertDescription>{accountDebtCopy.description}</AlertDescription>
         {topUpUrl == null ? null : (
           <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
-            <a
-              className={appButtonVariants({ size: "sm", variant: "danger" })}
-              href={topUpUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <ExternalLink aria-hidden data-icon="inline-start" />
-              Top up in Sealos Desktop
-            </a>
+            <AppButton
+              nativeButton={false}
+              render={
+                <a href={topUpUrl} rel="noreferrer" target="_blank">
+                  <ExternalLink aria-hidden data-icon="inline-start" />
+                  Top up in Sealos Desktop
+                </a>
+              }
+              size="sm"
+              variant="danger"
+            />
           </AlertAction>
         )}
       </Alert>
@@ -366,8 +365,10 @@ function BillingInvoiceNotice({
 
   return (
     <Alert
-      className="has-data-[slot=alert-action]:pr-4 sm:has-data-[slot=alert-action]:pr-18"
-      variant="destructive"
+      className={cn(
+        "border-none has-data-[slot=alert-action]:pr-4",
+        SUBSCRIPTION_WARNING_TONES["deletion-imminent"]
+      )}
     >
       <AlertCircle aria-hidden />
       <AlertTitle>
@@ -382,15 +383,21 @@ function BillingInvoiceNotice({
       </AlertDescription>
       <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
         {canPayInvoice && current.invoicePaymentUrl != null ? (
-          <a
-            className={appButtonVariants({ size: "sm", variant: "danger" })}
-            href={current.invoicePaymentUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <ExternalLink aria-hidden data-icon="inline-start" />
-            Pay invoice
-          </a>
+          <AppButton
+            nativeButton={false}
+            render={
+              <a
+                href={current.invoicePaymentUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <ExternalLink aria-hidden data-icon="inline-start" />
+                Pay invoice
+              </a>
+            }
+            size="sm"
+            variant="danger"
+          />
         ) : null}
         {canCancelInvoice && invoiceId != null && onCancelInvoice != null ? (
           <AppButton
