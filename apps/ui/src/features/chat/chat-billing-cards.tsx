@@ -169,7 +169,7 @@ export function ChatBillingCardSlot({
     return null;
   }
   return (
-    <div className="shrink-0 px-[10px] pt-1">
+    <div className="shrink-0 px-2.5 pt-1">
       {card === "blocked" ? (
         <BlockedCard onNavigateToBilling={onNavigateToBilling} />
       ) : null}
