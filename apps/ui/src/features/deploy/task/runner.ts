@@ -23,7 +23,12 @@ import {
   getTemplateSource,
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
-import { deriveProjectDisplayName } from "@/features/projects/derived-project-display-name";
+import {
+  derivedProjectDisplayNameBase,
+  deriveProjectDisplayName,
+} from "@/features/projects/derived-project-display-name";
+import { projectResourceDisplayNames } from "@/features/resource-display-name/project-resource-display-names";
+import { uniqueResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -1321,18 +1326,52 @@ function databaseSettings(
   return settings;
 }
 
+/**
+ * Deploy-time Resource Display Name (ADR 0062): derived from the Deployment
+ * Source and numbered against the display names already taken in the
+ * Project. Naming must never fail a deploy — an unreadable project listing
+ * degrades to the bare derived name (duplicates are tolerated, as in the
+ * lazy read-time chain).
+ */
+async function directResourceDisplayName(input: {
+  kubeconfig: string;
+  projectName: string;
+  task: DeployTaskRow;
+}): Promise<string | undefined> {
+  const base = derivedProjectDisplayNameBase(input.task.source);
+  if (base == null) {
+    return undefined;
+  }
+  let takenNames: string[] = [];
+  try {
+    takenNames = await projectResourceDisplayNames({
+      kubeconfig: input.kubeconfig,
+      namespace: input.task.namespace,
+      projectId: input.projectName,
+    });
+  } catch {
+    // Fall through with no numbering rather than blocking the deploy.
+  }
+  return uniqueResourceDisplayName(base, takenNames);
+}
+
 function generateDirectArtifact(input: {
+  displayName?: string;
   kubeconfig: string;
   projectName: string;
   task: DeployTaskRow;
 }): DeploymentArtifact {
+  // The Kubernetes name shares the display name's source prefix so kubectl
+  // and the canvas roughly agree (`nginx-xkqjzw` next to `nginx`).
+  const sourceName = derivedProjectDisplayNameBase(input.task.source) ?? "";
   switch (input.task.source.kind) {
     case "docker": {
       const settings = dockerSettings(input.task.source.settings);
       return {
         kind: "brain-manifest",
         yaml: renderDockerDeploymentYaml({
-          name: childResourceName(input.projectName, "ap"),
+          displayName: input.displayName,
+          name: childResourceName(sourceName, "ap"),
           namespace: input.task.namespace,
           projectName: input.projectName,
           routingDomain: apUserDomain(input.kubeconfig),
@@ -1346,8 +1385,9 @@ function generateDirectArtifact(input: {
       return {
         kind: "brain-manifest",
         yaml: renderDbDeploymentYaml({
+          displayName: input.displayName,
           engine: choice.engine,
-          name: childResourceName(input.projectName, "db"),
+          name: childResourceName(sourceName, "db"),
           namespace: input.task.namespace,
           projectName: input.projectName,
           quota: settings.instancePreset,
@@ -2699,7 +2739,8 @@ async function runDirectDeploymentTask(input: {
     phase: "plan",
   });
 
-  const artifact = generateDirectArtifact(input);
+  const displayName = await directResourceDisplayName(input);
+  const artifact = generateDirectArtifact({ ...input, displayName });
   await updateDeployTaskState(input.task.id, {
     artifactSummary: { artifacts: [artifact] },
     phase: "generate-artifacts",
