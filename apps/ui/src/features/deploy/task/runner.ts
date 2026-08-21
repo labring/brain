@@ -1067,6 +1067,41 @@ export function buildCodexGatewayEnv(
   return env;
 }
 
+function openAiCredentialPair(
+  apiKey: string | undefined,
+  baseUrl: string | undefined
+): CodexGatewayOpenAiCredentials | null {
+  const compactApiKey = compactEnvValue(apiKey);
+  const compactBaseUrl = compactEnvValue(baseUrl);
+  if (compactApiKey != null && compactBaseUrl != null) {
+    return { apiKey: compactApiKey, baseUrl: compactBaseUrl };
+  }
+  return null;
+}
+
+export function githubDeployOpenAiOverride(): CodexGatewayOpenAiCredentials | null {
+  const apiKey = compactEnvValue(process.env.GITHUB_DEPLOY_OPENAI_API_KEY);
+  const baseUrl = compactEnvValue(process.env.GITHUB_DEPLOY_OPENAI_BASE_URL);
+  if (apiKey != null && baseUrl != null) {
+    return { apiKey, baseUrl };
+  }
+  if (apiKey != null || baseUrl != null) {
+    throw new Error(
+      "GitHub deploy OpenAI override requires both GITHUB_DEPLOY_OPENAI_API_KEY and GITHUB_DEPLOY_OPENAI_BASE_URL."
+    );
+  }
+  return (
+    openAiCredentialPair(
+      process.env.CODEX_GATEWAY_OPENAI_API_KEY,
+      process.env.CODEX_GATEWAY_OPENAI_BASE_URL
+    ) ??
+    openAiCredentialPair(
+      process.env.SYSTEM_OPENAI_API_KEY,
+      process.env.SYSTEM_OPENAI_API_BASE_URL
+    )
+  );
+}
+
 export async function resolveCodexGatewayCredentials(input: {
   encodedKubeconfig: string;
   kubeconfig: string;
@@ -3145,6 +3180,12 @@ export async function ensureAiDeploymentDevbox(input: {
       namespace: input.task.namespace,
       repoUrl: aiSourceKey(input.task),
       resolveGatewayCredentials: async (signal) => {
+        if (input.task.source.kind === "github") {
+          const override = githubDeployOpenAiOverride();
+          if (override != null) {
+            return override;
+          }
+        }
         try {
           return await resolveCodexGatewayCredentials({
             encodedKubeconfig: input.encodedKubeconfig,
