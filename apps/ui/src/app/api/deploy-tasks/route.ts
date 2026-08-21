@@ -32,6 +32,7 @@ import {
   createDeployTaskInputSchema,
   deployTaskStatusSchema,
 } from "@/features/deploy/task/types";
+import { marketingAttributionSnapshotSchema } from "@/features/marketing/types";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
@@ -40,10 +41,15 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const requestSchema = createDeployTaskInputSchema
-  .omit({ createdFrom: true })
+  .omit({ createdFrom: true, marketingAttribution: true })
   .partial({ runner: true, source: true, target: true })
   .extend({
     encodedKubeconfig: z.string().optional(),
+    /**
+     * Validated separately after parsing: a malformed attribution snapshot
+     * degrades to an unattributed deploy instead of rejecting the request.
+     */
+    marketingAttribution: z.unknown().optional(),
     /** Redeploy: clone this failed/cancelled predecessor (ADR 0038). */
     predecessorTaskId: z.string().trim().min(1).max(128).optional(),
   })
@@ -63,22 +69,36 @@ function jsonError(message: string, status: number, code?: string) {
   );
 }
 
+function identityBindingFailureResponse(error: unknown): NextResponse {
+  if (error instanceof IdentityBindingSupersededError) {
+    return jsonError(
+      "Authentication is required.",
+      401,
+      "app_token_superseded"
+    );
+  }
+  throw error;
+}
+
 /**
- * GitHub-source creation and redeploy are personal-resource authorization
- * points (ADR-0059): the app token proves the initiator's `crName → userUid`
- * binding before their uid-keyed active connection is bound to the task.
- * Non-GitHub sources stay namespace-shared and never consult the token.
+ * Marketing attribution needs the same app-token identity binding as GitHub
+ * credentials. The regional workspace actor remains the deployment actor;
+ * the verified global uid is passed to the marketing normalizer separately.
  */
 async function resolveCredentialBinding(input: {
   appToken: string;
   encodedKubeconfig?: string;
   namespace: string;
+  requiresMarketingIdentity: boolean;
   sourceKind?: DeploymentTaskSource["kind"];
 }): Promise<
-  | { credentialBinding?: DeploymentCredentialBinding }
+  | {
+      credentialBinding?: DeploymentCredentialBinding;
+      marketingConsentSubject?: string;
+    }
   | { response: NextResponse }
 > {
-  if (input.sourceKind !== "github") {
+  if (input.sourceKind !== "github" && !input.requiresMarketingIdentity) {
     return {};
   }
   const authorization = await authorizeWorkspaceActor({
@@ -88,6 +108,14 @@ async function resolveCredentialBinding(input: {
     normalizeNamespace: normalizeAssistantNamespace,
   });
   if (!authorization.ok) {
+    // Marketing identity is best-effort for namespace-shared sources: an
+    // unverifiable actor (missing or stale app token) degrades to an
+    // unattributed user — the normalizer scrubs unverified consent — instead
+    // of blocking the deploy. GitHub stays fail-closed: it needs the actor
+    // for credentials, not just attribution.
+    if (input.sourceKind !== "github") {
+      return {};
+    }
     return {
       response: jsonError(
         authorization.message,
@@ -95,6 +123,10 @@ async function resolveCredentialBinding(input: {
         authorization.code
       ),
     };
+  }
+  const marketingConsentSubject = authorization.actorBinding.userUid;
+  if (input.sourceKind !== "github") {
+    return { marketingConsentSubject };
   }
   const actor = verifiedGithubConnectionActor(authorization);
   // Every verified entry request first adopts the initiator's legacy
@@ -129,6 +161,7 @@ async function resolveCredentialBinding(input: {
       credentialOwner: actor.owner.userUid,
       version: CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
     },
+    marketingConsentSubject,
   };
 }
 
@@ -220,41 +253,65 @@ export async function POST(request: Request) {
   }
   const effectiveSource = parsed.data.source ?? predecessor?.source;
   const creatingActor = namespaceResolved.workspaceActor;
+  // Attribution never blocks a deploy: a snapshot that fails validation is
+  // dropped here and the task proceeds unattributed.
+  const attributionParse =
+    parsed.data.marketingAttribution == null
+      ? null
+      : marketingAttributionSnapshotSchema.safeParse(
+          parsed.data.marketingAttribution
+        );
+  const marketingAttribution = attributionParse?.success
+    ? attributionParse.data
+    : undefined;
   const bindingResolution = await resolveCredentialBinding({
     appToken: appTokenFromRequest(request),
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     namespace: taskNamespace,
+    requiresMarketingIdentity: marketingAttribution?.consent_token != null,
     sourceKind: effectiveSource?.kind,
   });
   if ("response" in bindingResolution) {
     return bindingResolution.response;
   }
-  const { credentialBinding } = bindingResolution;
+  const { credentialBinding, marketingConsentSubject } = bindingResolution;
 
-  const { encodedKubeconfig, predecessorTaskId, ...taskInput } = parsed.data;
-  const result = await createDeployTaskAction(getDeployTaskEngineContext(), {
-    create: {
-      ...taskInput,
-      createdFrom: "ui",
-      ...(creatingActor == null ? {} : { creatingActor }),
-      ...(credentialBinding == null ? {} : { credentialBinding }),
-      namespace: taskNamespace,
-    },
+  const {
+    encodedKubeconfig,
+    marketingAttribution: _rawMarketingAttribution,
     predecessorTaskId,
-    resolveTarget: resolveDeployTaskTargetForCreate,
-    run: (handle, task) =>
-      runDeployTask(handle, {
-        encodedKubeconfig,
-        // Full template args from the request body: the engine persists a
-        // stripped copy, so sensitive values reach the runner only through
-        // this in-memory hand-off (ADR 0037).
-        sourceArgValues:
-          parsed.data.source?.kind === "template"
-            ? parsed.data.source.args
-            : undefined,
-        taskId: task.id,
-      }),
-  });
+    ...taskInput
+  } = parsed.data;
+  let result: Awaited<ReturnType<typeof createDeployTaskAction>>;
+  try {
+    result = await createDeployTaskAction(getDeployTaskEngineContext(), {
+      create: {
+        ...taskInput,
+        createdFrom: "ui",
+        ...(creatingActor == null ? {} : { creatingActor }),
+        ...(credentialBinding == null ? {} : { credentialBinding }),
+        ...(marketingAttribution == null ? {} : { marketingAttribution }),
+        ...(marketingConsentSubject == null ? {} : { marketingConsentSubject }),
+        namespace: taskNamespace,
+      },
+      predecessorTaskId,
+      resolveTarget: resolveDeployTaskTargetForCreate,
+      run: (handle, task) =>
+        runDeployTask(handle, {
+          encodedKubeconfig,
+          // Full template args from the request body: the engine persists a
+          // stripped copy, so sensitive values reach the runner only through
+          // this in-memory hand-off (ADR 0037).
+          sourceArgValues:
+            parsed.data.source?.kind === "template"
+              ? parsed.data.source.args
+              : undefined,
+          taskId: task.id,
+        }),
+    });
+  } catch (error) {
+    return identityBindingFailureResponse(error);
+  }
 
   switch (result.kind) {
     case "created":

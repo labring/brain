@@ -1,5 +1,7 @@
 "use client";
 
+import { readMarketingAttribution } from "@/features/marketing/attribution-client";
+import { marketingAttributionSnapshotSchema } from "@/features/marketing/types";
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import type {
   DeploymentTargetPipelineAdapters,
@@ -68,20 +70,29 @@ export async function createDeploymentTaskFromApi({
   encodedKubeconfig: string;
   input: DeploymentTaskCreateInput;
 }): Promise<DeploymentTaskCreateResult> {
-  // Only GitHub-source creation is a personal-resource authorization point
-  // (ADR-0059): the server resolves the Deployment Credential Binding from
-  // the token-proven initiator's uid-keyed connection. Namespace-shared
-  // sources never carry the token.
+  // Attribution never blocks a deploy: stored state that no longer passes
+  // the server schema (oversized inbound params, stale shapes) is dropped
+  // instead of poisoning every create with a 400.
+  const storedAttribution = readMarketingAttribution();
+  const attributionParse =
+    storedAttribution == null
+      ? null
+      : marketingAttributionSnapshotSchema.safeParse(storedAttribution);
+  const marketingAttribution = attributionParse?.success
+    ? attributionParse.data
+    : undefined;
+  const requiresIdentityToken =
+    input.source.kind === "github" ||
+    marketingAttribution?.consent_token != null;
   const response = await fetch("/api/deploy-tasks", {
     body: JSON.stringify({
       ...input,
       encodedKubeconfig,
+      marketingAttribution,
     }),
     headers: {
       "Content-Type": "application/json",
-      ...(input.source.kind === "github"
-        ? appTokenRequestHeaders(appToken)
-        : {}),
+      ...(requiresIdentityToken ? appTokenRequestHeaders(appToken) : {}),
     },
     method: "POST",
   });

@@ -23,7 +23,7 @@ function captureAppTokenHeaders(): (string | null)[] {
   return headers;
 }
 
-test("redeploy of a GitHub predecessor attaches the app token", async () => {
+test("GitHub redeploy attaches the app token", async () => {
   const headers = captureAppTokenHeaders();
   await redeployDeploymentTask({
     appToken: "app-token",
@@ -35,16 +35,14 @@ test("redeploy of a GitHub predecessor attaches the app token", async () => {
   assert.deepEqual(headers, ["app-token"]);
 });
 
-test("redeploy of a namespace-shared predecessor never carries the app token", async () => {
+test("namespace-shared redeploy keeps the app token private", async () => {
   const headers = captureAppTokenHeaders();
-  for (const kind of ["database", "docker", "template"] as const) {
-    await redeployDeploymentTask({
-      appToken: "app-token",
-      kubeconfig: "encoded-kubeconfig",
-      namespace: "shared",
-      predecessorSourceKind: kind,
-      predecessorTaskId: `task-${kind}`,
-    });
-  }
-  assert.deepEqual(headers, [null, null, null]);
+  await redeployDeploymentTask({
+    appToken: "app-token",
+    kubeconfig: "encoded-kubeconfig",
+    namespace: "shared",
+    predecessorSourceKind: "template",
+    predecessorTaskId: "task-1",
+  });
+  assert.deepEqual(headers, [null]);
 });

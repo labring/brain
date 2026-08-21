@@ -33,9 +33,8 @@ export function useDeploymentTaskActions(input: {
   namespace: string;
 }): DeploymentTaskActions {
   const { kubeconfig, namespace } = input;
-  // Redeploy of a GitHub predecessor alone attaches the app token
-  // (ADR-0059): it re-binds the initiator's credential, while cancel and
-  // namespace-shared redeploys stay token-free.
+  // GitHub redeploy proves the initiator; namespace-shared redeploy stays
+  // token-free and the server redacts inherited personal attribution.
   const appToken = useAtomValue(appTokenAtom);
   const [cancelPendingTaskIds, setCancelPendingTaskIds] = useState<
     ReadonlySet<string>

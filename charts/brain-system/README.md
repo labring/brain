@@ -40,6 +40,8 @@ then edit `$private_values_file`, especially:
 - GitHub App and OAuth values (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`)
 - `GITHUB_USER_TOKEN_ENCRYPTION_KEY`: keep stable; changing it prevents decrypting previously stored GitHub user tokens
 - assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
+- `MARKETING_EVENTS_INGEST_SECRET`: shared bearer secret for trusted lifecycle event producers
+- `MARKETING_CONSENT_SIGNING_KEY`: shared HS256 secret used to verify Desktop-issued consent tokens
 - `JWT_INTERNAL`: the cluster-shared secret used for app-token verification and account-service request signing
 - Devbox runtime values (`DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` when the chart should create and reference `ghcr-cred`

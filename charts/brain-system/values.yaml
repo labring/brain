@@ -125,6 +125,8 @@ ui:
     # skips its boot-time schema migrations instead of applying DDL there.
     APP_POSTGRES_SKIP_MIGRATIONS: ""
     JWT_INTERNAL: ""
+    MARKETING_EVENTS_INGEST_SECRET: ""
+    MARKETING_CONSENT_SIGNING_KEY: ""
     GITHUB_APP_ID: ""
     GITHUB_APP_PRIVATE_KEY: ""
     GITHUB_OAUTH_CLIENT_ID: ""

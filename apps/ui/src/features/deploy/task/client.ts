@@ -355,10 +355,9 @@ export async function cancelDeploymentTask(input: {
  * A 409 carries the already-active recovery attempt (or the non-terminal
  * predecessor); callers reconcile from that snapshot.
  *
- * Redeploy of a GitHub predecessor is a personal-resource authorization
- * point (ADR-0059): the app token proves the initiator, whose own uid-keyed
- * GitHub Connection becomes the new task's Deployment Credential Binding.
- * Namespace-shared predecessors never carry the token.
+ * Redeploy of a GitHub predecessor proves the initiator for its personal
+ * credential binding. Namespace-shared predecessors keep the token-free
+ * redeploy contract and redact inherited personal attribution server-side.
  */
 export async function redeployDeploymentTask(input: {
   appToken: string;
