@@ -177,6 +177,7 @@ func dbRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 		CPULimit:       stringFromMap(spec, "cpuLimit"),
 		CPURequest:     stringFromMap(spec, "cpuRequest"),
 		ClusterVersion: version,
+		DisplayName:    strings.TrimSpace(obj.GetAnnotations()[orchestration.BrainDisplayNameAnnotation]),
 		Engine:         engine,
 		ExposeNodePort: boolFromMap(spec, "exposeNodePort"),
 		MemoryLimit:    stringFromMap(spec, "memoryLimit"),
@@ -903,7 +904,7 @@ func registerUpdate(grp huma.API) {
 		middleware.AuthInput
 		Name      string          `query:"name" required:"true" doc:"DB instance name to patch"`
 		Namespace string          `query:"namespace" doc:"Namespace (default from kubeconfig)"`
-		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the DB product surface.\n\nSupported patch targets:\n- spec.replicas: creates a KubeBlocks HorizontalScaling OpsRequest.\n- spec.paused: creates a KubeBlocks Stop or Start OpsRequest.\n- spec.restartRequest: creates a KubeBlocks Restart OpsRequest; prefer POST /restart.\n- spec.storageSize: creates a KubeBlocks VolumeExpansion OpsRequest when the desired size increases.\n- spec.cpuRequest / spec.memoryRequest: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.cpuLimit / spec.memoryLimit: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.terminationPolicy: patches the KubeBlocks Cluster management policy.\n- spec.exposeNodePort: applies or deletes Service {name}-export.\n\nUnsupported for now and rejected with 422: spec.quota, spec.storageClassName, spec.clusterVersion, spec.version, spec.scheduledBackup, spec.parameterConfig, spec.restoreFromBackup.\n\nPatch examples:\n- Stop: {\"spec\":{\"paused\":true}}\n- Start: {\"spec\":{\"paused\":false}}\n- Scale replicas: {\"spec\":{\"replicas\":2}}\n- Expose via NodePort: {\"spec\":{\"exposeNodePort\":true}}\n- Update resources: {\"spec\":{\"cpuLimit\":\"2000m\",\"memoryLimit\":\"4Gi\"}}\n- Expand storage: {\"spec\":{\"storageSize\":\"20Gi\"}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Runtime operations are expressed as KubeBlocks OpsRequest CRs, not direct Cluster componentSpec rewrites."`
+		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the DB product surface.\n\nSupported patch targets:\n- spec.replicas: creates a KubeBlocks HorizontalScaling OpsRequest.\n- spec.paused: creates a KubeBlocks Stop or Start OpsRequest.\n- spec.restartRequest: creates a KubeBlocks Restart OpsRequest; prefer POST /restart.\n- spec.storageSize: creates a KubeBlocks VolumeExpansion OpsRequest when the desired size increases.\n- spec.cpuRequest / spec.memoryRequest: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.cpuLimit / spec.memoryLimit: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.terminationPolicy: patches the KubeBlocks Cluster management policy.\n- spec.exposeNodePort: applies or deletes Service {name}-export.\n- metadata.annotations[\"brain.io/display-name\"]: set the Resource Display Name; an empty or null value clears it and restores the derived default.\n\nUnsupported for now and rejected with 422: spec.quota, spec.storageClassName, spec.clusterVersion, spec.version, spec.scheduledBackup, spec.parameterConfig, spec.restoreFromBackup.\n\nPatch examples:\n- Stop: {\"spec\":{\"paused\":true}}\n- Start: {\"spec\":{\"paused\":false}}\n- Scale replicas: {\"spec\":{\"replicas\":2}}\n- Expose via NodePort: {\"spec\":{\"exposeNodePort\":true}}\n- Update resources: {\"spec\":{\"cpuLimit\":\"2000m\",\"memoryLimit\":\"4Gi\"}}\n- Expand storage: {\"spec\":{\"storageSize\":\"20Gi\"}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Runtime operations are expressed as KubeBlocks OpsRequest CRs, not direct Cluster componentSpec rewrites."`
 	}
 	type dbUpdateOutput struct {
 		Body json.RawMessage
@@ -1014,9 +1015,17 @@ func dbUpdatePlanFromProductPatch(patch []byte, clusterJSON []byte, name string,
 	if err := json.Unmarshal(patch, &body); err != nil {
 		return dbUpdatePlan{}, err
 	}
+	mergeMetadata := dbDisplayNameMetadataPatch(body)
 	specPatch, _ := body["spec"].(map[string]interface{})
 	if len(specPatch) == 0 {
-		return dbUpdatePlan{}, nil
+		if len(mergeMetadata) == 0 {
+			return dbUpdatePlan{}, nil
+		}
+		bytes, err := json.Marshal(map[string]interface{}{"metadata": mergeMetadata})
+		if err != nil {
+			return dbUpdatePlan{}, err
+		}
+		return dbUpdatePlan{ClusterPatch: bytes, HasClusterPatch: true}, nil
 	}
 
 	var cluster unstructured.Unstructured
@@ -1134,8 +1143,15 @@ func dbUpdatePlanFromProductPatch(patch []byte, clusterJSON []byte, name string,
 		}
 		plan.OpsRequests = append(plan.OpsRequests, ops)
 	}
-	if len(mergeSpec) > 0 {
-		bytes, err := json.Marshal(map[string]interface{}{"spec": mergeSpec})
+	if len(mergeSpec) > 0 || len(mergeMetadata) > 0 {
+		merge := map[string]interface{}{}
+		if len(mergeSpec) > 0 {
+			merge["spec"] = mergeSpec
+		}
+		if len(mergeMetadata) > 0 {
+			merge["metadata"] = mergeMetadata
+		}
+		bytes, err := json.Marshal(merge)
 		if err != nil {
 			return dbUpdatePlan{}, err
 		}
@@ -1143,6 +1159,31 @@ func dbUpdatePlanFromProductPatch(patch []byte, clusterJSON []byte, name string,
 		plan.HasClusterPatch = true
 	}
 	return plan, nil
+}
+
+// dbDisplayNameMetadataPatch forwards a Resource Display Name change
+// (ADR 0062) from the product patch to the Cluster: a non-empty string sets
+// the annotation, an empty or null value deletes it (merge-patch nil),
+// restoring the derived default. Other metadata fields are never forwarded.
+func dbDisplayNameMetadataPatch(body map[string]interface{}) map[string]interface{} {
+	metadata, _ := body["metadata"].(map[string]interface{})
+	annotations, _ := metadata["annotations"].(map[string]interface{})
+	if annotations == nil {
+		return nil
+	}
+	raw, ok := annotations[orchestration.BrainDisplayNameAnnotation]
+	if !ok {
+		return nil
+	}
+	var patchValue interface{}
+	if value, _ := raw.(string); strings.TrimSpace(value) != "" {
+		patchValue = strings.TrimSpace(value)
+	}
+	return map[string]interface{}{
+		"annotations": map[string]interface{}{
+			orchestration.BrainDisplayNameAnnotation: patchValue,
+		},
+	}
 }
 
 func quantityString(value interface{}, field string) (string, error) {

@@ -24,6 +24,7 @@ type APResourcesInput struct {
 	Args             []string
 	Command          []string
 	ConfigMaps       []APConfigMapMount
+	DisplayName      string
 	Env              []corev1.EnvVar
 	EnvRawSource     string
 	Image            string
@@ -172,6 +173,9 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 		labels[APRoutingDomainLabel] = domain
 	}
 	annotations := map[string]string{}
+	if displayName := strings.TrimSpace(input.DisplayName); displayName != "" {
+		annotations[BrainDisplayNameAnnotation] = displayName
+	}
 	if networkJSON := strings.TrimSpace(input.NetworkJSON); networkJSON != "" {
 		annotations[APDesiredNetworkAnnotation] = networkJSON
 	}

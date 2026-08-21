@@ -8,6 +8,9 @@ const (
 	BrainDeploymentNameLabel = "brain.io/deployment-name"
 	BrainTemplateNameLabel   = "brain.io/template-name"
 	BrainDBEngineLabel       = "brain.io/db-engine"
+	// BrainDisplayNameAnnotation stores the Resource Display Name (ADR 0062);
+	// display-only, never a selector or identity.
+	BrainDisplayNameAnnotation = "brain.io/display-name"
 
 	APDesiredNetworkAnnotation    = "brain.io/ap-desired-network"
 	APConfigMapChecksumAnnotation = "brain.io/ap-config-checksum"

@@ -1063,6 +1063,40 @@ func TestApplyAPResourcesPauseStateAllowsZeroReplicasOnUpdate(t *testing.T) {
 	}
 }
 
+func TestAPUpdatePatchForwardsDisplayNameAnnotation(t *testing.T) {
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "nginx-xkqjzw", Namespace: "ns-a"},
+		Spec:       appsv1.DeploymentSpec{Replicas: &replicas},
+	}
+
+	patch, err := templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"metadata":{"annotations":{"brain.io/display-name":" My Service "}}}`), testTime())
+	if err != nil {
+		t.Fatalf("templateAPUpdateMergePatch returned error: %v", err)
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(patch, &got); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	annotations := got["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	if annotations[orchestration.BrainDisplayNameAnnotation] != "My Service" {
+		t.Fatalf("display-name annotation = %v, want My Service", annotations[orchestration.BrainDisplayNameAnnotation])
+	}
+
+	patch, err = templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"metadata":{"annotations":{"brain.io/display-name":null}}}`), testTime())
+	if err != nil {
+		t.Fatalf("templateAPUpdateMergePatch returned error: %v", err)
+	}
+	if err := json.Unmarshal(patch, &got); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	annotations = got["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	value, ok := annotations[orchestration.BrainDisplayNameAnnotation]
+	if !ok || value != nil {
+		t.Fatalf("display-name annotation = %v (present %v), want explicit null delete", value, ok)
+	}
+}
+
 func TestTemplateAPUpdatePatchBuildsPauseMergePatch(t *testing.T) {
 	replicas := int32(2)
 	deployment := &appsv1.Deployment{

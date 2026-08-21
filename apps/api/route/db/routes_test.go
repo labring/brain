@@ -332,6 +332,47 @@ func TestDBUpdatePlanFromProductPatchKeepsPublicAccessOutOfClusterAndOpsRequests
 	}
 }
 
+func TestDBUpdatePlanForwardsDisplayNameAnnotation(t *testing.T) {
+	cluster := []byte(`{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind": "Cluster",
+		"metadata": {"name": "pg", "labels": {"brain.io/db-engine": "postgresql"}},
+		"spec": {"componentSpecs": [{"name": "postgresql", "replicas": 1}]}
+	}`)
+
+	plan, err := dbUpdatePlanFromProductPatch([]byte(`{"metadata":{"annotations":{"brain.io/display-name":" 订单库 "}}}`), cluster, "pg", "ns-a", testingNow())
+	if err != nil {
+		t.Fatalf("dbUpdatePlanFromProductPatch returned error: %v", err)
+	}
+	if !plan.HasClusterPatch {
+		t.Fatal("expected Cluster patch for display-name product patch")
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(plan.ClusterPatch, &out); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	annotations := out["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	if got := annotations[orchestration.BrainDisplayNameAnnotation]; got != "订单库" {
+		t.Fatalf("display-name annotation = %v, want 订单库", got)
+	}
+
+	plan, err = dbUpdatePlanFromProductPatch([]byte(`{"metadata":{"annotations":{"brain.io/display-name":null}}}`), cluster, "pg", "ns-a", testingNow())
+	if err != nil {
+		t.Fatalf("dbUpdatePlanFromProductPatch returned error: %v", err)
+	}
+	if !plan.HasClusterPatch {
+		t.Fatal("expected Cluster patch for display-name clear")
+	}
+	if err := json.Unmarshal(plan.ClusterPatch, &out); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	annotations = out["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	value, ok := annotations[orchestration.BrainDisplayNameAnnotation]
+	if !ok || value != nil {
+		t.Fatalf("display-name annotation = %v (present %v), want explicit null delete", value, ok)
+	}
+}
+
 func TestDBUpdatePlanFromProductPatchRejectsUnsupportedProductFields(t *testing.T) {
 	cluster := []byte(`{
 		"apiVersion": "apps.kubeblocks.io/v1alpha1",
