@@ -53,7 +53,9 @@ let activeLease: TestLease | null = null;
 let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
 let appendCalls: UIMessage[] = [];
 let connectionAvailable = true;
-let consumeCalls = 0;
+let denyReservation: (() => void) | null = null;
+let releaseCalls = 0;
+let reserveCalls = 0;
 let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
 let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
 let judgmentCalls: {
@@ -237,12 +239,33 @@ mock.module("@/features/billing/server/free-trial-judgment", () => ({
   },
 }));
 mock.module("@/features/chat/persistence/free-tier", () => ({
-  consumeFreeTurnIfAvailable: () => {
-    consumeCalls += 1;
-    return Promise.resolve(true);
-  },
   getFreeTierSnapshot: () => Promise.resolve({ ...freeTierSnapshot }),
   isSystemOpenAiConfigured: () => true,
+  releaseReservedFreeTurn: () => {
+    releaseCalls += 1;
+    freeTierSnapshot = {
+      ...freeTierSnapshot,
+      remaining: freeTierSnapshot.remaining + 1,
+      used: freeTierSnapshot.used - 1,
+    };
+    return Promise.resolve();
+  },
+  reserveFreeTurnIfAvailable: () => {
+    reserveCalls += 1;
+    if (denyReservation != null) {
+      denyReservation();
+      return Promise.resolve(false);
+    }
+    if (freeTierSnapshot.remaining <= 0) {
+      return Promise.resolve(false);
+    }
+    freeTierSnapshot = {
+      ...freeTierSnapshot,
+      remaining: freeTierSnapshot.remaining - 1,
+      used: freeTierSnapshot.used + 1,
+    };
+    return Promise.resolve(true);
+  },
 }));
 mock.module("@/features/chat/persistence/service", () => ({
   adoptLegacyAssistantConversationsForActor: (actor: {
@@ -627,7 +650,9 @@ beforeEach(() => {
   adoptionCalls = [];
   appendCalls = [];
   connectionAvailable = true;
-  consumeCalls = 0;
+  denyReservation = null;
+  releaseCalls = 0;
+  reserveCalls = 0;
   forceReplaceConflict = false;
   freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
   history = [];
@@ -742,7 +767,8 @@ test("accepts and streams a canonical client-tool continuation", async () => {
 
   expect(replaceCalls).toBe(1);
   expect(modelCalls).toBe(1);
-  expect(consumeCalls).toBe(1);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
   expect(titleCalls).toBe(1);
   expect(modelProviderOptions[0]).toEqual({
     openai: { reasoningEffort: "high" },
@@ -854,7 +880,8 @@ test("request abort stops the model and releases the lease", async () => {
     expect(timeoutController.signal.aborted).toBe(false);
     expect(modelAbortSignals[0]?.aborted).toBe(true);
     expect(leaseReleaseCalls).toBe(1);
-    expect(consumeCalls).toBe(0);
+    expect(reserveCalls).toBe(1);
+    expect(releaseCalls).toBe(1);
     expect(titleCalls).toBe(0);
     expect(history.filter((message) => message.role === "assistant")).toEqual(
       []
@@ -888,7 +915,8 @@ test("request abort persists partial text without billing", async () => {
 
     expect(timeoutController.signal.aborted).toBe(false);
     expect(leaseReleaseCalls).toBe(1);
-    expect(consumeCalls).toBe(0);
+    expect(reserveCalls).toBe(1);
+    expect(releaseCalls).toBe(1);
     expect(titleCalls).toBe(0);
     expect(history.at(-1)?.parts).toContainEqual(
       expect.objectContaining({ text: "Recovered response", type: "text" })
@@ -944,7 +972,8 @@ test("keeps an approval retryable when connection preflight fails", async () => 
   expect(response.status).toBe(503);
   expect(replaceCalls).toBe(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([pendingApprovalMessage()]);
 
   connectionAvailable = true;
@@ -964,7 +993,8 @@ test("keeps an approval retryable when toolset preflight fails", async () => {
   expect(response.status).toBe(503);
   expect(replaceCalls).toBe(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([pendingApprovalMessage()]);
 
   toolsetAvailable = true;
@@ -1016,7 +1046,8 @@ test("rejects forged client-tool input before CAS or model execution", async () 
   expect(response.status).toBe(400);
   expect(replaceCalls).toBe(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([pendingNavigationMessage()]);
 });
 
@@ -1027,7 +1058,8 @@ test("rejects a stale or replayed client-tool continuation", async () => {
 
   expect(response.status).toBe(409);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
 });
 
 test("stops before the model when a concurrent continuation wins the CAS", async () => {
@@ -1039,7 +1071,8 @@ test("stops before the model when a concurrent continuation wins the CAS", async
   expect(response.status).toBe(409);
   expect(replaceCalls).toBe(1);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([pendingNavigationMessage()]);
   expect(activeLease).toBeNull();
 });
@@ -1116,13 +1149,15 @@ test("holds the chat lease after continuation CAS until the stream finishes", as
   const competing = await POST(chatRequest(competingUser));
   expect(competing.status).toBe(409);
   expect(history).not.toContainEqual(competingUser);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(2);
+  expect(releaseCalls).toBe(1);
 
   await drain(continuation);
   expect(activeLease).toBeNull();
   expect(leaseReleaseCalls).toBe(1);
   expect(modelCalls).toBe(1);
-  expect(consumeCalls).toBe(1);
+  expect(reserveCalls).toBe(2);
+  expect(releaseCalls).toBe(1);
 });
 
 test("rejects a request when history changes during runtime preflight", async () => {
@@ -1142,7 +1177,8 @@ test("rejects a request when history changes during runtime preflight", async ()
   expect(activeLease).toBeNull();
   expect(leaseReleaseCalls).toBe(1);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
 });
 
 test("recovers an old incomplete client tool before processing a new user turn", async () => {
@@ -1263,7 +1299,8 @@ test("rejects a new user turn when continuation recovery loses the CAS", async (
   expect(replaceCalls).toBe(1);
   expect(appendCalls).toHaveLength(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([
     userMessage("user-original", "open the project"),
     pendingNavigationMessage(),
@@ -1282,7 +1319,8 @@ test("does not persist or bill an empty assistant response on stream error", asy
 
   expect(history).toEqual([userMessage("user-error", "inspect the cluster")]);
   expect(appendCalls).toHaveLength(1);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
   expect(activeLease).toBeNull();
 });
@@ -1302,7 +1340,8 @@ test("closes an interrupted approval with a durable tool error", async () => {
     })
   );
   expect(activeLease).toBeNull();
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
 
   streamMode = "success";
@@ -1312,7 +1351,8 @@ test("closes an interrupted approval with a durable tool error", async () => {
   expect(followUp.status).toBe(200);
   await drain(followUp);
   expect(modelCalls).toBe(2);
-  expect(consumeCalls).toBe(1);
+  expect(reserveCalls).toBe(2);
+  expect(releaseCalls).toBe(1);
 });
 
 test("rejects the reserved stream lease message id", async () => {
@@ -1345,7 +1385,8 @@ test("discards a late response after its lease is stolen", async () => {
   await drain(response);
 
   expect(history).toEqual([user]);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
   expect(activeLease?.token).toBe("replacement-owner");
   expect(leaseReleaseCalls).toBe(0);
@@ -1365,7 +1406,8 @@ test("keeps partial assistant text but does not bill an errored stream", async (
   expect(history[1]?.parts).toContainEqual(
     expect.objectContaining({ text: "Recovered response", type: "text" })
   );
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
 });
 
@@ -1387,7 +1429,8 @@ test("drops partial tool input when an errored stream has durable text", async (
       (part) => "state" in part && part.state === "input-streaming"
     )
   ).toBe(false);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
 });
 
@@ -1413,7 +1456,7 @@ test("refuses a confirmed-blocked trial request with 402 and the full header set
   expect(appendCalls).toHaveLength(0);
   expect(leaseAcquireCalls).toBe(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
 });
 
 test("judges the trial per turn with the verified workspace identity", async () => {
@@ -1443,7 +1486,8 @@ test("a failed judgment with turns remaining serves the turn free (fail-open)", 
   expect(response.headers.get("X-Chat-Free-Remaining")).toBe("4");
   await drain(response);
 
-  expect(consumeCalls).toBe(1);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
 });
 
 test("a failed judgment with the allowance exhausted degrades to user, never 402", async () => {
@@ -1458,7 +1502,7 @@ test("a failed judgment with the allowance exhausted degrades to user, never 402
   expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
   await drain(response);
 
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
 });
 
 test("a non-trial workspace bills user from its first message, allowance untouched", async () => {
@@ -1472,7 +1516,7 @@ test("a non-trial workspace bills user from its first message, allowance untouch
   expect(response.headers.get("X-Chat-Free-Remaining")).toBe("5");
   await drain(response);
 
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
 });
 
 test("the turn spending the last free message already reports blocked", async () => {
@@ -1488,7 +1532,8 @@ test("the turn spending the last free message already reports blocked", async ()
   expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
   await drain(response);
 
-  expect(consumeCalls).toBe(1);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
 });
 
 test("FREE_CHAT_TURNS=0 keeps silent user billing and never judges the trial", async () => {
@@ -1502,5 +1547,73 @@ test("FREE_CHAT_TURNS=0 keeps silent user billing and never judges the trial", a
   await drain(response);
 
   expect(judgmentCalls).toEqual([]);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
+});
+
+test("a lost reservation race on a confirmed trial refuses with 402 before the model", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "trial";
+  denyReservation = () => {
+    // The concurrent winner spent the last turn between snapshot and reserve.
+    freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-race-loser", "one more message"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(await response.json()).toEqual({
+    code: "free_chat_turns_exhausted",
+    error:
+      "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
+  });
+  expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  // Refused before any conversation state mutates or a model runs.
+  expect(history).toEqual([]);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
+});
+
+test("a lost reservation race with an unknown judgment degrades to user billing", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "unknown";
+  denyReservation = () => {
+    freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-race-degraded", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  await drain(response);
+
+  expect(modelCalls).toBe(1);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
+});
+
+test("a stream error on the last free turn rolls the reservation back", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "trial";
+  streamMode = "error";
+
+  const response = await POST(
+    chatRequest(userMessage("user-last-free-error", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  // The optimistic post-turn header is truthful at send time: the turn is
+  // already reserved when the response starts streaming…
+  expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
+  await drain(response);
+
+  // …and the failed stream rolls it back, so the turn stays spendable.
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
+  expect(freeTierSnapshot).toEqual({ limit: 5, remaining: 1, used: 4 });
 });

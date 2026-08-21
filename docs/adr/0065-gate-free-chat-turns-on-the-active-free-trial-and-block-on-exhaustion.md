@@ -14,7 +14,7 @@ Free Chat Turns become a benefit of the Active Free Trial instead of an uncondit
 
 **What ADR-0033 got right survives.** Steady-state `user` billing shows no paid indicator — paying is the ambient baseline on a metered platform — and a deployment with no platform model stays silently `user` from the first turn (its untouched turns unspendable, and never `blocked`).
 
-**The counting model is untouched.** The namespace-shared lifetime counter stands as decided in ADR-0047/0056/0059 (`assistant_entitlements`, namespace key, monotonic, no reset — upstream trials are once per user for life, so no return-and-reset scenario exists), and `FREE_CHAT_TURNS` stays a global env (default 5, `0` disables). The trial gate lives in the judgment layer, never in the table.
+**The counting model is untouched; the spend timing is reserve-then-rollback.** The namespace-shared lifetime counter stands as decided in ADR-0047/0056/0059 (`assistant_entitlements`, namespace key, monotonic, no reset — upstream trials are once per user for life, so no return-and-reset scenario exists), and `FREE_CHAT_TURNS` stays a global env (default 5, `0` disables). The trial gate lives in the judgment layer, never in the table. A `free` turn atomically reserves its count **before** model execution — the pre-flight snapshot is advisory, so concurrent turns race on the counter itself and can never overspend the cap; the loser re-judges on a fresh snapshot (402 on a confirmed trial, `user` otherwise). Every unsuccessful path (preflight failure, stream error, abort, lost lease) returns the reservation, so a failed turn still costs nothing. A crash between reservation and rollback leaks one turn — bounded, and it errs toward the platform, never toward overspending.
 
 ## Considered Options
 
@@ -31,3 +31,4 @@ Free Chat Turns become a benefit of the Active Free Trial instead of an uncondit
 - The Billing Area Plan view renders its free-allowance block under exactly the same predicate — trial only, no PAUSED/DEBT rendering.
 - The crossing toast and its two client code paths are deleted outright.
 - Per-turn judgment adds one in-cluster call per turn and accepts stale-free-turn edge cases within a single in-flight turn (a turn runs to completion under the judgment it started with).
+- The last free turn's `blocked` header is a fact at send time (the turn is already reserved), but a failed stream rolls the reservation back after the header shipped; the chat client refetches the session on stream error as well as on finish, so a rolled-back turn unlocks the composer again.

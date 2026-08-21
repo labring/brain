@@ -15,9 +15,10 @@ import {
   resolveChatOpenAiConnection,
 } from "@/features/chat/ai-proxy/resolve-chat-open-ai-connection";
 import {
-  consumeFreeTurnIfAvailable,
   getFreeTierSnapshot,
   isSystemOpenAiConfigured,
+  releaseReservedFreeTurn,
+  reserveFreeTurnIfAvailable,
 } from "@/features/chat/persistence/free-tier";
 import {
   freeTierPosture,
@@ -84,6 +85,27 @@ function chatBillingHeaders(state: FreeTierState): Record<string, string> {
     "X-Chat-Free-Remaining": String(state.remaining),
     "X-Chat-Free-Limit": String(state.limit),
   };
+}
+
+function freeTurnsExhaustedResponse(state: FreeTierState): Response {
+  return Response.json(
+    {
+      code: "free_chat_turns_exhausted",
+      error:
+        "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
+    } satisfies ChatApiErrorBody,
+    { headers: chatBillingHeaders(state), status: 402 }
+  );
+}
+
+async function releaseReservedFreeTurnQuietly(
+  namespace: string
+): Promise<void> {
+  try {
+    await releaseReservedFreeTurn(namespace);
+  } catch (error) {
+    console.error("[api/chat] release reserved free turn:", error);
+  }
 }
 
 function persistableAssistantResponse(
@@ -468,11 +490,12 @@ function createChatStreamFinishHandler(input: {
 }): UIMessageStreamOnFinishCallback<UIMessage> {
   return async ({ finishReason, isAborted, responseMessage }) => {
     const lease = await input.heartbeat.stop();
-    if (lease == null) {
-      return;
-    }
+    let freeTurnSpent = false;
     let leaseReleased = false;
     try {
+      if (lease == null) {
+        return;
+      }
       const interrupted =
         isAborted || finishReason == null || finishReason === "error";
       const persistable = persistableAssistantResponse(
@@ -500,17 +523,7 @@ function createChatStreamFinishHandler(input: {
       if (interrupted) {
         return;
       }
-      if (input.billing === "free") {
-        const consumed = await consumeFreeTurnIfAvailable(
-          input.owner.namespace
-        );
-        if (!consumed) {
-          console.warn(
-            "[api/chat] free turn not recorded (limit reached concurrently):",
-            input.owner.namespace
-          );
-        }
-      }
+      freeTurnSpent = true;
       await releaseLeaseQuietly(lease);
       leaseReleased = true;
       await maybeAutoTitleThread({
@@ -523,7 +536,13 @@ function createChatStreamFinishHandler(input: {
     } catch (error) {
       console.error("[api/chat] persist assistant turn:", error);
     } finally {
-      if (!leaseReleased) {
+      // A `free` turn arrives here holding its pre-stream reservation; only
+      // a persisted, uninterrupted turn keeps it — an empty or errored
+      // stream, an abort, or a lost lease rolls it back.
+      if (input.billing === "free" && !freeTurnSpent) {
+        await releaseReservedFreeTurnQuietly(input.owner.namespace);
+      }
+      if (lease != null && !leaseReleased) {
         await releaseLeaseQuietly(lease);
       }
     }
@@ -564,6 +583,82 @@ async function cleanUpFailedChatPipeline(input: {
   }
 }
 
+/**
+ * Chat Billing Posture for this turn (ADR-0065), with the free turn already
+ * reserved on the counter when it returns `billing: "free"`. Reserving before
+ * any model execution makes concurrent turns race on the counter itself, so
+ * the allowance can never be overspent; the caller owns rolling the
+ * reservation back on every unsuccessful path.
+ */
+async function settleTurnBillingPosture(input: {
+  accountUserId: string | null;
+  cookieHeader: string | null;
+  owner: AssistantConversationOwner;
+}): Promise<
+  | { response: Response; billing?: never }
+  | {
+      billing: ChatBillingMode;
+      /** Post-turn posture for the `X-Chat-*` response headers. */
+      clientFreeTier: FreeTierState;
+      reserved: boolean;
+      response?: never;
+    }
+> {
+  const { owner } = input;
+  const freeTier = await getFreeTierSnapshot(owner.namespace);
+  const systemModelConfigured = isSystemOpenAiConfigured();
+  const trial =
+    freeTier.limit > 0 && systemModelConfigured
+      ? await judgeActiveFreeTrialForWorkspace({
+          cookieHeader: input.cookieHeader,
+          userId: input.accountUserId,
+          userUid: owner.userUid,
+          workspace: owner.namespace,
+        })
+      : "not-trial";
+  const posture = freeTierPosture(freeTier, systemModelConfigured, trial);
+  if (posture.billing === "blocked") {
+    return { response: freeTurnsExhaustedResponse(posture) };
+  }
+  if (posture.billing !== "free") {
+    return {
+      billing: posture.billing,
+      clientFreeTier: posture,
+      reserved: false,
+    };
+  }
+
+  if (await reserveFreeTurnIfAvailable(owner.namespace)) {
+    // Headers carry the POST-turn posture: the turn spending the last free
+    // turn already reports `blocked`, so the pane flips the moment that
+    // message finishes streaming instead of one composed message later. With
+    // the turn reserved up front, that posture is a fact, not a prediction.
+    return {
+      billing: "free",
+      clientFreeTier: freeTierPostureAfterTurn(
+        freeTier,
+        systemModelConfigured,
+        trial
+      ),
+      reserved: true,
+    };
+  }
+
+  // Lost the counter race to a concurrent turn: re-judge on a fresh
+  // snapshot. A confirmed trial is now exhausted (402); otherwise the turn
+  // degrades to `user`, matching the exhausted fail-open case.
+  const contested = await getFreeTierSnapshot(owner.namespace);
+  const contestedPosture = freeTierPosture(
+    contested,
+    systemModelConfigured,
+    trial
+  );
+  if (contestedPosture.billing === "blocked") {
+    return { response: freeTurnsExhaustedResponse(contestedPosture) };
+  }
+  return { billing: "user", clientFreeTier: contestedPosture, reserved: false };
+}
+
 async function runChatPipeline(input: {
   actor: VerifiedAssistantConversationActor;
   /** Forwards the billing dev-mock scenario cookie in dev/demo builds. */
@@ -579,33 +674,21 @@ async function runChatPipeline(input: {
   let ownedLease: ChatStreamLease | null = null;
   let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
+  let ownedFreeTurnReservation = false;
   try {
     // The Active Free Trial is judged live on every turn (ADR-0065). A
     // confirmed-blocked request is refused before any conversation state
     // mutates, so a stale tab or scripted client cannot bypass the panel.
-    const freeTier = await getFreeTierSnapshot(owner.namespace);
-    const systemModelConfigured = isSystemOpenAiConfigured();
-    const trial =
-      freeTier.limit > 0 && systemModelConfigured
-        ? await judgeActiveFreeTrialForWorkspace({
-            cookieHeader: input.cookieHeader,
-            userId: actor.accountUserId ?? null,
-            userUid: owner.userUid,
-            workspace: owner.namespace,
-          })
-        : "not-trial";
-    const posture = freeTierPosture(freeTier, systemModelConfigured, trial);
-    if (posture.billing === "blocked") {
-      return Response.json(
-        {
-          code: "free_chat_turns_exhausted",
-          error:
-            "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
-        } satisfies ChatApiErrorBody,
-        { headers: chatBillingHeaders(posture), status: 402 }
-      );
+    const settled = await settleTurnBillingPosture({
+      accountUserId: actor.accountUserId ?? null,
+      cookieHeader: input.cookieHeader,
+      owner,
+    });
+    if (settled.response != null) {
+      return settled.response;
     }
-    const billing: ChatBillingMode = posture.billing;
+    const { billing, clientFreeTier } = settled;
+    ownedFreeTurnReservation = settled.reserved;
 
     // Adopt before the thread ensure: continuing a legacy crName-keyed
     // conversation must find the re-keyed row instead of refusing its id.
@@ -728,14 +811,6 @@ async function runChatPipeline(input: {
       },
     });
 
-    // Headers carry the POST-turn posture: the turn spending the last free
-    // turn already reports `blocked`, so the pane flips the moment that
-    // message finishes streaming instead of one composed message later.
-    const clientFreeTier = freeTierPostureAfterTurn(
-      freeTier,
-      systemModelConfigured,
-      trial
-    );
     const responseHeaders = chatBillingHeaders(clientFreeTier);
 
     const streamHeartbeat = leaseHeartbeat;
@@ -758,6 +833,9 @@ async function runChatPipeline(input: {
     ownedLease = null;
     leaseHeartbeat = null;
     rollbackAssistant = null;
+    // The finish handler owns the reservation from here: it keeps it on a
+    // billable turn and rolls it back on an unsuccessful one.
+    ownedFreeTurnReservation = false;
     return response;
   } catch (error) {
     if (leaseHeartbeat != null) {
@@ -784,6 +862,12 @@ async function runChatPipeline(input: {
       "Could not handle chat request (DATABASE_URL, schema migrations, or upstream).",
       503
     );
+  } finally {
+    // Covers every exit between reservation and the streaming response —
+    // early refusals (404/409), preflight failures, and thrown errors.
+    if (ownedFreeTurnReservation) {
+      await releaseReservedFreeTurnQuietly(owner.namespace);
+    }
   }
 }
 

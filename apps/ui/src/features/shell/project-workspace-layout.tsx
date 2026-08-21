@@ -534,6 +534,14 @@ function ProjectAssistantChatSession({
     async onFinish() {
       await onAssistantStreamFinished?.();
     },
+    // A failed stream can leave the header-derived posture stale — most
+    // acutely when the last free turn errors: the server rolled its
+    // reservation back, but this pane already applied the optimistic
+    // `blocked` header. Refetching the session restores the authoritative
+    // posture and unlocks the composer.
+    async onError() {
+      await onAssistantStreamFinished?.();
+    },
     async onToolCall({ toolCall }) {
       const submit = addToolOutputRef.current;
       if (submit == null) {
