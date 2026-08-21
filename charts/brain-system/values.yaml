@@ -129,6 +129,11 @@ ui:
     MARKETING_CONSENT_SIGNING_KEY: ""
     GITHUB_APP_ID: ""
     GITHUB_APP_PRIVATE_KEY: ""
+    # Optional. When both are set, GitHub Deploy uses this OpenAI-compatible
+    # endpoint instead of the caller's AI Proxy. Leave empty to reuse
+    # CODEX_GATEWAY_OPENAI_* then SYSTEM_OPENAI_* when that pair is complete.
+    GITHUB_DEPLOY_OPENAI_API_KEY: ""
+    GITHUB_DEPLOY_OPENAI_BASE_URL: ""
     GITHUB_OAUTH_CLIENT_ID: ""
     GITHUB_OAUTH_CLIENT_SECRET: ""
     GITHUB_USER_TOKEN_ENCRYPTION_KEY: ""
