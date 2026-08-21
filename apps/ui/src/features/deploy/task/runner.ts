@@ -89,9 +89,9 @@ import {
 } from "./failure-summary";
 import {
   codexGatewayFailureDetails,
-  DEPLOY_GATEWAY_MODEL,
   type GatewayContext,
   getCodexGatewayContextFromDevboxInfo,
+  resolveDeployGatewayModel,
   runDeployTaskGateway,
 } from "./gateway";
 import type { ManagedDeployResumeMode } from "./gateway-prompt";
@@ -1045,7 +1045,9 @@ export interface CodexGatewayOpenAiCredentials {
 export function buildCodexGatewayEnv(
   credentials?: CodexGatewayOpenAiCredentials
 ): Record<string, string> {
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = {
+    CODEX_GATEWAY_MODEL: resolveDeployGatewayModel(),
+  };
   const apiKey = credentials
     ? credentials.apiKey
     : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_API_KEY) ??
@@ -1054,17 +1056,12 @@ export function buildCodexGatewayEnv(
     ? credentials.baseUrl
     : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_BASE_URL) ??
       compactEnvValue(process.env.SYSTEM_OPENAI_API_BASE_URL));
-  const model =
-    compactEnvValue(process.env.CODEX_GATEWAY_MODEL) ?? DEPLOY_GATEWAY_MODEL;
 
   if (apiKey != null) {
     env.CODEX_GATEWAY_OPENAI_API_KEY = apiKey;
   }
   if (baseUrl != null) {
     env.CODEX_GATEWAY_OPENAI_BASE_URL = baseUrl;
-  }
-  if (model != null) {
-    env.CODEX_GATEWAY_MODEL = model;
   }
 
   return env;

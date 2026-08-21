@@ -353,6 +353,11 @@ describe("deployment AI Proxy credentials", () => {
     });
   });
 
+  it("falls back to gpt-5.5 when CODEX_GATEWAY_MODEL is unset", () => {
+    delete process.env.CODEX_GATEWAY_MODEL;
+    expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("gpt-5.5");
+  });
+
   it("resumes the recorded Devbox without requesting AI Proxy credentials", async () => {
     const requests: Request[] = [];
     let getCount = 0;
