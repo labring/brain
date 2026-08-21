@@ -42,10 +42,7 @@ test("renderDbDeploymentYaml writes the display name annotation when provided", 
     })
   );
 
-  assert.equal(
-    out.metadata.annotations["brain.io/display-name"],
-    "postgresql"
-  );
+  assert.equal(out.metadata.annotations["brain.io/display-name"], "postgresql");
 
   const unnamed = YAML.parse(
     renderDbDeploymentYaml({

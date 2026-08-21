@@ -2,9 +2,12 @@
 
 import { useAPPublicAddressReadiness } from "@workspace/api/hooks";
 import { Router, Settings2, SquarePen } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo } from "react";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectApTarget } from "@/features/panes/target-identity";
+import { projectRuntimeResourceKey } from "@/features/project-canvas/runtime/resource-facts";
+import { applyResourceDisplayName } from "@/features/resource-display-name/apply-resource-display-name";
+import { resolveApDisplayName } from "@/features/resource-display-name/resource-display-name";
 import { AP_SETTINGS_REPLICA_LIMITS } from "@/features/resource-settings/ap/ap-settings-context";
 import {
   type ApNetwork,
@@ -16,6 +19,7 @@ import { useApWorkloadSettings } from "@/features/resource-settings/ap/hooks/use
 import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
 import { settingsOwnerIdentity } from "@/features/resource-settings/settings-owner-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { ResourceDisplayNameTitle } from "./resource-display-name-title";
 import { SettingsSections } from "./settings-sections";
 import type {
   SettingsProviderProps,
@@ -95,21 +99,26 @@ function publicAddressNetworkOrNull(
 }
 
 function apSettingsModelBase({
+  displayName,
   resolvedView,
   subtitle,
   target,
+  titleContent,
 }: {
+  displayName: string;
   resolvedView: string;
   subtitle: string;
   target: ProjectApTarget;
+  titleContent?: ReactNode;
 }): Omit<SettingsViewModel, "sections"> {
+  const title = displayName || target.name;
   if (resolvedView === AP_SETTINGS_PUBLIC_ADDRESSES_VIEW) {
     return {
       closeAriaLabel: "Close Public Address settings",
       icon: <Router aria-hidden className="size-4 shrink-0 text-blue-400" />,
       resolvedView,
       subtitle: `Container · ${target.namespace}`,
-      title: `${target.name} Public Addresses`,
+      title: `${title} Public Addresses`,
     };
   }
   if (resolvedView === AP_SETTINGS_ENVIRONMENT_VIEW) {
@@ -118,7 +127,7 @@ function apSettingsModelBase({
       icon: <Settings2 aria-hidden className="size-4 shrink-0 text-blue-400" />,
       resolvedView,
       subtitle,
-      title: target.name === "" ? "Environment Variables" : target.name,
+      title: title === "" ? "Environment Variables" : title,
     };
   }
   return {
@@ -126,7 +135,8 @@ function apSettingsModelBase({
     icon: <Settings2 aria-hidden className="size-4 shrink-0 text-blue-400" />,
     resolvedView,
     subtitle,
-    title: target.name === "" ? "AP Settings" : target.name,
+    title: title === "" ? "AP Settings" : title,
+    ...(titleContent == null ? {} : { titleContent }),
   };
 }
 
@@ -299,6 +309,7 @@ interface ApSettingsModelInput {
   baseSubtitle: string;
   canEditAp: boolean;
   display: ApWorkloadSettingsState["display"];
+  displayName: string;
   draftRoutingDomain: string;
   effectiveReadOnly: boolean;
   error: ApWorkloadSettingsState["error"];
@@ -327,6 +338,7 @@ interface ApSettingsModelInput {
     ReturnType<typeof useApSettingsSections>,
     "footer" | "leaveGuard" | "sections"
   >;
+  titleContent?: ReactNode;
 }
 
 function unavailableApSettingsModel(resolvedView: string): SettingsViewModel {
@@ -468,9 +480,11 @@ function buildApSettingsModel(input: ApSettingsModelInput): SettingsViewModel {
   }
 
   const base = apSettingsModelBase({
+    displayName: input.displayName,
     resolvedView,
     subtitle: input.baseSubtitle,
     target: apTarget,
+    titleContent: input.titleContent,
   });
 
   if (apTarget.name.trim() === "" || apTarget.namespace.trim() === "") {
@@ -534,6 +548,7 @@ export function ApSettingsProvider({
     onNetworkChange,
     onResourceQuotasCommit,
     onSettingsDraftCommit,
+    revalidateClaim,
   } = useApWorkloadSettings({
     dbDsnReferenceSources,
     kubeconfig,
@@ -555,6 +570,58 @@ export function ApSettingsProvider({
     image: display.image,
     kind: "Container",
   });
+  const resourceMetadata = asRecord(resource?.metadata);
+  const displayName =
+    apTarget == null
+      ? ""
+      : resolveApDisplayName({
+          annotations: asRecord(resourceMetadata?.annotations),
+          image: display.image,
+          kubernetesName: apTarget.name,
+          labels: asRecord(resourceMetadata?.labels),
+        });
+  const selfResourceKey =
+    apTarget == null
+      ? null
+      : projectRuntimeResourceKey({
+          kind: "AP",
+          name: apTarget.name,
+          namespace: apTarget.namespace,
+        });
+  const hintedDisplayNames = readModelHints?.resourceDisplayNames;
+  const takenDisplayNames = useMemo(
+    () =>
+      (hintedDisplayNames ?? [])
+        .filter((row) => row.key !== selfResourceKey)
+        .map((row) => row.displayName),
+    [hintedDisplayNames, selfResourceKey]
+  );
+  const apName = apTarget?.name ?? "";
+  const apNamespace = apTarget?.namespace ?? "";
+  const onRenameResource = useCallback(
+    async (value: string | null) => {
+      if (apName === "" || apNamespace === "") {
+        return;
+      }
+      await applyResourceDisplayName({
+        kind: "AP",
+        kubeconfig,
+        name: apName,
+        namespace: apNamespace,
+        value,
+      });
+      await Promise.allSettled([revalidateClaim(), onUpdated?.()]);
+    },
+    [apName, apNamespace, kubeconfig, onUpdated, revalidateClaim]
+  );
+  const titleContent =
+    apTarget == null || resolvedView !== AP_SETTINGS_FULL_VIEW ? undefined : (
+      <ResourceDisplayNameTitle
+        displayName={displayName}
+        onRename={canEditAp ? onRenameResource : undefined}
+        takenNames={takenDisplayNames}
+      />
+    );
   const network = publicAddressNetworkOrNull(display.network);
   const { data: publicAddressReadiness } = useAPPublicAddressReadiness({
     enabled: apTarget != null && isApWorkload && network != null,
@@ -628,6 +695,8 @@ export function ApSettingsProvider({
       baseSubtitle,
       canEditAp,
       display,
+      displayName,
+      titleContent,
       draftRoutingDomain,
       effectiveReadOnly,
       error,
@@ -656,6 +725,8 @@ export function ApSettingsProvider({
     apTarget,
     canEditAp,
     display,
+    displayName,
+    titleContent,
     draftRoutingDomain,
     effectiveReadOnly,
     error,
@@ -680,7 +751,14 @@ export function ApSettingsProvider({
     settingsSectionsModel,
   ]);
 
-  const { closeAriaLabel, icon, leaveGuard, subtitle, title } = model;
+  const {
+    closeAriaLabel,
+    icon,
+    leaveGuard,
+    subtitle,
+    title,
+    titleContent: modelTitleContent,
+  } = model;
 
   useEffect(() => {
     onModelChange({
@@ -691,11 +769,13 @@ export function ApSettingsProvider({
       sections: [],
       subtitle,
       title,
+      titleContent: modelTitleContent,
     });
   }, [
     closeAriaLabel,
     icon,
     leaveGuard,
+    modelTitleContent,
     onModelChange,
     resolvedView,
     subtitle,

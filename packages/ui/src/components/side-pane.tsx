@@ -53,6 +53,8 @@ export interface SidePaneProps {
   open?: boolean;
   subtitle?: string;
   title: string;
+  /** Replaces the default title heading (e.g. an inline rename editor); `title` still labels the pane. */
+  titleContent?: ReactNode;
 }
 
 export function SidePane({
@@ -68,6 +70,7 @@ export function SidePane({
   busy,
   subtitle,
   title,
+  titleContent,
 }: SidePaneProps) {
   const motionOpen = useSidePaneMotionOpen(open);
   const glowPhase = useContext(SidePaneGlowPhaseContext);
@@ -160,12 +163,14 @@ export function SidePane({
                     {icon}
                   </span>
                 )}
-                <h2
-                  className="truncate font-semibold text-foreground text-lg leading-none"
-                  title={title}
-                >
-                  {title}
-                </h2>
+                {titleContent ?? (
+                  <h2
+                    className="truncate font-semibold text-foreground text-lg leading-none"
+                    title={title}
+                  >
+                    {title}
+                  </h2>
+                )}
               </div>
               {subtitle == null || subtitle.trim() === "" ? null : (
                 <p className="truncate text-muted-foreground text-sm leading-5">

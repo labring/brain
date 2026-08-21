@@ -736,13 +736,19 @@ export function useProjectCanvasModule({
   );
   const activeSettingsEntry =
     surfaceState.side?.kind === "settings" ? surfaceState.side : null;
+  const resourceDisplayNames = useSyncExternalStore(
+    runtimeStore.subscribeResourceDisplayNames,
+    runtimeStore.selectResourceDisplayNames,
+    runtimeStore.selectResourceDisplayNames
+  );
   const settingsReadModelHints = useMemo<SettingsReadModelHints>(
     () => ({
       ap: {
         dbDsnReferenceSources: apEnvironmentDbReferenceSources,
       },
+      resourceDisplayNames,
     }),
-    [apEnvironmentDbReferenceSources]
+    [apEnvironmentDbReferenceSources, resourceDisplayNames]
   );
   const settingsSessionEvents = useMemo<
     SettingsSessionEvents | undefined

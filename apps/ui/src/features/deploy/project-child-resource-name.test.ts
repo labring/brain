@@ -10,6 +10,7 @@ const POSTGRESQL_DB_NAME = /^postgresql-[a-z]{6}$/;
 const TEMPLATE_NAME_PREFIX = /^memos-[a-z]{6}$/;
 const NORMALIZED_TEMPLATE_NAME =
   /^my-template-name-with-a-very-long-template-identifier-[a-z]{6}$/;
+const MY_APP_IMAGE_NAME = /^my-app-image-[a-z]{6}$/;
 
 test("ap and db names carry the slugified source prefix", () => {
   assert.match(childResourceName("nginx", "ap"), NGINX_AP_NAME);
@@ -20,7 +21,7 @@ test("ap and db names stay DNS-1035 labels for unsafe sources", () => {
   const name = childResourceName("My_App.Image", "ap");
 
   assert.match(name, DNS_1035_LABEL);
-  assert.match(name, /^my-app-image-[a-z]{6}$/);
+  assert.match(name, MY_APP_IMAGE_NAME);
   assert.equal(name.length <= 63, true);
 });
 

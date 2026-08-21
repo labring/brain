@@ -72,7 +72,9 @@ export function derivedApDisplayNameBase(
   return (
     usableDerivedName(templateNameFromLabels(facts.labels)) ??
     usableDerivedName(
-      facts.image === undefined ? undefined : dockerImageNameSegment(facts.image)
+      facts.image === undefined
+        ? undefined
+        : dockerImageNameSegment(facts.image)
     )
   );
 }

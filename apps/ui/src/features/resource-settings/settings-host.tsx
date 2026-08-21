@@ -101,6 +101,7 @@ export function SettingsHost({
                 resolvedView: model.resolvedView,
                 subtitle: model.subtitle,
                 title: model.title,
+                titleContent: model.titleContent,
               };
         if (
           current.key === entryKey &&
@@ -142,6 +143,7 @@ export function SettingsHost({
       onClose={onClose}
       subtitle={model?.subtitle}
       title={model?.title ?? "Settings"}
+      titleContent={model?.titleContent}
     >
       <Provider
         kubeconfig={kubeconfig}

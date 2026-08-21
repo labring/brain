@@ -319,6 +319,56 @@ test("Project Runtime shows the AP's Resource Display Name on its Public Access 
   assert.equal(facts.publicAccessFacts[0]?.ref.name, "nginx-xkqjzw");
 });
 
+test("Project Runtime store exposes the Project's taken Resource Display Names", () => {
+  const store = createProjectRuntimeStore();
+  const commit = (displayNameAnnotation: string) =>
+    store.commitResources({
+      apsData: {
+        items: [
+          {
+            metadata: {
+              annotations: { "brain.io/display-name": displayNameAnnotation },
+              name: "nginx-xkqjzw",
+              namespace: "default",
+            },
+            spec: { input: { image: "nginx:1.27" } },
+            status: { phase: "Running" },
+          },
+        ],
+      },
+      dbsData: {
+        items: [
+          {
+            metadata: { name: "db-mzpqrt", namespace: "default" },
+            spec: { engine: "postgresql" },
+            status: { phase: "Running" },
+          },
+        ],
+      },
+      namespace: "default",
+    });
+
+  commit("My Service");
+  assert.deepEqual(store.selectResourceDisplayNames(), [
+    { displayName: "My Service", key: "AP:default:nginx-xkqjzw" },
+    { displayName: "postgresql", key: "DB:default:db-mzpqrt" },
+  ]);
+
+  const before = store.selectResourceDisplayNames();
+  let notifications = 0;
+  store.subscribeResourceDisplayNames(() => {
+    notifications += 1;
+  });
+
+  commit("My Service");
+  assert.equal(store.selectResourceDisplayNames(), before);
+  assert.equal(notifications, 0);
+
+  commit("Renamed");
+  assert.equal(notifications, 1);
+  assert.equal(store.selectResourceDisplayNames()[0]?.displayName, "Renamed");
+});
+
 test("Project Runtime ignores old template-native workload facts", () => {
   const facts = projectRuntimeFactsFromResources({ namespace: "ns-admin" });
 
