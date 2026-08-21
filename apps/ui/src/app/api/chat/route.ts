@@ -54,7 +54,10 @@ import {
   type ChatStreamLeaseHeartbeat,
   startChatStreamLeaseHeartbeat,
 } from "@/features/chat/runtime/chat-stream-lease-heartbeat";
-import { jsonError } from "@/features/chat/runtime/errors";
+import {
+  type ChatApiErrorBody,
+  jsonError,
+} from "@/features/chat/runtime/errors";
 import { createInjectToolDurationStreamTransform } from "@/features/chat/runtime/inject-tool-duration-stream";
 import {
   CHAT_MAX_STEPS,
@@ -598,7 +601,7 @@ async function runChatPipeline(input: {
           code: "free_chat_turns_exhausted",
           error:
             "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
-        },
+        } satisfies ChatApiErrorBody,
         { headers: chatBillingHeaders(posture), status: 402 }
       );
     }

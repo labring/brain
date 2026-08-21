@@ -3,7 +3,6 @@ import type { AppTokenVerificationConfig } from "@/lib/app-token";
 import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
 import {
   authorizePersonalResourceRequest,
-  jsonError,
   supersededBindingResponse,
 } from "@/lib/personal-resource-http";
 import type { VerifyKubeconfigNamespace } from "@/lib/request-kubeconfig-auth";
@@ -16,6 +15,7 @@ import {
   normalizeAssistantNamespace,
   type VerifiedAssistantConversationActor,
 } from "../persistence/types";
+import { jsonError } from "./errors";
 
 export interface AssistantConversationHandlerDependencies {
   /**
@@ -54,11 +54,11 @@ export interface AssistantConversationHandlerDependencies {
 }
 
 function conversationNotFound(): Response {
-  return jsonError({
-    code: "assistant_conversation_not_found",
-    message: "Assistant conversation not found.",
-    status: 404,
-  });
+  return jsonError(
+    "assistant_conversation_not_found",
+    "Assistant conversation not found.",
+    404
+  );
 }
 
 export function createAssistantConversationHandlers(
@@ -85,11 +85,11 @@ export function createAssistantConversationHandlers(
     messagesGet: async (request: Request): Promise<Response> => {
       const chatId = new URL(request.url).searchParams.get("chatId")?.trim();
       if (!chatId) {
-        return jsonError({
-          code: "invalid_request",
-          message: "chatId query parameter required",
-          status: 400,
-        });
+        return jsonError(
+          "invalid_request",
+          "chatId query parameter required",
+          400
+        );
       }
       const authorization = await authorize(request);
       if (!authorization.ok) {
@@ -110,11 +110,11 @@ export function createAssistantConversationHandlers(
           return superseded;
         }
         console.error("[api/chat/messages] persistence unavailable");
-        return jsonError({
-          code: "assistant_chat_unavailable",
-          message: "Assistant chat persistence is unavailable.",
-          status: 503,
-        });
+        return jsonError(
+          "assistant_chat_unavailable",
+          "Assistant chat persistence is unavailable.",
+          503
+        );
       }
     },
     freeTurns: async (request: Request): Promise<Response> => {
@@ -132,12 +132,11 @@ export function createAssistantConversationHandlers(
           return superseded;
         }
         console.error("[api/chat/free-turns] persistence unavailable");
-        return jsonError({
-          code: "assistant_chat_unavailable",
-          message:
-            "Could not load free assistant message usage (database / DATABASE_URL).",
-          status: 503,
-        });
+        return jsonError(
+          "assistant_chat_unavailable",
+          "Could not load free assistant message usage (database / DATABASE_URL).",
+          503
+        );
       }
     },
     session: async (request: Request): Promise<Response> => {
@@ -163,12 +162,11 @@ export function createAssistantConversationHandlers(
           return superseded;
         }
         console.error("[api/chat/session] persistence unavailable");
-        return jsonError({
-          code: "assistant_chat_unavailable",
-          message:
-            "Could not load assistant session (database / DATABASE_URL).",
-          status: 503,
-        });
+        return jsonError(
+          "assistant_chat_unavailable",
+          "Could not load assistant session (database / DATABASE_URL).",
+          503
+        );
       }
     },
     threads: async (request: Request): Promise<Response> => {
@@ -187,12 +185,11 @@ export function createAssistantConversationHandlers(
           return superseded;
         }
         console.error("[api/chat/threads] persistence unavailable");
-        return jsonError({
-          code: "assistant_chat_unavailable",
-          message:
-            "Assistant chat persistence is unavailable (check DATABASE_URL).",
-          status: 503,
-        });
+        return jsonError(
+          "assistant_chat_unavailable",
+          "Assistant chat persistence is unavailable (check DATABASE_URL).",
+          503
+        );
       }
     },
   };
