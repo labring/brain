@@ -107,6 +107,30 @@ function ProjectCanvasLifecycleDialog({
   );
 }
 
+// Lifecycle confirmations show the Kubernetes name next to the display name
+// (ADR 0062) so a renamed or duplicated node cannot be mistaken.
+function lifecycleNameDetail(target: {
+  displayName: string;
+  kind?: string;
+  name: string;
+}): ReactNode {
+  const detail = [
+    target.kind?.trim(),
+    target.name === target.displayName ? undefined : target.name,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  if (!detail) {
+    return null;
+  }
+  return (
+    <>
+      {" "}
+      (<span className="font-mono">{detail}</span>)
+    </>
+  );
+}
+
 function ProjectCanvasApRestartDialog({
   onConfirm,
   onOpenChange,
@@ -119,7 +143,6 @@ function ProjectCanvasApRestartDialog({
   if (target == null) {
     return null;
   }
-  const resolvedKind = target.kind?.trim();
 
   return (
     <ProjectCanvasLifecycleDialog
@@ -131,14 +154,8 @@ function ProjectCanvasApRestartDialog({
     >
       This will restart{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {resolvedKind ? (
-        <>
-          {" "}
-          (<span className="font-mono">{resolvedKind}</span>)
-        </>
-      ) : null}
-      . Running replicas and app traffic may be briefly interrupted while the
-      workload rolls out.
+      {lifecycleNameDetail(target)}. Running replicas and app traffic may be
+      briefly interrupted while the workload rolls out.
     </ProjectCanvasLifecycleDialog>
   );
 }
@@ -155,7 +172,6 @@ function ProjectCanvasApStopDialog({
   if (target == null) {
     return null;
   }
-  const resolvedKind = target.kind?.trim();
 
   return (
     <ProjectCanvasLifecycleDialog
@@ -167,14 +183,8 @@ function ProjectCanvasApStopDialog({
     >
       This will stop{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {resolvedKind ? (
-        <>
-          {" "}
-          (<span className="font-mono">{resolvedKind}</span>)
-        </>
-      ) : null}
-      . Running replicas and app traffic may be interrupted until it is started
-      again.
+      {lifecycleNameDetail(target)}. Running replicas and app traffic may be
+      interrupted until it is started again.
     </ProjectCanvasLifecycleDialog>
   );
 }
@@ -201,9 +211,9 @@ function ProjectCanvasDbRestartDialog({
       title="Restart DB Service?"
     >
       This will restart{" "}
-      <span className="font-medium text-foreground">{target.displayName}</span>.
-      Database connections may be briefly interrupted while the DB Service
-      restarts.
+      <span className="font-medium text-foreground">{target.displayName}</span>
+      {lifecycleNameDetail(target)}. Database connections may be briefly
+      interrupted while the DB Service restarts.
     </ProjectCanvasLifecycleDialog>
   );
 }
@@ -230,8 +240,9 @@ function ProjectCanvasDbStopDialog({
       title="Stop DB Service?"
     >
       This will stop{" "}
-      <span className="font-medium text-foreground">{target.displayName}</span>.
-      Database connections will be unavailable until it is started again.
+      <span className="font-medium text-foreground">{target.displayName}</span>
+      {lifecycleNameDetail(target)}. Database connections will be unavailable
+      until it is started again.
     </ProjectCanvasLifecycleDialog>
   );
 }

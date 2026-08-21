@@ -84,7 +84,7 @@ export function DatabaseLogsPane({
       icon={<FileText aria-hidden className="size-4 shrink-0" />}
       onClose={onClose}
       open={open}
-      subtitle={states.name}
+      subtitle={states.displayName ?? states.name}
       title="Logs"
     >
       {error === undefined ? null : (

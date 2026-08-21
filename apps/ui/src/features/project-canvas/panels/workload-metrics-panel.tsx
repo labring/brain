@@ -56,7 +56,7 @@ export const WorkloadMetricsPane = memo(function WorkloadMetricsPane({
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const ns = useAtomValue(namespaceAtom).trim();
   const states = containerStatesFromNode(node);
-  const name = states?.name ?? "Workload";
+  const name = states?.displayName ?? states?.name ?? "Workload";
 
   const target = useMemo(
     () => workloadMetricsSeriesTarget(node, ns),

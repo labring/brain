@@ -202,7 +202,9 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const name = states?.name ?? "";
   const ns = states?.namespace?.trim() || namespaceFallback;
   const workloadKind = workloadClaimKindFromStates(states);
-  const title = name === "" ? "Deployments" : `${name} Deployments`;
+  const displayTitleName = states?.displayName ?? name;
+  const title =
+    displayTitleName === "" ? "Deployments" : `${displayTitleName} Deployments`;
 
   const claim = useBrainProductResource({
     kind: workloadKind,

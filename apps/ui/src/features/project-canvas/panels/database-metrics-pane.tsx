@@ -162,7 +162,7 @@ export function DatabaseMetricsPane({
   const cpuSeries = metricsData.cpu ?? [];
   const memorySeries = metricsData.memory ?? [];
   const storageSeries = metricsData.storage ?? [];
-  const title = `${states.name} Metrics`;
+  const title = `${states.displayName ?? states.name} Metrics`;
   const subtitle = `${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""} · Last 60 minutes`;
 
   return (

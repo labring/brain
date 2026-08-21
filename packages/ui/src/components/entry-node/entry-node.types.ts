@@ -5,6 +5,8 @@ import type {
 import type { ReactNode } from "react";
 
 export interface EntryNodeStates {
+  /** Human-facing Resource Display Name; falls back to `name` when absent. */
+  displayName?: string;
   name: string;
 }
 

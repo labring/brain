@@ -112,6 +112,7 @@ export function useCanvasDatabaseNodeActions({
     });
     const mutableWorkload =
       mutationDisabledReason === undefined ? workload : null;
+    const displayName = model.states.displayName ?? (model.states.name || name);
     const connections = resolveDatabasePublicConnections(
       model.connections,
       activity.publicAccessPendingTarget
@@ -131,11 +132,11 @@ export function useCanvasDatabaseNodeActions({
                 }),
               {
                 loading: nextEnabled
-                  ? `Enabling public access for "${name}"...`
-                  : `Disabling public access for "${name}"...`,
+                  ? `Enabling public access for "${displayName}"...`
+                  : `Disabling public access for "${displayName}"...`,
                 success: nextEnabled
-                  ? `Enabled public access for "${name}"`
-                  : `Disabled public access for "${name}"`,
+                  ? `Enabled public access for "${displayName}"`
+                  : `Disabled public access for "${displayName}"`,
               },
               {
                 onSettled: () =>
@@ -151,7 +152,6 @@ export function useCanvasDatabaseNodeActions({
       loading,
       onClick: () => commands.runResourceAction(mutation, copy),
     });
-    const displayName = model.states.name || name;
     const lifecycleActions =
       mutableWorkload == null
         ? unavailableDatabaseLifecycleActions(mutationDisabledReason)

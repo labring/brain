@@ -135,6 +135,11 @@ function ProjectCanvasApDeleteDialog({
     return null;
   }
   const resolvedKind = target.kind?.trim();
+  // Destructive confirmations show the Kubernetes name next to the display
+  // name (ADR 0062) so a renamed or duplicated node cannot be mistaken.
+  const detail = [resolvedKind, kubernetesNameDetail(target)]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <ProjectCanvasDeleteDialog
@@ -147,15 +152,22 @@ function ProjectCanvasApDeleteDialog({
     >
       This will delete{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {resolvedKind ? (
+      {detail ? (
         <>
           {" "}
-          (<span className="font-mono">{resolvedKind}</span>)
+          (<span className="font-mono">{detail}</span>)
         </>
       ) : null}{" "}
       from the project.
     </ProjectCanvasDeleteDialog>
   );
+}
+
+function kubernetesNameDetail(target: {
+  displayName: string;
+  name: string;
+}): string | undefined {
+  return target.name === target.displayName ? undefined : target.name;
 }
 
 function ProjectCanvasDbDeleteDialog({
@@ -181,7 +193,13 @@ function ProjectCanvasDbDeleteDialog({
       verificationText={target.displayName}
     >
       This will delete{" "}
-      <span className="font-medium text-foreground">{target.displayName}</span>{" "}
+      <span className="font-medium text-foreground">{target.displayName}</span>
+      {kubernetesNameDetail(target) ? (
+        <>
+          {" "}
+          (<span className="font-mono">{kubernetesNameDetail(target)}</span>)
+        </>
+      ) : null}{" "}
       from the project. DB resources and stored data may be removed depending on
       the termination policy.
     </ProjectCanvasDeleteDialog>

@@ -6,6 +6,10 @@ import {
   platformAddressIdsFromRows,
 } from "@/features/project-canvas/platform-addresses";
 import {
+  resolveApDisplayName,
+  resolveDbDisplayName,
+} from "@/features/resource-display-name/resource-display-name";
+import {
   readApImage,
   readApIsPaused,
   readApReplicas,
@@ -194,6 +198,23 @@ function metadataLabels(
   return labels === undefined ? undefined : { ...labels };
 }
 
+function metadataAnnotations(
+  resource: unknown
+): Record<string, unknown> | undefined {
+  return asRecord(metadataRecord(resource).annotations);
+}
+
+/** Resource Display Name for an AP resource (ADR 0062 resolution chain). */
+function apDisplayName(ap: unknown, kubernetesName: string): string {
+  const spec = asRecord(asRecord(ap)?.spec) ?? {};
+  return resolveApDisplayName({
+    annotations: metadataAnnotations(ap),
+    image: readApImage(spec),
+    kubernetesName,
+    labels: metadataLabels(ap),
+  });
+}
+
 export function projectRuntimeResourceKey(
   ref: Pick<CanvasLayoutResourceRef, "kind" | "name" | "namespace">
 ): ProjectRuntimeFactKey {
@@ -308,7 +329,12 @@ function dbFactFromResource(
     ...(metadataDeletionTimestamp(db) === undefined
       ? {}
       : { deletionTimestamp: metadataDeletionTimestamp(db) }),
-    displayName: name,
+    displayName: resolveDbDisplayName({
+      annotations: metadataAnnotations(db),
+      engine: engineKey,
+      kubernetesName: name,
+      labels,
+    }),
     engine: {
       displayName: displayEngineFromKey(engineKey),
       ...(engineKey === undefined ? {} : { key: engineKey }),
@@ -580,7 +606,8 @@ function publicAccessFactFromAp(
   return {
     ...(accessDomain === undefined ? {} : { accessDomain }),
     apRef,
-    displayName: apName,
+    // A Public Access node never owns a name — it shows its AP's (ADR 0062).
+    displayName: apDisplayName(ap, apName),
     key: projectRuntimeResourceKey(ref),
     ...(metadataUid(ap) === undefined ? {} : { observedUid: metadataUid(ap) }),
     ref,
@@ -624,7 +651,7 @@ function apFactFromResource(
   const ref: ApFact["ref"] = { kind: "AP", name, namespace };
   const replicaSummary = apReplicaSummary(ap, spec);
   return {
-    displayName: name,
+    displayName: apDisplayName(ap, name),
     key: projectRuntimeResourceKey(ref),
     ...(metadataUid(ap) === undefined ? {} : { observedUid: metadataUid(ap) }),
     ref,

@@ -36,7 +36,9 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
   const ns = useAtomValue(namespaceAtom).trim();
   const states = containerStatesFromNode(node);
   const name =
-    states?.name === "" || states?.name == null ? "Logs" : states.name;
+    states?.name === "" || states?.name == null
+      ? "Logs"
+      : (states.displayName ?? states.name);
   const [logWindow, setLogWindow] = useState<LogWindow>(
     RESOURCE_LOGS_DEFAULT_WINDOW
   );

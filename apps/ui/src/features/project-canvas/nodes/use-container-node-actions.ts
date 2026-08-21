@@ -90,7 +90,7 @@ export function useCanvasContainerNodeActions({
     });
 
     const ref = lifecycleWorkload ?? { name: states.name, namespace: ns };
-    const displayName = states.name;
+    const displayName = states.displayName ?? states.name;
     const lifecycleActions =
       lifecycleWorkload == null
         ? unavailableContainerLifecycleActions(lifecycleDisabledReason)

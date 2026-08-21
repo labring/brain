@@ -148,7 +148,7 @@ export function MainActionSurface({
       icon={<Database aria-hidden className="size-4" strokeWidth={2} />}
       onClose={onClose}
       open={open}
-      subtitle={states?.name}
+      subtitle={states?.displayName ?? states?.name}
       title="DB Access"
     >
       {model == null ? null : (

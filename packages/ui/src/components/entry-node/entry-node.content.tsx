@@ -26,7 +26,7 @@ function useEntryNodeAccessDomain() {
     state: { accessDomain, states },
   } = useEntryNode();
 
-  return getAccessDomain(states.name, accessDomain);
+  return getAccessDomain(states.displayName ?? states.name, accessDomain);
 }
 
 function useEntryNodeResolvedStatus() {

@@ -157,6 +157,7 @@ export function ContainerNodeHeaderContent({
     state: { states },
   } = useContainerNode();
   const subtitle = formatContainerSubtitle(states.kind);
+  const title = states.displayName ?? states.name;
 
   return (
     <div className={cn("flex min-w-0 flex-1 items-center gap-1.5", className)}>
@@ -170,9 +171,9 @@ export function ContainerNodeHeaderContent({
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span
             className="min-w-0 truncate font-normal text-sm text-zinc-50 leading-5"
-            title={states.name}
+            title={title}
           >
-            {states.name}
+            {title}
           </span>
           <span
             className="min-w-0 truncate font-normal text-muted-foreground text-xs leading-4"
