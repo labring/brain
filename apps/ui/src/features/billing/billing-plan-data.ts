@@ -1,6 +1,8 @@
 import { Quantity } from "@workspace/shared";
 import { z } from "zod";
 
+import { isActiveFreeTrialSubscription } from "@/lib/account-service/free-trial-core";
+
 import {
   type BillingCredentials,
   type BillingFetch,
@@ -81,6 +83,12 @@ export interface BillingPlanSnapshot {
     currentPeriodEndAt: string;
     invoiceId: string | null;
     invoicePaymentUrl: string | null;
+    /**
+     * Active Free Trial (ADR-0065): Free plan in normal standing. The Plan
+     * view's free-allowance card renders under exactly this predicate —
+     * paid, PAYG, PAUSED, and DEBT Free never render it.
+     */
+    isActiveFreeTrial: boolean;
     isPayg: boolean;
     lifecycle: SubscriptionLifecycle;
     payMethod: "balance" | "stripe";
@@ -570,6 +578,11 @@ export async function loadBillingPlanSnapshot(
       currentPeriodEndAt: subscription.CurrentPeriodEndAt,
       invoiceId: subscription.InvoiceInfo?.ID ?? null,
       invoicePaymentUrl: subscription.InvoiceInfo?.PaymentUrl ?? null,
+      isActiveFreeTrial: isActiveFreeTrialSubscription({
+        planName: subscription.PlanName,
+        status: subscription.Status,
+        type: subscription.type ?? "",
+      }),
       isPayg: subscription.type === "PAYG",
       lifecycle,
       payMethod: normalizedPayMethod(subscription.PayMethod),

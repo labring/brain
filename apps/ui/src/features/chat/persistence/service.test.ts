@@ -46,8 +46,6 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
   } satisfies ServiceRepository;
   const service = createAssistantConversationService({
     generateChatId: () => "generated-chat",
-    getFreeChatTurns: () => Promise.resolve({ limit: 10, remaining: 10 }),
-    isSystemModelConfigured: () => true,
     placeholderTitle: () => "Chat",
     repository,
     titleThread: () => Promise.resolve("Generated title"),
@@ -65,56 +63,6 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
   assert.equal(await service.ensureThread(draft.chatId, aliceActor), true);
   assert.equal(await service.ensureThread(draft.chatId, bobActor), false);
   assert.deepEqual(owners.get(draft.chatId), alice);
-});
-
-test("Free Chat Turns remain a namespace allowance instead of an actor allowance", async () => {
-  const freeTierKeys: string[] = [];
-  const repository = {
-    ensureThreadForOwner: () => Promise.resolve(true),
-    selectMessagesByOwner: () => Promise.resolve([]),
-    selectThreadByOwner: () => Promise.resolve(null),
-    selectThreadsByOwner: (owner) =>
-      Promise.resolve([
-        {
-          createdAt: new Date("2026-07-21T00:00:00.000Z"),
-          id: `${owner.userUid}-chat`,
-          namespace: owner.namespace,
-          title: "Chat",
-          titleAiGenerated: false,
-          updatedAt: new Date("2026-07-21T00:00:00.000Z"),
-          workspaceActor: owner.userUid,
-        },
-      ]),
-    updateThreadAiTitleOnceForOwner: () => Promise.resolve(false),
-  } satisfies ServiceRepository;
-  const service = createAssistantConversationService({
-    generateChatId: () => "generated-chat",
-    getFreeChatTurns: (namespace) => {
-      freeTierKeys.push(namespace);
-      return Promise.resolve({ limit: 10, remaining: 6 });
-    },
-    isSystemModelConfigured: () => true,
-    placeholderTitle: () => "Chat",
-    repository,
-    titleThread: () => Promise.resolve("Generated title"),
-  });
-
-  const alice = await service.bootstrap({
-    namespace: "shared",
-    userUid: "alice-cr",
-  });
-  const bob = await service.bootstrap({
-    namespace: "shared",
-    userUid: "bob-cr",
-  });
-
-  assert.deepEqual(freeTierKeys, ["shared", "shared"]);
-  assert.deepEqual(alice.freeTier, bob.freeTier);
-  assert.deepEqual(alice.freeTier, {
-    billing: "free",
-    limit: 10,
-    remaining: 6,
-  });
 });
 
 test("automatic titling cannot read or rename another actor's conversation", async () => {
@@ -156,8 +104,6 @@ test("automatic titling cannot read or rename another actor's conversation", asy
   } satisfies ServiceRepository;
   const service = createAssistantConversationService({
     generateChatId: () => "generated-chat",
-    getFreeChatTurns: () => Promise.resolve({ limit: 10, remaining: 10 }),
-    isSystemModelConfigured: () => true,
     placeholderTitle: () => "Chat",
     repository,
     titleThread: (input) => {

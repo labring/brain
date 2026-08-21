@@ -2,7 +2,6 @@ import "server-only";
 
 import { generateId, type UIMessage } from "ai";
 
-import { getFreeTierSnapshot, isSystemOpenAiConfigured } from "./free-tier";
 import {
   type AssistantMessagePartsReplacement,
   adoptLegacyThreadsForActor,
@@ -26,8 +25,6 @@ import {
 
 const service = createAssistantConversationService({
   generateChatId: generateId,
-  getFreeChatTurns: getFreeTierSnapshot,
-  isSystemModelConfigured: isSystemOpenAiConfigured,
   placeholderTitle: placeholderThreadTitle,
   repository: assistantConversationRepository,
   titleThread: deriveThreadTitle,

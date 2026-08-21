@@ -60,9 +60,13 @@ export const assistantThreadDTOSchema = z.object({
   updatedAt: z.string(),
 }) satisfies z.ZodType<AssistantThreadDTO>;
 
-/** Read-side snapshot of a namespace's chat billing posture, seeded into the pane on load. */
+/**
+ * Read-side snapshot of a workspace's Chat Billing Posture, seeded into the
+ * pane on load. Computed server-side only (ADR-0065): bootstrap payload and
+ * `X-Chat-*` headers agree; clients render, never derive.
+ */
 export interface FreeTierState {
-  billing: "free" | "user";
+  billing: "blocked" | "free" | "user";
   limit: number;
   remaining: number;
 }

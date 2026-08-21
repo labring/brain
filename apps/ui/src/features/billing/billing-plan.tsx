@@ -4,6 +4,7 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import {
+  type ComponentProps,
   type ReactNode,
   useCallback,
   useEffect,
@@ -20,6 +21,7 @@ import {
 import { loadAiCredits } from "@/features/billing/billing-ai-credits";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
+import { BillingFreeTurnsSection } from "@/features/billing/billing-free-turns-section";
 import {
   BillingPlanChangeDialog,
   type BillingPlanChangeServices,
@@ -48,6 +50,10 @@ import {
   settleSubscriptionChange,
 } from "@/features/billing/billing-subscription-settlement";
 import type { BillingCurrency } from "@/features/billing/config-core";
+import {
+  type FreeChatTurnsUsage,
+  fetchFreeChatTurnsUsage,
+} from "@/features/chat/persistence/client";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -286,6 +292,58 @@ function accountBalanceContent(input: {
   );
 }
 
+/**
+ * The credits slot: the trial's "Free assistant messages" allowance card and
+ * the paid plans' AI Credits section share it, so upgrading naturally swaps
+ * one for the other (ADR-0065). PAYG renders neither.
+ */
+function BillingCreditsSlot({
+  credits,
+  creditsError,
+  creditsLoading,
+  freeTurnsLoading,
+  freeTurnsUsage,
+  snapshot,
+}: {
+  credits: ComponentProps<typeof BillingAiCreditsSection>["credits"];
+  creditsError: unknown;
+  creditsLoading: boolean;
+  freeTurnsLoading: boolean;
+  freeTurnsUsage: FreeChatTurnsUsage | null;
+  snapshot: BillingPlanSnapshot;
+}) {
+  if (snapshot.current.isActiveFreeTrial) {
+    return (
+      <BillingFreeTurnsSection
+        expiresAt={snapshot.current.currentPeriodEndAt}
+        usage={freeTurnsUsage}
+        usageUnavailable={!freeTurnsLoading && freeTurnsUsage == null}
+      />
+    );
+  }
+  if (snapshot.current.isPayg) {
+    return null;
+  }
+  return (
+    <BillingAiCreditsSection
+      credits={credits}
+      error={creditsError}
+      isLoading={creditsLoading}
+      planIncludesCredits={snapshot.current.resources.some(
+        (resource) => resource.label === "AI Credits"
+      )}
+      resetAt={
+        snapshot.current.periodEndVoice === "silent"
+          ? "-"
+          : formatBillingDateTime(snapshot.current.currentPeriodEndAt)
+      }
+      resetLabel={
+        snapshot.current.periodEndVoice === "expiry" ? "Ends:" : "Resets:"
+      }
+    />
+  );
+}
+
 export function BillingPlan({
   currency,
   gpuEnabled,
@@ -343,6 +401,17 @@ export function BillingPlan({
   } = useSWR(
     creditsKey,
     () => loadAiCredits({ appToken, kubeconfig, workspace }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  // The Free-allowance card reads Brain's own chat usage — the Billing
+  // Area's only non-account-service data source (ADR-0065). The fetcher
+  // resolves `null` on failure, which the card renders as quiet degradation.
+  const { data: freeTurnsUsage, isLoading: freeTurnsLoading } = useSWR(
+    credentialsReady && snapshot?.current.isActiveFreeTrial
+      ? (["chat-free-turns", workspace, kubeconfig, appToken] as const)
+      : null,
+    () =>
+      fetchFreeChatTurnsUsage({ appToken, kubeconfig, namespace: workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
   // Read through refs so refreshPlanSnapshot's identity stays stable across
@@ -554,24 +623,14 @@ export function BillingPlan({
       cardManagementPending={cardManagementPending}
       credentials={{ appToken, kubeconfig }}
       credits={
-        snapshot.current.isPayg ? null : (
-          <BillingAiCreditsSection
-            credits={credits}
-            error={creditsError}
-            isLoading={creditsLoading}
-            planIncludesCredits={snapshot.current.resources.some(
-              (resource) => resource.label === "AI Credits"
-            )}
-            resetAt={
-              snapshot.current.periodEndVoice === "silent"
-                ? "-"
-                : formatBillingDateTime(snapshot.current.currentPeriodEndAt)
-            }
-            resetLabel={
-              snapshot.current.periodEndVoice === "expiry" ? "Ends:" : "Resets:"
-            }
-          />
-        )
+        <BillingCreditsSlot
+          credits={credits}
+          creditsError={creditsError}
+          creditsLoading={creditsLoading}
+          freeTurnsLoading={freeTurnsLoading}
+          freeTurnsUsage={freeTurnsUsage ?? null}
+          snapshot={snapshot}
+        />
       }
       currency={currency}
       gpuEnabled={gpuEnabled}

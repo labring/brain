@@ -54,6 +54,13 @@ let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
 let appendCalls: UIMessage[] = [];
 let connectionAvailable = true;
 let consumeCalls = 0;
+let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
+let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
+let judgmentCalls: {
+  userId: string | null;
+  userUid: string;
+  workspace: string;
+}[] = [];
 let forceReplaceConflict = false;
 let history: UIMessage[] = [];
 let heartbeatTick: (() => void) | null = null;
@@ -215,13 +222,26 @@ mock.module("@/features/chat/ai-proxy/resolve-chat-open-ai-connection", () => ({
     return Promise.resolve({ connection: {}, ok: true as const });
   },
 }));
+mock.module("@/features/billing/server/free-trial-judgment", () => ({
+  judgeActiveFreeTrialForWorkspace: (input: {
+    userId: string | null;
+    userUid: string;
+    workspace: string;
+  }) => {
+    judgmentCalls.push({
+      userId: input.userId,
+      userUid: input.userUid,
+      workspace: input.workspace,
+    });
+    return Promise.resolve(trialJudgment);
+  },
+}));
 mock.module("@/features/chat/persistence/free-tier", () => ({
   consumeFreeTurnIfAvailable: () => {
     consumeCalls += 1;
     return Promise.resolve(true);
   },
-  getFreeTierSnapshot: () =>
-    Promise.resolve({ limit: 5, remaining: 5, used: 0 }),
+  getFreeTierSnapshot: () => Promise.resolve({ ...freeTierSnapshot }),
   isSystemOpenAiConfigured: () => true,
 }));
 mock.module("@/features/chat/persistence/service", () => ({
@@ -583,6 +603,7 @@ test("chat POST fails closed with 401 when the app token header is missing", asy
 
   expect(response.status).toBe(401);
   expect(await response.json()).toEqual({
+    code: "app_token_required",
     error: "Authentication is required.",
   });
 });
@@ -608,7 +629,10 @@ beforeEach(() => {
   connectionAvailable = true;
   consumeCalls = 0;
   forceReplaceConflict = false;
+  freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
   history = [];
+  judgmentCalls = [];
+  trialJudgment = "trial";
   heartbeatTick = null;
   leaseAcquireCalls = 0;
   leaseAcquireMutation = null;
@@ -1179,6 +1203,7 @@ test("rejects a new user turn with actionable guidance while approval is pending
 
   expect(response.status).toBe(409);
   expect(await response.json()).toEqual({
+    code: "tool_approval_pending",
     error:
       "A tool approval is pending. Approve or deny it before sending a new message.",
   });
@@ -1195,6 +1220,7 @@ test("rejects unrecoverable incomplete tool history with actionable guidance", a
 
   expect(response.status).toBe(409);
   expect(await response.json()).toEqual({
+    code: "incomplete_tool_history",
     error:
       "This conversation contains an incomplete tool call that cannot be recovered. Start a new chat to continue.",
   });
@@ -1363,4 +1389,118 @@ test("drops partial tool input when an errored stream has durable text", async (
   ).toBe(false);
   expect(consumeCalls).toBe(0);
   expect(titleCalls).toBe(0);
+});
+
+test("refuses a confirmed-blocked trial request with 402 and the full header set", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  trialJudgment = "trial";
+
+  const response = await POST(
+    chatRequest(userMessage("user-blocked", "one more message"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(await response.json()).toEqual({
+    code: "free_chat_turns_exhausted",
+    error:
+      "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
+  });
+  expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
+  // Refused before any conversation state mutates.
+  expect(history).toEqual([]);
+  expect(appendCalls).toHaveLength(0);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(consumeCalls).toBe(0);
+});
+
+test("judges the trial per turn with the verified workspace identity", async () => {
+  const response = await POST(
+    chatRequest(userMessage("user-judged", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(judgmentCalls).toEqual([
+    {
+      userId: null,
+      userUid: `${WORKSPACE_ACTOR}-uid`,
+      workspace: NAMESPACE,
+    },
+  ]);
+});
+
+test("a failed judgment with turns remaining serves the turn free (fail-open)", async () => {
+  trialJudgment = "unknown";
+
+  const response = await POST(
+    chatRequest(userMessage("user-fail-open", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("free");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("4");
+  await drain(response);
+
+  expect(consumeCalls).toBe(1);
+});
+
+test("a failed judgment with the allowance exhausted degrades to user, never 402", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  trialJudgment = "unknown";
+
+  const response = await POST(
+    chatRequest(userMessage("user-degraded", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  await drain(response);
+
+  expect(consumeCalls).toBe(0);
+});
+
+test("a non-trial workspace bills user from its first message, allowance untouched", async () => {
+  trialJudgment = "not-trial";
+
+  const response = await POST(
+    chatRequest(userMessage("user-paid", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("5");
+  await drain(response);
+
+  expect(consumeCalls).toBe(0);
+});
+
+test("the turn spending the last free message already reports blocked", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "trial";
+
+  const response = await POST(
+    chatRequest(userMessage("user-last-free", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
+  await drain(response);
+
+  expect(consumeCalls).toBe(1);
+});
+
+test("FREE_CHAT_TURNS=0 keeps silent user billing and never judges the trial", async () => {
+  freeTierSnapshot = { limit: 0, remaining: 0, used: 0 };
+
+  const response = await POST(
+    chatRequest(userMessage("user-disabled", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  await drain(response);
+
+  expect(judgmentCalls).toEqual([]);
+  expect(consumeCalls).toBe(0);
 });
