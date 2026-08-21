@@ -356,3 +356,45 @@ test("GithubDeployer shows repository load errors after authorization", () => {
   assert.match(html, BAD_CREDENTIALS_RE);
   assert.doesNotMatch(html, AUTH_BUTTON_RE);
 });
+
+test("GithubDeployer auto deploy fires on authorized first paint while template options still load", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let deployCalls = 0;
+  const onDeploy = () => {
+    deployCalls += 1;
+  };
+  const authorizedProps = {
+    actions: { onDeploy, onDeployTemplate: () => undefined },
+    autoDeploy: true,
+    initialRepoUrl: "https://github.com/acme/api",
+    states: {
+      isAuthorized: true,
+      repos: [],
+      templateOptionsLoading: true,
+    },
+  } as const;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <GithubDeployer.Root {...authorizedProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    // The deep-link auto path deliberately skips the "Use existing template?"
+    // dialog: template matching happens inside the deployment task's Devbox
+    // skill, so an authorized first paint deploys immediately even while the
+    // catalog is still loading.
+    assert.equal(deployCalls, 1);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});

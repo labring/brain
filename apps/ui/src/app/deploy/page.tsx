@@ -14,7 +14,9 @@ export default async function DeployPage({
 }) {
   const { autoDeploy, githubRepo, templateForm, templateName } =
     await searchParams;
-  if (githubRepo !== undefined) {
+  // Only a single, non-empty repo value may claim the GitHub deep link; an
+  // empty or repeated `githubRepo` must not steal a parallel template link.
+  if (typeof githubRepo === "string" && githubRepo.trim() !== "") {
     redirect(githubDeployProjectPath(githubRepo, autoDeploy));
   }
   redirect(templateDeployProjectPath(templateName, templateForm));
