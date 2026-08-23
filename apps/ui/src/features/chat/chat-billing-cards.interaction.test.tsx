@@ -45,7 +45,7 @@ test("card arbitration is blocked > error > counter, nothing on user billing", a
 test("counter card keeps identical wording at every remaining count and links to plans", async () => {
   await withTestDom(async (act) => {
     const { ChatBillingCardSlot } = await cardModules();
-    const navigations: number[] = [];
+    const navigations: string[] = [];
     let rendered: ReturnType<typeof render> | undefined;
     try {
       await act(() => {
@@ -53,14 +53,16 @@ test("counter card keeps identical wording at every remaining count and links to
           <ChatBillingCardSlot
             errored={false}
             freeTier={TRIAL_MID}
-            onNavigateToBilling={() => navigations.push(1)}
+            onNavigateToBilling={(destination) => navigations.push(destination)}
           />
         );
       });
       const text = rendered?.container.textContent ?? "";
       assert.ok(text.includes("3 of 5 free trial messages left"));
       assert.ok(
-        rendered?.getByRole("progressbar", { name: "Free trial messages remaining" })
+        rendered?.getByRole("progressbar", {
+          name: "Free trial messages remaining",
+        })
       );
 
       await act(() => {
@@ -68,7 +70,7 @@ test("counter card keeps identical wording at every remaining count and links to
           <ChatBillingCardSlot
             errored={false}
             freeTier={TRIAL_LAST}
-            onNavigateToBilling={() => navigations.push(1)}
+            onNavigateToBilling={(destination) => navigations.push(destination)}
           />
         );
       });
@@ -81,7 +83,8 @@ test("counter card keeps identical wording at every remaining count and links to
       const viewPlans = rendered?.getByRole("button", { name: "View plans" });
       assert.ok(viewPlans);
       fireEvent.click(viewPlans as HTMLElement);
-      assert.deepEqual(navigations, [1]);
+      // "View plans" lands on the Plan view without deep-linking the picker.
+      assert.deepEqual(navigations, ["plans"]);
     } finally {
       await act(() => rendered?.unmount());
     }
@@ -91,7 +94,7 @@ test("counter card keeps identical wording at every remaining count and links to
 test("blocked card carries the upgrade CTA and outranks an error", async () => {
   await withTestDom(async (act) => {
     const { ChatBillingCardSlot } = await cardModules();
-    const navigations: number[] = [];
+    const navigations: string[] = [];
     let rendered: ReturnType<typeof render> | undefined;
     try {
       await act(() => {
@@ -99,7 +102,7 @@ test("blocked card carries the upgrade CTA and outranks an error", async () => {
           <ChatBillingCardSlot
             errored
             freeTier={BLOCKED}
-            onNavigateToBilling={() => navigations.push(1)}
+            onNavigateToBilling={(destination) => navigations.push(destination)}
           />
         );
       });
@@ -112,7 +115,8 @@ test("blocked card carries the upgrade CTA and outranks an error", async () => {
       const upgrade = rendered?.getByRole("button", { name: "Upgrade plan" });
       assert.ok(upgrade);
       fireEvent.click(upgrade as HTMLElement);
-      assert.deepEqual(navigations, [1]);
+      // The blocked CTA deep-links the Plan Picker open (`?mode=upgrade`).
+      assert.deepEqual(navigations, ["upgrade"]);
     } finally {
       await act(() => rendered?.unmount());
     }
