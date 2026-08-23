@@ -44,7 +44,7 @@ function RemainingPips({
 }) {
   return (
     <div
-      aria-label="Free messages remaining"
+      aria-label="Free trial messages remaining"
       aria-valuemax={limit}
       aria-valuemin={0}
       aria-valuenow={remaining}
@@ -82,7 +82,7 @@ function CounterCard({
         <GiftTile />
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-muted-foreground text-xs">
-            {freeTier.remaining} of {freeTier.limit} free messages left
+            {freeTier.remaining} of {freeTier.limit} free trial messages left
           </p>
           <RemainingPips
             limit={freeTier.limit}
@@ -111,7 +111,7 @@ function BlockedCard({
         <GiftTile />
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="font-medium text-foreground text-xs">
-            Free messages used up
+            Free trial messages used up
           </p>
           <p className="text-muted-foreground text-xs">
             Upgrade to keep chatting with the assistant.

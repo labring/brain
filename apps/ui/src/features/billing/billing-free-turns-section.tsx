@@ -20,7 +20,7 @@ function formatFreePlanExpiry(iso: string): string | null {
 }
 
 /**
- * The Plan view's "Free assistant messages" allowance card (ADR-0065, AIM-298
+ * The Plan view's "Free trial messages" allowance card (ADR-0065, AIM-298
  * confirmed prototype). Rendered in the credits slot under exactly the
  * Active Free Trial predicate; after upgrade the AI Credits section takes
  * its place. Usage comes from Brain's own chat session system — never
@@ -58,11 +58,12 @@ export function BillingFreeTurnsSection({
         </div>
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="font-medium text-foreground text-sm">
-            Free assistant messages
+            Free trial messages
           </h2>
           {usageUnavailable ? (
             <p className="text-muted-foreground text-sm" role="status">
-              Usage is unavailable right now — your free messages still work.
+              Usage is unavailable right now — your free trial messages still
+              work.
             </p>
           ) : (
             <p className="text-muted-foreground text-sm">
@@ -76,14 +77,14 @@ export function BillingFreeTurnsSection({
       <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
         {usage == null && !usageUnavailable ? (
           <Skeleton
-            aria-label="Loading free assistant messages"
+            aria-label="Loading free trial messages"
             className="h-5 w-28"
           />
         ) : null}
         {usage == null ? null : (
           <div className="flex items-center gap-3">
             <div
-              aria-label="Free assistant messages used"
+              aria-label="Free trial messages used"
               aria-valuemax={100}
               aria-valuemin={0}
               aria-valuenow={usedPercent}

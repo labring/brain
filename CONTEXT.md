@@ -490,9 +490,9 @@ _Avoid_: subscription tier, plan.
 
 ### Free Chat Turns
 
-A platform-funded allowance of assistant turns per namespace (user-visible label: Free assistant messages), spendable only during the workspace's Active Free Trial; a turn is reserved when it starts and returned if it fails, so only successfully completed turns stay spent. A lifetime entitlement counter — namespace-shared, never per-user, never reset — not a rate limit; exhausting it blocks further assistant requests rather than falling through to `user` billing.
+A platform-funded allowance of assistant turns per namespace (user-visible label: Free trial messages), spendable only during the workspace's Active Free Trial; a turn is reserved when it starts and returned if it fails, so only successfully completed turns stay spent. A lifetime entitlement counter — namespace-shared, never per-user, never reset — not a rate limit; exhausting it blocks further assistant requests rather than falling through to `user` billing.
 
-_Avoid_: free tier, trial credits.
+_Avoid_: free tier, trial credits, free assistant messages, free messages.
 
 ### AI Proxy
 

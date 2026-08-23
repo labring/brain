@@ -58,9 +58,9 @@ test("counter card keeps identical wording at every remaining count and links to
         );
       });
       const text = rendered?.container.textContent ?? "";
-      assert.ok(text.includes("3 of 5 free messages left"));
+      assert.ok(text.includes("3 of 5 free trial messages left"));
       assert.ok(
-        rendered?.getByRole("progressbar", { name: "Free messages remaining" })
+        rendered?.getByRole("progressbar", { name: "Free trial messages remaining" })
       );
 
       await act(() => {
@@ -75,7 +75,7 @@ test("counter card keeps identical wording at every remaining count and links to
       // The last count keeps the exact same sentence shape — informed, not
       // alarmed (user story 3).
       const lastText = rendered?.container.textContent ?? "";
-      assert.ok(lastText.includes("1 of 5 free messages left"));
+      assert.ok(lastText.includes("1 of 5 free trial messages left"));
       assert.equal(lastText.includes("Last"), false);
 
       const viewPlans = rendered?.getByRole("button", { name: "View plans" });
@@ -104,7 +104,7 @@ test("blocked card carries the upgrade CTA and outranks an error", async () => {
         );
       });
       const text = rendered?.container.textContent ?? "";
-      assert.ok(text.includes("Free messages used up"));
+      assert.ok(text.includes("Free trial messages used up"));
       assert.ok(text.includes("Upgrade to keep chatting with the assistant."));
       // The error card lost the arbitration: "try again" would be a lie.
       assert.equal(text.includes("Message not sent"), false);
@@ -165,7 +165,7 @@ test("error card replaces the counter card on a trial (one card at a time)", asy
       });
       const text = rendered?.container.textContent ?? "";
       assert.ok(text.includes("Message not sent"));
-      assert.equal(text.includes("free messages left"), false);
+      assert.equal(text.includes("free trial messages left"), false);
     } finally {
       await act(() => rendered?.unmount());
     }
