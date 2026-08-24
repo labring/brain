@@ -33,6 +33,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0058 — Derive Project Display Names from Deployment Sources at Creation](0058-derive-project-display-names-from-deployment-sources.md)
 - [0059 — Key Personal Resources by the Global User UID](0059-key-personal-resources-by-global-user-uid.md) *(revises ADR-0036, ADR-0047, and ADR-0056)*
 - [0061 — Key the Onboarding Profile by the Bare User UID](0061-key-the-onboarding-profile-by-bare-user-uid.md) *(supplements ADR-0059)*
+- [0062 — Give Canvas Resources Editable Display Names Stored on the Resource](0062-store-resource-display-names-in-annotations.md)
 
 ## Conventions
 
