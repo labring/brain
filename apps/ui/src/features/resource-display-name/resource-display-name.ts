@@ -9,8 +9,16 @@ import { BRAIN_DISPLAY_NAME_ANNOTATION } from "@/lib/brain-labels";
  * Kubernetes name — nothing is derived at read time.
  */
 
-/** Matches the Project Display Name bound (ADR 0058) so neither layer is the shorter channel. */
+/**
+ * Matches the Project Display Name bound (ADR 0058) so neither layer is the
+ * shorter channel. Counted in Unicode code points — keep in step with the Go
+ * API's MaxDisplayNameLength (apps/api/service/orchestration/labels.go).
+ */
 export const MAX_RESOURCE_DISPLAY_NAME_LENGTH = 256;
+
+function codePointLength(value: string): number {
+  return [...value].length;
+}
 
 export interface ResourceDisplayNameFacts {
   annotations?: Record<string, unknown> | undefined;
@@ -18,7 +26,9 @@ export interface ResourceDisplayNameFacts {
 }
 
 function boundedName(candidate: string): string {
-  return candidate.trim().slice(0, MAX_RESOURCE_DISPLAY_NAME_LENGTH);
+  return [...candidate.trim()]
+    .slice(0, MAX_RESOURCE_DISPLAY_NAME_LENGTH)
+    .join("");
 }
 
 function annotatedDisplayName(
@@ -74,7 +84,7 @@ export function validateResourceDisplayNameRename(input: {
   if (value === "") {
     return { kind: "noop" };
   }
-  if (value.length > MAX_RESOURCE_DISPLAY_NAME_LENGTH) {
+  if (codePointLength(value) > MAX_RESOURCE_DISPLAY_NAME_LENGTH) {
     return { kind: "invalid", reason: "too-long" };
   }
   const normalized = value.toLowerCase();

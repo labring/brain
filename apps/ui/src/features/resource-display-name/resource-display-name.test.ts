@@ -129,6 +129,23 @@ test("an overlong rename is rejected, not truncated", () => {
   );
 });
 
+test("length is counted in code points, matching the Go API bound", () => {
+  assert.deepEqual(
+    validateResourceDisplayNameRename({
+      takenNames: [],
+      value: "😀".repeat(256),
+    }),
+    { kind: "set", value: "😀".repeat(256) }
+  );
+  assert.deepEqual(
+    validateResourceDisplayNameRename({
+      takenNames: [],
+      value: "😀".repeat(257),
+    }),
+    { kind: "invalid", reason: "too-long" }
+  );
+});
+
 test("an overlong annotation is bounded on read", () => {
   const name = `nginx${"x".repeat(400)}`;
   const resolved = resolveResourceDisplayName({

@@ -904,7 +904,7 @@ func registerUpdate(grp huma.API) {
 		middleware.AuthInput
 		Name      string          `query:"name" required:"true" doc:"DB instance name to patch"`
 		Namespace string          `query:"namespace" doc:"Namespace (default from kubeconfig)"`
-		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the DB product surface.\n\nSupported patch targets:\n- spec.replicas: creates a KubeBlocks HorizontalScaling OpsRequest.\n- spec.paused: creates a KubeBlocks Stop or Start OpsRequest.\n- spec.restartRequest: creates a KubeBlocks Restart OpsRequest; prefer POST /restart.\n- spec.storageSize: creates a KubeBlocks VolumeExpansion OpsRequest when the desired size increases.\n- spec.cpuRequest / spec.memoryRequest: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.cpuLimit / spec.memoryLimit: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.terminationPolicy: patches the KubeBlocks Cluster management policy.\n- spec.exposeNodePort: applies or deletes Service {name}-export.\n- metadata.annotations[\"brain.io/display-name\"]: set the Resource Display Name; an empty or null value clears it and restores the derived default.\n\nUnsupported for now and rejected with 422: spec.quota, spec.storageClassName, spec.clusterVersion, spec.version, spec.scheduledBackup, spec.parameterConfig, spec.restoreFromBackup.\n\nPatch examples:\n- Stop: {\"spec\":{\"paused\":true}}\n- Start: {\"spec\":{\"paused\":false}}\n- Scale replicas: {\"spec\":{\"replicas\":2}}\n- Expose via NodePort: {\"spec\":{\"exposeNodePort\":true}}\n- Update resources: {\"spec\":{\"cpuLimit\":\"2000m\",\"memoryLimit\":\"4Gi\"}}\n- Expand storage: {\"spec\":{\"storageSize\":\"20Gi\"}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Runtime operations are expressed as KubeBlocks OpsRequest CRs, not direct Cluster componentSpec rewrites."`
+		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the DB product surface.\n\nSupported patch targets:\n- spec.replicas: creates a KubeBlocks HorizontalScaling OpsRequest.\n- spec.paused: creates a KubeBlocks Stop or Start OpsRequest.\n- spec.restartRequest: creates a KubeBlocks Restart OpsRequest; prefer POST /restart.\n- spec.storageSize: creates a KubeBlocks VolumeExpansion OpsRequest when the desired size increases.\n- spec.cpuRequest / spec.memoryRequest: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.cpuLimit / spec.memoryLimit: creates a KubeBlocks VerticalScaling OpsRequest.\n- spec.terminationPolicy: patches the KubeBlocks Cluster management policy.\n- spec.exposeNodePort: applies or deletes Service {name}-export.\n- metadata.annotations[\"brain.io/display-name\"]: set the Resource Display Name (trimmed, 1-256 characters). A display name is only ever set, never cleared — an empty or null value is rejected. Display names must stay unique within the Project: list the Project's resources and their display names first, and never submit a name another resource already uses — a duplicate makes display-name resolution ambiguous.\n\nUnsupported for now and rejected with 422: spec.quota, spec.storageClassName, spec.clusterVersion, spec.version, spec.scheduledBackup, spec.parameterConfig, spec.restoreFromBackup.\n\nPatch examples:\n- Stop: {\"spec\":{\"paused\":true}}\n- Start: {\"spec\":{\"paused\":false}}\n- Scale replicas: {\"spec\":{\"replicas\":2}}\n- Expose via NodePort: {\"spec\":{\"exposeNodePort\":true}}\n- Update resources: {\"spec\":{\"cpuLimit\":\"2000m\",\"memoryLimit\":\"4Gi\"}}\n- Expand storage: {\"spec\":{\"storageSize\":\"20Gi\"}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Runtime operations are expressed as KubeBlocks OpsRequest CRs, not direct Cluster componentSpec rewrites."`
 	}
 	type dbUpdateOutput struct {
 		Body json.RawMessage
@@ -1015,7 +1015,10 @@ func dbUpdatePlanFromProductPatch(patch []byte, clusterJSON []byte, name string,
 	if err := json.Unmarshal(patch, &body); err != nil {
 		return dbUpdatePlan{}, err
 	}
-	mergeMetadata := dbDisplayNameMetadataPatch(body)
+	mergeMetadata, err := dbDisplayNameMetadataPatch(body)
+	if err != nil {
+		return dbUpdatePlan{}, err
+	}
 	specPatch, _ := body["spec"].(map[string]interface{})
 	if len(specPatch) == 0 {
 		if len(mergeMetadata) == 0 {
@@ -1164,21 +1167,25 @@ func dbUpdatePlanFromProductPatch(patch []byte, clusterJSON []byte, name string,
 // dbDisplayNameMetadataPatch forwards a Resource Display Name change
 // (ADR 0062) from the product patch to the Cluster. Other metadata fields
 // are never forwarded.
-func dbDisplayNameMetadataPatch(body map[string]interface{}) map[string]interface{} {
+func dbDisplayNameMetadataPatch(body map[string]interface{}) (map[string]interface{}, error) {
 	metadata, _ := body["metadata"].(map[string]interface{})
 	annotations, _ := metadata["annotations"].(map[string]interface{})
 	if annotations == nil {
-		return nil
+		return nil, nil
 	}
 	raw, ok := annotations[orchestration.BrainDisplayNameAnnotation]
 	if !ok {
-		return nil
+		return nil, nil
+	}
+	value, err := orchestration.DisplayNameAnnotationPatchValue(raw)
+	if err != nil {
+		return nil, err
 	}
 	return map[string]interface{}{
 		"annotations": map[string]interface{}{
-			orchestration.BrainDisplayNameAnnotation: orchestration.DisplayNameAnnotationPatchValue(raw),
+			orchestration.BrainDisplayNameAnnotation: value,
 		},
-	}
+	}, nil
 }
 
 func quantityString(value interface{}, field string) (string, error) {

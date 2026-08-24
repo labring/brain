@@ -1,6 +1,11 @@
 package orchestration
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
 
 const (
 	BrainManagedByLabel      = "brain.io/managed-by"
@@ -60,24 +65,26 @@ func mergeStringMap(maps ...map[string]string) map[string]string {
 }
 
 // MaxDisplayNameLength bounds a stored Resource Display Name (ADR 0062:
-// "Trimmed, 1–256 characters"), matching the UI module's bound.
+// "Trimmed, 1–256 characters"), counted in Unicode code points on both
+// sides of the API — keep in step with the UI module
+// (apps/ui/src/features/resource-display-name/resource-display-name.ts).
 const MaxDisplayNameLength = 256
 
-// DisplayNameAnnotationPatchValue normalizes a Resource Display Name value
-// from a product merge patch (ADR 0062): a non-empty string sets the trimmed
-// name, truncated to MaxDisplayNameLength like the UI read path; an empty or
-// null value becomes merge-patch nil, deleting the annotation and restoring
-// the Kubernetes name.
-func DisplayNameAnnotationPatchValue(raw interface{}) interface{} {
+// DisplayNameAnnotationPatchValue validates a Resource Display Name value
+// from a product merge patch, mirroring the UI module's submit rules
+// (ADR 0062): a display name is only ever set, never cleared, so an empty
+// or null value is rejected instead of deleting the annotation; an
+// over-long value is rejected instead of truncated.
+func DisplayNameAnnotationPatchValue(raw interface{}) (string, error) {
 	value, _ := raw.(string)
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return nil
+		return "", errors.New("a Resource Display Name can only be set, never cleared; send a non-empty name")
 	}
-	if runes := []rune(trimmed); len(runes) > MaxDisplayNameLength {
-		return strings.TrimSpace(string(runes[:MaxDisplayNameLength]))
+	if utf8.RuneCountInString(trimmed) > MaxDisplayNameLength {
+		return "", fmt.Errorf("a Resource Display Name is at most %d characters", MaxDisplayNameLength)
 	}
-	return trimmed
+	return trimmed, nil
 }
 
 func brainLabels(projectID, deploymentKind, deploymentName string) map[string]string {

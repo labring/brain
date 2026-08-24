@@ -356,20 +356,8 @@ func TestDBUpdatePlanForwardsDisplayNameAnnotation(t *testing.T) {
 		t.Fatalf("display-name annotation = %v, want 订单库", got)
 	}
 
-	plan, err = dbUpdatePlanFromProductPatch([]byte(`{"metadata":{"annotations":{"brain.io/display-name":null}}}`), cluster, "pg", "ns-a", testingNow())
-	if err != nil {
-		t.Fatalf("dbUpdatePlanFromProductPatch returned error: %v", err)
-	}
-	if !plan.HasClusterPatch {
-		t.Fatal("expected Cluster patch for display-name clear")
-	}
-	if err := json.Unmarshal(plan.ClusterPatch, &out); err != nil {
-		t.Fatalf("unmarshal patch: %v", err)
-	}
-	annotations = out["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
-	value, ok := annotations[orchestration.BrainDisplayNameAnnotation]
-	if !ok || value != nil {
-		t.Fatalf("display-name annotation = %v (present %v), want explicit null delete", value, ok)
+	if _, err = dbUpdatePlanFromProductPatch([]byte(`{"metadata":{"annotations":{"brain.io/display-name":null}}}`), cluster, "pg", "ns-a", testingNow()); err == nil {
+		t.Fatal("a null display name must be rejected: a display name is never cleared")
 	}
 }
 

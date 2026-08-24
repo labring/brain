@@ -1083,17 +1083,8 @@ func TestAPUpdatePatchForwardsDisplayNameAnnotation(t *testing.T) {
 		t.Fatalf("display-name annotation = %v, want My Service", annotations[orchestration.BrainDisplayNameAnnotation])
 	}
 
-	patch, err = templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"metadata":{"annotations":{"brain.io/display-name":null}}}`), testTime())
-	if err != nil {
-		t.Fatalf("templateAPUpdateMergePatch returned error: %v", err)
-	}
-	if err := json.Unmarshal(patch, &got); err != nil {
-		t.Fatalf("unmarshal patch: %v", err)
-	}
-	annotations = got["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
-	value, ok := annotations[orchestration.BrainDisplayNameAnnotation]
-	if !ok || value != nil {
-		t.Fatalf("display-name annotation = %v (present %v), want explicit null delete", value, ok)
+	if _, err = templateAPUpdateMergePatch(apWorkload{Deployment: deployment}, json.RawMessage(`{"metadata":{"annotations":{"brain.io/display-name":null}}}`), testTime()); err == nil {
+		t.Fatal("a null display name must be rejected: a display name is never cleared")
 	}
 }
 

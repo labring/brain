@@ -3,25 +3,25 @@ package orchestration
 import (
 	"strings"
 	"testing"
-	"unicode/utf8"
 )
 
 func TestDisplayNameAnnotationPatchValue(t *testing.T) {
-	if got := DisplayNameAnnotationPatchValue(" My Service "); got != "My Service" {
-		t.Fatalf("trimmed value = %v, want My Service", got)
+	got, err := DisplayNameAnnotationPatchValue(" My Service ")
+	if err != nil || got != "My Service" {
+		t.Fatalf("trimmed value = %q, %v, want My Service", got, err)
 	}
-	if got := DisplayNameAnnotationPatchValue("   "); got != nil {
-		t.Fatalf("blank value = %v, want nil (annotation delete)", got)
+	if _, err := DisplayNameAnnotationPatchValue("   "); err == nil {
+		t.Fatal("blank value must be rejected: a display name is never cleared")
 	}
-	if got := DisplayNameAnnotationPatchValue(nil); got != nil {
-		t.Fatalf("null value = %v, want nil (annotation delete)", got)
+	if _, err := DisplayNameAnnotationPatchValue(nil); err == nil {
+		t.Fatal("null value must be rejected: a display name is never cleared")
 	}
-	long := strings.Repeat("名", MaxDisplayNameLength+10)
-	got, ok := DisplayNameAnnotationPatchValue(long).(string)
-	if !ok || utf8.RuneCountInString(got) != MaxDisplayNameLength {
-		t.Fatalf("over-long value kept %d characters, want %d", utf8.RuneCountInString(got), MaxDisplayNameLength)
+	exact := strings.Repeat("名", MaxDisplayNameLength)
+	got, err = DisplayNameAnnotationPatchValue(exact)
+	if err != nil || got != exact {
+		t.Fatalf("value of exactly %d characters must be accepted, got %v", MaxDisplayNameLength, err)
 	}
-	if !strings.HasPrefix(long, got) {
-		t.Fatal("truncated value must be a prefix of the submitted name")
+	if _, err := DisplayNameAnnotationPatchValue(exact + "名"); err == nil {
+		t.Fatal("over-long value must be rejected, not truncated")
 	}
 }
