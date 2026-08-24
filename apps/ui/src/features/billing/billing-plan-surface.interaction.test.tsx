@@ -33,6 +33,7 @@ const CANCELLING_PLAN: BillingPlanSnapshot = {
     periodEndVoice: "silent",
     planName: "Pro",
     priceMicroUnits: 20_000_000,
+    recoveryVoice: "renew",
     regionDomain: "us.example.test",
     resources: [{ label: "CPU", value: "4" }],
     // Cancelling: the deadline is the suspension date (the period end).

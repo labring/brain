@@ -229,6 +229,31 @@ const SUBSCRIPTION_WARNING_COPY: Record<
   },
 };
 
+// An expired Free plan rides the same Deletion Countdown as a paid plan, but
+// its recovery voice is "resubscribe": nothing was ever charged, so the copy
+// asks for an upgrade, never a renewal. Free cannot reach "cancelling" (the
+// lifecycle exempts the constructed cancel-at-period-end flag), hence the
+// partial record.
+const RESUBSCRIBE_WARNING_COPY: Partial<
+  Record<
+    SubscriptionWarningStage,
+    { after: string; before: string; fallback: string; title: string }
+  >
+> = {
+  "deletion-imminent": {
+    after: ". Upgrade now to avoid data loss.",
+    before: "All resources will be permanently deleted after ",
+    fallback: "the grace period ends",
+    title: "Workspace scheduled for deletion",
+  },
+  expired: {
+    after: ". Upgrade to a paid plan to avoid loss.",
+    before: "Your workspace is suspended and resources will be deleted after ",
+    fallback: "the grace period ends",
+    title: "Your Free plan has expired",
+  },
+};
+
 // Account Debt (a PAYG workspace whose Account Balance is in debt) is the
 // balance pipeline, not the subscription Deletion Countdown: there is no
 // subscription to expire and no timestamps to derive a deadline from, so the
@@ -305,7 +330,10 @@ function SubscriptionWarningBanner({
     );
   }
 
-  const copy = SUBSCRIPTION_WARNING_COPY[stage];
+  const copy =
+    (current.recoveryVoice === "resubscribe"
+      ? RESUBSCRIBE_WARNING_COPY[stage]
+      : undefined) ?? SUBSCRIPTION_WARNING_COPY[stage];
 
   return (
     <Alert
@@ -344,6 +372,12 @@ function BillingInvoiceNotice({
   const billingActionsAllowed = subscriptionLifecycleAllowsBillingActions(
     current.lifecycle
   );
+  // A Free plan is never a payment target: without a Pending Subscription
+  // Upgrade to recover or cancel, an InvoiceInfo on a Free record is stale
+  // upstream data and the payment ask must not render.
+  if (current.recoveryVoice === "resubscribe" && pendingUpgrade == null) {
+    return null;
+  }
   const pendingUpgradeUnavailable =
     pendingUpgrade != null && !pendingUpgradePlanAvailable;
   // Deliberately independent of warningStage: payment-due and cancelling are
@@ -899,9 +933,11 @@ function BillingPlanActions({
   }
 
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
-  // One "Renew" button covers both warning roads: before expiry it revokes
-  // the cancellation; after expiry it opens the plan picker so the user can
+  // One button covers both warning roads: before expiry it revokes the
+  // cancellation; after expiry it opens the plan picker so the user can
   // create a replacement subscription, matching the legacy costcenter flow.
+  // The post-expiry label follows the recovery voice — an expired Free plan
+  // asks for an upgrade, never a renewal.
   const canResume = current.lifecycle === "cancelling";
   const canRenew = current.lifecycle === "payment-due";
   const canCancel =
@@ -933,7 +969,7 @@ function BillingPlanActions({
           onClick={() => onPlanChange?.(null)}
         >
           <Sparkles aria-hidden data-icon="inline-start" />
-          Renew
+          {current.recoveryVoice === "resubscribe" ? "Upgrade Plan" : "Renew"}
         </AppButton>
       ) : null}
       {canResume || canRenew ? null : (

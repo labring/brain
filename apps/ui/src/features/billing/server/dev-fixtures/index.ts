@@ -61,6 +61,7 @@ const DEBT_SCENARIOS = new Set<BillingDevScenario>([
 const CARDLESS_SCENARIOS = new Set<BillingDevScenario>([
   "active-balance",
   "free",
+  "free-expired",
   "paused",
   "payg",
   "payg-debt",
@@ -69,6 +70,7 @@ const CARDLESS_SCENARIOS = new Set<BillingDevScenario>([
 /** Scenarios with no subscription transaction history. */
 const TRANSACTIONLESS_SCENARIOS = new Set<BillingDevScenario>([
   "free",
+  "free-expired",
   "paused",
   "payg",
   "payg-debt",
@@ -137,6 +139,20 @@ function subscriptionPayload(
         CurrentPeriodEndAt: trialEnd,
         ExpireAt: trialEnd,
         PlanName: "Free",
+      };
+    }
+    // A lapsed trial joins the same DEBT pipeline as a paid plan (ADR-0065).
+    // No InvoiceInfo: nothing was ever charged, so there is no invoice to
+    // recover — the combination the resubscribe recovery voice exists for.
+    case "free-expired": {
+      const trialEndedAt = daysFromNow(-2);
+      return {
+        ...base,
+        CancelAtPeriodEnd: true,
+        CurrentPeriodEndAt: trialEndedAt,
+        ExpireAt: trialEndedAt,
+        PlanName: "Free",
+        Status: "DEBT",
       };
     }
     case "paused":
@@ -693,7 +709,9 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
     const isPaygMode =
       context.scenario === "payg" || context.scenario === "payg-debt";
     const isFreePlan =
-      context.scenario === "free" || context.scenario === "paused";
+      context.scenario === "free" ||
+      context.scenario === "free-expired" ||
+      context.scenario === "paused";
     return {
       quota: {
         hard: {
@@ -793,6 +811,7 @@ const PAY_TRANSITIONS: Record<
   // plan while in debt), so the payment-due scenarios live here too.
   created: {
     deleted: "active",
+    "free-expired": "active",
     payg: "active",
     "payg-debt": "active",
     "payment-due": "active",
