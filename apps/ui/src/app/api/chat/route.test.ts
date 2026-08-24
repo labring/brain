@@ -58,6 +58,11 @@ let releaseCalls = 0;
 let reserveCalls = 0;
 let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
 let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
+let workspaceAiQuota = {
+  status: "available" as const,
+  totalMicroUnits: 20_000_000,
+  usedMicroUnits: 5_000_000,
+};
 let judgmentCalls: {
   userId: string | null;
   userUid: string;
@@ -237,6 +242,9 @@ mock.module("@/features/billing/server/free-trial-judgment", () => ({
     });
     return Promise.resolve(trialJudgment);
   },
+}));
+mock.module("@/features/billing/server/workspace-ai-quota", () => ({
+  loadWorkspaceAiQuota: () => Promise.resolve(workspaceAiQuota),
 }));
 mock.module("@/features/chat/persistence/free-tier", () => ({
   getFreeTierSnapshot: () => Promise.resolve({ ...freeTierSnapshot }),
@@ -655,6 +663,11 @@ beforeEach(() => {
   reserveCalls = 0;
   forceReplaceConflict = false;
   freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
+  workspaceAiQuota = {
+    status: "available",
+    totalMicroUnits: 20_000_000,
+    usedMicroUnits: 5_000_000,
+  };
   history = [];
   judgmentCalls = [];
   trialJudgment = "trial";
@@ -805,6 +818,22 @@ test("accepts and streams a canonical client-tool continuation", async () => {
       owner: { namespace: NAMESPACE, userUid: `${WORKSPACE_ACTOR}-uid` },
     },
   ]);
+});
+
+test("injects current AI Credits and Free Chat Turns into the model prompt", async () => {
+  const response = await POST(
+    chatRequest(userMessage("user-usage-context", "how much usage is left?"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).toContain("<assistant_usage_context>");
+  expect(prompt).toContain(
+    "Workspace AI Credits: 2,000 total, 500 used, 1,500 remaining"
+  );
+  expect(prompt).toContain("Free assistant messages: 5 remaining of 5");
+  expect(prompt).toContain("Billing mode for this turn: free");
 });
 
 test("accepts a client-tool continuation without server-injected metadata", async () => {

@@ -1,42 +1,20 @@
-import { z } from "zod";
-
+import {
+  formatAiCredits as formatAiCreditsCore,
+  MICRO_UNITS_PER_AI_CREDIT as MICRO_UNITS_PER_AI_CREDIT_CORE,
+  parseAiQuotaPayload,
+} from "./ai-quota-core";
 import {
   type BillingCredentials,
   type BillingFetch,
   createBillingJsonRequester,
 } from "./billing-data-client";
 
-/** Platform micro-units per displayed AI Credit (1 credit = 0.01 currency units). */
-export const MICRO_UNITS_PER_AI_CREDIT = 10_000;
-
-const CREDITS_FORMATTER = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 2,
-  minimumFractionDigits: 0,
-});
-
-const quantityValueSchema = z.union([z.string(), z.number()]);
-const quotaResponseSchema = z.object({
-  quota: z.object({
-    hard: z.record(z.string(), quantityValueSchema).optional().default({}),
-    used: z.record(z.string(), quantityValueSchema).optional().default({}),
-  }),
-});
+export const formatAiCredits = formatAiCreditsCore;
+export const MICRO_UNITS_PER_AI_CREDIT = MICRO_UNITS_PER_AI_CREDIT_CORE;
 
 export interface AiCredits {
   totalMicroUnits: number;
   usedMicroUnits: number;
-}
-
-function microUnitsFromQuota(value: string | number | undefined): number {
-  if (value === undefined) {
-    return 0;
-  }
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-export function formatAiCredits(microUnits: number): string {
-  return CREDITS_FORMATTER.format(microUnits / MICRO_UNITS_PER_AI_CREDIT);
 }
 
 export function aiCreditsPercentUsed(
@@ -65,12 +43,9 @@ export async function loadAiCredits(
   const payload = await requestBillingJson("/api/billing/workspace-quota", {
     workspace: credentials.workspace,
   });
-  const parsed = quotaResponseSchema.safeParse(payload);
-  if (!parsed.success) {
-    throw new Error("AI Credits response is invalid.");
-  }
+  const parsed = parseAiQuotaPayload(payload);
   return {
-    totalMicroUnits: microUnitsFromQuota(parsed.data.quota.hard.ai_quota),
-    usedMicroUnits: microUnitsFromQuota(parsed.data.quota.used.ai_quota),
+    totalMicroUnits: parsed.totalMicroUnits,
+    usedMicroUnits: parsed.usedMicroUnits,
   };
 }
