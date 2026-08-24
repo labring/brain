@@ -10,6 +10,7 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import { getDatabaseNodeConnectionKey } from "@workspace/ui/components/database-node/database-node";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { useMemo } from "react";
 import { dbLifecycleWorkloadRefFromTarget } from "@/features/project-canvas/actions/resource-actions";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
@@ -112,7 +113,7 @@ export function useCanvasDatabaseNodeActions({
     });
     const mutableWorkload =
       mutationDisabledReason === undefined ? workload : null;
-    const displayName = model.states.displayName ?? (model.states.name || name);
+    const displayName = nodeTitle(model.states) || name;
     const connections = resolveDatabasePublicConnections(
       model.connections,
       activity.publicAccessPendingTarget

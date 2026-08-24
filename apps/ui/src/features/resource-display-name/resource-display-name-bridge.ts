@@ -1,4 +1,5 @@
 import type { ProjectSurfaceTarget } from "@/features/panes/target-identity";
+import { projectRuntimeResourceKey } from "@/features/project-canvas/runtime/resource-facts";
 
 /**
  * Module-level bridge from the canvas read model to surfaces mounted outside
@@ -25,7 +26,11 @@ export function resourceDisplayNameForTarget(
   // A Public Access node shows its AP's display name (ADR 0062).
   const key =
     target.kind === "PublicAccess"
-      ? `AP:${target.namespace}:${target.apName}`
-      : `${target.kind}:${target.namespace}:${target.name}`;
+      ? projectRuntimeResourceKey({
+          kind: "AP",
+          name: target.apName,
+          namespace: target.namespace,
+        })
+      : projectRuntimeResourceKey(target);
   return displayNamesByResourceKey.get(key);
 }

@@ -214,6 +214,7 @@ export function DbSettingsProvider({
       };
     }
 
+    const title = displayName || data.states.name;
     return {
       closeAriaLabel: "Close database settings",
       icon: (
@@ -230,10 +231,10 @@ export function DbSettingsProvider({
       subtitle: `Database ${data.states.displayEngine}${
         data.states.formattedVersion ? ` ${data.states.formattedVersion}` : ""
       }`,
-      title: displayName || data.states.name,
+      title,
       titleContent: (
         <ResourceDisplayNameTitle
-          displayName={displayName || data.states.name}
+          displayName={title}
           onRename={canRename ? onRenameResource : undefined}
           takenNames={takenDisplayNames}
         />

@@ -13,6 +13,7 @@ import { AppInput } from "@workspace/ui/components/app-input";
 import { Label } from "@workspace/ui/components/label";
 import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
 import { Spinner } from "@workspace/ui/components/spinner";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { SquarePen, Upload } from "lucide-react";
@@ -202,7 +203,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const name = states?.name ?? "";
   const ns = states?.namespace?.trim() || namespaceFallback;
   const workloadKind = workloadClaimKindFromStates(states);
-  const displayTitleName = states?.displayName ?? name;
+  const displayTitleName = nodeTitle(states) ?? "";
   const title =
     displayTitleName === "" ? "Deployments" : `${displayTitleName} Deployments`;
 
