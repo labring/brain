@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  resolveApDisplayName,
-  resolveDbDisplayName,
+  resolveResourceDisplayName,
   resourceDisplayNameMergePatch,
   uniqueResourceDisplayName,
   validateResourceDisplayNameRename,
@@ -24,13 +23,11 @@ test("clearing a display name deletes the annotation key", () => {
   });
 });
 
-test("annotation wins over every derived candidate", () => {
+test("annotation wins over the kubernetes name", () => {
   assert.equal(
-    resolveApDisplayName({
+    resolveResourceDisplayName({
       annotations: { "brain.io/display-name": "My Service" },
-      image: "ghcr.io/org/nginx:1.27",
       kubernetesName: "nginx-xkqjzw",
-      labels: { "brain.io/template-name": "memos" },
     }),
     "My Service"
   );
@@ -38,7 +35,7 @@ test("annotation wins over every derived candidate", () => {
 
 test("annotation values are trimmed before use", () => {
   assert.equal(
-    resolveApDisplayName({
+    resolveResourceDisplayName({
       annotations: { "brain.io/display-name": "  padded  " },
       kubernetesName: "ap-xkqjzw",
     }),
@@ -46,84 +43,30 @@ test("annotation values are trimmed before use", () => {
   );
 });
 
-test("blank annotation falls through to derivation", () => {
+test("blank annotation falls back to the kubernetes name", () => {
   assert.equal(
-    resolveApDisplayName({
+    resolveResourceDisplayName({
       annotations: { "brain.io/display-name": "   " },
-      image: "nginx:1.27",
       kubernetesName: "ap-xkqjzw",
     }),
-    "nginx"
-  );
-});
-
-test("ap without annotation derives from the docker image segment", () => {
-  assert.equal(
-    resolveApDisplayName({
-      image: "ghcr.io/org/my-api@sha256:abc",
-      kubernetesName: "ap-xkqjzw",
-    }),
-    "my-api"
-  );
-});
-
-test("template-name label outranks the image for aps", () => {
-  assert.equal(
-    resolveApDisplayName({
-      image: "ghcr.io/usememos/memos:latest",
-      kubernetesName: "memos-xkqjzw",
-      labels: { "brain.io/template-name": "moememos" },
-    }),
-    "moememos"
-  );
-});
-
-test("ap with nothing derivable falls back to the kubernetes name", () => {
-  assert.equal(
-    resolveApDisplayName({ kubernetesName: "ap-xkqjzw" }),
-    "ap-xkqjzw"
-  );
-  assert.equal(
-    resolveApDisplayName({ image: "———", kubernetesName: "ap-xkqjzw" }),
     "ap-xkqjzw"
   );
 });
 
-test("db without annotation derives from the engine, lowercased", () => {
+test("non-string annotation falls back to the kubernetes name", () => {
   assert.equal(
-    resolveDbDisplayName({
-      engine: "PostgreSQL",
-      kubernetesName: "db-mzpqrt",
+    resolveResourceDisplayName({
+      annotations: { "brain.io/display-name": 42 },
+      kubernetesName: "ap-xkqjzw",
     }),
-    "postgresql"
+    "ap-xkqjzw"
   );
 });
 
-test("db engine outranks the template-name label", () => {
+test("resource without the annotation shows the kubernetes name", () => {
   assert.equal(
-    resolveDbDisplayName({
-      engine: "postgresql",
-      kubernetesName: "memos-db-abcdef",
-      labels: { "brain.io/template-name": "memos" },
-    }),
-    "postgresql"
-  );
-});
-
-test("template db without engine derives from the template-name label", () => {
-  assert.equal(
-    resolveDbDisplayName({
-      kubernetesName: "memos-db-abcdef",
-      labels: { "brain.io/template-name": "memos" },
-    }),
-    "memos"
-  );
-});
-
-test("db with nothing derivable falls back to the kubernetes name", () => {
-  assert.equal(
-    resolveDbDisplayName({ kubernetesName: "db-mzpqrt" }),
-    "db-mzpqrt"
+    resolveResourceDisplayName({ kubernetesName: "ap-xkqjzw" }),
+    "ap-xkqjzw"
   );
 });
 
@@ -160,7 +103,7 @@ test("a rename to a fresh name is accepted trimmed", () => {
   );
 });
 
-test("clearing the title restores the derived default", () => {
+test("clearing the title restores the kubernetes name", () => {
   assert.deepEqual(
     validateResourceDisplayNameRename({ takenNames: [], value: "   " }),
     { kind: "clear" }
@@ -194,9 +137,9 @@ test("an overlong rename is rejected, not truncated", () => {
   );
 });
 
-test("an overlong annotation is bounded like a derived name", () => {
+test("an overlong annotation is bounded on read", () => {
   const name = `nginx${"x".repeat(400)}`;
-  const resolved = resolveApDisplayName({
+  const resolved = resolveResourceDisplayName({
     annotations: { "brain.io/display-name": name },
     kubernetesName: "ap-xkqjzw",
   });

@@ -11,6 +11,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Activity,
@@ -157,7 +158,7 @@ export function ContainerNodeHeaderContent({
     state: { states },
   } = useContainerNode();
   const subtitle = formatContainerSubtitle(states.kind);
-  const title = states.displayName ?? states.name;
+  const title = nodeTitle(states);
 
   return (
     <div className={cn("flex min-w-0 flex-1 items-center gap-1.5", className)}>

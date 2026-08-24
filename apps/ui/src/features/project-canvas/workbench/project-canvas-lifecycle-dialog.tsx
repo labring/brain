@@ -2,7 +2,7 @@
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import type { ReactNode } from "react";
-import { resourceNameDetail } from "./resource-name-detail";
+import { resourceNameDetailSuffix } from "./resource-name-detail";
 
 export interface ProjectCanvasApLifecycleTarget {
   displayName: string;
@@ -108,23 +108,6 @@ function ProjectCanvasLifecycleDialog({
   );
 }
 
-function lifecycleNameDetail(target: {
-  displayName: string;
-  kind?: string;
-  name: string;
-}): ReactNode {
-  const detail = resourceNameDetail(target);
-  if (detail == null) {
-    return null;
-  }
-  return (
-    <>
-      {" "}
-      (<span className="font-mono">{detail}</span>)
-    </>
-  );
-}
-
 function ProjectCanvasApRestartDialog({
   onConfirm,
   onOpenChange,
@@ -148,8 +131,8 @@ function ProjectCanvasApRestartDialog({
     >
       This will restart{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {lifecycleNameDetail(target)}. Running replicas and app traffic may be
-      briefly interrupted while the workload rolls out.
+      {resourceNameDetailSuffix(target)}. Running replicas and app traffic may
+      be briefly interrupted while the workload rolls out.
     </ProjectCanvasLifecycleDialog>
   );
 }
@@ -177,8 +160,8 @@ function ProjectCanvasApStopDialog({
     >
       This will stop{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {lifecycleNameDetail(target)}. Running replicas and app traffic may be
-      interrupted until it is started again.
+      {resourceNameDetailSuffix(target)}. Running replicas and app traffic may
+      be interrupted until it is started again.
     </ProjectCanvasLifecycleDialog>
   );
 }
@@ -206,7 +189,7 @@ function ProjectCanvasDbRestartDialog({
     >
       This will restart{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {lifecycleNameDetail(target)}. Database connections may be briefly
+      {resourceNameDetailSuffix(target)}. Database connections may be briefly
       interrupted while the DB Service restarts.
     </ProjectCanvasLifecycleDialog>
   );
@@ -235,8 +218,8 @@ function ProjectCanvasDbStopDialog({
     >
       This will stop{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {lifecycleNameDetail(target)}. Database connections will be unavailable
-      until it is started again.
+      {resourceNameDetailSuffix(target)}. Database connections will be
+      unavailable until it is started again.
     </ProjectCanvasLifecycleDialog>
   );
 }

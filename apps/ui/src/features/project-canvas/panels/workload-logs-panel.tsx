@@ -3,6 +3,7 @@
 import { useWorkloadLogs } from "@workspace/api/hooks";
 import { LogViewer } from "@workspace/ui/components/log-viewer/log-viewer";
 import type { LogWindow } from "@workspace/ui/components/log-viewer/log-window";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { FileText } from "lucide-react";
@@ -36,9 +37,7 @@ export const WorkloadLogsPane = memo(function WorkloadLogsPane({
   const ns = useAtomValue(namespaceAtom).trim();
   const states = containerStatesFromNode(node);
   const name =
-    states?.name === "" || states?.name == null
-      ? "Logs"
-      : (states.displayName ?? states.name);
+    states?.name === "" || states?.name == null ? "Logs" : nodeTitle(states);
   const [logWindow, setLogWindow] = useState<LogWindow>(
     RESOURCE_LOGS_DEFAULT_WINDOW
   );

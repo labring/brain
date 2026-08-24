@@ -8,13 +8,14 @@ import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-ico
 import { useCallback, useEffect, useMemo } from "react";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectDbTarget } from "@/features/panes/target-identity";
-import { resolveDbDisplayName } from "@/features/resource-display-name/resource-display-name";
+import { resolveResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
 import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
 import { dbResourceToSettingsData } from "@/features/resource-settings/db/db-settings-resource";
 import { useDatabaseSettingsSections } from "@/features/resource-settings/db/db-settings-sections";
 import type { DbSettingsData } from "@/features/resource-settings/db/db-settings-types";
 import { settingsOwnerIdentity } from "@/features/resource-settings/settings-owner-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { asRecord } from "@/lib/unknown-record";
 import { ResourceDisplayNameTitle } from "./resource-display-name-title";
 import { SettingsSections } from "./settings-sections";
 import type {
@@ -62,12 +63,6 @@ function dbSettingsRepairEntry({
   return { kind: "settings", target };
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value != null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
 export function DbSettingsProvider({
   kubeconfig,
   onModelChange,
@@ -103,15 +98,12 @@ export function DbSettingsProvider({
   const workload = data?.workload;
   const updating = workload == null ? false : isUpdating(workload);
   const resourceMetadata = asRecord(k8sGetClaimBody(dbResource.data)?.metadata);
-  const engineKey = data?.states.engineKey;
   const displayName =
     dbTarget == null
       ? ""
-      : resolveDbDisplayName({
+      : resolveResourceDisplayName({
           annotations: asRecord(resourceMetadata?.annotations),
-          engine: engineKey,
           kubernetesName: dbTarget.name,
-          labels: asRecord(resourceMetadata?.labels),
         });
   const { onRenameResource, takenDisplayNames } = useResourceDisplayNameRename({
     kind: "DB",

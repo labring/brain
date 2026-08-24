@@ -309,7 +309,7 @@ export function createChatProductTools(options: {
       "Use this before answering resource-specific AP/DB questions or before proposing a mutation.",
       "This is preferred over kubectl for normal Brain product inspection.",
       "For a single AP/DB, pass kind + name. For lists, omit name and optionally pass labelSelector. Public address and domain state is read from AP network state.",
-      '`name` is always the Kubernetes metadata.name; a Resource Display Name (metadata.annotations["brain.io/display-name"], or a lazily derived readable name) is never a valid name argument. To resolve a display name, list resources and match the annotation or derived name first.',
+      '`name` is always the Kubernetes metadata.name; a Resource Display Name (metadata.annotations["brain.io/display-name"]) is never a valid name argument. To resolve a display name, list resources and match the annotation first; a resource without the annotation displays its Kubernetes name.',
     ].join(" "),
     inputSchema: productReadInputSchema,
     execute: async (input) => {

@@ -3,6 +3,7 @@
 import { useWorkloadLogs } from "@workspace/api/hooks";
 import { LogViewer } from "@workspace/ui/components/log-viewer/log-viewer";
 import type { LogWindow } from "@workspace/ui/components/log-viewer/log-window";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import type { Node } from "@xyflow/react";
 import { FileText } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -84,7 +85,7 @@ export function DatabaseLogsPane({
       icon={<FileText aria-hidden className="size-4 shrink-0" />}
       onClose={onClose}
       open={open}
-      subtitle={states.displayName ?? states.name}
+      subtitle={nodeTitle(states)}
       title="Logs"
     >
       {error === undefined ? null : (

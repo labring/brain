@@ -59,15 +59,25 @@ func mergeStringMap(maps ...map[string]string) map[string]string {
 	return out
 }
 
+// MaxDisplayNameLength bounds a stored Resource Display Name (ADR 0062:
+// "Trimmed, 1–256 characters"), matching the UI module's bound.
+const MaxDisplayNameLength = 256
+
 // DisplayNameAnnotationPatchValue normalizes a Resource Display Name value
 // from a product merge patch (ADR 0062): a non-empty string sets the trimmed
-// name; an empty or null value becomes merge-patch nil, deleting the
-// annotation and restoring the derived default.
+// name, truncated to MaxDisplayNameLength like the UI read path; an empty or
+// null value becomes merge-patch nil, deleting the annotation and restoring
+// the Kubernetes name.
 func DisplayNameAnnotationPatchValue(raw interface{}) interface{} {
-	if value, _ := raw.(string); strings.TrimSpace(value) != "" {
-		return strings.TrimSpace(value)
+	value, _ := raw.(string)
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
 	}
-	return nil
+	if runes := []rune(trimmed); len(runes) > MaxDisplayNameLength {
+		return strings.TrimSpace(string(runes[:MaxDisplayNameLength]))
+	}
+	return trimmed
 }
 
 func brainLabels(projectID, deploymentKind, deploymentName string) map[string]string {

@@ -44,8 +44,8 @@ test("Project Runtime parses AP resources into app-owned read-side facts", () =>
 
   assert.deepEqual(facts.apFacts, [
     {
-      // Lazily derived from the image (ADR 0062) — the AP has no annotation.
-      displayName: "nginx",
+      // No annotation, so the Kubernetes name shows as-is (ADR 0062).
+      displayName: "api",
       key: "AP:default:api",
       observedUid: "ap-uid",
       ref: { kind: "AP", name: "api", namespace: "default" },
@@ -101,8 +101,8 @@ test("Project Runtime parses DB resources into app-owned read-side facts", () =>
         public: { enabled: true, value: "postgres://public" },
       },
       deletionTimestamp: "2026-07-06T10:00:00Z",
-      // Lazily derived from the engine (ADR 0062) — the DB has no annotation.
-      displayName: "postgresql",
+      // No annotation, so the Kubernetes name shows as-is (ADR 0062).
+      displayName: "postgres",
       engine: { displayName: "PostgreSQL", key: "postgresql" },
       key: "DB:default:postgres",
       metadataLabels: { region: "192.168.12.53.nip.io" },
@@ -270,10 +270,10 @@ test("Project Runtime resolves Resource Display Names through the annotation cha
     namespace: "default",
   });
 
-  // Annotation first, then template label, engine, and finally the K8s name.
+  // Annotation first; without one the Kubernetes name shows as-is.
   assert.equal(facts.apFacts[0]?.displayName, "My Service");
-  assert.equal(facts.apFacts[1]?.displayName, "memos");
-  assert.equal(facts.dbFacts[0]?.displayName, "postgresql");
+  assert.equal(facts.apFacts[1]?.displayName, "memos-abcdef");
+  assert.equal(facts.dbFacts[0]?.displayName, "db-mzpqrt");
   assert.equal(facts.dbFacts[1]?.displayName, "db-legacy");
 });
 
@@ -351,7 +351,7 @@ test("Project Runtime store exposes the Project's taken Resource Display Names",
   commit("My Service");
   assert.deepEqual(store.selectResourceDisplayNames(), [
     { displayName: "My Service", key: "AP:default:nginx-xkqjzw" },
-    { displayName: "postgresql", key: "DB:default:db-mzpqrt" },
+    { displayName: "db-mzpqrt", key: "DB:default:db-mzpqrt" },
   ]);
 
   const before = store.selectResourceDisplayNames();
@@ -764,7 +764,7 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
   assert.deepEqual(models.containerModelsByKey.get("AP:default:api"), {
     resourceKind: "ap",
     states: {
-      displayName: "nginx",
+      displayName: "api",
       image: "nginx",
       kind: "AP",
       name: "api",
@@ -796,7 +796,7 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
     metadata: { labels: { region: "192.168.12.53.nip.io" } },
     states: {
       displayEngine: "PostgreSQL",
-      displayName: "postgresql",
+      displayName: "postgres",
       deletionTimestamp: "2026-07-06T10:00:00Z",
       engineKey: "postgresql",
       iconUrl: databaseModel.states.iconUrl,

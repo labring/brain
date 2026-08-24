@@ -17,10 +17,11 @@ shows its AP's display name rather than owning one.
 - **Default** — derived at deploy time from the Deployment Source through the
   ADR 0058 derivation module (Docker image segment, DB engine, template name)
   and written into the annotation, unique within the Project with an
-  incrementing suffix (`nginx`, `nginx-2`). Resources created before this
-  feature have no annotation and derive lazily at read time (duplicates
-  accepted there), falling back to the Kubernetes name only when nothing can
-  be derived.
+  incrementing suffix (`nginx`, `nginx-2`). Reading never derives: a resource
+  without the annotation (created before this feature, or by a writer that
+  does not stamp names yet) shows its Kubernetes name — exactly what it
+  displayed before this feature — until the user renames it. A display name
+  is either written on the resource or it is the Kubernetes name.
 - **Rename** — the settings pane title is the edit surface; saving patches the
   annotation. Trimmed, 1–256 characters, any script. Clearing the name removes
   the annotation and restores the derived default. A duplicate within the
@@ -45,6 +46,14 @@ shows its AP's display name rather than owning one.
 
 ## Considered Options
 
+- **Lazily derive a readable default at read time for unannotated
+  resources** — rejected. A derived name looks authoritative but is persisted
+  nowhere: read-time derivation cannot number, so two template instances both
+  read as `memos`, and the name silently changes when the underlying image or
+  labels change. Legacy resources already displayed their Kubernetes names,
+  so falling back there regresses nothing — and a writer that forgets the
+  annotation now surfaces as a visible machine name instead of a
+  plausible-looking unnumbered one.
 - **Only make the Kubernetes name meaningful, no display layer** — rejected.
   The Kubernetes name is immutable, so naming would be frozen at creation and
   a rename feature would mean delete-and-recreate; the user explicitly wants

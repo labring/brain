@@ -6,6 +6,7 @@ import type {
   DatabaseNodeMetricValue,
 } from "@workspace/ui/components/database-node/database-node";
 import type { MetricDataPoint } from "@workspace/ui/components/metrics-chart/metrics-chart.types";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import type { Node } from "@xyflow/react";
 import { Activity, Cpu, HardDrive, MemoryStick } from "lucide-react";
 import { type ComponentType, type SVGProps, useMemo } from "react";
@@ -162,7 +163,7 @@ export function DatabaseMetricsPane({
   const cpuSeries = metricsData.cpu ?? [];
   const memorySeries = metricsData.memory ?? [];
   const storageSeries = metricsData.storage ?? [];
-  const title = `${states.displayName ?? states.name} Metrics`;
+  const title = `${nodeTitle(states)} Metrics`;
   const subtitle = `${states.displayEngine}${states.formattedVersion ? ` ${states.formattedVersion}` : ""} · Last 60 minutes`;
 
   return (

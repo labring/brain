@@ -1,6 +1,7 @@
 "use client";
 
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { cn } from "@workspace/ui/lib/utils";
 import { Router } from "lucide-react";
 
@@ -26,7 +27,7 @@ function useEntryNodeAccessDomain() {
     state: { accessDomain, states },
   } = useEntryNode();
 
-  return getAccessDomain(states.displayName ?? states.name, accessDomain);
+  return getAccessDomain(nodeTitle(states), accessDomain);
 }
 
 function useEntryNodeResolvedStatus() {

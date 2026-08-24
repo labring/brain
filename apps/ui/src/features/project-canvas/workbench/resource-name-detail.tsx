@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 /**
  * Detail shown in parentheses beside a display name in destructive and
  * lifecycle confirmations (ADR 0062): the workload kind and, when it differs
@@ -16,4 +18,22 @@ export function resourceNameDetail(target: {
     .filter(Boolean)
     .join(" · ");
   return detail === "" ? undefined : detail;
+}
+
+/** The detail rendered as the confirmations' shared ` (kind · name)` suffix. */
+export function resourceNameDetailSuffix(target: {
+  displayName: string;
+  kind?: string;
+  name: string;
+}): ReactNode {
+  const detail = resourceNameDetail(target);
+  if (detail == null) {
+    return null;
+  }
+  return (
+    <>
+      {" "}
+      (<span className="font-mono">{detail}</span>)
+    </>
+  );
 }

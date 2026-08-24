@@ -5,7 +5,7 @@ import { Router, Settings2, SquarePen } from "lucide-react";
 import { type ReactNode, useEffect, useMemo } from "react";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectApTarget } from "@/features/panes/target-identity";
-import { resolveApDisplayName } from "@/features/resource-display-name/resource-display-name";
+import { resolveResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
 import { AP_SETTINGS_REPLICA_LIMITS } from "@/features/resource-settings/ap/ap-settings-context";
 import {
   type ApNetwork,
@@ -17,6 +17,7 @@ import { useApWorkloadSettings } from "@/features/resource-settings/ap/hooks/use
 import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
 import { settingsOwnerIdentity } from "@/features/resource-settings/settings-owner-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { asRecord } from "@/lib/unknown-record";
 import { ResourceDisplayNameTitle } from "./resource-display-name-title";
 import { SettingsSections } from "./settings-sections";
 import type {
@@ -43,12 +44,6 @@ function workloadSettingsSubtitle({
 }) {
   const imageValue = image?.trim() ?? "";
   return imageValue === "" ? kind : `${kind} · ${imageValue}`;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value != null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
 }
 
 function draftRoutingDomainFromResource(
@@ -573,11 +568,9 @@ export function ApSettingsProvider({
   const displayName =
     apTarget == null
       ? ""
-      : resolveApDisplayName({
+      : resolveResourceDisplayName({
           annotations: asRecord(resourceMetadata?.annotations),
-          image: display.image,
           kubernetesName: apTarget.name,
-          labels: asRecord(resourceMetadata?.labels),
         });
   const { onRenameResource, takenDisplayNames } = useResourceDisplayNameRename({
     kind: "AP",

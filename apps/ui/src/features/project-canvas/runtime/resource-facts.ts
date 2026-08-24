@@ -5,10 +5,7 @@ import {
   platformAddressIdFromValue,
   platformAddressIdsFromRows,
 } from "@/features/project-canvas/platform-addresses";
-import {
-  resolveApDisplayName,
-  resolveDbDisplayName,
-} from "@/features/resource-display-name/resource-display-name";
+import { resolveResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
 import {
   readApImage,
   readApIsPaused,
@@ -206,12 +203,9 @@ function metadataAnnotations(
 
 /** Resource Display Name for an AP resource (ADR 0062 resolution chain). */
 function apDisplayName(ap: unknown, kubernetesName: string): string {
-  const spec = asRecord(asRecord(ap)?.spec) ?? {};
-  return resolveApDisplayName({
+  return resolveResourceDisplayName({
     annotations: metadataAnnotations(ap),
-    image: readApImage(spec),
     kubernetesName,
-    labels: metadataLabels(ap),
   });
 }
 
@@ -329,11 +323,9 @@ function dbFactFromResource(
     ...(metadataDeletionTimestamp(db) === undefined
       ? {}
       : { deletionTimestamp: metadataDeletionTimestamp(db) }),
-    displayName: resolveDbDisplayName({
+    displayName: resolveResourceDisplayName({
       annotations: metadataAnnotations(db),
-      engine: engineKey,
       kubernetesName: name,
-      labels,
     }),
     engine: {
       displayName: displayEngineFromKey(engineKey),

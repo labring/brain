@@ -4,6 +4,7 @@ import {
   type APWorkloadEventItem,
   useAPWorkloadEvents,
 } from "@workspace/api/hooks";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { cn } from "@workspace/ui/lib/utils";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
@@ -235,7 +236,7 @@ export const WorkloadEventsPane = memo(function WorkloadEventsPane({
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const ns = useAtomValue(namespaceAtom).trim();
   const states = containerStatesFromNode(node);
-  const name = states?.displayName ?? states?.name ?? "Workload";
+  const name = nodeTitle(states) ?? "Workload";
   const namespace = states?.namespace?.trim() || ns;
   const workloadName = states?.name;
   const target = useMemo(

@@ -13,7 +13,7 @@ const RENAME_ERROR_COPY = {
 /**
  * Settings pane title as the rename surface (ADR 0062): click the Resource
  * Display Name to edit it in place. Submitting an empty title clears the
- * annotation and restores the derived default; a duplicate within the
+ * annotation and restores the Kubernetes name; a duplicate within the
  * Project is rejected with the reason shown inline. Thin shell over the
  * resource-display-name module — the rules live there.
  */

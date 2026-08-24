@@ -1,6 +1,6 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import type {
@@ -70,6 +70,18 @@ mock.module("server-only", () => ({}));
 const actualConnectionService = {
   ...(await import("@/features/deploy/github/connection-service")),
 };
+
+// Snapshot the real runner before mocking it below, so the runner mock can be
+// restored once this file's tests finish — the runner is itself under test in
+// src/features/deploy/task/runner.template-preserve.test.ts, which runs later
+// in the same bun test process and must see the real runDeployTask.
+const actualRunner = {
+  ...(await import("@/features/deploy/task/runner")),
+};
+
+after(() => {
+  mock.module("@/features/deploy/task/runner", () => ({ ...actualRunner }));
+});
 
 mock.module("@/features/deploy/task/api-auth", () => ({
   deployTaskRequestParams: () => ({}),

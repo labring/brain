@@ -4,6 +4,7 @@ import type {
   ContainerNodeActions,
   ContainerNodeQuickActionKey,
 } from "@workspace/ui/components/container-node/container-node";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { useMemo } from "react";
 import { apLifecycleWorkloadRefFromTarget } from "@/features/project-canvas/actions/resource-actions";
 import {
@@ -90,7 +91,7 @@ export function useCanvasContainerNodeActions({
     });
 
     const ref = lifecycleWorkload ?? { name: states.name, namespace: ns };
-    const displayName = states.displayName ?? states.name;
+    const displayName = nodeTitle(states);
     const lifecycleActions =
       lifecycleWorkload == null
         ? unavailableContainerLifecycleActions(lifecycleDisabledReason)
