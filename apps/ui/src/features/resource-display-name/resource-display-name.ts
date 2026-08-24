@@ -56,14 +56,15 @@ export function uniqueResourceDisplayName(
 }
 
 export type ResourceDisplayNameRename =
-  | { kind: "clear" }
   | { kind: "invalid"; reason: "duplicate" | "too-long" }
+  | { kind: "noop" }
   | { kind: "set"; value: string };
 
 /**
- * Submit-time rename rules: trimmed, 1–256 characters, any script; empty
- * restores the Kubernetes name (annotation removal); a duplicate of another
- * resource's display name in the Project is rejected.
+ * Submit-time rename rules: trimmed, 1–256 characters, any script; empty is
+ * a no-op — a stored name cannot be cleared back to the Kubernetes name
+ * (ADR 0062); a duplicate of another resource's display name in the Project
+ * is rejected.
  */
 export function validateResourceDisplayNameRename(input: {
   takenNames: Iterable<string>;
@@ -71,7 +72,7 @@ export function validateResourceDisplayNameRename(input: {
 }): ResourceDisplayNameRename {
   const value = input.value.trim();
   if (value === "") {
-    return { kind: "clear" };
+    return { kind: "noop" };
   }
   if (value.length > MAX_RESOURCE_DISPLAY_NAME_LENGTH) {
     return { kind: "invalid", reason: "too-long" };
@@ -87,11 +88,11 @@ export function validateResourceDisplayNameRename(input: {
 
 /**
  * JSON merge patch for the display-name annotation, shared by the AP and DB
- * settings patch pipelines. `null` deletes the key, restoring the Kubernetes
- * name on the next read (merge-patch semantics on both product routes).
+ * settings patch pipelines. A name is only ever set, never deleted — a
+ * stored name cannot be cleared back to the Kubernetes name (ADR 0062).
  */
-export function resourceDisplayNameMergePatch(value: string | null): {
-  metadata: { annotations: Record<string, string | null> };
+export function resourceDisplayNameMergePatch(value: string): {
+  metadata: { annotations: Record<string, string> };
 } {
   return {
     metadata: {

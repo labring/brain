@@ -23,8 +23,11 @@ shows its AP's display name rather than owning one.
   displayed before this feature — until the user renames it. A display name
   is either written on the resource or it is the Kubernetes name.
 - **Rename** — the settings pane title is the edit surface; saving patches the
-  annotation. Trimmed, 1–256 characters, any script. Clearing the name removes
-  the annotation and restores the derived default. A duplicate within the
+  annotation. Trimmed, 1–256 characters, any script. Submitting an empty name
+  is a no-op: there is no clear action, because once a name is stored the only
+  visible result of clearing would be exposing the Kubernetes name, which the
+  product avoids surfacing outside destructive confirmations and connection
+  strings. A duplicate within the
   Project is rejected at submit; enforcement is an application-side check
   (there is no database to index — the cluster is the source of truth), and
   the residual write race is acceptable because a display name is never

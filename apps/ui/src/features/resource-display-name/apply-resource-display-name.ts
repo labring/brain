@@ -5,15 +5,15 @@ import { resourceDisplayNameMergePatch } from "./resource-display-name";
 
 /**
  * Persist one Resource Display Name change through the product PATCH route.
- * Only the annotation is patched (`null` clears it); `metadata.name` stays
- * untouched — the Kubernetes name is immutable (ADR 0062).
+ * Only the annotation is patched; `metadata.name` stays untouched — the
+ * Kubernetes name is immutable (ADR 0062).
  */
 export async function applyResourceDisplayName(input: {
   kind: "AP" | "DB";
   kubeconfig: string;
   name: string;
   namespace: string;
-  value: string | null;
+  value: string;
 }): Promise<void> {
   await fetcher({
     base: ApiUrl(),

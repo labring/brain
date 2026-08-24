@@ -15,14 +15,6 @@ test("setting a display name patches only the annotation", () => {
   });
 });
 
-test("clearing a display name deletes the annotation key", () => {
-  assert.deepEqual(resourceDisplayNameMergePatch(null), {
-    metadata: {
-      annotations: { "brain.io/display-name": null },
-    },
-  });
-});
-
 test("annotation wins over the kubernetes name", () => {
   assert.equal(
     resolveResourceDisplayName({
@@ -103,10 +95,10 @@ test("a rename to a fresh name is accepted trimmed", () => {
   );
 });
 
-test("clearing the title restores the kubernetes name", () => {
+test("an empty rename is a no-op, not a clear", () => {
   assert.deepEqual(
     validateResourceDisplayNameRename({ takenNames: [], value: "   " }),
-    { kind: "clear" }
+    { kind: "noop" }
   );
 });
 

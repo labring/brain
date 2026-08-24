@@ -18,7 +18,7 @@ export function useResourceDisplayNameRename(input: {
   revalidate: () => Promise<unknown>;
   target: { name: string; namespace: string } | null;
 }): {
-  onRenameResource: (value: string | null) => Promise<void>;
+  onRenameResource: (value: string) => Promise<void>;
   takenDisplayNames: string[];
 } {
   const { kind, kubeconfig, onUpdated, resourceDisplayNames, revalidate } =
@@ -37,7 +37,7 @@ export function useResourceDisplayNameRename(input: {
     [resourceDisplayNames, selfResourceKey]
   );
   const onRenameResource = useCallback(
-    async (value: string | null) => {
+    async (value: string) => {
       if (name === "" || namespace === "" || kubeconfig.trim() === "") {
         return;
       }

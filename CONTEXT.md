@@ -376,7 +376,7 @@ The product identity of a canvas node's backing AP, DB, or AP Public Access Node
 
 ### Resource Display Name
 
-The human-facing name of one AP, DB, or Template Instance, shown on its canvas node, its settings pane title, and in assistant conversation. It is not chosen at creation: the platform derives a default from the resource's Deployment Source (Docker image, DB engine, or template name) at deploy time and resolves collisions itself; users can rename it afterwards. A resource carrying no stored name shows its Kubernetes name, and clearing the name returns to it. Unique within a Project (trimmed); an AP Public Access Node shows its AP's Resource Display Name rather than owning one. Never a selector or identity — stable identity is Canvas Resource Identity, and destructive confirmations additionally show the Kubernetes name.
+The human-facing name of one AP, DB, or Template Instance, shown on its canvas node, its settings pane title, and in assistant conversation. It is not chosen at creation: the platform derives a default from the resource's Deployment Source (Docker image, DB engine, or template name) at deploy time and resolves collisions itself; users can rename it afterwards. A resource carrying no stored name shows its Kubernetes name; a name, once stored, cannot be cleared back to it. Unique within a Project (trimmed); an AP Public Access Node shows its AP's Resource Display Name rather than owning one. Never a selector or identity — stable identity is Canvas Resource Identity, and destructive confirmations additionally show the Kubernetes name.
 
 _Avoid_: node name, resource name (that is the Kubernetes `metadata.name`), custom name.
 
