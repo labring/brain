@@ -10,7 +10,7 @@ import {
   type UIMessageStreamOnFinishCallback,
 } from "ai";
 import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
-import { loadWorkspaceAiQuota } from "@/features/billing/server/workspace-ai-quota";
+import { loadWorkspaceResourceQuota } from "@/features/billing/server/workspace-resource-quota";
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
@@ -51,7 +51,6 @@ import {
   normalizeAssistantNamespace,
   type VerifiedAssistantConversationActor,
 } from "@/features/chat/persistence/types";
-import { withAssistantUsageContext } from "@/features/chat/runtime/assistant-usage-context";
 import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
 import {
   type ChatStreamLeaseHeartbeat,
@@ -69,6 +68,7 @@ import {
 } from "@/features/chat/runtime/model";
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
+import { withWorkspaceResourceContext } from "@/features/chat/runtime/workspace-resource-context";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
@@ -600,8 +600,6 @@ async function settleTurnBillingPosture(input: {
   | { response: Response; billing?: never }
   | {
       billing: ChatBillingMode;
-      /** Pre-turn posture exposed to the current user message as context. */
-      promptFreeTier: FreeTierState;
       /** Post-turn posture for the `X-Chat-*` response headers. */
       clientFreeTier: FreeTierState;
       reserved: boolean;
@@ -627,7 +625,6 @@ async function settleTurnBillingPosture(input: {
   if (posture.billing !== "free") {
     return {
       billing: posture.billing,
-      promptFreeTier: posture,
       clientFreeTier: posture,
       reserved: false,
     };
@@ -640,7 +637,6 @@ async function settleTurnBillingPosture(input: {
     // the turn reserved up front, that posture is a fact, not a prediction.
     return {
       billing: "free",
-      promptFreeTier: posture,
       clientFreeTier: freeTierPostureAfterTurn(
         freeTier,
         systemModelConfigured,
@@ -664,7 +660,6 @@ async function settleTurnBillingPosture(input: {
   }
   return {
     billing: "user",
-    promptFreeTier: contestedPosture,
     clientFreeTier: contestedPosture,
     reserved: false,
   };
@@ -698,7 +693,7 @@ async function runChatPipeline(input: {
     if (settled.response != null) {
       return settled.response;
     }
-    const { billing, clientFreeTier, promptFreeTier } = settled;
+    const { billing, clientFreeTier } = settled;
     ownedFreeTurnReservation = settled.reserved;
 
     // Adopt before the thread ensure: continuing a legacy crName-keyed
@@ -732,22 +727,24 @@ async function runChatPipeline(input: {
     // The toolset's deploy-task actor stays the per-region crName: chat
     // deploy tools perform only namespace-shared actions, which record the
     // kubeconfig-verified identity (AIM-154 keeps them token-free).
-    const [{ tools, systemPrompt }, aiQuota] = await Promise.all([
-      buildChatToolset({
-        assistantContext,
-        chatId,
-        kubeconfig,
-        kubernetesNamespace: owner.namespace,
-        workspaceActor: actor.legacyWorkspaceActor,
-        workspaceUserUid: owner.userUid,
-      }),
-      loadWorkspaceAiQuota({
-        cookieHeader: input.cookieHeader,
-        userId: actor.accountUserId ?? null,
-        userUid: owner.userUid,
-        workspace: owner.namespace,
-      }),
-    ]);
+    const [{ tools, systemPrompt }, workspaceResourceQuota] = await Promise.all(
+      [
+        buildChatToolset({
+          assistantContext,
+          chatId,
+          kubeconfig,
+          kubernetesNamespace: owner.namespace,
+          workspaceActor: actor.legacyWorkspaceActor,
+          workspaceUserUid: owner.userUid,
+        }),
+        loadWorkspaceResourceQuota({
+          cookieHeader: input.cookieHeader,
+          userId: actor.accountUserId ?? null,
+          userUid: owner.userUid,
+          workspace: owner.namespace,
+        }),
+      ]
+    );
 
     const openAi = await resolveChatOpenAiConnection({
       encodedKubeconfig,
@@ -769,10 +766,10 @@ async function runChatPipeline(input: {
     );
     assertCompleteToolHistory(history);
     const modelMessages = await convertToModelMessages(
-      withAssistantUsageContext(withSelectedResourceContext(history), {
-        aiQuota,
-        freeTier: promptFreeTier,
-      }),
+      withWorkspaceResourceContext(
+        withSelectedResourceContext(history),
+        workspaceResourceQuota
+      ),
       { tools }
     );
 

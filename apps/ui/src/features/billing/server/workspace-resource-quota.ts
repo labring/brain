@@ -2,7 +2,11 @@ import "server-only";
 
 import { requestAccountService } from "@/lib/account-service/client";
 import { isAccountServiceConfigured } from "@/lib/account-service/config";
-import { parseAiQuotaPayload, type WorkspaceAiQuota } from "../ai-quota-core";
+import {
+  parseWorkspaceResourceQuotaPayload,
+  unavailableWorkspaceResourceQuota,
+  type WorkspaceResourceQuotaSnapshot,
+} from "../workspace-resource-quota";
 
 const WORKSPACE_QUOTA_PATHNAME =
   "/account/v1alpha1/workspace/get-resource-quota";
@@ -31,35 +35,28 @@ async function devMockWorkspaceQuota(
 
 async function readQuotaResponse(
   response: Response
-): Promise<WorkspaceAiQuota> {
+): Promise<WorkspaceResourceQuotaSnapshot> {
   if (!response.ok) {
-    return { status: "unavailable" };
+    return unavailableWorkspaceResourceQuota();
   }
   try {
-    const snapshot = parseAiQuotaPayload(await response.json());
-    return snapshot.hasAllowance
-      ? {
-          status: "available",
-          totalMicroUnits: snapshot.totalMicroUnits,
-          usedMicroUnits: snapshot.usedMicroUnits,
-        }
-      : { status: "not_applicable" };
+    return parseWorkspaceResourceQuotaPayload(await response.json());
   } catch {
-    return { status: "unavailable" };
+    return unavailableWorkspaceResourceQuota();
   }
 }
 
 /**
- * Loads the current workspace AI Credits for the authenticated chat actor.
- * This is informational context only: failures must never turn into zero
- * credits or block an otherwise valid chat request.
+ * Loads the current workspace resource usage for model context. Failures stay
+ * informational: they render placeholders and never block an otherwise valid
+ * assistant turn.
  */
-export async function loadWorkspaceAiQuota(input: {
+export async function loadWorkspaceResourceQuota(input: {
   cookieHeader?: string | null;
   userId: string | null;
   userUid: string;
   workspace: string;
-}): Promise<WorkspaceAiQuota> {
+}): Promise<WorkspaceResourceQuotaSnapshot> {
   const userId = input.userId?.trim() ?? "";
   const userUid = input.userUid.trim();
   const workspace = input.workspace.trim();
@@ -76,7 +73,7 @@ export async function loadWorkspaceAiQuota(input: {
       userUid === "" ||
       workspace === ""
     ) {
-      return { status: "unavailable" };
+      return unavailableWorkspaceResourceQuota();
     }
 
     const response = await requestAccountService({
@@ -90,6 +87,6 @@ export async function loadWorkspaceAiQuota(input: {
     });
     return await readQuotaResponse(response);
   } catch {
-    return { status: "unavailable" };
+    return unavailableWorkspaceResourceQuota();
   }
 }

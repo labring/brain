@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { simulateReadableStream, tool, type UIMessage } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
+import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
 const actualKubeconfig = { ...(await import("@/lib/kubeconfig")) };
 const actualRequestKubeconfigAuth = {
@@ -58,10 +59,15 @@ let releaseCalls = 0;
 let reserveCalls = 0;
 let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
 let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
-let workspaceAiQuota = {
+let workspaceResourceQuota: WorkspaceResourceQuotaSnapshot = {
+  rows: [
+    ["CPU", "19.2C/36C"],
+    ["Memory", "26.25Gi/164Gi"],
+    ["Storage", "12Gi/200Gi"],
+    ["Pods", "--/--"],
+    ["Ports", "0/10"],
+  ] as const,
   status: "available" as const,
-  totalMicroUnits: 20_000_000,
-  usedMicroUnits: 5_000_000,
 };
 let judgmentCalls: {
   userId: string | null;
@@ -243,8 +249,8 @@ mock.module("@/features/billing/server/free-trial-judgment", () => ({
     return Promise.resolve(trialJudgment);
   },
 }));
-mock.module("@/features/billing/server/workspace-ai-quota", () => ({
-  loadWorkspaceAiQuota: () => Promise.resolve(workspaceAiQuota),
+mock.module("@/features/billing/server/workspace-resource-quota", () => ({
+  loadWorkspaceResourceQuota: () => Promise.resolve(workspaceResourceQuota),
 }));
 mock.module("@/features/chat/persistence/free-tier", () => ({
   getFreeTierSnapshot: () => Promise.resolve({ ...freeTierSnapshot }),
@@ -663,10 +669,15 @@ beforeEach(() => {
   reserveCalls = 0;
   forceReplaceConflict = false;
   freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
-  workspaceAiQuota = {
+  workspaceResourceQuota = {
+    rows: [
+      ["CPU", "19.2C/36C"],
+      ["Memory", "26.25Gi/164Gi"],
+      ["Storage", "12Gi/200Gi"],
+      ["Pods", "--/--"],
+      ["Ports", "0/10"],
+    ],
     status: "available",
-    totalMicroUnits: 20_000_000,
-    usedMicroUnits: 5_000_000,
   };
   history = [];
   judgmentCalls = [];
@@ -820,7 +831,7 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   ]);
 });
 
-test("injects current AI Credits and Free Chat Turns into the model prompt", async () => {
+test("injects only the current workspace resources into the model prompt", async () => {
   const response = await POST(
     chatRequest(userMessage("user-usage-context", "how much usage is left?"))
   );
@@ -828,12 +839,43 @@ test("injects current AI Credits and Free Chat Turns into the model prompt", asy
   await drain(response);
 
   const prompt = JSON.stringify(modelPrompts[0]);
-  expect(prompt).toContain("<assistant_usage_context>");
-  expect(prompt).toContain(
-    "Workspace AI Credits: 2,000 total, 500 used, 1,500 remaining"
+  expect(prompt).toContain("<workspace_resource_context");
+  expect(prompt).toContain("CPU19.2C/36C");
+  expect(prompt).toContain("Memory26.25Gi/164Gi");
+  expect(prompt).toContain("Storage12Gi/200Gi");
+  expect(prompt).toContain("Pods--/--");
+  expect(prompt).toContain("Ports0/10");
+  expect(prompt).not.toContain("assistant_usage_context");
+  expect(prompt).not.toContain("Free assistant messages");
+  expect(prompt).not.toContain("Billing mode for this turn");
+  expect(prompt).not.toContain("AI Credits");
+  expect(prompt).not.toContain("ai_quota");
+});
+
+test("keeps chat available when workspace resources are unavailable", async () => {
+  workspaceResourceQuota = {
+    rows: [
+      ["CPU", "--/--"],
+      ["Memory", "--/--"],
+      ["Storage", "--/--"],
+      ["Pods", "--/--"],
+      ["Ports", "--/--"],
+    ],
+    status: "unavailable",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-resource-unavailable", "show resources"))
   );
-  expect(prompt).toContain("Free assistant messages: 5 remaining of 5");
-  expect(prompt).toContain("Billing mode for this turn: free");
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).toContain("CPU--/--");
+  expect(prompt).toContain("Memory--/--");
+  expect(prompt).toContain("Storage--/--");
+  expect(prompt).toContain("Pods--/--");
+  expect(prompt).toContain("Ports--/--");
 });
 
 test("accepts a client-tool continuation without server-injected metadata", async () => {
