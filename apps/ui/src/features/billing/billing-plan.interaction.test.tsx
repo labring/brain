@@ -36,6 +36,7 @@ const SNAPSHOT: BillingPlanSnapshot = {
     periodEndVoice: "renewal",
     planName: "Pro",
     priceMicroUnits: 20_000_000,
+    recoveryVoice: "renew",
     regionDomain: "us.example.test",
     resources: [{ label: "CPU", value: "4" }],
     warningDeadlineAt: null,

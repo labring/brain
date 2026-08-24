@@ -41,6 +41,17 @@ export type BillingDataAvailability = "available" | "unavailable";
  */
 export type PeriodEndVoice = "expiry" | "renewal" | "silent";
 
+/**
+ * How recovery from the payment-due lifecycle speaks:
+ * - "renew": a paid plan whose renewal lapsed — recovery is a Renew action
+ *   and the copy may speak of renewing and paying.
+ * - "resubscribe": a Free plan expired into the same DEBT pipeline — nothing
+ *   was ever charged and an unpriced Free Subscription Plan is not a renewal
+ *   target, so recovery means choosing a paid plan and no surface may ask
+ *   for a renewal or a payment.
+ */
+export type RecoveryVoice = "renew" | "resubscribe";
+
 export function subscriptionLifecycleAllowsBillingActions(
   lifecycle: SubscriptionLifecycle
 ): boolean {
@@ -95,6 +106,7 @@ export interface BillingPlanSnapshot {
     periodEndVoice: PeriodEndVoice;
     planName: string;
     priceMicroUnits: number;
+    recoveryVoice: RecoveryVoice;
     regionDomain: string;
     resources: BillingPlanResource[];
     /**
@@ -334,6 +346,14 @@ function periodEndVoice(input: {
     return "silent";
   }
   return input.planName.trim().toLowerCase() === "free" ? "expiry" : "renewal";
+}
+
+// Derived from the plan alone, not the lifecycle: Free is the one unpriced
+// plan, and whenever its expiry lands in the shared DEBT pipeline the
+// recovery surfaces must switch voice together — the badge, banner, CTA, and
+// invoice ask all consume this single field instead of re-testing the name.
+function recoveryVoice(planName: string): RecoveryVoice {
+  return planName.trim().toLowerCase() === "free" ? "resubscribe" : "renew";
 }
 
 function subscriptionWarningStage(input: {
@@ -592,6 +612,7 @@ export async function loadBillingPlanSnapshot(
       }),
       planName: subscription.PlanName,
       priceMicroUnits: currentPlan?.monthlyPriceMicroUnits ?? 0,
+      recoveryVoice: recoveryVoice(subscription.PlanName),
       regionDomain: subscription.RegionDomain || region.domain,
       resources:
         currentPlan?.resources.map(({ label, value }) => ({ label, value })) ??
@@ -671,7 +692,13 @@ export async function loadBillingPlanSnapshot(
         planName,
         priceMicroUnits:
           item == null ? null : (planPriceByName.get(planName) ?? 0),
-        renewalAt: item?.CurrentPeriodEndAt.trim() || null,
+        // A Free subscription has no Renewal Time — its period end is the
+        // plan's expiry, which the table's Renewal Time column must not
+        // claim as a renewal.
+        renewalAt:
+          recoveryVoice(planName) === "resubscribe"
+            ? null
+            : item?.CurrentPeriodEndAt.trim() || null,
       };
     }),
   };
