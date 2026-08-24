@@ -24,7 +24,7 @@ test("allowance card names the benefit and voices the expiry in the subtitle", a
         );
       });
       const text = rendered?.container.textContent ?? "";
-      assert.ok(text.includes("Free assistant messages"));
+      assert.ok(text.includes("Free trial messages"));
       assert.ok(text.includes("Included with the Free plan"));
       assert.ok(text.includes("until"));
       assert.ok(text.includes("2026"));
@@ -32,7 +32,7 @@ test("allowance card names the benefit and voices the expiry in the subtitle", a
       // Vocabulary red line: this surface never says "AI Credits".
       assert.equal(text.includes("AI Credits"), false);
       const bar = rendered?.getByRole("progressbar", {
-        name: "Free assistant messages used",
+        name: "Free trial messages used",
       });
       assert.ok(bar);
     } finally {
@@ -82,7 +82,7 @@ test("loading shows a right-side skeleton without usage numbers", async () => {
       });
       assert.ok(
         rendered?.container.querySelector(
-          '[aria-label="Loading free assistant messages"]'
+          '[aria-label="Loading free trial messages"]'
         )
       );
       assert.equal(
@@ -112,7 +112,7 @@ test("a failed usage lookup degrades quietly and reassures, never red", async ()
       const text = rendered?.container.textContent ?? "";
       assert.ok(
         text.includes(
-          "Usage is unavailable right now — your free messages still work."
+          "Usage is unavailable right now — your free trial messages still work."
         )
       );
       // Deliberately different from AI Credits' red error state: a status,

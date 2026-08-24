@@ -9,6 +9,13 @@ import type { FreeTierState } from "./persistence/types";
 export type ChatBillingCard = "blocked" | "counter" | "error";
 
 /**
+ * Where a chat billing CTA lands in the Billing Area: `upgrade` deep-links
+ * the Plan Picker open (`/billing?mode=upgrade`, the App Sidebar precedent),
+ * `plans` lands on the Plan view without opening it.
+ */
+export type ChatBillingDestination = "plans" | "upgrade";
+
+/**
  * Card-slot arbitration for the Project Assistant Pane (ADR-0065): exactly
  * one card renders at a time, blocked > error > counter. `blocked` outranks
  * the error card because "try again" is a lie once the server refuses chat;
@@ -44,7 +51,7 @@ function RemainingPips({
 }) {
   return (
     <div
-      aria-label="Free messages remaining"
+      aria-label="Free trial messages remaining"
       aria-valuemax={limit}
       aria-valuemin={0}
       aria-valuenow={remaining}
@@ -71,7 +78,7 @@ function CounterCard({
   onNavigateToBilling,
 }: {
   freeTier: FreeTierState;
-  onNavigateToBilling: () => void;
+  onNavigateToBilling: (destination: ChatBillingDestination) => void;
 }) {
   return (
     <div
@@ -82,7 +89,7 @@ function CounterCard({
         <GiftTile />
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-muted-foreground text-xs">
-            {freeTier.remaining} of {freeTier.limit} free messages left
+            {freeTier.remaining} of {freeTier.limit} free trial messages left
           </p>
           <RemainingPips
             limit={freeTier.limit}
@@ -90,7 +97,11 @@ function CounterCard({
           />
         </div>
       </div>
-      <AppButton onClick={onNavigateToBilling} size="sm" variant="quiet">
+      <AppButton
+        onClick={() => onNavigateToBilling("plans")}
+        size="sm"
+        variant="quiet"
+      >
         View plans
       </AppButton>
     </div>
@@ -100,7 +111,7 @@ function CounterCard({
 function BlockedCard({
   onNavigateToBilling,
 }: {
-  onNavigateToBilling: () => void;
+  onNavigateToBilling: (destination: ChatBillingDestination) => void;
 }) {
   return (
     <div
@@ -111,14 +122,14 @@ function BlockedCard({
         <GiftTile />
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="font-medium text-foreground text-xs">
-            Free messages used up
+            Free trial messages used up
           </p>
           <p className="text-muted-foreground text-xs">
             Upgrade to keep chatting with the assistant.
           </p>
         </div>
       </div>
-      <AppButton onClick={onNavigateToBilling} size="sm">
+      <AppButton onClick={() => onNavigateToBilling("upgrade")} size="sm">
         Upgrade plan
       </AppButton>
     </div>
@@ -158,8 +169,12 @@ export function ChatBillingCardSlot({
 }: {
   errored: boolean;
   freeTier: FreeTierState | null;
-  /** Both CTAs land on the Billing Area Plan view (full-page navigation). */
-  onNavigateToBilling: () => void;
+  /**
+   * Both CTAs are full-page navigations into the Billing Area: the blocked
+   * card's "Upgrade plan" deep-links the Plan Picker open (`upgrade`), the
+   * counter's "View plans" lands on the Plan view (`plans`).
+   */
+  onNavigateToBilling: (destination: ChatBillingDestination) => void;
 }) {
   const card = resolveChatBillingCard({
     billing: freeTier?.billing ?? null,

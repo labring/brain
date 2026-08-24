@@ -293,7 +293,7 @@ function accountBalanceContent(input: {
 }
 
 /**
- * The credits slot: the trial's "Free assistant messages" allowance card and
+ * The credits slot: the trial's "Free trial messages" allowance card and
  * the paid plans' AI Credits section share it, so upgrading naturally swaps
  * one for the other (ADR-0065). PAYG renders neither.
  */
