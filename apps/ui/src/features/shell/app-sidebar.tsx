@@ -54,12 +54,6 @@ import type {
   ProjectIconKeyMap,
 } from "@/features/projects/project-icons";
 import { createAppSidebarProjectGroups } from "@/features/shell/app-sidebar.groups";
-// PROTOTYPE imports — throwaway sidebar design exploration, dev-only.
-import {
-  AppSidebarPrototypeBar,
-  AppSidebarPrototypeFooter,
-  useAppSidebarPrototypeVariant,
-} from "@/features/shell/app-sidebar.prototype";
 import {
   type AppSidebarUpgradeUsageRow,
   formatWorkspaceQuotaRows,
@@ -128,8 +122,7 @@ interface AppSidebarNavRowProps {
   target?: string;
 }
 
-// Exported for the sidebar prototype only (see app-sidebar.prototype.tsx).
-export function AppSidebarNavRow({
+function AppSidebarNavRow({
   active,
   ariaLabel,
   href,
@@ -318,8 +311,7 @@ function AppSidebarHeader() {
   );
 }
 
-// Exported for the sidebar prototype only (see app-sidebar.prototype.tsx).
-export function AppSidebarDesktopReturn() {
+function AppSidebarDesktopReturn() {
   const desktopUrl = useSealosDesktopUrl();
 
   return (
@@ -610,8 +602,6 @@ function AppSidebarChrome({
       }),
     [states.pinnedProjectIds, states.projects]
   );
-  // PROTOTYPE: "0" (production always) renders the shipped sidebar untouched.
-  const protoVariant = useAppSidebarPrototypeVariant();
 
   return (
     <Sidebar
@@ -651,30 +641,19 @@ function AppSidebarChrome({
           </nav>
         </SidebarContent>
         <SidebarFooter className="p-0">
-          {protoVariant === "0" ? (
-            <div className="flex shrink-0 flex-col gap-2 pt-3">
-              <AppSidebarNavRow
-                active={billingActive}
-                href="/billing"
-                icon={
-                  <CreditCard
-                    aria-hidden
-                    className="size-4"
-                    strokeWidth={1.8}
-                  />
-                }
-                label="Billing"
-                onClick={recordBillingReturnRoute}
-              />
-              <AppSidebarDesktopReturn />
-              <AppSidebarUpgrade />
-            </div>
-          ) : (
-            <AppSidebarPrototypeFooter
-              billingActive={billingActive}
-              variant={protoVariant}
+          <div className="flex shrink-0 flex-col gap-2 pt-3">
+            <AppSidebarNavRow
+              active={billingActive}
+              href="/billing"
+              icon={
+                <CreditCard aria-hidden className="size-4" strokeWidth={1.8} />
+              }
+              label="Billing"
+              onClick={recordBillingReturnRoute}
             />
-          )}
+            <AppSidebarDesktopReturn />
+            <AppSidebarUpgrade />
+          </div>
         </SidebarFooter>
       </div>
     </Sidebar>
@@ -702,8 +681,6 @@ export function AppSidebarShell({
     >
       <AppSidebarFocusTransfer />
       {children}
-      {/* PROTOTYPE: floating variant switcher, dev-only. */}
-      <AppSidebarPrototypeBar />
     </SidebarProvider>
   );
 }
