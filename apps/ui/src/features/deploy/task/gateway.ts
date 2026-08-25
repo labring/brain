@@ -95,6 +95,41 @@ export class CodexGatewayTimeoutError extends Error {
   }
 }
 
+type CodexGatewayFailedTurnStatus =
+  | "cancelled"
+  | "failed"
+  | "interrupted"
+  | "unknown";
+
+export class CodexGatewayTurnError extends Error {
+  status: CodexGatewayFailedTurnStatus;
+
+  constructor(status: CodexGatewayFailedTurnStatus) {
+    super("Codex gateway turn did not complete successfully.");
+    this.name = "CodexGatewayTurnError";
+    this.status = status;
+  }
+}
+
+function failedGatewayTurnStatus(
+  value: string | null | undefined
+): CodexGatewayFailedTurnStatus | null {
+  switch (value?.trim().toLowerCase()) {
+    case "completed":
+      return null;
+    case "cancelled":
+    case "canceled":
+      return "cancelled";
+    case "failed":
+    case "error":
+      return "failed";
+    case "interrupted":
+      return "interrupted";
+    default:
+      return "unknown";
+  }
+}
+
 export function codexGatewayFailureDetails(
   error: unknown
 ): DeployTaskFailureDetails {
@@ -107,6 +142,9 @@ export function codexGatewayFailureDetails(
       reason:
         error.status >= 500 ? "gateway-upstream-error" : "gateway-unavailable",
     };
+  }
+  if (error instanceof CodexGatewayTurnError) {
+    return { reason: "gateway-upstream-error" };
   }
   if (
     (error instanceof DOMException && error.name === "TimeoutError") ||
@@ -737,6 +775,12 @@ async function waitForGatewayTurnCompletion(input: {
     });
 
     if (!sessionState.state.activeTurn) {
+      const failedStatus = failedGatewayTurnStatus(
+        sessionState.state.lastTurnStatus
+      );
+      if (failedStatus != null) {
+        throw new CodexGatewayTurnError(failedStatus);
+      }
       return sessionState.state;
     }
 
@@ -938,7 +982,7 @@ export async function runDeployTaskGateway(input: {
     });
     turnMayBeActive = false;
   } catch (error) {
-    if (turnMayBeActive) {
+    if (turnMayBeActive && !(error instanceof CodexGatewayTurnError)) {
       await interruptTurnOnce();
     }
     throw error;
