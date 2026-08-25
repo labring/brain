@@ -226,10 +226,11 @@ export function AppSidebarAccount() {
   );
 
   const [open, setOpen] = useState(false);
-  // null = not loaded (or failed): the popover omits the quota section.
+  // null = never loaded (or not applicable): the popover omits the section.
+  // A failed refresh keeps the previous snapshot instead of clearing it.
   const [quotaRows, setQuotaRows] = useState<AppSidebarQuotaRow[] | null>(null);
-  // null = not loaded, failed, or not applicable: the row is omitted alone —
-  // it rides a different data source than the workspace quota bars.
+  // Same lifecycle as quotaRows, but the row rides a different data source
+  // than the workspace quota bars, so its failures degrade independently.
   const [aiUsageRow, setAiUsageRow] = useState<AppSidebarQuotaRow | null>(null);
   // The Billing Plan view's credits-slot predicate (ADR-0065): Active Free
   // Trial → Free Chat Turns, other subscriptions → AI Credits, PAYG → none.
@@ -259,21 +260,30 @@ export function AppSidebarAccount() {
       if (!nextOpen) {
         return;
       }
-      loadQuotaRows()
-        .then(setQuotaRows)
-        .catch((error: unknown) => {
-          console.warn(
-            "[AppSidebarAccount] load workspace quota failed:",
-            error
-          );
-          setQuotaRows(null);
-        });
-      loadAiUsageRow()
-        .then(setAiUsageRow)
-        .catch((error: unknown) => {
-          console.warn("[AppSidebarAccount] load AI usage failed:", error);
-          setAiUsageRow(null);
-        });
+      // Both sides settle before a single commit, so the section lands in
+      // one frame — no AI row popping in above the quota bars. A rejection
+      // keeps that side's previous snapshot; a fulfilled null means "not
+      // applicable" and clears it.
+      Promise.allSettled([loadQuotaRows(), loadAiUsageRow()]).then(
+        ([quota, aiUsage]) => {
+          if (quota.status === "fulfilled") {
+            setQuotaRows(quota.value);
+          } else {
+            console.warn(
+              "[AppSidebarAccount] load workspace quota failed:",
+              quota.reason
+            );
+          }
+          if (aiUsage.status === "fulfilled") {
+            setAiUsageRow(aiUsage.value);
+          } else {
+            console.warn(
+              "[AppSidebarAccount] load AI usage failed:",
+              aiUsage.reason
+            );
+          }
+        }
+      );
     },
     [loadAiUsageRow]
   );

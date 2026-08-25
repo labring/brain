@@ -541,6 +541,46 @@ test("the popover leads the quota list with the AI Credits row on a paid plan", 
   );
 });
 
+test("a failed AI usage refresh keeps the last snapshot; not-applicable clears it", async () => {
+  billing.subscription = proSubscription();
+  aiUsage.credits = {
+    hard: { ai_quota: 3_000_000 },
+    used: { ai_quota: 2_400_000 },
+  };
+  await withSidebar(
+    async () => {
+      const row = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-account"]'
+      );
+      assert.ok(row);
+      const aiRow = () =>
+        document.querySelector('[data-slot="app-sidebar-ai-usage-row"]');
+      const toggle = () =>
+        actAndDrain(() => {
+          row.click();
+        });
+
+      await toggle();
+      assert.match(aiRow()?.textContent ?? "", AI_CREDITS_VALUE_RE);
+      await toggle();
+
+      // The credits route fails on the next open — the row keeps the stale
+      // snapshot instead of vanishing.
+      aiUsage.credits = null;
+      await toggle();
+      assert.match(aiRow()?.textContent ?? "", AI_CREDITS_VALUE_RE);
+      await toggle();
+
+      // A fulfilled "no allowance" answer is not a failure: it clears the row.
+      aiUsage.credits = { hard: { ai_quota: 0 }, used: { ai_quota: 0 } };
+      await toggle();
+      assert.equal(aiRow(), null);
+    },
+    true,
+    () => hydrateAccountAtoms("ws-account-ai-stale")
+  );
+});
+
 test("the trial popover shows Free trial messages and turns danger at exhaustion", async () => {
   billing.subscription = proSubscription({ PlanName: "free" });
   aiUsage.freeTurns = { limit: 5, remaining: 0, used: 5 };
