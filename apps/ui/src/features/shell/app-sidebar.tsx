@@ -481,6 +481,37 @@ function AppSidebarProjectRow({
   );
 }
 
+// Edge state is written straight to the DOM so scroll ticks never re-render
+// the nav; same contract as SidePane's footer lift.
+function useScrollEdgeState() {
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (scrollEl == null) {
+      return;
+    }
+    const sync = () => {
+      scrollEl.dataset.atTop = String(scrollEl.scrollTop <= 1);
+      scrollEl.dataset.atBottom = String(
+        scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1
+      );
+    };
+    sync();
+    scrollEl.addEventListener("scroll", sync, { passive: true });
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(sync);
+    observer?.observe(scrollEl);
+    const scrollContent = scrollEl.firstElementChild;
+    if (scrollContent != null) {
+      observer?.observe(scrollContent);
+    }
+    return () => {
+      scrollEl.removeEventListener("scroll", sync);
+      observer?.disconnect();
+    };
+  }, [scrollEl]);
+  return setScrollEl;
+}
+
 const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
   currentProjectId,
   groups,
@@ -490,6 +521,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
   groups: ReturnType<typeof createAppSidebarProjectGroups>;
   projectShortcutIconKeys: ProjectShortcutIconKeyMap | undefined;
 }) {
+  const attachProjectsScroller = useScrollEdgeState();
   return (
     <>
       {groups.pinned.length > 0 ? (
@@ -511,7 +543,10 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
       {groups.projects.length > 0 ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <AppSidebarGroupHeading>Projects</AppSidebarGroupHeading>
-          <div className="min-h-0 flex-1 overflow-y-auto [mask-image:linear-gradient(to_bottom,transparent,black_10px,black_calc(100%-10px),transparent)]">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto [--scroll-fade-bottom:0px] [--scroll-fade-top:0px] [mask-image:linear-gradient(to_bottom,transparent,black_var(--scroll-fade-top),black_calc(100%-var(--scroll-fade-bottom)),transparent)] data-[at-bottom=false]:[--scroll-fade-bottom:10px] data-[at-top=false]:[--scroll-fade-top:10px]"
+            ref={attachProjectsScroller}
+          >
             <div className="flex flex-col gap-1.5 py-1">
               {groups.projects.map((project) => (
                 <AppSidebarProjectRow
