@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_DOCKER_APP_LISTENING_PORT } from "@/features/deploy/docker-deployment-settings";
+import { githubRepoFieldsMatchUrl } from "@/features/deploy/github-repo-url";
 import {
   type DeploymentTaskRunner,
   type DeploymentTaskSource,
@@ -39,35 +40,44 @@ const chatDockerDeploymentSettingsSchema = z.object({
   storage: z.array(chatDockerStorageSchema).optional(),
 });
 
-export const chatDeploymentTaskSourceSchema = z.discriminatedUnion("kind", [
-  z.object({
-    branch: z.string().trim().max(256).optional(),
-    kind: z.literal("github"),
-    repo: z.object({
-      fullName: boundedString,
-      id: z.string().trim().max(128).optional(),
-      name: z.string().trim().min(1).max(256),
-      url: z.string().trim().url(),
+export const chatDeploymentTaskSourceSchema = z
+  .discriminatedUnion("kind", [
+    z.object({
+      branch: z.string().trim().max(256).optional(),
+      kind: z.literal("github"),
+      repo: z.object({
+        fullName: boundedString,
+        id: z.string().trim().max(128).optional(),
+        name: z.string().trim().min(1).max(256),
+        url: z.string().trim().url(),
+      }),
     }),
-  }),
-  z.object({
-    kind: z.literal("docker"),
-    settings: chatDockerDeploymentSettingsSchema,
-  }),
-  z.object({
-    kind: z.literal("database"),
-    settings: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    args: z.record(z.string(), z.string()).optional(),
-    kind: z.literal("template"),
-    templateName: z.string().trim().min(1).max(256),
-  }),
-  z.object({
-    kind: z.literal("prompt"),
-    text: z.string().trim().min(1).max(4000),
-  }),
-]);
+    z.object({
+      kind: z.literal("docker"),
+      settings: chatDockerDeploymentSettingsSchema,
+    }),
+    z.object({
+      kind: z.literal("database"),
+      settings: z.record(z.string(), z.unknown()),
+    }),
+    z.object({
+      args: z.record(z.string(), z.string()).optional(),
+      kind: z.literal("template"),
+      templateName: z.string().trim().min(1).max(256),
+    }),
+    z.object({
+      kind: z.literal("prompt"),
+      text: z.string().trim().min(1).max(4000),
+    }),
+  ])
+  .refine(
+    (source) =>
+      source.kind !== "github" || githubRepoFieldsMatchUrl(source.repo),
+    {
+      message: "GitHub repository fields must identify the same repository.",
+      path: ["repo"],
+    }
+  );
 
 export const createDeployTaskToolInputSchema = z.object({
   intention: chatToolIntentionField,

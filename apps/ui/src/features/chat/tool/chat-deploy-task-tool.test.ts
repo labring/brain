@@ -147,6 +147,22 @@ test("chat createDeployTask ignores model-provided raw runner fields", () => {
   );
 });
 
+test("chat createDeployTask rejects inconsistent GitHub repository identity", () => {
+  const parsed = createDeployTaskToolInputSchema.safeParse({
+    intention: "deploy the requested GitHub repository",
+    source: {
+      kind: "github",
+      repo: {
+        fullName: "public/example",
+        name: "example",
+        url: "https://github.com/private/other",
+      },
+    },
+  });
+
+  assert.equal(parsed.success, false);
+});
+
 test("chat getDeployTaskStatus returns the safe task timeline snapshot", async () => {
   timelineSnapshotReads.length = 0;
   timelineSnapshot = failedTimelineSnapshot();
