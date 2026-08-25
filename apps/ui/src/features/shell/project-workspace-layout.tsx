@@ -40,6 +40,7 @@ import {
   claimBrainAiEngagementFromSession,
   trackBrainGtmEvent,
 } from "@/features/analytics/brain-gtm";
+import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
 import { ChatBillingCardSlot } from "@/features/chat/chat-billing-cards";
@@ -464,7 +465,7 @@ function ProjectAssistantChatSession({
             ?.onBillingHeaders(response.headers);
           return response;
         }) as typeof fetch,
-        prepareSendMessagesRequest: ({
+        prepareSendMessagesRequest: async ({
           api,
           body,
           credentials,
@@ -485,6 +486,7 @@ function ProjectAssistantChatSession({
             currentProject.displayName,
             wire.projectId
           );
+          const workspaceResourceQuota = await loadWorkspaceQuotaSnapshot();
 
           const headersWithAppToken = new Headers(headers);
           for (const [name, value] of Object.entries(
@@ -499,6 +501,9 @@ function ProjectAssistantChatSession({
             body: {
               ...(body && typeof body === "object" ? body : {}),
               ...(assistantContext == null ? {} : { assistantContext }),
+              ...(workspaceResourceQuota == null
+                ? {}
+                : { workspaceResourceQuota }),
               chatId: id,
               encodedKubeconfig: encodeURIComponent(kubeconfig),
               message: last,

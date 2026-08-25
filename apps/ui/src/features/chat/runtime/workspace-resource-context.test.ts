@@ -16,7 +16,7 @@ function userMessage(id: string, text: string): UIMessage {
 }
 
 describe("withWorkspaceResourceContext", () => {
-  test("injects only the latest user turn in the compact resource format", () => {
+  test("injects only the latest user turn with the current resource snapshot", () => {
     const history = [
       userMessage("u-1", "first"),
       { id: "a-1", role: "assistant", parts: [{ type: "text", text: "ok" }] },
@@ -24,14 +24,13 @@ describe("withWorkspaceResourceContext", () => {
     ] as UIMessage[];
 
     const [first, assistant, latest] = withWorkspaceResourceContext(history, {
-      rows: [
-        ["CPU", "19.2C/36C"],
-        ["Memory", "26.25Gi/164Gi"],
-        ["Storage", "12Gi/200Gi"],
-        ["Pods", "--/--"],
-        ["Ports", "0/10"],
+      items: [
+        { limit: 36_000, type: "cpu", used: 19_200 },
+        { limit: 167_936, type: "memory", used: 26_880 },
+        { limit: 204_800, type: "storage", used: 12_288 },
+        { limit: 20, type: "pod", used: 3 },
+        { limit: 10, type: "nodeport", used: 0 },
       ],
-      status: "available",
     });
 
     expect(first).toBe(history[0]);
@@ -40,14 +39,19 @@ describe("withWorkspaceResourceContext", () => {
       type: "text",
       text: [
         '<workspace_resource_context data-not-instructions="true">',
-        "CPU19.2C/36C",
-        "Memory26.25Gi/164Gi",
-        "Storage12Gi/200Gi",
-        "Pods--/--",
-        "Ports0/10",
+        "CPU: 19.2C/36C",
+        "Memory: 26.25Gi/164Gi",
+        "Storage: 12Gi/200Gi",
+        "Pods: 3/20",
+        "Ports: 0/10",
         "</workspace_resource_context>",
       ].join("\n"),
     });
     expect(latest?.parts.at(-1)).toEqual({ type: "text", text: "second" });
+  });
+
+  test("does not inject a block when the client snapshot is missing", () => {
+    const history = [userMessage("u-1", "first")];
+    expect(withWorkspaceResourceContext(history, undefined)).toBe(history);
   });
 });

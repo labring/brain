@@ -10,7 +10,6 @@ import {
   type UIMessageStreamOnFinishCallback,
 } from "ai";
 import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
-import { loadWorkspaceResourceQuota } from "@/features/billing/server/workspace-resource-quota";
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
@@ -727,24 +726,14 @@ async function runChatPipeline(input: {
     // The toolset's deploy-task actor stays the per-region crName: chat
     // deploy tools perform only namespace-shared actions, which record the
     // kubeconfig-verified identity (AIM-154 keeps them token-free).
-    const [{ tools, systemPrompt }, workspaceResourceQuota] = await Promise.all(
-      [
-        buildChatToolset({
-          assistantContext,
-          chatId,
-          kubeconfig,
-          kubernetesNamespace: owner.namespace,
-          workspaceActor: actor.legacyWorkspaceActor,
-          workspaceUserUid: owner.userUid,
-        }),
-        loadWorkspaceResourceQuota({
-          cookieHeader: input.cookieHeader,
-          userId: actor.accountUserId ?? null,
-          userUid: owner.userUid,
-          workspace: owner.namespace,
-        }),
-      ]
-    );
+    const { tools, systemPrompt } = await buildChatToolset({
+      assistantContext,
+      chatId,
+      kubeconfig,
+      kubernetesNamespace: owner.namespace,
+      workspaceActor: actor.legacyWorkspaceActor,
+      workspaceUserUid: owner.userUid,
+    });
 
     const openAi = await resolveChatOpenAiConnection({
       encodedKubeconfig,
@@ -768,7 +757,7 @@ async function runChatPipeline(input: {
     const modelMessages = await convertToModelMessages(
       withWorkspaceResourceContext(
         withSelectedResourceContext(history),
-        workspaceResourceQuota
+        input.request.workspaceResourceQuota
       ),
       { tools }
     );

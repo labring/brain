@@ -1,6 +1,7 @@
 import { isToolUIPart, type UIMessage } from "ai";
 import { z } from "zod";
 
+import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
   NAVIGATE_APP_TOOL_NAME,
   navigateAppOutputSchema,
@@ -148,6 +149,7 @@ export const chatStreamRequestSchema = z.object({
   message: z.unknown(),
   encodedKubeconfig: z.string().optional(),
   assistantContext: assistantContextPayloadSchema.optional(),
+  workspaceResourceQuota: workspaceResourceQuotaSnapshotSchema.optional(),
 });
 export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
 

@@ -59,15 +59,14 @@ let releaseCalls = 0;
 let reserveCalls = 0;
 let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
 let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
-let workspaceResourceQuota: WorkspaceResourceQuotaSnapshot = {
-  rows: [
-    ["CPU", "19.2C/36C"],
-    ["Memory", "26.25Gi/164Gi"],
-    ["Storage", "12Gi/200Gi"],
-    ["Pods", "--/--"],
-    ["Ports", "0/10"],
-  ] as const,
-  status: "available" as const,
+let workspaceResourceQuota: WorkspaceResourceQuotaSnapshot | undefined = {
+  items: [
+    { limit: 36_000, type: "cpu", used: 19_200 },
+    { limit: 167_936, type: "memory", used: 26_880 },
+    { limit: 204_800, type: "storage", used: 12_288 },
+    { limit: 20, type: "pod", used: 3 },
+    { limit: 10, type: "nodeport", used: 0 },
+  ],
 };
 let judgmentCalls: {
   userId: string | null;
@@ -248,9 +247,6 @@ mock.module("@/features/billing/server/free-trial-judgment", () => ({
     });
     return Promise.resolve(trialJudgment);
   },
-}));
-mock.module("@/features/billing/server/workspace-resource-quota", () => ({
-  loadWorkspaceResourceQuota: () => Promise.resolve(workspaceResourceQuota),
 }));
 mock.module("@/features/chat/persistence/free-tier", () => ({
   getFreeTierSnapshot: () => Promise.resolve({ ...freeTierSnapshot }),
@@ -611,7 +607,10 @@ function userMessage(id: string, text: string): UIMessage {
 function chatRequest(
   message: UIMessage,
   signal?: AbortSignal,
-  options?: { appToken?: string | null }
+  options?: {
+    appToken?: string | null;
+    workspaceResourceQuota?: WorkspaceResourceQuotaSnapshot;
+  }
 ): Request {
   const appToken =
     options?.appToken === undefined ? "valid-app-token" : options.appToken;
@@ -621,6 +620,9 @@ function chatRequest(
       encodedKubeconfig: "encoded-kubeconfig",
       message,
       namespace: NAMESPACE,
+      ...(options?.workspaceResourceQuota === undefined
+        ? { workspaceResourceQuota }
+        : { workspaceResourceQuota: options.workspaceResourceQuota }),
     }),
     headers: {
       "content-type": "application/json",
@@ -670,14 +672,13 @@ beforeEach(() => {
   forceReplaceConflict = false;
   freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
   workspaceResourceQuota = {
-    rows: [
-      ["CPU", "19.2C/36C"],
-      ["Memory", "26.25Gi/164Gi"],
-      ["Storage", "12Gi/200Gi"],
-      ["Pods", "--/--"],
-      ["Ports", "0/10"],
+    items: [
+      { limit: 36_000, type: "cpu", used: 19_200 },
+      { limit: 167_936, type: "memory", used: 26_880 },
+      { limit: 204_800, type: "storage", used: 12_288 },
+      { limit: 20, type: "pod", used: 3 },
+      { limit: 10, type: "nodeport", used: 0 },
     ],
-    status: "available",
   };
   history = [];
   judgmentCalls = [];
@@ -840,11 +841,15 @@ test("injects only the current workspace resources into the model prompt", async
 
   const prompt = JSON.stringify(modelPrompts[0]);
   expect(prompt).toContain("<workspace_resource_context");
-  expect(prompt).toContain("CPU19.2C/36C");
-  expect(prompt).toContain("Memory26.25Gi/164Gi");
-  expect(prompt).toContain("Storage12Gi/200Gi");
-  expect(prompt).toContain("Pods--/--");
-  expect(prompt).toContain("Ports0/10");
+  expect(prompt).toContain("CPU: 19.2C/36C");
+  expect(prompt).toContain("Memory: 26.25Gi/164Gi");
+  expect(prompt).toContain("Storage: 12Gi/200Gi");
+  expect(prompt).toContain("Pods: 3/20");
+  expect(prompt).toContain("CPU: 19.2C/36C");
+  expect(prompt).toContain("Memory: 26.25Gi/164Gi");
+  expect(prompt).toContain("Storage: 12Gi/200Gi");
+  expect(prompt).toContain("Ports: 0/10");
+  expect(prompt).toContain("Ports: 0/10");
   expect(prompt).not.toContain("assistant_usage_context");
   expect(prompt).not.toContain("Free assistant messages");
   expect(prompt).not.toContain("Billing mode for this turn");
@@ -853,16 +858,7 @@ test("injects only the current workspace resources into the model prompt", async
 });
 
 test("keeps chat available when workspace resources are unavailable", async () => {
-  workspaceResourceQuota = {
-    rows: [
-      ["CPU", "--/--"],
-      ["Memory", "--/--"],
-      ["Storage", "--/--"],
-      ["Pods", "--/--"],
-      ["Ports", "--/--"],
-    ],
-    status: "unavailable",
-  };
+  workspaceResourceQuota = undefined;
 
   const response = await POST(
     chatRequest(userMessage("user-resource-unavailable", "show resources"))
@@ -871,11 +867,7 @@ test("keeps chat available when workspace resources are unavailable", async () =
   await drain(response);
 
   const prompt = JSON.stringify(modelPrompts[0]);
-  expect(prompt).toContain("CPU--/--");
-  expect(prompt).toContain("Memory--/--");
-  expect(prompt).toContain("Storage--/--");
-  expect(prompt).toContain("Pods--/--");
-  expect(prompt).toContain("Ports--/--");
+  expect(prompt).not.toContain("<workspace_resource_context");
 });
 
 test("accepts a client-tool continuation without server-injected metadata", async () => {

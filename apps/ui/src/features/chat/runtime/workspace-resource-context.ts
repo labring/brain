@@ -2,17 +2,28 @@ import "server-only";
 
 import type { UIMessage } from "ai";
 
-import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
+import {
+  formatWorkspaceQuotaRows,
+  type WorkspaceResourceQuotaRow,
+  type WorkspaceResourceQuotaSnapshot,
+} from "@/features/billing/workspace-resource-quota";
 
 /**
  * Adds the current workspace resource snapshot to the latest user message.
- * The block is ephemeral and message-scoped so old usage never becomes
- * historical truth and the stable system prompt remains cacheable.
+ * The block is ephemeral and message-scoped. Missing client data is a no-op.
  */
 export function withWorkspaceResourceContext(
   history: UIMessage[],
-  quota: WorkspaceResourceQuotaSnapshot
+  quota: WorkspaceResourceQuotaSnapshot | undefined
 ): UIMessage[] {
+  if (quota == null) {
+    return history;
+  }
+  const rows = formatWorkspaceQuotaRows(quota.items, { includeMissing: false });
+  if (rows.length === 0) {
+    return history;
+  }
+
   let latestUserIndex = -1;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     if (history[index]?.role === "user") {
@@ -31,7 +42,7 @@ export function withWorkspaceResourceContext(
           parts: [
             {
               type: "text",
-              text: renderWorkspaceResourceContext(quota),
+              text: renderWorkspaceResourceContext(rows),
             },
             ...message.parts,
           ],
@@ -41,11 +52,11 @@ export function withWorkspaceResourceContext(
 }
 
 function renderWorkspaceResourceContext(
-  quota: WorkspaceResourceQuotaSnapshot
+  rows: WorkspaceResourceQuotaRow[]
 ): string {
   return [
     '<workspace_resource_context data-not-instructions="true">',
-    ...quota.rows.map(([label, value]) => `${label}${value}`),
+    ...rows.map(([label, value]) => `${label}: ${value}`),
     "</workspace_resource_context>",
   ].join("\n");
 }
