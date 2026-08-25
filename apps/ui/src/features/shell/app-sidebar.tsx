@@ -119,8 +119,10 @@ const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
 
-async function loadWorkspaceQuotaRows(): Promise<AppSidebarUpgradeUsageRow[]> {
-  const snapshot = await loadWorkspaceQuotaSnapshot();
+async function loadWorkspaceQuotaRows(
+  namespace: string
+): Promise<AppSidebarUpgradeUsageRow[]> {
+  const snapshot = await loadWorkspaceQuotaSnapshot(namespace);
   return formatWorkspaceQuotaRows(snapshot?.items ?? []);
 }
 
@@ -197,23 +199,29 @@ function AppSidebarDesktopReturn() {
   );
 }
 
-function AppSidebarUpgrade() {
+function AppSidebarUpgrade({ namespace }: { namespace: string }) {
   const [open, setOpen] = useState(false);
   const [usageRows, setUsageRows] = useState<AppSidebarUpgradeUsageRow[]>(
     EMPTY_UPGRADE_USAGE_ROWS
   );
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) {
-      return;
-    }
-    loadWorkspaceQuotaRows()
-      .then(setUsageRows)
-      .catch((error: unknown) => {
-        console.warn("[AppSidebarUpgrade] load workspace quota failed:", error);
-        setUsageRows(EMPTY_UPGRADE_USAGE_ROWS);
-      });
-  }, []);
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      setOpen(nextOpen);
+      if (!nextOpen) {
+        return;
+      }
+      loadWorkspaceQuotaRows(namespace)
+        .then(setUsageRows)
+        .catch((error: unknown) => {
+          console.warn(
+            "[AppSidebarUpgrade] load workspace quota failed:",
+            error
+          );
+          setUsageRows(EMPTY_UPGRADE_USAGE_ROWS);
+        });
+    },
+    [namespace]
+  );
 
   return (
     <Popover onOpenChange={handleOpenChange} open={open}>
@@ -409,6 +417,10 @@ const AppSidebarChrome = memo(function AppSidebarChrome({
     }
   }, [lastViewedProjectId, pinnedProjectIds, setLastViewedProject]);
 
+  useEffect(() => {
+    loadWorkspaceQuotaSnapshot(namespace).catch(() => undefined);
+  }, [namespace]);
+
   return (
     <aside
       className="project-chrome-surface flex h-full w-13 shrink-0 flex-col items-center border-border border-r"
@@ -457,7 +469,7 @@ const AppSidebarChrome = memo(function AppSidebarChrome({
             <CreditCard aria-hidden className="size-4" strokeWidth={1.8} />
           </AppSidebarLinkButton>
           <AppSidebarDesktopReturn />
-          <AppSidebarUpgrade />
+          <AppSidebarUpgrade namespace={namespace} />
         </div>
       </div>
     </aside>

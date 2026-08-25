@@ -1,7 +1,7 @@
 import { isToolUIPart, type UIMessage } from "ai";
 import { z } from "zod";
 
-import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
+import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 import {
   NAVIGATE_APP_TOOL_NAME,
   navigateAppOutputSchema,
@@ -149,9 +149,10 @@ export const chatStreamRequestSchema = z.object({
   message: z.unknown(),
   encodedKubeconfig: z.string().optional(),
   assistantContext: assistantContextPayloadSchema.optional(),
-  workspaceResourceQuota: workspaceResourceQuotaSnapshotSchema.optional(),
 });
-export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
+export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema> & {
+  workspaceResourceQuota?: WorkspaceResourceQuotaSnapshot;
+};
 
 /** Body of `POST /api/chat/messages`. Used by UI event adapters. */
 export const appendMessageBodySchema = z.object({

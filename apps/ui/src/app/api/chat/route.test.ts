@@ -609,7 +609,7 @@ function chatRequest(
   signal?: AbortSignal,
   options?: {
     appToken?: string | null;
-    workspaceResourceQuota?: WorkspaceResourceQuotaSnapshot;
+    workspaceResourceQuota?: unknown;
   }
 ): Request {
   const appToken =
@@ -862,6 +862,25 @@ test("keeps chat available when workspace resources are unavailable", async () =
 
   const response = await POST(
     chatRequest(userMessage("user-resource-unavailable", "show resources"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).not.toContain("<workspace_resource_context");
+});
+
+test("keeps chat available when workspace resources are malformed", async () => {
+  const response = await POST(
+    chatRequest(
+      userMessage("user-malformed-resource-context", "show resources"),
+      undefined,
+      {
+        workspaceResourceQuota: {
+          items: [{ limit: "36C", type: "cpu", used: 19_200 }],
+        },
+      }
+    )
   );
   expect(response.status).toBe(200);
   await drain(response);
