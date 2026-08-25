@@ -590,14 +590,6 @@ export function ApSettingsProvider({
     revalidate: revalidateClaim,
     target: apTarget,
   });
-  const titleContent =
-    apTarget == null || resolvedView !== AP_SETTINGS_FULL_VIEW ? undefined : (
-      <ResourceDisplayNameTitle
-        displayName={displayName}
-        onRename={canEditAp ? onRenameResource : undefined}
-        takenNames={takenDisplayNames}
-      />
-    );
   const network = publicAddressNetworkOrNull(display.network);
   const { data: publicAddressReadiness } = useAPPublicAddressReadiness({
     enabled: apTarget != null && isApWorkload && network != null,
@@ -667,6 +659,14 @@ export function ApSettingsProvider({
   }, [apTarget, onRepairSideEntry, resolvedView, view]);
 
   const model = useMemo<SettingsViewModel>(() => {
+    const titleContent =
+      apTarget == null || resolvedView !== AP_SETTINGS_FULL_VIEW ? undefined : (
+        <ResourceDisplayNameTitle
+          displayName={displayName}
+          onRename={canEditAp ? onRenameResource : undefined}
+          takenNames={takenDisplayNames}
+        />
+      );
     return buildApSettingsModel({
       apTarget,
       baseSubtitle,
@@ -703,7 +703,8 @@ export function ApSettingsProvider({
     canEditAp,
     display,
     displayName,
-    titleContent,
+    onRenameResource,
+    takenDisplayNames,
     draftRoutingDomain,
     effectiveReadOnly,
     error,
