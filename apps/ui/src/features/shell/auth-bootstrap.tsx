@@ -10,7 +10,9 @@ import { applySealosSdkHydration } from "@/features/shell/auth-bootstrap-core";
 import {
   appTokenAtom,
   desktopLanguageAtom,
+  desktopUserAvatarAtom,
   desktopUserIdAtom,
+  desktopUserNameAtom,
   kubeconfigAtom,
   namespaceAtom,
 } from "@/lib/auth-store";
@@ -76,7 +78,9 @@ export default function AuthBootstrap({
 export function SealosSdkBootstrap() {
   const setAppToken = useSetAtom(appTokenAtom);
   const setDesktopLanguage = useSetAtom(desktopLanguageAtom);
+  const setDesktopUserAvatar = useSetAtom(desktopUserAvatarAtom);
   const setDesktopUserId = useSetAtom(desktopUserIdAtom);
+  const setDesktopUserName = useSetAtom(desktopUserNameAtom);
   const setKubeconfig = useSetAtom(kubeconfigAtom);
   const setNamespace = useSetAtom(namespaceAtom);
 
@@ -99,7 +103,9 @@ export function SealosSdkBootstrap() {
           session,
           setAppToken,
           setDesktopLanguage,
+          setDesktopUserAvatar,
           setDesktopUserId,
+          setDesktopUserName,
           setKubeconfig,
           setNamespace,
         });
@@ -130,7 +136,9 @@ export function SealosSdkBootstrap() {
   }, [
     setAppToken,
     setDesktopLanguage,
+    setDesktopUserAvatar,
     setDesktopUserId,
+    setDesktopUserName,
     setKubeconfig,
     setNamespace,
   ]);

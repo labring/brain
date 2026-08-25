@@ -6,7 +6,15 @@ export interface WorkspaceQuotaItem {
   used: number;
 }
 
-export type AppSidebarUpgradeUsageRow = readonly [label: string, value: string];
+export interface AppSidebarQuotaRow {
+  label: string;
+  /** Used share of the limit in percent (0–100), or null when unknowable. */
+  percent: number | null;
+  value: string;
+}
+
+/** Quota rows at or above this share render in the warning color. */
+export const QUOTA_WARNING_PERCENT = 80;
 
 const WORKSPACE_QUOTA_ROW_DEFINITIONS = [
   { label: "CPU", type: "cpu" },
@@ -15,6 +23,24 @@ const WORKSPACE_QUOTA_ROW_DEFINITIONS = [
   { label: "Pods", type: "pod" },
   { label: "Ports", type: "nodeport" },
 ] as const;
+
+export function isWorkspaceQuotaItem(
+  value: unknown
+): value is WorkspaceQuotaItem {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const item = value as { limit?: unknown; type?: unknown; used?: unknown };
+  return (
+    (item.type === "cpu" ||
+      item.type === "memory" ||
+      item.type === "storage" ||
+      item.type === "pod" ||
+      item.type === "nodeport") &&
+    typeof item.used === "number" &&
+    typeof item.limit === "number"
+  );
+}
 
 function formatPortQuotaNumber(value: number) {
   if (!Number.isFinite(value)) {
@@ -77,14 +103,28 @@ function formatQuotaValue(item: WorkspaceQuotaItem) {
   }
 }
 
+function quotaPercent(item: WorkspaceQuotaItem): number | null {
+  if (
+    !(Number.isFinite(item.used) && Number.isFinite(item.limit)) ||
+    item.limit <= 0
+  ) {
+    return null;
+  }
+  return Math.min(100, Math.max(0, (item.used / item.limit) * 100));
+}
+
 export function formatWorkspaceQuotaRows(
   quota: readonly WorkspaceQuotaItem[]
-): AppSidebarUpgradeUsageRow[] {
+): AppSidebarQuotaRow[] {
   return WORKSPACE_QUOTA_ROW_DEFINITIONS.map(({ label, type }) => {
     const item = quota.find((candidate) => candidate.type === type);
     if (item == null) {
-      return [label, "--/--"] as const;
+      return { label, percent: null, value: "--/--" };
     }
-    return [label, formatQuotaValue(item)] as const;
+    return {
+      label,
+      percent: quotaPercent(item),
+      value: formatQuotaValue(item),
+    };
   });
 }

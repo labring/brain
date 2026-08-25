@@ -1,15 +1,8 @@
 "use client";
 
-import { sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { sealosLogoSrc } from "@workspace/ui/assets/brand";
-import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { BrandMark } from "@workspace/ui/components/brand-mark";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@workspace/ui/components/popover";
 import {
   Sidebar,
   SidebarContent,
@@ -26,12 +19,12 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import {
+  ArrowUpRight,
   CreditCard,
   Database,
   House,
   PanelLeft,
   PanelsTopLeft,
-  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -40,7 +33,6 @@ import {
   type CSSProperties,
   memo,
   type ReactNode,
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -54,11 +46,7 @@ import type {
   ProjectIconKeyMap,
 } from "@/features/projects/project-icons";
 import { createAppSidebarProjectGroups } from "@/features/shell/app-sidebar.groups";
-import {
-  type AppSidebarUpgradeUsageRow,
-  formatWorkspaceQuotaRows,
-  type WorkspaceQuotaItem,
-} from "@/features/shell/app-sidebar-upgrade";
+import { AppSidebarAccount } from "@/features/shell/app-sidebar-account";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
@@ -66,7 +54,6 @@ const APP_SIDEBAR_NAV_ID = "app-sidebar-nav";
 const APP_SIDEBAR_WIDTH = "13.75rem";
 const APP_SIDEBAR_WIDTH_ICON = "3.25rem";
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
-const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
 
 function ProjectIcon({
   active,
@@ -120,6 +107,7 @@ interface AppSidebarNavRowProps {
   onClick?: ComponentProps<typeof Link>["onClick"];
   rel?: string;
   target?: string;
+  trailing?: ReactNode;
 }
 
 function AppSidebarNavRow({
@@ -131,6 +119,7 @@ function AppSidebarNavRow({
   onClick,
   rel,
   target,
+  trailing,
 }: AppSidebarNavRowProps) {
   const { state } = useSidebar();
   const expanded = state === "expanded";
@@ -169,6 +158,18 @@ function AppSidebarNavRow({
       >
         {label}
       </span>
+      {trailing ? (
+        <span
+          aria-hidden
+          className={cn(
+            "relative flex shrink-0 items-center pr-2.5 text-muted-foreground opacity-0 transition-opacity duration-150 motion-reduce:transition-none",
+            expanded &&
+              "group-hover/row:opacity-100 group-focus-visible/row:opacity-100"
+          )}
+        >
+          {trailing}
+        </span>
+      ) : null}
     </>
   );
   const sharedProps = {
@@ -316,136 +317,16 @@ function AppSidebarDesktopReturn() {
 
   return (
     <AppSidebarNavRow
-      ariaLabel="Back to Desktop"
+      ariaLabel="Sealos Desktop"
       href={desktopUrl ?? undefined}
       icon={<House aria-hidden className="size-4" strokeWidth={1.8} />}
-      label="Back to Desktop"
+      label="Sealos Desktop"
       rel={desktopUrl ? "noopener noreferrer" : undefined}
       target={desktopUrl ? "_blank" : undefined}
+      trailing={
+        <ArrowUpRight aria-hidden className="size-3.5" strokeWidth={1.8} />
+      }
     />
-  );
-}
-
-function isWorkspaceQuotaItem(value: unknown): value is WorkspaceQuotaItem {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const item = value as { limit?: unknown; type?: unknown; used?: unknown };
-  return (
-    (item.type === "cpu" ||
-      item.type === "memory" ||
-      item.type === "storage" ||
-      item.type === "pod" ||
-      item.type === "nodeport") &&
-    typeof item.used === "number" &&
-    typeof item.limit === "number"
-  );
-}
-
-async function loadWorkspaceQuotaRows(): Promise<AppSidebarUpgradeUsageRow[]> {
-  const snapshot = await sealosApp.getWorkspaceQuota();
-  const rawQuota: readonly unknown[] = Array.isArray(snapshot.quota)
-    ? snapshot.quota
-    : [];
-  return formatWorkspaceQuotaRows(rawQuota.filter(isWorkspaceQuotaItem));
-}
-
-function AppSidebarUpgrade() {
-  const { state } = useSidebar();
-  const expanded = state === "expanded";
-  const [open, setOpen] = useState(false);
-  const [usageRows, setUsageRows] = useState<AppSidebarUpgradeUsageRow[]>(
-    EMPTY_UPGRADE_USAGE_ROWS
-  );
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) {
-      return;
-    }
-    loadWorkspaceQuotaRows()
-      .then(setUsageRows)
-      .catch((error: unknown) => {
-        console.warn("[AppSidebarUpgrade] load workspace quota failed:", error);
-        setUsageRows(EMPTY_UPGRADE_USAGE_ROWS);
-      });
-  }, []);
-
-  // One button for both states: it keeps its centered layout and tracks the
-  // sidebar's width animation, the surface fading out into the quiet
-  // icon-button look as it reaches the rail.
-  const trigger = (
-    <AppButton
-      aria-label="Upgrade"
-      className={cn(
-        "overflow-hidden transition-[width,gap,padding,background-color,color] motion-reduce:transition-none",
-        expanded
-          ? "w-full duration-300 ease-sidebar"
-          : "w-9 gap-0 bg-transparent px-0 text-neutral-50 duration-200 ease-out hover:bg-input/30 hover:text-blue-400"
-      )}
-      type="button"
-      variant="secondary"
-    >
-      <Sparkles aria-hidden className="size-4" strokeWidth={1.75} />
-      <span
-        className={cn(
-          "overflow-hidden whitespace-nowrap transition-[max-width,opacity] motion-reduce:transition-none",
-          expanded
-            ? "max-w-24 opacity-100 duration-300 ease-sidebar"
-            : "max-w-0 opacity-0 duration-200 ease-out"
-        )}
-      >
-        Upgrade
-      </span>
-    </AppButton>
-  );
-
-  return (
-    <Popover onOpenChange={handleOpenChange} open={open}>
-      <PopoverTrigger render={trigger} />
-      <PopoverContent
-        align="start"
-        alignOffset={0}
-        className="w-[219px] gap-0 rounded-lg border border-border bg-input/30 p-4 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
-        side="right"
-        sideOffset={6}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3">
-            {usageRows.map(([label, value]) => (
-              <div
-                className="flex w-full items-start justify-between gap-4 whitespace-nowrap text-sm/5"
-                key={label}
-              >
-                <span className="text-muted-foreground">{label}</span>
-                <span className="text-brand-primary-foreground tabular-nums">
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <AppButton
-            className="w-full"
-            nativeButton={false}
-            render={
-              <Link
-                href="/billing?mode=upgrade"
-                onClick={recordBillingReturnRoute}
-              />
-            }
-            variant="secondary"
-          >
-            <Sparkles
-              aria-hidden
-              className="size-4"
-              data-icon="inline-start"
-              strokeWidth={1.75}
-            />
-            <span>Upgrade</span>
-          </AppButton>
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -652,7 +533,7 @@ function AppSidebarChrome({
               onClick={recordBillingReturnRoute}
             />
             <AppSidebarDesktopReturn />
-            <AppSidebarUpgrade />
+            <AppSidebarAccount />
           </div>
         </SidebarFooter>
       </div>

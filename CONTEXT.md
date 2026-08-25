@@ -26,6 +26,12 @@ The persistent left-edge product navigation surface containing product-level nav
 
 _Avoid_: Project list, left Side Pane, Project Shortcut (retired term), open/closed sidebar, full/mini sidebar, rail mode.
 
+### Sealos Desktop Entry
+
+The App Sidebar's app-level link out to the platform's Sealos Desktop (user-visible label: Sealos Desktop). It opens the Desktop alongside Brain rather than replacing it — an exit to the platform layer, not in-app navigation, which is why the label names the destination instead of claiming a return.
+
+_Avoid_: Back to Desktop (retired label), desktop return, home.
+
 ### Project Icon
 
 The small glyph identifying a Project in navigation surfaces such as the App Sidebar's Project rows. Presentation-only and derived from the Project's workloads — the brand of a recognized AP container image, or the DB engine when the Project has no AP — falling back to a generic container mark when nothing is recognized. Not a persisted Project property and not user-chosen.

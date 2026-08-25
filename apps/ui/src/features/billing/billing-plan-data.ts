@@ -294,6 +294,27 @@ export function isDeletedSubscriptionRecord(status: string): boolean {
   return status.trim().toLowerCase() === "deleted";
 }
 
+// Present a deleted subscription as the no-subscription PAYG shape: stale
+// plan, period, and invoice facts must not leak into a workspace that can
+// simply subscribe again. The record's role survives for `canManage`.
+function normalizeDeletedSubscriptionRecord(
+  subscription: z.infer<typeof subscriptionSchema>
+): z.infer<typeof subscriptionSchema> {
+  if (!isDeletedSubscriptionRecord(subscription.Status)) {
+    return subscription;
+  }
+  return {
+    ...subscription,
+    CancelAtPeriodEnd: false,
+    CurrentPeriodEndAt: "",
+    ExpireAt: null,
+    InvoiceInfo: undefined,
+    PlanName: "PAYG",
+    Status: "",
+    type: "PAYG" as const,
+  };
+}
+
 function subscriptionLifecycle(input: {
   cancelAtPeriodEnd: boolean;
   hasPendingUpgrade?: boolean;
@@ -519,22 +540,9 @@ export async function loadBillingPlanSnapshot(
   const plans = plansResponse.plans
     .map(normalizeBillingPlan)
     .sort((left, right) => left.order - right.order);
-  const rawSubscription = subscriptionResponse.subscription;
-  // Present a deleted subscription as the no-subscription PAYG shape: stale
-  // plan, period, and invoice facts must not leak into a workspace that can
-  // simply subscribe again. The record's role survives for `canManage`.
-  const subscription = isDeletedSubscriptionRecord(rawSubscription.Status)
-    ? {
-        ...rawSubscription,
-        CancelAtPeriodEnd: false,
-        CurrentPeriodEndAt: "",
-        ExpireAt: null,
-        InvoiceInfo: undefined,
-        PlanName: "PAYG",
-        Status: "",
-        type: "PAYG" as const,
-      }
-    : rawSubscription;
+  const subscription = normalizeDeletedSubscriptionRecord(
+    subscriptionResponse.subscription
+  );
   const transaction = transactionResponse.value?.transaction;
   const subscriptions = subscriptionsResponse.value?.subscriptions ?? [];
   const workspaceData = availableWorkspaceData(
@@ -701,6 +709,65 @@ export async function loadBillingPlanSnapshot(
             : item?.CurrentPeriodEndAt.trim() || null,
       };
     }),
+  };
+}
+
+/**
+ * The Workspace Subscription facts the App Sidebar account section needs —
+ * a two-request read (region, then the region-addressed subscription route)
+ * instead of the Plan view's full snapshot.
+ */
+export interface WorkspaceSubscriptionSummary {
+  currentPeriodEndAt: string;
+  isActiveFreeTrial: boolean;
+  isPayg: boolean;
+  lifecycle: SubscriptionLifecycle;
+  planName: string;
+}
+
+export async function loadWorkspaceSubscriptionSummary(
+  credentials: BillingCredentials & { workspace: string },
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<WorkspaceSubscriptionSummary> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: {
+      appToken: credentials.appToken,
+      kubeconfig: credentials.kubeconfig,
+    },
+    fallbackErrorMessage: "Could not load the workspace subscription.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+
+  const region = regionsResponseSchema.parse(
+    await requestBillingJson("/api/billing/regions")
+  ).current;
+  const subscription = normalizeDeletedSubscriptionRecord(
+    subscriptionResponseSchema.parse(
+      await requestBillingJson("/api/billing/subscription", {
+        regionDomain: region.domain,
+        workspace: credentials.workspace,
+      })
+    ).subscription
+  );
+
+  return {
+    currentPeriodEndAt: subscription.CurrentPeriodEndAt,
+    isActiveFreeTrial: isActiveFreeTrialSubscription({
+      planName: subscription.PlanName,
+      status: subscription.Status,
+      type: subscription.type ?? "",
+    }),
+    isPayg: subscription.type === "PAYG",
+    // Pending upgrades are invisible to this read (no transaction request);
+    // they surface as the quiet "active" state, which is what the account
+    // row's second line wants anyway.
+    lifecycle: subscriptionLifecycle({
+      cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
+      isPayg: subscription.type === "PAYG",
+      planName: subscription.PlanName,
+      status: subscription.Status,
+    }),
+    planName: subscription.PlanName,
   };
 }
 

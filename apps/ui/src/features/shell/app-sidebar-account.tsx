@@ -1,0 +1,352 @@
+"use client";
+
+import { sealosApp } from "@labring/sealos-desktop-sdk/app";
+import { PlanBadge } from "@workspace/ui/components/plan-badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@workspace/ui/components/popover";
+import { useSidebar } from "@workspace/ui/components/sidebar";
+import { cn } from "@workspace/ui/lib/utils";
+import { useAtomValue } from "jotai";
+import { Check, Copy, Sparkles, User } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
+import { loadWorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
+import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import {
+  type AppSidebarAccountBadge,
+  type AppSidebarAccountHint,
+  deriveAppSidebarAccountPresentation,
+} from "@/features/shell/app-sidebar-account-presentation";
+import {
+  type AppSidebarQuotaRow,
+  formatWorkspaceQuotaRows,
+  isWorkspaceQuotaItem,
+  QUOTA_WARNING_PERCENT,
+} from "@/features/shell/app-sidebar-quota";
+import {
+  appTokenAtom,
+  desktopUserAvatarAtom,
+  desktopUserIdAtom,
+  desktopUserNameAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/lib/auth-store";
+
+const HINT_TEXT_CLASS: Record<AppSidebarAccountHint["tone"], string> = {
+  danger: "text-red-400",
+  warn: "text-amber-400",
+};
+
+const COPY_FEEDBACK_MS = 1500;
+
+function AppSidebarAccountAvatar({
+  avatarUrl,
+  className,
+  name,
+}: {
+  avatarUrl: string;
+  className?: string;
+  name: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (avatarUrl !== "" && !failed) {
+    return (
+      // biome-ignore lint/performance/noImgElement: the Desktop-hosted avatar is a runtime cross-origin URL; next/image optimization gains nothing for a 24px disc.
+      <img
+        alt=""
+        aria-hidden
+        className={cn("shrink-0 rounded-full object-cover", className)}
+        height={24}
+        onError={() => setFailed(true)}
+        src={avatarUrl}
+        width={24}
+      />
+    );
+  }
+  const initial = name.slice(0, 1).toUpperCase();
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-full bg-linear-to-br from-blue-400 to-blue-600 font-medium text-white",
+        className
+      )}
+    >
+      {initial === "" ? (
+        <User aria-hidden className="size-3.5" strokeWidth={1.8} />
+      ) : (
+        initial
+      )}
+    </span>
+  );
+}
+
+function AppSidebarAccountBadgeSlot({
+  badge,
+}: {
+  badge: AppSidebarAccountBadge | null;
+}) {
+  if (badge == null) {
+    return null;
+  }
+  if (badge.kind === "payg") {
+    return <span className="text-muted-foreground text-xs">PAYG</span>;
+  }
+  return <PlanBadge className="h-4 text-xs" planName={badge.planName} />;
+}
+
+function AppSidebarQuotaBar({ percent }: { percent: number | null }) {
+  return (
+    <span
+      aria-hidden
+      className="block h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-input/50"
+    >
+      <span
+        className={cn(
+          "block h-full rounded-full",
+          percent != null && percent >= QUOTA_WARNING_PERCENT
+            ? "bg-amber-400"
+            : "bg-blue-400"
+        )}
+        style={{ width: `${percent ?? 0}%` }}
+      />
+    </span>
+  );
+}
+
+function useCopyFeedback(): [boolean, (text: string) => void] {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+  const copy = useCallback((text: string) => {
+    navigator.clipboard?.writeText(text).catch(() => undefined);
+    setCopied(true);
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(
+      () => setCopied(false),
+      COPY_FEEDBACK_MS
+    );
+  }, []);
+  return [copied, copy];
+}
+
+async function loadQuotaRows(): Promise<AppSidebarQuotaRow[]> {
+  const snapshot = await sealosApp.getWorkspaceQuota();
+  const rawQuota: readonly unknown[] = Array.isArray(snapshot.quota)
+    ? snapshot.quota
+    : [];
+  return formatWorkspaceQuotaRows(rawQuota.filter(isWorkspaceQuotaItem));
+}
+
+/**
+ * The App Sidebar's account section (AIM-308): identity row with the plan
+ * badge, opening the compact account popover — identity, copyable user ID,
+ * status hint, workspace quota bars, and the upgrade entry. Replaces the old
+ * Upgrade button as the sidebar's single quota surface.
+ */
+export function AppSidebarAccount() {
+  const { state } = useSidebar();
+  const expanded = state === "expanded";
+  const userId = useAtomValue(desktopUserIdAtom).trim();
+  const userName = useAtomValue(desktopUserNameAtom).trim();
+  const userAvatar = useAtomValue(desktopUserAvatarAtom).trim();
+  const appToken = useAtomValue(appTokenAtom).trim();
+  const kubeconfig = useAtomValue(kubeconfigAtom).trim();
+  const workspace = useAtomValue(namespaceAtom).trim();
+  const credentialsReady =
+    appToken !== "" && kubeconfig !== "" && workspace !== "";
+
+  // Live billing data, not the login-time session snapshot: the badge and
+  // hint follow the same subscription route as the Billing Area's hooks.
+  const { data: subscriptionSummary } = useSWR(
+    credentialsReady
+      ? (["app-sidebar-subscription", workspace, kubeconfig, appToken] as const)
+      : null,
+    () => loadWorkspaceSubscriptionSummary({ appToken, kubeconfig, workspace }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  const { badge, hint } = useMemo(
+    () =>
+      deriveAppSidebarAccountPresentation(
+        subscriptionSummary ?? null,
+        new Date()
+      ),
+    [subscriptionSummary]
+  );
+
+  const [open, setOpen] = useState(false);
+  // null = not loaded (or failed): the popover omits the quota section.
+  const [quotaRows, setQuotaRows] = useState<AppSidebarQuotaRow[] | null>(null);
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      return;
+    }
+    loadQuotaRows()
+      .then(setQuotaRows)
+      .catch((error: unknown) => {
+        console.warn("[AppSidebarAccount] load workspace quota failed:", error);
+        setQuotaRows(null);
+      });
+  }, []);
+  const [copied, copy] = useCopyFeedback();
+
+  const displayName = userName === "" ? "Account" : userName;
+  const secondLine = hint?.text ?? (userId === "" ? null : `ID: ${userId}`);
+  const secondLineClass =
+    hint == null ? "text-muted-foreground" : HINT_TEXT_CLASS[hint.tone];
+
+  const trigger = (
+    <button
+      aria-label={`Account: ${displayName}`}
+      className={cn(
+        "group/account relative flex w-full shrink-0 items-center overflow-hidden rounded-md text-left transition-[height] motion-reduce:transition-none",
+        expanded
+          ? "h-11 duration-300 ease-sidebar"
+          : "h-8 duration-200 ease-out"
+      )}
+      data-slot="app-sidebar-account"
+      type="button"
+    />
+  );
+
+  return (
+    <Popover onOpenChange={handleOpenChange} open={open}>
+      <PopoverTrigger render={trigger}>
+        <span
+          aria-hidden
+          className={cn(
+            "absolute inset-y-0 left-0 rounded-md transition-[width,background-color] group-hover/account:bg-input/30 motion-reduce:transition-none",
+            expanded
+              ? "w-full duration-300 ease-sidebar"
+              : "w-9 duration-200 ease-out"
+          )}
+        />
+        <span className="relative flex w-9 shrink-0 items-center justify-center">
+          <AppSidebarAccountAvatar
+            avatarUrl={userAvatar}
+            className="size-6 text-[10px]"
+            name={userName}
+          />
+        </span>
+        <span
+          className={cn(
+            "relative min-w-0 flex-1 transition-opacity motion-reduce:transition-none",
+            expanded
+              ? "opacity-100 duration-300 ease-sidebar"
+              : "opacity-0 duration-200 ease-out"
+          )}
+        >
+          <span className="block truncate font-medium text-neutral-50 text-sm/4">
+            {displayName}
+          </span>
+          {secondLine == null ? null : (
+            <span
+              className={cn(
+                "block truncate text-xs tabular-nums",
+                secondLineClass
+              )}
+              data-slot="app-sidebar-account-status"
+            >
+              {secondLine}
+            </span>
+          )}
+        </span>
+        <span
+          className={cn(
+            "relative flex shrink-0 items-center pr-1.5 transition-opacity motion-reduce:transition-none",
+            expanded
+              ? "opacity-100 duration-300 ease-sidebar"
+              : "opacity-0 duration-200 ease-out"
+          )}
+        >
+          <AppSidebarAccountBadgeSlot badge={badge} />
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-52 gap-0 rounded-lg border border-border bg-input/30 p-3 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
+        side={expanded ? "top" : "right"}
+        sideOffset={6}
+      >
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center gap-2">
+            <AppSidebarAccountAvatar
+              avatarUrl={userAvatar}
+              className="size-6 text-[10px]"
+              name={userName}
+            />
+            <span className="min-w-0 flex-1 truncate font-medium text-sm">
+              {displayName}
+            </span>
+            <AppSidebarAccountBadgeSlot badge={badge} />
+          </div>
+          {userId === "" ? null : (
+            <button
+              aria-label="Copy user ID"
+              className="flex items-center gap-1 text-muted-foreground text-xs tabular-nums transition-colors hover:text-neutral-50"
+              onClick={() => copy(userId)}
+              type="button"
+            >
+              <span className="truncate">ID: {userId}</span>
+              {copied ? (
+                <Check aria-hidden className="size-3" strokeWidth={1.8} />
+              ) : (
+                <Copy aria-hidden className="size-3" strokeWidth={1.8} />
+              )}
+            </button>
+          )}
+          {hint == null ? null : (
+            <div className={cn("text-xs", HINT_TEXT_CLASS[hint.tone])}>
+              {hint.text}
+            </div>
+          )}
+          <div aria-hidden className="h-px w-full bg-border" />
+          {quotaRows == null ? null : (
+            <div className="flex flex-col gap-1.5">
+              {quotaRows.map((row) => (
+                <div
+                  className="flex items-center gap-2"
+                  data-slot="app-sidebar-quota-row"
+                  data-warning={
+                    row.percent != null && row.percent >= QUOTA_WARNING_PERCENT
+                      ? "true"
+                      : undefined
+                  }
+                  key={row.label}
+                >
+                  <span className="w-10 shrink-0 text-muted-foreground text-xs">
+                    {row.label === "Memory" ? "Mem" : row.label}
+                  </span>
+                  <AppSidebarQuotaBar percent={row.percent} />
+                  <span
+                    className={cn(
+                      "shrink-0 text-right text-xs tabular-nums",
+                      row.percent != null &&
+                        row.percent >= QUOTA_WARNING_PERCENT &&
+                        "text-amber-400"
+                    )}
+                  >
+                    {row.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <Link
+            className="flex items-center justify-center gap-1.5 rounded-md bg-input/40 py-1 font-medium text-neutral-50 text-xs transition-colors hover:bg-input/60"
+            href="/billing?mode=upgrade"
+            onClick={recordBillingReturnRoute}
+          >
+            <Sparkles aria-hidden className="size-3.5" strokeWidth={1.75} />
+            Upgrade
+          </Link>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
