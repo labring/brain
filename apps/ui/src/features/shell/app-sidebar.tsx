@@ -2,10 +2,9 @@
 
 import { sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { sealosLogoSrc } from "@workspace/ui/assets/brand";
-import { deviconSrc, devicons } from "@workspace/ui/assets/devicons";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
-import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-icon";
+import { BrandMark } from "@workspace/ui/components/brand-mark";
 import {
   Popover,
   PopoverContent,
@@ -28,6 +27,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import {
   CreditCard,
+  Database,
   House,
   PanelLeft,
   PanelsTopLeft,
@@ -50,9 +50,9 @@ import { recordBillingReturnRoute } from "@/features/billing/billing-return-rout
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
-  ProjectShortcutIconKey,
-  ProjectShortcutIconKeyMap,
-} from "@/features/projects/project-shortcut-icons";
+  ProjectIconKey,
+  ProjectIconKeyMap,
+} from "@/features/projects/project-icons";
 import { createAppSidebarProjectGroups } from "@/features/shell/app-sidebar.groups";
 import {
   type AppSidebarUpgradeUsageRow,
@@ -63,44 +63,35 @@ import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
 const APP_SIDEBAR_NAV_ID = "app-sidebar-nav";
-const APP_SIDEBAR_WIDTH = "16.5rem";
+const APP_SIDEBAR_WIDTH = "13.75rem";
 const APP_SIDEBAR_WIDTH_ICON = "3.25rem";
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
 
-function ProjectShortcutIcon({
+function ProjectIcon({
   active,
   iconKey,
 }: {
   active?: boolean;
-  iconKey: ProjectShortcutIconKey;
+  iconKey: ProjectIconKey;
 }) {
-  if (iconKey !== "docker") {
+  if (iconKey === "database") {
     return (
-      <DatabaseEngineIcon
+      <Database
+        aria-hidden
         className={cn(
-          "block size-4 shrink-0 object-contain transition-[filter]",
-          iconKey !== "database" && !active && "brightness-0 invert"
+          "size-4 shrink-0 transition-colors",
+          !active && "text-neutral-400"
         )}
-        engine={iconKey === "database" ? undefined : iconKey}
-        variant={active || iconKey === "mysql" ? "original" : "plain"}
+        strokeWidth={1.8}
       />
     );
   }
 
-  const icon = devicons[iconKey];
-  const src = deviconSrc(active ? icon.original : icon.plain);
-
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "block size-4 bg-center bg-contain bg-no-repeat transition-[filter]",
-        !active && "brightness-0 invert"
-      )}
-      style={{
-        backgroundImage: `url(${JSON.stringify(src)})`,
-      }}
+    <BrandMark
+      brandKey={iconKey}
+      className={cn("transition-colors", !active && "text-neutral-400")}
     />
   );
 }
@@ -466,7 +457,7 @@ function AppSidebarProjectRow({
 }: {
   ariaLabel?: string;
   currentProjectId: string | undefined;
-  iconKey: ProjectShortcutIconKey;
+  iconKey: ProjectIconKey;
   project: { id: string; name: string };
 }) {
   const active = currentProjectId === project.id;
@@ -475,7 +466,7 @@ function AppSidebarProjectRow({
       active={active}
       ariaLabel={ariaLabel}
       href={`/project/${encodeURIComponent(project.id)}`}
-      icon={<ProjectShortcutIcon active={active} iconKey={iconKey} />}
+      icon={<ProjectIcon active={active} iconKey={iconKey} />}
       label={project.name}
     />
   );
@@ -515,11 +506,11 @@ function useScrollEdgeState() {
 const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
   currentProjectId,
   groups,
-  projectShortcutIconKeys,
+  projectIconKeys,
 }: {
   currentProjectId: string | undefined;
   groups: ReturnType<typeof createAppSidebarProjectGroups>;
-  projectShortcutIconKeys: ProjectShortcutIconKeyMap | undefined;
+  projectIconKeys: ProjectIconKeyMap | undefined;
 }) {
   const attachProjectsScroller = useScrollEdgeState();
   return (
@@ -532,7 +523,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
               <AppSidebarProjectRow
                 ariaLabel={`Pinned project: ${project.name}`}
                 currentProjectId={currentProjectId}
-                iconKey={projectShortcutIconKeys?.get(project.id) ?? "docker"}
+                iconKey={projectIconKeys?.get(project.id) ?? "docker"}
                 key={project.id}
                 project={project}
               />
@@ -551,7 +542,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
               {groups.projects.map((project) => (
                 <AppSidebarProjectRow
                   currentProjectId={currentProjectId}
-                  iconKey={projectShortcutIconKeys?.get(project.id) ?? "docker"}
+                  iconKey={projectIconKeys?.get(project.id) ?? "docker"}
                   key={project.id}
                   project={project}
                 />
@@ -645,7 +636,7 @@ function AppSidebarChrome({
             <AppSidebarProjectGroupsNav
               currentProjectId={currentProjectId}
               groups={groups}
-              projectShortcutIconKeys={states.projectShortcutIconKeys}
+              projectIconKeys={states.projectIconKeys}
             />
           </nav>
         </SidebarContent>

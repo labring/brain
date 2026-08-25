@@ -72,6 +72,7 @@
     "./hooks/*": "./src/hooks/*.ts",
     "./assets/app-icons": "./src/assets/app-icons/index.ts",
     "./assets/brand": "./src/assets/brand/index.ts",
+    "./assets/brand-marks": "./src/assets/brand-marks/index.ts",
     "./assets/devicons": "./src/assets/devicons/index.ts",
     "./assets/project-source-icons": "./src/assets/project-source-icons.tsx",
     "./assets/runtime-icons": "./src/assets/runtime-icons/index.ts"

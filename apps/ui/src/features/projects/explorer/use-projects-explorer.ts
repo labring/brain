@@ -27,9 +27,8 @@ import {
   aggregateProjectStatuses,
   type ProjectWorkloadStatusInput,
 } from "@/features/projects/project-aggregate-status";
-import { projectShortcutIconKeysFromWorkloads } from "@/features/projects/project-shortcut-icons";
+import { projectIconKeysFromWorkloads } from "@/features/projects/project-icons";
 import { usePinnedProjects } from "@/features/projects/use-pinned-projects";
-import { useProjectShortcutIconPreload } from "@/features/projects/use-project-shortcut-icon-preload";
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
@@ -190,15 +189,14 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
     ]);
   }, [apsData, dbsData]);
 
-  const projectShortcutIconKeys = useMemo(
+  const projectIconKeys = useMemo(
     () =>
-      projectShortcutIconKeysFromWorkloads({
+      projectIconKeysFromWorkloads({
         aps: apsData,
         dbs: dbsData,
       }),
     [apsData, dbsData]
   );
-  useProjectShortcutIconPreload(projectShortcutIconKeys);
 
   const projects = useMemo<ProjectExplorerProject[]>(
     () => brainProjectsToExplorerProjects(rawProjects, statusByProjectId),
@@ -224,14 +222,14 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
       ...(projectHistoryEmptyState ? { empty: projectHistoryEmptyState } : {}),
       pinnedProjectIds,
       pinnedProjectLimit,
-      projectShortcutIconKeys,
+      projectIconKeys,
       projects,
     }),
     [
       pinnedProjectIds,
       pinnedProjectLimit,
       projectHistoryEmptyState,
-      projectShortcutIconKeys,
+      projectIconKeys,
       projects,
     ]
   );

@@ -1,26 +1,22 @@
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import {
-  type DeviconKey,
-  databaseDeviconKey,
-  deviconSrc,
-  devicons,
-} from "@workspace/ui/assets/devicons";
+  type BrandMarkKey,
+  brandMarkKeyForDatabaseEngine,
+  brandMarkKeyForImage,
+} from "@workspace/ui/assets/brand-marks";
 
 import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 
-interface WorkloadShortcutCandidate {
+interface WorkloadIconCandidate {
   createdAt: string;
-  iconKey: ProjectShortcutIconKey;
+  iconKey: ProjectIconKey;
   name: string;
 }
 
-export type ProjectShortcutIconKey = DeviconKey | "database";
+export type ProjectIconKey = BrandMarkKey | "database";
 
-export type ProjectShortcutIconKeyMap = ReadonlyMap<
-  string,
-  ProjectShortcutIconKey
->;
+export type ProjectIconKeyMap = ReadonlyMap<string, ProjectIconKey>;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -51,15 +47,22 @@ function projectIdFromResource(value: unknown): string | undefined {
   return nonEmptyString(labels?.[BRAIN_PROJECT_ID_LABEL]);
 }
 
+function apIconKeyFromSpec(spec: Record<string, unknown>): ProjectIconKey {
+  const image = nonEmptyString(asRecord(spec.input)?.image);
+  return brandMarkKeyForImage(image) ?? "docker";
+}
+
 function databaseIconKeyFromSpec(
   spec: Record<string, unknown>
-): ProjectShortcutIconKey {
-  return databaseDeviconKey(nonEmptyString(spec.engine)) ?? "database";
+): ProjectIconKey {
+  return (
+    brandMarkKeyForDatabaseEngine(nonEmptyString(spec.engine)) ?? "database"
+  );
 }
 
 function compareWorkloadCandidates(
-  a: WorkloadShortcutCandidate,
-  b: WorkloadShortcutCandidate
+  a: WorkloadIconCandidate,
+  b: WorkloadIconCandidate
 ): number {
   const aTime = Date.parse(a.createdAt);
   const bTime = Date.parse(b.createdAt);
@@ -75,38 +78,11 @@ function compareWorkloadCandidates(
   return a.name.localeCompare(b.name);
 }
 
-function selectedApByProject(
-  data: K8sGetResponse | undefined
-): Map<string, WorkloadShortcutCandidate> {
-  const result = new Map<string, WorkloadShortcutCandidate>();
-
-  for (const item of apItemsFromList(data)) {
-    const projectId = projectIdFromResource(item);
-    if (projectId === undefined) {
-      continue;
-    }
-
-    const candidate: WorkloadShortcutCandidate = {
-      createdAt: metadataCreationTimestamp(item),
-      iconKey: "docker",
-      name: metadataName(item),
-    };
-    const current = result.get(projectId);
-    if (
-      current === undefined ||
-      compareWorkloadCandidates(candidate, current) < 0
-    ) {
-      result.set(projectId, candidate);
-    }
-  }
-
-  return result;
-}
-
-function selectedDbByProject(
-  data: K8sGetResponse | undefined
-): Map<string, WorkloadShortcutCandidate> {
-  const result = new Map<string, WorkloadShortcutCandidate>();
+function selectedWorkloadByProject(
+  data: K8sGetResponse | undefined,
+  iconKeyFromSpec: (spec: Record<string, unknown>) => ProjectIconKey
+): Map<string, WorkloadIconCandidate> {
+  const result = new Map<string, WorkloadIconCandidate>();
 
   for (const item of apItemsFromList(data)) {
     const projectId = projectIdFromResource(item);
@@ -115,9 +91,9 @@ function selectedDbByProject(
     }
 
     const spec = asRecord(asRecord(item)?.spec) ?? {};
-    const candidate: WorkloadShortcutCandidate = {
+    const candidate: WorkloadIconCandidate = {
       createdAt: metadataCreationTimestamp(item),
-      iconKey: databaseIconKeyFromSpec(spec),
+      iconKey: iconKeyFromSpec(spec),
       name: metadataName(item),
     };
     const current = result.get(projectId);
@@ -132,16 +108,16 @@ function selectedDbByProject(
   return result;
 }
 
-export function projectShortcutIconKeysFromWorkloads({
+export function projectIconKeysFromWorkloads({
   aps,
   dbs,
 }: {
   aps: K8sGetResponse | undefined;
   dbs: K8sGetResponse | undefined;
-}): ProjectShortcutIconKeyMap {
-  const apByProject = selectedApByProject(aps);
-  const dbByProject = selectedDbByProject(dbs);
-  const iconKeys = new Map<string, ProjectShortcutIconKey>();
+}): ProjectIconKeyMap {
+  const apByProject = selectedWorkloadByProject(aps, apIconKeyFromSpec);
+  const dbByProject = selectedWorkloadByProject(dbs, databaseIconKeyFromSpec);
+  const iconKeys = new Map<string, ProjectIconKey>();
 
   for (const [projectId, candidate] of dbByProject) {
     iconKeys.set(projectId, candidate.iconKey);
@@ -151,19 +127,4 @@ export function projectShortcutIconKeysFromWorkloads({
   }
 
   return iconKeys;
-}
-
-export function projectShortcutIconAssetUrls(
-  iconKeys: Iterable<ProjectShortcutIconKey>
-): string[] {
-  const urls = new Set<string>();
-  for (const iconKey of iconKeys) {
-    if (iconKey === "database") {
-      continue;
-    }
-    const icon = devicons[iconKey];
-    urls.add(deviconSrc(icon.original));
-    urls.add(deviconSrc(icon.plain));
-  }
-  return [...urls];
 }

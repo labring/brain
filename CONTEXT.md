@@ -26,6 +26,12 @@ The persistent left-edge product navigation surface containing product-level nav
 
 _Avoid_: Project list, left Side Pane, Project Shortcut (retired term), open/closed sidebar, full/mini sidebar, rail mode.
 
+### Project Icon
+
+The small glyph identifying a Project in navigation surfaces such as the App Sidebar's Project rows. Presentation-only and derived from the Project's workloads — the brand of a recognized AP container image, or the DB engine when the Project has no AP — falling back to a generic container mark when nothing is recognized. Not a persisted Project property and not user-chosen.
+
+_Avoid_: Project Shortcut Icon (retired term), project logo, project avatar.
+
 ## AP & Application Workloads
 
 ### AP (Application)
