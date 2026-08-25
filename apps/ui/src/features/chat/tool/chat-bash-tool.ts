@@ -28,6 +28,7 @@ const CHAT_BASH_WORKING_DIRECTORY = "/tmp";
 const DEVBOX_BASH_TOOL_PROMPT = [
   "Environment: typical Linux userland (grep, sed, awk, find, curl, common coreutils).",
   "kubectl is available in the Devbox runtime with the connected namespace permissions.",
+  "Sealos Skills are installed under /home/devbox/project/.agents/skills or /home/devbox/project/.codex/skills; use loadSkill for their instructions and loadSkillResource for referenced files.",
 ].join("\n");
 
 const TOOL_ERROR_JSON_MAX = 4000;

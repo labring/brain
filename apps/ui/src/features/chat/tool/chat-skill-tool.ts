@@ -1,18 +1,18 @@
-import { readFile } from "node:fs/promises";
 import { tool } from "ai";
 import { z } from "zod";
+import type { ChatDevboxSandbox } from "@/features/chat/devbox/chat-runtime";
 import {
   chatToolIntentionField,
   logChatToolIntention,
 } from "@/features/chat/tool/chat-tool-intention";
 import {
-  type PublicSkillMeta,
-  resolvePublicSkillResourcePath,
+  type ChatSkillMeta,
+  resolveChatSkillResourcePath,
   stripSkillFrontmatter,
-} from "./public-skills";
+} from "./devbox-skills";
 
 // biome-ignore lint/performance/noBarrelFile: single import surface for chat route (discovery + tool)
-export { discoverPublicSkills, type PublicSkillMeta } from "./public-skills";
+export { type ChatSkillMeta, discoverChatDevboxSkills } from "./devbox-skills";
 
 /** Input for `loadSkill` — skill `name` from SKILL.md frontmatter. */
 export const loadSkillInputSchema = z.object({
@@ -35,7 +35,7 @@ export const loadSkillResourceInputSchema = z.object({
 export function buildLoadSkillDescription(): string {
   return [
     "Load full markdown instructions for a named skill.",
-    "Skills live under `public/skills/<folder>/SKILL.md` with YAML frontmatter (`name`, `description`).",
+    "Skills live in the Chat Devbox under `/home/devbox/project/.agents/skills/<folder>/SKILL.md` or `/home/devbox/project/.codex/skills/<folder>/SKILL.md` with YAML frontmatter (`name`, `description`).",
     "Call when the user's task matches a skill listed in the system prompt. Returns body text without frontmatter.",
     "Always set `intention`: which user goal this skill satisfies.",
   ].join(" ");
@@ -55,12 +55,12 @@ export function buildLoadSkillResourceDescription(): string {
  * Full SKILL.md body is loaded via `loadSkill`.
  */
 export function buildChatSkillsDiscoveryPrompt(
-  entries: PublicSkillMeta[]
+  entries: ChatSkillMeta[]
 ): string {
   if (entries.length === 0) {
     return [
       "## Skills (on-demand)",
-      "There are no skills under `public/skills/*/SKILL.md`. Each skill is a folder containing `SKILL.md` with YAML frontmatter (`name`, `description`). When skills exist and the user’s task matches one, call `loadSkill` with that skill’s `name`; use `loadSkillResource` for referenced files inside that skill directory.",
+      "There are no user-facing Sealos skills installed in the Chat Devbox. Each skill is a folder containing `SKILL.md` with YAML frontmatter (`name`, `description`). When skills exist and the user’s task matches one, call `loadSkill` with that skill’s `name`; use `loadSkillResource` for referenced files inside that skill directory.",
     ].join("\n");
   }
   const bullets = entries
@@ -75,7 +75,10 @@ export function buildChatSkillsDiscoveryPrompt(
   ].join("\n");
 }
 
-export function createLoadSkillTool(skillIndex: PublicSkillMeta[]) {
+export function createLoadSkillTool(
+  skillIndex: ChatSkillMeta[],
+  sandbox: ChatDevboxSandbox
+) {
   return tool({
     description: buildLoadSkillDescription(),
     inputSchema: loadSkillInputSchema,
@@ -86,7 +89,7 @@ export function createLoadSkillTool(skillIndex: PublicSkillMeta[]) {
       if (skill == null) {
         return { error: `Unknown skill: ${name}` };
       }
-      const raw = await readFile(skill.skillMdPath, "utf-8");
+      const raw = await sandbox.readFile(skill.skillMdPath);
       return {
         name: skill.name,
         skillDirectory: skill.folderName,
@@ -96,7 +99,10 @@ export function createLoadSkillTool(skillIndex: PublicSkillMeta[]) {
   });
 }
 
-export function createLoadSkillResourceTool(skillIndex: PublicSkillMeta[]) {
+export function createLoadSkillResourceTool(
+  skillIndex: ChatSkillMeta[],
+  sandbox: ChatDevboxSandbox
+) {
   return tool({
     description: buildLoadSkillResourceDescription(),
     inputSchema: loadSkillResourceInputSchema,
@@ -108,7 +114,7 @@ export function createLoadSkillResourceTool(skillIndex: PublicSkillMeta[]) {
         return { error: `Unknown skill: ${name}` };
       }
 
-      const resourceFilePath = resolvePublicSkillResourcePath(
+      const resourceFilePath = resolveChatSkillResourcePath(
         skill,
         resourcePath
       );
@@ -117,7 +123,7 @@ export function createLoadSkillResourceTool(skillIndex: PublicSkillMeta[]) {
       }
 
       try {
-        const content = await readFile(resourceFilePath, "utf-8");
+        const content = await sandbox.readFile(resourceFilePath);
         return {
           name: skill.name,
           skillDirectory: skill.folderName,

@@ -4,6 +4,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { Sandbox as BashToolSandbox } from "bash-tool";
 import {
+  buildSealosSkillsInstallCommand,
+  getSealosSkillsSourceFromEnv,
+  SEALOS_CHAT_SKILL_NAMES,
+} from "@/features/sealos-skills/install";
+import {
   createDevbox,
   DevboxApiError,
   execDevbox,
@@ -26,6 +31,7 @@ const DEVBOX_COMMAND_TIMEOUT_SECONDS = 60;
 const DEVBOX_WRITE_TIMEOUT_SECONDS = 60;
 const DEVBOX_READ_TIMEOUT_SECONDS = 60;
 const DEVBOX_WARMUP_TIMEOUT_SECONDS = 30;
+const DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS = 180;
 
 export interface ChatDevboxRuntimeOptions {
   kubeconfig: string;
@@ -246,6 +252,36 @@ async function assertDevboxKubectlReady(
   }
 }
 
+async function installChatSkills(
+  authNamespace: string,
+  name: string,
+  signal?: AbortSignal
+): Promise<void> {
+  const result = await runDevboxCommand(
+    authNamespace,
+    name,
+    buildSealosSkillsInstallCommand({
+      force: false,
+      requiredSkillNames: SEALOS_CHAT_SKILL_NAMES,
+      skillSource: getSealosSkillsSourceFromEnv(process.env),
+      timeoutSeconds: DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS,
+    }),
+    DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS,
+    signal
+  );
+
+  if (result.exitCode !== 0) {
+    throw new Error(
+      [
+        "Chat Devbox Sealos skills installation failed.",
+        result.stderr.trim() || result.stdout.trim(),
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+  }
+}
+
 async function ensureChatDevbox(
   options: ChatDevboxRuntimeOptions,
   signal?: AbortSignal
@@ -279,6 +315,7 @@ async function ensureChatDevbox(
       options.namespace,
       signal
     );
+    await installChatSkills(authNamespace, existing.name, signal);
     return { name: existing.name, skippedExisting: true };
   }
 
@@ -312,6 +349,7 @@ async function ensureChatDevbox(
     options.namespace,
     signal
   );
+  await installChatSkills(authNamespace, name, signal);
   return { name, skippedExisting: false };
 }
 

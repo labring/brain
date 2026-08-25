@@ -30,6 +30,7 @@ import {
 } from "@/features/projects/derived-project-display-name";
 import { projectResourceDisplayNames } from "@/features/resource-display-name/project-resource-display-names";
 import { uniqueResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
+import { buildSealosSkillsInstallCommand } from "@/features/sealos-skills/install";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -214,9 +215,6 @@ const MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT = "/run/sealai/deployment";
 const MANAGED_DEPLOYMENT_FIXED_INPUT_PATH = `${MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT}/inputs.json`;
 const MANAGED_DEPLOYMENT_KUBECONFIG_PATH = "/home/devbox/.kube/config";
 const MANAGED_VERIFICATION_QUERY_BATCH_MS = 60_000;
-const SKILL_INSTALL_COMMAND_TIMEOUT_SECONDS =
-  DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000;
-const DEPLOY_SKILLS_CLI_VERSION = "1.5.20";
 const READ_OUTPUT_TIMEOUT_SECONDS = DEPLOY_TIMEOUT_POLICY.outputReadMs / 1000;
 const DEPLOY_OUTPUT_PROGRESS_POLL_MS = DEPLOY_TIMEOUT_POLICY.outputPollMs;
 const DIRECT_AP_READINESS_POLL_MS = 5000;
@@ -1785,33 +1783,12 @@ export function buildManagedWorkspacePurgeCommand(): string {
 
 /** Branch/tree URL for `skills add`; override via DEPLOY_SKILL_SOURCE. */
 export function buildDeploySkillInstallCommand(skillSource: string): string {
-  return [
-    "set -euo pipefail",
-    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
-    `skill_source=${shellQuote(skillSource)}`,
-    'agent_skill_marker="$workspace_dir/.agents/skills/sealos-deploy/SKILL.md"',
-    'agent_build_skill_marker="$workspace_dir/.agents/skills/k8s-kaniko-job/SKILL.md"',
-    'codex_skill_marker="$workspace_dir/.codex/skills/sealos-deploy/SKILL.md"',
-    'codex_build_skill_marker="$workspace_dir/.codex/skills/k8s-kaniko-job/SKILL.md"',
-    "if ! command -v npx >/dev/null 2>&1; then",
-    "  printf 'ERROR: npx is required to install sealos-deploy skill\\n' >&2",
-    "  exit 1",
-    "fi",
-    "for skill_name in sealos-deploy dockerfile-skill k8s-kaniko-job cloud-native-readiness docker-to-sealos; do",
-    '  rm -rf "$workspace_dir/.agents/skills/$skill_name"',
-    '  rm -rf "$workspace_dir/.codex/skills/$skill_name"',
-    "done",
-    'cd "$workspace_dir"',
-    `timeout ${SKILL_INSTALL_COMMAND_TIMEOUT_SECONDS} npx --yes skills@${DEPLOY_SKILLS_CLI_VERSION} add "$skill_source" -y`,
-    'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
-    "  printf 'ERROR: sealos-deploy skill not found after install\\n' >&2",
-    "  exit 1",
-    "fi",
-    'if [ ! -f "$agent_build_skill_marker" ] && [ ! -f "$codex_build_skill_marker" ]; then',
-    "  printf 'ERROR: k8s-kaniko-job skill not found after install\\n' >&2",
-    "  exit 1",
-    "fi",
-  ].join("\n");
+  return buildSealosSkillsInstallCommand({
+    force: true,
+    requiredSkillNames: ["sealos-deploy", "k8s-kaniko-job"],
+    skillSource,
+    timeoutSeconds: DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000,
+  });
 }
 
 function deployOutputReadScript(): string {
