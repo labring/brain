@@ -47,10 +47,20 @@ const billing = {
   subscription: null as Record<string, unknown> | null,
 };
 const workspaceQuota = { items: [] as unknown[] };
+// The popover's AI usage row fixtures. null = the route fails and the row
+// must be omitted alone.
+const aiUsage = {
+  credits: null as Record<string, unknown> | null,
+  freeTurns: null as Record<string, unknown> | null,
+};
 
 const ACCOUNT_USER = { id: "usr-Kx92mQ", name: "Ada Lovelace" };
 const ACCOUNT_NAME_RE = /Ada Lovelace/;
 const ACCOUNT_ID_RE = new RegExp(`ID: ${ACCOUNT_USER.id}`);
+const AI_CREDITS_LABEL_RE = /AI Credits/;
+const AI_CREDITS_VALUE_RE = /240\/300/;
+const FREE_TURNS_LABEL_RE = /Free trial messages/;
+const FREE_TURNS_VALUE_RE = /5\/5/;
 
 function proSubscription(
   overrides: Record<string, unknown> = {}
@@ -80,6 +90,18 @@ function billingFetchStub(input: unknown): Promise<Response> {
     return Promise.resolve(
       jsonResponse({ subscription: billing.subscription })
     );
+  }
+  if (url === "/api/billing/workspace-quota") {
+    if (aiUsage.credits == null) {
+      return Promise.resolve(new Response("{}", { status: 500 }));
+    }
+    return Promise.resolve(jsonResponse({ quota: aiUsage.credits }));
+  }
+  if (url.startsWith("/api/chat/free-turns")) {
+    if (aiUsage.freeTurns == null) {
+      return Promise.resolve(new Response("{}", { status: 500 }));
+    }
+    return Promise.resolve(jsonResponse(aiUsage.freeTurns));
   }
   return Promise.resolve(new Response("{}", { status: 404 }));
 }
@@ -172,6 +194,8 @@ async function withSidebar(
     explorer.states = { pinnedProjectIds: ["alpha"], projects };
     billing.subscription = null;
     workspaceQuota.items = [];
+    aiUsage.credits = null;
+    aiUsage.freeTurns = null;
     restoreGlobal(fetchOverride);
     restoreActEnvironment(previousActEnvironment);
     await dom.restore();
@@ -248,7 +272,11 @@ test("Cmd+B toggles the sidebar except inside an editable target", async () => {
   await withSidebar(async () => {
     await actAndDrain(() => {
       window.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "b", metaKey: true, bubbles: true })
+        new KeyboardEvent("keydown", {
+          key: "b",
+          metaKey: true,
+          bubbles: true,
+        })
       );
     });
     assert.equal(sidebarState(), "collapsed");
@@ -258,7 +286,11 @@ test("Cmd+B toggles the sidebar except inside an editable target", async () => {
     input.focus();
     await actAndDrain(() => {
       input.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "b", metaKey: true, bubbles: true })
+        new KeyboardEvent("keydown", {
+          key: "b",
+          metaKey: true,
+          bubbles: true,
+        })
       );
     });
     assert.equal(sidebarState(), "collapsed");
@@ -464,6 +496,77 @@ test("clicking the account row opens the popover with quota, copy, and upgrade",
     },
     true,
     () => hydrateAccountAtoms("ws-account-popover")
+  );
+});
+
+test("the popover leads the quota list with the AI Credits row on a paid plan", async () => {
+  billing.subscription = proSubscription();
+  aiUsage.credits = {
+    hard: { ai_quota: 3_000_000 },
+    used: { ai_quota: 2_400_000 },
+  };
+  workspaceQuota.items = [{ limit: 4000, type: "cpu", used: 1000 }];
+  await withSidebar(
+    async () => {
+      const row = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-account"]'
+      );
+      assert.ok(row);
+      await actAndDrain(() => {
+        row.click();
+      });
+
+      const popover = document.querySelector('[data-slot="popover-content"]');
+      assert.ok(popover);
+      const aiRow = popover.querySelector(
+        '[data-slot="app-sidebar-ai-usage-row"]'
+      );
+      assert.ok(aiRow);
+      assert.match(aiRow.textContent ?? "", AI_CREDITS_LABEL_RE);
+      assert.match(aiRow.textContent ?? "", AI_CREDITS_VALUE_RE);
+      // 80% used — the warning tier, not danger.
+      assert.equal(aiRow.getAttribute("data-warning"), "true");
+      assert.equal(aiRow.getAttribute("data-danger"), null);
+      // The AI row sits above the workspace quota bars.
+      assert.equal(aiRow.parentElement?.firstElementChild, aiRow);
+      assert.equal(
+        aiRow.parentElement?.querySelectorAll(
+          '[data-slot="app-sidebar-quota-row"]'
+        ).length,
+        5
+      );
+    },
+    true,
+    () => hydrateAccountAtoms("ws-account-ai-credits")
+  );
+});
+
+test("the trial popover shows Free trial messages and turns danger at exhaustion", async () => {
+  billing.subscription = proSubscription({ PlanName: "free" });
+  aiUsage.freeTurns = { limit: 5, remaining: 0, used: 5 };
+  await withSidebar(
+    async () => {
+      const row = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-account"]'
+      );
+      assert.ok(row);
+      await actAndDrain(() => {
+        row.click();
+      });
+
+      const popover = document.querySelector('[data-slot="popover-content"]');
+      assert.ok(popover);
+      const aiRow = popover.querySelector(
+        '[data-slot="app-sidebar-ai-usage-row"]'
+      );
+      assert.ok(aiRow);
+      assert.match(aiRow.textContent ?? "", FREE_TURNS_LABEL_RE);
+      assert.match(aiRow.textContent ?? "", FREE_TURNS_VALUE_RE);
+      assert.equal(aiRow.getAttribute("data-danger"), "true");
+      assert.equal(aiRow.getAttribute("data-warning"), null);
+    },
+    true,
+    () => hydrateAccountAtoms("ws-account-free-turns")
   );
 });
 

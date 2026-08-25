@@ -16,6 +16,30 @@ export interface AppSidebarQuotaRow {
 /** Quota rows at or above this share render in the warning color. */
 export const QUOTA_WARNING_PERCENT = 80;
 
+/** Quota rows at or above this share render in the danger color. */
+export const QUOTA_DANGER_PERCENT = 100;
+
+export type QuotaUsageTone = "danger" | "warn";
+
+/**
+ * The two-tier attention rule every popover usage row shares: warning from
+ * QUOTA_WARNING_PERCENT, danger at QUOTA_DANGER_PERCENT — where usage stops
+ * being "almost full" and becomes a hard stop (nothing new starts, the
+ * assistant blocks).
+ */
+export function quotaUsageTone(percent: number | null): QuotaUsageTone | null {
+  if (percent == null) {
+    return null;
+  }
+  if (percent >= QUOTA_DANGER_PERCENT) {
+    return "danger";
+  }
+  if (percent >= QUOTA_WARNING_PERCENT) {
+    return "warn";
+  }
+  return null;
+}
+
 const WORKSPACE_QUOTA_ROW_DEFINITIONS = [
   { label: "CPU", type: "cpu" },
   { label: "Memory", type: "memory" },

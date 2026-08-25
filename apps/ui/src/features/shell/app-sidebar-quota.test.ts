@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   formatWorkspaceQuotaRows,
+  quotaUsageTone,
   type WorkspaceQuotaItem,
 } from "./app-sidebar-quota";
 
@@ -40,6 +41,15 @@ test("formatWorkspaceQuotaRows keeps stable rows for missing quota items", () =>
 test("formatWorkspaceQuotaRows clamps overconsumption to 100 percent", () => {
   const rows = formatWorkspaceQuotaRows([{ limit: 10, type: "pod", used: 14 }]);
   assert.equal(rows[3]?.percent, 100);
+});
+
+test("quotaUsageTone steps from quiet to warn to danger", () => {
+  assert.equal(quotaUsageTone(null), null);
+  assert.equal(quotaUsageTone(0), null);
+  assert.equal(quotaUsageTone(79.9), null);
+  assert.equal(quotaUsageTone(80), "warn");
+  assert.equal(quotaUsageTone(99.9), "warn");
+  assert.equal(quotaUsageTone(100), "danger");
 });
 
 test("formatWorkspaceQuotaRows yields no percent for a zero or invalid limit", () => {

@@ -14,18 +14,24 @@ import { Check, Copy, Sparkles, User } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
+import { loadAiCredits } from "@/features/billing/billing-ai-credits";
 import { loadWorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { fetchFreeChatTurnsUsage } from "@/features/chat/persistence/client";
 import {
   type AppSidebarAccountBadge,
   type AppSidebarAccountHint,
   deriveAppSidebarAccountPresentation,
 } from "@/features/shell/app-sidebar-account-presentation";
 import {
+  aiUsageRowFromCredits,
+  aiUsageRowFromFreeTurns,
+} from "@/features/shell/app-sidebar-ai-usage";
+import {
   type AppSidebarQuotaRow,
   formatWorkspaceQuotaRows,
   isWorkspaceQuotaItem,
-  QUOTA_WARNING_PERCENT,
+  quotaUsageTone,
 } from "@/features/shell/app-sidebar-quota";
 import {
   appTokenAtom,
@@ -99,7 +105,13 @@ function AppSidebarAccountBadgeSlot({
   return <PlanBadge className="h-4 text-xs" planName={badge.planName} />;
 }
 
+const USAGE_BAR_CLASS: Record<"danger" | "warn", string> = {
+  danger: "bg-red-400",
+  warn: "bg-amber-400",
+};
+
 function AppSidebarQuotaBar({ percent }: { percent: number | null }) {
+  const tone = quotaUsageTone(percent);
   return (
     <span
       aria-hidden
@@ -108,13 +120,48 @@ function AppSidebarQuotaBar({ percent }: { percent: number | null }) {
       <span
         className={cn(
           "block h-full rounded-full",
-          percent != null && percent >= QUOTA_WARNING_PERCENT
-            ? "bg-amber-400"
-            : "bg-blue-400"
+          tone == null ? "bg-blue-400" : USAGE_BAR_CLASS[tone]
         )}
         style={{ width: `${percent ?? 0}%` }}
       />
     </span>
+  );
+}
+
+function AppSidebarUsageRow({
+  label,
+  labelClassName,
+  row,
+  slot,
+}: {
+  label: string;
+  labelClassName: string;
+  row: AppSidebarQuotaRow;
+  slot: string;
+}) {
+  const tone = quotaUsageTone(row.percent);
+  return (
+    <div
+      className="flex items-center gap-2"
+      data-danger={tone === "danger" ? "true" : undefined}
+      data-slot={slot}
+      data-warning={tone === "warn" ? "true" : undefined}
+    >
+      <span
+        className={cn("shrink-0 text-muted-foreground text-xs", labelClassName)}
+      >
+        {label}
+      </span>
+      <AppSidebarQuotaBar percent={row.percent} />
+      <span
+        className={cn(
+          "shrink-0 text-right text-xs tabular-nums",
+          tone == null ? undefined : HINT_TEXT_CLASS[tone]
+        )}
+      >
+        {row.value}
+      </span>
+    </div>
   );
 }
 
@@ -181,18 +228,55 @@ export function AppSidebarAccount() {
   const [open, setOpen] = useState(false);
   // null = not loaded (or failed): the popover omits the quota section.
   const [quotaRows, setQuotaRows] = useState<AppSidebarQuotaRow[] | null>(null);
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) {
-      return;
+  // null = not loaded, failed, or not applicable: the row is omitted alone —
+  // it rides a different data source than the workspace quota bars.
+  const [aiUsageRow, setAiUsageRow] = useState<AppSidebarQuotaRow | null>(null);
+  // The Billing Plan view's credits-slot predicate (ADR-0065): Active Free
+  // Trial → Free Chat Turns, other subscriptions → AI Credits, PAYG → none.
+  const loadAiUsageRow = useCallback(async () => {
+    if (
+      !credentialsReady ||
+      subscriptionSummary == null ||
+      subscriptionSummary.isPayg
+    ) {
+      return null;
     }
-    loadQuotaRows()
-      .then(setQuotaRows)
-      .catch((error: unknown) => {
-        console.warn("[AppSidebarAccount] load workspace quota failed:", error);
-        setQuotaRows(null);
+    if (subscriptionSummary.isActiveFreeTrial) {
+      const usage = await fetchFreeChatTurnsUsage({
+        appToken,
+        kubeconfig,
+        namespace: workspace,
       });
-  }, []);
+      return usage == null ? null : aiUsageRowFromFreeTurns(usage);
+    }
+    return aiUsageRowFromCredits(
+      await loadAiCredits({ appToken, kubeconfig, workspace })
+    );
+  }, [appToken, credentialsReady, kubeconfig, subscriptionSummary, workspace]);
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      setOpen(nextOpen);
+      if (!nextOpen) {
+        return;
+      }
+      loadQuotaRows()
+        .then(setQuotaRows)
+        .catch((error: unknown) => {
+          console.warn(
+            "[AppSidebarAccount] load workspace quota failed:",
+            error
+          );
+          setQuotaRows(null);
+        });
+      loadAiUsageRow()
+        .then(setAiUsageRow)
+        .catch((error: unknown) => {
+          console.warn("[AppSidebarAccount] load AI usage failed:", error);
+          setAiUsageRow(null);
+        });
+    },
+    [loadAiUsageRow]
+  );
   const [copied, copy] = useCopyFeedback();
 
   const displayName = userName === "" ? "Account" : userName;
@@ -204,10 +288,12 @@ export function AppSidebarAccount() {
     <button
       aria-label={`Account: ${displayName}`}
       className={cn(
-        "group/account relative flex w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left transition-[height] motion-reduce:transition-none",
+        // PROTOTYPE(sidebar-density): var(--sbp-*, …) fallbacks are the shipped
+        // values; see app-sidebar-density-prototype.tsx.
+        "group/account relative flex w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-[var(--sbp-radius,0.375rem)] text-left transition-[height] motion-reduce:transition-none",
         expanded
-          ? "h-11 duration-300 ease-sidebar"
-          : "h-8 duration-200 ease-out"
+          ? "h-[var(--sbp-account,2.75rem)] duration-300 ease-sidebar"
+          : "h-[var(--sbp-row,2rem)] duration-200 ease-out"
       )}
       data-slot="app-sidebar-account"
       type="button"
@@ -220,13 +306,13 @@ export function AppSidebarAccount() {
         <span
           aria-hidden
           className={cn(
-            "absolute inset-y-0 left-0 rounded-md transition-[width,background-color] group-hover/account:bg-input/30 motion-reduce:transition-none",
+            "absolute inset-y-0 left-0 rounded-[var(--sbp-radius,0.375rem)] transition-[width,background-color] group-hover/account:bg-input/30 motion-reduce:transition-none",
             expanded
               ? "w-full duration-300 ease-sidebar"
-              : "w-9 duration-200 ease-out"
+              : "w-[var(--sbp-slot,2.25rem)] duration-200 ease-out"
           )}
         />
-        <span className="relative flex w-9 shrink-0 items-center justify-center">
+        <span className="relative flex w-[var(--sbp-slot,2.25rem)] shrink-0 items-center justify-center">
           <AppSidebarAccountAvatar
             avatarUrl={userAvatar}
             className="size-6 text-[10px]"
@@ -241,7 +327,7 @@ export function AppSidebarAccount() {
               : "opacity-0 duration-200 ease-out"
           )}
         >
-          <span className="block truncate font-medium text-neutral-50 text-sm/4">
+          <span className="block truncate font-medium text-[length:var(--sbp-font,0.875rem)] text-neutral-50 leading-4">
             {displayName}
           </span>
           {secondLine == null ? null : (
@@ -306,34 +392,24 @@ export function AppSidebarAccount() {
             </div>
           )}
           <div aria-hidden className="h-px w-full bg-border" />
-          {quotaRows == null ? null : (
+          {aiUsageRow == null && quotaRows == null ? null : (
             <div className="flex flex-col gap-1.5">
-              {quotaRows.map((row) => (
-                <div
-                  className="flex items-center gap-2"
-                  data-slot="app-sidebar-quota-row"
-                  data-warning={
-                    row.percent != null && row.percent >= QUOTA_WARNING_PERCENT
-                      ? "true"
-                      : undefined
-                  }
+              {aiUsageRow == null ? null : (
+                <AppSidebarUsageRow
+                  label={aiUsageRow.label}
+                  labelClassName="whitespace-nowrap"
+                  row={aiUsageRow}
+                  slot="app-sidebar-ai-usage-row"
+                />
+              )}
+              {quotaRows?.map((row) => (
+                <AppSidebarUsageRow
                   key={row.label}
-                >
-                  <span className="w-10 shrink-0 text-muted-foreground text-xs">
-                    {row.label === "Memory" ? "Mem" : row.label}
-                  </span>
-                  <AppSidebarQuotaBar percent={row.percent} />
-                  <span
-                    className={cn(
-                      "shrink-0 text-right text-xs tabular-nums",
-                      row.percent != null &&
-                        row.percent >= QUOTA_WARNING_PERCENT &&
-                        "text-amber-400"
-                    )}
-                  >
-                    {row.value}
-                  </span>
-                </div>
+                  label={row.label === "Memory" ? "Mem" : row.label}
+                  labelClassName="w-10"
+                  row={row}
+                  slot="app-sidebar-quota-row"
+                />
               ))}
             </div>
           )}
