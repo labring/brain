@@ -65,6 +65,83 @@ export function uniqueResourceDisplayName(
   }
 }
 
+export interface TemplateResourceNamingResource {
+  /** DB engine, when known — preferred over the Kubernetes name as suffix. */
+  engine?: string | undefined;
+  kind: "ap" | "db";
+  kubernetesName: string;
+}
+
+function templateNameSuffix(identifier: string, templateName: string): string {
+  const trimmed = identifier.trim();
+  const lower = trimmed.toLowerCase();
+  const template = templateName.trim().toLowerCase();
+  if (lower === template) {
+    return "";
+  }
+  if (lower.startsWith(`${template}-`)) {
+    return trimmed.slice(template.length + 1);
+  }
+  return trimmed;
+}
+
+/**
+ * Deploy-time display names for the resources one template instance spawned
+ * (ADR 0062). The family shares the template name as base: the sole AP gets
+ * the bare base, every other resource gets `base-<own identifier>` (an AP's
+ * Kubernetes name, a DB's engine), and an identifier already carrying the
+ * template name as prefix is not prefixed twice. On a repeat deployment the
+ * base is numbered as a whole family (`wordpress-2`, `wordpress-2-mysql`) so
+ * siblings stay recognizably grouped. Returns Kubernetes name → display name.
+ */
+export function templateResourceDisplayNames(input: {
+  resources: TemplateResourceNamingResource[];
+  takenNames: Iterable<string>;
+  templateName: string;
+}): Map<string, string> {
+  const templateName = input.templateName.trim();
+  if (templateName === "" || input.resources.length === 0) {
+    return new Map();
+  }
+  const taken = new Set<string>();
+  for (const name of input.takenNames) {
+    taken.add(name.trim().toLowerCase());
+  }
+  const apCount = input.resources.filter(
+    (resource) => resource.kind === "ap"
+  ).length;
+
+  const familyForBase = (base: string): Map<string, string> => {
+    const local: string[] = [];
+    const family = new Map<string, string>();
+    for (const resource of input.resources) {
+      let candidate: string;
+      if (resource.kind === "ap" && apCount === 1) {
+        candidate = base;
+      } else {
+        const identifier =
+          resource.kind === "db"
+            ? (resource.engine ?? resource.kubernetesName)
+            : resource.kubernetesName;
+        const suffix = templateNameSuffix(identifier, templateName);
+        candidate = suffix === "" ? base : `${base}-${suffix}`;
+      }
+      const unique = uniqueResourceDisplayName(boundedName(candidate), local);
+      local.push(unique);
+      family.set(resource.kubernetesName, unique);
+    }
+    return family;
+  };
+
+  for (let attempt = 1; ; attempt += 1) {
+    const base = attempt <= 1 ? templateName : `${templateName}-${attempt}`;
+    const family = familyForBase(base);
+    if ([...family.values()].every((name) => !taken.has(name.toLowerCase()))) {
+      return family;
+    }
+  }
+}
+
 export type ResourceDisplayNameRename =
   | { kind: "invalid"; reason: "duplicate" | "too-long" }
   | { kind: "noop" }

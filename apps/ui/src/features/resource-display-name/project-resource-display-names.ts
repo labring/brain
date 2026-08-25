@@ -12,6 +12,10 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
+function kubernetesNameFromResource(resource: unknown): string | undefined {
+  return stringValue(asRecord(asRecord(resource)?.metadata)?.name);
+}
+
 export function resourceDisplayNameFromResource(
   resource: unknown
 ): string | undefined {
@@ -50,18 +54,30 @@ async function projectResourceList(input: {
 /**
  * Display names currently taken in the Project — the annotation where one is
  * set, the Kubernetes name otherwise. Used by deploy-time numbering
- * (ADR 0062).
+ * (ADR 0062). `excludeKubernetesNames` drops resources by identity — the
+ * post-create template path names resources that already exist, which must
+ * not count as taken against themselves.
  */
 export async function projectResourceDisplayNames(input: {
+  excludeKubernetesNames?: Iterable<string>;
   kubeconfig: string;
   namespace: string;
   projectId: string;
 }): Promise<string[]> {
+  const excluded = new Set(
+    [...(input.excludeKubernetesNames ?? [])].map((name) =>
+      name.trim().toLowerCase()
+    )
+  );
   const [aps, dbs] = await Promise.all([
     projectResourceList({ ...input, path: API_ROUTES.ap.root }),
     projectResourceList({ ...input, path: API_ROUTES.db.root }),
   ]);
   return [...aps, ...dbs]
+    .filter((resource) => {
+      const name = kubernetesNameFromResource(resource);
+      return name === undefined || !excluded.has(name.trim().toLowerCase());
+    })
     .map(resourceDisplayNameFromResource)
     .filter((name): name is string => name !== undefined);
 }

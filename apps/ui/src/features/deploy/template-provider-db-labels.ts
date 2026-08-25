@@ -217,6 +217,11 @@ export function templateProviderDbLabels(input: {
   };
 }
 
+export interface TemplateProviderDbResourceSummary {
+  engine?: string;
+  name: string;
+}
+
 export async function normalizeTemplateProviderDbResources(input: {
   encodedKubeconfig: string;
   instanceName: string;
@@ -225,7 +230,8 @@ export async function normalizeTemplateProviderDbResources(input: {
   resources: TemplateProviderResourceSummary[];
   signal?: AbortSignal;
   templateName: string;
-}): Promise<void> {
+}): Promise<TemplateProviderDbResourceSummary[]> {
+  const normalized: TemplateProviderDbResourceSummary[] = [];
   for (const resource of input.resources) {
     if (!isTemplateProviderClusterResource(resource)) {
       continue;
@@ -250,5 +256,8 @@ export async function normalizeTemplateProviderDbResources(input: {
       namespace: input.namespace,
       signal: input.signal,
     });
+    const engine = labels[BRAIN_DB_ENGINE_LABEL];
+    normalized.push({ ...(engine === undefined ? {} : { engine }), name });
   }
+  return normalized;
 }

@@ -9,19 +9,33 @@ Resource Identity (`kind`, `namespace`, `name`).
 
 ## Decision
 
-Every AP, DB, and Template Instance carries a Resource Display Name in a
-`brain.io/display-name` annotation on the resource object itself (same
-`brain.io` domain as the existing project labels). An AP Public Access Node
-shows its AP's display name rather than owning one.
+Every AP and DB carries a Resource Display Name in a `brain.io/display-name`
+annotation on the resource object itself (same `brain.io` domain as the
+existing project labels) — including the APs and DBs a template spawns. A
+Template Instance is deployment machinery, not a displayed entity: it has no
+canvas node and no settings pane, so it owns no display name. An AP Public
+Access Node shows its AP's display name rather than owning one.
 
 - **Default** — derived at deploy time from the Deployment Source through the
   ADR 0058 derivation module (Docker image segment, DB engine, template name)
   and written into the annotation, unique within the Project with an
   incrementing suffix (`nginx`, `nginx-2`). Reading never derives: a resource
-  without the annotation (created before this feature, or by a writer that
-  does not stamp names yet) shows its Kubernetes name — exactly what it
-  displayed before this feature — until the user renames it. A display name
-  is either written on the resource or it is the Kubernetes name.
+  without the annotation (created before this feature) shows its Kubernetes
+  name — exactly what it displayed before this feature — until the user
+  renames it. A display name is either written on the resource or it is the
+  Kubernetes name.
+- **Template-spawned resources** — the template provider creates the
+  resources cluster-side, so the deploy runner holds no manifest to render a
+  name into; names are stamped right after creation through the product
+  PATCH routes (the same writer the rename surface uses). One instance's
+  resources share the template name as their family base: the sole AP gets
+  the bare base, every other resource appends its own identifier (an AP its
+  Kubernetes name, a DB its engine), an identifier already carrying the
+  template prefix is not prefixed twice, and a repeat deployment numbers the
+  whole family from one base (`wordpress-2`, `wordpress-2-mysql`) so
+  siblings stay recognizably grouped. Stamping never fails a deploy: a
+  failed patch leaves the resource showing its Kubernetes name — the legal
+  degraded state above, which the user can rename out of.
 - **Rename** — the settings pane title is the edit surface; saving patches the
   annotation. Trimmed, 1–256 characters, any script. Submitting an empty name
   is a no-op: there is no clear action, because once a name is stored the only

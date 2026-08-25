@@ -23,6 +23,7 @@ import {
   getTemplateSource,
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
+import { stampTemplateProviderDisplayNames } from "@/features/deploy/template-provider-display-names";
 import {
   derivedProjectDisplayNameBase,
   deriveProjectDisplayName,
@@ -607,13 +608,21 @@ async function applyDeploymentArtifact(input: {
       signal: input.signal,
       templateName: input.artifact.templateName,
     });
-    await normalizeTemplateProviderDbResources({
+    const normalizedDbResources = await normalizeTemplateProviderDbResources({
       encodedKubeconfig: input.kubeconfig,
       instanceName: deployed.instanceName,
       namespace: input.task.namespace,
       projectId: input.task.projectId ?? deployed.instanceName,
       resources: deployed.resources,
       signal: input.signal,
+      templateName: input.artifact.templateName,
+    });
+    await stampTemplateProviderDisplayNames({
+      dbResources: normalizedDbResources,
+      kubeconfig: input.kubeconfig,
+      namespace: input.task.namespace,
+      projectId: input.task.projectId ?? deployed.instanceName,
+      resources: deployed.resources,
       templateName: input.artifact.templateName,
     });
     const created: DeploymentTemplateInstanceArtifact = {

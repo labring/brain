@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   resolveResourceDisplayName,
   resourceDisplayNameMergePatch,
+  templateResourceDisplayNames,
   uniqueResourceDisplayName,
   validateResourceDisplayNameRename,
 } from "./resource-display-name";
@@ -154,4 +155,160 @@ test("an overlong annotation is bounded on read", () => {
   });
   assert.equal(resolved.length, 256);
   assert.equal(resolved, name.slice(0, 256));
+});
+
+test("the sole AP of a template instance gets the bare template name", () => {
+  const names = templateResourceDisplayNames({
+    resources: [
+      { kind: "ap", kubernetesName: "wordpress" },
+      { engine: "mysql", kind: "db", kubernetesName: "wordpress-mysql-x" },
+    ],
+    takenNames: [],
+    templateName: "wordpress",
+  });
+  assert.deepEqual(
+    [...names.entries()],
+    [
+      ["wordpress", "wordpress"],
+      ["wordpress-mysql-x", "wordpress-mysql"],
+    ]
+  );
+});
+
+test("multiple APs all get the template name as prefix", () => {
+  const names = templateResourceDisplayNames({
+    resources: [
+      { kind: "ap", kubernetesName: "frontend" },
+      { kind: "ap", kubernetesName: "backend" },
+      { engine: "postgresql", kind: "db", kubernetesName: "pg-cluster" },
+    ],
+    takenNames: [],
+    templateName: "appsmith",
+  });
+  assert.deepEqual(
+    [...names.entries()],
+    [
+      ["frontend", "appsmith-frontend"],
+      ["backend", "appsmith-backend"],
+      ["pg-cluster", "appsmith-postgresql"],
+    ]
+  );
+});
+
+test("an identifier already carrying the template prefix is not prefixed twice", () => {
+  const names = templateResourceDisplayNames({
+    resources: [
+      { kind: "ap", kubernetesName: "wordpress" },
+      { kind: "ap", kubernetesName: "wordpress-cron" },
+    ],
+    takenNames: [],
+    templateName: "wordpress",
+  });
+  assert.deepEqual(
+    [...names.entries()],
+    [
+      ["wordpress", "wordpress"],
+      ["wordpress-cron", "wordpress-cron"],
+    ]
+  );
+});
+
+test("a repeat deployment numbers the whole family from one base", () => {
+  const names = templateResourceDisplayNames({
+    resources: [
+      { kind: "ap", kubernetesName: "wordpress-abcdef" },
+      { engine: "mysql", kind: "db", kubernetesName: "wp-mysql-abcdef" },
+    ],
+    takenNames: ["wordpress", "wordpress-mysql"],
+    templateName: "wordpress",
+  });
+  assert.deepEqual(
+    [...names.entries()],
+    [
+      ["wordpress-abcdef", "wordpress-2"],
+      ["wp-mysql-abcdef", "wordpress-2-mysql"],
+    ]
+  );
+});
+
+test("a family collision on any member renumbers the whole family", () => {
+  const names = templateResourceDisplayNames({
+    resources: [
+      { kind: "ap", kubernetesName: "wordpress-abcdef" },
+      { engine: "mysql", kind: "db", kubernetesName: "wp-mysql-abcdef" },
+    ],
+    takenNames: ["wordpress-mysql"],
+    templateName: "wordpress",
+  });
+  assert.deepEqual(
+    [...names.entries()],
+    [
+      ["wordpress-abcdef", "wordpress-2"],
+      ["wp-mysql-abcdef", "wordpress-2-mysql"],
+    ]
+  );
+});
+
+test("a DB without a known engine falls back to its kubernetes name as suffix", () => {
+  const names = templateResourceDisplayNames({
+    resources: [
+      { kind: "ap", kubernetesName: "memos" },
+      { kind: "db", kubernetesName: "memos-store" },
+    ],
+    takenNames: [],
+    templateName: "memos",
+  });
+  assert.deepEqual(
+    [...names.entries()],
+    [
+      ["memos", "memos"],
+      ["memos-store", "memos-store"],
+    ]
+  );
+});
+
+test("siblings deriving the same candidate are numbered within the family", () => {
+  const names = templateResourceDisplayNames({
+    resources: [
+      { engine: "redis", kind: "db", kubernetesName: "cache-a" },
+      { engine: "redis", kind: "db", kubernetesName: "cache-b" },
+    ],
+    takenNames: [],
+    templateName: "chat",
+  });
+  assert.deepEqual(
+    [...names.entries()],
+    [
+      ["cache-a", "chat-redis"],
+      ["cache-b", "chat-redis-2"],
+    ]
+  );
+});
+
+test("template naming is case-insensitive against taken names", () => {
+  const names = templateResourceDisplayNames({
+    resources: [{ kind: "ap", kubernetesName: "memos-abcdef" }],
+    takenNames: ["Memos"],
+    templateName: "memos",
+  });
+  assert.deepEqual([...names.entries()], [["memos-abcdef", "memos-2"]]);
+});
+
+test("an empty template name or resource list yields no names", () => {
+  assert.equal(
+    templateResourceDisplayNames({
+      resources: [{ kind: "ap", kubernetesName: "memos" }],
+      takenNames: [],
+      templateName: "  ",
+    }).size,
+    0
+  );
+  assert.equal(
+    templateResourceDisplayNames({
+      resources: [],
+      takenNames: [],
+      templateName: "memos",
+    }).size,
+    0
+  );
 });
