@@ -54,7 +54,7 @@ async function projectResourceList(input: {
 /**
  * Display names currently taken in the Project — the annotation where one is
  * set, the Kubernetes name otherwise. Used by deploy-time numbering
- * (ADR 0062). `excludeKubernetesNames` drops resources by identity — the
+ * (ADR 0066). `excludeKubernetesNames` drops resources by identity — the
  * post-create template path names resources that already exist, which must
  * not count as taken against themselves.
  */

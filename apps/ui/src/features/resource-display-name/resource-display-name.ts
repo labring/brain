@@ -1,7 +1,7 @@
 import { BRAIN_DISPLAY_NAME_ANNOTATION } from "@/lib/brain-labels";
 
 /**
- * Resource Display Name (ADR 0062) — the one module that owns the resolution
+ * Resource Display Name (ADR 0066) — the one module that owns the resolution
  * chain (annotation → Kubernetes name), project-scoped numbering for
  * deploy-time defaults, and rename validation. Deploy paths and the settings
  * UI both read the rules from here so a name always resolves the same way
@@ -87,7 +87,7 @@ function templateNameSuffix(identifier: string, templateName: string): string {
 
 /**
  * Deploy-time display names for the resources one template instance spawned
- * (ADR 0062). The family shares the template name as base: the sole AP gets
+ * (ADR 0066). The family shares the template name as base: the sole AP gets
  * the bare base, every other resource gets `base-<own identifier>` (an AP's
  * Kubernetes name, a DB's engine), and an identifier already carrying the
  * template name as prefix is not prefixed twice. On a repeat deployment the
@@ -150,7 +150,7 @@ export type ResourceDisplayNameRename =
 /**
  * Submit-time rename rules: trimmed, 1–256 characters, any script; empty is
  * a no-op — a stored name cannot be cleared back to the Kubernetes name
- * (ADR 0062); a duplicate of another resource's display name in the Project
+ * (ADR 0066); a duplicate of another resource's display name in the Project
  * is rejected.
  */
 export function validateResourceDisplayNameRename(input: {
@@ -176,7 +176,7 @@ export function validateResourceDisplayNameRename(input: {
 /**
  * JSON merge patch for the display-name annotation, shared by the AP and DB
  * settings patch pipelines. A name is only ever set, never deleted — a
- * stored name cannot be cleared back to the Kubernetes name (ADR 0062).
+ * stored name cannot be cleared back to the Kubernetes name (ADR 0066).
  */
 export function resourceDisplayNameMergePatch(value: string): {
   metadata: { annotations: Record<string, string> };

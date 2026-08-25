@@ -64,8 +64,8 @@ export interface ContainerNodeStates {
 }
 
 export type ContainerNodeQuickActionKey =
-  | "calendar"
   | "events"
+  | "imageVersions"
   | "logs"
   | "metrics"
   | "terminal";

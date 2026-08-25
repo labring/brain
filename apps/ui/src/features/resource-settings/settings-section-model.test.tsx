@@ -69,7 +69,6 @@ function ApSettingsSectionsHarness({
     replicaStrategy: { fixed: { replicas: 2 }, type: "fixed" },
     replicasQuota: { onValueChange: noop, value: 2 },
     sectionFocus,
-    showImageSection: false,
     storage: [],
     workloadKind: "deployment",
   });
@@ -95,6 +94,7 @@ test("AP settings section model exposes provider-rendered sections", () => {
   assert.deepEqual(sectionIdsFromHtml(html), [
     "replica-strategy",
     "cpu-memory",
+    "image",
     "launch-command",
     "config-files",
     "environment",

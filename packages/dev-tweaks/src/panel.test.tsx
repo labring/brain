@@ -1,437 +1,235 @@
 /**
- * Rendering coverage: panel sections (Active hidden when empty, editable
- * cross-page, mock-first ordering), three reset layers, and the indicator
- * capsule (labels, visibility, demo entry, click-to-open) — all through the
- * package's public components against a real store.
+ * Integration coverage for the panel surface through the package
+ * entry: hook value resolution, store → hook subscription, DevTweaksRoot panel
+ * rendering, and the package's own cssVarOverrides bridge.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
+import {
+  type DevTweaksConfig,
+  DevTweaksStore,
+} from "./panel/store/dev-tweaks-store";
 import {
   actAndDrain,
   installTestDom,
   restoreActEnvironment,
   setActEnvironment,
 } from "./test/harness";
-import type { DevTweaksDriver, DevTweaksGroupDef } from "./types";
 
-const REMOVE_OVERRIDE_LABEL = /^Remove .* override$/;
+// Tweaks tuples are mutable, so `satisfies` (not `as const`) keeps the
+// config assignable while preserving inference for ResolvedValues.
+const CARD_CONFIG = {
+  blur: [24, 0, 100, 1],
+  enabled: true,
+  scale: 1.2,
+  tint: "#ff5500",
+} satisfies DevTweaksConfig;
 
-const TWEAK_DEF = {
-  controls: {
-    layout: {
-      label: "Layout",
-      options: ["grid", "list"],
-      type: "select",
-      value: "grid",
-    },
-    outline: { label: "Outline", type: "switch", value: false },
-  },
-  feature: "Projects",
-  kind: "tweak",
-  title: "Projects · layout",
-} as const satisfies DevTweaksGroupDef;
-
-const MOCK_DEF = {
-  controls: {
-    enabled: { label: "Mock data", type: "switch", value: false },
-    scenario: {
-      label: "Scenario",
-      options: ["alpha", "beta"],
-      type: "select",
-      value: "alpha",
-    },
-  },
-  feature: "Billing",
-  kind: "mock",
-  persistence: "billing-mock",
-  title: "Billing · mock",
-} as const satisfies DevTweaksGroupDef;
-
-const SECOND_MOCK_DEF = {
-  controls: {
-    empty: { label: "Empty list", type: "switch", value: false },
-  },
-  feature: "Devbox",
-  kind: "mock",
-  title: "Devbox · mock",
-} as const satisfies DevTweaksGroupDef;
-
-function makeDriver(): DevTweaksDriver & {
-  persisted: (Record<string, unknown> | null)[];
-} {
-  const persisted: (Record<string, unknown> | null)[] = [];
-  return {
-    load: () => null,
-    persist: (_groupKey, values) => {
-      persisted.push(values);
-    },
-    persisted,
-  };
-}
-
-type TestingLibrary = typeof import("@testing-library/react/pure");
-type PackageSurface = typeof import("./index");
-
-async function withScene(
-  run: (tools: {
-    fireEvent: TestingLibrary["fireEvent"];
-    openPanel: () => Promise<void>;
-    pkg: PackageSurface;
-    renderScene: (
-      content: (pkg: PackageSurface) => React.ReactElement
-    ) => Promise<{
-      container: HTMLElement;
-      rerender: (element: React.ReactElement) => void;
-      unmount: () => void;
-    }>;
-    screen: ReturnType<TestingLibrary["within"]>;
-  }) => Promise<void>
-): Promise<void> {
+test("useDevTweaks resolves defaults and reflects store updates", async () => {
   const dom = installTestDom();
   const previousAct = setActEnvironment(true);
-  const cleanups: (() => void)[] = [];
   try {
-    const testingLibrary = await import("@testing-library/react/pure");
-    const pkg = await import("./index");
-    const { fireEvent, render, within } = testingLibrary;
-    // `screen` from the library binds the module-load document.body, which
-    // goes stale once a test DOM is restored — bind to the current one.
-    const screen = within(document.body);
+    const { useDevTweaks } = await import("./index");
+    const { cleanup, render, within } = await import(
+      "@testing-library/react/pure"
+    );
+    // `screen` binds the first registered DOM for the whole process — rebind
+    // queries to this test's document instead.
+    const body = () => within(document.body);
 
-    const renderScene = async (
-      content: (surface: PackageSurface) => React.ReactElement
-    ) => {
-      let rendered: ReturnType<typeof render> | null = null;
-      await actAndDrain(() => {
-        rendered = render(content(pkg));
-      });
-      if (!rendered) {
-        throw new Error("scene did not render");
-      }
-      const scene = rendered as ReturnType<typeof render>;
-      cleanups.push(() => scene.unmount());
-      return {
-        container: scene.container,
-        rerender: scene.rerender,
-        unmount: scene.unmount,
-      };
-    };
-
-    const openPanel = async () => {
-      await actAndDrain(() => {
-        window.dispatchEvent(
-          new KeyboardEvent("keydown", {
-            altKey: true,
-            bubbles: true,
-            code: "KeyT",
-            ctrlKey: true,
-          })
-        );
-      });
-    };
-
-    await run({ fireEvent, openPanel, pkg, renderScene, screen });
-  } finally {
-    for (const cleanup of cleanups.reverse()) {
-      cleanup();
+    function Probe() {
+      const values = useDevTweaks("Card", CARD_CONFIG, { id: "test-card" });
+      return <output data-testid="values">{JSON.stringify(values)}</output>;
     }
+
+    await actAndDrain(() => {
+      render(<Probe />);
+    });
+    assert.deepEqual(
+      JSON.parse(body().getByTestId("values").textContent ?? ""),
+      { blur: 24, enabled: true, scale: 1.2, tint: "#ff5500" }
+    );
+
+    await actAndDrain(() => {
+      DevTweaksStore.updateValue("test-card", "blur", 42);
+    });
+    assert.equal(
+      (
+        JSON.parse(body().getByTestId("values").textContent ?? "") as {
+          blur: number;
+        }
+      ).blur,
+      42
+    );
+
+    await actAndDrain(() => {
+      cleanup();
+    });
+  } finally {
     restoreActEnvironment(previousAct);
     await dom.restore();
   }
-}
-
-function Probe({
-  def,
-  groupKey,
-  pkg,
-}: {
-  def: DevTweaksGroupDef;
-  groupKey: string;
-  pkg: PackageSurface;
-}) {
-  pkg.useDevTweaks(groupKey, def);
-  return null;
-}
-
-test("Active section hides when empty, appears on override, and clears via ×", async () => {
-  await withScene(async ({ fireEvent, openPanel, renderScene, screen }) => {
-    const driver = makeDriver();
-    const scene = (surface: PackageSurface) => (
-      <surface.DevTweaksProvider drivers={{ "billing-mock": driver }}>
-        <Probe def={MOCK_DEF} groupKey="billing" pkg={surface} />
-        <surface.DevTweaksPanel>
-          <div>app</div>
-        </surface.DevTweaksPanel>
-      </surface.DevTweaksProvider>
-    );
-    await renderScene(scene);
-    await openPanel();
-
-    assert.equal(screen.queryByText("Active"), null);
-
-    const mockSwitch = screen.getByLabelText("Mock data");
-    await actAndDrain(() => {
-      fireEvent.click(mockSwitch);
-    });
-    assert.ok(screen.getByText("Active"));
-    assert.deepEqual(driver.persisted.at(-1), { enabled: true });
-
-    const remove = screen.getByLabelText("Remove Mock data override");
-    await actAndDrain(() => {
-      fireEvent.click(remove);
-    });
-    assert.equal(screen.queryByText("Active"), null);
-    assert.equal(driver.persisted.at(-1), null);
-  });
 });
 
-test("mock groups render before tweak groups on this screen", async () => {
-  await withScene(async ({ openPanel, renderScene }) => {
-    const scene = (surface: PackageSurface) => (
-      <surface.DevTweaksProvider>
-        {/* Tweak registers first — mock must still render first. */}
-        <Probe def={TWEAK_DEF} groupKey="projects" pkg={surface} />
-        <Probe def={SECOND_MOCK_DEF} groupKey="devbox" pkg={surface} />
-        <surface.DevTweaksPanel>
-          <div>app</div>
-        </surface.DevTweaksPanel>
-      </surface.DevTweaksProvider>
+test("DevTweaksRoot renders a registered panel", async () => {
+  const dom = installTestDom();
+  const previousAct = setActEnvironment(true);
+  try {
+    const { DevTweaksRoot, useDevTweaks } = await import("./index");
+    const { cleanup, render, within } = await import(
+      "@testing-library/react/pure"
     );
-    const { container } = await renderScene(scene);
-    await openPanel();
 
-    const titles = [...container.querySelectorAll(".dtp-grouptitle")].map(
-      (node) => node.textContent
-    );
-    assert.deepEqual(titles, ["Devbox · mock", "Projects · layout"]);
-  });
+    function Probe() {
+      useDevTweaks("Card", CARD_CONFIG, { id: "test-card-panel" });
+      return null;
+    }
+
+    await actAndDrain(() => {
+      render(
+        <>
+          <Probe />
+          <DevTweaksRoot />
+        </>
+      );
+    });
+    assert.ok(within(document.body).getByText("Card"));
+
+    await actAndDrain(() => {
+      cleanup();
+    });
+  } finally {
+    restoreActEnvironment(previousAct);
+    await dom.restore();
+  }
 });
 
-test("Active entries survive navigation and stay editable cross-page", async () => {
-  await withScene(
-    async ({ fireEvent, openPanel, pkg, renderScene, screen }) => {
-      const driver = makeDriver();
-      const withProbe = (surface: PackageSurface) => (
-        <surface.DevTweaksProvider drivers={{ "billing-mock": driver }}>
-          <Probe def={MOCK_DEF} groupKey="billing" pkg={surface} />
-          <surface.DevTweaksPanel>
-            <div>app</div>
-          </surface.DevTweaksPanel>
-        </surface.DevTweaksProvider>
-      );
-      const withoutProbe = (surface: PackageSurface) => (
-        <surface.DevTweaksProvider drivers={{ "billing-mock": driver }}>
-          <surface.DevTweaksPanel>
-            <div>app</div>
-          </surface.DevTweaksPanel>
-        </surface.DevTweaksProvider>
-      );
-      const { rerender } = await renderScene(withProbe);
-      await openPanel();
+function pressToggleHotkey() {
+  window.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      altKey: true,
+      cancelable: true,
+      code: "KeyT",
+      ctrlKey: true,
+    })
+  );
+}
 
-      await actAndDrain(() => {
-        fireEvent.click(screen.getByLabelText("Mock data"));
-      });
-      // Navigate away — the group unmounts, the override entry stays.
-      await actAndDrain(() => {
-        rerender(withoutProbe(pkg));
-      });
-      assert.ok(screen.getByText("Active"));
-      assert.equal(
-        screen.queryByText("This screen")?.textContent,
-        "This screen"
-      );
+test("⌃⌥T toggles the panel, and frame posture insets the document", async () => {
+  const dom = installTestDom();
+  const previousAct = setActEnvironment(true);
+  try {
+    const { DevTweaksRoot, useDevTweaks } = await import("./index");
+    const { cleanup, render } = await import("@testing-library/react/pure");
 
-      // Editing from "Active" still routes through the named driver.
-      await actAndDrain(() => {
-        fireEvent.click(screen.getByLabelText("Mock data"));
-      });
-      assert.deepEqual(driver.persisted.at(-1), { enabled: false });
+    function Probe() {
+      useDevTweaks("Card", CARD_CONFIG, { id: "test-card-hotkey" });
+      return null;
+    }
+
+    const collapsed = () =>
+      document
+        .querySelector(".dev-tweaks-panel-inner")
+        ?.getAttribute("data-collapsed");
+    const framed = () =>
+      document.documentElement.classList.contains("dev-tweaks-framed");
+
+    await actAndDrain(() => {
+      render(
+        <>
+          <Probe />
+          <DevTweaksRoot defaultOpen={false} />
+        </>
+      );
+    });
+    assert.equal(collapsed(), "true");
+    assert.equal(framed(), false);
+    assert.ok(
+      document.documentElement.classList.contains("dev-tweaks-frame-host")
+    );
+
+    await actAndDrain(() => {
+      pressToggleHotkey();
+    });
+    assert.equal(collapsed(), "false");
+    assert.equal(framed(), true, "open panel docks the page (frame default)");
+
+    await actAndDrain(() => {
+      pressToggleHotkey();
+    });
+    assert.equal(collapsed(), "true");
+    assert.equal(framed(), false);
+
+    await actAndDrain(() => {
+      cleanup();
+    });
+    assert.equal(
+      document.documentElement.classList.contains("dev-tweaks-frame-host"),
+      false,
+      "unmount leaves nothing behind"
+    );
+  } finally {
+    restoreActEnvironment(previousAct);
+    await dom.restore();
+  }
+});
+
+test("dirty-only launcher hides the closed bubble until a value deviates", async () => {
+  const dom = installTestDom();
+  const previousAct = setActEnvironment(true);
+  try {
+    const { DevTweaksRoot, useDevTweaks } = await import("./index");
+    const { cleanup, render } = await import("@testing-library/react/pure");
+
+    function Probe() {
+      useDevTweaks("Card", CARD_CONFIG, { id: "test-card-dirty" });
+      return null;
+    }
+
+    const panelDisplay = () =>
+      (document.querySelector(".dev-tweaks-panel") as HTMLElement | null)?.style
+        .display;
+
+    await actAndDrain(() => {
+      render(
+        <>
+          <Probe />
+          <DevTweaksRoot defaultOpen={false} launcher="dirty" />
+        </>
+      );
+    });
+    assert.equal(panelDisplay(), "none", "clean and closed → no chrome");
+
+    await actAndDrain(() => {
+      DevTweaksStore.updateValue("test-card-dirty", "blur", 42);
+    });
+    assert.notEqual(panelDisplay(), "none", "override lights the bubble");
+
+    await actAndDrain(() => {
+      DevTweaksStore.resetValues("test-card-dirty");
+    });
+    assert.equal(panelDisplay(), "none", "reset hides it again");
+
+    await actAndDrain(() => {
+      cleanup();
+    });
+  } finally {
+    restoreActEnvironment(previousAct);
+    await dom.restore();
+  }
+});
+
+test("cssVarOverrides writes only overridden values, with units", async () => {
+  const { cssVarOverrides } = await import("./css-vars");
+  const style = cssVarOverrides(
+    CARD_CONFIG,
+    { blur: 42, enabled: true, scale: 1.2, tint: "#ff5500" },
+    {
+      blur: { cssVar: "--card-blur", unit: "px" },
+      scale: { cssVar: "--card-scale" },
+      tint: { cssVar: "--card-tint" },
     }
   );
-});
-
-test("three reset layers: control, group, clear all", async () => {
-  await withScene(async ({ fireEvent, openPanel, renderScene, screen }) => {
-    const scene = (surface: PackageSurface) => (
-      <surface.DevTweaksProvider>
-        <Probe def={TWEAK_DEF} groupKey="projects" pkg={surface} />
-        <Probe def={SECOND_MOCK_DEF} groupKey="devbox" pkg={surface} />
-        <surface.DevTweaksPanel>
-          <div>app</div>
-        </surface.DevTweaksPanel>
-      </surface.DevTweaksProvider>
-    );
-    await renderScene(scene);
-    await openPanel();
-
-    const clearAll = screen.getByText("Clear all") as HTMLButtonElement;
-    assert.equal(clearAll.disabled, true);
-
-    await actAndDrain(() => {
-      fireEvent.click(screen.getByLabelText("Outline"));
-      fireEvent.change(screen.getByLabelText("Layout"), {
-        target: { value: "list" },
-      });
-      fireEvent.click(screen.getByLabelText("Empty list"));
-    });
-    assert.equal(screen.getAllByLabelText(REMOVE_OVERRIDE_LABEL).length, 3);
-
-    // Layer 1 — single control reset.
-    await actAndDrain(() => {
-      fireEvent.click(screen.getAllByLabelText("Reset Outline")[0] as Element);
-    });
-    assert.equal(screen.getAllByLabelText(REMOVE_OVERRIDE_LABEL).length, 2);
-
-    // Layer 2 — group reset.
-    await actAndDrain(() => {
-      fireEvent.click(
-        screen.getByLabelText("Reset Projects · layout to defaults")
-      );
-    });
-    assert.equal(screen.getAllByLabelText(REMOVE_OVERRIDE_LABEL).length, 1);
-
-    // Layer 3 — footer clear all.
-    assert.equal(clearAll.disabled, false);
-    await actAndDrain(() => {
-      fireEvent.click(clearAll);
-    });
-    assert.equal(screen.queryByText("Active"), null);
-    assert.equal(clearAll.disabled, true);
-  });
-});
-
-test("indicator capsule: labels, visibility, and click-to-open", async () => {
-  await withScene(async ({ fireEvent, openPanel, renderScene, screen }) => {
-    const driver = makeDriver();
-    const scene = (surface: PackageSurface) => (
-      <surface.DevTweaksProvider drivers={{ "billing-mock": driver }}>
-        <Probe def={MOCK_DEF} groupKey="billing" pkg={surface} />
-        <Probe def={TWEAK_DEF} groupKey="projects" pkg={surface} />
-        <surface.DevTweaksPanel>
-          <div>app</div>
-        </surface.DevTweaksPanel>
-        <surface.DevTweaksIndicator />
-      </surface.DevTweaksProvider>
-    );
-    await renderScene(scene);
-
-    // Clean store → no capsule.
-    assert.equal(screen.queryByTitle("Open dev tweaks"), null);
-
-    // Tweak override only → grey "1 override".
-    await openPanel();
-    await actAndDrain(() => {
-      fireEvent.click(screen.getByLabelText("Outline"));
-    });
-    // Panel open → capsule hidden even though dirty.
-    assert.equal(screen.queryByTitle("Open dev tweaks"), null);
-    await openPanel();
-    const capsule = screen.getByTitle("Open dev tweaks");
-    assert.equal(capsule.textContent, "1 override");
-    assert.equal(capsule.getAttribute("data-mock"), null);
-
-    // Single mock with a scenario select → MOCK · <scenario>.
-    await openPanel();
-    await actAndDrain(() => {
-      fireEvent.click(screen.getByLabelText("Mock data"));
-      fireEvent.change(screen.getByLabelText("Scenario"), {
-        target: { value: "beta" },
-      });
-    });
-    await openPanel();
-    const mockCapsule = screen.getByTitle("Open dev tweaks");
-    assert.equal(mockCapsule.textContent, "MOCK · beta");
-    assert.equal(mockCapsule.getAttribute("data-mock"), "true");
-
-    // Clicking the capsule opens the panel and the capsule leaves.
-    await actAndDrain(() => {
-      fireEvent.click(mockCapsule);
-    });
-    assert.equal(screen.queryByTitle("Open dev tweaks"), null);
-    const panel = screen.getByLabelText("Dev tweaks", { selector: "aside" });
-    assert.equal(panel.hasAttribute("inert"), false);
-  });
-});
-
-test("indicator shows MOCK ×N for several active mock groups", async () => {
-  await withScene(async ({ fireEvent, openPanel, renderScene, screen }) => {
-    const driver = makeDriver();
-    const scene = (surface: PackageSurface) => (
-      <surface.DevTweaksProvider drivers={{ "billing-mock": driver }}>
-        <Probe def={MOCK_DEF} groupKey="billing" pkg={surface} />
-        <Probe def={SECOND_MOCK_DEF} groupKey="devbox" pkg={surface} />
-        <surface.DevTweaksPanel>
-          <div>app</div>
-        </surface.DevTweaksPanel>
-        <surface.DevTweaksIndicator />
-      </surface.DevTweaksProvider>
-    );
-    await renderScene(scene);
-    await openPanel();
-    await actAndDrain(() => {
-      fireEvent.click(screen.getByLabelText("Mock data"));
-      fireEvent.click(screen.getByLabelText("Empty list"));
-    });
-    await openPanel();
-    assert.equal(screen.getByTitle("Open dev tweaks").textContent, "MOCK ×2");
-  });
-});
-
-test("frame mode insets the document and leaves nothing behind", async () => {
-  await withScene(async ({ fireEvent, openPanel, renderScene, screen }) => {
-    const { unmount } = await renderScene((surface) => (
-      <surface.DevTweaksProvider>
-        <surface.DevTweaksPanel
-          style={{ "--dtp-card-ring": "#abcabc" } as React.CSSProperties}
-        >
-          <span>page</span>
-        </surface.DevTweaksPanel>
-      </surface.DevTweaksProvider>
-    ));
-
-    const root = document.documentElement;
-    // The page is never wrapped: frame mode insets `<body>` itself, so the
-    // old card element must not come back.
-    assert.equal(document.querySelector(".dtp-card"), null);
-    // Bridge variables land on the root, the one ancestor both the card
-    // (`<body>`) and the top-layer panel share.
-    assert.equal(root.style.getPropertyValue("--dtp-card-ring"), "#abcabc");
-    assert.ok(root.classList.contains("dtp-frame-host"));
-    assert.equal(root.classList.contains("dtp-framed"), false);
-
-    await openPanel();
-    assert.ok(root.classList.contains("dtp-framed"));
-    assert.equal(root.style.getPropertyValue("--dtp-frame-panel-w"), "384px");
-    assert.equal(root.style.getPropertyValue("--dtp-frame-gap"), "32px");
-
-    await actAndDrain(() => {
-      fireEvent.click(screen.getByLabelText("Switch to floating window"));
-    });
-    assert.equal(root.classList.contains("dtp-framed"), false);
-
-    await actAndDrain(() => {
-      unmount();
-    });
-    assert.equal(root.classList.contains("dtp-frame-host"), false);
-    assert.equal(root.style.getPropertyValue("--dtp-card-ring"), "");
-  });
-});
-
-test("demo entry: alwaysVisible keeps the capsule present when clean", async () => {
-  await withScene(async ({ renderScene, screen }) => {
-    const scene = (surface: PackageSurface) => (
-      <surface.DevTweaksProvider>
-        <surface.DevTweaksPanel>
-          <div>app</div>
-        </surface.DevTweaksPanel>
-        <surface.DevTweaksIndicator alwaysVisible />
-      </surface.DevTweaksProvider>
-    );
-    await renderScene(scene);
-    const capsule = screen.getByTitle("Open dev tweaks");
-    assert.equal(capsule.textContent, "Dev tweaks");
-  });
+  assert.deepEqual(style, { "--card-blur": "42px" });
 });

@@ -19,6 +19,12 @@ import {
 
 const CODEX_GATEWAY_STARTUP_RETRY_MS = 1000;
 export const DEPLOY_GATEWAY_MODEL = "gpt-5.5";
+
+export function resolveDeployGatewayModel(): string {
+  const configured = process.env.CODEX_GATEWAY_MODEL?.trim();
+  return configured ? configured : DEPLOY_GATEWAY_MODEL;
+}
+
 const GATEWAY_SESSION_IDENTIFIER_REGEX =
   /^(?:session[-_][A-Za-z0-9][A-Za-z0-9._:-]{0,95}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const GATEWAY_TIMESTAMP_MAX_LENGTH = 24;
@@ -403,7 +409,7 @@ async function createGatewaySession(
     "/api/sessions",
     {
       body: JSON.stringify({
-        model: DEPLOY_GATEWAY_MODEL,
+        model: resolveDeployGatewayModel(),
         ...(options?.threadId == null ? {} : { threadId: options.threadId }),
       }),
       method: "POST",

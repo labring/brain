@@ -1165,7 +1165,7 @@ func dbUpdatePlanFromProductPatch(patch []byte, clusterJSON []byte, name string,
 }
 
 // dbDisplayNameMetadataPatch forwards a Resource Display Name change
-// (ADR 0062) from the product patch to the Cluster. Other metadata fields
+// (ADR 0066) from the product patch to the Cluster. Other metadata fields
 // are never forwarded.
 func dbDisplayNameMetadataPatch(body map[string]interface{}) (map[string]interface{}, error) {
 	metadata, _ := body["metadata"].(map[string]interface{})

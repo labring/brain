@@ -31,7 +31,7 @@ export function isTemplateProviderAppResource(
 }
 
 /**
- * Stamp deploy-time Resource Display Names (ADR 0062) onto the AP and DB
+ * Stamp deploy-time Resource Display Names (ADR 0066) onto the AP and DB
  * resources one template instance spawned. The template provider creates the
  * resources cluster-side, so the names are written post-create through the
  * product PATCH routes — the same writer the rename surface uses. Naming

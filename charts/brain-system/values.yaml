@@ -108,10 +108,16 @@ ui:
     - id: pa_uistaging2
       port: 3000
   env:
+    ACCOUNT_API_BASE_URL: ""
     AP_USER_DOMAIN: ""
     AP_USER_DOMAIN_TLS_SECRET_NAME: ""
     API_URL: ""
     APP_URL: ""
+    BILLING_CURRENCY: "usd"
+    BILLING_GPU_ENABLED: "false"
+    # Region domain this deployment belongs to; derived from the platform
+    # cloud domain when left empty.
+    BILLING_LOCAL_REGION_DOMAIN: ""
     GTM_ID: ""
     DATABASE_URL: ""
     # Set to "1" when DATABASE_URL points at a database owned by another
@@ -119,8 +125,15 @@ ui:
     # skips its boot-time schema migrations instead of applying DDL there.
     APP_POSTGRES_SKIP_MIGRATIONS: ""
     JWT_INTERNAL: ""
+    MARKETING_EVENTS_INGEST_SECRET: ""
+    MARKETING_CONSENT_SIGNING_KEY: ""
     GITHUB_APP_ID: ""
     GITHUB_APP_PRIVATE_KEY: ""
+    # Optional. When both are set, GitHub Deploy uses this OpenAI-compatible
+    # endpoint instead of the caller's AI Proxy. Leave empty to reuse
+    # CODEX_GATEWAY_OPENAI_* then SYSTEM_OPENAI_* when that pair is complete.
+    GITHUB_DEPLOY_OPENAI_API_KEY: ""
+    GITHUB_DEPLOY_OPENAI_BASE_URL: ""
     GITHUB_OAUTH_CLIENT_ID: ""
     GITHUB_OAUTH_CLIENT_SECRET: ""
     GITHUB_USER_TOKEN_ENCRYPTION_KEY: ""

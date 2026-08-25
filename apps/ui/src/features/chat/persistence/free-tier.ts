@@ -1,9 +1,13 @@
 import "server-only";
 
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, gt, lt, sql } from "drizzle-orm";
+
+import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
 
 import { getAssistantDb } from "./db";
+import { freeTierPosture } from "./free-tier-core";
 import { assistantEntitlements } from "./schema";
+import type { FreeTierState } from "./types";
 
 const DEFAULT_FREE_CHAT_TURNS = 5;
 
@@ -54,10 +58,39 @@ export async function getFreeTierSnapshot(
 }
 
 /**
- * Atomically increments usage after a successful assistant turn.
- * Returns false when the limit was already reached (concurrent overage guard).
+ * Chat Billing Posture for one verified actor (ADR-0065): local usage
+ * snapshot + live Active Free Trial judgment. The judgment is skipped when
+ * the feature cannot produce anything but `user` anyway (no platform model,
+ * or `FREE_CHAT_TURNS=0`).
  */
-export async function consumeFreeTurnIfAvailable(
+export async function resolveFreeTierPosture(input: {
+  accountUserId: string | null;
+  cookieHeader?: string | null;
+  namespace: string;
+  userUid: string;
+}): Promise<FreeTierState> {
+  const snapshot = await getFreeTierSnapshot(input.namespace);
+  const systemModelConfigured = isSystemOpenAiConfigured();
+  const trial =
+    snapshot.limit > 0 && systemModelConfigured
+      ? await judgeActiveFreeTrialForWorkspace({
+          cookieHeader: input.cookieHeader,
+          userId: input.accountUserId,
+          userUid: input.userUid,
+          workspace: input.namespace,
+        })
+      : "not-trial";
+  return freeTierPosture(snapshot, systemModelConfigured, trial);
+}
+
+/**
+ * Atomically reserves one free turn BEFORE model execution. The `lt` guard
+ * makes concurrent reservations race on the counter itself, so only one of
+ * two requests seeing `remaining = 1` can run its turn free — the loser must
+ * re-evaluate its posture before touching the platform model.
+ * Returns false when the limit was already reached.
+ */
+export async function reserveFreeTurnIfAvailable(
   namespaceKey: string
 ): Promise<boolean> {
   const limit = freeChatTurnsLimit();
@@ -86,4 +119,28 @@ export async function consumeFreeTurnIfAvailable(
     .returning({ namespace: assistantEntitlements.namespace });
 
   return updated.length > 0;
+}
+
+/**
+ * Returns a reserved free turn after an unsuccessful turn (stream error,
+ * abort, lost lease, or a preflight failure after reservation). The `gt`
+ * guard keeps the counter monotonic under a spurious double release. A crash
+ * between reservation and release leaks one turn — bounded, and it errs
+ * toward the platform, never toward overspending the lifetime cap.
+ */
+export async function releaseReservedFreeTurn(
+  namespaceKey: string
+): Promise<void> {
+  await getAssistantDb()
+    .update(assistantEntitlements)
+    .set({
+      freeTurnsUsed: sql`${assistantEntitlements.freeTurnsUsed} - 1`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(assistantEntitlements.namespace, namespaceKey),
+        gt(assistantEntitlements.freeTurnsUsed, 0)
+      )
+    );
 }

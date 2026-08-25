@@ -30,6 +30,7 @@ import type {
   ProjectSideSurfaceEntry,
   ProjectSurfaceIntent,
 } from "@/features/panes/surface-state";
+import type { ProjectApTarget } from "@/features/panes/target-identity";
 import { useProjectWorkbenchRouteState } from "@/features/panes/use-project-workbench-route-state";
 import { useProjectCanvasResourceActions } from "@/features/project-canvas/actions/use-project-canvas-resource-actions";
 import {
@@ -1180,6 +1181,16 @@ export function useProjectCanvasModule({
     });
   }, [openingKey, viewportDirectives]);
 
+  const openApImageVersions = useCallback(
+    (target: ProjectApTarget) => {
+      openSideSurface(
+        { kind: "apHistory", target },
+        { kind: "resource", target }
+      );
+    },
+    [openSideSurface]
+  );
+
   const surfaceActions = useMemo<ProjectCanvasSurfaceHostActions>(
     () => ({
       closeDrawerSurface,
@@ -1188,6 +1199,7 @@ export function useProjectCanvasModule({
       closeResourcePane,
       consumeSettingsLaunchContext,
       onDbServiceRestoreAccepted,
+      openApImageVersions,
       registerSettingsLeaveGuard,
       repairSide,
     }),
@@ -1198,6 +1210,7 @@ export function useProjectCanvasModule({
       closeResourcePane,
       consumeSettingsLaunchContext,
       onDbServiceRestoreAccepted,
+      openApImageVersions,
       registerSettingsLeaveGuard,
       repairSide,
     ]

@@ -359,23 +359,6 @@ test("AP settings pane renders Image below CPU / Memory", () => {
   assert.ok(cpuMemoryIndex < imageIndex);
 });
 
-test("AP settings pane can hide Image section", () => {
-  const html = renderToStaticMarkup(
-    <TestApSettingsSections
-      cpuQuota={{ onValueChange: noop, value: 1 }}
-      env={[]}
-      image="ghcr.io/acme/api:latest"
-      memoryQuota={{ onValueChange: noop, value: 512 }}
-      onEnvChange={noop}
-      onImageChange={noop}
-      showImageSection={false}
-    />
-  );
-
-  assert.match(html, CPU_MEMORY_SECTION_RE);
-  assert.doesNotMatch(html, IMAGE_INPUT_RE);
-});
-
 test("AP settings pane renders Figma-aligned empty Configuration Files state", () => {
   const html = renderPane();
 

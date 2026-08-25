@@ -6,7 +6,7 @@ import { renderYamlTemplate } from "./render-yaml-template";
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
 
 interface RenderDbDeploymentYamlOptions {
-  /** Resource Display Name written into the annotation at deploy time (ADR 0062). */
+  /** Resource Display Name written into the annotation at deploy time (ADR 0066). */
   displayName?: string;
   engine: string;
   name: string;

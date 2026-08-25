@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 /**
  * Detail shown in parentheses beside a display name in destructive and
- * lifecycle confirmations (ADR 0062): the workload kind and, when it differs
+ * lifecycle confirmations (ADR 0066): the workload kind and, when it differs
  * from the display name, the Kubernetes name — so a renamed or duplicated
  * node cannot be mistaken.
  */

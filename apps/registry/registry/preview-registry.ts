@@ -625,6 +625,33 @@ export const Index: RegistryIndex = {
     load: () => import("@registry/linear/components/mdx/mdx-preview"),
   },
 
+  "linear/components/plan-badge": {
+    style: "linear",
+    group: "components",
+    name: "plan-badge",
+    title: "Plan badge",
+    description:
+      "Subscription-plan tier badge with the Brain V2.0 gradient recipes, plus the matching accent app-type badge used in cost tables.",
+    state: "coding",
+    type: "registry:preview",
+    registryDependencies: ["preview", "plan-badge"],
+    files: [
+      {
+        path: "registry/linear/components/plan-badge/plan-badge-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "packages/ui/src/components/plan-badge.tsx",
+        type: "registry:ui",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import("@registry/linear/components/plan-badge/plan-badge-preview"),
+  },
+
   "linear/components/settings-slider": {
     style: "linear",
     group: "components",
@@ -655,7 +682,7 @@ export const Index: RegistryIndex = {
     name: "sliding-toggle",
     title: "Sliding toggle",
     description:
-      "Segmented toggle with a sliding input-colored indicator, default and compact sizing, and full-width or content-width layout.",
+      "Segmented toggle with a sliding input-colored indicator, default and compact sizing, full-width or content-width layout, and equal or fit-width segments.",
     state: "done",
     type: "registry:preview",
     registryDependencies: ["preview", "sliding-toggle", "toggle-group"],

@@ -60,9 +60,13 @@ export const assistantThreadDTOSchema = z.object({
   updatedAt: z.string(),
 }) satisfies z.ZodType<AssistantThreadDTO>;
 
-/** Read-side snapshot of a namespace's chat billing posture, seeded into the pane on load. */
+/**
+ * Read-side snapshot of a workspace's Chat Billing Posture, seeded into the
+ * pane on load. Computed server-side only (ADR-0065): bootstrap payload and
+ * `X-Chat-*` headers agree; clients render, never derive.
+ */
 export interface FreeTierState {
-  billing: "free" | "user";
+  billing: "blocked" | "free" | "user";
   limit: number;
   remaining: number;
 }
@@ -100,7 +104,7 @@ export type AssistantContextPayload = z.infer<
  * "nothing was selected"; we never backfill a stale target.
  */
 export const selectedResourceContextSchema = z.object({
-  /** Resource Display Name (ADR 0062) — display-only, never a `name` argument. */
+  /** Resource Display Name (ADR 0066) — display-only, never a `name` argument. */
   displayName: z.string().max(512).optional(),
   kind: z.string().max(128).optional(),
   name: z.string().max(512).optional(),

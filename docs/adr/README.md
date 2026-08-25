@@ -15,7 +15,6 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0027 — Use Sealos Native Product Labels for Template Instances](0027-use-sealos-native-product-labels-for-template-instances.md) *(replaces the earlier deployment-scoped Brain label model)*
 - [0028 — Model Deployment Progress as Task-Owned Timelines](0028-model-deployment-progress-as-task-owned-timelines.md)
 - [0030 — Store Pending Settings Updates Browser-Locally](0030-store-pending-settings-updates-browser-locally.md)
-- [0033 — Surface assistant billing as a free-allowance counter plus a one-time crossing notice](0033-surface-assistant-billing-as-free-allowance-only.md)
 - [0035 — Render Project Canvas from Canvas Runtime Stores and Stable Commands](0035-render-project-canvas-from-canvas-runtime-stores.md)
 - [0036 — Bind GitHub Integrations as User OAuth Connections](0036-bind-github-integrations-as-user-oauth-connections.md) *(owner identity and task credential binding revised by ADR-0056; owner key revised by ADR-0059)*
 - [0037 — Execute Deployment Tasks Under Leases and Guarded Transitions](0037-execute-deployment-tasks-under-leases-and-guarded-transitions.md)
@@ -32,8 +31,13 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0057 — Forget GitHub Connections Locally on Disconnect](0057-forget-github-connections-locally-on-disconnect.md)
 - [0058 — Derive Project Display Names from Deployment Sources at Creation](0058-derive-project-display-names-from-deployment-sources.md)
 - [0059 — Key Personal Resources by the Global User UID](0059-key-personal-resources-by-global-user-uid.md) *(revises ADR-0036, ADR-0047, and ADR-0056)*
+- [0060 — Call account-service with Self-Signed Internal JWTs](0060-call-account-service-with-self-signed-internal-jwts.md)
 - [0061 — Key the Onboarding Profile by the Bare User UID](0061-key-the-onboarding-profile-by-bare-user-uid.md) *(supplements ADR-0059)*
-- [0062 — Give Canvas Resources Editable Display Names Stored on the Resource](0062-store-resource-display-names-in-annotations.md)
+- [0062 — Submit Image Updates Inline from the AP Image Versions Surface](0062-submit-image-updates-inline-from-the-image-versions-surface.md) *(supplements ADR-0019 and ADR-0030)*
+- [0063 — Derive Resource-Deletion Dates Client-Side from Subscription Expiry](0063-derive-resource-deletion-dates-client-side.md)
+- [0064 — Pin the Current Billing Region by Deployment-Declared Domain](0064-pin-the-current-billing-region-by-deployment-declared-domain.md)
+- [0065 — Gate Free Chat Turns on the Active Free Trial and block on exhaustion](0065-gate-free-chat-turns-on-the-active-free-trial-and-block-on-exhaustion.md) *(replaces the deleted ADR-0033)*
+- [0066 — Give Canvas Resources Editable Display Names Stored on the Resource](0066-store-resource-display-names-in-annotations.md)
 
 ## Conventions
 

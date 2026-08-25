@@ -144,6 +144,14 @@ connection in that same transaction with no crName left to re-check, so the
 sweep order guarantees the callback either re-reads the survivor uid from its
 re-keyed session or commits a connection row the sweep still catches.
 
+Trusted lifecycle producers carry a verified uid as their sole identity key,
+while the fingerprint row requires a crName. A durable uid canonicalization
+table maps each ingest or merge uid to its current survivor. Event ingest locks
+that row through commit; the merge transaction redirects the tombstone and all
+earlier aliases before sweeping personal resources. The ordering guarantees
+that a delayed event either commits first and is swept, or reads the survivor
+and commits directly under the canonical uid.
+
 ### Keep one code path everywhere
 
 Local development mints a real token: a dev `JWT_INTERNAL` in `.env.local`,

@@ -6,7 +6,7 @@ import { projectRuntimeResourceKey } from "@/features/project-canvas/runtime/res
  * the runtime store's React subtree (the chat composer pins the selection
  * snapshot at send time). The canvas publishes the Project's resolved
  * Resource Display Names keyed by Canvas Resource Identity; readers get a
- * display-only hint — never an identity (ADR 0062).
+ * display-only hint — never an identity (ADR 0066).
  */
 
 const displayNamesByResourceKey = new Map<string, string>();
@@ -23,7 +23,7 @@ export function publishResourceDisplayNames(
 export function resourceDisplayNameForTarget(
   target: ProjectSurfaceTarget
 ): string | undefined {
-  // A Public Access node shows its AP's display name (ADR 0062).
+  // A Public Access node shows its AP's display name (ADR 0066).
   const key =
     target.kind === "PublicAccess"
       ? projectRuntimeResourceKey({

@@ -69,6 +69,17 @@ export type VerifyKubeconfigNamespace = (input: {
   token: string;
 }) => Promise<KubeconfigNamespaceVerification>;
 
+export type WorkspaceActorAuthFailureCode =
+  | "app_token_invalid"
+  | "app_token_mismatch"
+  | "app_token_required"
+  | "app_token_superseded"
+  | "authentication_required"
+  | "fingerprint_unavailable"
+  | "namespace_authorization_failed"
+  | "namespace_forbidden"
+  | "workspace_actor_required";
+
 export type WorkspaceActorAuthorization =
   | {
       /** The app-token-proven `crName → userUid` binding for this actor. */
@@ -78,16 +89,7 @@ export type WorkspaceActorAuthorization =
       workspaceActor: string;
     }
   | {
-      code:
-        | "app_token_invalid"
-        | "app_token_mismatch"
-        | "app_token_required"
-        | "app_token_superseded"
-        | "authentication_required"
-        | "fingerprint_unavailable"
-        | "namespace_authorization_failed"
-        | "namespace_forbidden"
-        | "workspace_actor_required";
+      code: WorkspaceActorAuthFailureCode;
       message: string;
       ok: false;
       status: number;

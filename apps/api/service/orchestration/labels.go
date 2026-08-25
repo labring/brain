@@ -15,7 +15,7 @@ const (
 	BrainDeploymentNameLabel = "brain.io/deployment-name"
 	BrainTemplateNameLabel   = "brain.io/template-name"
 	BrainDBEngineLabel       = "brain.io/db-engine"
-	// BrainDisplayNameAnnotation stores the Resource Display Name (ADR 0062);
+	// BrainDisplayNameAnnotation stores the Resource Display Name (ADR 0066);
 	// display-only, never a selector or identity.
 	BrainDisplayNameAnnotation = "brain.io/display-name"
 
@@ -64,7 +64,7 @@ func mergeStringMap(maps ...map[string]string) map[string]string {
 	return out
 }
 
-// MaxDisplayNameLength bounds a stored Resource Display Name (ADR 0062:
+// MaxDisplayNameLength bounds a stored Resource Display Name (ADR 0066:
 // "Trimmed, 1–256 characters"), counted in Unicode code points on both
 // sides of the API — keep in step with the UI module
 // (apps/ui/src/features/resource-display-name/resource-display-name.ts).
@@ -72,7 +72,7 @@ const MaxDisplayNameLength = 256
 
 // DisplayNameAnnotationPatchValue validates a Resource Display Name value
 // from a product merge patch, mirroring the UI module's submit rules
-// (ADR 0062): a display name is only ever set, never cleared, so an empty
+// (ADR 0066): a display name is only ever set, never cleared, so an empty
 // or null value is rejected instead of deleting the annotation; an
 // over-long value is rejected instead of truncated.
 func DisplayNameAnnotationPatchValue(raw interface{}) (string, error) {

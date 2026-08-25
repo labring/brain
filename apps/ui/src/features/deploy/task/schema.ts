@@ -16,6 +16,7 @@ import type {
   TemplateDefaultValue,
   TemplateSourceInput,
 } from "@/features/deploy/template-provider-core";
+import type { MarketingAttributionSnapshot } from "@/features/marketing/types";
 import type { DeploymentTaskTimelineSnapshot } from "./timeline";
 
 export const DEPLOYMENT_TASK_DB_SCHEMA = "sealai_deployment";
@@ -294,6 +295,9 @@ export const deployTasks = ns.table(
     projectId: text("project_uid"),
     projectName: text("project_name"),
     creatingActor: text("creating_actor"),
+    marketingAttribution: jsonb(
+      "marketing_attribution"
+    ).$type<MarketingAttributionSnapshot | null>(),
     credentialBinding: jsonb(
       "credential_binding"
     ).$type<DeploymentCredentialBinding | null>(),

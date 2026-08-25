@@ -201,7 +201,7 @@ function metadataAnnotations(
   return asRecord(metadataRecord(resource).annotations);
 }
 
-/** Resource Display Name for an AP resource (ADR 0062 resolution chain). */
+/** Resource Display Name for an AP resource (ADR 0066 resolution chain). */
 function apDisplayName(ap: unknown, kubernetesName: string): string {
   return resolveResourceDisplayName({
     annotations: metadataAnnotations(ap),
@@ -598,7 +598,7 @@ function publicAccessFactFromAp(
   return {
     ...(accessDomain === undefined ? {} : { accessDomain }),
     apRef,
-    // A Public Access node never owns a name — it shows its AP's (ADR 0062).
+    // A Public Access node never owns a name — it shows its AP's (ADR 0066).
     displayName: apDisplayName(ap, apName),
     key: projectRuntimeResourceKey(ref),
     ...(metadataUid(ap) === undefined ? {} : { observedUid: metadataUid(ap) }),

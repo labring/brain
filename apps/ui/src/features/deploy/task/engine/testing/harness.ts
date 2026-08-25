@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-
+import { identityFingerprints } from "@/features/chat/persistence/schema";
+import {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
 import {
   deployTaskAgentCalls,
   deployTaskEvents,
@@ -22,6 +26,9 @@ const deploymentTaskSchema = {
   deployTaskEvents,
   deployTaskMessages,
   deployTasks,
+  identityFingerprints,
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
 };
 
 export type DeployTaskTestDb = ReturnType<

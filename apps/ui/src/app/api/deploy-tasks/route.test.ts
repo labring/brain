@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
+import { identityFingerprints } from "@/features/chat/persistence/schema";
 import type {
   GithubConnectionOwnerIdentity,
   VerifiedGithubConnectionActor,
 } from "@/features/deploy/github/owner-identity";
+import { redeployDeploymentTask } from "@/features/deploy/task/client";
 import { DEPLOY_TASK_ENGINE_CADENCE } from "@/features/deploy/task/engine/constants";
 import type { DeployTaskEngineContext } from "@/features/deploy/task/engine/context";
 import type { DeployTaskHandle } from "@/features/deploy/task/engine/handle";
@@ -28,6 +30,7 @@ let testDb: DeployTaskTestHarness["db"] | undefined;
 let testEngineContext: DeployTaskEngineContext | undefined;
 let runDone: Promise<void> | undefined;
 let authorizedWorkspaceActor: string | undefined = "alice-cr";
+let afterAuthorize: (() => Promise<void>) | undefined;
 let activeGithubConnection: {
   accountLogin: string;
   accountType: string;
@@ -98,13 +101,13 @@ mock.module("@/lib/request-kubeconfig-auth", () => ({
    * test kubeconfig so route tests prove the header value reaches the
    * authorization input; anything else falls through to the real function.
    */
-  authorizeWorkspaceActor: (
+  authorizeWorkspaceActor: async (
     input: Parameters<
       typeof actualRequestKubeconfigAuth.authorizeWorkspaceActor
     >[0]
   ) => {
     if (input.encodedKubeconfig !== AUTHORIZED_ENCODED_KUBECONFIG) {
-      return actualRequestKubeconfigAuth.authorizeWorkspaceActor(input);
+      return await actualRequestKubeconfigAuth.authorizeWorkspaceActor(input);
     }
     authorizeCalls.push({
       appToken: input.appToken,
@@ -112,40 +115,54 @@ mock.module("@/lib/request-kubeconfig-auth", () => ({
       expectedNamespace: input.expectedNamespace,
     });
     if (authorizedWorkspaceActor == null) {
-      return Promise.resolve({
+      return {
         code: "workspace_actor_required" as const,
         message: "A verified Workspace Actor is required.",
         ok: false as const,
         status: 403,
-      });
+      };
     }
     const tokenActor = APP_TOKENS[input.appToken ?? ""];
     if (tokenActor == null) {
-      return Promise.resolve({
+      return {
         code: "app_token_required" as const,
         message: "Authentication is required.",
         ok: false as const,
         status: 401,
-      });
+      };
     }
     if (tokenActor !== authorizedWorkspaceActor) {
-      return Promise.resolve({
+      return {
         code: "app_token_mismatch" as const,
         message: "App token does not match the authenticated actor.",
         ok: false as const,
         status: 403,
-      });
+      };
     }
-    return Promise.resolve({
+    assert.ok(testDb);
+    const userUid = USER_UIDS[authorizedWorkspaceActor] ?? "uid-unknown";
+    await testDb
+      .insert(identityFingerprints)
+      .values({
+        crName: authorizedWorkspaceActor,
+        mintedAt: 1,
+        userUid,
+      })
+      .onConflictDoUpdate({
+        set: { mintedAt: 1, userUid },
+        target: identityFingerprints.crName,
+      });
+    await afterAuthorize?.();
+    return {
       actorBinding: {
         crName: authorizedWorkspaceActor,
         mintedAt: null,
-        userUid: USER_UIDS[authorizedWorkspaceActor] ?? "uid-unknown",
+        userUid,
       },
       namespace: "namespace-b",
       ok: true as const,
       workspaceActor: authorizedWorkspaceActor,
-    });
+    };
   },
 }));
 mock.module("@/features/deploy/github/connection-service", () => ({
@@ -216,6 +233,7 @@ function useHarness(harness: DeployTaskTestHarness): void {
 function clearHarness(): void {
   activeGithubConnection = null;
   adoptionCalls = [];
+  afterAuthorize = undefined;
   authorizeCalls = [];
   authorizedWorkspaceActor = "alice-cr";
   connectionLookups = [];
@@ -781,6 +799,252 @@ test("POST creates a redeploy from a non-GitHub predecessor without consulting t
     // A red assertion may fire while an unexpectedly created task is still
     // mid-transition; closing PGlite with a query in flight hangs the run.
     await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
+test("POST drops a malformed attribution snapshot instead of rejecting the deploy", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  try {
+    const { POST } = await import("./route");
+
+    const response = await POST(
+      deployTaskRequest({
+        // Unknown version + overlong click id: fails the snapshot schema.
+        marketingAttribution: {
+          click_id_candidates: [],
+          gclid: "x".repeat(4096),
+          version: 1,
+        },
+        namespace: "namespace-b",
+        runner: { kind: "template" },
+        source: { kind: "template", templateName: "attribution-garbage" },
+        target: { kind: "existingProject", projectId: "project-test" },
+      })
+    );
+    const body = (await response.json()) as { task: { id: string } };
+    assert.ok(runDone);
+    await runDone;
+
+    assert.equal(response.status, 201);
+    assert.equal(authorizeCalls.length, 0);
+    const [stored] = await harness.db
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, body.task.id));
+    assert.equal(stored?.marketingAttribution, null);
+  } finally {
+    await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
+test("POST degrades an unverifiable consent token to scrubbed attribution instead of 401", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  try {
+    const { POST } = await import("./route");
+
+    // No app token on a Template create: attribution identity cannot be
+    // verified, but the deploy must proceed with consent-safe scrubbing.
+    const response = await POST(
+      deployTaskRequest({
+        encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+        marketingAttribution: {
+          ad_personalization: "granted",
+          ad_user_data_consent: "granted",
+          click_id_candidates: [],
+          consent_provenance: null,
+          consent_token: "stale-or-unverifiable-token",
+          first_touch: null,
+          gbraid: null,
+          gclid: "degrade-gclid",
+          last_touch: null,
+          version: 3,
+          wbraid: null,
+        },
+        namespace: "namespace-b",
+        runner: { kind: "template" },
+        source: { kind: "template", templateName: "attribution-degrade" },
+        target: { kind: "existingProject", projectId: "project-test" },
+      })
+    );
+    const body = (await response.json()) as { task: { id: string } };
+    assert.ok(runDone);
+    await runDone;
+
+    assert.equal(response.status, 201);
+    assert.equal(authorizeCalls.length, 1);
+    const [stored] = await harness.db
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.id, body.task.id));
+    assert.equal(
+      stored?.marketingAttribution?.ad_user_data_consent,
+      "unspecified"
+    );
+    assert.equal(stored?.marketingAttribution?.consent_provenance, null);
+    assert.equal(stored?.marketingAttribution?.gclid, null);
+  } finally {
+    await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
+test("client collaboratively redeploys an attributed Template with workspace-safe attribution", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  authorizedWorkspaceActor = "bob-cr";
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  try {
+    const predecessor = await insertTaskRow(harness.db, {
+      completedAt: new Date(),
+      creatingActor: "alice-cr",
+      namespace: "namespace-b",
+      source: { kind: "template", templateName: "attributed-template" },
+      status: "failed",
+    });
+    await harness.db
+      .update(deployTasks)
+      .set({
+        marketingAttribution: {
+          ad_personalization: "granted",
+          ad_user_data_consent: "granted",
+          click_id_candidates: [],
+          consent_provenance: {
+            issuer: "sealos-desktop",
+            issued_at: "2026-08-14T00:00:00.000Z",
+            jti: "template-redeploy-jti",
+            region: "region-a",
+            source: "desktop_oauth",
+            subject_id: "uid-alice",
+          },
+          first_touch: null,
+          gbraid: null,
+          gclid: "template-redeploy-gclid",
+          last_touch: null,
+          version: 3,
+          wbraid: null,
+        },
+      })
+      .where(eq(deployTasks.id, predecessor.id));
+    const { POST } = await import("./route");
+    globalThis.window = {
+      location: { origin: "https://brain.test" },
+    } as unknown as Window & typeof globalThis;
+    globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) =>
+      POST(new Request(input, init))) as unknown as typeof fetch;
+
+    const result = await redeployDeploymentTask({
+      appToken: "app-token-bob",
+      kubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+      namespace: "namespace-b",
+      predecessorSourceKind: "template",
+      predecessorTaskId: predecessor.id,
+    });
+    assert.ok(runDone);
+    await runDone;
+
+    assert.equal(result.conflict, false);
+    assert.equal(result.task?.retriedFromTaskId, predecessor.id);
+    assert.deepEqual(authorizeCalls, []);
+    const [stored] = await harness.db
+      .select()
+      .from(deployTasks)
+      .where(eq(deployTasks.retriedFromTaskId, predecessor.id));
+    assert.equal(stored?.marketingAttribution?.consent_provenance, null);
+    assert.equal(stored?.marketingAttribution?.gclid, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
+    await runDone?.catch(() => undefined);
+    clearHarness();
+    await harness.close();
+  }
+});
+
+test("POST rejects inherited attribution when the identity changes after authorization", async () => {
+  const harness = await createDeployTaskTestHarness();
+  useHarness(harness);
+  activeGithubConnection = githubConnection("connection-alice", "alice");
+  try {
+    const predecessor = await insertTaskRow(harness.db, {
+      completedAt: new Date(),
+      creatingActor: "alice-cr",
+      namespace: "namespace-b",
+      source: githubCreateBody().source as never,
+      status: "failed",
+    });
+    await harness.db
+      .update(deployTasks)
+      .set({
+        marketingAttribution: {
+          ad_personalization: "granted",
+          ad_user_data_consent: "granted",
+          click_id_candidates: [],
+          consent_provenance: {
+            issuer: "sealos-desktop",
+            issued_at: "2026-08-13T00:00:00.000Z",
+            jti: "route-inherited-attribution-jti",
+            region: "region-a",
+            source: "desktop_oauth",
+            subject_id: "uid-alice",
+          },
+          first_touch: null,
+          gbraid: null,
+          gclid: null,
+          last_touch: null,
+          version: 3,
+          wbraid: null,
+        },
+      })
+      .where(eq(deployTasks.id, predecessor.id));
+    afterAuthorize = async () => {
+      await harness.db
+        .update(identityFingerprints)
+        .set({ mintedAt: 2, userUid: "uid-bob" })
+        .where(eq(identityFingerprints.crName, "alice-cr"));
+    };
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      deployTaskRequest(
+        {
+          encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+          namespace: "namespace-b",
+          predecessorTaskId: predecessor.id,
+        },
+        "app-token-alice"
+      )
+    );
+
+    assert.deepEqual(
+      { body: await response.json(), status: response.status },
+      {
+        body: {
+          code: "app_token_superseded",
+          error: "Authentication is required.",
+        },
+        status: 401,
+      }
+    );
+    assert.deepEqual(authorizeCalls, [
+      {
+        appToken: "app-token-alice",
+        encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+        expectedNamespace: "namespace-b",
+      },
+    ]);
+    assert.deepEqual(
+      (await harness.db.select().from(deployTasks)).map((task) => task.id),
+      [predecessor.id]
+    );
+  } finally {
     clearHarness();
     await harness.close();
   }

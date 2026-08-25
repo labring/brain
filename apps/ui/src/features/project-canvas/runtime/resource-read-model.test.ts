@@ -44,7 +44,7 @@ test("Project Runtime parses AP resources into app-owned read-side facts", () =>
 
   assert.deepEqual(facts.apFacts, [
     {
-      // No annotation, so the Kubernetes name shows as-is (ADR 0062).
+      // No annotation, so the Kubernetes name shows as-is (ADR 0066).
       displayName: "api",
       key: "AP:default:api",
       observedUid: "ap-uid",
@@ -101,7 +101,7 @@ test("Project Runtime parses DB resources into app-owned read-side facts", () =>
         public: { enabled: true, value: "postgres://public" },
       },
       deletionTimestamp: "2026-07-06T10:00:00Z",
-      // No annotation, so the Kubernetes name shows as-is (ADR 0062).
+      // No annotation, so the Kubernetes name shows as-is (ADR 0066).
       displayName: "postgres",
       engine: { displayName: "PostgreSQL", key: "postgresql" },
       key: "DB:default:postgres",

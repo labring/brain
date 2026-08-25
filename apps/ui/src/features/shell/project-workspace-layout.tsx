@@ -40,9 +40,13 @@ import {
   claimBrainAiEngagementFromSession,
   trackBrainGtmEvent,
 } from "@/features/analytics/brain-gtm";
+import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
-import { FreeTurnsIndicator } from "@/features/chat/free-turns-indicator";
+import {
+  ChatBillingCardSlot,
+  type ChatBillingDestination,
+} from "@/features/chat/chat-billing-cards";
 import {
   fetchAssistantSession,
   fetchAssistantThreadMessages,
@@ -232,7 +236,7 @@ function buildSelectedResourceSnapshot(
     return null;
   }
   const name = target.kind === "PublicAccess" ? target.apName : target.name;
-  // Display-only hint (ADR 0062): the model addresses the resource by its
+  // Display-only hint (ADR 0066): the model addresses the resource by its
   // Resource Display Name but must still target tools by `name`.
   const displayName = resourceDisplayNameForTarget(target);
   return {
@@ -302,6 +306,7 @@ function ComposerContextIndicator({
 
 function ProjectAssistantComposer({
   busy,
+  messagingLocked,
   projectId,
   onDatabaseIntent,
   onDockerIntent,
@@ -311,6 +316,12 @@ function ProjectAssistantComposer({
   onSubmit,
 }: {
   busy: boolean;
+  /**
+   * Blocked Chat Billing Posture locks only the message path (ADR-0065):
+   * textarea and send go dark while the deploy/skills intent buttons keep
+   * working — they open side-pane surfaces and never touch the chat API.
+   */
+  messagingLocked: boolean;
   projectId: string;
   onDatabaseIntent: () => void;
   onDockerIntent: () => void;
@@ -329,6 +340,9 @@ function ProjectAssistantComposer({
   const selectedRef = useRef<ProjectCanvasSelection | null>(null);
 
   const onPrimaryAction = useCallback(() => {
+    if (messagingLocked) {
+      return;
+    }
     if (busy) {
       onStop();
       return;
@@ -339,7 +353,7 @@ function ProjectAssistantComposer({
     }
     onSubmit(text, selectedRef.current);
     setInput("");
-  }, [busy, input, onStop, onSubmit]);
+  }, [busy, input, messagingLocked, onStop, onSubmit]);
 
   return (
     <div className="group flex w-full shrink-0 flex-col p-[10px]">
@@ -349,9 +363,14 @@ function ProjectAssistantComposer({
       />
       <Chat.ComposerShell>
         <Chat.ComposerTextarea
+          disabled={messagingLocked}
           onPrimaryAction={onPrimaryAction}
           onValueChange={setInput}
-          placeholder="Ask Sealos Agent to inspect, deploy, or explain this project..."
+          placeholder={
+            messagingLocked
+              ? "Upgrade your plan to keep chatting…"
+              : "Ask Sealos Agent to inspect, deploy, or explain this project..."
+          }
           responding={busy}
           value={input}
         />
@@ -367,6 +386,7 @@ function ProjectAssistantComposer({
             <Chat.DatabaseDeployButton onComposerAction={onDatabaseIntent} />
           </div>
           <Chat.ComposerSend
+            disabled={messagingLocked}
             onPrimaryAction={onPrimaryAction}
             responding={busy}
             value={input}
@@ -524,6 +544,14 @@ function ProjectAssistantChatSession({
         messages: nextMessages,
       }),
     async onFinish() {
+      await onAssistantStreamFinished?.();
+    },
+    // A failed stream can leave the header-derived posture stale — most
+    // acutely when the last free turn errors: the server rolled its
+    // reservation back, but this pane already applied the optimistic
+    // `blocked` header. Refetching the session restores the authoritative
+    // posture and unlocks the composer.
+    async onError() {
       await onAssistantStreamFinished?.();
     },
     async onToolCall({ toolCall }) {
@@ -699,6 +727,20 @@ function ProjectAssistantChatSession({
     stop();
   }, [stop]);
 
+  // Full-page navigation: returning from the Billing Area remounts the pane
+  // and re-fetches the session, which is the only way out of `blocked`.
+  // Recording the return route lets the Billing Area close button land back
+  // on this project instead of the sidebar's last entry point.
+  const navigateToBilling = useCallback(
+    (destination: ChatBillingDestination) => {
+      recordBillingReturnRoute();
+      router.push(
+        destination === "upgrade" ? "/billing?mode=upgrade" : "/billing"
+      );
+    },
+    [router]
+  );
+
   return (
     <Chat.Root>
       <Chat className="h-full min-h-0 flex-1 border-0 shadow-none">
@@ -719,16 +761,14 @@ function ProjectAssistantChatSession({
           messages={messages}
           status={status}
         />
-        {freeTier?.billing === "free" ? (
-          <div className="shrink-0 px-[10px] pt-1">
-            <FreeTurnsIndicator
-              limit={freeTier.limit}
-              remaining={freeTier.remaining}
-            />
-          </div>
-        ) : null}
+        <ChatBillingCardSlot
+          errored={status === "error"}
+          freeTier={freeTier}
+          onNavigateToBilling={navigateToBilling}
+        />
         <ProjectAssistantComposerMemo
           busy={busy}
+          messagingLocked={freeTier?.billing === "blocked"}
           onDatabaseIntent={onDatabaseIntent}
           onDockerIntent={onDockerIntent}
           onGithubIntent={onGithubIntent}
@@ -752,7 +792,6 @@ function ProjectAssistantChatPane() {
   const [sessionError, setSessionError] = useState(false);
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
   const assistantStateRefreshSequenceRef = useRef(0);
-  const prevBillingRef = useRef<"free" | "user" | null>(null);
 
   const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}`;
   const [prevSessionResetKey, setPrevSessionResetKey] =
@@ -767,7 +806,6 @@ function ProjectAssistantChatPane() {
   useEffect(() => {
     let cancelled = false;
     assistantStateRefreshSequenceRef.current += 1;
-    prevBillingRef.current = null;
 
     if (!namespaceReady) {
       return;
@@ -787,7 +825,6 @@ function ProjectAssistantChatPane() {
       }
       setSession(payload);
       setFreeTier(payload.freeTier);
-      prevBillingRef.current = payload.freeTier.billing;
     });
 
     return () => {
@@ -796,9 +833,18 @@ function ProjectAssistantChatPane() {
     };
   }, [appToken, kubeconfig, namespaceRaw, namespaceReady]);
 
+  // Every chat response — the 402 refusal included — carries the server's
+  // Chat Billing Posture in the `X-Chat-*` headers; the pane renders it and
+  // never derives its own (ADR-0065). A `blocked` header flips the pane the
+  // moment the last free message finishes streaming, and a 402 that slips
+  // past the panel's pre-check lands here too, zeroing the counter.
   const handleBillingHeaders = useCallback((headers: Headers) => {
     const billingHeader = headers.get("X-Chat-Billing");
-    if (billingHeader !== "free" && billingHeader !== "user") {
+    if (
+      billingHeader !== "blocked" &&
+      billingHeader !== "free" &&
+      billingHeader !== "user"
+    ) {
       return;
     }
     const remaining = Number.parseInt(
@@ -814,12 +860,6 @@ function ProjectAssistantChatPane() {
         ? { billing: billingHeader, remaining: 0, limit: 0 }
         : { ...prev, billing: billingHeader };
     });
-    if (prevBillingRef.current === "free" && billingHeader === "user") {
-      toast.info("Free assistant allowance used up", {
-        description: "Further messages now use your own AI Proxy balance.",
-      });
-    }
-    prevBillingRef.current = billingHeader;
   }, []);
 
   const selectThread = useCallback(
@@ -879,15 +919,6 @@ function ProjectAssistantChatPane() {
       prev == null ? prev : { ...prev, threads: refreshed.threads }
     );
     setFreeTier(refreshed.freeTier);
-    if (
-      prevBillingRef.current === "free" &&
-      refreshed.freeTier.billing === "user"
-    ) {
-      toast.info("Free assistant allowance used up", {
-        description: "Further messages now use your own AI Proxy balance.",
-      });
-    }
-    prevBillingRef.current = refreshed.freeTier.billing;
   }, [appToken, kubeconfig, namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {

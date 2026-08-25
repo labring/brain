@@ -39,11 +39,15 @@ export function useGithubDeployer(): GithubDeployerValue {
 
 export function GithubDeployerRoot({
   actions = {},
+  autoDeploy = false,
   children,
+  initialRepoUrl = "",
   states,
 }: {
   actions?: GithubDeployerActions;
+  autoDeploy?: boolean;
   children?: ReactNode;
+  initialRepoUrl?: string;
   states: GithubDeployerStates;
 }) {
   const [selectedRepoId, setSelectedRepoId] = useState(
@@ -109,13 +113,23 @@ export function GithubDeployerRoot({
   const value = useMemo(
     (): GithubDeployerValue => ({
       actions: resolvedActions,
+      autoDeploy,
+      initialRepoUrl,
       requestDisconnect,
       requestDeploy,
       selectedRepoId,
       setSelectedRepoId,
       states,
     }),
-    [requestDisconnect, requestDeploy, resolvedActions, selectedRepoId, states]
+    [
+      autoDeploy,
+      initialRepoUrl,
+      requestDisconnect,
+      requestDeploy,
+      resolvedActions,
+      selectedRepoId,
+      states,
+    ]
   );
 
   const recommendedTemplateLabel =

@@ -6,7 +6,7 @@ import type { ProjectResourceDisplayName } from "@/features/project-canvas/runti
 import { applyResourceDisplayName } from "@/features/resource-display-name/apply-resource-display-name";
 
 /**
- * Shared rename plumbing for the settings pane title (ADR 0062): the names
+ * Shared rename plumbing for the settings pane title (ADR 0066): the names
  * already taken by the Project's other resources (for the duplicate check)
  * and the submit callback that patches the annotation, then revalidates.
  */

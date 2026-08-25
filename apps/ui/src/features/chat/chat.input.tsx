@@ -474,6 +474,8 @@ export function ChatSkillsWorkflowButton({
 
 export interface ChatComposerSendProps {
   className?: string;
+  /** Forces the control off regardless of input (e.g. message path locked). */
+  disabled?: boolean;
   onPrimaryAction: () => void;
   responding?: boolean;
   value: string;
@@ -481,11 +483,12 @@ export interface ChatComposerSendProps {
 
 export function ChatComposerSend({
   className,
+  disabled = false,
   onPrimaryAction,
   responding = false,
   value,
 }: ChatComposerSendProps) {
-  const sendDisabled = !(responding || value.trim());
+  const sendDisabled = disabled || !(responding || value.trim());
 
   return (
     <AppIconButton

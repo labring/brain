@@ -6,7 +6,7 @@ import { resourceDisplayNameMergePatch } from "./resource-display-name";
 /**
  * Persist one Resource Display Name change through the product PATCH route.
  * Only the annotation is patched; `metadata.name` stays untouched — the
- * Kubernetes name is immutable (ADR 0062).
+ * Kubernetes name is immutable (ADR 0066).
  */
 export async function applyResourceDisplayName(input: {
   kind: "AP" | "DB";

@@ -24,6 +24,8 @@ const ENV_KEYS = [
   "DEPLOY_DEVBOX_STORAGE_LIMIT",
   "DEVBOX_API_BASE_URL",
   "DEVBOX_TOKEN",
+  "GITHUB_DEPLOY_OPENAI_API_KEY",
+  "GITHUB_DEPLOY_OPENAI_BASE_URL",
   "SYSTEM_OPENAI_API_KEY",
   "SYSTEM_OPENAI_API_BASE_URL",
   "SEALAI_DEPLOY_LABELS_JSON",
@@ -42,6 +44,7 @@ const {
   createManagedDeploymentLifecycleState,
   enterManagedDeploymentRepair,
   ensureAiDeploymentDevbox,
+  githubDeployOpenAiOverride,
   resolveCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
 const { getDeploySkillSourceFromEnv } = requireModule(
@@ -228,6 +231,8 @@ describe("deployment AI Proxy credentials", () => {
     process.env.DEVBOX_TOKEN = "devbox-test-token";
     process.env.DEPLOY_AGENT_MCP_URL =
       "https://brain.test/api/deploy-agent/mcp/v1";
+    delete process.env.GITHUB_DEPLOY_OPENAI_API_KEY;
+    delete process.env.GITHUB_DEPLOY_OPENAI_BASE_URL;
   });
 
   afterEach(() => {
@@ -353,6 +358,53 @@ describe("deployment AI Proxy credentials", () => {
     });
   });
 
+  it("falls back to gpt-5.5 when CODEX_GATEWAY_MODEL is unset", () => {
+    delete process.env.CODEX_GATEWAY_MODEL;
+    expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("gpt-5.5");
+  });
+
+  it("uses GITHUB_DEPLOY_OPENAI_* when both are set", () => {
+    process.env.GITHUB_DEPLOY_OPENAI_API_KEY = "  github-override-key  ";
+    process.env.GITHUB_DEPLOY_OPENAI_BASE_URL = " https://override.example/v1 ";
+    expect(githubDeployOpenAiOverride()).toEqual({
+      apiKey: "github-override-key",
+      baseUrl: "https://override.example/v1",
+    });
+  });
+
+  it("reuses CODEX_GATEWAY_OPENAI_* when GITHUB_DEPLOY_OPENAI_* is unset", () => {
+    expect(githubDeployOpenAiOverride()).toEqual({
+      apiKey: "gateway-platform-key",
+      baseUrl: "https://gateway-platform.example/v1",
+    });
+  });
+
+  it("reuses SYSTEM_OPENAI_* when GITHUB_DEPLOY_OPENAI_* and CODEX_GATEWAY_OPENAI_* are unset", () => {
+    delete process.env.CODEX_GATEWAY_OPENAI_API_KEY;
+    delete process.env.CODEX_GATEWAY_OPENAI_BASE_URL;
+    expect(githubDeployOpenAiOverride()).toEqual({
+      apiKey: "system-platform-key",
+      baseUrl: "https://system-platform.example/v1",
+    });
+  });
+
+  it("ignores blank GITHUB_DEPLOY_OPENAI_* values and incomplete fallback pairs", () => {
+    delete process.env.CODEX_GATEWAY_OPENAI_API_KEY;
+    delete process.env.CODEX_GATEWAY_OPENAI_BASE_URL;
+    delete process.env.SYSTEM_OPENAI_API_KEY;
+    process.env.SYSTEM_OPENAI_API_BASE_URL = "https://api.openai.com/v1";
+    process.env.GITHUB_DEPLOY_OPENAI_API_KEY = "   ";
+    process.env.GITHUB_DEPLOY_OPENAI_BASE_URL = "";
+    expect(githubDeployOpenAiOverride()).toBeNull();
+  });
+
+  it("fails closed when only one GITHUB_DEPLOY_OPENAI_* value is set", () => {
+    process.env.GITHUB_DEPLOY_OPENAI_API_KEY = "github-override-key";
+    expect(() => githubDeployOpenAiOverride()).toThrow(
+      "GitHub deploy OpenAI override requires both GITHUB_DEPLOY_OPENAI_API_KEY and GITHUB_DEPLOY_OPENAI_BASE_URL."
+    );
+  });
+
   it("resumes the recorded Devbox without requesting AI Proxy credentials", async () => {
     const requests: Request[] = [];
     let getCount = 0;
@@ -425,6 +477,10 @@ describe("deployment AI Proxy credentials", () => {
   });
 
   it("aborts an in-flight AI Proxy token request before creating a Devbox", async () => {
+    delete process.env.CODEX_GATEWAY_OPENAI_API_KEY;
+    delete process.env.CODEX_GATEWAY_OPENAI_BASE_URL;
+    delete process.env.SYSTEM_OPENAI_API_KEY;
+    delete process.env.SYSTEM_OPENAI_API_BASE_URL;
     const controller = new AbortController();
     let tokenRequestStarted!: () => void;
     const tokenRequestStart = new Promise<void>((resolve) => {
@@ -573,6 +629,142 @@ describe("deployment AI Proxy credentials", () => {
       }),
     });
     expect(createdStorageLimit).toBe("10Gi");
+  });
+
+  it("injects GITHUB_DEPLOY_OPENAI_* into GitHub Devboxes and skips AI Proxy", async () => {
+    process.env.GITHUB_DEPLOY_OPENAI_API_KEY = "github-override-key";
+    process.env.GITHUB_DEPLOY_OPENAI_BASE_URL = "https://override.example/v1";
+    const requests: Request[] = [];
+    let createdEnv: Record<string, string> | undefined;
+    installFetchHandler(async (request) => {
+      requests.push(request);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/v1/devbox" && request.method === "GET") {
+        return devboxEnvelope({ items: [] });
+      }
+      if (url.pathname === "/api/v1/devbox" && request.method === "POST") {
+        const body = (await request.json()) as {
+          env?: Record<string, string>;
+        };
+        createdEnv = body.env;
+        return devboxEnvelope({});
+      }
+      if (
+        url.pathname.startsWith("/api/v1/devbox/sealai-deploy-") &&
+        request.method === "GET"
+      ) {
+        const name = url.pathname.slice("/api/v1/devbox/".length);
+        return devboxEnvelope(devbox(name));
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    await ensureAiDeploymentDevbox({
+      encodedKubeconfig: encodeURIComponent(kubeconfig()),
+      kubeconfig: kubeconfig(),
+      task: githubTask(null),
+      taskDeadlineAtMs: Date.now() + 60_000,
+    });
+
+    expect(
+      requests.some(
+        (request) =>
+          new URL(request.url).hostname === "aiproxy-web.test.sealos.io"
+      )
+    ).toBe(false);
+    expect(createdEnv).toMatchObject({
+      CODEX_GATEWAY_OPENAI_API_KEY: "github-override-key",
+      CODEX_GATEWAY_OPENAI_BASE_URL: "https://override.example/v1",
+    });
+  });
+
+  it("injects CODEX_GATEWAY_OPENAI_* into GitHub Devboxes when GITHUB_DEPLOY_OPENAI_* is unset", async () => {
+    const requests: Request[] = [];
+    let createdEnv: Record<string, string> | undefined;
+    installFetchHandler(async (request) => {
+      requests.push(request);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/v1/devbox" && request.method === "GET") {
+        return devboxEnvelope({ items: [] });
+      }
+      if (url.pathname === "/api/v1/devbox" && request.method === "POST") {
+        const body = (await request.json()) as {
+          env?: Record<string, string>;
+        };
+        createdEnv = body.env;
+        return devboxEnvelope({});
+      }
+      if (
+        url.pathname.startsWith("/api/v1/devbox/sealai-deploy-") &&
+        request.method === "GET"
+      ) {
+        const name = url.pathname.slice("/api/v1/devbox/".length);
+        return devboxEnvelope(devbox(name));
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    await ensureAiDeploymentDevbox({
+      encodedKubeconfig: encodeURIComponent(kubeconfig()),
+      kubeconfig: kubeconfig(),
+      task: githubTask(null),
+      taskDeadlineAtMs: Date.now() + 60_000,
+    });
+
+    expect(
+      requests.some(
+        (request) =>
+          new URL(request.url).hostname === "aiproxy-web.test.sealos.io"
+      )
+    ).toBe(false);
+    expect(createdEnv).toMatchObject({
+      CODEX_GATEWAY_OPENAI_API_KEY: "gateway-platform-key",
+      CODEX_GATEWAY_OPENAI_BASE_URL: "https://gateway-platform.example/v1",
+    });
+  });
+
+  it("does not apply GITHUB_DEPLOY_OPENAI_* to prompt deployments", async () => {
+    process.env.GITHUB_DEPLOY_OPENAI_API_KEY = "github-override-key";
+    process.env.GITHUB_DEPLOY_OPENAI_BASE_URL = "https://override.example/v1";
+    let createdEnv: Record<string, string> | undefined;
+    installFetchHandler(async (request) => {
+      const url = new URL(request.url);
+      if (url.hostname === "aiproxy-web.test.sealos.io") {
+        return new Response(JSON.stringify({ key: "new-user-key" }), {
+          status: 200,
+        });
+      }
+      if (url.pathname === "/api/v1/devbox" && request.method === "GET") {
+        return devboxEnvelope({ items: [] });
+      }
+      if (url.pathname === "/api/v1/devbox" && request.method === "POST") {
+        const body = (await request.json()) as {
+          env?: Record<string, string>;
+        };
+        createdEnv = body.env;
+        return devboxEnvelope({});
+      }
+      if (
+        url.pathname.startsWith("/api/v1/devbox/sealai-deploy-") &&
+        request.method === "GET"
+      ) {
+        const name = url.pathname.slice("/api/v1/devbox/".length);
+        return devboxEnvelope(devbox(name));
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    await ensureAiDeploymentDevbox({
+      encodedKubeconfig: encodeURIComponent(kubeconfig()),
+      kubeconfig: kubeconfig(),
+      task: promptTask(null),
+      taskDeadlineAtMs: Date.now() + 60_000,
+    });
+
+    expect(createdEnv).toMatchObject({
+      CODEX_GATEWAY_OPENAI_API_KEY: "new-user-key",
+      CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
+    });
   });
 });
 

@@ -287,7 +287,7 @@ func apUpdateMergePatch(workload apWorkload, raw json.RawMessage, currentConfigM
 }
 
 // applyDisplayNameAnnotationPatch forwards a Resource Display Name change
-// (ADR 0062) from the product patch to the workload. Other annotation keys
+// (ADR 0066) from the product patch to the workload. Other annotation keys
 // are never forwarded.
 func applyDisplayNameAnnotationPatch(metadataPatch map[string]interface{}, annotations map[string]interface{}) error {
 	annotationPatch, _ := metadataPatch["annotations"].(map[string]interface{})

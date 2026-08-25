@@ -40,6 +40,13 @@ function useSidePaneMotionOpen(open: boolean | undefined) {
   return open ?? contextOpen;
 }
 
+export type SidePaneWidth = "default" | "wide";
+
+const sidePaneWidthClasses = {
+  default: "max-w-screen-sm",
+  wide: "max-w-screen-md",
+} satisfies Record<SidePaneWidth, string>;
+
 export interface SidePaneProps {
   bodyClassName?: string;
   busy?: boolean;
@@ -55,6 +62,7 @@ export interface SidePaneProps {
   title: string;
   /** Replaces the default title heading (e.g. an inline rename editor); `title` still labels the pane. */
   titleContent?: ReactNode;
+  width?: SidePaneWidth;
 }
 
 export function SidePane({
@@ -71,6 +79,7 @@ export function SidePane({
   subtitle,
   title,
   titleContent,
+  width = "default",
 }: SidePaneProps) {
   const motionOpen = useSidePaneMotionOpen(open);
   const glowPhase = useContext(SidePaneGlowPhaseContext);
@@ -132,7 +141,8 @@ export function SidePane({
       aria-hidden={!motionOpen}
       aria-label={label}
       className={cn(
-        "project-surface-slide-x pointer-events-auto absolute top-[calc(3.25rem-1px)] right-0 bottom-0 z-20 w-full min-w-0 max-w-screen-sm overflow-hidden transition-[opacity,transform] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+        "project-surface-slide-x pointer-events-auto absolute top-[calc(3.25rem-1px)] right-0 bottom-0 z-20 w-full min-w-0 overflow-hidden transition-[opacity,transform] ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+        sidePaneWidthClasses[width],
         motionOpen
           ? "project-surface-slide-x-open opacity-100 duration-[var(--project-surface-motion-enter-duration)]"
           : "project-surface-slide-x-offset pointer-events-none opacity-0 duration-[var(--project-surface-motion-exit-duration)]"
@@ -142,7 +152,8 @@ export function SidePane({
     >
       <div
         className={cn(
-          "project-chrome-surface project-surface-slide-x dark absolute inset-y-0 right-0 flex w-screen min-w-0 max-w-screen-sm flex-col overflow-hidden rounded-tl-lg border-border border-t border-l text-foreground shadow-lg transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+          "project-chrome-surface project-surface-slide-x dark absolute inset-y-0 right-0 flex w-screen min-w-0 flex-col overflow-hidden rounded-tl-lg border-border border-t border-l text-foreground shadow-lg transition-transform ease-[var(--project-surface-motion-ease)] motion-reduce:transform-none motion-reduce:transition-none",
+          sidePaneWidthClasses[width],
           motionOpen
             ? "project-surface-slide-x-open duration-[var(--project-surface-motion-enter-duration)]"
             : "project-surface-slide-x-full duration-[var(--project-surface-motion-exit-duration)]",

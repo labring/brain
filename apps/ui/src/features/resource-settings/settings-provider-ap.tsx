@@ -1,7 +1,7 @@
 "use client";
 
 import { useAPPublicAddressReadiness } from "@workspace/api/hooks";
-import { Router, Settings2, SquarePen } from "lucide-react";
+import { Router, Settings2, Variable } from "lucide-react";
 import { type ReactNode, useEffect, useMemo } from "react";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectApTarget } from "@/features/panes/target-identity";
@@ -156,6 +156,7 @@ interface ApSettingsSectionsHookInput {
   onImageChange: ApWorkloadSettingsState["onImageChange"];
   onLaunchContextConsumed?: () => void;
   onNetworkChange: ApWorkloadSettingsState["onNetworkChange"];
+  onOpenImageVersions?: () => void;
   onPendingDbReferencesChange: ApSettingsSectionsInput["onPendingDbReferencesChange"];
   onResourceQuotasCommit: ApWorkloadSettingsState["onResourceQuotasCommit"];
   onSettingsDraftCommit: ApWorkloadSettingsState["onSettingsDraftCommit"];
@@ -183,6 +184,7 @@ function apSettingsSectionsHookProps({
   onImageChange,
   onLaunchContextConsumed,
   onNetworkChange,
+  onOpenImageVersions,
   onPendingDbReferencesChange,
   onResourceQuotasCommit,
   onSettingsDraftCommit,
@@ -231,6 +233,7 @@ function apSettingsSectionsHookProps({
     onEnvResolvedValue: canEditAp ? onEnvResolvedValue : undefined,
     onImageChange: canEditAp ? onImageChange : ignoreImage,
     onNetworkChange: canEditAp ? onNetworkChange : ignoreNetwork,
+    onOpenImageVersions,
     onPendingDbReferencesChange,
     onResourceQuotasCommit: canEditAp ? onResourceQuotasCommit : undefined,
     onSettingsDraftCommit: canEditAp ? onSettingsDraftCommit : undefined,
@@ -247,7 +250,6 @@ function apSettingsSectionsHookProps({
         }
       : undefined,
     sectionFocus: metadata.sectionFocus,
-    showImageSection: false,
     storage: display.storage,
     submissionOwner: settingsOwnerIdentity({
       kubeconfig,
@@ -435,7 +437,7 @@ function publicAddressesApSettingsModel({
 function apSettingsSectionMetadata(resolvedView: string) {
   const environmentView = resolvedView === AP_SETTINGS_ENVIRONMENT_VIEW;
   return {
-    icon: environmentView ? SquarePen : Settings2,
+    icon: environmentView ? Variable : Settings2,
     id: environmentView ? "environment" : "ap-settings",
     sectionFocus: environmentView ? "environment" : "all",
     title: environmentView ? "Environment Variables" : "AP Settings",
@@ -509,6 +511,7 @@ export function ApSettingsProvider({
   launchContext,
   onLaunchContextConsumed,
   onModelChange,
+  onOpenApImageVersions,
   onRepairSideEntry,
   onUpdated,
   readModelHints,
@@ -560,6 +563,13 @@ export function ApSettingsProvider({
     kubeconfig
   );
   const canEditAp = isApWorkload && !effectiveReadOnly;
+  const onOpenImageVersions = useMemo(
+    () =>
+      apTarget == null || onOpenApImageVersions == null
+        ? undefined
+        : () => onOpenApImageVersions(apTarget),
+    [apTarget, onOpenApImageVersions]
+  );
   const baseSubtitle = workloadSettingsSubtitle({
     image: display.image,
     kind: "Container",
@@ -620,6 +630,7 @@ export function ApSettingsProvider({
           ? undefined
           : onLaunchContextConsumed,
       onNetworkChange,
+      onOpenImageVersions,
       onPendingDbReferencesChange: apSessionEvents?.onPendingDbReferencesChange,
       onResourceQuotasCommit,
       onSettingsDraftCommit,

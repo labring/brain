@@ -5,7 +5,7 @@ export const BRAIN_DEPLOYMENT_KIND_LABEL = "brain.io/deployment-kind";
 export const BRAIN_DEPLOYMENT_NAME_LABEL = "brain.io/deployment-name";
 export const BRAIN_TEMPLATE_NAME_LABEL = "brain.io/template-name";
 export const BRAIN_DB_ENGINE_LABEL = "brain.io/db-engine";
-/** Resource Display Name (ADR 0062) — lives on the resource, dies with it. */
+/** Resource Display Name (ADR 0066) — lives on the resource, dies with it. */
 export const BRAIN_DISPLAY_NAME_ANNOTATION = "brain.io/display-name";
 
 export const LAUNCHPAD_APP_DEPLOY_MANAGER_LABEL =

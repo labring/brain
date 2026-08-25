@@ -14,6 +14,7 @@ import { APP_TOKEN_HEADER } from "./app-token-header";
 
 const SECRET = "dev-jwt-internal";
 const REGION_UID = "0f2a6f47-6dcb-4a76-b177-6c0aa22eaf6e";
+const USER_ID = "user-123";
 const USER_UID = "6bd90648-b8b9-4a70-9be0-95c8391a0dcb";
 const CR_NAME = "alice-cr";
 const MINTED_AT = 1_753_600_000;
@@ -32,6 +33,7 @@ function mintAppToken(
   const jwt = new SignJWT({
     regionUid: REGION_UID,
     userCrName: CR_NAME,
+    userId: USER_ID,
     userUid: USER_UID,
     ...overrides.claims,
   })
@@ -53,7 +55,12 @@ test("accepts a token whose binding matches the authenticated actor", async () =
       token,
     }),
     {
-      binding: { crName: CR_NAME, mintedAt: MINTED_AT, userUid: USER_UID },
+      binding: {
+        crName: CR_NAME,
+        mintedAt: MINTED_AT,
+        userId: USER_ID,
+        userUid: USER_UID,
+      },
       expired: false,
       ok: true,
     }
@@ -70,7 +77,12 @@ test("accepts an expired but otherwise valid token and reports it as expired", a
       token,
     }),
     {
-      binding: { crName: CR_NAME, mintedAt: MINTED_AT, userUid: USER_UID },
+      binding: {
+        crName: CR_NAME,
+        mintedAt: MINTED_AT,
+        userId: USER_ID,
+        userUid: USER_UID,
+      },
       expired: true,
       ok: true,
     }
@@ -90,7 +102,12 @@ test("an unexpired expiry and workspace claims are carried without effect", asyn
       token,
     }),
     {
-      binding: { crName: CR_NAME, mintedAt: MINTED_AT, userUid: USER_UID },
+      binding: {
+        crName: CR_NAME,
+        mintedAt: MINTED_AT,
+        userId: USER_ID,
+        userUid: USER_UID,
+      },
       expired: false,
       ok: true,
     }
@@ -105,6 +122,7 @@ test("a token without a minting time still proves the binding", async () => {
   const jwt = await new SignJWT({
     regionUid: REGION_UID,
     userCrName: CR_NAME,
+    userId: USER_ID,
     userUid: USER_UID,
   })
     .setProtectedHeader({ alg: "HS256" })
@@ -117,7 +135,12 @@ test("a token without a minting time still proves the binding", async () => {
       token: jwt,
     }),
     {
-      binding: { crName: CR_NAME, mintedAt: null, userUid: USER_UID },
+      binding: {
+        crName: CR_NAME,
+        mintedAt: null,
+        userId: USER_ID,
+        userUid: USER_UID,
+      },
       expired: false,
       ok: true,
     }
@@ -237,7 +260,12 @@ test("a token minted for another region is accepted", async () => {
       token,
     }),
     {
-      binding: { crName: CR_NAME, mintedAt: MINTED_AT, userUid: USER_UID },
+      binding: {
+        crName: CR_NAME,
+        mintedAt: MINTED_AT,
+        userId: USER_ID,
+        userUid: USER_UID,
+      },
       expired: false,
       ok: true,
     }

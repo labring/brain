@@ -17,7 +17,7 @@ const RENAME_ERROR_COPY = {
 } as const;
 
 /**
- * Settings pane title as the rename surface (ADR 0062): hovering or focusing
+ * Settings pane title as the rename surface (ADR 0066): hovering or focusing
  * the title reveals an edit affordance, and clicking it (or the title) opens
  * an inline editor with explicit confirm/cancel buttons. Saving is always an
  * explicit act — Enter or the check button; Escape, the cross button, or

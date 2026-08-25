@@ -44,7 +44,7 @@ interface RuntimeState extends RuntimeMaps {
   resourceTopologySignature: string;
 }
 
-/** One resource's Resource Display Name (ADR 0062), keyed by Canvas Resource Identity. */
+/** One resource's Resource Display Name (ADR 0066), keyed by Canvas Resource Identity. */
 export interface ProjectResourceDisplayName {
   displayName: string;
   key: ProjectRuntimeFactKey;

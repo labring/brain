@@ -2,6 +2,50 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.7] - 2026-08-21
+
+### Added
+
+- Added the billing cost center covering plan, usage, invoices, and AI
+  credits.
+- Gated free chat turns on the active free trial and blocked on exhaustion.
+- Captured consent-safe marketing lifecycle attribution.
+- Added a GitHub repo deep-link with auto-deploy, and let GitHub Deploy
+  override user AI Proxy credentials via `GITHUB_DEPLOY_OPENAI_*`.
+- Added `APP_POSTGRES_SKIP_MIGRATIONS` to skip boot-time UI database
+  migrations.
+- Made the GitHub callback origin runtime-configurable via `APP_URL`.
+- Honored `CODEX_GATEWAY_MODEL` for GitHub deploy sessions.
+- Moved AP image updates onto the settings lifecycle and added a Docker env
+  raw source.
+- Threaded demo build flags through the UI image build.
+
+### Changed
+
+- Rebuilt the dev tweaks panel as a standalone `@workspace/dev-tweaks`
+  package on a DialKit fork, reskinned it on glass, contained frame mode in
+  `<body>`, and stopped pinning its capsule in demo builds.
+- Hardened the administrative Devbox cleanup script's namespace scoping.
+
+### Fixed
+
+- Projected one observed public address per ingress host for APs.
+- Showed the pod workspace quota in the UI.
+- Restored the invoice notice hierarchy and moved external billing CTAs to
+  `AppButton`.
+
+### Upgrade Notes
+
+- Run UI database migration `0014`.
+- Configure `MARKETING_EVENTS_INGEST_SECRET` and
+  `MARKETING_CONSENT_SIGNING_KEY` when enabling marketing lifecycle
+  attribution.
+- New optional environment variables: `APP_POSTGRES_SKIP_MIGRATIONS` (skip
+  boot-time UI migrations), `APP_URL` (GitHub callback origin),
+  `CODEX_GATEWAY_MODEL` (model override for GitHub deploy sessions), and
+  `GITHUB_DEPLOY_OPENAI_API_KEY` / `GITHUB_DEPLOY_OPENAI_BASE_URL`
+  (dedicated OpenAI-compatible endpoint for GitHub Deploy).
+
 ## [2.0.6] - 2026-08-13
 
 ### Changed

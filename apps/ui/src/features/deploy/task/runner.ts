@@ -95,9 +95,9 @@ import {
 } from "./failure-summary";
 import {
   codexGatewayFailureDetails,
-  DEPLOY_GATEWAY_MODEL,
   type GatewayContext,
   getCodexGatewayContextFromDevboxInfo,
+  resolveDeployGatewayModel,
   runDeployTaskGateway,
 } from "./gateway";
 import type { ManagedDeployResumeMode } from "./gateway-prompt";
@@ -1059,7 +1059,9 @@ export interface CodexGatewayOpenAiCredentials {
 export function buildCodexGatewayEnv(
   credentials?: CodexGatewayOpenAiCredentials
 ): Record<string, string> {
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = {
+    CODEX_GATEWAY_MODEL: resolveDeployGatewayModel(),
+  };
   const apiKey = credentials
     ? credentials.apiKey
     : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_API_KEY) ??
@@ -1068,8 +1070,6 @@ export function buildCodexGatewayEnv(
     ? credentials.baseUrl
     : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_BASE_URL) ??
       compactEnvValue(process.env.SYSTEM_OPENAI_API_BASE_URL));
-  const model =
-    compactEnvValue(process.env.CODEX_GATEWAY_MODEL) ?? DEPLOY_GATEWAY_MODEL;
 
   if (apiKey != null) {
     env.CODEX_GATEWAY_OPENAI_API_KEY = apiKey;
@@ -1077,11 +1077,43 @@ export function buildCodexGatewayEnv(
   if (baseUrl != null) {
     env.CODEX_GATEWAY_OPENAI_BASE_URL = baseUrl;
   }
-  if (model != null) {
-    env.CODEX_GATEWAY_MODEL = model;
-  }
 
   return env;
+}
+
+function openAiCredentialPair(
+  apiKey: string | undefined,
+  baseUrl: string | undefined
+): CodexGatewayOpenAiCredentials | null {
+  const compactApiKey = compactEnvValue(apiKey);
+  const compactBaseUrl = compactEnvValue(baseUrl);
+  if (compactApiKey != null && compactBaseUrl != null) {
+    return { apiKey: compactApiKey, baseUrl: compactBaseUrl };
+  }
+  return null;
+}
+
+export function githubDeployOpenAiOverride(): CodexGatewayOpenAiCredentials | null {
+  const apiKey = compactEnvValue(process.env.GITHUB_DEPLOY_OPENAI_API_KEY);
+  const baseUrl = compactEnvValue(process.env.GITHUB_DEPLOY_OPENAI_BASE_URL);
+  if (apiKey != null && baseUrl != null) {
+    return { apiKey, baseUrl };
+  }
+  if (apiKey != null || baseUrl != null) {
+    throw new Error(
+      "GitHub deploy OpenAI override requires both GITHUB_DEPLOY_OPENAI_API_KEY and GITHUB_DEPLOY_OPENAI_BASE_URL."
+    );
+  }
+  return (
+    openAiCredentialPair(
+      process.env.CODEX_GATEWAY_OPENAI_API_KEY,
+      process.env.CODEX_GATEWAY_OPENAI_BASE_URL
+    ) ??
+    openAiCredentialPair(
+      process.env.SYSTEM_OPENAI_API_KEY,
+      process.env.SYSTEM_OPENAI_API_BASE_URL
+    )
+  );
 }
 
 export async function resolveCodexGatewayCredentials(input: {
@@ -1336,7 +1368,7 @@ function databaseSettings(
 }
 
 /**
- * Deploy-time Resource Display Name (ADR 0062): derived from the Deployment
+ * Deploy-time Resource Display Name (ADR 0066): derived from the Deployment
  * Source and numbered against the display names already taken in the
  * Project. Naming must never fail a deploy — an unreadable project listing
  * degrades to the bare derived name (duplicates are tolerated, as in the
@@ -3202,6 +3234,12 @@ export async function ensureAiDeploymentDevbox(input: {
       namespace: input.task.namespace,
       repoUrl: aiSourceKey(input.task),
       resolveGatewayCredentials: async (signal) => {
+        if (input.task.source.kind === "github") {
+          const override = githubDeployOpenAiOverride();
+          if (override != null) {
+            return override;
+          }
+        }
         try {
           return await resolveCodexGatewayCredentials({
             encodedKubeconfig: input.encodedKubeconfig,

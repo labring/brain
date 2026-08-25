@@ -46,6 +46,12 @@ interface PendingSettingsStoreStorage {
 export interface PendingSettingsStore {
   clear: (owner: PendingSettingsOwnerIdentity, domain: string) => void;
   /**
+   * Drops every domain's entry for the owner. For actions that replace the
+   * whole desired configuration (e.g. rollback), where any surviving pending
+   * target would misreport against the restored state.
+   */
+  clearOwner: (owner: PendingSettingsOwnerIdentity) => void;
+  /**
    * Drops the snapshot cache and notifies listeners. For propagating writes
    * that bypassed this instance (another tab's `storage` event).
    */
@@ -186,6 +192,16 @@ export function createPendingSettingsStore({
       writeDocument(storage, {
         entries: document.entries.filter(
           (entry) => !samePendingDomain(entry, owner, domain)
+        ),
+        version: PENDING_SETTINGS_SCHEMA_VERSION,
+      });
+      invalidate();
+    },
+    clearOwner(owner) {
+      const document = read();
+      writeDocument(storage, {
+        entries: document.entries.filter(
+          (entry) => !samePendingOwner(entry, owner)
         ),
         version: PENDING_SETTINGS_SCHEMA_VERSION,
       });

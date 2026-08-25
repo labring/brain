@@ -25,7 +25,7 @@ function randomLowercaseLetters(length = RANDOM_LETTER_COUNT): string {
 
 /**
  * Child resource name: slugified source prefix plus 6 random lowercase
- * letters (DNS-1035 label), e.g. `nginx-xkqjzw` (ADR 0062). The source is
+ * letters (DNS-1035 label), e.g. `nginx-xkqjzw` (ADR 0066). The source is
  * what named the deployment — Docker image segment, DB engine, or template
  * name; an unusable source falls back to the kind itself (`ap-xkqjzw`).
  * The random suffix keeps names collision-safe without a uniqueness check.

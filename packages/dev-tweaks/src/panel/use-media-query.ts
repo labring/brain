@@ -1,28 +1,18 @@
-"use client";
-
 import { useCallback, useSyncExternalStore } from "react";
 
-const getServerSnapshot = () => false;
-
+/** Reactive media-query match; false on the server and before mount. */
 export function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
-    (listener: () => void) => {
-      if (typeof window === "undefined" || !window.matchMedia) {
-        return () => {
-          // No media query support — nothing to unsubscribe.
-        };
-      }
+    (callback: () => void) => {
       const list = window.matchMedia(query);
-      list.addEventListener("change", listener);
-      return () => list.removeEventListener("change", listener);
+      list.addEventListener("change", callback);
+      return () => list.removeEventListener("change", callback);
     },
     [query]
   );
-  const getSnapshot = useCallback(() => {
-    if (typeof window === "undefined" || !window.matchMedia) {
-      return false;
-    }
-    return window.matchMedia(query).matches;
-  }, [query]);
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const getSnapshot = useCallback(
+    () => window.matchMedia(query).matches,
+    [query]
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
