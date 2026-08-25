@@ -20,6 +20,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import {
   ArrowUpRight,
+  ChevronRight,
   CreditCard,
   Database,
   House,
@@ -210,7 +211,15 @@ function AppSidebarNavRow({
   );
 }
 
-function AppSidebarGroupHeading({ children }: { children: ReactNode }) {
+function AppSidebarGroupHeading({
+  children,
+  collapsed,
+  onToggle,
+}: {
+  children: ReactNode;
+  collapsed?: boolean;
+  onToggle?: () => void;
+}) {
   const { state } = useSidebar();
   const expanded = state === "expanded";
 
@@ -218,17 +227,36 @@ function AppSidebarGroupHeading({ children }: { children: ReactNode }) {
     <div
       className={cn(
         "app-sidebar-heading relative shrink-0 overflow-hidden transition-[height] motion-reduce:transition-none",
-        expanded ? "h-8 duration-300 ease-sidebar" : "h-4 duration-200 ease-out"
+        expanded
+          ? "h-10 duration-300 ease-sidebar"
+          : "h-4 duration-200 ease-out"
       )}
     >
-      <div
+      <button
+        aria-expanded={!collapsed}
         className={cn(
-          "absolute inset-x-0 bottom-1 truncate pl-2 font-medium text-muted-foreground text-xs transition-opacity duration-150 motion-reduce:transition-none",
-          expanded ? "opacity-100" : "opacity-0"
+          "group/heading absolute inset-0 flex w-full cursor-pointer items-end pb-1 text-left transition-opacity duration-150 motion-reduce:transition-none",
+          expanded ? "opacity-100" : "pointer-events-none opacity-0"
         )}
+        onClick={onToggle}
+        tabIndex={expanded ? undefined : -1}
+        type="button"
       >
-        {children}
-      </div>
+        <span className="flex min-w-0 flex-1 items-center gap-1 pl-2 font-medium text-muted-foreground text-xs transition-colors group-hover/heading:text-neutral-300">
+          <span className="truncate">{children}</span>
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              "size-3 shrink-0 transition-[opacity,transform] duration-150 motion-reduce:transition-none",
+              !collapsed && "rotate-90",
+              collapsed
+                ? "opacity-100"
+                : "opacity-0 group-hover/heading:opacity-100 group-focus-visible/heading:opacity-100"
+            )}
+            strokeWidth={1.8}
+          />
+        </span>
+      </button>
       <div
         aria-hidden
         className={cn(
@@ -394,40 +422,70 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
   projectIconKeys: ProjectIconKeyMap | undefined;
 }) {
   const attachProjectsScroller = useScrollEdgeState();
+  // Collapse state is deliberately session-only: a hidden Pinned group that
+  // silently persists across reloads is easy to forget about.
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   return (
     <>
       {groups.pinned.length > 0 ? (
         <div className="shrink-0" data-slot="app-sidebar-pinned">
-          <AppSidebarGroupHeading>Pinned</AppSidebarGroupHeading>
-          <div className="flex flex-col gap-1.5">
-            {groups.pinned.map((project) => (
-              <AppSidebarProjectRow
-                ariaLabel={`Pinned project: ${project.name}`}
-                currentProjectId={currentProjectId}
-                iconKey={projectIconKeys?.get(project.id) ?? "docker"}
-                key={project.id}
-                project={project}
-              />
-            ))}
+          <AppSidebarGroupHeading
+            collapsed={pinnedCollapsed}
+            onToggle={() => setPinnedCollapsed((value) => !value)}
+          >
+            Pinned
+          </AppSidebarGroupHeading>
+          <div
+            className={cn(
+              "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+              pinnedCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+            )}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex flex-col gap-0.5 group-data-[collapsible=icon]:gap-1.5">
+                {groups.pinned.map((project) => (
+                  <AppSidebarProjectRow
+                    ariaLabel={`Pinned project: ${project.name}`}
+                    currentProjectId={currentProjectId}
+                    iconKey={projectIconKeys?.get(project.id) ?? "docker"}
+                    key={project.id}
+                    project={project}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
       {groups.projects.length > 0 ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <AppSidebarGroupHeading>Projects</AppSidebarGroupHeading>
-          <div
-            className="min-h-0 flex-1 overflow-y-auto [--scroll-fade-bottom:0px] [--scroll-fade-top:0px] [mask-image:linear-gradient(to_bottom,transparent,black_var(--scroll-fade-top),black_calc(100%-var(--scroll-fade-bottom)),transparent)] data-[at-bottom=false]:[--scroll-fade-bottom:10px] data-[at-top=false]:[--scroll-fade-top:10px]"
-            ref={attachProjectsScroller}
+          <AppSidebarGroupHeading
+            collapsed={projectsCollapsed}
+            onToggle={() => setProjectsCollapsed((value) => !value)}
           >
-            <div className="flex flex-col gap-1.5 py-1">
-              {groups.projects.map((project) => (
-                <AppSidebarProjectRow
-                  currentProjectId={currentProjectId}
-                  iconKey={projectIconKeys?.get(project.id) ?? "docker"}
-                  key={project.id}
-                  project={project}
-                />
-              ))}
+            Projects
+          </AppSidebarGroupHeading>
+          <div
+            className={cn(
+              "grid min-h-0 flex-1 transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+              projectsCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+            )}
+          >
+            <div
+              className="min-h-0 overflow-y-auto [--scroll-fade-bottom:0px] [--scroll-fade-top:0px] [mask-image:linear-gradient(to_bottom,transparent,black_var(--scroll-fade-top),black_calc(100%-var(--scroll-fade-bottom)),transparent)] data-[at-bottom=false]:[--scroll-fade-bottom:10px] data-[at-top=false]:[--scroll-fade-top:10px]"
+              ref={attachProjectsScroller}
+            >
+              <div className="flex flex-col gap-0.5 py-1 group-data-[collapsible=icon]:gap-1.5">
+                {groups.projects.map((project) => (
+                  <AppSidebarProjectRow
+                    currentProjectId={currentProjectId}
+                    iconKey={projectIconKeys?.get(project.id) ?? "docker"}
+                    key={project.id}
+                    project={project}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -490,7 +548,10 @@ function AppSidebarChrome({
       collapsible="icon"
       innerClassName="project-chrome-surface overflow-hidden"
     >
-      <div className="flex h-full min-h-0 w-(--sidebar-width) flex-col px-2 py-2.5">
+      {/* Collapsed rail: the account avatar disc is optically heavier than
+          the stroke icons above it, so the rail takes extra bottom padding
+          (and the account row a top margin) to even out the perceived gaps. */}
+      <div className="flex h-full min-h-0 w-(--sidebar-width) flex-col px-2 py-2.5 transition-[padding] duration-200 ease-out group-data-[collapsible=icon]:pb-3.5 motion-reduce:transition-none">
         <SidebarHeader className="p-0">
           <AppSidebarHeader />
         </SidebarHeader>
@@ -522,7 +583,7 @@ function AppSidebarChrome({
           </nav>
         </SidebarContent>
         <SidebarFooter className="p-0">
-          <div className="flex shrink-0 flex-col gap-2 pt-3">
+          <div className="flex shrink-0 flex-col gap-0.5 pt-3 group-data-[collapsible=icon]:gap-2">
             <AppSidebarNavRow
               active={billingActive}
               href="/billing"
@@ -533,7 +594,14 @@ function AppSidebarChrome({
               onClick={recordBillingReturnRoute}
             />
             <AppSidebarDesktopReturn />
-            <AppSidebarAccount />
+            {/* The account row keeps 8px above it (footer gap + this
+                  margin): the avatar disc is visually heavier than the row
+                  glyphs, so it needs more breathing room than the 2px the
+                  tightened footer rows get. The collapsed rail spaces the
+                  account row itself (see AppSidebarAccount). */}
+            <div className="mt-1.5 group-data-[collapsible=icon]:mt-0">
+              <AppSidebarAccount />
+            </div>
           </div>
         </SidebarFooter>
       </div>

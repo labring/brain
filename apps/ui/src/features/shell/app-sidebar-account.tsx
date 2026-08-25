@@ -298,12 +298,13 @@ export function AppSidebarAccount() {
     <button
       aria-label={`Account: ${displayName}`}
       className={cn(
-        // PROTOTYPE(sidebar-density): var(--sbp-*, …) fallbacks are the shipped
-        // values; see app-sidebar-density-prototype.tsx.
-        "group/account relative flex w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-[var(--sbp-radius,0.375rem)] text-left transition-[height] motion-reduce:transition-none",
+        "group/account relative flex w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left transition-[height,margin] motion-reduce:transition-none",
         expanded
-          ? "h-[var(--sbp-account,2.75rem)] duration-300 ease-sidebar"
-          : "h-[var(--sbp-row,2rem)] duration-200 ease-out"
+          ? "h-11 duration-300 ease-sidebar"
+          : // mt-1: the 24px avatar disc is optically taller than the 16px
+            // glyphs above, so the collapsed row takes a small top margin to
+            // even out the perceived gaps in the icon rail.
+            "mt-1 h-8 duration-200 ease-out"
       )}
       data-slot="app-sidebar-account"
       type="button"
@@ -316,13 +317,13 @@ export function AppSidebarAccount() {
         <span
           aria-hidden
           className={cn(
-            "absolute inset-y-0 left-0 rounded-[var(--sbp-radius,0.375rem)] transition-[width,background-color] group-hover/account:bg-input/30 motion-reduce:transition-none",
+            "absolute inset-y-0 left-0 rounded-md transition-[width,background-color] group-hover/account:bg-input/30 motion-reduce:transition-none",
             expanded
               ? "w-full duration-300 ease-sidebar"
-              : "w-[var(--sbp-slot,2.25rem)] duration-200 ease-out"
+              : "w-9 duration-200 ease-out"
           )}
         />
-        <span className="relative flex w-[var(--sbp-slot,2.25rem)] shrink-0 items-center justify-center">
+        <span className="relative flex w-9 shrink-0 items-center justify-center">
           <AppSidebarAccountAvatar
             avatarUrl={userAvatar}
             className="size-6 text-[10px]"
@@ -337,7 +338,7 @@ export function AppSidebarAccount() {
               : "opacity-0 duration-200 ease-out"
           )}
         >
-          <span className="block truncate font-medium text-[length:var(--sbp-font,0.875rem)] text-neutral-50 leading-4">
+          <span className="block truncate font-medium text-neutral-50 text-sm/4">
             {displayName}
           </span>
           {secondLine == null ? null : (
