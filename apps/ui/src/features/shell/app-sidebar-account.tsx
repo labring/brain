@@ -204,7 +204,7 @@ export function AppSidebarAccount() {
     <button
       aria-label={`Account: ${displayName}`}
       className={cn(
-        "group/account relative flex w-full shrink-0 items-center overflow-hidden rounded-md text-left transition-[height] motion-reduce:transition-none",
+        "group/account relative flex w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left transition-[height] motion-reduce:transition-none",
         expanded
           ? "h-11 duration-300 ease-sidebar"
           : "h-8 duration-200 ease-out"
@@ -247,7 +247,7 @@ export function AppSidebarAccount() {
           {secondLine == null ? null : (
             <span
               className={cn(
-                "block truncate text-xs tabular-nums",
+                "mt-0.5 block truncate text-xs tabular-nums",
                 secondLineClass
               )}
               data-slot="app-sidebar-account-status"
@@ -258,7 +258,7 @@ export function AppSidebarAccount() {
         </span>
         <span
           className={cn(
-            "relative flex shrink-0 items-center pr-1.5 transition-opacity motion-reduce:transition-none",
+            "relative flex shrink-0 items-center pr-2 transition-opacity motion-reduce:transition-none",
             expanded
               ? "opacity-100 duration-300 ease-sidebar"
               : "opacity-0 duration-200 ease-out"
@@ -269,7 +269,7 @@ export function AppSidebarAccount() {
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-52 gap-0 rounded-lg border border-border bg-input/30 p-3 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
+        className="w-56 gap-0 rounded-lg border border-border bg-input/30 p-3 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
         side={expanded ? "top" : "right"}
         sideOffset={6}
       >
@@ -288,7 +288,7 @@ export function AppSidebarAccount() {
           {userId === "" ? null : (
             <button
               aria-label="Copy user ID"
-              className="flex items-center gap-1 text-muted-foreground text-xs tabular-nums transition-colors hover:text-neutral-50"
+              className="flex cursor-pointer items-center gap-1 text-muted-foreground text-xs tabular-nums transition-colors hover:text-neutral-50"
               onClick={() => copy(userId)}
               type="button"
             >
@@ -338,11 +338,11 @@ export function AppSidebarAccount() {
             </div>
           )}
           <Link
-            className="flex items-center justify-center gap-1.5 rounded-md bg-input/40 py-1 font-medium text-neutral-50 text-xs transition-colors hover:bg-input/60"
+            className="flex h-8 items-center justify-center gap-1.5 rounded-md bg-input/40 font-medium text-neutral-50 text-sm transition-colors hover:bg-input/60"
             href="/billing?mode=upgrade"
             onClick={recordBillingReturnRoute}
           >
-            <Sparkles aria-hidden className="size-3.5" strokeWidth={1.75} />
+            <Sparkles aria-hidden className="size-4" strokeWidth={1.75} />
             Upgrade
           </Link>
         </div>
