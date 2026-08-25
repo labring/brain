@@ -27,30 +27,6 @@ function githubTask(): DeployTaskRow {
   } as DeployTaskRow;
 }
 
-test("an unbound GitHub task tells the agent it cannot push an image", () => {
-  const prompt = buildManagedGatewayPrompt({
-    resumeMode: "initial",
-    task: githubTask(),
-  });
-  assert.ok(prompt.includes("No registry credential is available"));
-  assert.ok(prompt.includes("github-credential-required"));
-});
-
-test("a bound GitHub task keeps the registry restriction out of the prompt", () => {
-  const prompt = buildManagedGatewayPrompt({
-    resumeMode: "initial",
-    task: {
-      ...githubTask(),
-      credentialBinding: {
-        connectionRef: "connection-alice",
-        credentialOwner: "uid-alice",
-        version: 1,
-      },
-    } as DeployTaskRow,
-  });
-  assert.equal(prompt.includes("No registry credential is available"), false);
-});
-
 test("managed gateway turns use the MCP control contract for every resume mode", () => {
   const resumeModes: ManagedDeployResumeMode[] = [
     "initial",

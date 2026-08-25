@@ -5,8 +5,6 @@ import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
 
 const INVALIDATED_CONNECTION_ERROR =
   /GitHub OAuth connection is not authorized for this deployment\./;
-const STALE_BINDING_ERROR =
-  /A current Deployment Credential Binding is required for GitHub deployment\./;
 
 describe("deployment task runner credential binding", () => {
   it("resolves only the GitHub credential persisted on the task", async () => {
@@ -48,56 +46,6 @@ describe("deployment task runner credential binding", () => {
         ownerIdentityVersion: 2,
       },
     ]);
-  });
-
-  it("resolves no token for an unbound task so the runner clones anonymously", async () => {
-    let lookupCalls = 0;
-    const token = await resolveGithubTokenForDeploymentTask(
-      {
-        credentialBinding: null,
-        namespace: "shared-workspace",
-        source: {
-          kind: "github",
-          repo: {
-            fullName: "glpi-project/glpi",
-            name: "glpi",
-            url: "https://github.com/glpi-project/glpi",
-          },
-        },
-      },
-      () => {
-        lookupCalls += 1;
-        return Promise.resolve("should-not-be-used");
-      }
-    );
-
-    assert.equal(token, null);
-    assert.equal(lookupCalls, 0);
-  });
-
-  it("still fails when a binding exists but is not the current generation", async () => {
-    await assert.rejects(
-      resolveGithubTokenForDeploymentTask(
-        {
-          credentialBinding: {
-            connectionRef: "connection-alice",
-            credentialOwner: "uid-alice",
-            version: 0,
-          },
-          namespace: "shared-workspace",
-          source: {
-            kind: "github",
-            repo: {
-              fullName: "alice/example",
-              name: "example",
-              url: "https://github.com/alice/example",
-            },
-          },
-        },
-        () => Promise.resolve("alice-token")
-      ),
-      STALE_BINDING_ERROR
-    );
   });
 
   it("fails explicitly when a historical task's persisted credential was invalidated", async () => {

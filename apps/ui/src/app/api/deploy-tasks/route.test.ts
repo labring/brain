@@ -31,10 +31,6 @@ let testEngineContext: DeployTaskEngineContext | undefined;
 let runDone: Promise<void> | undefined;
 let authorizedWorkspaceActor: string | undefined = "alice-cr";
 let afterAuthorize: (() => Promise<void>) | undefined;
-let repoPublicAccess: { accessible: boolean; checked: boolean } = {
-  accessible: true,
-  checked: true,
-};
 let activeGithubConnection: {
   accountLogin: string;
   accountType: string;
@@ -175,11 +171,6 @@ mock.module("@/features/deploy/github/connection-service", () => ({
     connectionLookups.push(owner);
     return Promise.resolve(activeGithubConnection);
   },
-}));
-mock.module("@/features/deploy/github/repo-public-access", () => ({
-  GITHUB_REPO_NOT_PUBLIC_ERROR:
-    "This repository is not publicly accessible. Connect GitHub in Settings to deploy it.",
-  checkGithubRepoPublicAccess: () => Promise.resolve(repoPublicAccess),
 }));
 mock.module(
   fileURLToPath(
@@ -492,24 +483,26 @@ test("POST ignores a removed client-selected GitHub connection", async () => {
   }
 });
 
-test("POST creates an unbound task when the initiator has no GitHub connection", async () => {
+test("POST requires the initiator's active GitHub connection before creating a task", async () => {
   const harness = await createDeployTaskTestHarness();
   useHarness(harness);
-  repoPublicAccess = { accessible: true, checked: true };
   try {
     const { POST } = await import("./route");
     const response = await POST(
       deployTaskRequest(githubCreateBody(), "app-token-alice")
     );
 
-    const body = (await response.json()) as { task: { id: string } };
-    assert.equal(response.status, 201);
-    const [stored] = await harness.db
-      .select()
-      .from(deployTasks)
-      .where(eq(deployTasks.id, body.task.id));
-    assert.equal(stored?.credentialBinding, null);
-    await runDone;
+    assert.deepEqual(
+      { body: await response.json(), status: response.status },
+      {
+        body: {
+          code: "github_connection_required",
+          error: "Connect GitHub before creating this deployment task.",
+        },
+        status: 409,
+      }
+    );
+    assert.equal((await harness.db.select().from(deployTasks)).length, 0);
   } finally {
     // A red assertion may fire while an unexpectedly created task is still
     // mid-transition; closing PGlite with a query in flight hangs the run.
@@ -696,43 +689,10 @@ test("POST redeploy fails closed without a valid app token", async () => {
   }
 });
 
-test("POST rejects an unbound GitHub task when the repository is not public", async () => {
-  const harness = await createDeployTaskTestHarness();
-  useHarness(harness);
-  repoPublicAccess = { accessible: false, checked: true };
-  try {
-    const { POST } = await import("./route");
-    const response = await POST(
-      deployTaskRequest(githubCreateBody(), "app-token-alice")
-    );
-
-    assert.deepEqual(
-      { body: await response.json(), status: response.status },
-      {
-        body: {
-          code: "github_repo_private",
-          error:
-            "This repository is not publicly accessible. Connect GitHub in Settings to deploy it.",
-        },
-        status: 409,
-      }
-    );
-    assert.deepEqual(
-      (await harness.db.select().from(deployTasks)).map((task) => task.id),
-      []
-    );
-  } finally {
-    await runDone?.catch(() => undefined);
-    clearHarness();
-    await harness.close();
-  }
-});
-
-test("POST redeploy creates an unbound task without the initiator's own GitHub connection", async () => {
+test("POST redeploy creates no task without the initiator's own GitHub connection", async () => {
   const harness = await createDeployTaskTestHarness();
   useHarness(harness);
   authorizedWorkspaceActor = "bob-cr";
-  repoPublicAccess = { accessible: true, checked: true };
   try {
     const predecessor = await insertTaskRow(harness.db, {
       completedAt: new Date(),
@@ -758,14 +718,20 @@ test("POST redeploy creates an unbound task without the initiator's own GitHub c
       )
     );
 
-    const body = (await response.json()) as { task: { id: string } };
-    assert.equal(response.status, 201);
-    const [clone] = await harness.db
-      .select()
-      .from(deployTasks)
-      .where(eq(deployTasks.id, body.task.id));
-    assert.equal(clone?.credentialBinding, null);
-    await runDone;
+    assert.deepEqual(
+      { body: await response.json(), status: response.status },
+      {
+        body: {
+          code: "github_connection_required",
+          error: "Connect GitHub before creating this deployment task.",
+        },
+        status: 409,
+      }
+    );
+    assert.deepEqual(
+      (await harness.db.select().from(deployTasks)).map((task) => task.id),
+      [predecessor.id]
+    );
   } finally {
     // A red assertion may fire while an unexpectedly created task is still
     // mid-transition; closing PGlite with a query in flight hangs the run.

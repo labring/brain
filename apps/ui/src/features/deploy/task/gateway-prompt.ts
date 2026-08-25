@@ -1,4 +1,3 @@
-import { isCurrentDeploymentCredentialBinding } from "./credential-binding";
 import type { DeployTaskRow } from "./schema";
 
 export type ManagedDeployResumeMode =
@@ -9,22 +8,12 @@ export type ManagedDeployResumeMode =
 
 function gatewaySourcePromptLines(task: DeployTaskRow): string[] {
   switch (task.source.kind) {
-    case "github": {
-      const lines = [
+    case "github":
+      return [
         "The workspace contains the cloned GitHub repository.",
         `Repository: ${task.source.repo.fullName}`,
         `Branch: ${task.source.branch ?? "default"}`,
       ];
-      // An unbound task (ADR-0066) has no GITHUB_TOKEN, so a build that ends
-      // in a registry push cannot succeed. Say so before Phase 2 picks a
-      // path, otherwise the failure only surfaces after a full image build.
-      if (!isCurrentDeploymentCredentialBinding(task.credentialBinding)) {
-        lines.push(
-          "No registry credential is available for this task: GITHUB_TOKEN is not set and you cannot push an image to any registry. Prefer an existing published image for this repository. If the deployment cannot proceed without building and pushing a new image, stop and fail with reason `github-credential-required` instead of attempting a push."
-        );
-      }
-      return lines;
-    }
     case "prompt":
       return [
         "The workspace is empty except for the .sealos output directory.",

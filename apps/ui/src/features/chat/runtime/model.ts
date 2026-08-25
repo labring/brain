@@ -28,6 +28,7 @@ export const CHAT_BASE_SYSTEM_PROMPT = [
   "2. No template match and the user named a GitHub repository -> source.kind `github`.",
   "3. No template match and no repository -> source.kind `prompt` describing what the user asked for.",
   "4. source.kind `docker` only when the user explicitly names a container image.",
+  "If GitHub source creation reports that a connection or authentication is required, tell the user to connect or sign in again; do not reclassify the same repository as a prompt or Docker source.",
   "Never invent a container image name. If `searchDeployCatalog` returns more than one plausible match, list the candidates and ask the user which one before creating the task.",
   "When the chosen template has required args, ask the user for those values and pass them in `source.args`; never invent secrets or passwords.",
   "",
