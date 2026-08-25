@@ -19,6 +19,7 @@ type DBResourcesInput struct {
 	CPULimit          string
 	CPURequest        string
 	ClusterVersion    string
+	DisplayName       string
 	Engine            string
 	ExposeNodePort    bool
 	MemoryLimit       string
@@ -289,6 +290,9 @@ func RenderDBResources(input DBResourcesInput) (*DBResources, error) {
 		Kind:    "Cluster",
 	})
 	cluster.SetLabels(labels)
+	if displayName := strings.TrimSpace(input.DisplayName); displayName != "" {
+		cluster.SetAnnotations(map[string]string{BrainDisplayNameAnnotation: displayName})
+	}
 	if input.RestoreFromBackup != nil {
 		if err := applyDBRestoreFromBackupAnnotation(cluster, profile.ComponentName, input.RestoreFromBackup); err != nil {
 			return nil, err

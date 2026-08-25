@@ -2,6 +2,7 @@
 
 import { useWorkloadTelemetrySeries } from "@workspace/api/hooks";
 import type { MetricDataPoint } from "@workspace/ui/components/metrics-chart/metrics-chart.types";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { Activity, Cpu, MemoryStick } from "lucide-react";
@@ -56,7 +57,7 @@ export const WorkloadMetricsPane = memo(function WorkloadMetricsPane({
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const ns = useAtomValue(namespaceAtom).trim();
   const states = containerStatesFromNode(node);
-  const name = states?.name ?? "Workload";
+  const name = nodeTitle(states) ?? "Workload";
 
   const target = useMemo(
     () => workloadMetricsSeriesTarget(node, ns),

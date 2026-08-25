@@ -52,22 +52,30 @@ export function withSelectedResourceContext(history: UIMessage[]): UIMessage[] {
 }
 
 function selectionKey(context: SelectedResourceContext): string {
-  return [context.kind ?? "", context.namespace ?? "", context.name ?? ""].join(
-    "|"
-  );
+  // The display name participates so a rename re-emits a full block instead
+  // of collapsing to "unchanged" under the old name.
+  return [
+    context.kind ?? "",
+    context.namespace ?? "",
+    context.name ?? "",
+    context.displayName ?? "",
+  ].join("|");
 }
 
 function describeSelection(context: SelectedResourceContext): string {
   const kind = context.kind ? `${context.kind} ` : "";
   // Escaped like the full block: the terse marker echoes the name as free text,
   // so an untrusted name must not be able to break out of the data framing.
-  return escapeAttribute(`${kind}${context.name ?? "(unnamed)"}`.trim());
+  return escapeAttribute(
+    `${kind}${context.displayName ?? context.name ?? "(unnamed)"}`.trim()
+  );
 }
 
 function renderSelectedResourceBlock(context: SelectedResourceContext): string {
   const attributes = [
     attribute("kind", context.kind),
     attribute("name", context.name),
+    attribute("displayName", context.displayName),
     attribute("namespace", context.namespace),
   ]
     .filter((value): value is string => value != null)

@@ -44,6 +44,7 @@ test("Project Runtime parses AP resources into app-owned read-side facts", () =>
 
   assert.deepEqual(facts.apFacts, [
     {
+      // No annotation, so the Kubernetes name shows as-is (ADR 0066).
       displayName: "api",
       key: "AP:default:api",
       observedUid: "ap-uid",
@@ -100,6 +101,7 @@ test("Project Runtime parses DB resources into app-owned read-side facts", () =>
         public: { enabled: true, value: "postgres://public" },
       },
       deletionTimestamp: "2026-07-06T10:00:00Z",
+      // No annotation, so the Kubernetes name shows as-is (ADR 0066).
       displayName: "postgres",
       engine: { displayName: "PostgreSQL", key: "postgresql" },
       key: "DB:default:postgres",
@@ -225,6 +227,146 @@ test("Project Runtime does not show Public Access accessible while AP is updatin
     label: "Updating",
     tone: "updating",
   });
+});
+
+test("Project Runtime resolves Resource Display Names through the annotation chain", () => {
+  const facts = projectRuntimeFactsFromResources({
+    apsData: {
+      items: [
+        {
+          metadata: {
+            annotations: { "brain.io/display-name": "My Service" },
+            name: "nginx-xkqjzw",
+            namespace: "default",
+          },
+          spec: { input: { image: "nginx:1.27" } },
+          status: { phase: "Running" },
+        },
+        {
+          metadata: {
+            labels: { "brain.io/template-name": "memos" },
+            name: "memos-abcdef",
+            namespace: "default",
+          },
+          spec: { input: { image: "ghcr.io/usememos/memos:latest" } },
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    dbsData: {
+      items: [
+        {
+          metadata: { name: "db-mzpqrt", namespace: "default" },
+          spec: { engine: "postgresql" },
+          status: { phase: "Running" },
+        },
+        {
+          metadata: { name: "db-legacy", namespace: "default" },
+          spec: {},
+          status: { phase: "Running" },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  // Annotation first; without one the Kubernetes name shows as-is.
+  assert.equal(facts.apFacts[0]?.displayName, "My Service");
+  assert.equal(facts.apFacts[1]?.displayName, "memos-abcdef");
+  assert.equal(facts.dbFacts[0]?.displayName, "db-mzpqrt");
+  assert.equal(facts.dbFacts[1]?.displayName, "db-legacy");
+});
+
+test("Project Runtime shows the AP's Resource Display Name on its Public Access fact", () => {
+  const facts = projectRuntimeFactsFromResources({
+    apsData: {
+      items: [
+        {
+          metadata: {
+            annotations: { "brain.io/display-name": "My Service" },
+            name: "nginx-xkqjzw",
+            namespace: "default",
+          },
+          spec: {
+            input: {
+              network: {
+                platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+              },
+            },
+          },
+          status: {
+            network: {
+              publicAddresses: [
+                {
+                  host: "api.example.com",
+                  id: "pa_abc123",
+                  port: 8080,
+                  status: "accessible",
+                  type: "platform",
+                  url: "https://api.example.com/",
+                },
+              ],
+            },
+            phase: "Running",
+          },
+        },
+      ],
+    },
+    namespace: "default",
+  });
+
+  assert.equal(facts.publicAccessFacts[0]?.displayName, "My Service");
+  assert.equal(facts.publicAccessFacts[0]?.ref.name, "nginx-xkqjzw");
+});
+
+test("Project Runtime store exposes the Project's taken Resource Display Names", () => {
+  const store = createProjectRuntimeStore();
+  const commit = (displayNameAnnotation: string) =>
+    store.commitResources({
+      apsData: {
+        items: [
+          {
+            metadata: {
+              annotations: { "brain.io/display-name": displayNameAnnotation },
+              name: "nginx-xkqjzw",
+              namespace: "default",
+            },
+            spec: { input: { image: "nginx:1.27" } },
+            status: { phase: "Running" },
+          },
+        ],
+      },
+      dbsData: {
+        items: [
+          {
+            metadata: { name: "db-mzpqrt", namespace: "default" },
+            spec: { engine: "postgresql" },
+            status: { phase: "Running" },
+          },
+        ],
+      },
+      namespace: "default",
+    });
+
+  commit("My Service");
+  assert.deepEqual(store.selectResourceDisplayNames(), [
+    { displayName: "My Service", key: "AP:default:nginx-xkqjzw" },
+    { displayName: "db-mzpqrt", key: "DB:default:db-mzpqrt" },
+  ]);
+
+  const before = store.selectResourceDisplayNames();
+  let notifications = 0;
+  store.subscribeResourceDisplayNames(() => {
+    notifications += 1;
+  });
+
+  commit("My Service");
+  assert.equal(store.selectResourceDisplayNames(), before);
+  assert.equal(notifications, 0);
+
+  commit("Renamed");
+  assert.equal(notifications, 1);
+  assert.equal(store.selectResourceDisplayNames()[0]?.displayName, "Renamed");
 });
 
 test("Project Runtime ignores old template-native workload facts", () => {
@@ -622,6 +764,7 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
   assert.deepEqual(models.containerModelsByKey.get("AP:default:api"), {
     resourceKind: "ap",
     states: {
+      displayName: "api",
       image: "nginx",
       kind: "AP",
       name: "api",
@@ -653,6 +796,7 @@ test("Project Runtime adapts per-node models to shared UI props outside read-sid
     metadata: { labels: { region: "192.168.12.53.nip.io" } },
     states: {
       displayEngine: "PostgreSQL",
+      displayName: "postgres",
       deletionTimestamp: "2026-07-06T10:00:00Z",
       engineKey: "postgresql",
       iconUrl: databaseModel.states.iconUrl,

@@ -1,6 +1,6 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { asc } from "drizzle-orm";
 import { DEPLOY_TASK_ENGINE_CADENCE } from "@/features/deploy/task/engine/constants";
@@ -70,7 +70,20 @@ mock.module("@/features/deploy/task/engine/server", () => ({
 const runnerModulePath = fileURLToPath(
   new URL("../../../features/deploy/task/runner.ts", import.meta.url)
 );
-const actualRunner = await import("@/features/deploy/task/runner");
+// Snapshot into a plain object before mock.module: a live namespace import
+// would resolve to the mock itself once it is registered, and the restore
+// below would then re-register the poisoned exports.
+const actualRunner = {
+  ...(await import("@/features/deploy/task/runner")),
+};
+
+// The runner is itself under test in runner.template-preserve.test.ts, which
+// runs later in the same bun test process — restore the real module once this
+// file's tests finish so the mock does not leak into it.
+after(() => {
+  mock.module(runnerModulePath, () => ({ ...actualRunner }));
+});
+
 mock.module(runnerModulePath, () => ({
   ...actualRunner,
   runDeployTask: (handle: DeployTaskHandle) => {

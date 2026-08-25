@@ -2,6 +2,7 @@
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { type ReactNode, useState } from "react";
+import { resourceNameDetailSuffix } from "./resource-name-detail";
 
 export interface ProjectCanvasApDeleteTarget {
   displayName: string;
@@ -134,8 +135,6 @@ function ProjectCanvasApDeleteDialog({
   if (target == null) {
     return null;
   }
-  const resolvedKind = target.kind?.trim();
-
   return (
     <ProjectCanvasDeleteDialog
       dataSlot="project-canvas-ap-delete-dialog"
@@ -147,13 +146,7 @@ function ProjectCanvasApDeleteDialog({
     >
       This will delete{" "}
       <span className="font-medium text-foreground">{target.displayName}</span>
-      {resolvedKind ? (
-        <>
-          {" "}
-          (<span className="font-mono">{resolvedKind}</span>)
-        </>
-      ) : null}{" "}
-      from the project.
+      {resourceNameDetailSuffix(target)} from the project.
     </ProjectCanvasDeleteDialog>
   );
 }
@@ -181,9 +174,9 @@ function ProjectCanvasDbDeleteDialog({
       verificationText={target.displayName}
     >
       This will delete{" "}
-      <span className="font-medium text-foreground">{target.displayName}</span>{" "}
-      from the project. DB resources and stored data may be removed depending on
-      the termination policy.
+      <span className="font-medium text-foreground">{target.displayName}</span>
+      {resourceNameDetailSuffix(target)} from the project. DB resources and
+      stored data may be removed depending on the termination policy.
     </ProjectCanvasDeleteDialog>
   );
 }

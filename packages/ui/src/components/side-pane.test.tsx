@@ -35,9 +35,9 @@ const SLIDE_X_RE = /project-surface-slide-x/;
 const SCROLL_BEFORE_CONTENT_GAP_RE = /flex min-h-0 flex-1 flex-col gap-2.5/;
 const SCROLL_BODY_RE = /scrollbar-chat-thin min-h-0 flex-1 overflow-y-auto/;
 const SCROLL_CONTENT_RE =
-  /flex min-h-full min-w-0 flex-col gap-5 px-5 pt-2.5 pb-5/;
+  /flex min-h-full min-w-0 flex-col gap-5 px-4 pt-1.5 pb-4/;
 const TITLE_RE = /Details/;
-const TITLE_ROW_GAP_RE = /flex min-w-0 items-center gap-2"/;
+const TITLE_ROW_GAP_RE = /flex min-h-7 min-w-0 items-center gap-2"/;
 const CLOSED_SLIDE_FULL_RE = /project-surface-slide-x-full/;
 
 function indexOfOrThrow(source: string, needle: string) {

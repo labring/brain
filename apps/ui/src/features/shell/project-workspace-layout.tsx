@@ -114,6 +114,7 @@ import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
+import { resourceDisplayNameForTarget } from "@/features/resource-display-name/resource-display-name-bridge";
 import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
 import {
   ProjectTopBarSlotHost,
@@ -234,9 +235,16 @@ function buildSelectedResourceSnapshot(
   if (target == null) {
     return null;
   }
-  return target.kind === "PublicAccess"
-    ? { kind: target.kind, name: target.apName, namespace: target.namespace }
-    : { kind: target.kind, name: target.name, namespace: target.namespace };
+  const name = target.kind === "PublicAccess" ? target.apName : target.name;
+  // Display-only hint (ADR 0066): the model addresses the resource by its
+  // Resource Display Name but must still target tools by `name`.
+  const displayName = resourceDisplayNameForTarget(target);
+  return {
+    ...(displayName == null || displayName === name ? {} : { displayName }),
+    kind: target.kind,
+    name,
+    namespace: target.namespace,
+  };
 }
 
 /**
