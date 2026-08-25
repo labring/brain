@@ -40,10 +40,14 @@ import {
   claimBrainAiEngagementFromSession,
   trackBrainGtmEvent,
 } from "@/features/analytics/brain-gtm";
+import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
-import { ChatBillingCardSlot } from "@/features/chat/chat-billing-cards";
+import {
+  ChatBillingCardSlot,
+  type ChatBillingDestination,
+} from "@/features/chat/chat-billing-cards";
 import {
   fetchAssistantSession,
   fetchAssistantThreadMessages,
@@ -722,9 +726,17 @@ function ProjectAssistantChatSession({
 
   // Full-page navigation: returning from the Billing Area remounts the pane
   // and re-fetches the session, which is the only way out of `blocked`.
-  const navigateToBilling = useCallback(() => {
-    router.push("/billing");
-  }, [router]);
+  // Recording the return route lets the Billing Area close button land back
+  // on this project instead of the sidebar's last entry point.
+  const navigateToBilling = useCallback(
+    (destination: ChatBillingDestination) => {
+      recordBillingReturnRoute();
+      router.push(
+        destination === "upgrade" ? "/billing?mode=upgrade" : "/billing"
+      );
+    },
+    [router]
+  );
 
   return (
     <Chat.Root>

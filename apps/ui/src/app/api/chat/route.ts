@@ -93,7 +93,7 @@ function freeTurnsExhaustedResponse(state: FreeTierState): Response {
     {
       code: "free_chat_turns_exhausted",
       error:
-        "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
+        "Free trial messages are used up. Upgrade your plan to keep chatting with the assistant.",
     } satisfies ChatApiErrorBody,
     { headers: chatBillingHeaders(state), status: 402 }
   );

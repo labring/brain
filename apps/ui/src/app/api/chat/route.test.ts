@@ -1509,7 +1509,7 @@ test("refuses a confirmed-blocked trial request with 402 and the full header set
   expect(await response.json()).toEqual({
     code: "free_chat_turns_exhausted",
     error:
-      "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
+      "Free trial messages are used up. Upgrade your plan to keep chatting with the assistant.",
   });
   expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
   expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
@@ -1629,7 +1629,7 @@ test("a lost reservation race on a confirmed trial refuses with 402 before the m
   expect(await response.json()).toEqual({
     code: "free_chat_turns_exhausted",
     error:
-      "Free messages are used up. Upgrade your plan to keep chatting with the assistant.",
+      "Free trial messages are used up. Upgrade your plan to keep chatting with the assistant.",
   });
   expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
   expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");

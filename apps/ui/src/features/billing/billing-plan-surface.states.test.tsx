@@ -29,6 +29,10 @@ const EXPIRED_WARNING_TITLE_PATTERN = /Your subscription has expired/;
 const UNDATED_GRACE_FALLBACK_PATTERN = /the grace period ends/;
 const ACCOUNT_DEBT_TITLE_PATTERN = /Your account balance is in debt/;
 const ACCOUNT_DEBT_TOP_UP_PATTERN = /Top up your balance/;
+const PLAN_EXPIRED_BADGE_PATTERN = /Plan Expired/;
+const FREE_EXPIRED_TITLE_PATTERN = /Your Free plan has expired/;
+const FREE_EXPIRED_UPGRADE_PATTERN = /Upgrade to a paid plan to avoid loss/;
+const UNPAID_INVOICE_PATTERN = /unpaid invoice/;
 
 const CREDENTIALS = {
   appToken: "test-token",
@@ -107,6 +111,22 @@ test("payment-due-final keeps the deletion warning and the Renew action", async 
     // deletion date is already in the past in the final stage.
     assert.match(text, DELETION_WARNING_FUTURE_TENSE_PATTERN);
     assert.ok(rendered.queryByRole("button", { name: "Renew" }));
+  });
+});
+
+test("free-expired asks for an upgrade, never a renewal or a payment", async () => {
+  // The resubscribe recovery voice: an expired trial keeps the shared
+  // deletion countdown and the Plan Expired badge, but nothing was ever
+  // charged — so no Renew action, no renewal copy, and no invoice ask.
+  await renderScenario("free-expired", (rendered) => {
+    const text = rendered.container.textContent ?? "";
+    assert.match(text, PLAN_EXPIRED_BADGE_PATTERN);
+    assert.match(text, FREE_EXPIRED_TITLE_PATTERN);
+    assert.match(text, FREE_EXPIRED_UPGRADE_PATTERN);
+    assert.doesNotMatch(text, EXPIRED_WARNING_TITLE_PATTERN);
+    assert.doesNotMatch(text, UNPAID_INVOICE_PATTERN);
+    assert.ok(rendered.queryByRole("button", { name: "Upgrade Plan" }));
+    assert.equal(rendered.queryByRole("button", { name: "Renew" }), null);
   });
 });
 
@@ -197,4 +217,17 @@ test("payment-due blanks both header dates regardless of cancellation", async ()
     assert.equal(headerField(rendered, "Quota Resets On"), "-");
     assert.equal(headerRenewalTime(rendered), "-");
   });
+});
+
+test("Free workspaces rows carry no Renewal Time", async () => {
+  // A Free subscription has no Renewal Time — the All Plans table's Renewal
+  // Time column blanks its date instead of claiming the expiry as a renewal.
+  for (const scenario of ["free", "free-expired"]) {
+    const snapshot = await loadSnapshotForScenario(scenario);
+    const row = snapshot.workspaces.find(
+      (workspace) => workspace.planName === "Free"
+    );
+    assert.ok(row != null, `${scenario}: a Free row is present`);
+    assert.equal(row?.renewalAt, null, `${scenario}: no Renewal Time`);
+  }
 });

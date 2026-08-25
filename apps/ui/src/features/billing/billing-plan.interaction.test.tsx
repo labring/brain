@@ -36,6 +36,7 @@ const SNAPSHOT: BillingPlanSnapshot = {
     periodEndVoice: "renewal",
     planName: "Pro",
     priceMicroUnits: 20_000_000,
+    recoveryVoice: "renew",
     regionDomain: "us.example.test",
     resources: [{ label: "CPU", value: "4" }],
     warningDeadlineAt: null,
@@ -792,19 +793,19 @@ test("an Active Free Trial renders the allowance card in the credits slot, not A
 
     try {
       const text = rendered?.container.textContent ?? "";
-      assert.ok(text.includes("Free assistant messages"));
+      assert.ok(text.includes("Free trial messages"));
       assert.ok(text.includes("Included with the Free plan"));
       assert.ok(text.includes("3 of 5 left"));
       // Same slot and hierarchy as the paid plans' AI Credits section.
       assertTextOrder(text, [
         "Current Workspace Plan",
-        "Free assistant messages",
+        "Free trial messages",
         "Account Balance",
       ]);
       assert.equal(text.includes("AI Credits:"), false);
       assert.ok(
         rendered?.getByRole("progressbar", {
-          name: "Free assistant messages used",
+          name: "Free trial messages used",
         })
       );
     } finally {
@@ -836,7 +837,7 @@ test("a PAUSED Free workspace renders no allowance card and never asks Brain for
 
     try {
       const text = rendered?.container.textContent ?? "";
-      assert.equal(text.includes("Free assistant messages"), false);
+      assert.equal(text.includes("Free trial messages"), false);
       assert.equal(requestedPaths.includes("/api/chat/free-turns"), false);
     } finally {
       await restore();
@@ -857,10 +858,10 @@ test("a failed usage lookup degrades the allowance card quietly", async () => {
 
     try {
       const text = rendered?.container.textContent ?? "";
-      assert.ok(text.includes("Free assistant messages"));
+      assert.ok(text.includes("Free trial messages"));
       assert.ok(
         text.includes(
-          "Usage is unavailable right now — your free messages still work."
+          "Usage is unavailable right now — your free trial messages still work."
         )
       );
       assert.equal(text.includes("of 5 left"), false);

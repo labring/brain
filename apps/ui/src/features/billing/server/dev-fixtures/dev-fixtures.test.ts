@@ -69,7 +69,13 @@ const DATE_RANGE = {
   startTime: new Date(Date.now() - 31 * DAY_IN_MILLISECONDS).toISOString(),
 };
 
-const CREDITLESS_SCENARIOS = new Set(["free", "paused", "payg", "payg-debt"]);
+const CREDITLESS_SCENARIOS = new Set([
+  "free",
+  "free-expired",
+  "paused",
+  "payg",
+  "payg-debt",
+]);
 
 function loadPlanForScenario(scenario: string) {
   return loadBillingPlanSnapshot(CREDENTIALS, {
@@ -218,6 +224,20 @@ test("free derives an active trial that never reads as cancelling", async () => 
   assert.equal(plan.current.periodEndVoice, "expiry");
 });
 
+test("free-expired derives the resubscribe voice inside the debt pipeline", async () => {
+  // ADR-0065: a lapsed trial joins the same DEBT pipeline as a paid plan;
+  // the recovery voice is what keeps its surfaces from asking for a renewal
+  // or a payment.
+  const plan = await loadPlanForScenario("free-expired");
+  assert.equal(plan.current.planName, "Free");
+  assert.equal(plan.current.lifecycle, "payment-due");
+  assert.equal(plan.current.warningStage, "expired");
+  assert.equal(plan.current.recoveryVoice, "resubscribe");
+  assert.equal(plan.current.isActiveFreeTrial, false);
+  assert.equal(plan.current.invoiceId, null, "nothing was ever charged");
+  assert.ok(plan.current.warningDeadlineAt, "deletion date is derived");
+});
+
 test("paused derives a plan-change-ready Free subscription", async () => {
   const plan = await loadPlanForScenario("paused");
   assert.equal(plan.current.planName, "Free");
@@ -356,6 +376,7 @@ test("pay transitions move the scenario cookie", async () => {
     ["payg", "created", "active"],
     ["payg-debt", "created", "active"],
     ["deleted", "created", "active"],
+    ["free-expired", "created", "active"],
     ["payment-due", "created", "active"],
     ["payment-due-deletion", "created", "active"],
     ["payment-due-final", "created", "active"],
