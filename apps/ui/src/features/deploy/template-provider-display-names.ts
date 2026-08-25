@@ -67,7 +67,7 @@ export async function stampTemplateProviderDisplayNames(input: {
     return;
   }
 
-  let takenNames: string[] = [];
+  let takenNames: string[];
   try {
     takenNames = await projectResourceDisplayNames({
       excludeKubernetesNames: namingResources.map(
@@ -78,8 +78,11 @@ export async function stampTemplateProviderDisplayNames(input: {
       projectId: input.projectId,
     });
   } catch {
-    // Number against nothing rather than blocking the deploy — duplicates
-    // are tolerated, as in the direct deploy path.
+    // An unreadable listing blinds the numbering — skip stamping rather
+    // than risk a duplicate the rename surface would itself reject. The
+    // resources keep showing their Kubernetes names, the legal degraded
+    // state the user can rename out of (ADR 0066).
+    return;
   }
 
   const names = templateResourceDisplayNames({
@@ -89,7 +92,7 @@ export async function stampTemplateProviderDisplayNames(input: {
   });
   for (const resource of namingResources) {
     const value = names.get(resource.kubernetesName);
-    if (value === undefined || value === resource.kubernetesName) {
+    if (value === undefined) {
       continue;
     }
     try {

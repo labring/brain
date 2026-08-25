@@ -87,6 +87,18 @@ func DisplayNameAnnotationPatchValue(raw interface{}) (string, error) {
 	return trimmed, nil
 }
 
+// DisplayNameAnnotationCreateValue bounds a Resource Display Name arriving
+// on a create manifest (ADR 0066). Unlike the patch path, an invalid value
+// never fails the create — naming must not block a deploy — so an over-long
+// value is dropped and the resource shows its Kubernetes name instead.
+func DisplayNameAnnotationCreateValue(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if utf8.RuneCountInString(trimmed) > MaxDisplayNameLength {
+		return ""
+	}
+	return trimmed
+}
+
 func brainLabels(projectID, deploymentKind, deploymentName string) map[string]string {
 	return map[string]string{
 		BrainManagedByLabel:      BrainManagedByValue,

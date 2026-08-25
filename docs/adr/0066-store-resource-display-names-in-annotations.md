@@ -19,11 +19,16 @@ Access Node shows its AP's display name rather than owning one.
 - **Default** — derived at deploy time from the Deployment Source through the
   ADR 0058 derivation module (Docker image segment, DB engine, template name)
   and written into the annotation, unique within the Project with an
-  incrementing suffix (`nginx`, `nginx-2`). Reading never derives: a resource
+  incrementing suffix (`nginx`, `nginx-2`), the base truncated so a numbered
+  name stays within the length bound. Uniqueness outranks default naming:
+  when the taken-names listing cannot be read, deploy-time naming is skipped
+  for that deploy rather than numbered blind — the resource shows its
+  Kubernetes name. Reading never derives: a resource
   without the annotation (created before this feature) shows its Kubernetes
   name — exactly what it displayed before this feature — until the user
   renames it. A display name is either written on the resource or it is the
-  Kubernetes name.
+  Kubernetes name. On the create path an invalid annotation value is dropped,
+  not rejected — naming never fails a deploy; only the rename patch rejects.
 - **Template-spawned resources** — the template provider creates the
   resources cluster-side, so the deploy runner holds no manifest to render a
   name into; names are stamped right after creation through the product

@@ -177,7 +177,7 @@ func dbRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 		CPULimit:       stringFromMap(spec, "cpuLimit"),
 		CPURequest:     stringFromMap(spec, "cpuRequest"),
 		ClusterVersion: version,
-		DisplayName:    strings.TrimSpace(obj.GetAnnotations()[orchestration.BrainDisplayNameAnnotation]),
+		DisplayName:    orchestration.DisplayNameAnnotationCreateValue(obj.GetAnnotations()[orchestration.BrainDisplayNameAnnotation]),
 		Engine:         engine,
 		ExposeNodePort: boolFromMap(spec, "exposeNodePort"),
 		MemoryLimit:    stringFromMap(spec, "memoryLimit"),

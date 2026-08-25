@@ -183,7 +183,7 @@ test("existing project names number the whole template family", async () => {
   );
 });
 
-test("an unreadable project listing degrades to unnumbered names", async () => {
+test("an unreadable project listing skips stamping entirely", async () => {
   process.env.API_URL = "https://api.example.com";
   const patches = mockRoutes({ failListing: true });
   await stampTemplateProviderDisplayNames({
@@ -194,9 +194,7 @@ test("an unreadable project listing degrades to unnumbered names", async () => {
     resources: [{ name: "memos-abcdef", resourceType: "app" }],
     templateName: "memos",
   });
-  assert.deepEqual(patches[0]?.body, {
-    metadata: { annotations: { "brain.io/display-name": "memos" } },
-  });
+  assert.equal(patches.length, 0);
 });
 
 test("a failed display-name patch never throws", async () => {
@@ -212,7 +210,7 @@ test("a failed display-name patch never throws", async () => {
   });
 });
 
-test("a name equal to the kubernetes name is not patched", async () => {
+test("a name equal to the kubernetes name is still stamped", async () => {
   process.env.API_URL = "https://api.example.com";
   const patches = mockRoutes({});
   await stampTemplateProviderDisplayNames({
@@ -223,7 +221,9 @@ test("a name equal to the kubernetes name is not patched", async () => {
     resources: [{ name: "memos", resourceType: "app" }],
     templateName: "memos",
   });
-  assert.equal(patches.length, 0);
+  assert.deepEqual(patches[0]?.body, {
+    metadata: { annotations: { "brain.io/display-name": "memos" } },
+  });
 });
 
 test("resources without AP or DB classification are left alone", async () => {

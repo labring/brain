@@ -1371,8 +1371,8 @@ function databaseSettings(
  * Deploy-time Resource Display Name (ADR 0066): derived from the Deployment
  * Source and numbered against the display names already taken in the
  * Project. Naming must never fail a deploy — an unreadable project listing
- * degrades to the bare derived name (duplicates are tolerated, as in the
- * lazy read-time chain).
+ * skips naming entirely (the resource shows its Kubernetes name) rather
+ * than risk a duplicate the rename surface would itself reject.
  */
 async function directResourceNaming(input: {
   kubeconfig: string;
@@ -1383,7 +1383,7 @@ async function directResourceNaming(input: {
   if (base == null) {
     return { sourceName: "" };
   }
-  let takenNames: string[] = [];
+  let takenNames: string[];
   try {
     takenNames = await projectResourceDisplayNames({
       kubeconfig: input.kubeconfig,
@@ -1391,7 +1391,9 @@ async function directResourceNaming(input: {
       projectId: input.projectName,
     });
   } catch {
-    // Fall through with no numbering rather than blocking the deploy.
+    // An unreadable listing blinds the numbering — deploy unnamed rather
+    // than risk a duplicate; the resource shows its Kubernetes name.
+    return { sourceName: base };
   }
   return {
     displayName: uniqueResourceDisplayName(base, takenNames),

@@ -43,6 +43,23 @@ function annotatedDisplayName(
 }
 
 /**
+ * `base` for attempt 1, `base-2`, `base-3`, … after — with the base head
+ * truncated to leave room for the suffix, so a base already at the stored
+ * bound still numbers within 256 code points instead of producing a name no
+ * writer would accept.
+ */
+function numberedDisplayName(base: string, attempt: number): string {
+  if (attempt <= 1) {
+    return base;
+  }
+  const suffix = `-${attempt}`;
+  const head = [...base]
+    .slice(0, MAX_RESOURCE_DISPLAY_NAME_LENGTH - suffix.length)
+    .join("");
+  return `${head}${suffix}`;
+}
+
+/**
  * Deploy-time numbering within a Project: `nginx`, `nginx-2`, `nginx-3` …
  * Comparison is case-insensitive because the uniqueness rule exists only for
  * human distinguishability (same rationale as ADR 0058).
@@ -57,7 +74,7 @@ export function uniqueResourceDisplayName(
   }
   let attempt = 1;
   for (;;) {
-    const candidate = attempt <= 1 ? base : `${base}-${attempt}`;
+    const candidate = numberedDisplayName(base, attempt);
     if (!taken.has(candidate.toLowerCase())) {
       return candidate;
     }
@@ -99,7 +116,7 @@ export function templateResourceDisplayNames(input: {
   takenNames: Iterable<string>;
   templateName: string;
 }): Map<string, string> {
-  const templateName = input.templateName.trim();
+  const templateName = boundedName(input.templateName);
   if (templateName === "" || input.resources.length === 0) {
     return new Map();
   }
@@ -134,7 +151,7 @@ export function templateResourceDisplayNames(input: {
   };
 
   for (let attempt = 1; ; attempt += 1) {
-    const base = attempt <= 1 ? templateName : `${templateName}-${attempt}`;
+    const base = numberedDisplayName(templateName, attempt);
     const family = familyForBase(base);
     if ([...family.values()].every((name) => !taken.has(name.toLowerCase()))) {
       return family;

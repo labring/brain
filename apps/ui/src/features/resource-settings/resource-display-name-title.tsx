@@ -29,6 +29,12 @@ const RENAME_ERROR_COPY = {
  * keeps the editor open with the draft and an inline error, so it stays
  * unambiguous what the name currently is. Thin shell over the
  * resource-display-name module — the rules live there.
+ *
+ * Deliberately raw elements, not `AppButton`/`AppInput`: the closed state is
+ * a clickable heading and the editor a title-sized `field-sizing-content`
+ * box — both would override nearly everything the wrappers set. The shared
+ * bits the wrappers exist for (focus and invalid styling) come from the same
+ * `field-state` classes they use.
  */
 export function ResourceDisplayNameTitle({
   displayName,

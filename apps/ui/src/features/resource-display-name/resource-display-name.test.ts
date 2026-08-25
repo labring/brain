@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  MAX_RESOURCE_DISPLAY_NAME_LENGTH,
   resolveResourceDisplayName,
   resourceDisplayNameMergePatch,
   templateResourceDisplayNames,
@@ -83,6 +84,16 @@ test("numbering skips over holes left by renames", () => {
   assert.equal(
     uniqueResourceDisplayName("nginx", ["nginx", "nginx-3"]),
     "nginx-2"
+  );
+});
+
+test("numbering a base at the length cap stays within the bound", () => {
+  const base = "n".repeat(MAX_RESOURCE_DISPLAY_NAME_LENGTH);
+  const numbered = uniqueResourceDisplayName(base, [base]);
+  assert.equal(numbered.length, MAX_RESOURCE_DISPLAY_NAME_LENGTH);
+  assert.equal(
+    numbered,
+    `${"n".repeat(MAX_RESOURCE_DISPLAY_NAME_LENGTH - 2)}-2`
   );
 });
 

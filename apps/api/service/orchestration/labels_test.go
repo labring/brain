@@ -25,3 +25,21 @@ func TestDisplayNameAnnotationPatchValue(t *testing.T) {
 		t.Fatal("over-long value must be rejected, not truncated")
 	}
 }
+
+func TestDisplayNameAnnotationCreateValue(t *testing.T) {
+	if got := DisplayNameAnnotationCreateValue(" My Service "); got != "My Service" {
+		t.Fatalf("trimmed value = %q, want My Service", got)
+	}
+	if got := DisplayNameAnnotationCreateValue("   "); got != "" {
+		t.Fatalf("blank value = %q, want empty (no annotation)", got)
+	}
+	exact := strings.Repeat("名", MaxDisplayNameLength)
+	if got := DisplayNameAnnotationCreateValue(exact); got != exact {
+		t.Fatalf("value of exactly %d characters must be kept", MaxDisplayNameLength)
+	}
+	// A create never fails on the name — an over-long value is dropped and
+	// the resource shows its Kubernetes name (ADR 0066).
+	if got := DisplayNameAnnotationCreateValue(exact + "名"); got != "" {
+		t.Fatalf("over-long value = %q, want dropped", got)
+	}
+}
