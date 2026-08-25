@@ -48,6 +48,7 @@ import type {
 } from "@/features/projects/project-icons";
 import { createAppSidebarProjectGroups } from "@/features/shell/app-sidebar.groups";
 import { AppSidebarAccount } from "@/features/shell/app-sidebar-account";
+import { AppSidebarNotifications } from "@/features/shell/app-sidebar-notifications";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
@@ -574,6 +575,7 @@ function AppSidebarChrome({
                 }
                 label="Projects"
               />
+              <AppSidebarNotifications />
             </div>
             <AppSidebarProjectGroupsNav
               currentProjectId={currentProjectId}

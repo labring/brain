@@ -698,6 +698,20 @@ The cluster-level display currency for the Billing Area, delivered server-side p
 
 _Avoid_: user currency preference, build-time currency.
 
+## Notifications
+
+### Notification Center
+
+The user's single inbox for Notifications, opened from the App Sidebar's Notifications entry (below the Projects row). User-scoped and global: it aggregates messages across every Project rather than belonging to one. It is not the Deployment Task Dock and does not manage running tasks; it holds messages, not work.
+
+_Avoid_: task center, activity feed, message center, alerts panel.
+
+### Notification
+
+One message addressed to the current user in the Notification Center: a system event (a deployment outcome, a database event), a billing or quota event, or a product announcement. Persistent and individually read/unread, which distinguishes it from a toast (ephemeral feedback that vanishes on its own); a Notification names its source Project when it has one.
+
+_Avoid_: alert, toast (for persistent items), event (for the user-facing message).
+
 ## Design System
 
 ### Component Registry
