@@ -16,6 +16,7 @@ import { createChatProjectTools } from "@/features/chat/tool/chat-project-tools"
 import { refreshFrontendSwrCachesTool } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
 import {
   buildChatSkillsDiscoveryPrompt,
+  createLoadSkillResourceTool,
   createLoadSkillTool,
   discoverPublicSkills,
 } from "@/features/chat/tool/chat-skill-tool";
@@ -101,6 +102,7 @@ export async function buildChatToolset({
     readApiOpenApiDocs: readApiOpenApiDocsTool,
     sliceOpenApiDocs: sliceOpenApiDocsTool,
     loadSkill: createLoadSkillTool(skillIndex),
+    loadSkillResource: createLoadSkillResourceTool(skillIndex),
     ...bashTools,
   } as unknown as ToolSet;
 

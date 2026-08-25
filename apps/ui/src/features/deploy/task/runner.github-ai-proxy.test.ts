@@ -134,15 +134,15 @@ describe("deploy skill installation", () => {
     expect(command).not.toMatch(PINNED_SKILL_COMMIT_SOURCE_RE);
   });
 
-  it("defaults to sealos-skills main via runtime config", () => {
+  it("defaults to the unified Brain deployment branch via runtime config", () => {
     expect(getDeploySkillSourceFromEnv({})).toBe(
-      "https://github.com/labring/sealos-skills.git#main"
+      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
     );
     const command = buildDeploySkillInstallCommand(
       getDeploySkillSourceFromEnv({})
     );
     expect(command).toContain(
-      "https://github.com/labring/sealos-skills.git#main"
+      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
     );
   });
 });

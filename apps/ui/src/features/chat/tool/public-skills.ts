@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Dirent } from "node:fs";
+import { type Dirent, existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,16 +8,57 @@ import { parse as parseYaml } from "yaml";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-/** `apps/ui/public/skills` — stable regardless of `process.cwd()`. */
-export const PUBLIC_SKILLS_ROOT = path.resolve(here, "../../../public/skills");
+/**
+ * Resolve the bundled skill root in both source and standalone layouts.
+ *
+ * Next's standalone server runs from `/app`, while local tests and `next dev`
+ * may run from either the repository root or `apps/ui`. The source-relative
+ * path is useful before bundling, but `import.meta.url` can point at a traced
+ * module location after bundling, so it cannot be the only candidate.
+ */
+const PUBLIC_SKILLS_ROOT_CANDIDATES = [
+  path.resolve(process.cwd(), "public/skills"),
+  path.resolve(process.cwd(), "apps/ui/public/skills"),
+  path.resolve(here, "../../../../public/skills"),
+];
+
+export const PUBLIC_SKILLS_ROOT =
+  PUBLIC_SKILLS_ROOT_CANDIDATES.find((candidate) => existsSync(candidate)) ??
+  path.resolve(process.cwd(), "public/skills");
 
 const FRONTMATTER_BLOCK_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+const RESOURCE_PATH_SEGMENTS_RE = /[\\/]+/;
 
 export interface PublicSkillMeta {
   description: string;
   folderName: string;
   name: string;
   skillMdPath: string;
+}
+
+export function resolvePublicSkillResourcePath(
+  skill: PublicSkillMeta,
+  resourcePath: string
+): string | null {
+  const requested = resourcePath.trim();
+  if (requested === "" || requested.includes("\0")) {
+    return null;
+  }
+
+  const segments = requested.split(RESOURCE_PATH_SEGMENTS_RE);
+  if (segments.some((segment) => segment === ".." || segment === ".")) {
+    return null;
+  }
+
+  const skillRoot = path.dirname(skill.skillMdPath);
+  const resolved = path.resolve(skillRoot, requested);
+  if (
+    resolved !== skillRoot &&
+    !resolved.startsWith(`${skillRoot}${path.sep}`)
+  ) {
+    return null;
+  }
+  return resolved;
 }
 
 interface FrontmatterBlock {
@@ -120,5 +161,5 @@ export async function discoverPublicSkills(): Promise<PublicSkillMeta[]> {
     });
   }
 
-  return skills;
+  return skills.sort((a, b) => a.name.localeCompare(b.name));
 }

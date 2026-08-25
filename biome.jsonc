@@ -113,6 +113,14 @@
       "assist": { "enabled": false }
     },
     {
+      // Bundled upstream Sealos skill resources are runtime data, not Brain source.
+      // Preserve their upstream formatting and language-specific conventions.
+      "includes": ["apps/ui/public/skills/**"],
+      "formatter": { "enabled": false },
+      "linter": { "enabled": false },
+      "assist": { "enabled": false }
+    },
+    {
       // Throwaway self-contained prototypes (from the prototype skill): kept next
       // to the code they probe but never shipped, so exempt from code quality.
       "includes": ["**/*.prototype.html"],
