@@ -41,6 +41,7 @@ import {
   trackBrainGtmEvent,
 } from "@/features/analytics/brain-gtm";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { readCachedWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
 import {
@@ -114,6 +115,7 @@ import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
+import { resourceDisplayNameForTarget } from "@/features/resource-display-name/resource-display-name-bridge";
 import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
 import {
   ProjectTopBarSlotHost,
@@ -234,9 +236,16 @@ function buildSelectedResourceSnapshot(
   if (target == null) {
     return null;
   }
-  return target.kind === "PublicAccess"
-    ? { kind: target.kind, name: target.apName, namespace: target.namespace }
-    : { kind: target.kind, name: target.name, namespace: target.namespace };
+  const name = target.kind === "PublicAccess" ? target.apName : target.name;
+  // Display-only hint (ADR 0066): the model addresses the resource by its
+  // Resource Display Name but must still target tools by `name`.
+  const displayName = resourceDisplayNameForTarget(target);
+  return {
+    ...(displayName == null || displayName === name ? {} : { displayName }),
+    kind: target.kind,
+    name,
+    namespace: target.namespace,
+  };
 }
 
 /**
@@ -489,6 +498,9 @@ function ProjectAssistantChatSession({
             currentProject.displayName,
             wire.projectId
           );
+          const workspaceResourceQuota = readCachedWorkspaceQuotaSnapshot(
+            wire.namespace
+          );
 
           const headersWithAppToken = new Headers(headers);
           for (const [name, value] of Object.entries(
@@ -503,6 +515,9 @@ function ProjectAssistantChatSession({
             body: {
               ...(body && typeof body === "object" ? body : {}),
               ...(assistantContext == null ? {} : { assistantContext }),
+              ...(workspaceResourceQuota == null
+                ? {}
+                : { workspaceResourceQuota }),
               chatId: id,
               encodedKubeconfig: encodeURIComponent(kubeconfig),
               message: last,

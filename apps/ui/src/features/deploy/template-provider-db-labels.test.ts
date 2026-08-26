@@ -254,7 +254,7 @@ test("normalizeTemplateProviderDbResources patches provider cluster labels", asy
     return Promise.resolve(new Response("{}", { status: 200 }));
   }) as typeof fetch;
 
-  await normalizeTemplateProviderDbResources({
+  const normalized = await normalizeTemplateProviderDbResources({
     encodedKubeconfig: "kubeconfig",
     instanceName: "airbyte-demo",
     namespace: "ns-a",
@@ -266,6 +266,7 @@ test("normalizeTemplateProviderDbResources patches provider cluster labels", asy
     templateName: "airbyte",
   });
 
+  assert.deepEqual(normalized, [{ engine: "postgresql", name: "airbyte-pg" }]);
   assert.equal(calls.length, 2);
   assert.match(calls[0]?.url ?? "", K8S_GET_PATH_RE);
   assert.match(calls[0]?.url ?? "", CLUSTERS_KIND_QUERY_RE);

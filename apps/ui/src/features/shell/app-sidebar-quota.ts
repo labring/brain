@@ -1,10 +1,7 @@
 import { BinaryScale, Quantity, Scale } from "@workspace/shared";
+import type { WorkspaceQuotaItem } from "@/features/billing/workspace-resource-quota";
 
-export interface WorkspaceQuotaItem {
-  limit: number;
-  type: "cpu" | "memory" | "nodeport" | "pod" | "storage";
-  used: number;
-}
+export type { WorkspaceQuotaItem } from "@/features/billing/workspace-resource-quota";
 
 export interface AppSidebarQuotaRow {
   label: string;
@@ -47,24 +44,6 @@ const WORKSPACE_QUOTA_ROW_DEFINITIONS = [
   { label: "Pods", type: "pod" },
   { label: "Ports", type: "nodeport" },
 ] as const;
-
-export function isWorkspaceQuotaItem(
-  value: unknown
-): value is WorkspaceQuotaItem {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const item = value as { limit?: unknown; type?: unknown; used?: unknown };
-  return (
-    (item.type === "cpu" ||
-      item.type === "memory" ||
-      item.type === "storage" ||
-      item.type === "pod" ||
-      item.type === "nodeport") &&
-    typeof item.used === "number" &&
-    typeof item.limit === "number"
-  );
-}
 
 function formatPortQuotaNumber(value: number) {
   if (!Number.isFinite(value)) {

@@ -3,12 +3,15 @@ import type {
   DockerDeploymentEnvVar,
   DockerDeploymentSettings,
 } from "@/features/deploy/docker-deployment-settings";
+import { BRAIN_DISPLAY_NAME_ANNOTATION } from "@/lib/brain-labels";
 import { dockerEnvCanonicalRawSource } from "./docker-env-raw";
 import { renderYamlTemplate } from "./render-yaml-template";
 
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
 
 interface RenderDockerDeploymentYamlOptions {
+  /** Resource Display Name written into the annotation at deploy time (ADR 0066). */
+  displayName?: string;
   name: string;
   namespace: string;
   platformAddressId?: string;
@@ -115,6 +118,16 @@ function metadataWithRoutingDomain(
 
   if (Object.keys(nextLabels).length > 0) {
     nextMetadata.labels = nextLabels;
+  }
+
+  const displayName = options.displayName?.trim();
+  if (displayName) {
+    const annotations =
+      nextMetadata.annotations && typeof nextMetadata.annotations === "object"
+        ? { ...(nextMetadata.annotations as Record<string, unknown>) }
+        : {};
+    annotations[BRAIN_DISPLAY_NAME_ANNOTATION] = displayName;
+    nextMetadata.annotations = annotations;
   }
 
   return nextMetadata;

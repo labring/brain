@@ -53,6 +53,7 @@ const { getDeploySkillSourceFromEnv } = requireModule(
 const {
   CodexGatewayApiError,
   CodexGatewayTimeoutError,
+  CodexGatewayTurnError,
   codexGatewayFailureDetails,
   gatewayEventProjection,
   gatewayStateSnapshot,
@@ -787,6 +788,26 @@ describe("Codex gateway failure classification", () => {
       reason: "gateway-timeout",
     });
   });
+
+  it("classifies a failed Codex turn as an upstream execution error", () => {
+    expect(
+      codexGatewayFailureDetails(new CodexGatewayTurnError("failed"))
+    ).toEqual({
+      reason: "gateway-upstream-error",
+    });
+  });
+
+  for (const [status, reason] of [
+    ["cancelled", "cancelled"],
+    ["interrupted", "interrupted"],
+    ["unknown", "unknown"],
+  ] as const) {
+    it(`preserves the ${status} Codex turn reason`, () => {
+      expect(
+        codexGatewayFailureDetails(new CodexGatewayTurnError(status))
+      ).toEqual({ reason });
+    });
+  }
 
   it("classifies fetch failures as unavailable", () => {
     expect(codexGatewayFailureDetails(new TypeError("fetch failed"))).toEqual({

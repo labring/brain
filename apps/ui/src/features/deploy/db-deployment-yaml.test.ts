@@ -29,6 +29,34 @@ test("renderDbDeploymentYaml writes deployment settings into a direct DB manifes
   assert.equal(out.spec.legacyRuntime, undefined);
 });
 
+test("renderDbDeploymentYaml writes the display name annotation when provided", () => {
+  const out = YAML.parse(
+    renderDbDeploymentYaml({
+      displayName: "postgresql",
+      engine: "postgresql",
+      name: "postgresql-mzpqrt",
+      namespace: "ns-admin",
+      projectName: "project-a",
+      quota: "s",
+      replicas: 1,
+    })
+  );
+
+  assert.equal(out.metadata.annotations["brain.io/display-name"], "postgresql");
+
+  const unnamed = YAML.parse(
+    renderDbDeploymentYaml({
+      engine: "postgresql",
+      name: "db-mzpqrt",
+      namespace: "ns-admin",
+      projectName: "project-a",
+      quota: "s",
+      replicas: 1,
+    })
+  );
+  assert.equal(unnamed.metadata.annotations, undefined);
+});
+
 test("renderDbDeploymentYaml strips public-only region labels from templates", () => {
   const out = YAML.parse(
     renderDbDeploymentYaml({

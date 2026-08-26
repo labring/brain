@@ -12,6 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Activity,
@@ -156,6 +157,7 @@ export function DatabaseNodeHeaderContent({
     state: { states },
   } = useDatabaseNode();
   const subtitle = formatDatabaseSubtitle(states);
+  const title = nodeTitle(states);
 
   return (
     <div className={cn("flex min-w-0 flex-1 items-center gap-1.5", className)}>
@@ -170,9 +172,9 @@ export function DatabaseNodeHeaderContent({
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span
             className="min-w-0 truncate font-normal text-sm text-zinc-50 leading-5"
-            title={states.name}
+            title={title}
           >
-            {states.name}
+            {title}
           </span>
           <span
             className="min-w-0 truncate font-normal text-muted-foreground text-xs leading-4"

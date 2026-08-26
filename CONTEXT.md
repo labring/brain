@@ -386,6 +386,12 @@ A canvas node that represents an AP workload. The name is retained as a product/
 
 The product identity of a canvas node's backing AP, DB, or AP Public Access Node surface, keyed by `kind`, `namespace`, and `name` so Canvas Layout stays stable across short reconciliation gaps. Kubernetes UID is retained only as last-seen entity identity to detect when a same-named workload is meaningfully new; AP Public Access Nodes use AP-bound identity rather than their own UID.
 
+### Resource Display Name
+
+The human-facing name of one AP or DB, shown on its canvas node, its settings pane title, and in assistant conversation. A Template Instance owns none — the APs and DBs it spawns each carry their own, sharing the template's name as a common base. It is not chosen at creation: the platform derives a default from the resource's Deployment Source (Docker image, DB engine, or template name) at deploy time and resolves collisions itself; users can rename it afterwards. A resource carrying no stored name shows its Kubernetes name; a name, once stored, cannot be cleared back to it. Unique within a Project (trimmed); an AP Public Access Node shows its AP's Resource Display Name rather than owning one. Never a selector or identity — stable identity is Canvas Resource Identity, and destructive confirmations additionally show the Kubernetes name.
+
+_Avoid_: node name, resource name (that is the Kubernetes `metadata.name`), custom name.
+
 ### Canvas Layout
 
 The Project-scoped visual arrangement of the canvas, shared by everyone who opens the Project — the single authoritative placement store, keyed by Canvas Placement Owners rather than rendered node instances. A resource-owned placement survives transient read-model absence for a grace window (Missing Resource Layout Grace); only continuous absence beyond it may remove the placement.

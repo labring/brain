@@ -7,6 +7,7 @@ import type {
   ProjectApTarget,
   SettingsOwnerTarget,
 } from "@/features/panes/target-identity";
+import type { ProjectResourceDisplayName } from "@/features/project-canvas/runtime/resource-store";
 import type { SettingsLaunchContext } from "@/features/project-canvas/runtime/settings-launch-context";
 import type {
   ApSettingsConfirmedAddDbDsnReference,
@@ -21,6 +22,8 @@ export interface SettingsReadModelHints {
   ap?: {
     dbDsnReferenceSources?: ApEnvDbDsnSource[];
   };
+  /** Display names taken in the Project (ADR 0066), for rename duplicate checks. */
+  resourceDisplayNames?: readonly ProjectResourceDisplayName[];
 }
 
 export interface SettingsSessionEvents {
@@ -52,6 +55,8 @@ export interface SettingsViewModel {
   sections: SettingsRenderedSection[];
   subtitle?: string;
   title: string;
+  /** Replaces the pane's title heading (the inline rename editor, ADR 0066). */
+  titleContent?: ReactNode;
 }
 
 export interface SettingsProviderProps {

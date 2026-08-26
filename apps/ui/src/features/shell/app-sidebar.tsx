@@ -40,6 +40,7 @@ import {
   useState,
 } from "react";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
@@ -544,6 +545,12 @@ function AppSidebarChrome({
       }),
     [states.pinnedProjectIds, states.projects]
   );
+
+  // Warm the workspace-quota cache so chat turns can inject the snapshot
+  // without waiting on the desktop SDK (see project-workspace-layout).
+  useEffect(() => {
+    loadWorkspaceQuotaSnapshot(namespace).catch(() => undefined);
+  }, [namespace]);
 
   return (
     <Sidebar

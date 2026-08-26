@@ -41,9 +41,12 @@ function apModelFromFact(fact: ApFact): CanvasContainerNodeData {
   return {
     resourceKind: "ap",
     states: {
+      // `name` stays the workload identity every panel and telemetry target
+      // reads; the Resource Display Name rides alongside for display only.
+      displayName: fact.displayName,
       image: fact.workload.image,
       kind: fact.workload.kind,
-      name: fact.displayName,
+      name: fact.ref.name,
       namespace: fact.ref.namespace,
       ...(fact.replicaSummary?.desired === undefined
         ? {}
@@ -92,6 +95,7 @@ function dbModelFromFact(fact: DbFact): CanvasDatabaseNodeData {
         ? {}
         : { deletionTimestamp: fact.deletionTimestamp }),
       displayEngine: fact.engine.displayName,
+      displayName: fact.displayName,
       ...(fact.engine.key === undefined ? {} : { engineKey: fact.engine.key }),
       ...(fact.version === undefined ? {} : { formattedVersion: fact.version }),
       ...(iconUrl === undefined ? {} : { iconUrl }),
@@ -111,7 +115,7 @@ function dbModelFromFact(fact: DbFact): CanvasDatabaseNodeData {
             },
           }),
       metrics: {},
-      name: fact.displayName,
+      name: fact.ref.name,
       status: fact.status,
       ...(fact.observedUid === undefined ? {} : { uid: fact.observedUid }),
     },
@@ -129,7 +133,7 @@ function publicAccessModelFromFact(
       : { accessDomain: fact.accessDomain }),
     resource: {
       apRef: fact.apRef.name,
-      name: fact.displayName,
+      name: fact.apRef.name,
       namespace: fact.ref.namespace,
       selectionKey: publicAccessSelectionKey({
         apName: fact.apRef.name,
@@ -137,7 +141,7 @@ function publicAccessModelFromFact(
       }),
       ...(fact.observedUid === undefined ? {} : { uid: fact.observedUid }),
     },
-    states: { name: fact.displayName },
+    states: { displayName: fact.displayName, name: fact.apRef.name },
     targets: fact.targets.map((target) => ({
       id: target.id,
       label: target.label,

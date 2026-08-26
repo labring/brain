@@ -23,7 +23,13 @@ import {
   getTemplateSource,
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
-import { deriveProjectDisplayName } from "@/features/projects/derived-project-display-name";
+import { stampTemplateProviderDisplayNames } from "@/features/deploy/template-provider-display-names";
+import {
+  derivedProjectDisplayNameBase,
+  deriveProjectDisplayName,
+} from "@/features/projects/derived-project-display-name";
+import { projectResourceDisplayNames } from "@/features/resource-display-name/project-resource-display-names";
+import { uniqueResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -602,13 +608,21 @@ async function applyDeploymentArtifact(input: {
       signal: input.signal,
       templateName: input.artifact.templateName,
     });
-    await normalizeTemplateProviderDbResources({
+    const normalizedDbResources = await normalizeTemplateProviderDbResources({
       encodedKubeconfig: input.kubeconfig,
       instanceName: deployed.instanceName,
       namespace: input.task.namespace,
       projectId: input.task.projectId ?? deployed.instanceName,
       resources: deployed.resources,
       signal: input.signal,
+      templateName: input.artifact.templateName,
+    });
+    await stampTemplateProviderDisplayNames({
+      dbResources: normalizedDbResources,
+      kubeconfig: input.kubeconfig,
+      namespace: input.task.namespace,
+      projectId: input.task.projectId ?? deployed.instanceName,
+      resources: deployed.resources,
       templateName: input.artifact.templateName,
     });
     const created: DeploymentTemplateInstanceArtifact = {
@@ -1353,18 +1367,58 @@ function databaseSettings(
   return settings;
 }
 
-function generateDirectArtifact(input: {
+/**
+ * Deploy-time Resource Display Name (ADR 0066): derived from the Deployment
+ * Source and numbered against the display names already taken in the
+ * Project. Naming must never fail a deploy — an unreadable project listing
+ * skips naming entirely (the resource shows its Kubernetes name) rather
+ * than risk a duplicate the rename surface would itself reject.
+ */
+async function directResourceNaming(input: {
   kubeconfig: string;
   projectName: string;
   task: DeployTaskRow;
+}): Promise<{ displayName?: string; sourceName: string }> {
+  const base = derivedProjectDisplayNameBase(input.task.source);
+  if (base == null) {
+    return { sourceName: "" };
+  }
+  let takenNames: string[];
+  try {
+    takenNames = await projectResourceDisplayNames({
+      kubeconfig: input.kubeconfig,
+      namespace: input.task.namespace,
+      projectId: input.projectName,
+    });
+  } catch {
+    // An unreadable listing blinds the numbering — deploy unnamed rather
+    // than risk a duplicate; the resource shows its Kubernetes name.
+    return { sourceName: base };
+  }
+  return {
+    displayName: uniqueResourceDisplayName(base, takenNames),
+    sourceName: base,
+  };
+}
+
+function generateDirectArtifact(input: {
+  displayName?: string;
+  kubeconfig: string;
+  projectName: string;
+  // The Kubernetes name shares the display name's source prefix so kubectl
+  // and the canvas roughly agree (`nginx-xkqjzw` next to `nginx`).
+  sourceName: string;
+  task: DeployTaskRow;
 }): DeploymentArtifact {
+  const { sourceName } = input;
   switch (input.task.source.kind) {
     case "docker": {
       const settings = dockerSettings(input.task.source.settings);
       return {
         kind: "brain-manifest",
         yaml: renderDockerDeploymentYaml({
-          name: childResourceName(input.projectName, "ap"),
+          displayName: input.displayName,
+          name: childResourceName(sourceName, "ap"),
           namespace: input.task.namespace,
           projectName: input.projectName,
           routingDomain: apUserDomain(input.kubeconfig),
@@ -1378,8 +1432,9 @@ function generateDirectArtifact(input: {
       return {
         kind: "brain-manifest",
         yaml: renderDbDeploymentYaml({
+          displayName: input.displayName,
           engine: choice.engine,
-          name: childResourceName(input.projectName, "db"),
+          name: childResourceName(sourceName, "db"),
           namespace: input.task.namespace,
           projectName: input.projectName,
           quota: settings.instancePreset,
@@ -2731,7 +2786,8 @@ async function runDirectDeploymentTask(input: {
     phase: "plan",
   });
 
-  const artifact = generateDirectArtifact(input);
+  const naming = await directResourceNaming(input);
+  const artifact = generateDirectArtifact({ ...input, ...naming });
   await updateDeployTaskState(input.task.id, {
     artifactSummary: { artifacts: [artifact] },
     phase: "generate-artifacts",
@@ -3541,17 +3597,12 @@ export function enterManagedDeploymentCompletionRequired(
   return { ...state, resumeMode: "completion-required" };
 }
 
-const MAX_COMPLETION_REQUIRED_TURNS = 2;
-
 async function continueManagedDeploymentAfterMissingControlNotification(input: {
   attempt: number;
   applying: boolean;
   lifecycleState: ManagedDeploymentLifecycleState;
   taskId: string;
 }): Promise<ManagedDeploymentLifecycleState> {
-  if (input.attempt > MAX_COMPLETION_REQUIRED_TURNS) {
-    throw deployFailureError("runner-error");
-  }
   await recordDeployTaskEvent(input.taskId, {
     kind: "deployment_task.gateway_completion_required",
     message:
@@ -3626,6 +3677,7 @@ async function runManagedDeploymentLifecycleCore(input: {
   let completionRequiredTurns = 0;
 
   while (true) {
+    throwIfDeploymentDeadlineElapsed(input.executionDeadlineAtMs);
     // No per-turn limit: every turn shares the same Agent execution window,
     // which is itself clamped to the 70-minute task deadline.
     const deadlineAtMs = input.executionDeadlineAtMs;

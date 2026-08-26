@@ -1,6 +1,7 @@
 import { isToolUIPart, type UIMessage } from "ai";
 import { z } from "zod";
 
+import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 import {
   NAVIGATE_APP_TOOL_NAME,
   navigateAppOutputSchema,
@@ -104,6 +105,8 @@ export type AssistantContextPayload = z.infer<
  * "nothing was selected"; we never backfill a stale target.
  */
 export const selectedResourceContextSchema = z.object({
+  /** Resource Display Name (ADR 0066) — display-only, never a `name` argument. */
+  displayName: z.string().max(512).optional(),
   kind: z.string().max(128).optional(),
   name: z.string().max(512).optional(),
   namespace: z.string().max(256).optional(),
@@ -149,7 +152,9 @@ export const chatStreamRequestSchema = z.object({
   encodedKubeconfig: z.string().optional(),
   assistantContext: assistantContextPayloadSchema.optional(),
 });
-export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
+export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema> & {
+  workspaceResourceQuota?: WorkspaceResourceQuotaSnapshot;
+};
 
 /** Body of `POST /api/chat/messages`. Used by UI event adapters. */
 export const appendMessageBodySchema = z.object({

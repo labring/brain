@@ -56,6 +56,8 @@ export interface DatabaseNodeStatus {
 export interface DatabaseNodeStates {
   deletionTimestamp?: string;
   displayEngine: string;
+  /** Human-facing Resource Display Name; falls back to `name` when absent. */
+  displayName?: string;
   engineKey?: DatabaseEngineKey;
   formattedVersion?: string;
   iconUrl?: string;

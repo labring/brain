@@ -38,8 +38,32 @@ interface RuntimeMaps {
 
 interface RuntimeState extends RuntimeMaps {
   relationshipIndexes: ProjectRuntimeRelationshipIndexes;
+  resourceDisplayNames: ProjectResourceDisplayName[];
+  resourceDisplayNamesSignature: string;
   resourceTopology: ProjectRuntimeResourceTopologyItem[];
   resourceTopologySignature: string;
+}
+
+/** One resource's Resource Display Name (ADR 0066), keyed by Canvas Resource Identity. */
+export interface ProjectResourceDisplayName {
+  displayName: string;
+  key: ProjectRuntimeFactKey;
+}
+
+function projectResourceDisplayNamesFromFacts(
+  facts: ProjectRuntimeFacts
+): ProjectResourceDisplayName[] {
+  // Public Access facts mirror their AP's name, so only APs and DBs own one.
+  return [...facts.apFacts, ...facts.dbFacts].map((fact) => ({
+    displayName: fact.displayName,
+    key: fact.key,
+  }));
+}
+
+function projectResourceDisplayNamesSignature(
+  names: readonly ProjectResourceDisplayName[]
+): string {
+  return names.map((item) => `${item.key}=${item.displayName}`).join("|");
 }
 
 function factsEqual<TFact extends RuntimeFact>(a: TFact, b: TFact): boolean {
@@ -143,6 +167,8 @@ function emptyState(): RuntimeState {
       apToDb: [],
       publicAccessToAp: [],
     },
+    resourceDisplayNames: [],
+    resourceDisplayNamesSignature: "",
     resourceTopology: [],
     resourceTopologySignature: "",
   };
@@ -180,6 +206,7 @@ export interface ProjectRuntimeStore {
     key: ProjectRuntimeFactKey
   ): PublicAccessFact | undefined;
   selectRelationshipIndexes(): ProjectRuntimeRelationshipIndexes;
+  selectResourceDisplayNames(): readonly ProjectResourceDisplayName[];
   selectResourceTopology(): ProjectRuntimeResourceTopologyItem[];
   subscribeApFact(
     key: ProjectRuntimeFactKey,
@@ -194,6 +221,7 @@ export interface ProjectRuntimeStore {
     subscriber: FactSubscriber<PublicAccessFact>
   ): () => void;
   subscribeRelationshipIndexes(subscriber: StoreSubscriber): () => void;
+  subscribeResourceDisplayNames(subscriber: StoreSubscriber): () => void;
   subscribeResourceTopology(subscriber: StoreSubscriber): () => void;
 }
 
@@ -212,6 +240,7 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     Set<FactSubscriber<PublicAccessFact>>
   >();
   const relationshipSubscribers = new Set<StoreSubscriber>();
+  const resourceDisplayNameSubscribers = new Set<StoreSubscriber>();
   const resourceTopologySubscribers = new Set<StoreSubscriber>();
 
   function updateState(facts: ProjectRuntimeFacts): RuntimeState {
@@ -238,9 +267,17 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     )
       ? state.relationshipIndexes
       : facts.relationshipIndexes;
+    const resourceDisplayNames = projectResourceDisplayNamesFromFacts(facts);
+    const resourceDisplayNamesSignature =
+      projectResourceDisplayNamesSignature(resourceDisplayNames);
     return {
       ...nextMaps,
       relationshipIndexes,
+      resourceDisplayNames:
+        resourceDisplayNamesSignature === state.resourceDisplayNamesSignature
+          ? state.resourceDisplayNames
+          : resourceDisplayNames,
+      resourceDisplayNamesSignature,
       resourceTopology:
         resourceTopologySignature === state.resourceTopologySignature
           ? state.resourceTopology
@@ -271,6 +308,9 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
       if (previous.relationshipIndexes !== state.relationshipIndexes) {
         notifyStoreSubscribers(relationshipSubscribers);
       }
+      if (previous.resourceDisplayNames !== state.resourceDisplayNames) {
+        notifyStoreSubscribers(resourceDisplayNameSubscribers);
+      }
       if (previous.resourceTopology !== state.resourceTopology) {
         notifyStoreSubscribers(resourceTopologySubscribers);
       }
@@ -286,6 +326,9 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
     },
     selectRelationshipIndexes() {
       return state.relationshipIndexes;
+    },
+    selectResourceDisplayNames() {
+      return state.resourceDisplayNames;
     },
     selectResourceTopology() {
       return state.resourceTopology;
@@ -327,6 +370,12 @@ export function createProjectRuntimeStore(): ProjectRuntimeStore {
       subscribers.add(subscriber);
       return () => {
         subscribers?.delete(subscriber);
+      };
+    },
+    subscribeResourceDisplayNames(subscriber) {
+      resourceDisplayNameSubscribers.add(subscriber);
+      return () => {
+        resourceDisplayNameSubscribers.delete(subscriber);
       };
     },
     subscribeResourceTopology(subscriber) {

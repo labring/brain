@@ -37,6 +37,7 @@ mock.module("./runner-writes", () => ({
 const {
   CodexGatewayApiError,
   CodexGatewayTimeoutError,
+  CodexGatewayTurnError,
   DEPLOY_GATEWAY_MODEL,
   resolveDeployGatewayModel,
   runDeployTaskGateway: runDeployTaskGatewayRaw,
@@ -54,10 +55,14 @@ function runDeployTaskGateway(
   });
 }
 
-function gatewayState(activeTurn: boolean) {
+function gatewayState(
+  activeTurn: boolean,
+  lastTurnStatus: string | null = activeTurn ? "inProgress" : "completed"
+) {
   return {
     activeTurn,
     cwd: "/home/devbox/project",
+    lastTurnStatus,
     ready: true,
     recentEvents: [],
     transcript: [],
@@ -66,12 +71,13 @@ function gatewayState(activeTurn: boolean) {
 
 function sessionResponse(
   activeTurn: boolean,
-  sessionId = "session-test-1"
+  sessionId = "session-test-1",
+  lastTurnStatus: string | null = activeTurn ? "inProgress" : "completed"
 ): Response {
   return Response.json({
     ok: true,
     sessionId,
-    state: gatewayState(activeTurn),
+    state: gatewayState(activeTurn, lastTurnStatus),
   });
 }
 
@@ -101,13 +107,17 @@ function installGatewayFetch(input: {
   sessionHeaders?: Record<string, string>[];
   stateActiveSequence?: boolean[];
   stateActive: boolean;
+  stateOmitLastTurnStatus?: boolean;
+  stateResponseDelayMs?: number[];
   stateStatuses?: number[];
+  stateTurnStatus?: string | null;
+  stateTurnStatusSequence?: Array<string | null>;
   turnError?: Error;
 }): string[] {
   const paths: string[] = [];
   let interruptAttempt = 0;
   let stateRead = 0;
-  globalThis.fetch = ((
+  globalThis.fetch = (async (
     requestInput: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1]
   ) => {
@@ -152,12 +162,31 @@ function installGatewayFetch(input: {
     if (url.pathname.endsWith("/state")) {
       input.onState?.();
       const readIndex = stateRead++;
+      const delayMs = input.stateResponseDelayMs?.[readIndex] ?? 0;
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
       const status = input.stateStatuses?.[readIndex] ?? 200;
       if (status !== 200) {
         return Response.json({ error: "state unavailable" }, { status });
       }
+      const activeTurn =
+        input.stateActiveSequence?.[readIndex] ?? input.stateActive;
+      if (input.stateOmitLastTurnStatus) {
+        const { lastTurnStatus: _lastTurnStatus, ...state } =
+          gatewayState(activeTurn);
+        return Response.json({
+          ok: true,
+          sessionId: "session-test-1",
+          state,
+        });
+      }
       return sessionResponse(
-        input.stateActiveSequence?.[readIndex] ?? input.stateActive
+        activeTurn,
+        "session-test-1",
+        input.stateTurnStatusSequence?.[readIndex] ??
+          input.stateTurnStatus ??
+          (activeTurn ? "inProgress" : "completed")
       );
     }
     if (url.pathname.endsWith("/turn/interrupt")) {
@@ -212,6 +241,48 @@ describe("deployment Codex gateway interruption", () => {
     expect(paths.some((path) => path.endsWith("/turn/interrupt"))).toBe(false);
     expect(
       recordedEvents.some((event) => event.kind.includes("interrupted"))
+    ).toBe(false);
+  });
+
+  it("accepts a settled turn when an older gateway omits lastTurnStatus", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateOmitLastTurnStatus: true,
+    });
+
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: task(),
+    });
+
+    expect(paths.some((path) => path.endsWith("/turn/interrupt"))).toBe(false);
+    expect(
+      recordedEvents.some(
+        (event) => event.kind === "deploy_task.gateway_turn_completed"
+      )
+    ).toBe(true);
+  });
+
+  it("rejects a failed terminal turn without opening a completion-required turn", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateTurnStatus: "failed",
+    });
+
+    await expect(
+      runDeployTaskGateway({
+        context: { authToken: "gateway-token", url: "https://gateway.test" },
+        deadlineAtMs: Date.now() + 1000,
+        task: task(),
+      })
+    ).rejects.toBeInstanceOf(CodexGatewayTurnError);
+
+    expect(paths.some((path) => path.endsWith("/turn/interrupt"))).toBe(false);
+    expect(
+      recordedEvents.some(
+        (event) => event.kind === "deploy_task.gateway_turn_completed"
+      )
     ).toBe(false);
   });
 
@@ -362,6 +433,26 @@ describe("deployment Codex gateway interruption", () => {
         (event) => event.kind === "deploy_task.gateway_interrupt_failed"
       )
     ).toBe(true);
+  });
+
+  it("preserves timeout when the deadline interrupt settles during a state poll", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateResponseDelayMs: [50],
+      stateTurnStatus: "interrupted",
+    });
+
+    await expect(
+      runDeployTaskGateway({
+        context: { authToken: "gateway-token", url: "https://gateway.test" },
+        deadlineAtMs: Date.now() + 25,
+        task: task(),
+      })
+    ).rejects.toBeInstanceOf(CodexGatewayTimeoutError);
+
+    expect(
+      paths.filter((path) => path.endsWith("/turn/interrupt"))
+    ).toHaveLength(1);
   });
 
   it("retries a 409 while the turn is still active", async () => {

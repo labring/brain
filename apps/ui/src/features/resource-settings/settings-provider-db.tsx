@@ -8,17 +8,21 @@ import { DatabaseEngineIcon } from "@workspace/ui/components/database-engine-ico
 import { useCallback, useEffect, useMemo } from "react";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
 import type { ProjectDbTarget } from "@/features/panes/target-identity";
+import { resolveResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
 import { k8sGetClaimBody } from "@/features/resource-settings/ap/k8s/claim-mapper";
 import { dbResourceToSettingsData } from "@/features/resource-settings/db/db-settings-resource";
 import { useDatabaseSettingsSections } from "@/features/resource-settings/db/db-settings-sections";
 import type { DbSettingsData } from "@/features/resource-settings/db/db-settings-types";
 import { settingsOwnerIdentity } from "@/features/resource-settings/settings-owner-identity";
 import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+import { asRecord } from "@/lib/unknown-record";
+import { ResourceDisplayNameTitle } from "./resource-display-name-title";
 import { SettingsSections } from "./settings-sections";
 import type {
   SettingsProviderProps,
   SettingsViewModel,
 } from "./settings-types";
+import { useResourceDisplayNameRename } from "./use-resource-display-name-rename";
 
 const DB_SETTINGS_FULL_VIEW = "full";
 
@@ -64,6 +68,7 @@ export function DbSettingsProvider({
   onModelChange,
   onRepairSideEntry,
   onUpdated,
+  readModelHints,
   readOnly,
   target,
   view,
@@ -92,6 +97,23 @@ export function DbSettingsProvider({
   });
   const workload = data?.workload;
   const updating = workload == null ? false : isUpdating(workload);
+  const resourceMetadata = asRecord(k8sGetClaimBody(dbResource.data)?.metadata);
+  const displayName =
+    dbTarget == null
+      ? ""
+      : resolveResourceDisplayName({
+          annotations: asRecord(resourceMetadata?.annotations),
+          kubernetesName: dbTarget.name,
+        });
+  const { onRenameResource, takenDisplayNames } = useResourceDisplayNameRename({
+    kind: "DB",
+    kubeconfig: kubeconfig ?? "",
+    onUpdated,
+    resourceDisplayNames: readModelHints?.resourceDisplayNames,
+    revalidate: dbResource.mutate,
+    target: dbTarget,
+  });
+  const canRename = data != null && !effectiveReadOnly && authReady;
   const handleSubmitPatch = useCallback(
     (patch: Parameters<typeof updateSettings>[1]) => {
       if (workload == null) {
@@ -192,6 +214,7 @@ export function DbSettingsProvider({
       };
     }
 
+    const title = displayName || data.states.name;
     return {
       closeAriaLabel: "Close database settings",
       icon: (
@@ -208,18 +231,36 @@ export function DbSettingsProvider({
       subtitle: `Database ${data.states.displayEngine}${
         data.states.formattedVersion ? ` ${data.states.formattedVersion}` : ""
       }`,
-      title: data.states.name,
+      title,
+      titleContent: (
+        <ResourceDisplayNameTitle
+          displayName={title}
+          onRename={canRename ? onRenameResource : undefined}
+          takenNames={takenDisplayNames}
+        />
+      ),
     };
   }, [
+    canRename,
     data,
     dbResource.isLoading,
     dbResource.isValidating,
+    displayName,
+    onRenameResource,
     resolvedView,
     sectionsModel,
+    takenDisplayNames,
     target,
   ]);
 
-  const { closeAriaLabel, icon, leaveGuard, subtitle, title } = model;
+  const {
+    closeAriaLabel,
+    icon,
+    leaveGuard,
+    subtitle,
+    title,
+    titleContent: modelTitleContent,
+  } = model;
 
   useEffect(() => {
     onModelChange({
@@ -230,11 +271,13 @@ export function DbSettingsProvider({
       sections: [],
       subtitle,
       title,
+      titleContent: modelTitleContent,
     });
   }, [
     closeAriaLabel,
     icon,
     leaveGuard,
+    modelTitleContent,
     onModelChange,
     resolvedView,
     subtitle,

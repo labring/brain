@@ -1,6 +1,5 @@
 "use client";
 
-import { sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { PlanBadge } from "@workspace/ui/components/plan-badge";
 import {
   Popover,
@@ -28,6 +27,7 @@ import {
   type WorkspaceSubscriptionSummary,
 } from "@/features/billing/billing-plan-data";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { fetchFreeChatTurnsUsage } from "@/features/chat/persistence/client";
 import {
   type AppSidebarAccountBadge,
@@ -43,7 +43,6 @@ import {
 import {
   type AppSidebarQuotaRow,
   formatWorkspaceQuotaRows,
-  isWorkspaceQuotaItem,
   quotaUsageTone,
 } from "@/features/shell/app-sidebar-quota";
 import { useCloseOnSidebarToggle } from "@/features/shell/use-close-on-sidebar-toggle";
@@ -246,12 +245,15 @@ function useCopyFeedback(): [boolean, (text: string) => void] {
   return [copied, copy];
 }
 
-async function loadQuotaRows(): Promise<AppSidebarQuotaRow[]> {
-  const snapshot = await sealosApp.getWorkspaceQuota();
-  const rawQuota: readonly unknown[] = Array.isArray(snapshot.quota)
-    ? snapshot.quota
-    : [];
-  return formatWorkspaceQuotaRows(rawQuota.filter(isWorkspaceQuotaItem));
+async function loadQuotaRows(namespace: string): Promise<AppSidebarQuotaRow[]> {
+  // The quota client fails open (undefined instead of rejecting); surface
+  // that as a failure so the slot keeps its snapshot-or-collapse contract
+  // instead of rendering a list of "--/--" placeholders.
+  const snapshot = await loadWorkspaceQuotaSnapshot(namespace);
+  if (snapshot == null) {
+    throw new Error("workspace quota unavailable");
+  }
+  return formatWorkspaceQuotaRows(snapshot.items);
 }
 
 interface UsageSlotState<T> {
@@ -486,7 +488,8 @@ export function AppSidebarAccount() {
   // subscription answer — it decides whether the row exists at all — so an
   // unknown subscription is pending, never "not applicable": opening before
   // it lands can no longer eat the row.
-  const quotaSlot = useUsageSlot(open, loadQuotaRows, "load workspace quota");
+  const loadQuota = useCallback(() => loadQuotaRows(workspace), [workspace]);
+  const quotaSlot = useUsageSlot(open, loadQuota, "load workspace quota");
   const aiSlot = useUsageSlot(
     open && !subscriptionPending,
     loadAiUsageRow,

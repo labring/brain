@@ -10,6 +10,7 @@ import {
   type UIMessageStreamOnFinishCallback,
 } from "ai";
 import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
+import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
@@ -67,6 +68,7 @@ import {
 } from "@/features/chat/runtime/model";
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
+import { withWorkspaceResourceContext } from "@/features/chat/runtime/workspace-resource-context";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
@@ -656,7 +658,11 @@ async function settleTurnBillingPosture(input: {
   if (contestedPosture.billing === "blocked") {
     return { response: freeTurnsExhaustedResponse(contestedPosture) };
   }
-  return { billing: "user", clientFreeTier: contestedPosture, reserved: false };
+  return {
+    billing: "user",
+    clientFreeTier: contestedPosture,
+    reserved: false,
+  };
 }
 
 async function runChatPipeline(input: {
@@ -750,7 +756,10 @@ async function runChatPipeline(input: {
     );
     assertCompleteToolHistory(history);
     const modelMessages = await convertToModelMessages(
-      withSelectedResourceContext(history),
+      withWorkspaceResourceContext(
+        withSelectedResourceContext(history),
+        input.request.workspaceResourceQuota
+      ),
       { tools }
     );
 
@@ -877,7 +886,19 @@ export async function POST(req: Request) {
     return jsonError("invalid_request", "Invalid JSON body", 400);
   }
 
-  const parsed = chatStreamRequestSchema.safeParse(body);
+  const isObjectBody =
+    typeof body === "object" && body !== null && !Array.isArray(body);
+  const rawWorkspaceResourceQuota = isObjectBody
+    ? (body as Record<string, unknown>).workspaceResourceQuota
+    : undefined;
+  const chatBody = isObjectBody
+    ? Object.fromEntries(
+        Object.entries(body as Record<string, unknown>).filter(
+          ([key]) => key !== "workspaceResourceQuota"
+        )
+      )
+    : body;
+  const parsed = chatStreamRequestSchema.safeParse(chatBody);
   if (!parsed.success) {
     return jsonError(
       "invalid_request",
@@ -886,11 +907,17 @@ export async function POST(req: Request) {
       parsed.error.flatten()
     );
   }
+  const workspaceResourceQuota = workspaceResourceQuotaSnapshotSchema.safeParse(
+    rawWorkspaceResourceQuota
+  );
+  const request: ChatStreamRequest = workspaceResourceQuota.success
+    ? { ...parsed.data, workspaceResourceQuota: workspaceResourceQuota.data }
+    : parsed.data;
 
   const authorization = await authorizeWorkspaceActor({
     appToken: appTokenFromRequest(req),
-    encodedKubeconfig: parsed.data.encodedKubeconfig,
-    expectedNamespace: parsed.data.namespace.trim() || undefined,
+    encodedKubeconfig: request.encodedKubeconfig,
+    expectedNamespace: request.namespace.trim() || undefined,
     normalizeNamespace: normalizeAssistantNamespace,
   });
   if (!authorization.ok) {
@@ -914,7 +941,7 @@ export async function POST(req: Request) {
     actor,
     cookieHeader: req.headers.get("cookie"),
     kubeconfig,
-    request: parsed.data,
+    request,
     requestAbortSignal: req.signal,
   });
 }

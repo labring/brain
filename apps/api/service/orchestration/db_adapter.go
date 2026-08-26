@@ -15,6 +15,10 @@ func DBObjectFromCluster(cluster *unstructured.Unstructured) map[string]interfac
 	for key, value := range cluster.GetLabels() {
 		labels[key] = value
 	}
+	annotations := map[string]interface{}{}
+	for key, value := range cluster.GetAnnotations() {
+		annotations[key] = value
+	}
 	engine := strings.TrimSpace(cluster.GetLabels()[BrainDBEngineLabel])
 	if engine == "" {
 		engine = strings.TrimSpace(cluster.GetLabels()[DBProviderClusterDefinitionLabel])
@@ -44,6 +48,7 @@ func DBObjectFromCluster(cluster *unstructured.Unstructured) map[string]interfac
 	statusRaw, _ := cluster.Object["status"].(map[string]interface{})
 	phase := dbPhase(statusRaw)
 	metadata := map[string]interface{}{
+		"annotations":       annotations,
 		"creationTimestamp": cluster.GetCreationTimestamp().String(),
 		"labels":            labels,
 		"name":              cluster.GetName(),

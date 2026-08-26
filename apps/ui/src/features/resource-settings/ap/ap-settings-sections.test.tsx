@@ -139,7 +139,7 @@ const CONFIG_FILES_EMPTY_STATE_RE =
 const CONFIG_FILE_PREVIEW_RE = /debug: false/;
 const STORAGE_SIZE_RE = /aria-label="Storage size"/;
 const CONFIG_FILE_MOUNT_PATH_RE = /\/etc\/app\/config\.yaml/;
-const STORAGE_SIZE_VALUE_RE = /20Gi/;
+const STORAGE_SIZE_VALUE_RE = /aria-label="Storage size"[^>]*value="20"/;
 const PENDING_AP_IMAGE_RE = /ghcr.io\/acme\/api:pending/;
 const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
 const MYSQL_DATABASE_URL_REFERENCE_RE = /\$\{\{mysql\.DATABASE_URL\}\}/;
