@@ -3597,17 +3597,12 @@ export function enterManagedDeploymentCompletionRequired(
   return { ...state, resumeMode: "completion-required" };
 }
 
-const MAX_COMPLETION_REQUIRED_TURNS = 2;
-
 async function continueManagedDeploymentAfterMissingControlNotification(input: {
   attempt: number;
   applying: boolean;
   lifecycleState: ManagedDeploymentLifecycleState;
   taskId: string;
 }): Promise<ManagedDeploymentLifecycleState> {
-  if (input.attempt > MAX_COMPLETION_REQUIRED_TURNS) {
-    throw deployFailureError("runner-error");
-  }
   await recordDeployTaskEvent(input.taskId, {
     kind: "deployment_task.gateway_completion_required",
     message:
@@ -3682,6 +3677,7 @@ async function runManagedDeploymentLifecycleCore(input: {
   let completionRequiredTurns = 0;
 
   while (true) {
+    throwIfDeploymentDeadlineElapsed(input.executionDeadlineAtMs);
     // No per-turn limit: every turn shares the same Agent execution window,
     // which is itself clamped to the 70-minute task deadline.
     const deadlineAtMs = input.executionDeadlineAtMs;
