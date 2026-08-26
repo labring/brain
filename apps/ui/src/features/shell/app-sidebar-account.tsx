@@ -514,10 +514,7 @@ export function AppSidebarAccount() {
         "group/account relative flex w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left transition-[height,margin] motion-reduce:transition-none",
         expanded
           ? "h-11 duration-300 ease-sidebar"
-          : // mt-1: the 24px avatar disc is optically taller than the 16px
-            // glyphs above, so the collapsed row takes a small top margin to
-            // even out the perceived gaps in the icon rail.
-            "mt-1 h-8 duration-200 ease-out"
+          : "h-8 duration-200 ease-out"
       )}
       data-slot="app-sidebar-account"
       type="button"

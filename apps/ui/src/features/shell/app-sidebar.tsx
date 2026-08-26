@@ -228,9 +228,7 @@ function AppSidebarGroupHeading({
     <div
       className={cn(
         "app-sidebar-heading relative shrink-0 overflow-hidden transition-[height] motion-reduce:transition-none",
-        expanded
-          ? "h-10 duration-300 ease-sidebar"
-          : "h-4 duration-200 ease-out"
+        expanded ? "h-6 duration-300 ease-sidebar" : "h-4 duration-200 ease-out"
       )}
     >
       <button
@@ -430,7 +428,10 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
   return (
     <>
       {groups.pinned.length > 0 ? (
-        <div className="shrink-0" data-slot="app-sidebar-pinned">
+        <div
+          className="shrink-0 pt-3 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:pt-0 motion-reduce:transition-none"
+          data-slot="app-sidebar-pinned"
+        >
           <AppSidebarGroupHeading
             collapsed={pinnedCollapsed}
             onToggle={() => setPinnedCollapsed((value) => !value)}
@@ -444,7 +445,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
             )}
           >
             <div className="min-h-0 overflow-hidden">
-              <div className="flex flex-col gap-0.5 group-data-[collapsible=icon]:gap-1.5">
+              <div className="flex flex-col gap-0.5 pt-0.5 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:pt-0 motion-reduce:transition-none">
                 {groups.pinned.map((project) => (
                   <AppSidebarProjectRow
                     ariaLabel={`Pinned project: ${project.name}`}
@@ -460,7 +461,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
         </div>
       ) : null}
       {groups.projects.length > 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col pt-3 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:pt-0 motion-reduce:transition-none">
           <AppSidebarGroupHeading
             collapsed={projectsCollapsed}
             onToggle={() => setProjectsCollapsed((value) => !value)}
@@ -477,7 +478,8 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
               className="min-h-0 overflow-y-auto [--scroll-fade-bottom:0px] [--scroll-fade-top:0px] [mask-image:linear-gradient(to_bottom,transparent,black_var(--scroll-fade-top),black_calc(100%-var(--scroll-fade-bottom)),transparent)] data-[at-bottom=false]:[--scroll-fade-bottom:10px] data-[at-top=false]:[--scroll-fade-top:10px]"
               ref={attachProjectsScroller}
             >
-              <div className="flex flex-col gap-0.5 py-1 group-data-[collapsible=icon]:gap-1.5">
+              {/* pb-1 is scroll-fade headroom, not list spacing */}
+              <div className="flex flex-col gap-0.5 pt-0.5 pb-1 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:pt-0 motion-reduce:transition-none">
                 {groups.projects.map((project) => (
                   <AppSidebarProjectRow
                     currentProjectId={currentProjectId}
@@ -551,7 +553,7 @@ function AppSidebarChrome({
     >
       {/* Collapsed rail: the account avatar disc is optically heavier than
           the stroke icons above it, so the rail takes extra bottom padding
-          (and the account row a top margin) to even out the perceived gaps. */}
+          to even out the perceived gap. */}
       <div className="flex h-full min-h-0 w-(--sidebar-width) flex-col px-2 py-2.5 transition-[padding] duration-200 ease-out group-data-[collapsible=icon]:pb-3.5 motion-reduce:transition-none">
         <SidebarHeader className="p-0">
           <AppSidebarHeader />
@@ -562,7 +564,11 @@ function AppSidebarChrome({
             className="flex min-h-0 flex-1 flex-col"
             id={APP_SIDEBAR_NAV_ID}
           >
-            <div className="pt-2">
+            {/* Spacing rule — Expanded: rows 2px apart, sections 12px
+                apart; Collapsed rail: rows 4px apart, sections 8px apart.
+                Every gap below is one of those four values (the account row
+                is the documented exception). */}
+            <div className="flex flex-col gap-0.5 pt-3 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:pt-2 motion-reduce:transition-none">
               <AppSidebarNavRow
                 active={projectsActive}
                 href="/project"
@@ -585,7 +591,7 @@ function AppSidebarChrome({
           </nav>
         </SidebarContent>
         <SidebarFooter className="p-0">
-          <div className="flex shrink-0 flex-col gap-0.5 pt-3 group-data-[collapsible=icon]:gap-2">
+          <div className="flex shrink-0 flex-col gap-0.5 pt-3 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:pt-2 motion-reduce:transition-none">
             <AppSidebarNavRow
               active={billingActive}
               href="/billing"
@@ -596,12 +602,10 @@ function AppSidebarChrome({
               onClick={recordBillingReturnRoute}
             />
             <AppSidebarDesktopReturn />
-            {/* The account row keeps 8px above it (footer gap + this
-                  margin): the avatar disc is visually heavier than the row
-                  glyphs, so it needs more breathing room than the 2px the
-                  tightened footer rows get. The collapsed rail spaces the
-                  account row itself (see AppSidebarAccount). */}
-            <div className="mt-1.5 group-data-[collapsible=icon]:mt-0">
+            {/* Account-row exception: the avatar disc is visually heavier
+                  than the row glyphs, so in both states it takes this extra
+                  margin on top of the footer gap. */}
+            <div className="mt-1">
               <AppSidebarAccount />
             </div>
           </div>
