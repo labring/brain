@@ -149,7 +149,18 @@ export function codexGatewayFailureDetails(
     };
   }
   if (error instanceof CodexGatewayTurnError) {
-    return { reason: "gateway-upstream-error" };
+    switch (error.status) {
+      case "cancelled":
+        return { reason: "cancelled" };
+      case "failed":
+        return { reason: "gateway-upstream-error" };
+      case "interrupted":
+        return { reason: "interrupted" };
+      case "unknown":
+        return { reason: "unknown" };
+      default:
+        return { reason: "unknown" };
+    }
   }
   if (
     (error instanceof DOMException && error.name === "TimeoutError") ||

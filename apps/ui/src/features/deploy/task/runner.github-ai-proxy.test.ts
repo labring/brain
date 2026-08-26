@@ -797,6 +797,18 @@ describe("Codex gateway failure classification", () => {
     });
   });
 
+  for (const [status, reason] of [
+    ["cancelled", "cancelled"],
+    ["interrupted", "interrupted"],
+    ["unknown", "unknown"],
+  ] as const) {
+    it(`preserves the ${status} Codex turn reason`, () => {
+      expect(
+        codexGatewayFailureDetails(new CodexGatewayTurnError(status))
+      ).toEqual({ reason });
+    });
+  }
+
   it("classifies fetch failures as unavailable", () => {
     expect(codexGatewayFailureDetails(new TypeError("fetch failed"))).toEqual({
       reason: "gateway-unavailable",
