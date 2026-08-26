@@ -285,12 +285,28 @@ function useUsageSlot<T>(
   const [justFilled, setJustFilled] = useState(false);
   const dataRef = useRef<T | null>(null);
   const seqRef = useRef(0);
+  // Pending flips during render (compare-and-set) the moment a refresh is
+  // (re)triggered — the skeleton's first frame, without an effect-time
+  // setState cascading a second render.
+  const [lastTrigger, setLastTrigger] = useState<{
+    active: boolean;
+    load: () => Promise<T | null>;
+  } | null>(null);
+  if (
+    lastTrigger == null ||
+    lastTrigger.active !== active ||
+    lastTrigger.load !== load
+  ) {
+    setLastTrigger({ active, load });
+    if (active) {
+      setPending(true);
+    }
+  }
   useEffect(() => {
     if (!active) {
       return;
     }
     const seq = ++seqRef.current;
-    setPending(true);
     load().then(
       (next) => {
         if (seqRef.current !== seq) {

@@ -34,6 +34,7 @@ import {
   type CSSProperties,
   memo,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -384,15 +385,24 @@ function AppSidebarProjectRow({
 // Edge state is written straight to the DOM so scroll ticks never re-render
 // the nav; same contract as SidePane's footer lift.
 function useScrollEdgeState() {
+  const scrollElRef = useRef<HTMLDivElement | null>(null);
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const attachScrollEl = useCallback((node: HTMLDivElement | null) => {
+    scrollElRef.current = node;
+    setScrollEl(node);
+  }, []);
   useEffect(() => {
     if (scrollEl == null) {
       return;
     }
     const sync = () => {
-      scrollEl.dataset.atTop = String(scrollEl.scrollTop <= 1);
-      scrollEl.dataset.atBottom = String(
-        scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1
+      const el = scrollElRef.current;
+      if (el == null) {
+        return;
+      }
+      el.dataset.atTop = String(el.scrollTop <= 1);
+      el.dataset.atBottom = String(
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 1
       );
     };
     sync();
@@ -409,7 +419,7 @@ function useScrollEdgeState() {
       observer?.disconnect();
     };
   }, [scrollEl]);
-  return setScrollEl;
+  return attachScrollEl;
 }
 
 const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
