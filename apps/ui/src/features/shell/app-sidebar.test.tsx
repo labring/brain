@@ -258,6 +258,9 @@ test("app sidebar defaults to Expanded and collapses from the header button", as
     assert.equal(collapse.getAttribute("aria-controls"), "app-sidebar-nav");
 
     await actAndDrain(() => {
+      // Activating the header button focuses it first (mouse or keyboard);
+      // the focus transfer only fires when focus sat inside the sidebar.
+      collapse.focus();
       collapse.click();
     });
 
@@ -280,6 +283,7 @@ test("collapsed logo slot expands the sidebar and moves focus to collapse", asyn
     );
     assert.ok(expand);
     await actAndDrain(() => {
+      expand.focus();
       expand.click();
     });
     assert.equal(sidebarState(), "expanded");
@@ -318,6 +322,72 @@ test("Cmd+B toggles the sidebar except inside an editable target", async () => {
     });
     assert.equal(sidebarState(), "collapsed");
     input.remove();
+  });
+});
+
+test("Cmd+B from outside the sidebar leaves focus where it is", async () => {
+  await withSidebar(async () => {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.focus();
+    await actAndDrain(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "b",
+          metaKey: true,
+          bubbles: true,
+        })
+      );
+    });
+    assert.equal(sidebarState(), "collapsed");
+    // The toggle happened, but focus was in the main view — the rail's
+    // expand control must not steal it.
+    assert.equal(document.activeElement, outside);
+    outside.remove();
+  });
+});
+
+test("a collapsed Projects group reopens on the icon rail and restores on expand", async () => {
+  await withSidebar(async () => {
+    const heading = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        ".app-sidebar-heading button"
+      ),
+    ].find((button) => button.textContent?.includes("Projects"));
+    assert.ok(heading);
+    const grid = heading.closest(".app-sidebar-heading")?.nextElementSibling;
+    assert.ok(grid);
+
+    await actAndDrain(() => {
+      heading.click();
+    });
+    assert.equal(heading.getAttribute("aria-expanded"), "false");
+    assert.ok(grid.className.includes("grid-rows-[0fr]"));
+
+    // Collapse the sidebar: the rail heading is inert, so the group must
+    // render open or its project icons would be unrecoverable.
+    const collapse = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Collapse sidebar"]'
+    );
+    assert.ok(collapse);
+    await actAndDrain(() => {
+      collapse.click();
+    });
+    assert.equal(sidebarState(), "collapsed");
+    assert.equal(heading.getAttribute("aria-expanded"), "true");
+    assert.ok(grid.className.includes("grid-rows-[1fr]"));
+    assert.ok(document.querySelector('a[href="/project/beta"]'));
+
+    // Expanding brings the session collapse flag back.
+    const expand = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Expand sidebar"]'
+    );
+    assert.ok(expand);
+    await actAndDrain(() => {
+      expand.click();
+    });
+    assert.equal(heading.getAttribute("aria-expanded"), "false");
+    assert.ok(grid.className.includes("grid-rows-[0fr]"));
   });
 });
 
@@ -382,10 +452,12 @@ test("the active project uses aria-current and locked copy is present", async ()
 
 test("tooltips belong to Collapsed; Expanded uses a title fallback", async () => {
   await withSidebar(async () => {
+    // The row keeps one DOM tree across expand/collapse: it is always a
+    // mounted tooltip trigger, disabled while expanded. `title` is the
+    // expanded-state fallback and drops away once the tooltip takes over.
     const expandedRow = document.querySelector('a[href="/project/beta"]');
     assert.ok(expandedRow);
     assert.equal(expandedRow.getAttribute("title"), "Beta");
-    assert.notEqual(expandedRow.getAttribute("data-slot"), "tooltip-trigger");
 
     const collapse = document.querySelector<HTMLButtonElement>(
       '[aria-label="Collapse sidebar"]'

@@ -432,10 +432,18 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
   projectIconKeys: ProjectIconKeyMap | undefined;
 }) {
   const attachProjectsScroller = useScrollEdgeState();
+  const { state } = useSidebar();
   // Collapse state is deliberately session-only: a hidden Pinned group that
   // silently persists across reloads is easy to forget about.
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [projectsCollapsed, setProjectsCollapsed] = useState(false);
+  // On the icon rail the headings are inert, so a collapsed group would
+  // strand its project icons with no way to reopen them. Render every group
+  // open while the sidebar is collapsed; the session flags come back when
+  // it expands.
+  const iconMode = state === "collapsed";
+  const pinnedHidden = pinnedCollapsed && !iconMode;
+  const projectsHidden = projectsCollapsed && !iconMode;
   return (
     <>
       {groups.pinned.length > 0 ? (
@@ -444,7 +452,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
           data-slot="app-sidebar-pinned"
         >
           <AppSidebarGroupHeading
-            collapsed={pinnedCollapsed}
+            collapsed={pinnedHidden}
             onToggle={() => setPinnedCollapsed((value) => !value)}
           >
             Pinned
@@ -452,7 +460,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
           <div
             className={cn(
               "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
-              pinnedCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+              pinnedHidden ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
             )}
           >
             <div className="min-h-0 overflow-hidden">
@@ -474,7 +482,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
       {groups.projects.length > 0 ? (
         <div className="flex min-h-0 flex-1 flex-col pt-3 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:pt-0 motion-reduce:transition-none">
           <AppSidebarGroupHeading
-            collapsed={projectsCollapsed}
+            collapsed={projectsHidden}
             onToggle={() => setProjectsCollapsed((value) => !value)}
           >
             Projects
@@ -482,7 +490,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
           <div
             className={cn(
               "grid min-h-0 flex-1 transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
-              projectsCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+              projectsHidden ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
             )}
           >
             <div
@@ -517,6 +525,13 @@ function AppSidebarFocusTransfer() {
       return;
     }
     previousState.current = state;
+    // Only hand focus over when it was already inside the sidebar — the
+    // toggle button the user pressed goes inert after the flip. A
+    // Cmd/Ctrl+B from the canvas or main view must not yank focus into
+    // the rail.
+    if (!document.activeElement?.closest('[data-slot="sidebar"]')) {
+      return;
+    }
     const selector =
       state === "expanded"
         ? '[data-slot="app-sidebar-collapse"]'
