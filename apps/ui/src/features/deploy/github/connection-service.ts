@@ -1,7 +1,16 @@
 import "server-only";
 
 import { generateId } from "ai";
-import { and, eq, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 
 import {
   type AssistantPgTransaction,
@@ -32,6 +41,12 @@ import {
 } from "./user-token-crypto";
 
 const GITHUB_API = "https://api.github.com";
+
+export interface GithubConnectionRevocationFence {
+  namespace: string;
+  revokingAt: Date;
+  workspaceUserUid: string;
+}
 
 export interface GithubRepoDTO {
   description: string | null;
@@ -177,6 +192,8 @@ export async function upsertGithubOauthConnectionInTransaction(
       id: generateId(),
       namespace,
       ownerIdentityVersion: input.owner.ownerIdentityVersion,
+      revocationWorkspaceActor: null,
+      revokingAt: null,
       scope: input.token.scope,
       tokenType: input.token.tokenType,
       updatedAt: now,
@@ -186,15 +203,17 @@ export async function upsertGithubOauthConnectionInTransaction(
       set: {
         accessTokenCiphertext: encryptGithubUserToken(input.token.accessToken),
         githubLogin,
+        revocationWorkspaceActor: null,
         scope: input.token.scope,
         tokenType: input.token.tokenType,
+        revokingAt: null,
         updatedAt: now,
       },
       target: [
         githubOauthConnections.namespace,
         githubOauthConnections.workspaceActor,
       ],
-      targetWhere: sql`${githubOauthConnections.ownerIdentityVersion} = ${sql.raw(String(CURRENT_GITHUB_OWNER_IDENTITY_VERSION))}`,
+      targetWhere: sql`${githubOauthConnections.ownerIdentityVersion} = ${sql.raw(String(CURRENT_GITHUB_OWNER_IDENTITY_VERSION))} AND ${githubOauthConnections.revokingAt} IS NULL`,
     })
     .returning();
   if (row == null) {
@@ -221,9 +240,22 @@ export async function getGithubConnectionStatusForOwner(
  * row and revive an authorization the user asked to forget.
  */
 export async function revokeGithubConnectionsForActor(
-  actor: VerifiedGithubConnectionActor
+  actor: VerifiedGithubConnectionActor,
+  fence?: GithubConnectionRevocationFence
 ): Promise<void> {
   const { legacyWorkspaceActor, userUid } = requireVerifiedActor(actor);
+  // Direct service callers fence on every explicit revoke. The HTTP handler
+  // passes its fence through after runtime cleanup so a reauthorization
+  // created during that cleanup remains active (revoking_at = NULL).
+  const effectiveFence =
+    fence ?? (await beginGithubConnectionRevocationForActor(actor));
+  const namespace = normalizeAssistantNamespace(actor.owner.namespace);
+  if (
+    normalizeAssistantNamespace(effectiveFence.namespace) !== namespace ||
+    effectiveFence.workspaceUserUid.trim() !== userUid
+  ) {
+    throw new Error("GitHub connection revocation fence does not match actor.");
+  }
   await getAssistantDb()
     .delete(githubOauthConnections)
     .where(
@@ -241,7 +273,72 @@ export async function revokeGithubConnectionsForActor(
             )
           ),
           legacyConnectionOf(legacyWorkspaceActor)
-        )
+        ),
+        // Only delete rows fenced by beginGithubConnectionRevocationForActor.
+        // A new authorization created while cleanup was in flight remains active.
+        isNotNull(githubOauthConnections.revokingAt),
+        eq(githubOauthConnections.revocationWorkspaceActor, userUid),
+        lte(githubOauthConnections.revokingAt, effectiveFence.revokingAt)
+      )
+    );
+}
+
+/**
+ * Durably fences all current and legacy credentials before runtime cleanup.
+ * Reads and adoptions exclude fenced rows, while a concurrent reauthorization
+ * can safely create a fresh active row because the unique index only covers
+ * rows with revoking_at IS NULL.
+ */
+export async function beginGithubConnectionRevocationForActor(
+  actor: VerifiedGithubConnectionActor
+): Promise<GithubConnectionRevocationFence> {
+  const { legacyWorkspaceActor, userUid } = requireVerifiedActor(actor);
+  const namespace = normalizeAssistantNamespace(actor.owner.namespace);
+  const now = new Date();
+  await getAssistantDb()
+    .update(githubOauthConnections)
+    .set({
+      revocationWorkspaceActor: userUid,
+      revokingAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(githubOauthConnections.namespace, namespace),
+        or(
+          and(
+            eq(githubOauthConnections.workspaceActor, userUid),
+            eq(
+              githubOauthConnections.ownerIdentityVersion,
+              actor.owner.ownerIdentityVersion
+            )
+          ),
+          legacyConnectionOf(legacyWorkspaceActor)
+        ),
+        isNull(githubOauthConnections.revokingAt)
+      )
+    );
+  return { namespace, revokingAt: now, workspaceUserUid: userUid };
+}
+
+/** Finalizes only rows fenced for this namespace/UID; active reauth survives. */
+export async function finalizeGithubConnectionRevocation(input: {
+  namespace: string;
+  workspaceUserUid: string;
+}): Promise<void> {
+  await getAssistantDb()
+    .delete(githubOauthConnections)
+    .where(
+      and(
+        eq(
+          githubOauthConnections.namespace,
+          normalizeAssistantNamespace(input.namespace)
+        ),
+        eq(
+          githubOauthConnections.revocationWorkspaceActor,
+          input.workspaceUserUid.trim()
+        ),
+        isNotNull(githubOauthConnections.revokingAt)
       )
     );
 }
@@ -335,7 +432,8 @@ export async function adoptLegacyGithubConnectionForOwner(
               githubOauthConnections.namespace,
               normalizeAssistantNamespace(actor.owner.namespace)
             ),
-            legacyConnectionOf(legacyWorkspaceActor)
+            legacyConnectionOf(legacyWorkspaceActor),
+            isNull(githubOauthConnections.revokingAt)
           )
         );
     });
@@ -378,7 +476,8 @@ function githubOauthOwnerWhere(owner: GithubConnectionOwnerIdentity) {
       normalizeAssistantNamespace(owner.namespace)
     ),
     eq(githubOauthConnections.workspaceActor, owner.userUid.trim()),
-    eq(githubOauthConnections.ownerIdentityVersion, owner.ownerIdentityVersion)
+    eq(githubOauthConnections.ownerIdentityVersion, owner.ownerIdentityVersion),
+    isNull(githubOauthConnections.revokingAt)
   );
 }
 
@@ -397,7 +496,12 @@ async function materializeGithubOAuthToken(
   await getAssistantDb()
     .update(githubOauthConnections)
     .set({ lastUsedAt: now, updatedAt: now })
-    .where(eq(githubOauthConnections.id, row.id));
+    .where(
+      and(
+        eq(githubOauthConnections.id, row.id),
+        isNull(githubOauthConnections.revokingAt)
+      )
+    );
   return decryptGithubUserToken(row.accessTokenCiphertext);
 }
 

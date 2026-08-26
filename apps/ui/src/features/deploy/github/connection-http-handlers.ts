@@ -13,6 +13,7 @@ import {
   encodedKubeconfigFromRequest,
   type VerifyKubeconfigNamespace,
 } from "@/lib/request-kubeconfig-auth";
+import type { GithubConnectionRevocationFence } from "./connection-service";
 import {
   type GithubConnectionOwnerIdentity,
   type VerifiedGithubConnectionActor,
@@ -25,6 +26,17 @@ export type GithubConnectionStatusLookup = (
 
 /** Forgets the actor's connection across both generations (ADR-0057). */
 export type GithubConnectionDelete = (
+  actor: VerifiedGithubConnectionActor,
+  fence?: GithubConnectionRevocationFence
+) => Promise<void>;
+
+/** Marks credentials revoked before touching long-lived runtimes. */
+export type GithubConnectionRevocationBegin = (
+  actor: VerifiedGithubConnectionActor
+) => Promise<GithubConnectionRevocationFence>;
+
+/** Clears credentials from all active Chat Devbox runtimes before revoke. */
+export type GithubRuntimeCredentialCleanup = (
   actor: VerifiedGithubConnectionActor
 ) => Promise<void>;
 
@@ -249,7 +261,9 @@ export function createGithubRepositoryListHandler(input: {
 
 export function createGithubConnectionDeleteHandler(input: {
   appTokenConfig?: AppTokenVerificationConfig | null;
+  beginRevocation?: GithubConnectionRevocationBegin;
   deleteConnection: GithubConnectionDelete;
+  clearRuntimeCredentials?: GithubRuntimeCredentialCleanup;
   observeFingerprint?: ObserveIdentityFingerprint;
   verify?: VerifyKubeconfigNamespace;
 }): (request: Request) => Promise<Response> {
@@ -258,10 +272,17 @@ export function createGithubConnectionDeleteHandler(input: {
     if (actor instanceof Response) {
       return actor;
     }
+    // Fence both generations before touching long-lived runtimes. Any sync
+    // that starts after this point cannot read or adopt the old token.
+    const fence = await input.beginRevocation?.(actor);
     // Disconnect forgets both the uid-keyed row and any inert legacy row
     // (ADR-0057) — deleting only the current owner would let a later entry
     // request adopt the legacy row and revive a forgotten authorization.
-    await input.deleteConnection(actor);
+    // Clear long-lived runtime files first. If cleanup fails, keep the OAuth
+    // row so the caller can retry without leaving a newly revoked connection
+    // partially active in an existing Devbox.
+    await input.clearRuntimeCredentials?.(actor);
+    await input.deleteConnection(actor, fence);
     return Response.json({ connection: null });
   };
 }

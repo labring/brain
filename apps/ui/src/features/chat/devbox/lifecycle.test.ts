@@ -8,19 +8,24 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
 import type { AssistantPgDatabase } from "../persistence/db";
-import { assistantDevboxRuntimes } from "../persistence/schema";
+import {
+  assistantDevboxRuntimes,
+  githubOauthConnections,
+} from "../persistence/schema";
 
 mock.module("server-only", () => ({}));
 
-const { recordChatDevboxActivity, runChatDevboxLifecycleSweep } = await import(
-  "./lifecycle"
-);
+const {
+  listChatDevboxRuntimesForActor,
+  recordChatDevboxActivity,
+  runChatDevboxLifecycleSweep,
+} = await import("./lifecycle");
 
 const DAY_MS = 24 * 60 * 60_000;
 const NOW = new Date("2026-08-05T00:00:00.000Z");
 let pglite: PGlite;
 let db: AssistantPgDatabase;
-const lifecycleSchema = { assistantDevboxRuntimes };
+const lifecycleSchema = { assistantDevboxRuntimes, githubOauthConnections };
 let testDb: ReturnType<typeof drizzle<typeof lifecycleSchema>>;
 
 beforeAll(async () => {
@@ -41,6 +46,67 @@ afterAll(async () => {
 async function clearRuntimes() {
   await db.delete(assistantDevboxRuntimes);
 }
+
+test("lifecycle retries fenced GitHub credential cleanup", async () => {
+  await clearRuntimes();
+  await db.delete(githubOauthConnections);
+  await db.insert(githubOauthConnections).values({
+    accessTokenCiphertext: "ciphertext",
+    githubLogin: "alice",
+    id: "pending-cleanup",
+    namespace: "ns-test",
+    ownerIdentityVersion: 2,
+    revocationWorkspaceActor: "alice-uid",
+    revokingAt: NOW,
+    workspaceActor: "alice-uid",
+  });
+  const cleaned: Array<{ namespace: string; workspaceUserUid: string }> = [];
+
+  await runChatDevboxLifecycleSweep({
+    api: {
+      delete: () => Promise.resolve("deleted" as const),
+      pause: () => Promise.resolve("paused" as const),
+    },
+    cleanupGithubCredentials: async (input) => {
+      cleaned.push(input);
+      await db.delete(githubOauthConnections);
+    },
+    db,
+    now: () => NOW,
+  });
+
+  assert.deepEqual(cleaned, [
+    { namespace: "ns-test", workspaceUserUid: "alice-uid" },
+  ]);
+  assert.equal((await db.select().from(githubOauthConnections)).length, 0);
+});
+
+test("runtime credential lookup is isolated to the requested namespace", async () => {
+  await clearRuntimes();
+  await db.insert(assistantDevboxRuntimes).values([
+    {
+      namespace: "ns-a",
+      pauseDueAt: NOW,
+      runtimeName: "runtime-a",
+      upstreamId: "upstream-ns-a",
+      workspaceActor: "same-uid",
+    },
+    {
+      namespace: "ns-b",
+      pauseDueAt: NOW,
+      runtimeName: "runtime-b",
+      upstreamId: "upstream-ns-b",
+      workspaceActor: "same-uid",
+    },
+  ]);
+
+  const runtimes = await listChatDevboxRuntimesForActor("same-uid", db, "ns-a");
+
+  assert.deepEqual(
+    runtimes.map((runtime) => `${runtime.namespace}/${runtime.runtimeName}`),
+    ["ns-a/runtime-a"]
+  );
+});
 
 test("activity resets a paused runtime before external resume", async () => {
   await clearRuntimes();

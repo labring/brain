@@ -17,6 +17,7 @@ import {
   createGithubRepositoryListHandler,
   type GithubAppInstallSessionCreate,
   type GithubConnectionDelete,
+  type GithubConnectionRevocationBegin,
   type GithubConnectionStatusLookup,
   type GithubLegacyConnectionAdoption,
   type GithubOAuthCallbackCancel,
@@ -152,6 +153,7 @@ function createWorkspaceActorHttpHarness(input: {
   const authorizationTokens: string[] = [];
   const callbackWrites: CallbackWrite[] = [];
   const deletes: Parameters<GithubConnectionDelete>[0][] = [];
+  const deleteFences: Parameters<GithubConnectionDelete>[1][] = [];
   const lookups: Parameters<GithubConnectionStatusLookup>[0][] = [];
   const oauthSessions: Parameters<GithubOAuthSessionCreate>[0][] = [];
   const oauthStates = new Map<string, StoredOAuthState>();
@@ -199,9 +201,15 @@ function createWorkspaceActorHttpHarness(input: {
     },
   });
   const deleteHandler = createGithubConnectionDeleteHandler({
+    beginRevocation: (async (actor) => ({
+      namespace: actor.owner.namespace,
+      revokingAt: new Date("2026-08-26T00:00:00Z"),
+      workspaceUserUid: actor.owner.userUid,
+    })) satisfies GithubConnectionRevocationBegin,
     /** Mirrors the persistence seam: forget the uid row and any legacy row. */
-    deleteConnection: (actor) => {
+    deleteConnection: (actor, fence) => {
       deletes.push(actor);
+      deleteFences.push(fence);
       connections.delete(ownerKey(actor.owner));
       connections.delete(
         `${actor.owner.namespace}:${actor.legacyWorkspaceActor}:1`
@@ -389,6 +397,7 @@ function createWorkspaceActorHttpHarness(input: {
         })
       ),
     deletes,
+    deleteFences,
     getStatus: async (request: {
       appToken?: string | null;
       encodedKubeconfig?: string;
@@ -582,12 +591,20 @@ test("disconnect ignores legacy userId and removes only the verified actor's con
   assert.equal(harness.connections.has("shared:bob-cr-uid:2"), false);
   assert.deepEqual(harness.deletes, [
     {
+      accountUserId: null,
       legacyWorkspaceActor: "bob-cr",
       owner: {
         namespace: "shared",
         ownerIdentityVersion: 2,
         userUid: "bob-cr-uid",
       },
+    },
+  ]);
+  assert.deepEqual(harness.deleteFences, [
+    {
+      namespace: "shared",
+      revokingAt: new Date("2026-08-26T00:00:00Z"),
+      workspaceUserUid: "bob-cr-uid",
     },
   ]);
 });
@@ -610,6 +627,7 @@ test("OAuth session creation binds state to the verified actor and ignores legac
   assert.deepEqual(harness.oauthSessions, [
     {
       actor: {
+        accountUserId: null,
         legacyWorkspaceActor: "alice-cr",
         owner: {
           namespace: "shared",
@@ -642,6 +660,7 @@ test("GitHub App install session uses the same verified owner authorization", as
   assert.deepEqual(harness.appInstallSessions, [
     {
       actor: {
+        accountUserId: null,
         legacyWorkspaceActor: "alice-cr",
         owner: {
           namespace: "shared",
@@ -1061,6 +1080,7 @@ test("a legacy generation-1 connection is adopted to the uid owner on first veri
   assert.equal(harness.connections.has("shared:alice-cr-uid:2"), true);
   assert.deepEqual(harness.adoptions, [
     {
+      accountUserId: null,
       legacyWorkspaceActor: "alice-cr",
       owner: {
         namespace: "shared",
@@ -1069,6 +1089,7 @@ test("a legacy generation-1 connection is adopted to the uid owner on first veri
       },
     },
     {
+      accountUserId: null,
       legacyWorkspaceActor: "alice-cr",
       owner: {
         namespace: "shared",
@@ -1119,6 +1140,7 @@ test("another member's verified entry never adopts a foreign legacy connection",
   assert.equal(harness.connections.has("shared:alice-cr:1"), true);
   assert.deepEqual(harness.adoptions, [
     {
+      accountUserId: null,
       legacyWorkspaceActor: "bob-cr",
       owner: {
         namespace: "shared",
@@ -1146,6 +1168,7 @@ test("disconnect forgets the actor's connection across both generations", async 
   assert.equal(harness.connections.size, 0);
   assert.deepEqual(harness.deletes, [
     {
+      accountUserId: null,
       legacyWorkspaceActor: "alice-cr",
       owner: {
         namespace: "shared",

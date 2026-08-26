@@ -67,6 +67,8 @@ import {
 } from "@/features/chat/runtime/model";
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
+import { adoptLegacyGithubConnectionForOwner } from "@/features/deploy/github/connection-service";
+import { CURRENT_GITHUB_OWNER_IDENTITY_VERSION } from "@/features/deploy/github/owner-identity";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
@@ -689,6 +691,17 @@ async function runChatPipeline(input: {
     }
     const { billing, clientFreeTier } = settled;
     ownedFreeTurnReservation = settled.reserved;
+
+    // GitHub connections created before the uid-keyed ownership migration are
+    // adopted lazily. Chat's bash/gh path must perform the same adoption as
+    // the deploy task path before its runtime credentials are synchronized.
+    await adoptLegacyGithubConnectionForOwner({
+      ...actor,
+      owner: {
+        ...actor.owner,
+        ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+      },
+    });
 
     // Adopt before the thread ensure: continuing a legacy crName-keyed
     // conversation must find the re-keyed row instead of refusing its id.

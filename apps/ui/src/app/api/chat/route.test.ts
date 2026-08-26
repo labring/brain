@@ -51,6 +51,10 @@ interface TestOwner {
 
 let activeLease: TestLease | null = null;
 let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
+let githubAdoptionCalls: {
+  legacyWorkspaceActor: string;
+  owner: TestOwner & { ownerIdentityVersion: number };
+}[] = [];
 let appendCalls: UIMessage[] = [];
 let connectionAvailable = true;
 let denyReservation: (() => void) | null = null;
@@ -377,6 +381,16 @@ mock.module("@/features/chat/persistence/service", () => ({
     return leaseRenewWait ?? Promise.resolve(lease);
   },
 }));
+mock.module("@/features/deploy/github/connection-service", () => ({
+  adoptLegacyGithubConnectionForOwner: (actor: {
+    legacyWorkspaceActor: string;
+    owner: TestOwner & { ownerIdentityVersion: number };
+  }) => {
+    githubAdoptionCalls.push(structuredClone(actor));
+    return Promise.resolve();
+  },
+  CURRENT_GITHUB_OWNER_IDENTITY_VERSION: 2,
+}));
 mock.module("@/features/chat/runtime/attach-tool-duration-metrics", () => ({
   attachToolDurationMetrics: (message: UIMessage) => message,
 }));
@@ -648,6 +662,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 beforeEach(() => {
   activeLease = null;
   adoptionCalls = [];
+  githubAdoptionCalls = [];
   appendCalls = [];
   connectionAvailable = true;
   denyReservation = null;
@@ -803,6 +818,16 @@ test("accepts and streams a canonical client-tool continuation", async () => {
     {
       legacyWorkspaceActor: WORKSPACE_ACTOR,
       owner: { namespace: NAMESPACE, userUid: `${WORKSPACE_ACTOR}-uid` },
+    },
+  ]);
+  expect(githubAdoptionCalls).toEqual([
+    {
+      legacyWorkspaceActor: WORKSPACE_ACTOR,
+      owner: {
+        namespace: NAMESPACE,
+        ownerIdentityVersion: 2,
+        userUid: `${WORKSPACE_ACTOR}-uid`,
+      },
     },
   ]);
 });

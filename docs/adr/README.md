@@ -37,6 +37,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0063 — Derive Resource-Deletion Dates Client-Side from Subscription Expiry](0063-derive-resource-deletion-dates-client-side.md)
 - [0064 — Pin the Current Billing Region by Deployment-Declared Domain](0064-pin-the-current-billing-region-by-deployment-declared-domain.md)
 - [0065 — Gate Free Chat Turns on the Active Free Trial and block on exhaustion](0065-gate-free-chat-turns-on-the-active-free-trial-and-block-on-exhaustion.md) *(replaces the deleted ADR-0033)*
+- [0066 — Materialize GitHub Credentials in Chat Devbox Login Shells](0066-materialize-github-credentials-in-chat-devbox.md)
 
 ## Conventions
 

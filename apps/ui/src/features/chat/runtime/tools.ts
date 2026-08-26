@@ -72,7 +72,11 @@ export async function buildChatToolset({
 }): Promise<ChatToolset> {
   const [skillIndex, { tools: bashTools }] = await Promise.all([
     discoverPublicSkills(),
-    createChatBashTool({ kubeconfig, namespace: kubernetesNamespace }),
+    createChatBashTool({
+      kubeconfig,
+      namespace: kubernetesNamespace,
+      workspaceUserUid,
+    }),
   ]);
   const deployTaskTools = createDeployTaskTools({
     assistantContext,

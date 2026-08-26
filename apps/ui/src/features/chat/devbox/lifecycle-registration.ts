@@ -8,6 +8,7 @@ export async function recordChatDevboxActivity(
     pauseDueAt: Date;
     runtimeName: string;
     upstreamId: string;
+    workspaceActor?: string;
   },
   signal?: AbortSignal
 ): Promise<void> {

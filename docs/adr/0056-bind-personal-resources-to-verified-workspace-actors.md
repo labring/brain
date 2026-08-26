@@ -2,6 +2,12 @@
 
 ## Status
 
+Partially superseded by ADR-0059 and ADR-0066. The ownership and identity
+decisions are revised by those ADRs; the runtime-credential deferral below
+does not apply to Chat Devbox login-shell GitHub credentials.
+
+## Status
+
 Accepted; the actor subject key, identity trust source, and migration mode are
 revised by ADR-0059.
 
@@ -104,14 +110,16 @@ overlap. Users reauthorize GitHub and create new conversations after the
 migration. This is a forward-only security change and should be deployed in a
 maintenance window or with a Recreate rollout.
 
-### Defer runtime credential materialisation
+### Defer deployment-task runtime credential materialisation
 
-This decision changes authorization, ownership, and credential selection; it
-does not change how a selected OAuth token reaches the deployment runtime. The
-runner still materialises it in `GITHUB_TOKEN`, authenticated clone commands,
-and the GHCR pull-secret path. Replacing that delivery with a task-scoped grant
-or credential broker is explicitly deferred, so Deployment Credential Binding
-must not be described as runtime credential isolation.
+This decision changes authorization, ownership, and credential selection for
+deployment tasks; it does not change how a selected OAuth token reaches the
+deployment runtime. The runner still materialises it in `GITHUB_TOKEN`,
+authenticated clone commands, and the GHCR pull-secret path. Replacing that
+delivery with a task-scoped grant or credential broker remains deferred, so
+Deployment Credential Binding must not be described as runtime credential
+isolation. Chat Devbox login-shell materialisation is a separate, explicitly
+accepted path under ADR-0066.
 
 ## Considered Options
 

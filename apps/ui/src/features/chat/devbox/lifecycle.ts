@@ -2,10 +2,14 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { DevboxApiError, deleteDevbox, pauseDevbox } from "@/lib/devbox/client";
 import { type AssistantPgDatabase, getAssistantDb } from "../persistence/db";
-import { assistantDevboxRuntimes } from "../persistence/schema";
+import {
+  assistantDevboxRuntimes,
+  githubOauthConnections,
+} from "../persistence/schema";
+import { normalizeAssistantNamespace } from "../persistence/types";
 
 const DELETE_AFTER_PAUSE_MS = 24 * 60 * 60_000;
 const DEVBOX_OPERATION_TIMEOUT_MS = 10_000;
@@ -51,6 +55,11 @@ interface ChatDevboxLifecycleApi {
 
 export interface ChatDevboxLifecycleContext {
   api: ChatDevboxLifecycleApi;
+  /** Best-effort retry for OAuth rows fenced by a failed disconnect cleanup. */
+  cleanupGithubCredentials?: (input: {
+    namespace: string;
+    workspaceUserUid: string;
+  }) => Promise<void>;
   db: AssistantPgDatabase;
   now?: () => Date;
 }
@@ -66,6 +75,42 @@ interface ClaimedChatDevboxRuntime {
   namespace: string;
   runtimeName: string;
   upstreamId: string;
+}
+
+export interface ChatDevboxRuntimeRecord {
+  namespace: string;
+  runtimeName: string;
+  upstreamId: string;
+  workspaceActor: string;
+}
+
+export async function listChatDevboxRuntimesForActor(
+  workspaceActor: string,
+  db: AssistantPgDatabase = getAssistantDb(),
+  namespace?: string
+): Promise<ChatDevboxRuntimeRecord[]> {
+  const actor = workspaceActor.trim();
+  if (actor === "") {
+    return [];
+  }
+  const filters = [eq(assistantDevboxRuntimes.workspaceActor, actor)];
+  if (namespace != null && namespace.trim() !== "") {
+    filters.push(
+      eq(
+        assistantDevboxRuntimes.namespace,
+        normalizeAssistantNamespace(namespace)
+      )
+    );
+  }
+  return await db
+    .select({
+      namespace: assistantDevboxRuntimes.namespace,
+      runtimeName: assistantDevboxRuntimes.runtimeName,
+      upstreamId: assistantDevboxRuntimes.upstreamId,
+      workspaceActor: assistantDevboxRuntimes.workspaceActor,
+    })
+    .from(assistantDevboxRuntimes)
+    .where(and(...filters));
 }
 
 function isMissingDevboxError(error: unknown): boolean {
@@ -107,6 +152,7 @@ export async function recordChatDevboxActivity(
     pauseDueAt: Date;
     runtimeName: string;
     upstreamId: string;
+    workspaceActor?: string;
   },
   db: AssistantPgDatabase = getAssistantDb(),
   signal?: AbortSignal
@@ -116,6 +162,18 @@ export async function recordChatDevboxActivity(
   while (true) {
     signal?.throwIfAborted();
     const now = new Date();
+    const workspaceActor = input.workspaceActor?.trim() ?? "";
+    const updateValues = {
+      cleanupLeaseExpiresAt: null,
+      cleanupLeaseOwner: null,
+      deleteDueAt: null,
+      namespace: input.namespace,
+      pausedAt: null,
+      pauseDueAt: input.pauseDueAt,
+      runtimeName: input.runtimeName,
+      updatedAt: now,
+      ...(workspaceActor === "" ? {} : { workspaceActor }),
+    };
     const changed = await db
       .insert(assistantDevboxRuntimes)
       .values({
@@ -123,19 +181,11 @@ export async function recordChatDevboxActivity(
         pauseDueAt: input.pauseDueAt,
         runtimeName: input.runtimeName,
         upstreamId: input.upstreamId,
+        workspaceActor,
         updatedAt: now,
       })
       .onConflictDoUpdate({
-        set: {
-          cleanupLeaseExpiresAt: null,
-          cleanupLeaseOwner: null,
-          deleteDueAt: null,
-          namespace: input.namespace,
-          pausedAt: null,
-          pauseDueAt: input.pauseDueAt,
-          runtimeName: input.runtimeName,
-          updatedAt: now,
-        },
+        set: updateValues,
         setWhere: or(
           isNull(assistantDevboxRuntimes.cleanupLeaseOwner),
           isNull(assistantDevboxRuntimes.cleanupLeaseExpiresAt),
@@ -320,6 +370,53 @@ async function runConcurrentWave<T>(
   };
 }
 
+async function retryGithubCredentialCleanups(
+  ctx: ChatDevboxLifecycleContext
+): Promise<void> {
+  if (ctx.cleanupGithubCredentials == null) {
+    return;
+  }
+  const rows = await ctx.db
+    .select({
+      namespace: githubOauthConnections.namespace,
+      workspaceUserUid: githubOauthConnections.revocationWorkspaceActor,
+    })
+    .from(githubOauthConnections)
+    .where(
+      and(
+        isNotNull(githubOauthConnections.revokingAt),
+        isNotNull(githubOauthConnections.revocationWorkspaceActor)
+      )
+    );
+  const targets = new Map(
+    rows.flatMap((row) =>
+      row.workspaceUserUid == null || row.workspaceUserUid.trim() === ""
+        ? []
+        : [
+            [
+              `${row.namespace}\0${row.workspaceUserUid}`,
+              {
+                namespace: row.namespace,
+                workspaceUserUid: row.workspaceUserUid,
+              },
+            ] as const,
+          ]
+    )
+  );
+  await Promise.all(
+    [...targets.values()].map(async (target) => {
+      try {
+        await ctx.cleanupGithubCredentials?.(target);
+      } catch (error) {
+        console.error(
+          "[chat-devbox-lifecycle] GitHub credential cleanup retry failed:",
+          error
+        );
+      }
+    })
+  );
+}
+
 async function processClaimedWaves(
   claim: (
     leaseOwner: string,
@@ -450,6 +547,7 @@ export async function runChatDevboxLifecycleSweep(
   ctx: ChatDevboxLifecycleContext
 ): Promise<ChatDevboxLifecycleSweepSummary> {
   const now = ctx.now?.() ?? new Date();
+  await retryGithubCredentialCleanups(ctx);
   const pauses = await sweepPauses(ctx, now);
   const deletes = await sweepDeletes(ctx, now);
   return {
@@ -471,6 +569,20 @@ export function startChatDevboxLifecycleRuntime(): void {
   }
   const ctx: ChatDevboxLifecycleContext = {
     api: serverApi,
+    cleanupGithubCredentials: async (input) => {
+      const [
+        { clearChatGithubCredentialsForActor },
+        { finalizeGithubConnectionRevocation },
+      ] = await Promise.all([
+        import("./github-credentials"),
+        import("@/features/deploy/github/connection-service"),
+      ]);
+      await clearChatGithubCredentialsForActor({
+        namespace: input.namespace,
+        workspaceUserUid: input.workspaceUserUid,
+      });
+      await finalizeGithubConnectionRevocation(input);
+    },
     db: getAssistantDb(),
   };
   const sweep = () => {

@@ -43,6 +43,7 @@ await testDb.insert(identityFingerprints).values([
 
 const {
   adoptLegacyGithubConnectionForOwner,
+  beginGithubConnectionRevocationForActor,
   getGithubConnectionStatusForOwner,
   revokeGithubConnectionsForActor,
   upsertGithubOauthConnectionInTransaction,
@@ -352,6 +353,72 @@ test("disconnect forgets both generations so the inert legacy row cannot resurre
     await getGithubConnectionStatusForOwner(owner("alice-uid", "forget")),
     null
   );
+});
+
+test("revocation fences reads and does not delete a reauthorization created during cleanup", async () => {
+  await upsertConnection({
+    githubLogin: "before-revoke",
+    namespace: "revocation-race",
+    userUid: "alice-uid",
+  });
+
+  const actor = {
+    legacyWorkspaceActor: "alice-cr",
+    owner: owner("alice-uid", "revocation-race"),
+  };
+  const fence = await beginGithubConnectionRevocationForActor(actor);
+  assert.equal(
+    await getGithubConnectionStatusForOwner(
+      owner("alice-uid", "revocation-race")
+    ),
+    null
+  );
+
+  await upsertConnection({
+    githubLogin: "after-revoke",
+    namespace: "revocation-race",
+    userUid: "alice-uid",
+  });
+  await revokeGithubConnectionsForActor(actor, fence);
+
+  const status = await getGithubConnectionStatusForOwner(
+    owner("alice-uid", "revocation-race")
+  );
+  assert.equal(status?.accountLogin, "after-revoke");
+});
+
+test("a retrying disconnect fences a reauthorization left behind by a failed cleanup", async () => {
+  await upsertConnection({
+    githubLogin: "before-failed-cleanup",
+    namespace: "revocation-retry",
+    userUid: "alice-uid",
+  });
+  const actor = {
+    legacyWorkspaceActor: "alice-cr",
+    owner: owner("alice-uid", "revocation-retry"),
+  };
+
+  // The first DELETE fenced the old credential, but runtime cleanup failed,
+  // so the fenced row remains while the user authorizes again.
+  await beginGithubConnectionRevocationForActor(actor);
+  await upsertConnection({
+    githubLogin: "after-failed-cleanup",
+    namespace: "revocation-retry",
+    userUid: "alice-uid",
+  });
+
+  // A second DELETE must fence the new active row as well, then remove both
+  // fenced generations after cleanup succeeds.
+  const retryFence = await beginGithubConnectionRevocationForActor(actor);
+  await revokeGithubConnectionsForActor(actor, retryFence);
+
+  assert.equal(
+    await getGithubConnectionStatusForOwner(
+      owner("alice-uid", "revocation-retry")
+    ),
+    null
+  );
+  assert.deepEqual(await selectRows("revocation-retry"), []);
 });
 
 test("adoption refuses a uid tombstoned by a merge, keeping the legacy row adoptable", async () => {

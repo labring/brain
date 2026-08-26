@@ -222,5 +222,7 @@ product need, that is the moment to add it.
 This decision revises ADR-0056's actor subject key, identity trust source, and
 migration mode; ADR-0047's conversation owner key; and ADR-0036's connection
 owner key and identity generation. ADR-0056's verified-actor boundary, its
-ownership enforcement and fail-closed semantics, and its deferral of runtime
-credential isolation all stand.
+ownership enforcement, and its fail-closed semantics stand. Deployment-task
+credential delivery remains deferred as described there; Chat Devbox
+login-shell GitHub credential materialisation is separately decided by
+ADR-0066.

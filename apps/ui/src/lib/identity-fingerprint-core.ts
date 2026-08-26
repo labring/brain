@@ -7,6 +7,7 @@ import type {
 } from "@/features/chat/persistence/db";
 import {
   assistantChats,
+  assistantDevboxRuntimes,
   githubAppInstallSessions,
   githubOauthConnections,
   identityFingerprints,
@@ -230,6 +231,7 @@ async function rekeyPersonalResources(
   lifecycleEventsRekeyed: number;
   profilesReleased: number;
   profilesRekeyed: number;
+  devboxRuntimesRekeyed: number;
 }> {
   const identityUidCanonicalizationsRekeyed = await rekeyCanonicalIdentityUids(
     tx,
@@ -261,6 +263,12 @@ async function rekeyPersonalResources(
     .set({ workspaceActor: input.survivorUserUid })
     .where(eq(assistantChats.workspaceActor, input.tombstoneUserUid))
     .returning({ id: assistantChats.id });
+
+  const devboxRuntimesRekeyed = await tx
+    .update(assistantDevboxRuntimes)
+    .set({ workspaceActor: input.survivorUserUid })
+    .where(eq(assistantDevboxRuntimes.workspaceActor, input.tombstoneUserUid))
+    .returning({ upstreamId: assistantDevboxRuntimes.upstreamId });
 
   const rekeyedDeployAttributionProvenance = await tx
     .update(deployTasks)
@@ -357,7 +365,15 @@ async function rekeyPersonalResources(
   );
   const rekeyedConnections = await tx
     .update(githubOauthConnections)
-    .set({ updatedAt: new Date(), workspaceActor: input.survivorUserUid })
+    .set({
+      revocationWorkspaceActor: sql`CASE
+        WHEN ${githubOauthConnections.revocationWorkspaceActor} = ${input.tombstoneUserUid}
+          THEN ${input.survivorUserUid}
+        ELSE ${githubOauthConnections.revocationWorkspaceActor}
+      END`,
+      updatedAt: new Date(),
+      workspaceActor: input.survivorUserUid,
+    })
     .where(
       and(
         tombstoneConnectionWhere,
@@ -419,6 +435,7 @@ async function rekeyPersonalResources(
     connectionsReleased: releasedConnections.length,
     connectionsRekeyed: rekeyedConnections.length,
     conversations: conversations.length,
+    devboxRuntimesRekeyed: devboxRuntimesRekeyed.length,
     deployAttributionProvenanceRekeyed:
       rekeyedDeployAttributionProvenance.length,
     identityUidCanonicalizationsRekeyed,

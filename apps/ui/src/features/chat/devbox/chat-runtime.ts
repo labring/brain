@@ -14,6 +14,12 @@ import {
 } from "@/lib/devbox/client";
 import { getDevboxDefaultImage } from "@/lib/devbox/config";
 import type { DevboxInfo } from "@/lib/devbox/types";
+import {
+  CHAT_GITHUB_PROFILE_PATH,
+  redactChatGithubToken,
+  syncChatGithubCredentials,
+  wrapChatGithubCommand,
+} from "./github-credentials";
 import { recordChatDevboxActivity } from "./lifecycle-registration";
 
 const DEVBOX_NAME_PREFIX = "sealai-chat";
@@ -30,6 +36,8 @@ const DEVBOX_WARMUP_TIMEOUT_SECONDS = 30;
 export interface ChatDevboxRuntimeOptions {
   kubeconfig: string;
   namespace: string;
+  /** Verified global user UID; absent only for unauthenticated warmup. */
+  workspaceUserUid?: string;
 }
 
 export interface ChatDevboxRuntimeSummary {
@@ -196,6 +204,23 @@ function writeFileCommand(path: string, content: string): string {
   ].join("\n");
 }
 
+function writeAtomicFileCommand(path: string, content: string): string {
+  const encoded = Buffer.from(content, "utf8").toString("base64");
+  const quotedPath = shellQuote(path);
+  return [
+    "set -euo pipefail",
+    `mkdir -p -- "$(dirname -- ${quotedPath})"`,
+    `temp_path="$(mktemp -- ${shellQuote(`${path}.tmp.XXXXXX`)})"`,
+    "trap 'rm -f -- \"$temp_path\"' EXIT",
+    `base64 -d > "$temp_path" <<'EOF'`,
+    encoded,
+    "EOF",
+    `chmod 600 -- "$temp_path"`,
+    `mv -f -- "$temp_path" ${quotedPath}`,
+    "trap - EXIT",
+  ].join("\n");
+}
+
 async function runDevboxCommand(
   authNamespace: string,
   name: string,
@@ -249,7 +274,11 @@ async function assertDevboxKubectlReady(
 async function ensureChatDevbox(
   options: ChatDevboxRuntimeOptions,
   signal?: AbortSignal
-): Promise<{ name: string; skippedExisting: boolean }> {
+): Promise<{
+  name: string;
+  skippedExisting: boolean;
+  githubToken: string | null;
+}> {
   signal?.throwIfAborted();
   const kubeconfig = normalizeKubeconfig(options.kubeconfig);
   const authNamespace = options.namespace;
@@ -264,6 +293,7 @@ async function ensureChatDevbox(
       pauseDueAt: new Date(pauseAt),
       runtimeName: name,
       upstreamId: upstreamID,
+      workspaceActor: options.workspaceUserUid,
     },
     signal
   );
@@ -273,13 +303,18 @@ async function ensureChatDevbox(
   if (existing != null) {
     await ensureRunningDevbox(authNamespace, existing.name, signal);
     await refreshLease(authNamespace, existing.name, pauseAt, signal);
+    const github = await syncGithubCredentials(options, existing.name, signal);
     await assertDevboxKubectlReady(
       authNamespace,
       existing.name,
       options.namespace,
       signal
     );
-    return { name: existing.name, skippedExisting: true };
+    return {
+      githubToken: github,
+      name: existing.name,
+      skippedExisting: true,
+    };
   }
 
   signal?.throwIfAborted();
@@ -306,13 +341,45 @@ async function ensureChatDevbox(
   );
 
   await waitForRunningDevbox(authNamespace, name, signal);
+  const github = await syncGithubCredentials(options, name, signal);
   await assertDevboxKubectlReady(
     authNamespace,
     name,
     options.namespace,
     signal
   );
-  return { name, skippedExisting: false };
+  return { githubToken: github, name, skippedExisting: false };
+}
+
+async function syncGithubCredentials(
+  options: ChatDevboxRuntimeOptions,
+  name: string,
+  signal?: AbortSignal
+): Promise<string | null> {
+  const workspaceUserUid = options.workspaceUserUid?.trim() ?? "";
+  if (workspaceUserUid === "") {
+    return null;
+  }
+  const result = await syncChatGithubCredentials({
+    namespace: options.namespace,
+    signal,
+    workspaceUserUid,
+    writeProfile: async (content, writeSignal) => {
+      const response = await runDevboxCommand(
+        options.namespace,
+        name,
+        writeAtomicFileCommand(CHAT_GITHUB_PROFILE_PATH, content),
+        DEVBOX_WRITE_TIMEOUT_SECONDS,
+        writeSignal
+      );
+      if (response.exitCode !== 0) {
+        throw new Error(
+          `Devbox GitHub credential write failed: ${response.stderr || response.stdout}`.trim()
+        );
+      }
+    },
+  });
+  return result.token;
 }
 
 export async function bootstrapChatDevboxIfNeeded(
@@ -331,7 +398,11 @@ export function createChatDevboxSandbox(
 ): ChatDevboxSandbox {
   const abortSignalStorage = new AsyncLocalStorage<AbortSignal | undefined>();
   let runtimePromise:
-    | Promise<{ name: string; skippedExisting: boolean }>
+    | Promise<{
+        name: string;
+        skippedExisting: boolean;
+        githubToken: string | null;
+      }>
     | undefined;
 
   const getRuntime = async (signal?: AbortSignal) => {
@@ -355,18 +426,18 @@ export function createChatDevboxSandbox(
     async executeCommand(command) {
       const signal = getInvocationSignal();
       signal?.throwIfAborted();
-      const { name } = await getRuntime(signal);
+      const { name, githubToken } = await getRuntime(signal);
       const result = await runDevboxCommand(
         options.namespace,
         name,
-        command,
+        wrapChatGithubCommand(command),
         DEVBOX_COMMAND_TIMEOUT_SECONDS,
         signal
       );
       return {
         exitCode: result.exitCode,
-        stderr: result.stderr,
-        stdout: result.stdout,
+        stderr: redactChatGithubToken(result.stderr, githubToken),
+        stdout: redactChatGithubToken(result.stdout, githubToken),
       };
     },
     async getDevboxName() {
@@ -378,7 +449,7 @@ export function createChatDevboxSandbox(
     async readFile(path) {
       const signal = getInvocationSignal();
       signal?.throwIfAborted();
-      const { name } = await getRuntime(signal);
+      const { name, githubToken } = await getRuntime(signal);
       const result = await runDevboxCommand(
         options.namespace,
         name,
@@ -391,7 +462,7 @@ export function createChatDevboxSandbox(
           `Devbox file read failed: ${result.stderr || result.stdout}`.trim()
         );
       }
-      return result.stdout;
+      return redactChatGithubToken(result.stdout, githubToken);
     },
     async runWithAbortSignal(signal, operation) {
       return await abortSignalStorage.run(signal, operation);

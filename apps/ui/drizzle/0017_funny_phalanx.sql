@@ -1,0 +1,1 @@
+ALTER TABLE "sealai_assistant"."github_oauth_connections" ADD COLUMN "revocation_workspace_actor" text;

@@ -243,6 +243,8 @@ export interface CreateChatBashToolRuntimeOptions {
   kubeconfig: string;
   /** Authoritative Kubernetes namespace for Devbox permission checks. */
   namespace: string;
+  /** Verified global user UID used to materialize GitHub credentials. */
+  workspaceUserUid?: string;
 }
 
 export type CreateChatBashToolOptions = Omit<CreateBashToolOptions, "sandbox"> &
@@ -261,6 +263,7 @@ export async function createChatBashTool(
   const lazySandbox = createChatDevboxSandbox({
     kubeconfig,
     namespace,
+    workspaceUserUid: options.workspaceUserUid,
   });
   const toolkit = await createBashTool({
     ...bashToolOptions,

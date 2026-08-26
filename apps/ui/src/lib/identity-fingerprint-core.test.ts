@@ -76,6 +76,8 @@ function seedConnection(input: {
   id: string;
   namespace: string;
   ownerIdentityVersion?: number;
+  revocationWorkspaceActor?: string | null;
+  revokingAt?: Date;
   workspaceActor: string;
 }) {
   return db.insert(githubOauthConnections).values({
@@ -84,6 +86,10 @@ function seedConnection(input: {
     id: input.id,
     namespace: input.namespace,
     ownerIdentityVersion: input.ownerIdentityVersion ?? 2,
+    ...(input.revocationWorkspaceActor === undefined
+      ? {}
+      : { revocationWorkspaceActor: input.revocationWorkspaceActor }),
+    ...(input.revokingAt === undefined ? {} : { revokingAt: input.revokingAt }),
     workspaceActor: input.workspaceActor,
   });
 }
@@ -491,6 +497,57 @@ test("where the survivor already reauthorized, that connection wins and the tomb
   );
   assert.equal(telemetry?.attributionSubjectsRekeyed, 0);
   assert.equal(telemetry?.attributionSubjectsReleased, 1);
+});
+
+test("a merge re-keys pending revoke metadata and its runtime ledger to the survivor", async () => {
+  const revokingAt = new Date("2026-08-20T00:00:00Z");
+  await observe({
+    crName: "pending-revoke-cr",
+    mintedAt: 10_500,
+    userUid: "pending-revoke-tombstone",
+  });
+  await seedConnection({
+    githubLogin: "pending-revoke-github",
+    id: "pending-revoke-connection",
+    namespace: "pending-revoke",
+    revocationWorkspaceActor: "pending-revoke-tombstone",
+    revokingAt,
+    workspaceActor: "pending-revoke-tombstone",
+  });
+  await db.insert(assistantDevboxRuntimes).values({
+    namespace: "pending-revoke",
+    pauseDueAt: revokingAt,
+    runtimeName: "pending-revoke-runtime",
+    upstreamId: "pending-revoke-runtime-id",
+    workspaceActor: "pending-revoke-tombstone",
+  });
+
+  assert.deepEqual(
+    await observe({
+      crName: "pending-revoke-cr",
+      mintedAt: 10_600,
+      userUid: "pending-revoke-survivor",
+    }),
+    { outcome: "merge" }
+  );
+
+  const [connection] = await db
+    .select({
+      revocationWorkspaceActor: githubOauthConnections.revocationWorkspaceActor,
+      revokingAt: githubOauthConnections.revokingAt,
+      workspaceActor: githubOauthConnections.workspaceActor,
+    })
+    .from(githubOauthConnections)
+    .where(eq(githubOauthConnections.id, "pending-revoke-connection"));
+  assert.equal(connection?.workspaceActor, "pending-revoke-survivor");
+  assert.equal(connection?.revocationWorkspaceActor, "pending-revoke-survivor");
+  assert.equal(connection?.revokingAt?.toISOString(), revokingAt.toISOString());
+
+  const [runtime] = await db
+    .select({ workspaceActor: assistantDevboxRuntimes.workspaceActor })
+    .from(assistantDevboxRuntimes)
+    .where(eq(assistantDevboxRuntimes.upstreamId, "pending-revoke-runtime-id"));
+  assert.equal(runtime?.workspaceActor, "pending-revoke-survivor");
 });
 
 test("a merge re-keys pending current-generation authorization sessions and leaves legacy ones", async () => {

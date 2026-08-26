@@ -101,6 +101,8 @@ export const assistantDevboxRuntimes = ns.table(
   {
     upstreamId: text("upstream_id").primaryKey(),
     namespace: text("namespace").notNull(),
+    /** Verified global user UID that last used this runtime (ADR-0059). */
+    workspaceActor: text("workspace_actor").notNull().default(""),
     runtimeName: text("runtime_name").notNull(),
     pauseDueAt: timestamp("pause_due_at", {
       mode: "date",
@@ -130,6 +132,9 @@ export const assistantDevboxRuntimes = ns.table(
     index("assistant_devbox_runtimes_delete_due_idx")
       .on(table.deleteDueAt)
       .where(sql`${table.deleteDueAt} IS NOT NULL`),
+    index("assistant_devbox_runtimes_workspace_actor_idx").on(
+      table.workspaceActor
+    ),
   ]
 );
 
@@ -239,6 +244,12 @@ export const githubOauthConnections = ns.table(
     ownerIdentityVersion: integer("owner_identity_version")
       .notNull()
       .default(0),
+    revokingAt: timestamp("revoking_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    /** UID whose runtime credentials must be cleared before final deletion. */
+    revocationWorkspaceActor: text("revocation_workspace_actor"),
     githubLogin: text("github_login").notNull(),
     accessTokenCiphertext: text("access_token_ciphertext").notNull(),
     tokenType: text("token_type").notNull().default("bearer"),
@@ -260,7 +271,7 @@ export const githubOauthConnections = ns.table(
     uniqueIndex("github_oauth_connections_current_owner_unique_idx")
       .on(table.namespace, table.workspaceActor)
       .where(
-        sql`${table.ownerIdentityVersion} = ${sql.raw(String(CURRENT_GITHUB_OWNER_IDENTITY_VERSION))}`
+        sql`${table.ownerIdentityVersion} = ${sql.raw(String(CURRENT_GITHUB_OWNER_IDENTITY_VERSION))} AND ${table.revokingAt} IS NULL`
       ),
   ]
 );
