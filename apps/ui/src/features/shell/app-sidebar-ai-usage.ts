@@ -6,6 +6,10 @@ import {
 import type { FreeChatTurnsUsage } from "@/features/chat/persistence/client";
 import type { AppSidebarQuotaRow } from "@/features/shell/app-sidebar-quota";
 
+/** The AI slot's user-visible labels — the popover skeleton reuses them. */
+export const FREE_TRIAL_MESSAGES_ROW_LABEL = "Free trial messages";
+export const AI_CREDITS_ROW_LABEL = "AI Credits";
+
 /**
  * The account popover's AI usage row — the Billing Plan view's credits slot
  * (ADR-0065) in sidebar form: an Active Free Trial shows Free Chat Turns
@@ -23,7 +27,7 @@ export function aiUsageRowFromFreeTurns(
   }
   const used = Math.max(0, usage.used);
   return {
-    label: "Free trial messages",
+    label: FREE_TRIAL_MESSAGES_ROW_LABEL,
     percent: Math.min(100, (used / usage.limit) * 100),
     value: `${used}/${usage.limit}`,
   };
@@ -37,7 +41,7 @@ export function aiUsageRowFromCredits(
     return null;
   }
   return {
-    label: "AI Credits",
+    label: AI_CREDITS_ROW_LABEL,
     percent: aiCreditsPercentUsed(
       credits.usedMicroUnits,
       credits.totalMicroUnits

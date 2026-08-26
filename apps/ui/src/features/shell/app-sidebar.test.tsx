@@ -42,17 +42,31 @@ const explorer = {
 
 // The account section reads the subscription through the real billing proxy
 // loader; the fetch stub serves these fixtures. null = the route fails and
-// the section must degrade.
+// the section must degrade. A `hold` promise, when set, delays the answer so
+// a test can observe the in-flight skeleton state.
 const billing = {
+  hold: null as Promise<void> | null,
   subscription: null as Record<string, unknown> | null,
 };
-const workspaceQuota = { items: [] as unknown[] };
+const workspaceQuota = {
+  hold: null as Promise<void> | null,
+  items: [] as unknown[] | null,
+};
 // The popover's AI usage row fixtures. null = the route fails and the row
 // must be omitted alone.
 const aiUsage = {
   credits: null as Record<string, unknown> | null,
   freeTurns: null as Record<string, unknown> | null,
+  hold: null as Promise<void> | null,
 };
+
+function deferred(): { promise: Promise<void>; release: () => void } {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
 
 const ACCOUNT_USER = { id: "usr-Kx92mQ", name: "Ada Lovelace" };
 const ACCOUNT_NAME_RE = /Ada Lovelace/;
@@ -76,34 +90,34 @@ function proSubscription(
   };
 }
 
-function billingFetchStub(input: unknown): Promise<Response> {
+async function billingFetchStub(input: unknown): Promise<Response> {
   const url = requestUrl(input);
   if (url === "/api/billing/regions") {
-    return Promise.resolve(
-      jsonResponse({ current: { domain: "billing.test", uid: "region-1" } })
-    );
+    return jsonResponse({
+      current: { domain: "billing.test", uid: "region-1" },
+    });
   }
   if (url === "/api/billing/subscription") {
+    await billing.hold;
     if (billing.subscription == null) {
-      return Promise.resolve(new Response("{}", { status: 500 }));
+      return new Response("{}", { status: 500 });
     }
-    return Promise.resolve(
-      jsonResponse({ subscription: billing.subscription })
-    );
+    return jsonResponse({ subscription: billing.subscription });
   }
   if (url === "/api/billing/workspace-quota") {
+    await aiUsage.hold;
     if (aiUsage.credits == null) {
-      return Promise.resolve(new Response("{}", { status: 500 }));
+      return new Response("{}", { status: 500 });
     }
-    return Promise.resolve(jsonResponse({ quota: aiUsage.credits }));
+    return jsonResponse({ quota: aiUsage.credits });
   }
   if (url.startsWith("/api/chat/free-turns")) {
     if (aiUsage.freeTurns == null) {
-      return Promise.resolve(new Response("{}", { status: 500 }));
+      return new Response("{}", { status: 500 });
     }
-    return Promise.resolve(jsonResponse(aiUsage.freeTurns));
+    return jsonResponse(aiUsage.freeTurns);
   }
-  return Promise.resolve(new Response("{}", { status: 404 }));
+  return new Response("{}", { status: 404 });
 }
 
 // Each scenario gets its own workspace so SWR's cache never replays another
@@ -150,7 +164,13 @@ mock.module("@/features/projects/explorer/use-projects-explorer", () => ({
 mock.module("@labring/sealos-desktop-sdk/app", () => ({
   sealosApp: {
     getHostConfig: async () => ({ cloud: { domain: "https://desktop.test" } }),
-    getWorkspaceQuota: async () => ({ quota: workspaceQuota.items }),
+    getWorkspaceQuota: async () => {
+      await workspaceQuota.hold;
+      if (workspaceQuota.items == null) {
+        throw new Error("workspace quota unavailable");
+      }
+      return { quota: workspaceQuota.items };
+    },
     runEvents: async () => undefined,
   },
 }));
@@ -192,10 +212,13 @@ async function withSidebar(
       rendered?.unmount();
     }).catch(() => undefined);
     explorer.states = { pinnedProjectIds: ["alpha"], projects };
+    billing.hold = null;
     billing.subscription = null;
+    workspaceQuota.hold = null;
     workspaceQuota.items = [];
     aiUsage.credits = null;
     aiUsage.freeTurns = null;
+    aiUsage.hold = null;
     restoreGlobal(fetchOverride);
     restoreActEnvironment(previousActEnvironment);
     await dom.restore();
@@ -607,6 +630,194 @@ test("the trial popover shows Free trial messages and turns danger at exhaustion
     },
     true,
     () => hydrateAccountAtoms("ws-account-free-turns")
+  );
+});
+
+test("the first open holds quota skeletons while the AI slot fills alone", async () => {
+  billing.subscription = proSubscription();
+  aiUsage.credits = {
+    hard: { ai_quota: 3_000_000 },
+    used: { ai_quota: 2_400_000 },
+  };
+  const gate = deferred();
+  workspaceQuota.hold = gate.promise;
+  workspaceQuota.items = [
+    { limit: 4000, type: "cpu", used: 1900 },
+    { limit: 8192, type: "memory", used: 4096 },
+    { limit: 51_200, type: "storage", used: 12_288 },
+    { limit: 32, type: "pod", used: 14 },
+    { limit: 8, type: "nodeport", used: 3 },
+  ];
+  await withSidebar(
+    async () => {
+      const row = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-account"]'
+      );
+      assert.ok(row);
+      await actAndDrain(() => {
+        row.click();
+      });
+
+      const popover = document.querySelector('[data-slot="popover-content"]');
+      assert.ok(popover);
+      // The quota snapshot is still in flight: real labels, shimmer values.
+      const skeletons = [
+        ...popover.querySelectorAll('[data-slot="app-sidebar-quota-skeleton"]'),
+      ];
+      assert.deepEqual(
+        skeletons.map((skeleton) => skeleton.textContent?.trim()),
+        ["CPU", "Mem", "Storage", "Pods", "Ports"]
+      );
+      assert.equal(
+        popover.querySelectorAll('[data-slot="app-sidebar-quota-row"]').length,
+        0
+      );
+      // The AI slot committed independently — it never waits for the quota.
+      const aiRow = popover.querySelector(
+        '[data-slot="app-sidebar-ai-usage-row"]'
+      );
+      assert.match(aiRow?.textContent ?? "", AI_CREDITS_VALUE_RE);
+
+      await actAndDrain(() => {
+        gate.release();
+      });
+      assert.equal(
+        popover.querySelectorAll('[data-slot="app-sidebar-quota-skeleton"]')
+          .length,
+        0
+      );
+      assert.equal(
+        popover.querySelectorAll('[data-slot="app-sidebar-quota-row"]').length,
+        5
+      );
+    },
+    true,
+    () => hydrateAccountAtoms("ws-account-quota-skeleton")
+  );
+});
+
+test("a slow AI side keeps its own skeleton without holding the quota bars", async () => {
+  billing.subscription = proSubscription();
+  const gate = deferred();
+  aiUsage.hold = gate.promise;
+  aiUsage.credits = {
+    hard: { ai_quota: 3_000_000 },
+    used: { ai_quota: 2_400_000 },
+  };
+  workspaceQuota.items = [{ limit: 4000, type: "cpu", used: 1000 }];
+  await withSidebar(
+    async () => {
+      const row = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-account"]'
+      );
+      assert.ok(row);
+      await actAndDrain(() => {
+        row.click();
+      });
+
+      const popover = document.querySelector('[data-slot="popover-content"]');
+      assert.ok(popover);
+      // All five quota rows landed without waiting for the AI side.
+      assert.equal(
+        popover.querySelectorAll('[data-slot="app-sidebar-quota-row"]').length,
+        5
+      );
+      // The subscription is known, so the pending AI slot shows its real label.
+      const aiSkeleton = popover.querySelector(
+        '[data-slot="app-sidebar-ai-usage-skeleton"]'
+      );
+      assert.match(aiSkeleton?.textContent ?? "", AI_CREDITS_LABEL_RE);
+
+      await actAndDrain(() => {
+        gate.release();
+      });
+      assert.equal(
+        popover.querySelector('[data-slot="app-sidebar-ai-usage-skeleton"]'),
+        null
+      );
+      assert.match(
+        popover.querySelector('[data-slot="app-sidebar-ai-usage-row"]')
+          ?.textContent ?? "",
+        AI_CREDITS_VALUE_RE
+      );
+    },
+    true,
+    () => hydrateAccountAtoms("ws-account-ai-skeleton")
+  );
+});
+
+test("opening before the subscription answer keeps the AI slot pending, not absent", async () => {
+  const gate = deferred();
+  billing.hold = gate.promise;
+  billing.subscription = proSubscription();
+  aiUsage.credits = {
+    hard: { ai_quota: 3_000_000 },
+    used: { ai_quota: 2_400_000 },
+  };
+  workspaceQuota.items = [{ limit: 4000, type: "cpu", used: 1000 }];
+  await withSidebar(
+    async () => {
+      const row = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-account"]'
+      );
+      assert.ok(row);
+      await actAndDrain(() => {
+        row.click();
+      });
+
+      const popover = document.querySelector('[data-slot="popover-content"]');
+      assert.ok(popover);
+      // Unknown subscription: the slot is held by a label-less skeleton.
+      const aiSkeleton = popover.querySelector(
+        '[data-slot="app-sidebar-ai-usage-skeleton"]'
+      );
+      assert.ok(aiSkeleton);
+      assert.equal(aiSkeleton.textContent?.trim(), "");
+
+      // The answer lands mid-open: the row appears in the same session
+      // instead of being committed away as "not applicable".
+      await actAndDrain(() => {
+        gate.release();
+      });
+      assert.match(
+        popover.querySelector('[data-slot="app-sidebar-ai-usage-row"]')
+          ?.textContent ?? "",
+        AI_CREDITS_VALUE_RE
+      );
+    },
+    true,
+    () => hydrateAccountAtoms("ws-account-sub-pending")
+  );
+});
+
+test("a failed first load collapses the usage section instead of pinning skeletons", async () => {
+  billing.subscription = proSubscription();
+  aiUsage.credits = null;
+  workspaceQuota.items = null;
+  await withSidebar(
+    async () => {
+      const row = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-account"]'
+      );
+      assert.ok(row);
+      await actAndDrain(() => {
+        row.click();
+      });
+
+      const popover = document.querySelector('[data-slot="popover-content"]');
+      assert.ok(popover);
+      for (const slot of [
+        "app-sidebar-quota-skeleton",
+        "app-sidebar-quota-row",
+        "app-sidebar-ai-usage-skeleton",
+        "app-sidebar-ai-usage-row",
+      ]) {
+        assert.equal(popover.querySelector(`[data-slot="${slot}"]`), null);
+      }
+      assert.ok(popover.querySelector('a[href="/billing?mode=upgrade"]'));
+    },
+    true,
+    () => hydrateAccountAtoms("ws-account-usage-failed")
   );
 });
 

@@ -8,14 +8,25 @@ import {
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
 import { useSidebar } from "@workspace/ui/components/sidebar";
+import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { Check, Copy, Sparkles, User } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import useSWR from "swr";
 import { loadAiCredits } from "@/features/billing/billing-ai-credits";
-import { loadWorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
+import {
+  loadWorkspaceSubscriptionSummary,
+  type WorkspaceSubscriptionSummary,
+} from "@/features/billing/billing-plan-data";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { fetchFreeChatTurnsUsage } from "@/features/chat/persistence/client";
 import {
@@ -24,8 +35,10 @@ import {
   deriveAppSidebarAccountPresentation,
 } from "@/features/shell/app-sidebar-account-presentation";
 import {
+  AI_CREDITS_ROW_LABEL,
   aiUsageRowFromCredits,
   aiUsageRowFromFreeTurns,
+  FREE_TRIAL_MESSAGES_ROW_LABEL,
 } from "@/features/shell/app-sidebar-ai-usage";
 import {
   type AppSidebarQuotaRow,
@@ -129,11 +142,13 @@ function AppSidebarQuotaBar({ percent }: { percent: number | null }) {
 }
 
 function AppSidebarUsageRow({
+  className,
   label,
   labelClassName,
   row,
   slot,
 }: {
+  className?: string;
   label: string;
   labelClassName: string;
   row: AppSidebarQuotaRow;
@@ -142,7 +157,7 @@ function AppSidebarUsageRow({
   const tone = quotaUsageTone(row.percent);
   return (
     <div
-      className="flex items-center gap-2"
+      className={cn("flex items-center gap-2", className)}
       data-danger={tone === "danger" ? "true" : undefined}
       data-slot={slot}
       data-warning={tone === "warn" ? "true" : undefined}
@@ -161,6 +176,55 @@ function AppSidebarUsageRow({
       >
         {row.value}
       </span>
+    </div>
+  );
+}
+
+// The workspace quota rows as displayed, in their fixed order — the first-open
+// skeleton writes the real labels because only the values are unknown.
+const QUOTA_SKELETON_LABELS = [
+  "CPU",
+  "Mem",
+  "Storage",
+  "Pods",
+  "Ports",
+] as const;
+
+// Data replacing its skeleton fades in briefly; the geometry never moves.
+const USAGE_FILL_CLASS =
+  "animate-in fade-in duration-150 motion-reduce:animate-none";
+
+/**
+ * A usage row's first-open placeholder: the real label (or a shimmer block
+ * while the subscription is still unknown), the empty bar track, and a
+ * shimmer where the value lands. Same geometry as the filled row, so data
+ * arriving never moves the popover.
+ */
+function AppSidebarUsageRowSkeleton({
+  label,
+  labelClassName,
+  slot,
+}: {
+  label: string | null;
+  labelClassName?: string;
+  slot: string;
+}) {
+  return (
+    <div aria-hidden className="flex h-4 items-center gap-2" data-slot={slot}>
+      {label == null ? (
+        <Skeleton className="h-3 w-16 shrink-0 rounded-sm" />
+      ) : (
+        <span
+          className={cn(
+            "shrink-0 text-muted-foreground text-xs",
+            labelClassName
+          )}
+        >
+          {label}
+        </span>
+      )}
+      <span className="block h-1 min-w-0 flex-1 rounded-full bg-input/50" />
+      <Skeleton className="h-3 w-10 shrink-0 rounded-sm" />
     </div>
   );
 }
@@ -189,11 +253,165 @@ async function loadQuotaRows(): Promise<AppSidebarQuotaRow[]> {
   return formatWorkspaceQuotaRows(rawQuota.filter(isWorkspaceQuotaItem));
 }
 
+interface UsageSlotState<T> {
+  /** Latest fulfilled value; null = no snapshot yet, or "not applicable". */
+  data: T | null;
+  /** The commit replaced a visible skeleton this open — drives the fade. */
+  justFilled: boolean;
+  pending: boolean;
+  resetFade: () => void;
+  /** Some load fulfilled at least once — a fulfilled null is a snapshot too. */
+  settled: boolean;
+}
+
+/**
+ * One usage slot's load lifecycle: refresh while `active`, commit alone —
+ * the AI and quota slots ride different transports, so a slow or failed side
+ * never holds the other back. The sequence counter drops a settling load
+ * once a newer refresh superseded it; a rejection keeps the previous
+ * snapshot (on a first open the skeleton collapses instead of pinning).
+ */
+function useUsageSlot<T>(
+  active: boolean,
+  load: () => Promise<T | null>,
+  warnLabel: string
+): UsageSlotState<T> {
+  const [data, setData] = useState<T | null>(null);
+  const [pending, setPending] = useState(false);
+  const [settled, setSettled] = useState(false);
+  const [justFilled, setJustFilled] = useState(false);
+  const dataRef = useRef<T | null>(null);
+  const seqRef = useRef(0);
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const seq = ++seqRef.current;
+    setPending(true);
+    load().then(
+      (next) => {
+        if (seqRef.current !== seq) {
+          return;
+        }
+        setJustFilled(dataRef.current == null && next != null);
+        dataRef.current = next;
+        setData(next);
+        setSettled(true);
+        setPending(false);
+      },
+      (reason: unknown) => {
+        if (seqRef.current !== seq) {
+          return;
+        }
+        setPending(false);
+        console.warn(`[AppSidebarAccount] ${warnLabel} failed:`, reason);
+      }
+    );
+  }, [active, load, warnLabel]);
+  const resetFade = useCallback(() => setJustFilled(false), []);
+  return { data, justFilled, pending, resetFade, settled };
+}
+
+// While the subscription is unknown the AI slot is optimistically expected
+// (ADR-0065 decides its existence): collapsing a placeholder later beats
+// inserting a row that shoves the list down. A known PAYG never shows one.
+function deriveAiSlotPresentation(
+  credentialsReady: boolean,
+  subscriptionPending: boolean,
+  summary: WorkspaceSubscriptionSummary | undefined
+): { expected: boolean; skeletonLabel: string | null } {
+  const expected =
+    credentialsReady &&
+    (subscriptionPending || (summary != null && !summary.isPayg));
+  let skeletonLabel: string | null = null;
+  if (summary != null) {
+    skeletonLabel = summary.isActiveFreeTrial
+      ? FREE_TRIAL_MESSAGES_ROW_LABEL
+      : AI_CREDITS_ROW_LABEL;
+  }
+  return { expected, skeletonLabel };
+}
+
+function AppSidebarUsageSection({
+  aiJustFilled,
+  aiRow,
+  aiSkeletonLabel,
+  quotaJustFilled,
+  quotaRows,
+  showAiSkeleton,
+  showQuotaSkeleton,
+}: {
+  aiJustFilled: boolean;
+  aiRow: AppSidebarQuotaRow | null;
+  aiSkeletonLabel: string | null;
+  quotaJustFilled: boolean;
+  quotaRows: AppSidebarQuotaRow[] | null;
+  showAiSkeleton: boolean;
+  showQuotaSkeleton: boolean;
+}) {
+  let aiSlot: ReactNode = null;
+  if (aiRow != null) {
+    aiSlot = (
+      <AppSidebarUsageRow
+        className={aiJustFilled ? USAGE_FILL_CLASS : undefined}
+        label={aiRow.label}
+        labelClassName="whitespace-nowrap"
+        row={aiRow}
+        slot="app-sidebar-ai-usage-row"
+      />
+    );
+  } else if (showAiSkeleton) {
+    aiSlot = (
+      <AppSidebarUsageRowSkeleton
+        label={aiSkeletonLabel}
+        labelClassName="whitespace-nowrap"
+        slot="app-sidebar-ai-usage-skeleton"
+      />
+    );
+  }
+  let quotaSlot: ReactNode = null;
+  if (quotaRows != null && quotaRows.length > 0) {
+    quotaSlot = quotaRows.map((row) => (
+      <AppSidebarUsageRow
+        className={quotaJustFilled ? USAGE_FILL_CLASS : undefined}
+        key={row.label}
+        label={row.label === "Memory" ? "Mem" : row.label}
+        labelClassName="w-10"
+        row={row}
+        slot="app-sidebar-quota-row"
+      />
+    ));
+  } else if (showQuotaSkeleton) {
+    quotaSlot = QUOTA_SKELETON_LABELS.map((label) => (
+      <AppSidebarUsageRowSkeleton
+        key={label}
+        label={label}
+        labelClassName="w-10"
+        slot="app-sidebar-quota-skeleton"
+      />
+    ));
+  }
+  if (aiSlot == null && quotaSlot == null) {
+    return null;
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      {aiSlot}
+      {quotaSlot}
+    </div>
+  );
+}
+
 /**
  * The App Sidebar's account section (AIM-308): identity row with the plan
  * badge, opening the compact account popover — identity, copyable user ID,
  * status hint, workspace quota bars, and the upgrade entry. Replaces the old
  * Upgrade button as the sidebar's single quota surface.
+ *
+ * The usage section's first open renders skeleton rows at the final
+ * geometry; the AI and quota slots then fill independently. Reopens show the
+ * previous snapshot while a silent refresh lands. A slot whose first load
+ * fails collapses quietly instead of pinning its skeleton.
  */
 export function AppSidebarAccount() {
   const { state } = useSidebar();
@@ -209,7 +427,7 @@ export function AppSidebarAccount() {
 
   // Live billing data, not the login-time session snapshot: the badge and
   // hint follow the same subscription route as the Billing Area's hooks.
-  const { data: subscriptionSummary } = useSWR(
+  const { data: subscriptionSummary, isLoading: subscriptionPending } = useSWR(
     credentialsReady
       ? (["app-sidebar-subscription", workspace, kubeconfig, appToken] as const)
       : null,
@@ -226,12 +444,6 @@ export function AppSidebarAccount() {
   );
 
   const [open, setOpen] = useState(false);
-  // null = never loaded (or not applicable): the popover omits the section.
-  // A failed refresh keeps the previous snapshot instead of clearing it.
-  const [quotaRows, setQuotaRows] = useState<AppSidebarQuotaRow[] | null>(null);
-  // Same lifecycle as quotaRows, but the row rides a different data source
-  // than the workspace quota bars, so its failures degrade independently.
-  const [aiUsageRow, setAiUsageRow] = useState<AppSidebarQuotaRow | null>(null);
   // The Billing Plan view's credits-slot predicate (ADR-0065): Active Free
   // Trial → Free Chat Turns, other subscriptions → AI Credits, PAYG → none.
   const loadAiUsageRow = useCallback(async () => {
@@ -254,38 +466,28 @@ export function AppSidebarAccount() {
       await loadAiCredits({ appToken, kubeconfig, workspace })
     );
   }, [appToken, credentialsReady, kubeconfig, subscriptionSummary, workspace]);
+  // Both slots refresh on every open. The AI slot additionally waits for the
+  // subscription answer — it decides whether the row exists at all — so an
+  // unknown subscription is pending, never "not applicable": opening before
+  // it lands can no longer eat the row.
+  const quotaSlot = useUsageSlot(open, loadQuotaRows, "load workspace quota");
+  const aiSlot = useUsageSlot(
+    open && !subscriptionPending,
+    loadAiUsageRow,
+    "load AI usage"
+  );
+  const resetQuotaFade = quotaSlot.resetFade;
+  const resetAiFade = aiSlot.resetFade;
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       setOpen(nextOpen);
       if (!nextOpen) {
-        return;
+        // Reopens mount straight from the snapshot — no replay of the fade.
+        resetQuotaFade();
+        resetAiFade();
       }
-      // Both sides settle before a single commit, so the section lands in
-      // one frame — no AI row popping in above the quota bars. A rejection
-      // keeps that side's previous snapshot; a fulfilled null means "not
-      // applicable" and clears it.
-      Promise.allSettled([loadQuotaRows(), loadAiUsageRow()]).then(
-        ([quota, aiUsage]) => {
-          if (quota.status === "fulfilled") {
-            setQuotaRows(quota.value);
-          } else {
-            console.warn(
-              "[AppSidebarAccount] load workspace quota failed:",
-              quota.reason
-            );
-          }
-          if (aiUsage.status === "fulfilled") {
-            setAiUsageRow(aiUsage.value);
-          } else {
-            console.warn(
-              "[AppSidebarAccount] load AI usage failed:",
-              aiUsage.reason
-            );
-          }
-        }
-      );
     },
-    [loadAiUsageRow]
+    [resetAiFade, resetQuotaFade]
   );
   const [copied, copy] = useCopyFeedback();
 
@@ -293,6 +495,17 @@ export function AppSidebarAccount() {
   const secondLine = hint?.text ?? (userId === "" ? null : `ID: ${userId}`);
   const secondLineClass =
     hint == null ? "text-muted-foreground" : HINT_TEXT_CLASS[hint.tone];
+
+  const aiPresentation = deriveAiSlotPresentation(
+    credentialsReady,
+    subscriptionPending,
+    subscriptionSummary
+  );
+  const showAiSkeleton =
+    !aiSlot.settled &&
+    aiPresentation.expected &&
+    (subscriptionPending || aiSlot.pending);
+  const showQuotaSkeleton = quotaSlot.data == null && quotaSlot.pending;
 
   const trigger = (
     <button
@@ -403,27 +616,15 @@ export function AppSidebarAccount() {
             </div>
           )}
           <div aria-hidden className="h-px w-full bg-border" />
-          {aiUsageRow == null && quotaRows == null ? null : (
-            <div className="flex flex-col gap-1.5">
-              {aiUsageRow == null ? null : (
-                <AppSidebarUsageRow
-                  label={aiUsageRow.label}
-                  labelClassName="whitespace-nowrap"
-                  row={aiUsageRow}
-                  slot="app-sidebar-ai-usage-row"
-                />
-              )}
-              {quotaRows?.map((row) => (
-                <AppSidebarUsageRow
-                  key={row.label}
-                  label={row.label === "Memory" ? "Mem" : row.label}
-                  labelClassName="w-10"
-                  row={row}
-                  slot="app-sidebar-quota-row"
-                />
-              ))}
-            </div>
-          )}
+          <AppSidebarUsageSection
+            aiJustFilled={aiSlot.justFilled}
+            aiRow={aiSlot.data}
+            aiSkeletonLabel={aiPresentation.skeletonLabel}
+            quotaJustFilled={quotaSlot.justFilled}
+            quotaRows={quotaSlot.data}
+            showAiSkeleton={showAiSkeleton}
+            showQuotaSkeleton={showQuotaSkeleton}
+          />
           <Link
             className="flex h-8 items-center justify-center gap-1.5 rounded-md bg-input/40 font-medium text-neutral-50 text-sm transition-colors hover:bg-input/60"
             href="/billing?mode=upgrade"
