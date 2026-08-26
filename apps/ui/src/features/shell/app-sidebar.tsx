@@ -1,6 +1,5 @@
 "use client";
 
-import { sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { sealosLogoSrc } from "@workspace/ui/assets/brand";
 import { deviconSrc, devicons } from "@workspace/ui/assets/devicons";
 import { AppButton } from "@workspace/ui/components/app-button";
@@ -34,6 +33,9 @@ import {
   useState,
 } from "react";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
+import type { WorkspaceResourceQuotaRow as AppSidebarUpgradeUsageRow } from "@/features/billing/workspace-resource-quota";
+import { formatWorkspaceQuotaRows } from "@/features/billing/workspace-resource-quota";
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
@@ -45,11 +47,6 @@ import {
   createProjectSidebarShortcutItems,
   type ProjectSidebarShortcutItem,
 } from "@/features/shell/app-sidebar.shortcuts";
-import {
-  type AppSidebarUpgradeUsageRow,
-  formatWorkspaceQuotaRows,
-  type WorkspaceQuotaItem,
-} from "@/features/shell/app-sidebar-upgrade";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
@@ -122,28 +119,11 @@ const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
 const EMPTY_UPGRADE_USAGE_ROWS = formatWorkspaceQuotaRows([]);
 
-function isWorkspaceQuotaItem(value: unknown): value is WorkspaceQuotaItem {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const item = value as { limit?: unknown; type?: unknown; used?: unknown };
-  return (
-    (item.type === "cpu" ||
-      item.type === "memory" ||
-      item.type === "storage" ||
-      item.type === "pod" ||
-      item.type === "nodeport") &&
-    typeof item.used === "number" &&
-    typeof item.limit === "number"
-  );
-}
-
-async function loadWorkspaceQuotaRows(): Promise<AppSidebarUpgradeUsageRow[]> {
-  const snapshot = await sealosApp.getWorkspaceQuota();
-  const rawQuota: readonly unknown[] = Array.isArray(snapshot.quota)
-    ? snapshot.quota
-    : [];
-  return formatWorkspaceQuotaRows(rawQuota.filter(isWorkspaceQuotaItem));
+async function loadWorkspaceQuotaRows(
+  namespace: string
+): Promise<AppSidebarUpgradeUsageRow[]> {
+  const snapshot = await loadWorkspaceQuotaSnapshot(namespace);
+  return formatWorkspaceQuotaRows(snapshot?.items ?? []);
 }
 
 type AppSidebarLinkButtonProps = Pick<
@@ -219,23 +199,29 @@ function AppSidebarDesktopReturn() {
   );
 }
 
-function AppSidebarUpgrade() {
+function AppSidebarUpgrade({ namespace }: { namespace: string }) {
   const [open, setOpen] = useState(false);
   const [usageRows, setUsageRows] = useState<AppSidebarUpgradeUsageRow[]>(
     EMPTY_UPGRADE_USAGE_ROWS
   );
-  const handleOpenChange = useCallback((nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) {
-      return;
-    }
-    loadWorkspaceQuotaRows()
-      .then(setUsageRows)
-      .catch((error: unknown) => {
-        console.warn("[AppSidebarUpgrade] load workspace quota failed:", error);
-        setUsageRows(EMPTY_UPGRADE_USAGE_ROWS);
-      });
-  }, []);
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      setOpen(nextOpen);
+      if (!nextOpen) {
+        return;
+      }
+      loadWorkspaceQuotaRows(namespace)
+        .then(setUsageRows)
+        .catch((error: unknown) => {
+          console.warn(
+            "[AppSidebarUpgrade] load workspace quota failed:",
+            error
+          );
+          setUsageRows(EMPTY_UPGRADE_USAGE_ROWS);
+        });
+    },
+    [namespace]
+  );
 
   return (
     <Popover onOpenChange={handleOpenChange} open={open}>
@@ -431,6 +417,10 @@ const AppSidebarChrome = memo(function AppSidebarChrome({
     }
   }, [lastViewedProjectId, pinnedProjectIds, setLastViewedProject]);
 
+  useEffect(() => {
+    loadWorkspaceQuotaSnapshot(namespace).catch(() => undefined);
+  }, [namespace]);
+
   return (
     <aside
       className="project-chrome-surface flex h-full w-13 shrink-0 flex-col items-center border-border border-r"
@@ -479,7 +469,7 @@ const AppSidebarChrome = memo(function AppSidebarChrome({
             <CreditCard aria-hidden className="size-4" strokeWidth={1.8} />
           </AppSidebarLinkButton>
           <AppSidebarDesktopReturn />
-          <AppSidebarUpgrade />
+          <AppSidebarUpgrade namespace={namespace} />
         </div>
       </div>
     </aside>

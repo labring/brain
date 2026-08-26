@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { simulateReadableStream, tool, type UIMessage } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
+import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
 const actualKubeconfig = { ...(await import("@/lib/kubeconfig")) };
 const actualRequestKubeconfigAuth = {
@@ -58,6 +59,15 @@ let releaseCalls = 0;
 let reserveCalls = 0;
 let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
 let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
+let workspaceResourceQuota: WorkspaceResourceQuotaSnapshot | undefined = {
+  items: [
+    { limit: 36_000, type: "cpu", used: 19_200 },
+    { limit: 167_936, type: "memory", used: 26_880 },
+    { limit: 204_800, type: "storage", used: 12_288 },
+    { limit: 20, type: "pod", used: 3 },
+    { limit: 10, type: "nodeport", used: 0 },
+  ],
+};
 let judgmentCalls: {
   userId: string | null;
   userUid: string;
@@ -597,7 +607,10 @@ function userMessage(id: string, text: string): UIMessage {
 function chatRequest(
   message: UIMessage,
   signal?: AbortSignal,
-  options?: { appToken?: string | null }
+  options?: {
+    appToken?: string | null;
+    workspaceResourceQuota?: unknown;
+  }
 ): Request {
   const appToken =
     options?.appToken === undefined ? "valid-app-token" : options.appToken;
@@ -607,6 +620,9 @@ function chatRequest(
       encodedKubeconfig: "encoded-kubeconfig",
       message,
       namespace: NAMESPACE,
+      ...(options?.workspaceResourceQuota === undefined
+        ? { workspaceResourceQuota }
+        : { workspaceResourceQuota: options.workspaceResourceQuota }),
     }),
     headers: {
       "content-type": "application/json",
@@ -655,6 +671,15 @@ beforeEach(() => {
   reserveCalls = 0;
   forceReplaceConflict = false;
   freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
+  workspaceResourceQuota = {
+    items: [
+      { limit: 36_000, type: "cpu", used: 19_200 },
+      { limit: 167_936, type: "memory", used: 26_880 },
+      { limit: 204_800, type: "storage", used: 12_288 },
+      { limit: 20, type: "pod", used: 3 },
+      { limit: 10, type: "nodeport", used: 0 },
+    ],
+  };
   history = [];
   judgmentCalls = [];
   trialJudgment = "trial";
@@ -805,6 +830,63 @@ test("accepts and streams a canonical client-tool continuation", async () => {
       owner: { namespace: NAMESPACE, userUid: `${WORKSPACE_ACTOR}-uid` },
     },
   ]);
+});
+
+test("injects only the current workspace resources into the model prompt", async () => {
+  const response = await POST(
+    chatRequest(userMessage("user-usage-context", "how much usage is left?"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).toContain("<workspace_resource_context");
+  expect(prompt).toContain("CPU: 19.2C/36C");
+  expect(prompt).toContain("Memory: 26.25Gi/164Gi");
+  expect(prompt).toContain("Storage: 12Gi/200Gi");
+  expect(prompt).toContain("Pods: 3/20");
+  expect(prompt).toContain("CPU: 19.2C/36C");
+  expect(prompt).toContain("Memory: 26.25Gi/164Gi");
+  expect(prompt).toContain("Storage: 12Gi/200Gi");
+  expect(prompt).toContain("Ports: 0/10");
+  expect(prompt).toContain("Ports: 0/10");
+  expect(prompt).not.toContain("assistant_usage_context");
+  expect(prompt).not.toContain("Free assistant messages");
+  expect(prompt).not.toContain("Billing mode for this turn");
+  expect(prompt).not.toContain("AI Credits");
+  expect(prompt).not.toContain("ai_quota");
+});
+
+test("keeps chat available when workspace resources are unavailable", async () => {
+  workspaceResourceQuota = undefined;
+
+  const response = await POST(
+    chatRequest(userMessage("user-resource-unavailable", "show resources"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).not.toContain("<workspace_resource_context");
+});
+
+test("keeps chat available when workspace resources are malformed", async () => {
+  const response = await POST(
+    chatRequest(
+      userMessage("user-malformed-resource-context", "show resources"),
+      undefined,
+      {
+        workspaceResourceQuota: {
+          items: [{ limit: "36C", type: "cpu", used: 19_200 }],
+        },
+      }
+    )
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).not.toContain("<workspace_resource_context");
 });
 
 test("accepts a client-tool continuation without server-injected metadata", async () => {

@@ -41,6 +41,7 @@ import {
   trackBrainGtmEvent,
 } from "@/features/analytics/brain-gtm";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { readCachedWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
 import {
@@ -497,6 +498,9 @@ function ProjectAssistantChatSession({
             currentProject.displayName,
             wire.projectId
           );
+          const workspaceResourceQuota = readCachedWorkspaceQuotaSnapshot(
+            wire.namespace
+          );
 
           const headersWithAppToken = new Headers(headers);
           for (const [name, value] of Object.entries(
@@ -511,6 +515,9 @@ function ProjectAssistantChatSession({
             body: {
               ...(body && typeof body === "object" ? body : {}),
               ...(assistantContext == null ? {} : { assistantContext }),
+              ...(workspaceResourceQuota == null
+                ? {}
+                : { workspaceResourceQuota }),
               chatId: id,
               encodedKubeconfig: encodeURIComponent(kubeconfig),
               message: last,
