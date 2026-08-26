@@ -108,6 +108,7 @@ function installGatewayFetch(input: {
   stateActiveSequence?: boolean[];
   stateActive: boolean;
   stateOmitLastTurnStatus?: boolean;
+  stateResponseDelayMs?: number[];
   stateStatuses?: number[];
   stateTurnStatus?: string | null;
   stateTurnStatusSequence?: Array<string | null>;
@@ -116,7 +117,7 @@ function installGatewayFetch(input: {
   const paths: string[] = [];
   let interruptAttempt = 0;
   let stateRead = 0;
-  globalThis.fetch = ((
+  globalThis.fetch = (async (
     requestInput: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1]
   ) => {
@@ -161,6 +162,10 @@ function installGatewayFetch(input: {
     if (url.pathname.endsWith("/state")) {
       input.onState?.();
       const readIndex = stateRead++;
+      const delayMs = input.stateResponseDelayMs?.[readIndex] ?? 0;
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
       const status = input.stateStatuses?.[readIndex] ?? 200;
       if (status !== 200) {
         return Response.json({ error: "state unavailable" }, { status });
@@ -428,6 +433,26 @@ describe("deployment Codex gateway interruption", () => {
         (event) => event.kind === "deploy_task.gateway_interrupt_failed"
       )
     ).toBe(true);
+  });
+
+  it("preserves timeout when the deadline interrupt settles during a state poll", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateResponseDelayMs: [50],
+      stateTurnStatus: "interrupted",
+    });
+
+    await expect(
+      runDeployTaskGateway({
+        context: { authToken: "gateway-token", url: "https://gateway.test" },
+        deadlineAtMs: Date.now() + 25,
+        task: task(),
+      })
+    ).rejects.toBeInstanceOf(CodexGatewayTimeoutError);
+
+    expect(
+      paths.filter((path) => path.endsWith("/turn/interrupt"))
+    ).toHaveLength(1);
   });
 
   it("retries a 409 while the turn is still active", async () => {

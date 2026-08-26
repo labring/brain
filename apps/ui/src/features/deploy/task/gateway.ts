@@ -780,6 +780,9 @@ async function waitForGatewayTurnCompletion(input: {
     });
 
     if (!sessionState.state.activeTurn) {
+      if (Date.now() >= input.deadlineAtMs) {
+        throw new CodexGatewayTimeoutError();
+      }
       const failedStatus = failedGatewayTurnStatus(
         sessionState.state.lastTurnStatus
       );
