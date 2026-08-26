@@ -18,7 +18,7 @@ import {
   type LucideIcon,
   Megaphone,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { AppSidebarNotificationsDevMockGate } from "@/features/shell/app-sidebar-notifications-dev-mock-gate";
 import {
   type AppNotification,
@@ -33,6 +33,7 @@ import {
   appNotificationsAtom,
   notificationReadIdsAtom,
 } from "@/features/shell/app-sidebar-notifications-store";
+import { useCloseOnSidebarToggle } from "@/features/shell/use-close-on-sidebar-toggle";
 
 const KIND_META: Record<
   AppNotificationKind,
@@ -221,6 +222,12 @@ export function AppSidebarNotifications() {
   const readIds = useAtomValue(notificationReadIdsAtom);
   const unreadCount = countUnreadNotifications(items, readIds);
   const badgeLabel = notificationBadgeLabel(unreadCount);
+  const [open, setOpen] = useState(false);
+  // Collapsed anchor: the row keeps its full expanded width under the rail's
+  // clipping (same trap as the nav-row tooltips), so the popover anchors the
+  // w-9 icon slot instead of the trigger row.
+  const iconSlotRef = useRef<HTMLSpanElement>(null);
+  useCloseOnSidebarToggle(expanded, () => setOpen(false));
 
   const trigger = (
     <button
@@ -238,7 +245,7 @@ export function AppSidebarNotifications() {
   return (
     <>
       <AppSidebarNotificationsDevMockGate />
-      <Popover>
+      <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger render={trigger}>
           <span
             aria-hidden
@@ -249,7 +256,10 @@ export function AppSidebarNotifications() {
                 : "w-9 duration-200 ease-out"
             )}
           />
-          <span className="relative flex w-9 shrink-0 items-center justify-center">
+          <span
+            className="relative flex w-9 shrink-0 items-center justify-center"
+            ref={iconSlotRef}
+          >
             <Bell aria-hidden className="size-4" strokeWidth={1.8} />
             <span
               aria-hidden
@@ -289,8 +299,12 @@ export function AppSidebarNotifications() {
             )}
           </span>
         </PopoverTrigger>
+        {/* Collapsed rail: anchor the icon slot, sideOffset 6 (the rail-wide
+            convention for popovers) — the default trigger anchor sits at the
+            clipped full-width row's edge, far past the visible rail. */}
         <PopoverContent
           align="start"
+          anchor={expanded ? undefined : iconSlotRef}
           className="w-80 gap-0 rounded-lg border border-border bg-input/30 p-0 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
           side="right"
           sideOffset={expanded ? 10 : 6}

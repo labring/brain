@@ -46,6 +46,7 @@ import {
   isWorkspaceQuotaItem,
   quotaUsageTone,
 } from "@/features/shell/app-sidebar-quota";
+import { useCloseOnSidebarToggle } from "@/features/shell/use-close-on-sidebar-toggle";
 import {
   appTokenAtom,
   desktopUserAvatarAtom,
@@ -402,6 +403,16 @@ function AppSidebarUsageSection({
   );
 }
 
+// The AI row shows a skeleton only while its answer is still possible and
+// pending: the subscription decides whether the row exists at all.
+function shouldShowAiSkeleton(
+  aiSlot: { settled: boolean; pending: boolean },
+  expected: boolean,
+  subscriptionPending: boolean
+): boolean {
+  return !aiSlot.settled && expected && (subscriptionPending || aiSlot.pending);
+}
+
 /**
  * The App Sidebar's account section (AIM-308): identity row with the plan
  * badge, opening the compact account popover — identity, copyable user ID,
@@ -444,6 +455,11 @@ export function AppSidebarAccount() {
   );
 
   const [open, setOpen] = useState(false);
+  // Collapsed anchor: the row keeps its full expanded width under the rail's
+  // clipping (same trap as the nav-row tooltips), so the popover anchors the
+  // w-9 icon slot instead of the trigger row.
+  const iconSlotRef = useRef<HTMLSpanElement>(null);
+  useCloseOnSidebarToggle(expanded, () => setOpen(false));
   // The Billing Plan view's credits-slot predicate (ADR-0065): Active Free
   // Trial → Free Chat Turns, other subscriptions → AI Credits, PAYG → none.
   const loadAiUsageRow = useCallback(async () => {
@@ -501,10 +517,11 @@ export function AppSidebarAccount() {
     subscriptionPending,
     subscriptionSummary
   );
-  const showAiSkeleton =
-    !aiSlot.settled &&
-    aiPresentation.expected &&
-    (subscriptionPending || aiSlot.pending);
+  const showAiSkeleton = shouldShowAiSkeleton(
+    aiSlot,
+    aiPresentation.expected,
+    subscriptionPending
+  );
   const showQuotaSkeleton = quotaSlot.data == null && quotaSlot.pending;
 
   const trigger = (
@@ -533,7 +550,10 @@ export function AppSidebarAccount() {
               : "w-9 duration-200 ease-out"
           )}
         />
-        <span className="relative flex w-9 shrink-0 items-center justify-center">
+        <span
+          className="relative flex w-9 shrink-0 items-center justify-center"
+          ref={iconSlotRef}
+        >
           <AppSidebarAccountAvatar
             avatarUrl={userAvatar}
             className="size-6 text-[10px]"
@@ -574,8 +594,12 @@ export function AppSidebarAccount() {
           <AppSidebarAccountBadgeSlot badge={badge} />
         </span>
       </PopoverTrigger>
+      {/* Collapsed rail: anchor the icon slot, sideOffset 6 (the rail-wide
+          convention for popovers) — the default trigger anchor sits at the
+          clipped full-width row's edge, far past the visible rail. */}
       <PopoverContent
         align="start"
+        anchor={expanded ? undefined : iconSlotRef}
         className="w-56 gap-0 rounded-lg border border-border bg-input/30 p-3 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
         side={expanded ? "top" : "right"}
         sideOffset={6}
