@@ -5,9 +5,11 @@ import type { streamText } from "ai";
 
 type ChatModel = Parameters<typeof streamText>[0]["model"];
 
-export const CHAT_MODEL_ID = "gpt-5.5";
-/** Lightweight model for thread title generation (`deriveThreadTitle`). */
-export const CHAT_THREAD_TITLE_MODEL_ID = "gpt-5.4-mini";
+const DEFAULT_CHAT_MODEL_ID = "gpt-5.5";
+export const CHAT_MODEL_ID =
+  process.env.CODEX_GATEWAY_MODEL?.trim() || DEFAULT_CHAT_MODEL_ID;
+/** Thread titles use the same model as regular chat responses. */
+export const CHAT_THREAD_TITLE_MODEL_ID = CHAT_MODEL_ID;
 export const CHAT_MAX_STEPS = 15;
 export const CHAT_BASE_SYSTEM_PROMPT = [
   "You are Sealos Brain, the assistant that helps users manage their Kubernetes resources across Sealos projects and namespaces.",
