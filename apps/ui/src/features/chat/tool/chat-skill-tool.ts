@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { type ToolExecutionOptions, tool } from "ai";
 import { z } from "zod";
 import type { ChatDevboxSandbox } from "@/features/chat/devbox/chat-runtime";
 import {
@@ -82,14 +82,20 @@ export function createLoadSkillTool(
   return tool({
     description: buildLoadSkillDescription(),
     inputSchema: loadSkillInputSchema,
-    execute: async ({ intention, name }) => {
+    execute: async (
+      { intention, name },
+      executionOptions?: ToolExecutionOptions
+    ) => {
       logChatToolIntention("loadSkill", intention);
       const key = name.trim().toLowerCase();
       const skill = skillIndex.find((s) => s.name.toLowerCase() === key);
       if (skill == null) {
         return { error: `Unknown skill: ${name}` };
       }
-      const raw = await sandbox.readFile(skill.skillMdPath);
+      const raw = await sandbox.runWithAbortSignal(
+        executionOptions?.abortSignal,
+        () => sandbox.readFile(skill.skillMdPath)
+      );
       return {
         name: skill.name,
         skillDirectory: skill.folderName,
@@ -106,7 +112,10 @@ export function createLoadSkillResourceTool(
   return tool({
     description: buildLoadSkillResourceDescription(),
     inputSchema: loadSkillResourceInputSchema,
-    execute: async ({ intention, name, path: resourcePath }) => {
+    execute: async (
+      { intention, name, path: resourcePath },
+      executionOptions?: ToolExecutionOptions
+    ) => {
       logChatToolIntention("loadSkillResource", intention);
       const key = name.trim().toLowerCase();
       const skill = skillIndex.find((s) => s.name.toLowerCase() === key);
@@ -123,7 +132,10 @@ export function createLoadSkillResourceTool(
       }
 
       try {
-        const content = await sandbox.readFile(resourceFilePath);
+        const content = await sandbox.runWithAbortSignal(
+          executionOptions?.abortSignal,
+          () => sandbox.readFile(resourceFilePath)
+        );
         return {
           name: skill.name,
           skillDirectory: skill.folderName,
@@ -131,6 +143,7 @@ export function createLoadSkillResourceTool(
           content,
         };
       } catch {
+        executionOptions?.abortSignal?.throwIfAborted();
         return {
           error:
             "Skill resource not found: " +

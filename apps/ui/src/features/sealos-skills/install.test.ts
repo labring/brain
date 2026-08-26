@@ -14,6 +14,7 @@ const DEPLOY_SKILL_RE = /sealos-deploy/;
 const INTERNAL_SKILL_RE = /required_skill_names=.*k8s-kaniko-job/;
 const KANIKO_SKILL_RE = /k8s-kaniko-job/;
 const QUOTED_SOURCE_RE = /branch\/it.*s-safe/;
+const LOCK_RE = /flock --wait/;
 
 test("Sealos Skills source defaults to the shared deployment branch", () => {
   assert.equal(getSealosSkillsSourceFromEnv({}), DEFAULT_SEALOS_SKILLS_SOURCE);
@@ -38,6 +39,10 @@ test("chat install command is idempotent and excludes the internal executor", ()
   });
 
   assert.match(command, INSTALL_MARKER_RE);
+  assert.match(command, LOCK_RE);
+  assert.ok(
+    command.indexOf("flock --wait") < command.indexOf("skills_ready=true")
+  );
   assert.match(command, IDEMPOTENCY_RE);
   assert.match(command, CLI_VERSION_RE);
   assert.match(command, DEPLOY_SKILL_RE);
@@ -54,6 +59,8 @@ test("deployment install command always reinstalls and shell-quotes the source",
   });
 
   assert.doesNotMatch(command, IDEMPOTENCY_RE);
+  assert.match(command, LOCK_RE);
+  assert.ok(command.indexOf("flock --wait") < command.indexOf("rm -rf"));
   assert.match(command, KANIKO_SKILL_RE);
   assert.match(command, QUOTED_SOURCE_RE);
 });

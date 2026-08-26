@@ -6,6 +6,7 @@ import {
   executeEmitGenUISpec,
   genUISpecInputSchema,
 } from "@/features/chat/agui/gen-ui-tool";
+import { getChatDevboxSkillsSnapshot } from "@/features/chat/devbox/chat-runtime";
 import type { AssistantContextPayload } from "@/features/chat/persistence/types";
 import { createChatBashTool } from "@/features/chat/tool/chat-bash-tool";
 import { createDeployTaskTools } from "@/features/chat/tool/chat-deploy-task-tool";
@@ -18,7 +19,6 @@ import {
   buildChatSkillsDiscoveryPrompt,
   createLoadSkillResourceTool,
   createLoadSkillTool,
-  discoverChatDevboxSkills,
 } from "@/features/chat/tool/chat-skill-tool";
 import {
   chatToolIntentionField,
@@ -52,8 +52,8 @@ export interface ChatToolset {
  * Assemble the per-request tool registry + system prompt.
  *
  * - Skill index drives both the `loadSkill` tool and the discovery prompt addendum.
- * - The shared Chat Devbox is started here so its installed Skills can be
- *   discovered before the system prompt is sent to the model.
+ * - The shared Chat Devbox remains lazy; Skill metadata comes from the
+ *   background warmup cache and never blocks the chat stream preflight.
  */
 export async function buildChatToolset({
   kubeconfig,
@@ -74,7 +74,10 @@ export async function buildChatToolset({
     kubeconfig,
     namespace: kubernetesNamespace,
   });
-  const skillIndex = await discoverChatDevboxSkills(lazySandbox);
+  const skillIndex = getChatDevboxSkillsSnapshot({
+    kubeconfig,
+    namespace: kubernetesNamespace,
+  });
   const deployTaskTools = createDeployTaskTools({
     assistantContext,
     kubeconfig,

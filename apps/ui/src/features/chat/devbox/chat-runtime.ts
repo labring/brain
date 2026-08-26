@@ -4,9 +4,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { Sandbox as BashToolSandbox } from "bash-tool";
 import {
+  type ChatSkillMeta,
+  discoverChatDevboxSkills,
+} from "@/features/chat/tool/devbox-skills";
+import {
   buildSealosSkillsInstallCommand,
   getSealosSkillsSourceFromEnv,
   SEALOS_CHAT_SKILL_NAMES,
+  SEALOS_SKILLS_CLI_VERSION,
 } from "@/features/sealos-skills/install";
 import {
   createDevbox,
@@ -32,6 +37,8 @@ const DEVBOX_WRITE_TIMEOUT_SECONDS = 60;
 const DEVBOX_READ_TIMEOUT_SECONDS = 60;
 const DEVBOX_WARMUP_TIMEOUT_SECONDS = 30;
 const DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS = 180;
+const chatDevboxSkillSnapshots = new Map<string, ChatSkillMeta[]>();
+const chatDevboxSkillWarmups = new Map<string, Promise<ChatSkillMeta[]>>();
 
 export interface ChatDevboxRuntimeOptions {
   kubeconfig: string;
@@ -51,6 +58,38 @@ export type ChatDevboxSandbox = BashToolSandbox & {
   ) => Promise<T>;
   stop: () => Promise<void>;
 };
+
+export function getChatDevboxSkillsSnapshot(
+  options: ChatDevboxRuntimeOptions
+): ChatSkillMeta[] {
+  const snapshot = chatDevboxSkillSnapshots.get(
+    chatDevboxSkillCacheKey(options)
+  );
+  return snapshot?.map((skill) => ({ ...skill })) ?? [];
+}
+
+export function warmChatDevboxSkills(
+  options: ChatDevboxRuntimeOptions
+): Promise<ChatSkillMeta[]> {
+  const cacheKey = chatDevboxSkillCacheKey(options);
+  const existing = chatDevboxSkillWarmups.get(cacheKey);
+  if (existing != null) {
+    return existing;
+  }
+
+  const sandbox = createChatDevboxSandbox(options);
+  const warmup = discoverChatDevboxSkills(sandbox)
+    .then((skills) => {
+      chatDevboxSkillSnapshots.set(cacheKey, skills);
+      return skills.map((skill) => ({ ...skill }));
+    })
+    .finally(async () => {
+      chatDevboxSkillWarmups.delete(cacheKey);
+      await sandbox.stop();
+    });
+  chatDevboxSkillWarmups.set(cacheKey, warmup);
+  return warmup;
+}
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
@@ -83,6 +122,15 @@ function hashRuntimeIdentity(kubeconfig: string, namespace: string): string {
     .update(`${namespace}|${hashKubeconfigForDevbox(kubeconfig)}`)
     .digest("hex")
     .slice(0, 32);
+}
+
+function chatDevboxSkillCacheKey(options: ChatDevboxRuntimeOptions): string {
+  const runtimeHash = hashRuntimeIdentity(
+    normalizeKubeconfig(options.kubeconfig),
+    options.namespace
+  );
+  const skillSource = getSealosSkillsSourceFromEnv(process.env);
+  return `${runtimeHash}|${skillSource}|${SEALOS_SKILLS_CLI_VERSION}`;
 }
 
 function runtimeName(runtimeHash: string): string {
