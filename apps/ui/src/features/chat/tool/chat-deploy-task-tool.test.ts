@@ -8,11 +8,13 @@ import type {
   DeploymentTaskTimelineSnapshotDTO,
   DeployTaskSnapshotDTO,
 } from "@/features/deploy/task/types";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 
 import { createDeployTaskToolInputSchema } from "./chat-deploy-task-input";
 
 const timelineSnapshotReads: { namespace?: string; taskId: string }[] = [];
 let timelineSnapshot: DeploymentTaskTimelineSnapshotDTO | null = null;
+const CONNECTION_DATABASE_UNAVAILABLE_RE = /connection database unavailable/;
 
 // `server-only` has no runtime API and throws outside a React server runtime,
 // so this process-wide shim cannot change another test's observable behavior.
@@ -145,6 +147,22 @@ test("chat createDeployTask ignores model-provided raw runner fields", () => {
   );
 });
 
+test("chat createDeployTask rejects inconsistent GitHub repository identity", () => {
+  const parsed = createDeployTaskToolInputSchema.safeParse({
+    intention: "deploy the requested GitHub repository",
+    source: {
+      kind: "github",
+      repo: {
+        fullName: "public/example",
+        name: "example",
+        url: "https://github.com/private/other",
+      },
+    },
+  });
+
+  assert.equal(parsed.success, false);
+});
+
 test("chat getDeployTaskStatus returns the safe task timeline snapshot", async () => {
   timelineSnapshotReads.length = 0;
   timelineSnapshot = failedTimelineSnapshot();
@@ -155,6 +173,7 @@ test("chat getDeployTaskStatus returns the safe task timeline snapshot", async (
       kubeconfig: "test-kubeconfig",
       kubernetesNamespace: "ns-test",
       workspaceActor: "alice",
+      workspaceUserUid: "uid-alice",
     },
     {
       getDeployTaskTimelineSnapshot: (
@@ -193,6 +212,7 @@ test("chat submitDeployTaskInput preserves the active blocker keys", async () =>
       kubeconfig: "test-kubeconfig",
       kubernetesNamespace: "ns-test",
       workspaceActor: "alice",
+      workspaceUserUid: "uid-alice",
     },
     {
       getDeployTaskEngineContext: () => null as never,
@@ -253,4 +273,158 @@ test("chat submitDeployTaskInput preserves the active blocker keys", async () =>
     taskId: "task-1",
   });
   assert.deepEqual(result, { ok: true, task: taskSnapshot.task });
+});
+
+const githubSource = {
+  kind: "github" as const,
+  repo: {
+    fullName: "glpi-project/glpi",
+    name: "glpi",
+    url: "https://github.com/glpi-project/glpi",
+  },
+};
+
+function githubToolOptions() {
+  return {
+    kubeconfig: "test-kubeconfig",
+    kubernetesNamespace: "ns-test",
+    workspaceActor: "alice",
+    workspaceUserUid: "uid-alice",
+  };
+}
+
+function githubConnection() {
+  return {
+    accountLogin: "alice",
+    accountType: "User",
+    id: "connection-alice",
+    installationId: "",
+    isAuthorized: true,
+    namespace: "ns-test",
+    repositorySelection: "oauth",
+    updatedAt: new Date(0).toISOString(),
+  };
+}
+
+test("chat createDeployTask requires a GitHub connection before task creation", async () => {
+  let createCalls = 0;
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    adoptLegacyGithubConnectionForOwner: () =>
+      Promise.resolve(undefined as never),
+    createDeployTaskAction: () => {
+      createCalls += 1;
+      return Promise.resolve({ kind: "invalid", message: "unexpected" });
+    },
+    getGithubConnectionStatusForOwner: () => Promise.resolve(null),
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the glpi repository",
+      source: githubSource,
+      target: { kind: "newProject", displayName: "glpi" },
+    },
+    { messages: [], toolCallId: "tool-call-3" }
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    error: "Connect GitHub in Settings before deploying from a repository.",
+  });
+  assert.equal(createCalls, 0);
+});
+
+test("chat createDeployTask binds the initiator's GitHub connection", async () => {
+  const createInputs: { credentialBinding?: unknown }[] = [];
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    adoptLegacyGithubConnectionForOwner: () =>
+      Promise.resolve(undefined as never),
+    createDeployTaskAction: (_context, input) => {
+      createInputs.push(input.create);
+      return Promise.resolve({
+        kind: "created",
+        launched: null,
+        task: { id: "task-9" } as never,
+      });
+    },
+    getDeployTaskEngineContext: () => null as never,
+    getDeployTaskSnapshot: () => Promise.resolve(null),
+    getGithubConnectionStatusForOwner: () =>
+      Promise.resolve(githubConnection()),
+    runDeployTask: () => Promise.resolve(),
+    toDeployTaskDTO: (task: unknown) => task as never,
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the glpi repository",
+      source: githubSource,
+      target: { kind: "newProject", displayName: "glpi" },
+    },
+    { messages: [], toolCallId: "tool-call-4" }
+  );
+
+  assert.ok(result != null && "ok" in result && result.ok);
+  assert.equal(createInputs.length, 1);
+  assert.deepEqual(createInputs[0]?.credentialBinding, {
+    connectionRef: "connection-alice",
+    credentialOwner: "uid-alice",
+    version: 1,
+  });
+});
+
+test("chat createDeployTask surfaces a superseded identity without creating a task", async () => {
+  let createCalls = 0;
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    adoptLegacyGithubConnectionForOwner: () =>
+      Promise.reject(new IdentityBindingSupersededError()),
+    createDeployTaskAction: () => {
+      createCalls += 1;
+      return Promise.resolve({ kind: "invalid", message: "unexpected" });
+    },
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the glpi repository",
+      source: githubSource,
+      target: { kind: "newProject", displayName: "glpi" },
+    },
+    { messages: [], toolCallId: "tool-call-5" }
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    error:
+      "Authentication is required. Sign in again before deploying from GitHub.",
+  });
+  assert.equal(createCalls, 0);
+});
+
+test("chat createDeployTask propagates GitHub connection lookup failures", async () => {
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    adoptLegacyGithubConnectionForOwner: () =>
+      Promise.resolve(undefined as never),
+    getGithubConnectionStatusForOwner: () =>
+      Promise.reject(new Error("connection database unavailable")),
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  await assert.rejects(async () => {
+    await deployTaskTools.createDeployTask.execute?.(
+      {
+        intention: "deploy the glpi repository",
+        source: githubSource,
+        target: { kind: "newProject", displayName: "glpi" },
+      },
+      { messages: [], toolCallId: "tool-call-6" }
+    );
+  }, CONNECTION_DATABASE_UNAVAILABLE_RE);
 });

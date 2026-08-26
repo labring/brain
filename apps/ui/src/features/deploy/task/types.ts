@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { githubRepoFieldsMatchUrl } from "@/features/deploy/github-repo-url";
 
 import { marketingAttributionSnapshotSchema } from "@/features/marketing/types";
 
@@ -69,39 +70,48 @@ export const deployTaskStatusSchema = z.enum([
 
 const boundedString = z.string().trim().min(1).max(512);
 
-export const deploymentTaskSourceSchema = z.discriminatedUnion("kind", [
-  z.object({
-    branch: z.string().trim().max(256).optional(),
-    kind: z.literal("github"),
-    repo: z.object({
-      fullName: boundedString,
-      id: z.string().trim().max(128).optional(),
-      name: z.string().trim().min(1).max(256),
-      url: z.string().trim().url(),
+export const deploymentTaskSourceSchema = z
+  .discriminatedUnion("kind", [
+    z.object({
+      branch: z.string().trim().max(256).optional(),
+      kind: z.literal("github"),
+      repo: z.object({
+        fullName: boundedString,
+        id: z.string().trim().max(128).optional(),
+        name: z.string().trim().min(1).max(256),
+        url: z.string().trim().url(),
+      }),
     }),
-  }),
-  z.object({
-    kind: z.literal("docker"),
-    settings: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    kind: z.literal("database"),
-    settings: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    args: z.record(z.string(), z.string()).optional(),
-    kind: z.literal("template"),
-    sensitiveKeys: z
-      .array(z.string().trim().min(1).max(256))
-      .max(64)
-      .optional(),
-    templateName: z.string().trim().min(1).max(256),
-  }),
-  z.object({
-    kind: z.literal("prompt"),
-    text: z.string().trim().min(1).max(4000),
-  }),
-]) satisfies z.ZodType<DeploymentTaskSource>;
+    z.object({
+      kind: z.literal("docker"),
+      settings: z.record(z.string(), z.unknown()),
+    }),
+    z.object({
+      kind: z.literal("database"),
+      settings: z.record(z.string(), z.unknown()),
+    }),
+    z.object({
+      args: z.record(z.string(), z.string()).optional(),
+      kind: z.literal("template"),
+      sensitiveKeys: z
+        .array(z.string().trim().min(1).max(256))
+        .max(64)
+        .optional(),
+      templateName: z.string().trim().min(1).max(256),
+    }),
+    z.object({
+      kind: z.literal("prompt"),
+      text: z.string().trim().min(1).max(4000),
+    }),
+  ])
+  .refine(
+    (source) =>
+      source.kind !== "github" || githubRepoFieldsMatchUrl(source.repo),
+    {
+      message: "GitHub repository fields must identify the same repository.",
+      path: ["repo"],
+    }
+  ) satisfies z.ZodType<DeploymentTaskSource>;
 
 export const deploymentTaskTargetSchema = z.discriminatedUnion("kind", [
   z.object({

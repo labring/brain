@@ -326,6 +326,7 @@ test("POST binds GitHub creation to the initiator's uid-keyed active connection"
     // generation-1 row before the uid-keyed lookup (ADR-0059).
     assert.deepEqual(adoptionCalls, [
       {
+        accountUserId: undefined,
         legacyWorkspaceActor: "alice-cr",
         owner: {
           namespace: "namespace-b",

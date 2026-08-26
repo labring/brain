@@ -9,6 +9,14 @@ import {
   logChatToolIntention,
 } from "@/features/chat/tool/chat-tool-intention";
 import {
+  adoptLegacyGithubConnectionForOwner,
+  getGithubConnectionStatusForOwner,
+} from "@/features/deploy/github/connection-service";
+import {
+  CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+  type VerifiedGithubConnectionActor,
+} from "@/features/deploy/github/owner-identity";
+import {
   cancelDeployTaskAction,
   createDeployTaskAction,
   submitDeployTaskInputAction,
@@ -19,6 +27,10 @@ import {
   runDeployTask,
 } from "@/features/deploy/task/runner";
 import {
+  CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
+  type DeploymentCredentialBinding,
+} from "@/features/deploy/task/schema";
+import {
   getDeployTaskSnapshot,
   getDeployTaskTimelineSnapshot,
   toDeployTaskDTO,
@@ -27,6 +39,12 @@ import {
   type DeploymentTaskTarget,
   submitDeployTaskInputSchema,
 } from "@/features/deploy/task/types";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
+
+const GITHUB_CONNECTION_REQUIRED_ERROR =
+  "Connect GitHub in Settings before deploying from a repository.";
+const GITHUB_AUTHENTICATION_REQUIRED_ERROR =
+  "Authentication is required. Sign in again before deploying from GitHub.";
 
 const getDeployTaskStatusToolInputSchema = z.object({
   intention: chatToolIntentionField,
@@ -76,8 +94,12 @@ export function createDeployTaskTools(
     kubeconfig: string;
     kubernetesNamespace: string;
     workspaceActor: string;
+    workspaceUserUid: string;
   },
   dependencies: {
+    adoptLegacyGithubConnectionForOwner?: typeof adoptLegacyGithubConnectionForOwner;
+    createDeployTaskAction?: typeof createDeployTaskAction;
+    getGithubConnectionStatusForOwner?: typeof getGithubConnectionStatusForOwner;
     getDeployTaskEngineContext?: typeof getDeployTaskEngineContext;
     getDeployTaskSnapshot?: typeof getDeployTaskSnapshot;
     getDeployTaskTimelineSnapshot?: typeof getDeployTaskTimelineSnapshot;
@@ -98,12 +120,62 @@ export function createDeployTaskTools(
   const runTask = dependencies.runDeployTask ?? runDeployTask;
   const submitTaskInput =
     dependencies.submitDeployTaskInputAction ?? submitDeployTaskInputAction;
+  const createTask =
+    dependencies.createDeployTaskAction ?? createDeployTaskAction;
   const projectTask = dependencies.toDeployTaskDTO ?? toDeployTaskDTO;
+  const readGithubConnection =
+    dependencies.getGithubConnectionStatusForOwner ??
+    getGithubConnectionStatusForOwner;
+  const adoptLegacyGithubConnection =
+    dependencies.adoptLegacyGithubConnectionForOwner ??
+    adoptLegacyGithubConnectionForOwner;
+
+  const githubActor: VerifiedGithubConnectionActor = {
+    legacyWorkspaceActor: options.workspaceActor,
+    owner: {
+      namespace: options.kubernetesNamespace,
+      ownerIdentityVersion: CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
+      userUid: options.workspaceUserUid,
+    },
+  };
+
+  /**
+   * Resolve the initiator's binding the same way the deploy-task route does
+   * (ADR-0036/0056/0059). Missing or superseded credentials fail before task
+   * creation; infrastructure errors propagate instead of degrading to an
+   * anonymous deployment.
+   */
+  async function resolveChatGithubBinding(): Promise<
+    | { credentialBinding: DeploymentCredentialBinding; ok: true }
+    | { error: string; ok: false }
+  > {
+    try {
+      await adoptLegacyGithubConnection(githubActor);
+      const connection = await readGithubConnection(githubActor.owner);
+      if (connection == null) {
+        return { error: GITHUB_CONNECTION_REQUIRED_ERROR, ok: false };
+      }
+      return {
+        credentialBinding: {
+          connectionRef: connection.id,
+          credentialOwner: githubActor.owner.userUid,
+          version: CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
+        },
+        ok: true,
+      };
+    } catch (error) {
+      if (error instanceof IdentityBindingSupersededError) {
+        return { error: GITHUB_AUTHENTICATION_REQUIRED_ERROR, ok: false };
+      }
+      throw error;
+    }
+  }
 
   const createDeployTaskTool = tool({
     description: [
       "Create a long-running Deployment Task in SealAI.",
-      "Use this when the user asks to deploy a Docker image, a database, a template, or a prompt.",
+      "Use this when the user asks to deploy a Docker image, a database, a template, a GitHub repository, or a prompt.",
+      "GitHub repository deployments require the user to connect GitHub in Settings. If no connection is available, report that requirement instead of retrying the repository as a prompt or Docker source.",
       "The task resolves or creates its target Project, runs the server-selected Deployment Runner, applies artifacts, and reports progress separately.",
       "Do not provide a runner; Docker and database sources use the Direct Runner, template sources use the Template Runner, and GitHub or prompt sources use the AI Runner.",
       "If the user is already inside a Project, omit target to deploy into the current Project; otherwise provide a newProject target.",
@@ -121,16 +193,18 @@ export function createDeployTaskTools(
             "No deployment target was provided. Use target.kind newProject with a displayName, or open a Project first.",
         };
       }
+      let credentialBinding: DeploymentCredentialBinding | undefined;
       if (input.source.kind === "github") {
-        return {
-          ok: false,
-          error:
-            "GitHub deployment creation is not available in Assistant tools. Use the GitHub deployment pane, which binds the verified Workspace Actor's connection.",
-        };
+        const bindingResolution = await resolveChatGithubBinding();
+        if (!bindingResolution.ok) {
+          return bindingResolution;
+        }
+        credentialBinding = bindingResolution.credentialBinding;
       }
 
-      const result = await createDeployTaskAction(engineContext(), {
+      const result = await createTask(engineContext(), {
         create: {
+          ...(credentialBinding == null ? {} : { credentialBinding }),
           createdFrom: "chat",
           creatingActor: actionActor,
           namespace,

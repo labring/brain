@@ -57,3 +57,23 @@ export function normalizeGithubRepoUrl(
   const repo = typeof value === "string" ? githubUrlToRepo(value) : null;
   return repo?.url ?? null;
 }
+
+/**
+ * Keep persisted/audited repository identity aligned with the exact GitHub
+ * repository root the runner will clone.
+ */
+export function githubRepoFieldsMatchUrl(input: {
+  fullName: string;
+  name: string;
+  url: string;
+}): boolean {
+  const parsed = githubUrlToRepo(input.url);
+  if (parsed?.fullName == null) {
+    return false;
+  }
+
+  return (
+    parsed.fullName.toLowerCase() === input.fullName.trim().toLowerCase() &&
+    parsed.name.toLowerCase() === input.name.trim().toLowerCase()
+  );
+}
