@@ -5,6 +5,7 @@ import {
   AppShellSidebar,
   AppShellView,
 } from "@/features/shell/app-shell";
+import { AppSidebarCookieBridge } from "@/features/shell/app-sidebar-cookie-bridge";
 import AuthBootstrap, {
   SealosSdkBootstrap,
 } from "@/features/shell/auth-bootstrap";
@@ -22,10 +23,12 @@ export default function BillingLayout({
       <AuthBootstrap serverEncodedKubeconfig="" serverNamespace="" />
       <SealosSdkBootstrap />
       <BillingDevMockGate />
-      <AppShellSidebar />
-      <AppShellView className="min-w-0 flex-1 basis-0">
-        <BillingTabShell>{children}</BillingTabShell>
-      </AppShellView>
+      <AppSidebarCookieBridge>
+        <AppShellSidebar />
+        <AppShellView className="min-w-0 flex-1 basis-0">
+          <BillingTabShell>{children}</BillingTabShell>
+        </AppShellView>
+      </AppSidebarCookieBridge>
     </AppShellChrome>
   );
 }

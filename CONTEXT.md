@@ -22,15 +22,21 @@ _Avoid_: Favorite Project, starred Project, recent Project.
 
 ### App Sidebar
 
-The persistent left-edge product navigation surface containing product-level navigation, Project Shortcuts, and app-level actions. It is outside the Project Canvas and is not a Side Pane or a Project list.
+The persistent left-edge product navigation surface containing product-level navigation, Project navigation (Pinned Projects and all other Projects), and app-level actions. It is outside the Project Canvas and is not a Side Pane or a Project list. It has exactly two user-controlled states, and these are their canonical names: **Expanded** (icons with text labels) and **Collapsed** (an icon rail with tooltips). State changes only by explicit user action and is independent of viewport width.
 
-_Avoid_: Project list, left Side Pane.
+_Avoid_: Project list, left Side Pane, Project Shortcut (retired term), open/closed sidebar, full/mini sidebar, rail mode.
 
-### Project Shortcut
+### Sealos Desktop Entry
 
-A Project navigation entry in the App Sidebar: the current user's Pinned Projects plus at most one last-viewed unpinned Project. Not the complete Project list.
+The App Sidebar's app-level link out to the platform's Sealos Desktop (user-visible label: Sealos Desktop). It opens the Desktop alongside Brain rather than replacing it — an exit to the platform layer, not in-app navigation, which is why the label names the destination instead of claiming a return.
 
-_Avoid_: Sidebar Project.
+_Avoid_: Back to Desktop (retired label), desktop return, home.
+
+### Project Icon
+
+The small glyph identifying a Project in navigation surfaces such as the App Sidebar's Project rows. Presentation-only and derived from the Project's workloads — the brand of a recognized AP container image, or the DB engine when the Project has no AP — falling back to a generic container mark when nothing is recognized. Not a persisted Project property and not user-chosen.
+
+_Avoid_: Project Shortcut Icon (retired term), project logo, project avatar.
 
 ## AP & Application Workloads
 
@@ -697,6 +703,20 @@ _Avoid_: payment popup, in-place payment, webhook return.
 The cluster-level display currency for the Billing Area, delivered server-side per request rather than baked into the client bundle at build time, so per-cluster configuration takes effect at runtime.
 
 _Avoid_: user currency preference, build-time currency.
+
+## Notifications
+
+### Notification Center
+
+The user's single inbox for Notifications, opened from the App Sidebar's Notifications entry (below the Projects row). User-scoped and global: it aggregates messages across every Project rather than belonging to one. It is not the Deployment Task Dock and does not manage running tasks; it holds messages, not work.
+
+_Avoid_: task center, activity feed, message center, alerts panel.
+
+### Notification
+
+One message addressed to the current user in the Notification Center: a system event (a deployment outcome, a database event), a billing or quota event, or a product announcement. Persistent and individually read/unread, which distinguishes it from a toast (ephemeral feedback that vanishes on its own); a Notification names its source Project when it has one.
+
+_Avoid_: alert, toast (for persistent items), event (for the user-facing message).
 
 ## Design System
 

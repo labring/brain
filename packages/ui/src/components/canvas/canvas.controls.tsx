@@ -6,6 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
+import { isEditableKeyboardTarget } from "@workspace/ui/lib/is-editable-keyboard-target";
 import { cn } from "@workspace/ui/lib/utils";
 import { useReactFlow } from "@xyflow/react";
 import {
@@ -131,26 +132,6 @@ function resolveCanvasShortcut(event: KeyboardEvent): CanvasShortcut | null {
   }
 
   return null;
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (target.isContentEditable) {
-    return true;
-  }
-
-  const tagName = target.tagName.toLowerCase();
-  return (
-    tagName === "input" ||
-    tagName === "select" ||
-    tagName === "textarea" ||
-    target.closest(
-      '[contenteditable="true"], [data-canvas-hotkeys="ignore"]'
-    ) !== null
-  );
 }
 
 function isCanvasKeyboardScope(

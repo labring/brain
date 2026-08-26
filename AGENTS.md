@@ -34,6 +34,7 @@ packages/
 - **Boundaries:** import through package exports (`@workspace/ui/*`, `@workspace/api/*`) or app-local `@/*`; never across apps or into another package's private `src`.
 - **Styling:** no inline color/spacing/radius/type/shadow literals — use tokens (`packages/ui/src/styles/globals.css`) or the Tailwind scale.
 - **UI reuse:** compose UI from existing `@workspace/ui` components (see `packages/ui/src/components`) before writing new ones; reach for the `app-*` wrappers (`app-button`, `app-dialog`, `app-select`, …) rather than the raw shadcn primitives they wrap.
+- **Custom utility classes:** register them with `@utility` in `globals.css`, not as plain classes inside `@layer utilities` — Tailwind 4 silently emits nothing when a plain layered class is used behind a variant prefix (`hover:`, `[&_...]:`).
 - **Domain:** `CONTEXT.md` names every product concept (AP, DB, deployment, public access, canvas, settings, …) and `docs/adr/` the accepted decisions behind them — before changing behavior in any area they name, read the relevant sections and ADRs; if a change would contradict an accepted ADR, stop and raise it instead of proceeding.
 - **Ports:** before using a local port, confirm it serves *this* checkout (not another worktree's): `lsof -a -d cwd -Fn -p $(lsof -tiTCP:<port> -sTCP:LISTEN | head -1)` — the cwd must be inside it.
 

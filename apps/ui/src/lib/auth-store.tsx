@@ -30,4 +30,8 @@ export const appTokenAtom = atom(
 
 export const desktopUserIdAtom = atom("");
 
+export const desktopUserNameAtom = atom("");
+
+export const desktopUserAvatarAtom = atom("");
+
 export const desktopLanguageAtom = atom("en");
