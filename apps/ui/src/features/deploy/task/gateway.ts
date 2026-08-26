@@ -114,7 +114,12 @@ export class CodexGatewayTurnError extends Error {
 function failedGatewayTurnStatus(
   value: string | null | undefined
 ): CodexGatewayFailedTurnStatus | null {
-  switch (value?.trim().toLowerCase()) {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  switch (normalized) {
     case "completed":
       return null;
     case "cancelled":

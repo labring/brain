@@ -107,6 +107,7 @@ function installGatewayFetch(input: {
   sessionHeaders?: Record<string, string>[];
   stateActiveSequence?: boolean[];
   stateActive: boolean;
+  stateOmitLastTurnStatus?: boolean;
   stateStatuses?: number[];
   stateTurnStatus?: string | null;
   stateTurnStatusSequence?: Array<string | null>;
@@ -166,6 +167,15 @@ function installGatewayFetch(input: {
       }
       const activeTurn =
         input.stateActiveSequence?.[readIndex] ?? input.stateActive;
+      if (input.stateOmitLastTurnStatus) {
+        const { lastTurnStatus: _lastTurnStatus, ...state } =
+          gatewayState(activeTurn);
+        return Response.json({
+          ok: true,
+          sessionId: "session-test-1",
+          state,
+        });
+      }
       return sessionResponse(
         activeTurn,
         "session-test-1",
@@ -227,6 +237,26 @@ describe("deployment Codex gateway interruption", () => {
     expect(
       recordedEvents.some((event) => event.kind.includes("interrupted"))
     ).toBe(false);
+  });
+
+  it("accepts a settled turn when an older gateway omits lastTurnStatus", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateOmitLastTurnStatus: true,
+    });
+
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: task(),
+    });
+
+    expect(paths.some((path) => path.endsWith("/turn/interrupt"))).toBe(false);
+    expect(
+      recordedEvents.some(
+        (event) => event.kind === "deploy_task.gateway_turn_completed"
+      )
+    ).toBe(true);
   });
 
   it("rejects a failed terminal turn without opening a completion-required turn", async () => {
