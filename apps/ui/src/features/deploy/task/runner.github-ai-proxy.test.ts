@@ -127,23 +127,22 @@ describe("deploy skill installation", () => {
       "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
     );
     expect(command).toContain('npx --yes skills@1.5.20 add "$skill_source" -y');
-    expect(command).toContain("k8s-kaniko-job/SKILL.md");
     expect(command).toContain(
-      "for skill_name in sealos-deploy dockerfile-skill k8s-kaniko-job cloud-native-readiness docker-to-sealos"
+      "required_skill_names=('sealos-deploy' 'k8s-kaniko-job')"
     );
     expect(command).not.toContain("deploy-skills-revision");
     expect(command).not.toMatch(PINNED_SKILL_COMMIT_SOURCE_RE);
   });
 
-  it("defaults to sealos-skills main via runtime config", () => {
+  it("defaults to the unified Brain deployment branch via runtime config", () => {
     expect(getDeploySkillSourceFromEnv({})).toBe(
-      "https://github.com/labring/sealos-skills.git#main"
+      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
     );
     const command = buildDeploySkillInstallCommand(
       getDeploySkillSourceFromEnv({})
     );
     expect(command).toContain(
-      "https://github.com/labring/sealos-skills.git#main"
+      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
     );
   });
 });

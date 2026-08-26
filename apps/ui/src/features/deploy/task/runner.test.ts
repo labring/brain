@@ -123,9 +123,9 @@ describe("deploy task runtime config", () => {
     expect(DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS).toBe(5 * 60_000);
   });
 
-  it("defaults the deploy skill source to sealos-skills main", () => {
+  it("defaults the deploy skill source to the unified Brain deployment branch", () => {
     expect(DEFAULT_DEPLOY_SKILL_SOURCE).toBe(
-      "https://github.com/labring/sealos-skills.git#main"
+      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
     );
     expect(getDeploySkillSourceFromEnv({})).toBe(DEFAULT_DEPLOY_SKILL_SOURCE);
     expect(

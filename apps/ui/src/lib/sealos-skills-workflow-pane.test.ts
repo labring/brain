@@ -21,7 +21,7 @@ const COMMAND_HIGHLIGHT_TEXT_RE = /isCommandHighlighted && "text-foreground"/;
 const COMMAND_ROW_HOVER_BACKGROUND_RE = /group[\s\S]*hover:bg-input/;
 const COMMAND_ROW_HOVER_TEXT_RE = /group-hover:text-foreground/;
 const CURRENT_INSTALL_COMMAND_RE =
-  /SEALOS_SKILLS_INSTALL_COMMAND[\s\S]{0,80}npx skills add labring\/sealos-skills/;
+  /SEALOS_SKILLS_INSTALL_COMMAND[\s\S]{0,180}npx --yes skills@1\.5\.20 add https:\/\/github\.com\/labring\/sealos-skills\.git#codex\/unify-main-brain-deploy -y/;
 const LEGACY_INSTALL_COMMAND_RE = /labring\/seakills/;
 const INSTALL_COMMAND_ROW_SOURCE =
   SKILLS_WORKFLOW_CONTENT_SOURCE.match(

@@ -6,6 +6,7 @@ import {
   executeEmitGenUISpec,
   genUISpecInputSchema,
 } from "@/features/chat/agui/gen-ui-tool";
+import { getChatDevboxSkillsSnapshot } from "@/features/chat/devbox/chat-runtime";
 import type { AssistantContextPayload } from "@/features/chat/persistence/types";
 import { createChatBashTool } from "@/features/chat/tool/chat-bash-tool";
 import { createSearchDeployCatalogTool } from "@/features/chat/tool/chat-deploy-catalog-tool";
@@ -17,8 +18,8 @@ import { createChatProjectTools } from "@/features/chat/tool/chat-project-tools"
 import { refreshFrontendSwrCachesTool } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
 import {
   buildChatSkillsDiscoveryPrompt,
+  createLoadSkillResourceTool,
   createLoadSkillTool,
-  discoverPublicSkills,
 } from "@/features/chat/tool/chat-skill-tool";
 import {
   chatToolIntentionField,
@@ -52,8 +53,8 @@ export interface ChatToolset {
  * Assemble the per-request tool registry + system prompt.
  *
  * - Skill index drives both the `loadSkill` tool and the discovery prompt addendum.
- * - Bash tool Devbox is created lazily; it does not start a runtime until the
- *   model actually invokes a bash subtool.
+ * - The shared Chat Devbox remains lazy; Skill metadata comes from the
+ *   background warmup cache and never blocks the chat stream preflight.
  */
 export async function buildChatToolset({
   kubeconfig,
@@ -70,10 +71,14 @@ export async function buildChatToolset({
   workspaceUserUid: string;
   assistantContext?: AssistantContextPayload;
 }): Promise<ChatToolset> {
-  const [skillIndex, { tools: bashTools }] = await Promise.all([
-    discoverPublicSkills(),
-    createChatBashTool({ kubeconfig, namespace: kubernetesNamespace }),
-  ]);
+  const { tools: bashTools, lazySandbox } = await createChatBashTool({
+    kubeconfig,
+    namespace: kubernetesNamespace,
+  });
+  const skillIndex = getChatDevboxSkillsSnapshot({
+    kubeconfig,
+    namespace: kubernetesNamespace,
+  });
   const deployTaskTools = createDeployTaskTools({
     assistantContext,
     kubeconfig,
@@ -103,7 +108,8 @@ export async function buildChatToolset({
     refreshFrontendSwrCaches: refreshFrontendSwrCachesTool,
     readApiOpenApiDocs: readApiOpenApiDocsTool,
     sliceOpenApiDocs: sliceOpenApiDocsTool,
-    loadSkill: createLoadSkillTool(skillIndex),
+    loadSkill: createLoadSkillTool(skillIndex, lazySandbox),
+    loadSkillResource: createLoadSkillResourceTool(skillIndex, lazySandbox),
     ...bashTools,
   } as unknown as ToolSet;
 
