@@ -15,9 +15,12 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import {
   type AccountBalance,
-  formatAccountBalance,
   loadAccountBalance,
 } from "@/features/billing/account-balance";
+import {
+  type AccountCredits,
+  loadAccountCredits,
+} from "@/features/billing/account-credits";
 import { loadAiCredits } from "@/features/billing/billing-ai-credits";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
@@ -42,10 +45,12 @@ import {
 } from "@/features/billing/billing-plan-data";
 import {
   BillingAiCreditsSection,
+  BillingBalanceValue,
   BillingPlanSurface,
 } from "@/features/billing/billing-plan-surface";
 import {
   accountBalanceSwrKey,
+  accountCreditsSwrKey,
   aiCreditsSwrKey,
   settleSubscriptionChange,
 } from "@/features/billing/billing-subscription-settlement";
@@ -268,9 +273,13 @@ function accountBalanceContent(input: {
   balance: AccountBalance | undefined;
   credentialsReady: boolean;
   error: unknown;
+  /** Undefined while loading or after a failed fetch — either renders as
+   *  no gift, so the figure quietly falls back to Balance − Deduction. */
+  giftCredits: AccountCredits | undefined;
+  giftCreditsLoading: boolean;
   isLoading: boolean;
 }): ReactNode {
-  if (!input.credentialsReady || input.isLoading) {
+  if (!input.credentialsReady || input.isLoading || input.giftCreditsLoading) {
     return (
       <Skeleton aria-label="Loading Account Balance" className="h-8 w-28" />
     );
@@ -285,10 +294,13 @@ function accountBalanceContent(input: {
   if (input.balance == null) {
     return null;
   }
+  const giftMicroUnits = input.giftCredits?.usableMicroUnits ?? 0;
   return (
-    <p className="font-semibold text-2xl text-foreground tabular-nums">
-      {formatAccountBalance(input.balance)}
-    </p>
+    <BillingBalanceValue
+      availableMicroUnits={input.balance.microUnits + giftMicroUnits}
+      currency={input.balance.currency}
+      giftMicroUnits={giftMicroUnits}
+    />
   );
 }
 
@@ -376,6 +388,11 @@ export function BillingPlan({
       ? accountBalanceSwrKey({ appToken, currency, kubeconfig })
       : null,
     () => loadAccountBalance({ appToken, currency, kubeconfig }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  const { data: giftCredits, isLoading: giftCreditsLoading } = useSWR(
+    credentialsReady ? accountCreditsSwrKey({ appToken, kubeconfig }) : null,
+    () => loadAccountCredits({ appToken, kubeconfig }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
   const {
@@ -616,6 +633,8 @@ export function BillingPlan({
             balance,
             credentialsReady,
             error: balanceError,
+            giftCredits,
+            giftCreditsLoading,
             isLoading: balanceLoading,
           })}
         </div>

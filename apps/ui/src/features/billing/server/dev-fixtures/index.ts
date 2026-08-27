@@ -735,6 +735,26 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
       },
     };
   },
+  // account-service serializes its CreditsInfoReq struct under "credits";
+  // the balance fields mirror the account fixture. Only `free` carries an
+  // active gift (the $1 newbie grant, partly consumed) — every other
+  // scenario reports none, so the Plan view shows the bare number.
+  "/payment/v1alpha1/credits/info": ({ scenario }) => {
+    const inDebt = DEBT_SCENARIOS.has(scenario);
+    const gift = scenario === "free";
+    return {
+      credits: {
+        balance: inDebt ? 5_000_000 : 128_000_000,
+        credits: gift ? 1_000_000 : 0,
+        currentPlanCreditsBalance: gift ? 1_000_000 : 0,
+        currentPlanCreditsDeductionBalance: gift ? 280_000 : 0,
+        deductionBalance: inDebt ? 11_320_000 : 23_450_000,
+        deductionCredits: gift ? 280_000 : 0,
+        kycDeductionCreditsBalance: gift ? 1_000_000 : 0,
+        kycDeductionCreditsDeductionBalance: gift ? 280_000 : 0,
+      },
+    };
+  },
 };
 
 interface WriteFixtureResult {

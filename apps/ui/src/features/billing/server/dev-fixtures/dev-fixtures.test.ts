@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadAccountBalance } from "../../account-balance";
+import { loadAccountCredits } from "../../account-credits";
 import { loadAiCredits } from "../../billing-ai-credits";
 import { loadBillingCosts } from "../../billing-costs-data";
 import type { BillingFetch } from "../../billing-data-client";
@@ -86,31 +87,39 @@ function loadPlanForScenario(scenario: string) {
 test("every scenario passes every loader's schemas", async () => {
   for (const scenario of BILLING_DEV_SCENARIOS) {
     const mockFetch = mockFetchFor(scenario);
-    const [plan, usage, pricing, costs, balance, credits] = await Promise.all([
-      loadBillingPlanSnapshot(CREDENTIALS, { fetch: mockFetch }),
-      loadBillingUsage(CREDENTIALS, { fetch: mockFetch }),
-      loadBillingPricing(CREDENTIALS, { fetch: mockFetch }),
-      loadBillingCosts(
-        {
-          appToken: CREDENTIALS.appToken,
-          dateRange: DATE_RANGE,
-          kubeconfig: CREDENTIALS.kubeconfig,
-          page: 1,
-          pageSize: 10,
-          workspace: null,
-        },
-        mockFetch
-      ),
-      loadAccountBalance(
-        {
-          appToken: CREDENTIALS.appToken,
-          currency: "usd",
-          kubeconfig: CREDENTIALS.kubeconfig,
-        },
-        mockFetch
-      ),
-      loadAiCredits(CREDENTIALS, mockFetch),
-    ]);
+    const [plan, usage, pricing, costs, balance, credits, giftCredits] =
+      await Promise.all([
+        loadBillingPlanSnapshot(CREDENTIALS, { fetch: mockFetch }),
+        loadBillingUsage(CREDENTIALS, { fetch: mockFetch }),
+        loadBillingPricing(CREDENTIALS, { fetch: mockFetch }),
+        loadBillingCosts(
+          {
+            appToken: CREDENTIALS.appToken,
+            dateRange: DATE_RANGE,
+            kubeconfig: CREDENTIALS.kubeconfig,
+            page: 1,
+            pageSize: 10,
+            workspace: null,
+          },
+          mockFetch
+        ),
+        loadAccountBalance(
+          {
+            appToken: CREDENTIALS.appToken,
+            currency: "usd",
+            kubeconfig: CREDENTIALS.kubeconfig,
+          },
+          mockFetch
+        ),
+        loadAiCredits(CREDENTIALS, mockFetch),
+        loadAccountCredits(
+          {
+            appToken: CREDENTIALS.appToken,
+            kubeconfig: CREDENTIALS.kubeconfig,
+          },
+          mockFetch
+        ),
+      ]);
     assert.equal(plan.plans.length, 9, `${scenario}: plan catalog loads`);
     assert.ok(usage.rows.length >= 5, `${scenario}: usage rows load`);
     assert.ok(pricing.prices.length >= 6, `${scenario}: metered prices load`);
@@ -124,6 +133,11 @@ test("every scenario passes every loader's schemas", async () => {
       Number.isFinite(credits.usedMicroUnits) &&
         Number.isFinite(credits.totalMicroUnits),
       `${scenario}: AI Credits load`
+    );
+    assert.equal(
+      giftCredits.usableMicroUnits,
+      scenario === "free" ? 720_000 : 0,
+      `${scenario}: only the Free trial carries an active gift credit`
     );
     if (CREDITLESS_SCENARIOS.has(scenario)) {
       assert.equal(

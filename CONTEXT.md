@@ -592,9 +592,15 @@ _Avoid_: first region, default region, regions[0].
 
 ### Account Balance
 
-The user's account-level prepaid funds held by account-service, presented as the net of balance minus accumulated deductions. Account Balance is real money that can offset subscription charges; it is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. It is not a Free Chat Turns count, a quota, or an entitlement counter.
+The user's account-level prepaid funds held by account-service, presented as the available amount: balance minus accumulated deductions, plus any usable Gift Credit — the same formula the platform's own debt pipeline judges an account by, so the number a user sees and the number that suspends them never disagree. Account Balance is real money that can offset subscription charges; it is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. It is not a Free Chat Turns count, a quota, or an entitlement counter.
 
 _Avoid_: credits, wallet, free balance, top-up balance.
+
+### Gift Credit
+
+Promotional money the platform grants to an account — the new-user gift is the canonical case — consumed by metered usage before paid funds and expiring on a platform-set date. Gift Credit is account-scoped and counts toward the available Account Balance; while any remains, the Balance display names it so its silent burn-down is visible. It is not AI Credits (a workspace allowance for AI usage) and not cash: it cannot be topped up, transferred, or refunded.
+
+_Avoid_: bonus, voucher, trial balance, free balance.
 
 ### Subscription Plan
 
