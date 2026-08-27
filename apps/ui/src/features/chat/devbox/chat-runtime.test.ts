@@ -6,6 +6,8 @@ mock.module("./lifecycle-registration", () => ({
   recordChatDevboxActivity: () => Promise.resolve(),
 }));
 
+const INSTALL_MARKER_RE = /sealos-skills-install\.marker/;
+
 const {
   bootstrapChatDevboxIfNeeded,
   getChatDevboxSkillsSnapshot,
@@ -27,6 +29,7 @@ test("background Skill warmup is shared and publishes metadata after discovery",
   const originalBaseUrl = process.env.DEVBOX_API_BASE_URL;
   const originalToken = process.env.DEVBOX_TOKEN;
   let execCalls = 0;
+  let installCommand = "";
 
   process.env.DEVBOX_API_BASE_URL = "https://devbox.test";
   process.env.DEVBOX_TOKEN = "test-token";
@@ -54,6 +57,9 @@ test("background Skill warmup is shared and publishes metadata after discovery",
         command?: string[];
       };
       const command = body.command?.at(-1) ?? "";
+      if (command.includes("skills@1.5.20 add")) {
+        installCommand = command;
+      }
       if (command.includes("find ")) {
         return Response.json({
           data: {
@@ -96,6 +102,11 @@ test("background Skill warmup is shared and publishes metadata after discovery",
       ["sealos-deploy"]
     );
     assert.ok(execCalls >= 3);
+    assert.match(installCommand, INSTALL_MARKER_RE);
+    assert.ok(
+      installCommand.indexOf('cat -- "$install_marker"') <
+        installCommand.indexOf("install_output")
+    );
   } finally {
     globalThis.fetch = originalFetch;
     if (originalBaseUrl === undefined) {

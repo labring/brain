@@ -133,6 +133,7 @@ describe("deploy skill installation", () => {
     expect(command).not.toContain("skills-lock.json");
     expect(command).not.toContain("required_skill_names");
     expect(command).not.toContain("deploy-skills-revision");
+    expect(command).not.toContain("sealos-skills-install.marker");
     expect(command).not.toMatch(PINNED_SKILL_COMMIT_SOURCE_RE);
   });
 

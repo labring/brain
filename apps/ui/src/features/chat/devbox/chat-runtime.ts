@@ -308,6 +308,7 @@ async function installChatSkills(
     authNamespace,
     name,
     buildSealosSkillsInstallCommand({
+      skipIfInstallMarkerMatches: true,
       skillSource: getSealosSkillsSourceFromEnv(process.env),
       timeoutSeconds: DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS,
     }),
