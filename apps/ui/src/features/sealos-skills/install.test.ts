@@ -4,17 +4,19 @@ import {
   buildSealosSkillsInstallCommand,
   DEFAULT_SEALOS_SKILLS_SOURCE,
   getSealosSkillsSourceFromEnv,
-  SEALOS_CHAT_SKILL_NAMES,
 } from "./install";
 
 const INSTALL_MARKER_RE = /sealos-skills-install\.marker/;
 const IDEMPOTENCY_RE = /skills_ready=true/;
 const CLI_VERSION_RE = /skills@1\.5\.20/;
-const DEPLOY_SKILL_RE = /sealos-deploy/;
-const INTERNAL_SKILL_RE = /required_skill_names=.*k8s-kaniko-job/;
-const KANIKO_SKILL_RE = /k8s-kaniko-job/;
 const QUOTED_SOURCE_RE = /branch\/it.*s-safe/;
 const LOCK_RE = /flock --wait/;
+const AGENTS_SKILLS_CLEANUP_RE =
+  /rm -rf -- "\$workspace_dir\/\.agents\/skills"/;
+const CODEX_SKILLS_CLEANUP_RE = /rm -rf -- "\$workspace_dir\/\.codex\/skills"/;
+const SKILLS_LOCK_CLEANUP_RE = /rm -f -- "\$skills_lock_path"/;
+const SKILL_NAME_VALIDATION_RE =
+  /required_skill_names|required Sealos skill|cloud-native-readiness|sealos-deploy|k8s-kaniko-job/;
 
 test("Sealos Skills source defaults to the shared deployment branch", () => {
   assert.equal(getSealosSkillsSourceFromEnv({}), DEFAULT_SEALOS_SKILLS_SOURCE);
@@ -30,10 +32,9 @@ test("Sealos Skills source defaults to the shared deployment branch", () => {
   );
 });
 
-test("chat install command is idempotent and excludes the internal executor", () => {
+test("chat install command is idempotent and lets the source own the skill set", () => {
   const command = buildSealosSkillsInstallCommand({
     force: false,
-    requiredSkillNames: SEALOS_CHAT_SKILL_NAMES,
     skillSource: DEFAULT_SEALOS_SKILLS_SOURCE,
     timeoutSeconds: 180,
   });
@@ -45,15 +46,16 @@ test("chat install command is idempotent and excludes the internal executor", ()
   );
   assert.match(command, IDEMPOTENCY_RE);
   assert.match(command, CLI_VERSION_RE);
-  assert.match(command, DEPLOY_SKILL_RE);
-  assert.doesNotMatch(command, INTERNAL_SKILL_RE);
+  assert.match(command, AGENTS_SKILLS_CLEANUP_RE);
+  assert.match(command, CODEX_SKILLS_CLEANUP_RE);
+  assert.match(command, SKILLS_LOCK_CLEANUP_RE);
+  assert.doesNotMatch(command, SKILL_NAME_VALIDATION_RE);
 });
 
 test("deployment install command always reinstalls and shell-quotes the source", () => {
   const source = "https://example.test/sealos-skills.git#branch/it's-safe";
   const command = buildSealosSkillsInstallCommand({
     force: true,
-    requiredSkillNames: ["sealos-deploy", "k8s-kaniko-job"],
     skillSource: source,
     timeoutSeconds: 180,
   });
@@ -61,6 +63,6 @@ test("deployment install command always reinstalls and shell-quotes the source",
   assert.doesNotMatch(command, IDEMPOTENCY_RE);
   assert.match(command, LOCK_RE);
   assert.ok(command.indexOf("flock --wait") < command.indexOf("rm -rf"));
-  assert.match(command, KANIKO_SKILL_RE);
   assert.match(command, QUOTED_SOURCE_RE);
+  assert.doesNotMatch(command, SKILL_NAME_VALIDATION_RE);
 });

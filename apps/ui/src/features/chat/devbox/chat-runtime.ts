@@ -10,7 +10,6 @@ import {
 import {
   buildSealosSkillsInstallCommand,
   getSealosSkillsSourceFromEnv,
-  SEALOS_CHAT_SKILL_NAMES,
   SEALOS_SKILLS_CLI_VERSION,
 } from "@/features/sealos-skills/install";
 import {
@@ -310,7 +309,6 @@ async function installChatSkills(
     name,
     buildSealosSkillsInstallCommand({
       force: false,
-      requiredSkillNames: SEALOS_CHAT_SKILL_NAMES,
       skillSource: getSealosSkillsSourceFromEnv(process.env),
       timeoutSeconds: DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS,
     }),

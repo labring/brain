@@ -1785,7 +1785,6 @@ export function buildManagedWorkspacePurgeCommand(): string {
 export function buildDeploySkillInstallCommand(skillSource: string): string {
   return buildSealosSkillsInstallCommand({
     force: true,
-    requiredSkillNames: ["sealos-deploy", "k8s-kaniko-job"],
     skillSource,
     timeoutSeconds: DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000,
   });
