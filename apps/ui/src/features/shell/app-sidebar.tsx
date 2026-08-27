@@ -18,15 +18,7 @@ import {
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
-import {
-  ArrowUpRight,
-  ChevronRight,
-  CreditCard,
-  Database,
-  House,
-  PanelLeft,
-  PanelsTopLeft,
-} from "lucide-react";
+import { ChevronRight, Database, PanelLeft, PanelsTopLeft } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -40,7 +32,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
@@ -52,13 +43,15 @@ import { createAppSidebarProjectGroups } from "@/features/shell/app-sidebar.grou
 import { AppSidebarAccount } from "@/features/shell/app-sidebar-account";
 import { AppSidebarNotifications } from "@/features/shell/app-sidebar-notifications";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
-import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
 const APP_SIDEBAR_NAV_ID = "app-sidebar-nav";
 const APP_SIDEBAR_WIDTH = "13.75rem";
 const APP_SIDEBAR_WIDTH_ICON = "3.25rem";
 const EMPTY_PROJECT_IDS: readonly string[] = Object.freeze([]);
 
+// The inactive tint sets its own color, which beats the icon slot's inherited
+// hover blue — so the row's group-hover must be restated here (`group/row`
+// comes from AppSidebarNavRow).
 function ProjectIcon({
   active,
   iconKey,
@@ -72,7 +65,7 @@ function ProjectIcon({
         aria-hidden
         className={cn(
           "size-4 shrink-0 transition-colors",
-          !active && "text-neutral-400"
+          !active && "text-neutral-400 group-hover/row:text-blue-400"
         )}
         strokeWidth={1.8}
       />
@@ -82,7 +75,10 @@ function ProjectIcon({
   return (
     <BrandMark
       brandKey={iconKey}
-      className={cn("transition-colors", !active && "text-neutral-400")}
+      className={cn(
+        "transition-colors",
+        !active && "text-neutral-400 group-hover/row:text-blue-400"
+      )}
     />
   );
 }
@@ -130,7 +126,7 @@ function AppSidebarNavRow({
   const iconSlotRef = useRef<HTMLSpanElement>(null);
   const accessibleName = ariaLabel ?? label;
   const className =
-    "group/row relative flex h-8 w-full shrink-0 items-center overflow-hidden rounded-md text-left text-neutral-50 text-sm";
+    "group/row relative flex h-9 w-full shrink-0 items-center overflow-hidden rounded-md text-left text-neutral-50 text-sm";
   const body = (
     <>
       <span
@@ -145,7 +141,7 @@ function AppSidebarNavRow({
       />
       <span
         className={cn(
-          "relative flex w-9 shrink-0 items-center justify-center",
+          "relative flex w-9 shrink-0 items-center justify-center transition-colors group-hover/row:text-blue-400",
           active && "text-blue-400"
         )}
         ref={iconSlotRef}
@@ -341,24 +337,6 @@ function AppSidebarHeader() {
   );
 }
 
-function AppSidebarDesktopReturn() {
-  const desktopUrl = useSealosDesktopUrl();
-
-  return (
-    <AppSidebarNavRow
-      ariaLabel="Sealos Desktop"
-      href={desktopUrl ?? undefined}
-      icon={<House aria-hidden className="size-4" strokeWidth={1.8} />}
-      label="Sealos Desktop"
-      rel={desktopUrl ? "noopener noreferrer" : undefined}
-      target={desktopUrl ? "_blank" : undefined}
-      trailing={
-        <ArrowUpRight aria-hidden className="size-3.5" strokeWidth={1.8} />
-      }
-    />
-  );
-}
-
 function AppSidebarProjectRow({
   ariaLabel,
   currentProjectId,
@@ -548,11 +526,9 @@ function AppSidebarFocusTransfer() {
 }
 
 function AppSidebarChrome({
-  billingActive,
   currentProjectId,
   projectsActive,
 }: {
-  billingActive: boolean;
   currentProjectId: string | undefined;
   projectsActive: boolean;
 }) {
@@ -624,16 +600,8 @@ function AppSidebarChrome({
         </SidebarContent>
         <SidebarFooter className="p-0">
           <div className="flex shrink-0 flex-col gap-0.5 pt-3 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:pt-2 motion-reduce:transition-none">
-            <AppSidebarNavRow
-              active={billingActive}
-              href="/billing"
-              icon={
-                <CreditCard aria-hidden className="size-4" strokeWidth={1.8} />
-              }
-              label="Billing"
-              onClick={recordBillingReturnRoute}
-            />
-            <AppSidebarDesktopReturn />
+            {/* Billing and the Sealos Desktop Entry live inside the account
+                popover; the account row is the whole footer. */}
             {/* Account-row exception: the avatar disc is visually heavier
                   than the row glyphs, so in both states it takes this extra
                   margin on top of the footer gap. */}
@@ -677,7 +645,6 @@ export default function AppSidebar() {
 
   return (
     <AppSidebarChrome
-      billingActive={pathname.startsWith("/billing")}
       currentProjectId={projectIdFromPathname(pathname)}
       projectsActive={pathname === "/project"}
     />

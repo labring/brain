@@ -437,11 +437,10 @@ test("the active project uses aria-current and locked copy is present", async ()
     assert.ok(active);
     assert.equal(active.getAttribute("aria-current"), "page");
 
-    assert.ok(document.querySelector('[aria-label="Sealos Desktop"]'));
-    const billing = document.querySelector('a[href="/billing"]');
-    assert.ok(billing);
-    assert.equal(billing.getAttribute("aria-label"), "Billing");
-    assert.equal(billing.getAttribute("aria-current"), null);
+    // Billing and the Sealos Desktop Entry live inside the account popover,
+    // not the sidebar footer (see the popover test below).
+    assert.equal(document.querySelector('a[href="/billing"]'), null);
+    assert.equal(document.querySelector('[aria-label="Sealos Desktop"]'), null);
     // AIM-308: the account section replaced the Upgrade button as the
     // sidebar's single quota surface.
     assert.equal(document.querySelector('[aria-label="Upgrade"]'), null);
@@ -578,6 +577,27 @@ test("clicking the account row opens the popover with quota, copy, and upgrade",
         [null, "true", null, null, null]
       );
       assert.ok(popover.querySelector('a[href="/billing?mode=upgrade"]'));
+
+      // The popover carries the menu rows: the Usage entry (collapsed by
+      // default, quota rows folded into its expansion), Billing, and the
+      // Sealos Desktop Entry.
+      const billingRow = popover.querySelector('a[href="/billing"]');
+      assert.ok(billingRow);
+      assert.equal(billingRow.textContent?.includes("Billing"), true);
+      const desktopRow = [...popover.querySelectorAll("a")].find((link) =>
+        link.textContent?.includes("Sealos Desktop")
+      );
+      assert.ok(desktopRow);
+      const usageToggle = popover.querySelector<HTMLButtonElement>(
+        "button[aria-expanded]"
+      );
+      assert.ok(usageToggle);
+      assert.equal(usageToggle.textContent?.includes("Usage"), true);
+      assert.equal(usageToggle.getAttribute("aria-expanded"), "false");
+      await actAndDrain(() => {
+        usageToggle.click();
+      });
+      assert.equal(usageToggle.getAttribute("aria-expanded"), "true");
 
       const copy = popover.querySelector<HTMLButtonElement>(
         '[aria-label="Copy user ID"]'

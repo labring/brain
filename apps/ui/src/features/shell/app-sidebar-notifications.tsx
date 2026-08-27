@@ -236,7 +236,7 @@ export function AppSidebarNotifications() {
           ? `Notifications, ${unreadCount} unread`
           : "Notifications"
       }
-      className="group/nbell relative flex h-8 w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left text-neutral-50 text-sm"
+      className="group/nbell relative flex h-9 w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left text-neutral-50 text-sm"
       data-slot="app-sidebar-notifications"
       type="button"
     />
@@ -257,14 +257,14 @@ export function AppSidebarNotifications() {
             )}
           />
           <span
-            className="relative flex w-9 shrink-0 items-center justify-center"
+            className="relative flex w-9 shrink-0 items-center justify-center transition-colors group-hover/nbell:text-blue-400"
             ref={iconSlotRef}
           >
             <Bell aria-hidden className="size-4" strokeWidth={1.8} />
             <span
               aria-hidden
               className={cn(
-                "absolute top-1.5 right-2 size-1.5 rounded-full bg-blue-400 transition-opacity motion-reduce:transition-none",
+                "absolute top-2 right-2 size-1.5 rounded-full bg-blue-400 transition-opacity motion-reduce:transition-none",
                 !expanded && unreadCount > 0
                   ? "opacity-100 duration-200 ease-out"
                   : "opacity-0 duration-300 ease-sidebar"
