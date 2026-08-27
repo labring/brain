@@ -1784,8 +1784,7 @@ export function buildManagedWorkspacePurgeCommand(): string {
 /** Branch/tree URL for `skills add`; override via DEPLOY_SKILL_SOURCE. */
 export function buildDeploySkillInstallCommand(skillSource: string): string {
   return buildSealosSkillsInstallCommand({
-    force: true,
-    requiredSkillNames: ["sealos-deploy", "k8s-kaniko-job"],
+    skipIfInstallMarkerMatches: false,
     skillSource,
     timeoutSeconds: DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000,
   });

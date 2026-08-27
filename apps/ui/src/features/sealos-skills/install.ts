@@ -4,29 +4,10 @@ export const DEFAULT_SEALOS_SKILLS_SOURCE =
 export const SEALOS_SKILLS_CLI_VERSION = "1.5.20";
 export const SEALOS_SKILLS_WORKSPACE_DIR = "/home/devbox/project";
 export const SEALOS_SKILLS_INSTALL_MARKER = `${SEALOS_SKILLS_WORKSPACE_DIR}/.sealos/sealos-skills-install.marker`;
-
-/** Skills installed by the shared Sealos skills repository. */
-export const SEALOS_SKILL_NAMES = [
-  "cloud-native-readiness",
-  "docker-to-sealos",
-  "dockerfile-skill",
-  "k8s-kaniko-job",
-  "sealos-app-builder",
-  "sealos-canvas",
-  "sealos-database",
-  "sealos-deploy",
-  "sealos-s3",
-] as const;
+const SEALOS_SKILLS_INSTALL_MARKER_SCHEMA = "source-install-v1";
 
 /** Internal deployment executor; it is not exposed by the chat Skill loader. */
 export const SEALOS_INTERNAL_CHAT_SKILL_NAMES = ["k8s-kaniko-job"] as const;
-
-export const SEALOS_CHAT_SKILL_NAMES = SEALOS_SKILL_NAMES.filter(
-  (name) =>
-    !SEALOS_INTERNAL_CHAT_SKILL_NAMES.includes(
-      name as (typeof SEALOS_INTERNAL_CHAT_SKILL_NAMES)[number]
-    )
-);
 
 export function getSealosSkillsSourceFromEnv(
   env: Record<string, string | undefined>
@@ -38,43 +19,48 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function shellArray(values: readonly string[]): string {
-  return values.map((value) => shellQuote(value)).join(" ");
-}
-
 export interface BuildSealosSkillsInstallCommandOptions {
-  force: boolean;
-  requiredSkillNames: readonly string[];
   skillSource: string;
+  skipIfInstallMarkerMatches: boolean;
   timeoutSeconds: number;
 }
 
 /**
  * Builds the single installation flow shared by Chat Devboxes and deployment
- * task Devboxes. Chat uses marker-based idempotency; deployment tasks force a
- * fresh install after preparing their workspace.
+ * task Devboxes. The configured source owns what gets installed; existing
+ * workspace skills and lock files are intentionally preserved.
  */
 export function buildSealosSkillsInstallCommand({
-  force,
-  requiredSkillNames,
+  skipIfInstallMarkerMatches,
   skillSource,
   timeoutSeconds,
 }: BuildSealosSkillsInstallCommandOptions): string {
-  const requiredNames = [...new Set(requiredSkillNames)];
-  const cleanupNames = [...new Set(SEALOS_SKILL_NAMES)];
   const marker = shellQuote(SEALOS_SKILLS_INSTALL_MARKER);
-  const markerContent = `source=${skillSource}\ncli_version=${SEALOS_SKILLS_CLI_VERSION}\n`;
+  const markerContent = `marker_schema=${SEALOS_SKILLS_INSTALL_MARKER_SCHEMA}\nsource=${skillSource}\ncli_version=${SEALOS_SKILLS_CLI_VERSION}`;
+  const markerSetup = skipIfInstallMarkerMatches
+    ? [
+        `install_marker=${marker}`,
+        `marker_content=${shellQuote(markerContent)}`,
+      ]
+    : [];
+  const cachedInstallCheck = skipIfInstallMarkerMatches
+    ? [
+        'if [ -f "$install_marker" ] && [ "$(cat -- "$install_marker")" = "$marker_content" ]; then',
+        "  exit 0",
+        "fi",
+      ]
+    : [];
+  const markerWrite = skipIfInstallMarkerMatches
+    ? ['printf \'%s\' "$marker_content" > "$install_marker"']
+    : [];
 
   return [
     "set -euo pipefail",
     `workspace_dir=${shellQuote(SEALOS_SKILLS_WORKSPACE_DIR)}`,
     `skill_source=${shellQuote(skillSource)}`,
-    `install_marker=${marker}`,
     'install_lock_path="$workspace_dir/.sealos/sealos-skills-install.lock"',
     `install_lock_wait_seconds=${timeoutSeconds}`,
-    `required_skill_names=(${shellArray(requiredNames)})`,
-    `cleanup_skill_names=(${shellArray(cleanupNames)})`,
-    `marker_content=${shellQuote(markerContent)}`,
+    ...markerSetup,
     'mkdir -p -- "$workspace_dir/.sealos"',
     "if ! command -v npx >/dev/null 2>&1; then",
     "  printf 'ERROR: npx is required to install Sealos skills\\n' >&2",
@@ -89,34 +75,22 @@ export function buildSealosSkillsInstallCommand({
     "  printf 'ERROR: timed out waiting for the Sealos skills install lock\\n' >&2",
     "  exit 1",
     "fi",
-    ...(force
-      ? []
-      : [
-          "skills_ready=true",
-          `if [ ! -f "$install_marker" ] || ! grep -Fxq "source=$skill_source" "$install_marker" || ! grep -Fxq "cli_version=${SEALOS_SKILLS_CLI_VERSION}" "$install_marker"; then`,
-          "  skills_ready=false",
-          "fi",
-          `for skill_name in "\${required_skill_names[@]}"; do`,
-          '  if [ ! -f "$workspace_dir/.agents/skills/$skill_name/SKILL.md" ] && [ ! -f "$workspace_dir/.codex/skills/$skill_name/SKILL.md" ]; then',
-          "    skills_ready=false",
-          "  fi",
-          "done",
-          'if [ "$skills_ready" = true ]; then',
-          "  exit 0",
-          "fi",
-        ]),
-    `for skill_name in "\${cleanup_skill_names[@]}"; do`,
-    '  rm -rf -- "$workspace_dir/.agents/skills/$skill_name"',
-    '  rm -rf -- "$workspace_dir/.codex/skills/$skill_name"',
-    "done",
+    ...cachedInstallCheck,
     'cd -- "$workspace_dir"',
-    `timeout ${timeoutSeconds} npx --yes skills@${SEALOS_SKILLS_CLI_VERSION} add "$skill_source" -y`,
-    `for skill_name in "\${required_skill_names[@]}"; do`,
-    '  if [ ! -f "$workspace_dir/.agents/skills/$skill_name/SKILL.md" ] && [ ! -f "$workspace_dir/.codex/skills/$skill_name/SKILL.md" ]; then',
-    "    printf 'ERROR: required Sealos skill missing after install: %s\\n' \"$skill_name\" >&2",
-    "    exit 1",
-    "  fi",
-    "done",
-    'printf \'%s\' "$marker_content" > "$install_marker"',
+    `if install_output=$(timeout ${timeoutSeconds} npx --yes skills@${SEALOS_SKILLS_CLI_VERSION} add "$skill_source" --agent codex -y 2>&1); then`,
+    "  :",
+    "else",
+    "  install_exit_code=$?",
+    "  printf '%s\\n' \"$install_output\" >&2",
+    "  printf 'ERROR: Sealos skills CLI failed with exit code %s\\n' \"$install_exit_code\" >&2",
+    '  exit "$install_exit_code"',
+    "fi",
+    `if printf '%s\\n' "$install_output" | grep -Eq 'Failed to install [1-9][0-9]*'; then`,
+    "  printf '%s\\n' \"$install_output\" >&2",
+    "  printf 'ERROR: Sealos skills CLI reported installation failures\\n' >&2",
+    "  exit 1",
+    "fi",
+    "printf '%s\\n' \"$install_output\"",
+    ...markerWrite,
   ].join("\n");
 }
