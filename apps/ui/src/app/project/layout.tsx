@@ -1,4 +1,5 @@
 import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
+import { ProjectsExplorerDevMockGate } from "@/features/projects/explorer/projects-dev-mock-gate";
 import {
   AppShellChrome,
   AppShellSidebar,
@@ -25,6 +26,7 @@ export default function ProjectLayout({
       <SealosSdkBootstrap />
       <DevboxBootstrap />
       <OnboardingGate />
+      <ProjectsExplorerDevMockGate />
       <AppSidebarCookieBridge>
         <AppShellSidebar />
         <AppShellView className="min-w-0 flex-1 basis-0">
