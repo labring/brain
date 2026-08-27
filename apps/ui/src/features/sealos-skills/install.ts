@@ -19,7 +19,6 @@ function shellQuote(value: string): string {
 }
 
 export interface BuildSealosSkillsInstallCommandOptions {
-  force: boolean;
   skillSource: string;
   timeoutSeconds: number;
 }
@@ -30,7 +29,6 @@ export interface BuildSealosSkillsInstallCommandOptions {
  * workspace skills and lock files are intentionally preserved.
  */
 export function buildSealosSkillsInstallCommand({
-  force,
   skillSource,
   timeoutSeconds,
 }: BuildSealosSkillsInstallCommandOptions): string {
@@ -59,19 +57,20 @@ export function buildSealosSkillsInstallCommand({
     "  printf 'ERROR: timed out waiting for the Sealos skills install lock\\n' >&2",
     "  exit 1",
     "fi",
-    ...(force
-      ? []
-      : [
-          "skills_ready=true",
-          `if [ ! -f "$install_marker" ] || ! grep -Fxq "source=$skill_source" "$install_marker" || ! grep -Fxq "cli_version=${SEALOS_SKILLS_CLI_VERSION}" "$install_marker"; then`,
-          "  skills_ready=false",
-          "fi",
-          'if [ "$skills_ready" = true ]; then',
-          "  exit 0",
-          "fi",
-        ]),
     'cd -- "$workspace_dir"',
-    `timeout ${timeoutSeconds} npx --yes skills@${SEALOS_SKILLS_CLI_VERSION} add "$skill_source" -y`,
+    `if install_output=$(timeout ${timeoutSeconds} npx --yes skills@${SEALOS_SKILLS_CLI_VERSION} add "$skill_source" --agent codex -y 2>&1); then`,
+    "  :",
+    "else",
+    "  install_exit_code=$?",
+    "  printf '%s\\n' \"$install_output\"",
+    "  printf 'ERROR: Sealos skills CLI failed with exit code %s\\n' \"$install_exit_code\" >&2",
+    '  exit "$install_exit_code"',
+    "fi",
+    "printf '%s\\n' \"$install_output\"",
+    `if printf '%s\\n' "$install_output" | grep -Eq 'Failed to install [1-9][0-9]*'; then`,
+    "  printf 'ERROR: Sealos skills CLI reported installation failures\\n' >&2",
+    "  exit 1",
+    "fi",
     'printf \'%s\' "$marker_content" > "$install_marker"',
   ].join("\n");
 }

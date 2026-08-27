@@ -7,8 +7,9 @@ import {
 } from "./install";
 
 const INSTALL_MARKER_RE = /sealos-skills-install\.marker/;
-const IDEMPOTENCY_RE = /skills_ready=true/;
 const CLI_VERSION_RE = /skills@1\.5\.20/;
+const CODEX_AGENT_RE = /--agent codex -y/;
+const INSTALL_FAILURE_RE = /Failed to install/;
 const QUOTED_SOURCE_RE = /branch\/it.*s-safe/;
 const LOCK_RE = /flock --wait/;
 const SKILL_NAME_VALIDATION_RE =
@@ -30,9 +31,8 @@ test("Sealos Skills source defaults to the shared deployment branch", () => {
   );
 });
 
-test("shared install command preserves the workspace and lets the source own installation", () => {
+test("shared install command always installs the configured source for Codex", () => {
   const command = buildSealosSkillsInstallCommand({
-    force: false,
     skillSource: DEFAULT_SEALOS_SKILLS_SOURCE,
     timeoutSeconds: 180,
   });
@@ -40,23 +40,22 @@ test("shared install command preserves the workspace and lets the source own ins
   assert.match(command, INSTALL_MARKER_RE);
   assert.match(command, LOCK_RE);
   assert.ok(
-    command.indexOf("flock --wait") < command.indexOf("skills_ready=true")
+    command.indexOf("flock --wait") < command.indexOf("install_output")
   );
-  assert.match(command, IDEMPOTENCY_RE);
   assert.match(command, CLI_VERSION_RE);
+  assert.match(command, CODEX_AGENT_RE);
+  assert.match(command, INSTALL_FAILURE_RE);
   assert.doesNotMatch(command, WORKSPACE_CLEANUP_RE);
   assert.doesNotMatch(command, SKILL_NAME_VALIDATION_RE);
 });
 
-test("deployment install command always reinstalls and shell-quotes the source", () => {
+test("installation command shell-quotes the source and preserves the workspace", () => {
   const source = "https://example.test/sealos-skills.git#branch/it's-safe";
   const command = buildSealosSkillsInstallCommand({
-    force: true,
     skillSource: source,
     timeoutSeconds: 180,
   });
 
-  assert.doesNotMatch(command, IDEMPOTENCY_RE);
   assert.match(command, LOCK_RE);
   assert.match(command, QUOTED_SOURCE_RE);
   assert.doesNotMatch(command, WORKSPACE_CLEANUP_RE);

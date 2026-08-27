@@ -126,7 +126,9 @@ describe("deploy skill installation", () => {
     expect(command).toContain(
       "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
     );
-    expect(command).toContain('npx --yes skills@1.5.20 add "$skill_source" -y');
+    expect(command).toContain(
+      'npx --yes skills@1.5.20 add "$skill_source" --agent codex -y'
+    );
     expect(command).not.toContain("rm -rf");
     expect(command).not.toContain("skills-lock.json");
     expect(command).not.toContain("required_skill_names");
