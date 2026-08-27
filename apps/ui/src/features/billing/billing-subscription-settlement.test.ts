@@ -19,6 +19,7 @@ async function until(condition: () => boolean, deadlineMs = 2000) {
 function settlementFetch(input: {
   quotaTotals: () => number | Error;
   onBalanceRequest?: () => void;
+  onCreditsRequest?: () => void;
   onQuotaRequest?: () => void;
 }): BillingFetch {
   return (requestInput) => {
@@ -27,6 +28,12 @@ function settlementFetch(input: {
       input.onBalanceRequest?.();
       return Promise.resolve(
         Response.json({ account: { Balance: 5_000_000, DeductionBalance: 0 } })
+      );
+    }
+    if (url === "/api/billing/credits") {
+      input.onCreditsRequest?.();
+      return Promise.resolve(
+        Response.json({ credits: { credits: 0, deductionCredits: 0 } })
       );
     }
     if (url === "/api/billing/workspace-quota") {
@@ -58,6 +65,7 @@ function credentials(workspace: string) {
 
 test("polls AI Credits until the total moves off the baseline, refreshing Account Balance once", async () => {
   let balanceRequests = 0;
+  let creditsRequests = 0;
   let quotaRequests = 0;
   const totals = [100, 100, 200];
   const cancel = settleSubscriptionChange({
@@ -66,6 +74,9 @@ test("polls AI Credits until the total moves off the baseline, refreshing Accoun
     fetch: settlementFetch({
       onBalanceRequest: () => {
         balanceRequests += 1;
+      },
+      onCreditsRequest: () => {
+        creditsRequests += 1;
       },
       onQuotaRequest: () => {
         quotaRequests += 1;
@@ -80,6 +91,7 @@ test("polls AI Credits until the total moves off the baseline, refreshing Accoun
   await sleep(60);
   assert.equal(quotaRequests, 3);
   assert.equal(balanceRequests, 1);
+  assert.equal(creditsRequests, 1);
   cancel();
 });
 

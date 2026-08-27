@@ -231,3 +231,95 @@ test("Free workspaces rows carry no Renewal Time", async () => {
     assert.equal(row?.renewalAt, null, `${scenario}: no Renewal Time`);
   }
 });
+
+async function renderBalanceValue(
+  props: {
+    availableMicroUnits: number;
+    creditsResolved?: boolean;
+    giftMicroUnits: number;
+  },
+  run: (rendered: ReturnType<typeof render>) => void | Promise<void>
+) {
+  await withTestDom(async (act) => {
+    const { BillingBalanceValue } = await import("./billing-plan-surface");
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingBalanceValue creditsResolved currency="usd" {...props} />
+        );
+      });
+      if (rendered != null) {
+        await run(rendered);
+      }
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+}
+
+test("an active gift renders as a chip beside the available total", async () => {
+  // AIM-323: the newbie state — no cash, only the $1 gift partly consumed.
+  await renderBalanceValue(
+    { availableMicroUnits: 720_000, giftMicroUnits: 720_000 },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("$0.72"), "the available total renders");
+      assert.ok(text.includes("Gift $0.72"), "the gift chip renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "a positive total carries no debt caption"
+      );
+    }
+  );
+});
+
+test("a spent gift leaves the bare number", async () => {
+  await renderBalanceValue(
+    { availableMicroUnits: 104_550_000, giftMicroUnits: 0 },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("$104.55"));
+      assert.equal(text.includes("Gift"), false);
+    }
+  );
+});
+
+test("a non-positive available total voices Account Debt", async () => {
+  // Recovery is a top-up, never a plan (CONTEXT.md's Account Debt voice).
+  await renderBalanceValue(
+    { availableMicroUnits: -6_320_000, giftMicroUnits: 0 },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("-$6.32"), "the negative total renders");
+      assert.ok(
+        text.includes(
+          "Top up from the Sealos Desktop to restore your services."
+        ),
+        "the debt caption renders"
+      );
+    }
+  );
+});
+
+test("unresolved credits withhold the debt voice", async () => {
+  // A failed or pending credits fetch leaves the figure cash-only; unseen
+  // credits could still cover the account, so no red tint and no caption.
+  await renderBalanceValue(
+    {
+      availableMicroUnits: -6_320_000,
+      creditsResolved: false,
+      giftMicroUnits: 0,
+    },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("-$6.32"), "the cash figure still renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "no debt caption without the full formula"
+      );
+    }
+  );
+});

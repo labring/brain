@@ -47,6 +47,12 @@ export const BILLING_ROUTES = {
     apiPath: "/api/billing/costs",
     upstreamPathname: "/account/v1alpha1/costs",
   },
+  // The one billing upstream outside the /account/v1alpha1 group: credits
+  // live in account-service's payment route group (AIM-315).
+  credits: {
+    apiPath: "/api/billing/credits",
+    upstreamPathname: "/payment/v1alpha1/credits/info",
+  },
   payments: {
     apiPath: "/api/billing/payments",
     upstreamPathname: "/account/v1alpha1/workspace-subscription/payment-list",

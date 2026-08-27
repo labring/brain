@@ -779,6 +779,62 @@ export function BillingAiCreditsSection({
   );
 }
 
+/**
+ * The Account Balance figure (prototype D of AIM-313): the available total —
+ * Balance − DeductionBalance + usable credits across every active row, the
+ * upstream debt formula — with any remaining new-user gift (and only the
+ * gift: plan grants feed the total unlabeled) pinned beside it as a
+ * borderless chip. Debt (≤ 0) tints the amount and adds the Account Debt
+ * caption (recovery is a top-up, never a plan). The $5 low-balance threshold
+ * deliberately does not tint this persistent display — that voice belongs to
+ * notifications.
+ */
+export function BillingBalanceValue({
+  availableMicroUnits,
+  creditsResolved,
+  currency,
+  giftMicroUnits,
+}: {
+  availableMicroUnits: number;
+  /**
+   * Whether the credits fetch has succeeded. While false the available
+   * figure is cash-only, so debt must not be voiced — unseen credits could
+   * still cover the account.
+   */
+  creditsResolved: boolean;
+  currency: BillingCurrency;
+  giftMicroUnits: number;
+}) {
+  const inDebt = creditsResolved && availableMicroUnits <= 0;
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline gap-2.5">
+        <p
+          className={cn(
+            "font-semibold text-2xl tabular-nums",
+            inDebt ? "text-red-400" : "text-foreground"
+          )}
+        >
+          {formatBillingAmount(availableMicroUnits, currency)}
+        </p>
+        {giftMicroUnits > 0 ? (
+          <Badge
+            className="self-center bg-blue-400/10 text-blue-400 tabular-nums"
+            variant="secondary"
+          >
+            Gift {formatBillingAmount(giftMicroUnits, currency)}
+          </Badge>
+        ) : null}
+      </div>
+      {inDebt ? (
+        <p className="text-red-400 text-xs">
+          Top up from the Sealos Desktop to restore your services.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function BillingBalanceSection({
   balance,
   variant = "panel",

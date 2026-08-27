@@ -445,6 +445,18 @@ const PLAN_PAGE_RESPONSES: Record<string, unknown> = {
   "/api/billing/account": {
     account: { Balance: 4_200_000, DeductionBalance: 1_200_000 },
   },
+  // A paid plan's own grant: the aggregate feeds the available total while
+  // the zero KYC pair keeps the Gift chip away.
+  "/api/billing/credits": {
+    credits: {
+      credits: 3_000_000,
+      currentPlanCreditsBalance: 3_000_000,
+      currentPlanCreditsDeductionBalance: 1_200_000,
+      deductionCredits: 1_200_000,
+      kycDeductionCreditsBalance: 0,
+      kycDeductionCreditsDeductionBalance: 0,
+    },
+  },
   "/api/billing/card": {
     payment_method: {
       card: { brand: "visa", exp_month: 12, exp_year: 2028, last4: "4242" },
@@ -760,6 +772,58 @@ test("Plan renders without waiting for the AI Credits request", async () => {
       assert.ok(text.includes("Account Balance"));
       assert.ok(rendered?.getByLabelText("Loading AI Credits"));
       assert.equal(text.includes("1,200 / 2,000"), false);
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("Account Balance composes cash and usable credits without a Gift chip", async () => {
+  // AIM-323 review: a paid plan's grant feeds the available total ($3.00
+  // cash + $1.80 plan credits) but must never be labeled Gift.
+  await withTestDom(async (act) => {
+    const { rendered, restore } = await renderPlanPage(act, (pathname) =>
+      jsonFixtureResponse(PLAN_PAGE_RESPONSES, pathname)
+    );
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("Account Balance"));
+      assert.ok(text.includes("$4.80"), "cash + usable credits renders");
+      assert.equal(text.includes("Gift"), false, "plan credits are not Gift");
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a failed credits request never voices Account Debt on cash alone", async () => {
+  // Cash-only ≤ 0 while credits are unknown: unseen credits could still
+  // cover the account, so the figure stays unvoiced instead of going red.
+  await withTestDom(async (act) => {
+    const responses = planPageResponses({
+      "/api/billing/account": {
+        account: { Balance: 0, DeductionBalance: 500_000 },
+      },
+    });
+    const { rendered, restore } = await renderPlanPage(act, (pathname) => {
+      if (pathname === "/api/billing/credits") {
+        return new Response(JSON.stringify({ error: "credits unavailable" }), {
+          headers: { "content-type": "application/json" },
+          status: 500,
+        });
+      }
+      return jsonFixtureResponse(responses, pathname);
+    });
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("-$0.50"), "the cash figure still renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "no debt caption without the credits term"
+      );
     } finally {
       await restore();
     }

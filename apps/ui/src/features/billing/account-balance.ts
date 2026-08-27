@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { formatBillingAmount } from "@/features/billing/billing-amount";
 import {
   type BillingFetch,
   createBillingJsonRequester,
@@ -42,8 +41,4 @@ export async function loadAccountBalance(
     microUnits:
       parsed.data.account.Balance - parsed.data.account.DeductionBalance,
   };
-}
-
-export function formatAccountBalance(balance: AccountBalance): string {
-  return formatBillingAmount(balance.microUnits, balance.currency);
 }

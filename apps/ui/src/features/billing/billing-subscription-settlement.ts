@@ -5,6 +5,10 @@ import {
   loadAccountBalance,
 } from "@/features/billing/account-balance";
 import {
+  type AccountCredits,
+  loadAccountCredits,
+} from "@/features/billing/account-credits";
+import {
   type AiCredits,
   loadAiCredits,
 } from "@/features/billing/billing-ai-credits";
@@ -22,6 +26,17 @@ export function accountBalanceSwrKey(credentials: {
   return [
     "billing-account-balance",
     credentials.currency,
+    credentials.kubeconfig,
+    credentials.appToken,
+  ] as const;
+}
+
+export function accountCreditsSwrKey(credentials: {
+  appToken: string;
+  kubeconfig: string;
+}) {
+  return [
+    "billing-account-credits",
     credentials.kubeconfig,
     credentials.appToken,
   ] as const;
@@ -84,6 +99,14 @@ export function settleSubscriptionChange({
   mutate<AccountBalance>(
     accountBalanceSwrKey({ appToken, currency, kubeconfig }),
     loadAccountBalance({ appToken, currency, kubeconfig }, fetch),
+    { revalidate: false }
+  ).catch(() => undefined);
+
+  // Gift credits feed the same Account Balance figure (a plan purchase can
+  // grant plan credits upstream), so they refresh alongside it.
+  mutate<AccountCredits>(
+    accountCreditsSwrKey({ appToken, kubeconfig }),
+    loadAccountCredits({ appToken, kubeconfig }, fetch),
     { revalidate: false }
   ).catch(() => undefined);
 

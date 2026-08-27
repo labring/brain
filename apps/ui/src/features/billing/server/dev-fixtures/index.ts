@@ -735,6 +735,36 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
       },
     };
   },
+  // account-service serializes its CreditsInfoReq struct under "credits";
+  // the balance fields mirror the account fixture. Only `free` carries an
+  // active gift (the $1 newbie grant, partly consumed; upstream copies the
+  // KYC pair from the current-plan pair on a Free trial, so they match).
+  // `active` instead carries a current-plan grant with no gift — the
+  // aggregate exceeds the KYC pair, so the Plan view must show the higher
+  // available total without a Gift chip. Every other scenario reports no
+  // credits, so debt scenarios stay red on cash alone.
+  "/payment/v1alpha1/credits/info": ({ scenario }) => {
+    const inDebt = DEBT_SCENARIOS.has(scenario);
+    const gift = scenario === "free";
+    let grant = { balance: 0, used: 0 };
+    if (gift) {
+      grant = { balance: 1_000_000, used: 280_000 };
+    } else if (scenario === "active") {
+      grant = { balance: 3_000_000, used: 1_200_000 };
+    }
+    return {
+      credits: {
+        balance: inDebt ? 5_000_000 : 128_000_000,
+        credits: grant.balance,
+        currentPlanCreditsBalance: grant.balance,
+        currentPlanCreditsDeductionBalance: grant.used,
+        deductionBalance: inDebt ? 11_320_000 : 23_450_000,
+        deductionCredits: grant.used,
+        kycDeductionCreditsBalance: gift ? grant.balance : 0,
+        kycDeductionCreditsDeductionBalance: gift ? grant.used : 0,
+      },
+    };
+  },
 };
 
 interface WriteFixtureResult {

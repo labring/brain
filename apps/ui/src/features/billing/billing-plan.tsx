@@ -15,9 +15,12 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import {
   type AccountBalance,
-  formatAccountBalance,
   loadAccountBalance,
 } from "@/features/billing/account-balance";
+import {
+  type AccountCredits,
+  loadAccountCredits,
+} from "@/features/billing/account-credits";
 import { loadAiCredits } from "@/features/billing/billing-ai-credits";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
@@ -42,10 +45,12 @@ import {
 } from "@/features/billing/billing-plan-data";
 import {
   BillingAiCreditsSection,
+  BillingBalanceValue,
   BillingPlanSurface,
 } from "@/features/billing/billing-plan-surface";
 import {
   accountBalanceSwrKey,
+  accountCreditsSwrKey,
   aiCreditsSwrKey,
   settleSubscriptionChange,
 } from "@/features/billing/billing-subscription-settlement";
@@ -268,6 +273,10 @@ function accountBalanceContent(input: {
   balance: AccountBalance | undefined;
   credentialsReady: boolean;
   error: unknown;
+  /** Undefined while loading or after a failed fetch — either renders the
+   *  cash figure alone (no chip) with the debt voice withheld, since unseen
+   *  credits could still cover the account. */
+  giftCredits: AccountCredits | undefined;
   isLoading: boolean;
 }): ReactNode {
   if (!input.credentialsReady || input.isLoading) {
@@ -286,9 +295,14 @@ function accountBalanceContent(input: {
     return null;
   }
   return (
-    <p className="font-semibold text-2xl text-foreground tabular-nums">
-      {formatAccountBalance(input.balance)}
-    </p>
+    <BillingBalanceValue
+      availableMicroUnits={
+        input.balance.microUnits + (input.giftCredits?.usableMicroUnits ?? 0)
+      }
+      creditsResolved={input.giftCredits != null}
+      currency={input.balance.currency}
+      giftMicroUnits={input.giftCredits?.giftMicroUnits ?? 0}
+    />
   );
 }
 
@@ -376,6 +390,11 @@ export function BillingPlan({
       ? accountBalanceSwrKey({ appToken, currency, kubeconfig })
       : null,
     () => loadAccountBalance({ appToken, currency, kubeconfig }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  const { data: giftCredits } = useSWR(
+    credentialsReady ? accountCreditsSwrKey({ appToken, kubeconfig }) : null,
+    () => loadAccountCredits({ appToken, kubeconfig }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
   const {
@@ -616,6 +635,7 @@ export function BillingPlan({
             balance,
             credentialsReady,
             error: balanceError,
+            giftCredits,
             isLoading: balanceLoading,
           })}
         </div>
