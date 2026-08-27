@@ -944,8 +944,12 @@ export async function cancelSubscriptionInvoice(
 
 export interface SubscriptionTransactionStatus {
   id: string;
+  /** Lowercased upstream operator: created, upgraded, downgraded, renewed, canceled, … */
+  operator: string;
   payId: string;
   planName: string;
+  /** When a scheduled change lands (a downgrade at period end); null otherwise. */
+  startAt: string | null;
   status: string;
 }
 
@@ -972,8 +976,10 @@ export async function loadSubscriptionTransactionStatus(
   }
   return {
     id: transaction.ID ?? "",
+    operator: transaction.Operator?.trim().toLowerCase() ?? "",
     payId: transaction.PayID ?? "",
     planName: transaction.NewPlanName ?? "",
+    startAt: transaction.StartAt?.trim() || null,
     status: transaction.Status?.trim().toLowerCase() ?? "",
   };
 }

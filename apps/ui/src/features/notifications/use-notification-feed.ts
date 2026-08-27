@@ -7,23 +7,26 @@ import {
   useNotificationCRList,
 } from "@workspace/api/hooks";
 import { useAtom, useAtomValue } from "jotai";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import useSWR from "swr";
 
+import { loadAccountCredits } from "@/features/billing/account-credits";
+import { loadHasToppedUp } from "@/features/billing/account-top-up";
 import {
   type AppNotification,
   countUnreadNotifications,
   isNotificationUnread,
 } from "@/features/shell/app-sidebar-notifications-model";
-import {
-  notificationReadIdsAtom,
-  notificationsDevMockItemsAtom,
-} from "@/features/shell/app-sidebar-notifications-store";
+import { notificationReadIdsAtom } from "@/features/shell/app-sidebar-notifications-store";
 import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
-import { fetchNotificationFeed, postNotificationReadReceipts } from "./client";
-import { mergeNotificationFeed } from "./feed-model";
+import {
+  fetchNotificationFeed,
+  postNotificationReadReceipts,
+  reportGiftCreditObservation,
+} from "./client";
+import { isGiftOnlyNewcomer, mergeNotificationFeed } from "./feed-model";
 import { planReadDispatch } from "./read-dispatch";
 
 const EMPTY_ITEMS: readonly AppNotification[] = [];
@@ -39,14 +42,16 @@ export interface NotificationFeed {
 /**
  * The merged Notification Center feed: platform CRs polled from the cluster
  * (≤5 minutes) and Brain-produced entries plus the user's receipts from
- * Brain's store, merged client-side into one list. Mark-read is optimistic
- * and dispatched per source; a Dev Mock override replaces the items outright.
+ * Brain's store, merged client-side into one list with the display layer
+ * applied (override table, gift-only filter). Mark-read is optimistic and
+ * dispatched per source. The account's credits and top-up history decide the
+ * gift-only filter and are the gift hint's observation point; while the
+ * billing Dev Mock serves the feed, its fixture CRs replace the cluster poll.
  */
 export function useNotificationFeed(): NotificationFeed {
   const appToken = useAtomValue(appTokenAtom).trim();
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const namespace = useAtomValue(namespaceAtom).trim();
-  const mockItems = useAtomValue(notificationsDevMockItemsAtom);
   const [readIds, setReadIds] = useAtom(notificationReadIdsAtom);
   const { data: subscription } = useWorkspaceSubscriptionSummary();
 
@@ -54,13 +59,8 @@ export function useNotificationFeed(): NotificationFeed {
     appToken !== "" && kubeconfig !== "" && namespace !== "";
   const credentialKey = kubeconfigCredentialKey(kubeconfig);
 
-  const crList = useNotificationCRList({
-    enabled: mockItems == null,
-    kubeconfig,
-    namespace,
-  });
   const brainFeed = useSWR(
-    credentialsReady && mockItems == null
+    credentialsReady
       ? (["notifications-feed", namespace, credentialKey, appToken] as const)
       : null,
     () => fetchNotificationFeed({ appToken, kubeconfig, namespace }),
@@ -69,20 +69,89 @@ export function useNotificationFeed(): NotificationFeed {
       shouldRetryOnError: false,
     }
   );
+  const { mutate: refreshBrainFeed } = brainFeed;
+  // Until the Brain feed answers, the cluster poll runs as in production;
+  // a mock session pays one cluster request before the fixtures take over.
+  const fixturePlatformItems = brainFeed.data?.platformItems;
+  const crList = useNotificationCRList({
+    enabled: fixturePlatformItems == null,
+    kubeconfig,
+    namespace,
+  });
+  const { mutate: refreshCRList } = crList;
+
+  // Account facts for the display layer: gift and usable credit plus whether
+  // the account ever topped up. Both are account-scoped, so they key on the
+  // credentials alone. Credits burn down, so they follow the inbox's own
+  // cadence; top-up history only ever grows, so one read per session is
+  // the truth for the session.
+  const credits = useSWR(
+    credentialsReady
+      ? (["notifications-credits", credentialKey, appToken] as const)
+      : null,
+    () => loadAccountCredits({ appToken, kubeconfig }),
+    {
+      refreshInterval: NOTIFICATION_CR_REFRESH_INTERVAL_MS,
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    }
+  );
+  const toppedUp = useSWR(
+    credentialsReady
+      ? (["notifications-topped-up", credentialKey, appToken] as const)
+      : null,
+    () => loadHasToppedUp({ appToken, kubeconfig }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  // Unknown account state never hides a warning: the filter is on only once
+  // both facts are in and say so.
+  const giftOnly =
+    credits.data != null &&
+    toppedUp.data != null &&
+    isGiftOnlyNewcomer({ ...credits.data, hasToppedUp: toppedUp.data });
+
+  // The gift hint's observation point: the first read that shows gift credit
+  // reports it once per session; the producer dedupes by user beyond that.
+  const giftObservedFor = useRef<string | null>(null);
+  const giftMicroUnits = credits.data?.giftMicroUnits ?? 0;
+  useEffect(() => {
+    const key = `${namespace}|${credentialKey}`;
+    if (
+      !credentialsReady ||
+      giftMicroUnits <= 0 ||
+      giftObservedFor.current === key
+    ) {
+      return;
+    }
+    giftObservedFor.current = key;
+    reportGiftCreditObservation(
+      { appToken, kubeconfig, namespace },
+      { giftMicroUnits }
+    )
+      .then(() => refreshBrainFeed())
+      .catch(() => undefined);
+  }, [
+    appToken,
+    credentialKey,
+    credentialsReady,
+    giftMicroUnits,
+    kubeconfig,
+    namespace,
+    refreshBrainFeed,
+  ]);
 
   const items = useMemo(() => {
-    if (mockItems != null) {
-      return mockItems;
-    }
-    if (crList.data == null && brainFeed.data == null) {
+    const crItems = fixturePlatformItems ?? crList.data?.items;
+    if (crItems == null && brainFeed.data == null) {
       return EMPTY_ITEMS;
     }
     return mergeNotificationFeed({
-      crItems: crList.data?.items ?? [],
+      crItems: crItems ?? [],
       dbMessages: brainFeed.data?.messages ?? [],
+      giftOnly,
       receipts: brainFeed.data?.receipts ?? [],
     });
-  }, [brainFeed.data, crList.data, mockItems]);
+  }, [brainFeed.data, crList.data, fixturePlatformItems, giftOnly]);
 
   const dispatchRead = useCallback(
     (targets: readonly AppNotification[]) => {
@@ -96,30 +165,33 @@ export function useNotificationFeed(): NotificationFeed {
         }
         return next;
       });
-      if (mockItems != null || !credentialsReady) {
+      if (!credentialsReady) {
         return;
       }
       const plan = planReadDispatch(targets, subscription?.role);
       const credentials = { appToken, kubeconfig, namespace };
       postNotificationReadReceipts(credentials, plan.receiptIds)
-        .then(() => brainFeed.mutate())
+        .then(() => refreshBrainFeed())
         .catch(() => undefined);
+      if (fixturePlatformItems != null) {
+        return;
+      }
       // Desktop parity is best-effort: a 403 (Developer RBAC) or any other
       // failure is swallowed — the receipt already made the message read.
       for (const name of plan.crNames) {
         markNotificationCRRead({ kubeconfig, name, namespace })
-          .then(() => crList.mutate())
+          .then(() => refreshCRList())
           .catch(() => undefined);
       }
     },
     [
       appToken,
-      brainFeed.mutate,
       credentialsReady,
-      crList.mutate,
+      fixturePlatformItems,
       kubeconfig,
-      mockItems,
       namespace,
+      refreshBrainFeed,
+      refreshCRList,
       setReadIds,
       subscription?.role,
     ]

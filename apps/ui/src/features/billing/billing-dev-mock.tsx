@@ -17,7 +17,7 @@ import {
 
 /**
  * Billing's Dev Mock: registered with the dev tweaks panel while any
- * /billing screen is mounted. The session cookie stays the single source of
+ * /billing screen or the App Sidebar's Notification Center is mounted. The session cookie stays the single source of
  * truth — the source below is the only writer on the client, the fixture
  * dispatcher transitions it on the server.
  */
@@ -80,7 +80,7 @@ const billingDevMockSource: DevTweaksMockSource = {
 export function BillingDevMockTweaks() {
   useDevTweaksMock(BILLING_DEV_MOCK_KEY, {
     defaultScenario: DEFAULT_BILLING_DEV_SCENARIO,
-    note: "Serves /api/billing/* from fixtures",
+    note: "Serves /api/billing/* and the Notification Center from fixtures",
     scenarios: BILLING_DEV_SCENARIOS,
     source: billingDevMockSource,
     title: "Billing mock",

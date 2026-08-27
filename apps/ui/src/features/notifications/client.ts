@@ -2,8 +2,10 @@ import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspac
 import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 import {
+  type GiftObservationRequest,
   type NotificationFeedResponse,
   notificationFeedResponseSchema,
+  type SubscriptionChangeObservationRequest,
 } from "./types";
 
 /** Credentials every Brain-side notification request carries (ADR-0059). */
@@ -58,19 +60,17 @@ export async function postNotificationReadReceipts(
   }
 }
 
-/**
- * Reports a workspace quota snapshot so the quota-exhausted producer can
- * observe it. Best-effort: the sidebar's quota read must never fail on it.
- */
-export async function reportWorkspaceQuotaObservation(
+async function postObservation(
+  pathname: string,
   credentials: NotificationClientCredentials,
-  snapshot: WorkspaceResourceQuotaSnapshot,
-  fetchImpl: typeof fetch = globalThis.fetch
+  body: unknown,
+  label: string,
+  fetchImpl: typeof fetch
 ): Promise<void> {
   const response = await fetchImpl(
-    notificationsUrl("/quota-observation", credentials.namespace),
+    notificationsUrl(pathname, credentials.namespace),
     {
-      body: JSON.stringify({ quota: snapshot }),
+      body: JSON.stringify(body),
       headers: {
         ...personalResourceAuthHeaders(credentials),
         "content-type": "application/json",
@@ -79,6 +79,54 @@ export async function reportWorkspaceQuotaObservation(
     }
   );
   if (!response.ok) {
-    throw new Error(`Quota observation request failed (${response.status})`);
+    throw new Error(`${label} request failed (${response.status})`);
   }
+}
+
+/**
+ * Reports a workspace quota snapshot so the quota-exhausted producer can
+ * observe it. Best-effort: the sidebar's quota read must never fail on it.
+ */
+export function reportWorkspaceQuotaObservation(
+  credentials: NotificationClientCredentials,
+  snapshot: WorkspaceResourceQuotaSnapshot,
+  fetchImpl: typeof fetch = globalThis.fetch
+): Promise<void> {
+  return postObservation(
+    "/quota-observation",
+    credentials,
+    { quota: snapshot },
+    "Quota observation",
+    fetchImpl
+  );
+}
+
+/** Reports visible gift credit so the gift-hint producer can observe it. */
+export function reportGiftCreditObservation(
+  credentials: NotificationClientCredentials,
+  observation: GiftObservationRequest,
+  fetchImpl: typeof fetch = globalThis.fetch
+): Promise<void> {
+  return postObservation(
+    "/gift-observation",
+    credentials,
+    observation,
+    "Gift observation",
+    fetchImpl
+  );
+}
+
+/** Reports a settled subscription change so its receipt can be written. */
+export function reportSubscriptionChangeObservation(
+  credentials: NotificationClientCredentials,
+  observation: SubscriptionChangeObservationRequest,
+  fetchImpl: typeof fetch = globalThis.fetch
+): Promise<void> {
+  return postObservation(
+    "/subscription-change",
+    credentials,
+    observation,
+    "Subscription-change observation",
+    fetchImpl
+  );
 }

@@ -1,0 +1,113 @@
+import { afterAll, test } from "bun:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
+
+import { identityFingerprints } from "@/features/chat/persistence/schema";
+
+import {
+  creditHintDedupeKey,
+  observeGiftCreditForNotifications,
+} from "./producer-credit-hint";
+import { notificationMessages, notificationReadReceipts } from "./schema";
+import { createNotificationStore } from "./store";
+
+const pglite = new PGlite();
+const db = drizzle(pglite, {
+  schema: {
+    identityFingerprints,
+    notificationMessages,
+    notificationReadReceipts,
+  },
+});
+await migrate(db, {
+  migrationsFolder: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../../drizzle"
+  ),
+});
+const store = createNotificationStore(() => db);
+
+afterAll(() => pglite.close());
+
+const NOW = new Date("2026-08-27T12:00:00Z");
+
+test("the dedupe key names the user, not the workspace", () => {
+  assert.equal(creditHintDedupeKey("uid-alice"), "credit-hint:uid-alice");
+});
+
+test("a visible gift writes one hint per user; retries and other workspaces write nothing", async () => {
+  const first = await observeGiftCreditForNotifications(store, {
+    giftMicroUnits: 720_000,
+    namespace: "ns-a",
+    now: NOW,
+    userUid: "uid-alice",
+  });
+  const retry = await observeGiftCreditForNotifications(store, {
+    giftMicroUnits: 700_000,
+    namespace: "ns-a",
+    now: new Date(NOW.getTime() + 60_000),
+    userUid: "uid-alice",
+  });
+  const elsewhere = await observeGiftCreditForNotifications(store, {
+    giftMicroUnits: 700_000,
+    namespace: "ns-b",
+    now: new Date(NOW.getTime() + 120_000),
+    userUid: "uid-alice",
+  });
+
+  assert.deepEqual(first, { produced: true });
+  assert.deepEqual(retry, { produced: false });
+  assert.deepEqual(elsewhere, { produced: false });
+  const messages = await store.listMessages("ns-a");
+  assert.equal(messages.length, 1);
+  assert.deepEqual(messages[0]?.payload, {
+    giftMicroUnits: 720_000,
+    kind: "credit-hint",
+  });
+  assert.deepEqual(await store.listMessages("ns-b"), []);
+});
+
+test("another user gets their own hint; no gift writes nothing", async () => {
+  assert.deepEqual(
+    await observeGiftCreditForNotifications(store, {
+      giftMicroUnits: 0,
+      namespace: "ns-a",
+      now: NOW,
+      userUid: "uid-bob",
+    }),
+    { produced: false }
+  );
+  assert.deepEqual(
+    await observeGiftCreditForNotifications(store, {
+      giftMicroUnits: 1_000_000,
+      namespace: "ns-a",
+      now: NOW,
+      userUid: "uid-bob",
+    }),
+    { produced: true }
+  );
+  assert.equal((await store.listMessages("ns-a")).length, 2);
+});
+
+test("a blank user or workspace observes nothing", async () => {
+  assert.deepEqual(
+    await observeGiftCreditForNotifications(store, {
+      giftMicroUnits: 1_000_000,
+      namespace: " ",
+      userUid: "uid-carol",
+    }),
+    { produced: false }
+  );
+  assert.deepEqual(
+    await observeGiftCreditForNotifications(store, {
+      giftMicroUnits: 1_000_000,
+      namespace: "ns-a",
+      userUid: "",
+    }),
+    { produced: false }
+  );
+});

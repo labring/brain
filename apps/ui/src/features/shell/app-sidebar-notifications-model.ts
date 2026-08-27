@@ -18,6 +18,16 @@ export type AppNotificationKind =
 export type AppNotificationSource = "cr" | "db";
 
 /**
+ * The one way out a Notification offers (design spec §10 rule 6): a verb
+ * from the CTA table deep-linking to the page that solves the problem.
+ * Receipts and hints carry none.
+ */
+export interface NotificationCTA {
+  href: string;
+  label: string;
+}
+
+/**
  * One Notification: a message addressed to the current user, aggregated
  * across Projects. `id` is source-prefixed (`cr:<name>:<timestamp>` or
  * `db:<id>`) and doubles as the read-receipt key; `timestamp` is epoch
@@ -28,6 +38,7 @@ export interface AppNotification {
   body?: string;
   /** The CR to patch when a `cr:` item is marked read (best-effort). */
   crName?: string;
+  cta?: NotificationCTA;
   id: string;
   kind: AppNotificationKind;
   project?: string;

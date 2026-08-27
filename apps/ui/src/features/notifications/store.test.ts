@@ -119,7 +119,10 @@ test("messages are isolated per namespace", async () => {
   const b = await store.listMessages("ns-b");
   assert.equal(a.length, 2);
   assert.equal(b.length, 1);
-  assert.equal(b[0]?.payload.resource, "cpu");
+  assert.equal(
+    b[0]?.payload.kind === "quota-exhausted" ? b[0].payload.resource : null,
+    "cpu"
+  );
 });
 
 test("receipts are per user, follow the person across workspaces, and db receipts attach their row", async () => {

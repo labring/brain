@@ -34,3 +34,16 @@ export function formatNotificationTime(
     month: "short",
   });
 }
+
+/**
+ * An absolute date for Notification bodies (design spec §10 rule 5, "Sep 3"
+ * style); an unparsable instant renders as an empty string so a sentence
+ * never carries "Invalid Date".
+ */
+export function formatNotificationDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+}

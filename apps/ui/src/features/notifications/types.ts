@@ -5,10 +5,14 @@ import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspa
 /**
  * The Brain-produced Notification kinds (`db:` stream). Each kind's payload
  * carries the structured parameters the display layer renders; strings never
- * cross the wire. The first producer is `quota-exhausted`; the gift hint and
- * subscription-change receipt follow in later tickets.
+ * cross the wire. Catalog rows A1 (quota exhausted), D4 (the $1 gift hint),
+ * and B5 (subscription-change receipts).
  */
-export const NOTIFICATION_MESSAGE_KINDS = ["quota-exhausted"] as const;
+export const NOTIFICATION_MESSAGE_KINDS = [
+  "quota-exhausted",
+  "credit-hint",
+  "subscription-change",
+] as const;
 
 export type NotificationMessageKind =
   (typeof NOTIFICATION_MESSAGE_KINDS)[number];
@@ -34,8 +38,45 @@ export const quotaExhaustedPayloadSchema = z
   })
   .strict();
 
+/** ISO-8601 instant; the display layer renders it as an absolute date. */
+const isoInstantSchema = z.string().datetime({ offset: true });
+
+export const creditHintPayloadSchema = z
+  .object({
+    kind: z.literal("credit-hint"),
+    /**
+     * Gift expiry. Upstream's credits/info carries no per-row expiry today,
+     * so live entries omit it and the copy states the one-month validity;
+     * the renderer already speaks the dated form for when it lands.
+     */
+    expiresAt: isoInstantSchema.optional(),
+    /** Remaining gift at first visibility, in micro-units. */
+    giftMicroUnits: z.number().finite().nonnegative(),
+  })
+  .strict();
+
+export const SUBSCRIPTION_CHANGES = [
+  "upgraded",
+  "downgraded",
+  "cancelled",
+] as const;
+
+export type SubscriptionChange = (typeof SUBSCRIPTION_CHANGES)[number];
+
+export const subscriptionChangePayloadSchema = z
+  .object({
+    kind: z.literal("subscription-change"),
+    change: z.enum(SUBSCRIPTION_CHANGES),
+    /** When a scheduled change lands (a downgrade or cancellation at period end). */
+    effectiveAt: isoInstantSchema.optional(),
+    planName: z.string().trim().min(1).max(64),
+  })
+  .strict();
+
 export const notificationPayloadSchema = z.discriminatedUnion("kind", [
   quotaExhaustedPayloadSchema,
+  creditHintPayloadSchema,
+  subscriptionChangePayloadSchema,
 ]);
 
 export type NotificationPayload = z.infer<typeof notificationPayloadSchema>;
@@ -54,9 +95,37 @@ export const notificationMessageSchema = z
 
 export type NotificationMessage = z.infer<typeof notificationMessageSchema>;
 
+/**
+ * One upstream Notification CR as the Go read proxy flattens it (mirrors
+ * `NotificationCRItem` in `@workspace/api/hooks`); only the dev fixtures
+ * ever send it over Brain's own wire.
+ */
+export const notificationCRItemSchema = z
+  .object({
+    creationTimestamp: z.string().optional(),
+    desktopPopup: z.boolean(),
+    from: z.string().optional(),
+    importance: z.string().optional(),
+    isRead: z.boolean(),
+    message: z.string(),
+    name: z.string().min(1),
+    namespace: z.string(),
+    /** `spec.timestamp` in Unix seconds. */
+    timestamp: z.number().int().nonnegative(),
+    title: z.string(),
+    uid: z.string().optional(),
+  })
+  .strict();
+
 export const notificationFeedResponseSchema = z
   .object({
     messages: z.array(notificationMessageSchema),
+    /**
+     * Fixture platform CRs, present only while the billing Dev Mock serves
+     * the feed: the client then takes them as the `cr:` stream instead of
+     * polling the cluster. Production never sends the field.
+     */
+    platformItems: z.array(notificationCRItemSchema).optional(),
     /** Source-prefixed notification ids the current user has read. */
     receipts: z.array(z.string().min(1)),
   })
@@ -87,4 +156,32 @@ export const quotaObservationRequestSchema = z
 
 export type QuotaObservationRequest = z.infer<
   typeof quotaObservationRequestSchema
+>;
+
+/** `POST /api/notifications/gift-observation`: the credits the client just read. */
+export const giftObservationRequestSchema = z
+  .object({
+    giftMicroUnits: z.number().finite().nonnegative(),
+  })
+  .strict();
+
+export type GiftObservationRequest = z.infer<
+  typeof giftObservationRequestSchema
+>;
+
+/**
+ * `POST /api/notifications/subscription-change`: a change the client saw
+ * settle, identified by the platform's transaction id.
+ */
+export const subscriptionChangeObservationRequestSchema = z
+  .object({
+    change: z.enum(SUBSCRIPTION_CHANGES),
+    effectiveAt: isoInstantSchema.optional(),
+    planName: z.string().trim().min(1).max(64),
+    transactionId: z.string().trim().min(1).max(128),
+  })
+  .strict();
+
+export type SubscriptionChangeObservationRequest = z.infer<
+  typeof subscriptionChangeObservationRequestSchema
 >;

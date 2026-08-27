@@ -1037,8 +1037,10 @@ test("loads the latest subscription transaction status for payment waiting", asy
 
   assert.deepEqual(transaction, {
     id: "transaction-1",
+    operator: "upgraded",
     payId: "payment-1",
     planName: "Team",
+    startAt: null,
     status: "completed",
   });
   assert.equal(request?.url, "/api/billing/subscription/last-transaction");

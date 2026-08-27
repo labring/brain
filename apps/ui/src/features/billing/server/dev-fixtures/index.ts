@@ -15,7 +15,9 @@ import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
  * (`dev-mock-cookie.ts` documents the grammar); while it names a scenario,
  * every `/api/billing/*` proxy answers from these fixtures instead of the
  * account service, so the real /billing pages can be exercised in any
- * subscription state without credentials.
+ * subscription state without credentials. The same cookie drives the
+ * Notification Center's fixtures (`./notifications.ts`), so one scenario
+ * shapes the Plan view and the inbox together.
  *
  * Reads come from `FIXTURES`, pure functions of (body, scenario, workspace).
  * Writes are scenario transitions: a successful mutation answers with
@@ -52,9 +54,19 @@ const MOCK_WORKSPACES = {
 /** Scenarios whose account sits in debt (deductions outrun the balance). */
 const DEBT_SCENARIOS = new Set<BillingDevScenario>([
   "payg-debt",
+  "payg-debt-deletion",
+  "payg-debt-final",
   "payment-due",
   "payment-due-deletion",
   "payment-due-final",
+]);
+
+/** Pay-as-you-go modes: no subscription row at all. */
+export const PAYG_SCENARIOS = new Set<BillingDevScenario>([
+  "payg",
+  "payg-debt",
+  "payg-debt-deletion",
+  "payg-debt-final",
 ]);
 
 /** Scenarios with no saved card: PAYG modes and never-paid Free plans. */
@@ -63,8 +75,7 @@ const CARDLESS_SCENARIOS = new Set<BillingDevScenario>([
   "free",
   "free-expired",
   "paused",
-  "payg",
-  "payg-debt",
+  ...PAYG_SCENARIOS,
 ]);
 
 /** Scenarios with no subscription transaction history. */
@@ -72,9 +83,15 @@ const TRANSACTIONLESS_SCENARIOS = new Set<BillingDevScenario>([
   "free",
   "free-expired",
   "paused",
-  "payg",
-  "payg-debt",
+  ...PAYG_SCENARIOS,
 ]);
+
+/**
+ * Accounts that never topped up: the $1 gift newcomer. Their payment history
+ * carries no recharge, which is what keeps the Notification Center's
+ * gift-only filter on for them.
+ */
+export const NEVER_TOPPED_UP_SCENARIOS = new Set<BillingDevScenario>(["free"]);
 
 function daysFromNow(days: number): string {
   return new Date(Date.now() + days * DAY_IN_MILLISECONDS).toISOString();
@@ -108,6 +125,14 @@ function subscriptionPayload(
     // A PAYG workspace in debt: still no subscription row, so the status
     // arrives without any period timestamps to derive dates from.
     return { Status: "DEBT", type: "PAYG" };
+  }
+  // The account debt ladder's later rungs (design spec §2.3): the deletion
+  // period, then final deletion — still PAYG, still no timestamps.
+  if (scenario === "payg-debt-deletion") {
+    return { Status: "DEBT_PRE_DELETION", type: "PAYG" };
+  }
+  if (scenario === "payg-debt-final") {
+    return { Status: "DEBT_FINAL_DELETION", type: "PAYG" };
   }
   // The upstream keeps ExpireAt >= CurrentPeriodEndAt and its Stripe path
   // sets them equal, so the fixtures mirror that instead of null.
@@ -217,7 +242,7 @@ function subscriptionPayload(
 }
 
 function subscriptionListPayload(context: FixtureContext): unknown[] {
-  if (context.scenario === "payg" || context.scenario === "payg-debt") {
+  if (PAYG_SCENARIOS.has(context.scenario)) {
     return [];
   }
   const current = subscriptionPayload(context.scenario, context.workspace);
@@ -438,6 +463,9 @@ function paymentsPayload(context: FixtureContext): unknown[] {
     Type: "SUBSCRIPTION",
     Workspace: context.workspace,
   });
+  if (NEVER_TOPPED_UP_SCENARIOS.has(context.scenario)) {
+    return [];
+  }
   return [
     subscriptionPayment("pay-mock-1", "renewed", daysFromNow(-2)),
     {
@@ -706,8 +734,7 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   // plan) so downgrade checks compare realistic numbers. PAYG modes have no
   // ai_quota key at all; Free plans carry one with the plan's zero allowance.
   "/account/v1alpha1/workspace/get-resource-quota": (context) => {
-    const isPaygMode =
-      context.scenario === "payg" || context.scenario === "payg-debt";
+    const isPaygMode = PAYG_SCENARIOS.has(context.scenario);
     const isFreePlan =
       context.scenario === "free" ||
       context.scenario === "free-expired" ||
@@ -727,7 +754,9 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
           "limits.cpu": "1500m",
           "limits.memory": "3Gi",
           "limits.nvidia.com/gpu": "0",
-          "requests.storage": "12Gi",
+          // quota-full: storage at 100% (catalog A1/A2).
+          "requests.storage":
+            context.scenario === "quota-full" ? "20Gi" : "12Gi",
           "services.nodeports": "2",
           traffic: "26843545600",
           ...(isPaygMode ? {} : { ai_quota: isFreePlan ? 0 : 1_200_000 }),
@@ -844,6 +873,8 @@ const PAY_TRANSITIONS: Record<
     "free-expired": "active",
     payg: "active",
     "payg-debt": "active",
+    "payg-debt-deletion": "active",
+    "payg-debt-final": "active",
     "payment-due": "active",
     "payment-due-deletion": "active",
     "payment-due-final": "active",
@@ -855,6 +886,7 @@ const PAY_TRANSITIONS: Record<
     free: "active",
     "mixed-workspaces": "active",
     paused: "active",
+    "quota-full": "active",
   },
 };
 
@@ -884,46 +916,76 @@ function transitionHeaders(
   };
 }
 
-export async function billingDevMockResponse(
-  pathname: string,
+export type BillingDevMockResolution =
+  | { kind: "invalid"; response: Response }
+  | { kind: "off" }
+  | { kind: "set"; scenario: BillingDevScenario };
+
+/**
+ * Reads the mock cookie off a request: off (no cookie, or disabled, or a
+ * real production build), invalid (a 500 that names the valid scenarios so
+ * typos fail loud), or the scenario to serve. Shared by every fixture
+ * dispatcher so the one cookie drives billing and notifications alike.
+ */
+export function resolveBillingDevMock(
   request: Request
-): Promise<Response | null> {
+): BillingDevMockResolution {
   if (
     process.env.NODE_ENV === "production" &&
     process.env.NEXT_PUBLIC_DEV_TWEAKS !== "1"
   ) {
-    return null;
+    return { kind: "off" };
   }
   const parsed = parseBillingDevMockCookie(mockCookieValue(request));
   if (
     parsed.kind === "unset" ||
     (parsed.kind === "set" && !parsed.state.enabled)
   ) {
-    return null;
+    return { kind: "off" };
   }
   if (parsed.kind === "invalid") {
-    return Response.json(
-      {
-        error: `Unknown billing mock scenario "${parsed.raw}". Valid scenarios: ${BILLING_DEV_SCENARIOS.join(", ")}. Toggle the mock from the dev tweaks pane (⌃⌥T).`,
-      },
-      { status: 500 }
-    );
+    return {
+      kind: "invalid",
+      response: Response.json(
+        {
+          error: `Unknown billing mock scenario "${parsed.raw}". Valid scenarios: ${BILLING_DEV_SCENARIOS.join(", ")}. Toggle the mock from the dev tweaks pane (⌃⌥T).`,
+        },
+        { status: 500 }
+      ),
+    };
   }
-  const scenario = parsed.state.scenario;
+  return { kind: "set", scenario: parsed.state.scenario };
+}
+
+/** The workspace fixtures address when the request names none. */
+export function billingDevMockWorkspace(requested: unknown): string {
+  return typeof requested === "string" && requested.trim() !== ""
+    ? requested
+    : defaultWorkspace();
+}
+
+export async function billingDevMockResponse(
+  pathname: string,
+  request: Request
+): Promise<Response | null> {
+  const resolution = resolveBillingDevMock(request);
+  if (resolution.kind === "off") {
+    return null;
+  }
+  if (resolution.kind === "invalid") {
+    return resolution.response;
+  }
+  const scenario = resolution.scenario;
 
   const payload: unknown = await request.json().catch(() => null);
   const body =
     typeof payload === "object" && payload != null
       ? (payload as Record<string, unknown>)
       : {};
-  const requestedWorkspace =
-    typeof body.workspace === "string" && body.workspace.trim() !== ""
-      ? body.workspace
-      : defaultWorkspace();
   const context: FixtureContext = {
     body,
     scenario,
-    workspace: requestedWorkspace,
+    workspace: billingDevMockWorkspace(body.workspace),
   };
 
   const write = WRITE_FIXTURES[pathname];

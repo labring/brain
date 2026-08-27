@@ -1,3 +1,5 @@
+import type { z } from "zod";
+
 import type { AppTokenVerificationConfig } from "@/lib/app-token";
 import type { ObserveIdentityFingerprint } from "@/lib/identity-fingerprint-core";
 import {
@@ -11,12 +13,16 @@ import {
   verifiedPersonalResourceActor,
 } from "@/lib/verified-personal-actor";
 
+import { observeGiftCreditForNotifications } from "./producer-credit-hint";
 import { observeWorkspaceQuotaForNotifications } from "./producer-quota-exhausted";
+import { observeSubscriptionChangeForNotifications } from "./producer-subscription-change";
 import type { NotificationReader, NotificationStore } from "./store";
 import {
+  giftObservationRequestSchema,
   markNotificationReadRequestSchema,
   type NotificationFeedResponse,
   quotaObservationRequestSchema,
+  subscriptionChangeObservationRequestSchema,
 } from "./types";
 
 export interface NotificationHandlerDependencies {
@@ -48,9 +54,10 @@ function unavailable(route: string, message: string): Response {
 /**
  * The Notification Center's Brain-side HTTP surface (ADR-0067): the `db:`
  * stream plus the user's receipts, the per-user mark-read write, and the
- * quota observation point. Every handler travels the verified-personal-actor
- * choke point — receipts are uid-keyed rows (ADR-0059) and the stream is
- * namespace-scoped, so both the workspace and the user must be verified.
+ * producers' observation points (quota, gift credit, subscription change).
+ * Every handler travels the verified-personal-actor choke point — receipts
+ * are uid-keyed rows (ADR-0059) and the stream is namespace-scoped, so both
+ * the workspace and the user must be verified.
  */
 export function createNotificationHandlers(
   dependencies: NotificationHandlerDependencies
@@ -70,6 +77,45 @@ export function createNotificationHandlers(
       ? { actor: verifiedPersonalResourceActor(result.authorization), ok: true }
       : result;
   };
+
+  /**
+   * Every producer's observation point has one shape: verify the actor,
+   * parse the body, hand the verified namespace (and user) to the producer,
+   * answer its result. A persistence failure is a 503, never a crash.
+   */
+  const observation =
+    <T>(config: {
+      message: string;
+      produce: (
+        actor: VerifiedPersonalResourceActor,
+        input: T
+      ) => Promise<unknown>;
+      route: string;
+      schema: z.ZodType<T>;
+      unavailableMessage: string;
+    }) =>
+    async (request: Request): Promise<Response> => {
+      const authorization = await authorize(request);
+      if (!authorization.ok) {
+        return authorization.response;
+      }
+      const body = await request.json().catch(() => null);
+      const parsed = config.schema.safeParse(body);
+      if (!parsed.success) {
+        return jsonError({
+          code: "invalid_request",
+          message: config.message,
+          status: 400,
+        });
+      }
+      try {
+        return Response.json(
+          await config.produce(authorization.actor, parsed.data)
+        );
+      } catch {
+        return unavailable(config.route, config.unavailableMessage);
+      }
+    };
 
   return {
     feed: async (request: Request): Promise<Response> => {
@@ -117,35 +163,39 @@ export function createNotificationHandlers(
         return unavailable("read", "Could not record the read receipt.");
       }
     },
-    observeQuota: async (request: Request): Promise<Response> => {
-      const authorization = await authorize(request);
-      if (!authorization.ok) {
-        return authorization.response;
-      }
-      const body = await request.json().catch(() => null);
-      const parsed = quotaObservationRequestSchema.safeParse(body);
-      if (!parsed.success) {
-        return jsonError({
-          code: "invalid_request",
-          message: "Invalid quota observation.",
-          status: 400,
-        });
-      }
-      try {
-        const result = await observeWorkspaceQuotaForNotifications(
-          dependencies.store,
-          {
-            namespace: authorization.actor.owner.namespace,
-            snapshot: parsed.data.quota,
-          }
-        );
-        return Response.json(result);
-      } catch {
-        return unavailable(
-          "quota-observation",
-          "Could not record the quota observation."
-        );
-      }
-    },
+    observeGift: observation({
+      message: "Invalid gift observation.",
+      produce: (actor, input) =>
+        observeGiftCreditForNotifications(dependencies.store, {
+          ...input,
+          namespace: actor.owner.namespace,
+          userUid: actor.owner.userUid,
+        }),
+      route: "gift-observation",
+      schema: giftObservationRequestSchema,
+      unavailableMessage: "Could not record the gift observation.",
+    }),
+    observeQuota: observation({
+      message: "Invalid quota observation.",
+      produce: (actor, input) =>
+        observeWorkspaceQuotaForNotifications(dependencies.store, {
+          namespace: actor.owner.namespace,
+          snapshot: input.quota,
+        }),
+      route: "quota-observation",
+      schema: quotaObservationRequestSchema,
+      unavailableMessage: "Could not record the quota observation.",
+    }),
+    observeSubscriptionChange: observation({
+      message: "Invalid subscription-change observation.",
+      produce: (actor, input) =>
+        observeSubscriptionChangeForNotifications(dependencies.store, {
+          ...input,
+          namespace: actor.owner.namespace,
+        }),
+      route: "subscription-change",
+      schema: subscriptionChangeObservationRequestSchema,
+      unavailableMessage: "Could not record the subscription change.",
+    }),
   };
 }

@@ -155,7 +155,12 @@ test("a quota observation crossing 100% writes one entry, and the feed lists it 
   assert.equal(feed.status, 200);
   const parsed = notificationFeedResponseSchema.parse(await feed.json());
   assert.equal(parsed.messages.length, 1);
-  assert.equal(parsed.messages[0]?.payload.resource, "storage");
+  assert.deepEqual(parsed.messages[0]?.payload, {
+    kind: "quota-exhausted",
+    limit: 20_480,
+    resource: "storage",
+    used: 20_480,
+  });
   assert.deepEqual(parsed.receipts, []);
 });
 
@@ -218,4 +223,71 @@ test("requests without an App Token are refused; malformed bodies answer 400", a
     await request("/quota-observation", { actor: "alice", body: { quota: {} } })
   );
   assert.equal(badQuota.status, 400);
+});
+
+test("a visible gift writes one hint per user through the route; a retry writes nothing", async () => {
+  const body = { giftMicroUnits: 720_000 };
+  const first = await handlers.observeGift(
+    await request("/gift-observation", { actor: "carol", body })
+  );
+  const retry = await handlers.observeGift(
+    await request("/gift-observation", { actor: "carol", body })
+  );
+  assert.equal(first.status, 200);
+  assert.deepEqual(await first.json(), { produced: true });
+  assert.deepEqual(await retry.json(), { produced: false });
+
+  const feed = notificationFeedResponseSchema.parse(
+    await (await handlers.feed(await request("", { actor: "carol" }))).json()
+  );
+  const hint = feed.messages.find((message) => message.kind === "credit-hint");
+  assert.deepEqual(hint?.payload, {
+    giftMicroUnits: 720_000,
+    kind: "credit-hint",
+  });
+
+  const bad = await handlers.observeGift(
+    await request("/gift-observation", {
+      actor: "carol",
+      body: { giftMicroUnits: -1 },
+    })
+  );
+  assert.equal(bad.status, 400);
+});
+
+test("a subscription change writes one receipt per transaction through the route", async () => {
+  const body = {
+    change: "upgraded",
+    planName: "Pro",
+    transactionId: "txn-route-1",
+  };
+  const first = await handlers.observeSubscriptionChange(
+    await request("/subscription-change", { actor: "carol", body })
+  );
+  const again = await handlers.observeSubscriptionChange(
+    await request("/subscription-change", { actor: "carol", body })
+  );
+  assert.equal(first.status, 200);
+  assert.deepEqual(await first.json(), { produced: true });
+  assert.deepEqual(await again.json(), { produced: false });
+
+  const feed = notificationFeedResponseSchema.parse(
+    await (await handlers.feed(await request("", { actor: "carol" }))).json()
+  );
+  const receipt = feed.messages.find(
+    (message) => message.kind === "subscription-change"
+  );
+  assert.deepEqual(receipt?.payload, {
+    change: "upgraded",
+    kind: "subscription-change",
+    planName: "Pro",
+  });
+
+  const bad = await handlers.observeSubscriptionChange(
+    await request("/subscription-change", {
+      actor: "carol",
+      body: { change: "renewed", planName: "Pro", transactionId: "t" },
+    })
+  );
+  assert.equal(bad.status, 400);
 });

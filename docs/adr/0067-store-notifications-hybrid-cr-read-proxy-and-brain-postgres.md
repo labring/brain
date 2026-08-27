@@ -19,9 +19,11 @@ Each message has exactly one source of truth, chosen by who produces it.
   Go API serves a read proxy (`/api/notification/v1alpha1`) that lists the
   current namespace's Notification CRs with the caller's kubeconfig bearer
   token and merge-patches the same `isRead` label the Sealos desktop writes.
-  The client polls it at the desktop's cadence (≤5 minutes). Upstream copy is
-  shown as written; the display-layer override table is a later, display-only
-  concern.
+  The client polls it at the desktop's cadence (≤5 minutes). The display
+  layer may substitute Brain-voiced copy and a CTA for the known fixed-name
+  debt-ladder CRs and hide the low-balance tiers from gift-only newcomers —
+  display-only: the CR is never touched, and unknown names show upstream's
+  text as written.
 - **Brain-produced messages live in Brain's own Postgres** under a new schema,
   `sealai_notification`: `notification_messages` (namespace, kind, project,
   structured payload, `dedupe_key`) rendered client-side, isolated per
@@ -80,8 +82,10 @@ keeping Brain's own messages in Brain's own database needs none.
 - Read state can diverge between Brain and the desktop for Developers (no
   patch permission) and whenever the best-effort patch fails; the receipt is
   authoritative inside Brain.
-- Producers only fire where a request carries the observed data (today: the
-  chat turn and the sidebar's quota warm-up). A state that changes while no
+- Producers only fire where a request carries the observed data (the chat
+  turn and the sidebar's quota warm-up for quota; the inbox's own credits
+  read for the gift hint; the Plan view's settlement for subscription-change
+  receipts). A state that changes while no
   one is using Brain is noticed on the next request, not at the moment it
   changes. The observed snapshot is the client's (the desktop SDK's quota
   read, already trusted for chat context), so a workspace member could post

@@ -59,6 +59,7 @@ import {
   type FreeChatTurnsUsage,
   fetchFreeChatTurnsUsage,
 } from "@/features/chat/persistence/client";
+import { observeSubscriptionChangeQuietly } from "@/features/notifications/subscription-change-observer";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -471,6 +472,19 @@ export function BillingPlan({
         workspace: current.workspace,
       });
       await refreshSnapshot();
+      if (operator === "canceled") {
+        // The receipt's observation point for cancellations (catalog B5).
+        observeSubscriptionChangeQuietly({
+          appToken,
+          cancelled: {
+            currentPeriodEndAt: current.currentPeriodEndAt,
+            planName: current.planName,
+          },
+          kubeconfig,
+          regionDomain: current.regionDomain,
+          workspace: current.workspace,
+        }).catch(() => undefined);
+      }
       toast.success(
         operator === "canceled"
           ? "Subscription cancellation scheduled."
@@ -592,6 +606,18 @@ export function BillingPlan({
         kubeconfig,
         workspace: settleWorkspace,
       });
+      // …and for the subscription-change receipt (catalog B5): the settled
+      // transaction names what happened. Only the current workspace's inbox
+      // is verifiable from here, so another workspace's change goes
+      // unreceipted rather than landing in the wrong inbox.
+      if (settleWorkspace === workspace) {
+        observeSubscriptionChangeQuietly({
+          appToken,
+          kubeconfig,
+          regionDomain: nextSnapshot.current.regionDomain,
+          workspace,
+        }).catch(() => undefined);
+      }
       return nextSnapshot;
     },
     [appToken, currency, kubeconfig, refreshSnapshot, workspace]

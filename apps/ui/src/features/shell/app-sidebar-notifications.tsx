@@ -17,13 +17,15 @@ import {
   type LucideIcon,
   Megaphone,
 } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState } from "react";
+import { BillingDevMockGate } from "@/features/billing/billing-dev-mock-gate";
+import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { formatNotificationTime } from "@/features/notifications/notification-time";
 import {
   type NotificationFeed,
   useNotificationFeed,
 } from "@/features/notifications/use-notification-feed";
-import { AppSidebarNotificationsDevMockGate } from "@/features/shell/app-sidebar-notifications-dev-mock-gate";
 import {
   type AppNotification,
   type AppNotificationKind,
@@ -71,27 +73,50 @@ function NotificationRow({
   const meta = [item.project, formatNotificationTime(item.timestamp)]
     .filter(Boolean)
     .join(" · ");
+  // The CTA is the row's one way out (design spec §10): a sibling link, not
+  // a nested control, so the row stays a plain button. Billing CTAs record
+  // the return route first so the Billing Area's close button comes back.
+  const cta = item.cta;
   return (
-    <button
-      className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-2 text-left transition-colors hover:bg-input/30"
+    <div
+      className="flex items-center gap-2.5 rounded-md px-1.5 py-2 transition-colors hover:bg-input/30"
       data-slot="app-sidebar-notification-row"
-      onClick={onRead}
-      type="button"
     >
-      <NotificationKindIcon kind={item.kind} />
-      <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block truncate text-sm",
-            unread ? "font-medium text-neutral-50" : "text-neutral-300"
-          )}
+      <button
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+        onClick={onRead}
+        type="button"
+      >
+        <NotificationKindIcon kind={item.kind} />
+        <span className="min-w-0 flex-1">
+          <span
+            className={cn(
+              "block truncate text-sm",
+              unread ? "font-medium text-neutral-50" : "text-neutral-300"
+            )}
+          >
+            {item.title}
+          </span>
+          <span className="mt-0.5 block truncate text-muted-foreground text-xs">
+            {meta}
+          </span>
+        </span>
+      </button>
+      {cta == null ? null : (
+        <Link
+          className="shrink-0 rounded-md bg-input/40 px-2 py-1 font-medium text-neutral-50 text-xs transition-colors hover:bg-input/60"
+          data-slot="app-sidebar-notification-cta"
+          href={cta.href}
+          onClick={() => {
+            if (cta.href.startsWith("/billing")) {
+              recordBillingReturnRoute();
+            }
+            onRead();
+          }}
         >
-          {item.title}
-        </span>
-        <span className="mt-0.5 block truncate text-muted-foreground text-xs">
-          {meta}
-        </span>
-      </span>
+          {cta.label}
+        </Link>
+      )}
       <span
         aria-hidden
         className={cn(
@@ -99,7 +124,7 @@ function NotificationRow({
           unread ? "opacity-100" : "opacity-0"
         )}
       />
-    </button>
+    </div>
   );
 }
 
@@ -226,7 +251,9 @@ export function AppSidebarNotifications() {
 
   return (
     <>
-      <AppSidebarNotificationsDevMockGate />
+      {/* The billing Dev Mock's scenarios drive the inbox fixtures too, so
+          its panel entry is reachable from anywhere the inbox is. */}
+      <BillingDevMockGate />
       <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger render={trigger}>
           <span

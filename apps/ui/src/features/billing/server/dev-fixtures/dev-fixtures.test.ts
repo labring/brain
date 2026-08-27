@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadAccountBalance } from "../../account-balance";
 import { loadAccountCredits } from "../../account-credits";
+import { loadHasToppedUp } from "../../account-top-up";
 import { loadAiCredits } from "../../billing-ai-credits";
 import { loadBillingCosts } from "../../billing-costs-data";
 import type { BillingFetch } from "../../billing-data-client";
 import {
+  checkSubscriptionDowngrade,
   loadBillingPlanSnapshot,
   loadSubscriptionUpgradeQuote,
 } from "../../billing-plan-data";
@@ -76,6 +78,8 @@ const CREDITLESS_SCENARIOS = new Set([
   "paused",
   "payg",
   "payg-debt",
+  "payg-debt-deletion",
+  "payg-debt-final",
 ]);
 
 function loadPlanForScenario(scenario: string) {
@@ -229,6 +233,40 @@ test("payg-debt derives a PAYG workspace inside the debt pipeline", async () => 
     mockFetchFor("payg-debt")
   );
   assert.ok(balance.microUnits < 0, "the account balance sits in debt");
+});
+
+test("payg-debt-deletion and payg-debt-final walk the account debt ladder's later rungs", async () => {
+  for (const scenario of ["payg-debt-deletion", "payg-debt-final"]) {
+    const plan = await loadPlanForScenario(scenario);
+    assert.equal(plan.current.isPayg, true, scenario);
+    assert.equal(plan.current.lifecycle, "payment-due", scenario);
+    assert.equal(plan.current.warningStage, "deletion-imminent", scenario);
+    assert.equal(plan.current.warningDeadlineAt, null, scenario);
+  }
+});
+
+test("quota-full is an active subscription whose storage sits at 100%", async () => {
+  const plan = await loadPlanForScenario("quota-full");
+  assert.equal(plan.current.lifecycle, "active");
+  const check = await checkSubscriptionDowngrade(
+    {
+      ...CREDENTIALS,
+      limits: { storage: "20Gi" },
+      regionDomain: "mock.sealos.run",
+    },
+    { fetch: mockFetchFor("quota-full") }
+  );
+  assert.equal(check.allowed, true, "at the limit, not past it");
+});
+
+test("only the gift newcomer has never topped up", async () => {
+  for (const scenario of BILLING_DEV_SCENARIOS) {
+    assert.equal(
+      await loadHasToppedUp(CREDENTIALS, mockFetchFor(scenario)),
+      scenario !== "free",
+      `${scenario}: top-up history`
+    );
+  }
 });
 
 test("free derives an active trial that never reads as cancelling", async () => {
