@@ -120,6 +120,13 @@
       "when": 1788319231977,
       "tag": "0016_cancellation_survey",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788337614503,
+      "tag": "0017_template_instance_adoptions",
+      "breakpoints": true
     }
   ]
 }

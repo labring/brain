@@ -278,6 +278,12 @@ The split lifecycle boundary between permanent Deployment Task history and its e
 
 _Avoid_: task purge, clear history, archive task, Devbox retention as task retention.
 
+### Template Instance Adoption
+
+Claiming an already-applied Sealos Template Instance into Brain as a Project after the cluster already has the Instance. Brain creates the Project row and writes Brain bookkeeping labels onto the instance's namespaced resources; it does not inject `extraLabels` at create time (that remains the GitHub Deployment Task path). Namespace comes only from the request kubeconfig. Identity is the Instance UID, not the instance name — a reused name with a new UID is a new Project. The mapping's adopting/adopted/failed status is internal bookkeeping, never a user-visible Project status. Brain labels written here follow ADR 0027: they mark ownership, they do not classify AP or DB.
+
+_Avoid_: import template, claim instance, extraLabels backfill, adopt as a Deployment Task.
+
 ### GitHub Connection
 
 A personal OAuth authorization that lets one Workspace Actor list and deploy from their own GitHub repositories within a namespace — never a shared namespace credential another actor may select. Disconnecting forgets the connection locally; the GitHub-side authorization survives until revoked on GitHub, and account choice happens at connect time, never at disconnect.

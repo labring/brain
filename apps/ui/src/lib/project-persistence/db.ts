@@ -11,6 +11,7 @@ import {
   projectManagementAuditEvents,
   projectNavigationPreferences,
   projects,
+  templateInstanceAdoptions,
 } from "./schema";
 
 const projectSchema = {
@@ -20,6 +21,7 @@ const projectSchema = {
   projectCanvasLayouts,
   projectNavigationPreferences,
   projects,
+  templateInstanceAdoptions,
 };
 
 export type ProjectPgDatabase = NodePgDatabase<typeof projectSchema>;
