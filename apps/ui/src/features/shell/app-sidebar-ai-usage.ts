@@ -6,8 +6,13 @@ import {
 import type { FreeChatTurnsUsage } from "@/features/chat/persistence/client";
 import type { AppSidebarQuotaRow } from "@/features/shell/app-sidebar-quota";
 
-/** The AI slot's user-visible labels — the popover skeleton reuses them. */
-export const FREE_TRIAL_MESSAGES_ROW_LABEL = "Free trial messages";
+/**
+ * The AI slot's user-visible labels — the popover skeleton reuses them.
+ * The free-turns label is the compact sidebar form of "Free trial messages"
+ * (the full label the Billing Plan view keeps): the popover's fixed label
+ * column would truncate the full phrase.
+ */
+export const FREE_TRIAL_MESSAGES_ROW_LABEL = "Free msgs";
 export const AI_CREDITS_ROW_LABEL = "AI Credits";
 
 /**

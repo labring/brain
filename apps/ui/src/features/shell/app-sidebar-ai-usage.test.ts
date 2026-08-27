@@ -9,7 +9,7 @@ import {
 test("aiUsageRowFromFreeTurns renders the trial allowance as counted turns", () => {
   assert.deepEqual(
     aiUsageRowFromFreeTurns({ limit: 5, remaining: 3, used: 2 }),
-    { label: "Free trial messages", percent: 40, value: "2/5" }
+    { label: "Free msgs", percent: 40, value: "2/5" }
   );
 });
 
