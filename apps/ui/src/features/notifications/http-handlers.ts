@@ -81,7 +81,7 @@ export function createNotificationHandlers(
       try {
         const [messages, receipts] = await Promise.all([
           dependencies.store.listMessages(reader.namespace),
-          dependencies.store.listReceipts(reader),
+          dependencies.store.listReceipts(reader.userUid),
         ]);
         const body: NotificationFeedResponse = { messages, receipts };
         return Response.json(body);

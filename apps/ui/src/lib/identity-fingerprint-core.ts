@@ -416,8 +416,8 @@ async function rekeyPersonalResources(
     .where(eq(onboardingProfiles.userUid, input.tombstoneUserUid))
     .returning({ userUid: onboardingProfiles.userUid });
 
-  // Notification read receipts are keyed by (uid, namespace, message key):
-  // the tombstone's receipts follow the survivor except where the survivor
+  // Notification read receipts are keyed by (uid, message key): the
+  // tombstone's receipts follow the survivor except where the survivor
   // already read the same message, and the rest are deleted — a receipt is
   // a fact about one person, so two rows for one message collapse to one.
   const survivorReceipts = alias(notificationReadReceipts, "survivor_receipts");
@@ -434,10 +434,6 @@ async function rekeyPersonalResources(
             .where(
               and(
                 eq(survivorReceipts.userUid, input.survivorUserUid),
-                eq(
-                  survivorReceipts.namespace,
-                  notificationReadReceipts.namespace
-                ),
                 eq(
                   survivorReceipts.messageKey,
                   notificationReadReceipts.messageKey

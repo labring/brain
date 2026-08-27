@@ -3,7 +3,7 @@ import "server-only";
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
 import { observeWorkspaceQuotaForNotifications } from "./producer-quota-exhausted";
-import { notificationStore } from "./route-handlers";
+import { notificationStore } from "./server-store";
 
 /**
  * Fire-and-forget quota observation for request paths that already carry a

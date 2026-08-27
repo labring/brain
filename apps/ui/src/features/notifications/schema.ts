@@ -62,20 +62,21 @@ export const notificationMessages = ns.table(
 );
 
 /**
- * One read receipt per user × workspace × message key. The key is the
- * source-prefixed notification id: `db:<message id>` for Brain-produced
- * entries (with `messageId` set so the 365-day sweep cascades) and
- * `cr:<name>:<timestamp>` for platform CRs — versioned by the CR's own
- * timestamp so an upstream revive (same fixed name, newer timestamp) reads as
- * unread again. Any role writes receipts; the CR label is a separate,
- * best-effort write.
+ * One read receipt per user × message key. The key is the source-prefixed
+ * notification id: `db:<message id>` for Brain-produced entries (with
+ * `messageId` set so the 365-day sweep cascades) and `cr:<name>:<timestamp>`
+ * for platform CRs — versioned by the CR's own timestamp so an upstream
+ * revive (same fixed name, newer timestamp) reads as unread again. No
+ * workspace in the key: upstream writes account-level messages into every
+ * user namespace with the same name and timestamp, and a person reads a
+ * message once, not once per workspace. Any role writes receipts; the CR
+ * label is a separate, best-effort write.
  */
 export const notificationReadReceipts = ns.table(
   "notification_read_receipts",
   {
     /** Bare global user UID (ADR-0059). */
     userUid: text("user_uid").notNull(),
-    namespace: text("namespace").notNull(),
     messageKey: text("message_key").notNull(),
     messageId: text("message_id").references(() => notificationMessages.id, {
       onDelete: "cascade",
@@ -85,9 +86,7 @@ export const notificationReadReceipts = ns.table(
       .notNull(),
   },
   (table) => [
-    primaryKey({
-      columns: [table.userUid, table.namespace, table.messageKey],
-    }),
+    primaryKey({ columns: [table.userUid, table.messageKey] }),
     index("notification_read_receipts_message_id_idx").on(table.messageId),
   ]
 );

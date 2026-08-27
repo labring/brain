@@ -13,11 +13,10 @@ CREATE TABLE "sealai_notification"."notification_messages" (
 --> statement-breakpoint
 CREATE TABLE "sealai_notification"."notification_read_receipts" (
 	"user_uid" text NOT NULL,
-	"namespace" text NOT NULL,
 	"message_key" text NOT NULL,
 	"message_id" text,
 	"read_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "notification_read_receipts_user_uid_namespace_message_key_pk" PRIMARY KEY("user_uid","namespace","message_key")
+	CONSTRAINT "notification_read_receipts_user_uid_message_key_pk" PRIMARY KEY("user_uid","message_key")
 );
 --> statement-breakpoint
 ALTER TABLE "sealai_notification"."notification_read_receipts" ADD CONSTRAINT "notification_read_receipts_message_id_notification_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "sealai_notification"."notification_messages"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

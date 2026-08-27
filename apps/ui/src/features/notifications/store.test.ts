@@ -80,7 +80,6 @@ test("produce writes one entry per dedupe key and retries dedupe", async () => {
   assert.equal(messages[0]?.kind, "quota-exhausted");
   assert.deepEqual(messages[0]?.payload, quotaPayload("storage"));
   assert.equal(messages[0]?.createdAt, NOW.getTime());
-  assert.equal(await store.isLive("quota-exhausted:ns-a:storage"), true);
 });
 
 test("release frees the dedupe key, keeps history, and lets the next crossing write again", async () => {
@@ -123,7 +122,7 @@ test("messages are isolated per namespace", async () => {
   assert.equal(b[0]?.payload.resource, "cpu");
 });
 
-test("receipts are per user and per namespace, and db receipts attach their row", async () => {
+test("receipts are per user, follow the person across workspaces, and db receipts attach their row", async () => {
   await bindIdentity("alice", "alice-uid");
   await bindIdentity("bob", "bob-uid");
   const [message] = await store.listMessages("ns-b");
@@ -135,24 +134,13 @@ test("receipts are per user and per namespace, and db receipts attach their row"
   await store.markRead(reader({ namespace: "ns-b" }), [dbId]);
 
   assert.deepEqual(
-    (await store.listReceipts(reader({ namespace: "ns-b" }))).sort(),
+    (await store.listReceipts("alice-uid")).sort(),
     [crId, dbId].sort()
   );
   assert.deepEqual(
-    await store.listReceipts(
-      reader({
-        legacyWorkspaceActor: "bob",
-        namespace: "ns-b",
-        userUid: "bob-uid",
-      })
-    ),
+    await store.listReceipts("bob-uid"),
     [],
     "another user's inbox is untouched"
-  );
-  assert.deepEqual(
-    await store.listReceipts(reader({ namespace: "ns-a" })),
-    [],
-    "the same user's other workspace is untouched"
   );
   const [receipt] = await db
     .select({ messageId: notificationReadReceipts.messageId })
@@ -175,7 +163,7 @@ test("a db receipt for a foreign or unknown message is ignored, not refused", as
     dbNotificationId("does-not-exist"),
   ]);
 
-  const receipts = await store.listReceipts(reader({ namespace: "ns-b" }));
+  const receipts = await store.listReceipts("alice-uid");
   assert.equal(receipts.includes(dbNotificationId(foreign.id)), false);
   assert.equal(receipts.includes(dbNotificationId("does-not-exist")), false);
 });
@@ -220,7 +208,7 @@ test("writes sweep entries older than 365 days and their receipts cascade", asyn
 
   assert.deepEqual(await store.listMessages("ns-c"), []);
   assert.deepEqual(
-    await store.listReceipts(carol),
+    await store.listReceipts("carol-uid"),
     ["cr:keep:1"],
     "the swept row's receipt cascades; the CR receipt stays"
   );

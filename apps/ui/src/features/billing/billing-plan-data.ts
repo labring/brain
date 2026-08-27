@@ -712,14 +712,14 @@ export async function loadBillingPlanSnapshot(
   };
 }
 
+/** The caller's membership role in the workspace as the subscription record names it. */
+export type WorkspaceSubscriptionRole = "DEVELOPER" | "MANAGER" | "OWNER";
+
 /**
  * The Workspace Subscription facts the App Sidebar account section needs —
  * a two-request read (region, then the region-addressed subscription route)
  * instead of the Plan view's full snapshot.
  */
-/** The caller's membership role in the workspace as the subscription record names it. */
-export type WorkspaceSubscriptionRole = "DEVELOPER" | "MANAGER" | "OWNER";
-
 export interface WorkspaceSubscriptionSummary {
   currentPeriodEndAt: string;
   isActiveFreeTrial: boolean;

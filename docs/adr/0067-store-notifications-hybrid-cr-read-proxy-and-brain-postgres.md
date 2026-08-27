@@ -32,10 +32,11 @@ Each message has exactly one source of truth, chosen by who produces it.
   re-entry writes a fresh entry while history stays). Retention is 365 days,
   swept opportunistically on every write.
 - **Read state is a per-user, additive receipt** (`notification_read_receipts`:
-  user × namespace × message key × read_at). The key is the source-prefixed
-  notification id — `db:<id>` for Brain entries, `cr:<name>:<timestamp>` for
-  platform CRs, versioned by the CR's own timestamp so an upstream revive
-  reads as unread again. Any role can mark anything read; Owners and Managers
+  user × message key × read_at). The key is the source-prefixed notification
+  id — `db:<id>` for Brain entries, `cr:<name>:<timestamp>` for platform CRs,
+  versioned by the CR's own timestamp so an upstream revive reads as unread
+  again. No workspace in the key: upstream writes account-level messages
+  into every user namespace, and a person reads a message once. Any role can mark anything read; Owners and Managers
   additionally patch the CR label best-effort for desktop parity, Developers
   skip. A platform message is unread iff the label says unread and no receipt
   exists; upstream's auto-read stacks on top with no reconciliation.
@@ -46,7 +47,7 @@ Each message has exactly one source of truth, chosen by who produces it.
 
 - **All-CRD: Brain writes its own messages as Notification CRs too.** The
   survey (AIM-316) showed this would make Brain's events visible in the
-  desktop message center for free. Rejected: writing CRs needs a
+  desktop's own inbox for free. Rejected: writing CRs needs a
   ServiceAccount with cluster-wide `notifications` create/update (the
   "architecture D" controller verified in AIM-321), which means standing
   credentials, a deployment surface Brain does not have today, and a
@@ -74,7 +75,7 @@ keeping Brain's own messages in Brain's own database needs none.
 - The inbox's aggregation boundary is the current workspace, because the
   caller's kubeconfig reaches one namespace. Account-level platform messages
   still appear everywhere since upstream writes them to every user namespace.
-- Brain-produced messages are invisible to the desktop message center; the
+- Brain-produced messages are invisible to the desktop's own inbox; the
   desktop is a later channel if ever wanted.
 - Read state can diverge between Brain and the desktop for Developers (no
   patch permission) and whenever the best-effort patch fails; the receipt is
@@ -82,7 +83,10 @@ keeping Brain's own messages in Brain's own database needs none.
 - Producers only fire where a request carries the observed data (today: the
   chat turn and the sidebar's quota warm-up). A state that changes while no
   one is using Brain is noticed on the next request, not at the moment it
-  changes.
+  changes. The observed snapshot is the client's (the desktop SDK's quota
+  read, already trusted for chat context), so a workspace member could post
+  a fabricated one — the write lands only in that member's own verified
+  workspace, as a nuisance entry, never across workspaces.
 - Freshness is poll-bound (≤5 minutes); a WATCH upgrade is a later change to
   the proxy only.
 - `sealai_notification` joins the app-owned schemas: migrations apply at

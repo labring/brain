@@ -188,7 +188,7 @@ test("marking read writes a receipt the feed returns; other users keep theirs em
   assert.deepEqual(bob.receipts, [], "read state is personal");
 });
 
-test("the feed is scoped to the verified workspace", async () => {
+test("the stream is scoped to the verified workspace; receipts follow the person", async () => {
   const other = notificationFeedResponseSchema.parse(
     await (
       await handlers.feed(
@@ -197,6 +197,10 @@ test("the feed is scoped to the verified workspace", async () => {
     ).json()
   );
   assert.deepEqual(other.messages, []);
+  assert.ok(
+    other.receipts.includes("cr:debt-choice-debtperiod:1756200000"),
+    "an account-level CR read in one workspace is read in every workspace"
+  );
 });
 
 test("requests without an App Token are refused; malformed bodies answer 400", async () => {

@@ -44,7 +44,7 @@ export interface NotificationCRReadResponse {
 
 export type NotificationCRFetchRequest = Omit<FetcherOptions, "base">;
 
-/** The desktop polls its message center every 5 minutes; match it. */
+/** The desktop polls its own inbox every 5 minutes; match it. */
 export const NOTIFICATION_CR_REFRESH_INTERVAL_MS = 5 * 60_000;
 
 export function notificationCRReadPath(name: string): string {

@@ -22,7 +22,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 type ReceiptInsert = typeof notificationReadReceipts.$inferInsert;
 
-/** The reader marking notifications read: bare uid key + crName for the re-check. */
+/**
+ * The reader marking notifications read: bare uid key + crName for the
+ * re-check, plus the workspace whose `db:` rows the receipts may attach to.
+ */
 export interface NotificationReader {
   legacyWorkspaceActor: string;
   namespace: string;
@@ -40,12 +43,10 @@ export interface ProduceNotificationInput {
 }
 
 export interface NotificationStore {
-  /** Whether a live (unreleased) row holds the dedupe key. */
-  isLive(dedupeKey: string): Promise<boolean>;
   /** The namespace's entries, newest first. */
   listMessages(namespace: string): Promise<NotificationMessage[]>;
-  /** The user's receipts for the namespace, as source-prefixed ids. */
-  listReceipts(reader: NotificationReader): Promise<string[]>;
+  /** The user's receipts, as source-prefixed ids. */
+  listReceipts(userUid: string): Promise<string[]>;
   /**
    * Records receipts for the given source-prefixed ids. `db:` ids attach the
    * message row so the sweep cascades; unknown or foreign `db:` ids are
@@ -86,12 +87,7 @@ function receiptRows(
     if (isDbKey && !(messageId != null && ownedMessageIds.has(messageId))) {
       continue;
     }
-    rows.push({
-      messageId,
-      messageKey: key,
-      namespace: reader.namespace,
-      userUid: reader.userUid,
-    });
+    rows.push({ messageId, messageKey: key, userUid: reader.userUid });
   }
   return rows;
 }
@@ -115,19 +111,6 @@ export function createNotificationStore(
   getDb: () => NotificationPgDatabase
 ): NotificationStore {
   return {
-    isLive: async (dedupeKey) => {
-      const [row] = await getDb()
-        .select({ id: notificationMessages.id })
-        .from(notificationMessages)
-        .where(
-          and(
-            eq(notificationMessages.dedupeKey, dedupeKey),
-            isNull(notificationMessages.releasedAt)
-          )
-        )
-        .limit(1);
-      return row != null;
-    },
     listMessages: async (namespace) => {
       const rows = await getDb()
         .select()
@@ -139,16 +122,11 @@ export function createNotificationStore(
         );
       return rows.map(toMessage);
     },
-    listReceipts: async (reader) => {
+    listReceipts: async (userUid) => {
       const rows = await getDb()
         .select({ messageKey: notificationReadReceipts.messageKey })
         .from(notificationReadReceipts)
-        .where(
-          and(
-            eq(notificationReadReceipts.userUid, reader.userUid),
-            eq(notificationReadReceipts.namespace, reader.namespace)
-          )
-        );
+        .where(eq(notificationReadReceipts.userUid, userUid));
       return rows.map((row) => row.messageKey);
     },
     markRead: (reader, ids) =>
@@ -190,7 +168,6 @@ export function createNotificationStore(
           .onConflictDoNothing({
             target: [
               notificationReadReceipts.userUid,
-              notificationReadReceipts.namespace,
               notificationReadReceipts.messageKey,
             ],
           });

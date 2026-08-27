@@ -1,5 +1,5 @@
 {
-  "id": "18095ed1-1f31-475f-b343-789f3ea17726",
+  "id": "bda42e6a-255a-42d0-a8c4-4f3a7505c783",
   "prevId": "67332fdf-15e9-467a-aecf-25706210e908",
   "version": "7",
   "dialect": "postgresql",
@@ -2183,12 +2183,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "namespace": {
-          "name": "namespace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "message_key": {
           "name": "message_key",
           "type": "text",
@@ -2239,9 +2233,9 @@
         }
       },
       "compositePrimaryKeys": {
-        "notification_read_receipts_user_uid_namespace_message_key_pk": {
-          "name": "notification_read_receipts_user_uid_namespace_message_key_pk",
-          "columns": ["user_uid", "namespace", "message_key"]
+        "notification_read_receipts_user_uid_message_key_pk": {
+          "name": "notification_read_receipts_user_uid_message_key_pk",
+          "columns": ["user_uid", "message_key"]
         }
       },
       "uniqueConstraints": {},

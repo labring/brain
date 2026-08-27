@@ -18,6 +18,12 @@ import (
 // BasePath is the group root; `main.go` accepts it with or without the slash.
 const BasePath = "/api/notification/v1alpha1"
 
+// Service seams, swapped by route tests for a fake cluster.
+var (
+	listNotifications    = notificationsvc.List
+	markNotificationRead = notificationsvc.MarkRead
+)
+
 // Register adds the Notification API routes to the Huma API.
 func Register(api huma.API) {
 	grp := huma.NewGroup(api, BasePath)
@@ -39,14 +45,14 @@ func registerList(grp huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/",
 		Summary:     "List platform Notifications",
-		Description: "List the upstream Notification CRs (`notifications.notification.sealos.io/v1`) of the resolved namespace, newest first. The platform writes and withdraws these; Brain only reads them. `isRead` mirrors the CR's `isRead` label — the same state the Sealos desktop message center shows.",
+		Description: "List the upstream Notification CRs (`notifications.notification.sealos.io/v1`) of the resolved namespace, newest first. The platform writes and withdraws these; Brain only reads them. `isRead` mirrors the CR's `isRead` label — the same state the Sealos desktop's own inbox shows.",
 		Tags:        []string{"Notification"},
 	}, func(ctx context.Context, input *listInput) (*listOutput, error) {
 		_, cfg, err := middleware.RestConfigFromAuth(input.Authorization)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-		result, err := notificationsvc.List(ctx, cfg, input.Namespace)
+		result, err := listNotifications(ctx, cfg, input.Namespace)
 		if err != nil {
 			return nil, mapK8sError("failed to list notifications", err)
 		}
@@ -76,7 +82,7 @@ func registerMarkRead(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid kubeconfig", err)
 		}
-		result, err := notificationsvc.MarkRead(ctx, cfg, input.Namespace, input.Name)
+		result, err := markNotificationRead(ctx, cfg, input.Namespace, input.Name)
 		if err != nil {
 			return nil, mapK8sError("failed to mark notification read", err)
 		}
