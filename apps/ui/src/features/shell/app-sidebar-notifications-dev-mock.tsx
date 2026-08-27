@@ -9,117 +9,138 @@ import { useSetAtom } from "jotai";
 import { useEffect } from "react";
 import type { AppNotification } from "@/features/shell/app-sidebar-notifications-model";
 import {
-  appNotificationsAtom,
   notificationReadIdsAtom,
+  notificationsDevMockItemsAtom,
 } from "@/features/shell/app-sidebar-notifications-store";
 
 /**
- * The Notification Center's Dev Mock: fills the notifications store with
- * fixture items so the panel can be designed and demoed before a real feed
- * exists. Registered while the App Sidebar is mounted; disabled (the
- * default) leaves the store empty — the shipped empty state.
+ * The Notification Center's Dev Mock: overrides the merged feed with fixture
+ * items so the panel can be designed and demoed without a cluster or store.
+ * Registered while the App Sidebar is mounted; disabled (the default) hands
+ * the panel back to the real feed. Scenario fixtures feeding the real
+ * pipeline (fixture CRs and rows) are the display-layer ticket's follow-up.
  */
 
 export const NOTIFICATIONS_DEV_MOCK_KEY = "notifications-mock";
 
 const NOTIFICATIONS_DEV_SCENARIOS = ["mixed", "flood", "all-read"] as const;
 
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const MOCK_NOW = Date.now();
+
+function mockItem(
+  overrides: Partial<AppNotification> & {
+    ago: number;
+    id: string;
+    kind: AppNotification["kind"];
+    title: string;
+  }
+): AppNotification {
+  const { ago, ...rest } = overrides;
+  return {
+    source: "db",
+    timestamp: MOCK_NOW - ago,
+    unread: false,
+    ...rest,
+    id: `db:mock-${rest.id}`,
+  };
+}
+
 const MIXED_ITEMS: AppNotification[] = [
-  {
+  mockItem({
+    ago: 2 * MINUTE_MS,
     id: "n1",
     kind: "deploy-failure",
     project: "api-server",
-    time: "2m ago",
     title: "Deployment failed",
     unread: true,
-  },
-  {
+  }),
+  mockItem({
+    ago: 26 * MINUTE_MS,
     id: "n2",
     kind: "deploy-success",
     project: "web-app",
-    time: "26m ago",
     title: "Deployment complete",
     unread: true,
-  },
-  {
+  }),
+  mockItem({
+    ago: HOUR_MS,
     id: "n3",
     kind: "quota",
-    time: "1h ago",
-    title: "Memory quota at 82%",
+    title: "Storage quota is full",
     unread: true,
-  },
-  {
+  }),
+  mockItem({
+    ago: 30 * HOUR_MS,
     id: "n4",
     kind: "billing",
-    time: "Yesterday",
     title: "Free trial ends in 3 days",
-    unread: false,
-  },
-  {
+  }),
+  mockItem({
+    ago: 31 * HOUR_MS,
     id: "n5",
     kind: "deploy-success",
     project: "pg-main",
-    time: "Yesterday",
     title: "Database backup finished",
-    unread: false,
-  },
-  {
+  }),
+  mockItem({
+    ago: 2 * DAY_MS,
     id: "n6",
     kind: "announcement",
-    time: "2d ago",
     title: "New: database terminal",
-    unread: false,
-  },
+  }),
 ];
 
 const FLOOD_ITEMS: AppNotification[] = [
   ...MIXED_ITEMS.slice(0, 3),
-  {
+  mockItem({
+    ago: 2 * HOUR_MS,
     id: "n7",
     kind: "deploy-success",
     project: "landing",
-    time: "3h ago",
     title: "Deployment complete",
     unread: true,
-  },
-  {
+  }),
+  mockItem({
+    ago: 3 * HOUR_MS,
     id: "n8",
-    kind: "quota",
-    time: "6h ago",
-    title: "Storage quota at 91%",
-    unread: true,
-  },
-  ...MIXED_ITEMS.slice(3),
-  {
-    id: "n9",
     kind: "deploy-failure",
-    project: "redis-cache",
-    time: "2d ago",
-    title: "Workload restarted",
-    unread: false,
-  },
-  {
+    project: "worker",
+    title: "Deployment failed",
+    unread: true,
+  }),
+  mockItem({
+    ago: 4 * HOUR_MS,
+    id: "n9",
+    kind: "quota",
+    title: "CPU quota is full",
+    unread: true,
+  }),
+  mockItem({
+    ago: 5 * HOUR_MS,
     id: "n10",
     kind: "billing",
-    time: "3d ago",
-    title: "Invoice ready",
-    unread: false,
-  },
-  {
+    title: "Balance exhausted",
+    unread: true,
+  }),
+  mockItem({
+    ago: 6 * HOUR_MS,
     id: "n11",
-    kind: "announcement",
-    time: "5d ago",
-    title: "New: GitHub deployments",
-    unread: false,
-  },
-  {
-    id: "n12",
     kind: "deploy-success",
-    project: "docs-site",
-    time: "6d ago",
+    project: "docs",
     title: "Deployment complete",
-    unread: false,
-  },
+    unread: true,
+  }),
+  mockItem({
+    ago: 7 * HOUR_MS,
+    id: "n12",
+    kind: "announcement",
+    title: "Scheduled maintenance",
+    unread: true,
+  }),
+  ...MIXED_ITEMS.slice(3),
 ];
 
 const SCENARIO_ITEMS: Record<string, readonly AppNotification[]> = {
@@ -142,19 +163,19 @@ const notificationsDevMockSource: DevTweaksMockSource = {
 /** Registers the mock while the App Sidebar is mounted; renders nothing. */
 export function AppSidebarNotificationsDevMock() {
   const mock = useDevTweaksMock(NOTIFICATIONS_DEV_MOCK_KEY, {
-    note: "Fills the Notification Center with fixture items",
+    note: "Replaces the Notification Center feed with fixture items",
     scenarios: NOTIFICATIONS_DEV_SCENARIOS,
     source: notificationsDevMockSource,
     title: "Notifications mock",
   });
-  const setItems = useSetAtom(appNotificationsAtom);
+  const setItems = useSetAtom(notificationsDevMockItemsAtom);
   const setReadIds = useSetAtom(notificationReadIdsAtom);
 
   useEffect(() => {
     setItems(
-      mock.enabled ? (SCENARIO_ITEMS[mock.scenario] ?? MIXED_ITEMS) : []
+      mock.enabled ? (SCENARIO_ITEMS[mock.scenario] ?? MIXED_ITEMS) : null
     );
-    // A scenario switch is a fresh inbox: session read receipts reset with it.
+    // A scenario switch is a fresh inbox: optimistic read receipts reset.
     setReadIds(new Set());
   }, [mock.enabled, mock.scenario, setItems, setReadIds]);
 

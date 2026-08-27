@@ -1172,6 +1172,7 @@ test("loads the sidebar subscription summary with only region-addressed reads", 
     isPayg: false,
     lifecycle: "active",
     planName: "Pro",
+    role: "OWNER",
   });
   assert.deepEqual(
     requests.map((request) => request.url),
@@ -1195,6 +1196,7 @@ test("the sidebar summary reports an Active Free Trial and its period end", asyn
     isPayg: false,
     lifecycle: "active",
     planName: "Free",
+    role: "OWNER",
   });
 });
 
@@ -1218,5 +1220,6 @@ test("the sidebar summary presents a deleted subscription as PAYG", async () => 
     isPayg: true,
     lifecycle: "active",
     planName: "PAYG",
+    role: "OWNER",
   });
 });

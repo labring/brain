@@ -717,12 +717,17 @@ export async function loadBillingPlanSnapshot(
  * a two-request read (region, then the region-addressed subscription route)
  * instead of the Plan view's full snapshot.
  */
+/** The caller's membership role in the workspace as the subscription record names it. */
+export type WorkspaceSubscriptionRole = "DEVELOPER" | "MANAGER" | "OWNER";
+
 export interface WorkspaceSubscriptionSummary {
   currentPeriodEndAt: string;
   isActiveFreeTrial: boolean;
   isPayg: boolean;
   lifecycle: SubscriptionLifecycle;
   planName: string;
+  /** Null when the record names no role (PAYG workspaces). */
+  role: WorkspaceSubscriptionRole | null;
 }
 
 export async function loadWorkspaceSubscriptionSummary(
@@ -768,6 +773,7 @@ export async function loadWorkspaceSubscriptionSummary(
       status: subscription.Status,
     }),
     planName: subscription.PlanName,
+    role: subscription.role ?? null,
   };
 }
 

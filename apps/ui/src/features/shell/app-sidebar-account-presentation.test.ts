@@ -15,6 +15,7 @@ function summary(
     isPayg: false,
     lifecycle: "active",
     planName: "PRO",
+    role: null,
     ...overrides,
   };
 }

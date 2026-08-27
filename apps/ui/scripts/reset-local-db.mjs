@@ -28,6 +28,8 @@ try {
     DROP SCHEMA IF EXISTS
       sealai_assistant,
       sealai_deployment,
+      sealai_marketing,
+      sealai_notification,
       sealai_onboarding,
       sealai_project,
       drizzle

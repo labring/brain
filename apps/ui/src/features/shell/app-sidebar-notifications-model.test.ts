@@ -11,9 +11,10 @@ import {
 
 function item(overrides: Partial<AppNotification>): AppNotification {
   return {
-    id: "n1",
+    id: "db:n1",
     kind: "deploy-success",
-    time: "2m ago",
+    source: "db",
+    timestamp: Date.UTC(2026, 7, 27, 12, 0, 0),
     title: "Deployment complete",
     unread: false,
     ...overrides,

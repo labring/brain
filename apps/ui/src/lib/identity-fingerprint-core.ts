@@ -17,6 +17,7 @@ import {
   marketingAttributionSubjects,
   marketingLifecycleEvents,
 } from "@/features/marketing/schema";
+import { notificationReadReceipts } from "@/features/notifications/schema";
 import { onboardingProfiles } from "@/features/onboarding/schema";
 import { rekeyCanonicalIdentityUids } from "@/lib/identity-uid-canonicalization";
 
@@ -230,6 +231,8 @@ async function rekeyPersonalResources(
   lifecycleEventsRekeyed: number;
   profilesReleased: number;
   profilesRekeyed: number;
+  receiptsReleased: number;
+  receiptsRekeyed: number;
 }> {
   const identityUidCanonicalizationsRekeyed = await rekeyCanonicalIdentityUids(
     tx,
@@ -413,6 +416,43 @@ async function rekeyPersonalResources(
     .where(eq(onboardingProfiles.userUid, input.tombstoneUserUid))
     .returning({ userUid: onboardingProfiles.userUid });
 
+  // Notification read receipts are keyed by (uid, namespace, message key):
+  // the tombstone's receipts follow the survivor except where the survivor
+  // already read the same message, and the rest are deleted — a receipt is
+  // a fact about one person, so two rows for one message collapse to one.
+  const survivorReceipts = alias(notificationReadReceipts, "survivor_receipts");
+  const rekeyedReceipts = await tx
+    .update(notificationReadReceipts)
+    .set({ userUid: input.survivorUserUid })
+    .where(
+      and(
+        eq(notificationReadReceipts.userUid, input.tombstoneUserUid),
+        notExists(
+          tx
+            .select({ userUid: survivorReceipts.userUid })
+            .from(survivorReceipts)
+            .where(
+              and(
+                eq(survivorReceipts.userUid, input.survivorUserUid),
+                eq(
+                  survivorReceipts.namespace,
+                  notificationReadReceipts.namespace
+                ),
+                eq(
+                  survivorReceipts.messageKey,
+                  notificationReadReceipts.messageKey
+                )
+              )
+            )
+        )
+      )
+    )
+    .returning({ messageKey: notificationReadReceipts.messageKey });
+  const releasedReceipts = await tx
+    .delete(notificationReadReceipts)
+    .where(eq(notificationReadReceipts.userUid, input.tombstoneUserUid))
+    .returning({ messageKey: notificationReadReceipts.messageKey });
+
   return {
     attributionSubjectsRekeyed: rekeyedAttributionSubjects.length,
     attributionSubjectsReleased: releasedAttributionSubjects.length,
@@ -426,5 +466,7 @@ async function rekeyPersonalResources(
     lifecycleEventsRekeyed: rekeyedLifecycleEvents.length,
     profilesReleased: releasedProfiles.length,
     profilesRekeyed: rekeyedProfiles.length,
+    receiptsReleased: releasedReceipts.length,
+    receiptsRekeyed: rekeyedReceipts.length,
   };
 }

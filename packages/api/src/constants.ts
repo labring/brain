@@ -61,6 +61,12 @@ export const API_ROUTES = {
     stop: "/api/db/v1alpha1/stop",
   },
 
+  notification: {
+    base: "/api/notification/v1alpha1",
+    /** GET list of the namespace's upstream Notification CRs — group root. */
+    root: "/api/notification/v1alpha1",
+  },
+
   telemetry: {
     base: "/api/telemetry/v1alpha1",
     logsHealth: "/api/telemetry/v1alpha1/logs/health",

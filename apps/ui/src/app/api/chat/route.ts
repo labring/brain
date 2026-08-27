@@ -69,6 +69,7 @@ import {
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
 import { withWorkspaceResourceContext } from "@/features/chat/runtime/workspace-resource-context";
+import { observeWorkspaceQuotaQuietly } from "@/features/notifications/producers";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
@@ -929,6 +930,14 @@ export async function POST(req: Request) {
   }
   const actor: VerifiedAssistantConversationActor =
     verifiedPersonalResourceActor(authorization);
+  // The chat turn is a natural observation point for the quota-exhausted
+  // producer: the snapshot already crossed the server boundary here.
+  if (workspaceResourceQuota.success) {
+    observeWorkspaceQuotaQuietly({
+      namespace: authorization.namespace,
+      snapshot: workspaceResourceQuota.data,
+    });
+  }
   const kubeconfig = decodeKubeconfig(parsed.data.encodedKubeconfig);
   if (kubeconfig == null) {
     return jsonError(

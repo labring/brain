@@ -50,6 +50,17 @@ export {
   useK8sNamespacedList,
 } from "./use-k8s-namespaced-list";
 export {
+  buildNotificationCRListRequest,
+  buildNotificationCRReadRequest,
+  markNotificationCRRead,
+  NOTIFICATION_CR_REFRESH_INTERVAL_MS,
+  type NotificationCRItem,
+  type NotificationCRListResponse,
+  type NotificationCRReadResponse,
+  notificationCRReadPath,
+  useNotificationCRList,
+} from "./use-notification-crs";
+export {
   type BrainProductResourceKind,
   type UseBrainProductResourceOptions,
   useBrainProductResource,

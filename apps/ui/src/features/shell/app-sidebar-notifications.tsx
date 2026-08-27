@@ -7,7 +7,6 @@ import {
 } from "@workspace/ui/components/popover";
 import { useSidebar } from "@workspace/ui/components/sidebar";
 import { cn } from "@workspace/ui/lib/utils";
-import { useAtom, useAtomValue } from "jotai";
 import {
   Bell,
   CheckCheck,
@@ -18,21 +17,21 @@ import {
   type LucideIcon,
   Megaphone,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { formatNotificationTime } from "@/features/notifications/notification-time";
+import {
+  type NotificationFeed,
+  useNotificationFeed,
+} from "@/features/notifications/use-notification-feed";
 import { AppSidebarNotificationsDevMockGate } from "@/features/shell/app-sidebar-notifications-dev-mock-gate";
 import {
   type AppNotification,
   type AppNotificationKind,
-  countUnreadNotifications,
   isNotificationUnread,
   type NotificationTab,
   notificationBadgeLabel,
   visibleNotifications,
 } from "@/features/shell/app-sidebar-notifications-model";
-import {
-  appNotificationsAtom,
-  notificationReadIdsAtom,
-} from "@/features/shell/app-sidebar-notifications-store";
 import { useCloseOnSidebarToggle } from "@/features/shell/use-close-on-sidebar-toggle";
 
 const KIND_META: Record<
@@ -69,7 +68,9 @@ function NotificationRow({
   onRead: () => void;
   unread: boolean;
 }) {
-  const meta = [item.project, item.time].filter(Boolean).join(" · ");
+  const meta = [item.project, formatNotificationTime(item.timestamp)]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <button
       className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-2 text-left transition-colors hover:bg-input/30"
@@ -122,29 +123,11 @@ function NotificationsEmptyState() {
   );
 }
 
-function NotificationsPanel() {
-  const items = useAtomValue(appNotificationsAtom);
-  const [readIds, setReadIds] = useAtom(notificationReadIdsAtom);
+function NotificationsPanel({ feed }: { feed: NotificationFeed }) {
+  const { items, markAllRead, markRead, readIds, unreadCount } = feed;
   const [tab, setTab] = useState<NotificationTab>("all");
 
-  const unreadCount = countUnreadNotifications(items, readIds);
   const visible = visibleNotifications(items, tab, readIds);
-
-  const markRead = useCallback(
-    (id: string) => {
-      setReadIds((previous) => new Set(previous).add(id));
-    },
-    [setReadIds]
-  );
-  const markAllRead = useCallback(() => {
-    setReadIds((previous) => {
-      const next = new Set(previous);
-      for (const item of items) {
-        next.add(item.id);
-      }
-      return next;
-    });
-  }, [items, setReadIds]);
 
   return (
     <>
@@ -196,7 +179,7 @@ function NotificationsPanel() {
               <NotificationRow
                 item={item}
                 key={item.id}
-                onRead={() => markRead(item.id)}
+                onRead={() => markRead(item)}
                 unread={isNotificationUnread(item, readIds)}
               />
             ))}
@@ -218,9 +201,8 @@ function NotificationsPanel() {
 export function AppSidebarNotifications() {
   const { state } = useSidebar();
   const expanded = state === "expanded";
-  const items = useAtomValue(appNotificationsAtom);
-  const readIds = useAtomValue(notificationReadIdsAtom);
-  const unreadCount = countUnreadNotifications(items, readIds);
+  const feed = useNotificationFeed();
+  const { unreadCount } = feed;
   const badgeLabel = notificationBadgeLabel(unreadCount);
   const [open, setOpen] = useState(false);
   // Collapsed anchor: the row keeps its full expanded width under the rail's
@@ -309,7 +291,7 @@ export function AppSidebarNotifications() {
           side="right"
           sideOffset={expanded ? 10 : 6}
         >
-          <NotificationsPanel />
+          <NotificationsPanel feed={feed} />
         </PopoverContent>
       </Popover>
     </>
