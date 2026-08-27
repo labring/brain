@@ -181,7 +181,7 @@ function AppSidebarUsageRow({
       <AppSidebarQuotaBar percent={row.percent} />
       <span
         className={cn(
-          "shrink-0 text-right text-xs tabular-nums",
+          "w-13 shrink-0 text-right text-xs tabular-nums",
           tone == null ? undefined : HINT_TEXT_CLASS[tone]
         )}
       >
@@ -235,7 +235,9 @@ function AppSidebarUsageRowSkeleton({
         </span>
       )}
       <span className="block h-1 min-w-0 flex-1 rounded-full bg-input/50" />
-      <Skeleton className="h-3 w-10 shrink-0 rounded-sm" />
+      <span className="flex w-13 shrink-0 justify-end">
+        <Skeleton className="h-3 w-10 rounded-sm" />
+      </span>
     </div>
   );
 }
@@ -385,7 +387,7 @@ function AppSidebarUsageSection({
       <AppSidebarUsageRow
         className={aiJustFilled ? USAGE_FILL_CLASS : undefined}
         label={aiRow.label}
-        labelClassName="whitespace-nowrap"
+        labelClassName="w-15 truncate"
         row={aiRow}
         slot="app-sidebar-ai-usage-row"
       />
@@ -394,7 +396,7 @@ function AppSidebarUsageSection({
     aiSlot = (
       <AppSidebarUsageRowSkeleton
         label={aiSkeletonLabel}
-        labelClassName="whitespace-nowrap"
+        labelClassName="w-15 truncate"
         slot="app-sidebar-ai-usage-skeleton"
       />
     );
@@ -406,7 +408,7 @@ function AppSidebarUsageSection({
         className={quotaJustFilled ? USAGE_FILL_CLASS : undefined}
         key={row.label}
         label={row.label === "Memory" ? "Mem" : row.label}
-        labelClassName="w-10"
+        labelClassName="w-15"
         row={row}
         slot="app-sidebar-quota-row"
       />
@@ -416,7 +418,7 @@ function AppSidebarUsageSection({
       <AppSidebarUsageRowSkeleton
         key={label}
         label={label}
-        labelClassName="w-10"
+        labelClassName="w-15"
         slot="app-sidebar-quota-skeleton"
       />
     ));
@@ -425,7 +427,7 @@ function AppSidebarUsageSection({
     return null;
   }
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       {aiSlot}
       {quotaSlot}
     </div>
@@ -470,7 +472,7 @@ function AppSidebarAccountMenuRow({
       rel={rel}
       target={target}
     >
-      <span className="flex w-5 shrink-0 items-center justify-center text-neutral-50 transition-colors group-hover/menurow:text-blue-400">
+      <span className="flex w-6 shrink-0 items-center justify-center text-neutral-50 transition-colors group-hover/menurow:text-blue-400">
         {icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -555,7 +557,7 @@ function AppSidebarUsageAccordion({
         >
           <span
             className={cn(
-              "flex w-5 shrink-0 items-center justify-center transition-colors group-hover/menurow:text-blue-400",
+              "flex w-6 shrink-0 items-center justify-center transition-colors group-hover/menurow:text-blue-400",
               open ? "text-blue-400" : "text-neutral-50"
             )}
           >
@@ -581,9 +583,7 @@ function AppSidebarUsageAccordion({
           )}
         >
           <div className="min-h-0 overflow-hidden">
-            <div className="px-2.5 pt-1.5 pb-2.5 [&>div]:gap-2">
-              {usageSection}
-            </div>
+            <div className="px-2.5 pt-1.5 pb-2.5">{usageSection}</div>
           </div>
         </div>
       </div>
@@ -892,7 +892,7 @@ export function AppSidebarAccount() {
           )}
         />
         <span
-          className="relative flex w-9 shrink-0 items-center justify-center"
+          className="relative flex w-9 shrink-0 items-center justify-center self-stretch"
           ref={iconSlotRef}
         >
           <AppSidebarAccountAvatar
@@ -939,9 +939,9 @@ export function AppSidebarAccount() {
           convention for popovers) — the default trigger anchor sits at the
           clipped full-width row's edge, far past the visible rail. */}
       <PopoverContent
-        align="start"
+        align={expanded ? "start" : "end"}
         anchor={expanded ? undefined : iconSlotRef}
-        className="w-56 gap-0 rounded-lg border border-border bg-input/30 p-3 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
+        className="w-58 gap-0 rounded-lg border border-border bg-input/30 p-3 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
         side={expanded ? "top" : "right"}
         sideOffset={6}
       >

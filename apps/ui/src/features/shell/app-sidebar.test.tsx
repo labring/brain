@@ -73,7 +73,7 @@ const ACCOUNT_NAME_RE = /Ada Lovelace/;
 const ACCOUNT_ID_RE = new RegExp(`ID: ${ACCOUNT_USER.id}`);
 const AI_CREDITS_LABEL_RE = /AI Credits/;
 const AI_CREDITS_VALUE_RE = /240\/300/;
-const FREE_TURNS_LABEL_RE = /Free trial messages/;
+const FREE_TURNS_LABEL_RE = /Free msgs/;
 const FREE_TURNS_VALUE_RE = /5\/5/;
 
 function proSubscription(
