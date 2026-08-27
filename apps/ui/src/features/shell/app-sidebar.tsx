@@ -341,11 +341,14 @@ function AppSidebarProjectRow({
   ariaLabel,
   currentProjectId,
   iconKey,
+  inert,
   project,
 }: {
   ariaLabel?: string;
   currentProjectId: string | undefined;
   iconKey: ProjectIconKey;
+  /** Renders the row without a link (Projects Dev Mock fixture rows). */
+  inert?: boolean;
   project: { id: string; name: string };
 }) {
   const active = currentProjectId === project.id;
@@ -353,7 +356,7 @@ function AppSidebarProjectRow({
     <AppSidebarNavRow
       active={active}
       ariaLabel={ariaLabel}
-      href={`/project/${encodeURIComponent(project.id)}`}
+      href={inert ? undefined : `/project/${encodeURIComponent(project.id)}`}
       icon={<ProjectIcon active={active} iconKey={iconKey} />}
       label={project.name}
     />
@@ -404,10 +407,13 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
   currentProjectId,
   groups,
   projectIconKeys,
+  rowsInert,
 }: {
   currentProjectId: string | undefined;
   groups: ReturnType<typeof createAppSidebarProjectGroups>;
   projectIconKeys: ProjectIconKeyMap | undefined;
+  /** True while the Projects Dev Mock is on: fixture rows must not navigate. */
+  rowsInert?: boolean;
 }) {
   const attachProjectsScroller = useScrollEdgeState();
   const { state } = useSidebar();
@@ -448,6 +454,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
                     ariaLabel={`Pinned project: ${project.name}`}
                     currentProjectId={currentProjectId}
                     iconKey={projectIconKeys?.get(project.id) ?? "docker"}
+                    inert={rowsInert}
                     key={project.id}
                     project={project}
                   />
@@ -481,6 +488,7 @@ const AppSidebarProjectGroupsNav = memo(function AppSidebarProjectGroupsNav({
                   <AppSidebarProjectRow
                     currentProjectId={currentProjectId}
                     iconKey={projectIconKeys?.get(project.id) ?? "docker"}
+                    inert={rowsInert}
                     key={project.id}
                     project={project}
                   />
@@ -534,7 +542,7 @@ function AppSidebarChrome({
 }) {
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const namespace = useAtomValue(namespaceAtom);
-  const { states } = useProjectsExplorerReadModel({
+  const { devMockActive, states } = useProjectsExplorerReadModel({
     kubeconfig,
     ns: namespace,
   });
@@ -595,6 +603,7 @@ function AppSidebarChrome({
               currentProjectId={currentProjectId}
               groups={groups}
               projectIconKeys={states.projectIconKeys}
+              rowsInert={devMockActive}
             />
           </nav>
         </SidebarContent>

@@ -6,7 +6,7 @@ import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { trackBrainGtmEventAfterSuccess } from "@/features/analytics/brain-gtm";
@@ -23,6 +23,10 @@ import type {
   ProjectExplorerProject,
   ProjectExplorerStates,
 } from "@/features/projects/explorer/project-explorer";
+import {
+  getProjectsExplorerDevMockSnapshot,
+  subscribeProjectsExplorerDevMock,
+} from "@/features/projects/explorer/projects-explorer-dev-mock-store";
 import {
   aggregateProjectStatuses,
   type ProjectWorkloadStatusInput,
@@ -119,9 +123,25 @@ interface ProjectsExplorerReadModel {
     aps: K8sGetResponse | undefined;
     dbs: K8sGetResponse | undefined;
   };
+  /**
+   * True while the Projects Dev Mock replaces the list with fixture rows;
+   * consumers render those rows inert (the generated Projects do not exist).
+   */
+  devMockActive: boolean;
   /** Revalidate the projects list (e.g. after creating a project). */
   refreshProjects: () => Promise<unknown>;
   states: ProjectExplorerStates;
+}
+
+const getDevMockServerSnapshot = () => null;
+
+/** The Projects Dev Mock snapshot, or `null` when the mock is off. */
+function useProjectsExplorerDevMock() {
+  return useSyncExternalStore(
+    subscribeProjectsExplorerDevMock,
+    getProjectsExplorerDevMockSnapshot,
+    getDevMockServerSnapshot
+  );
 }
 
 interface ProjectsExplorerResult extends ProjectsExplorerReadModel {
@@ -129,6 +149,7 @@ interface ProjectsExplorerResult extends ProjectsExplorerReadModel {
 }
 
 function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
+  const devMock = useProjectsExplorerDevMock();
   const kubeconfig = options.kubeconfig.trim();
   const ns = options.ns;
   const hasKubeconfig = kubeconfig !== "";
@@ -191,30 +212,37 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
 
   const projectIconKeys = useMemo(
     () =>
-      projectIconKeysFromWorkloads({
-        aps: apsData,
-        dbs: dbsData,
-      }),
-    [apsData, dbsData]
+      devMock
+        ? devMock.projectIconKeys
+        : projectIconKeysFromWorkloads({
+            aps: apsData,
+            dbs: dbsData,
+          }),
+    [apsData, dbsData, devMock]
   );
 
   const projects = useMemo<ProjectExplorerProject[]>(
-    () => brainProjectsToExplorerProjects(rawProjects, statusByProjectId),
-    [rawProjects, statusByProjectId]
+    () =>
+      devMock
+        ? devMock.projects
+        : brainProjectsToExplorerProjects(rawProjects, statusByProjectId),
+    [devMock, rawProjects, statusByProjectId]
   );
 
   useEffect(() => {
-    if (rawProjects === undefined) {
+    // Never prune against fixture IDs — the Dev Mock's generated rows would
+    // wipe the user's real Pinned Projects.
+    if (devMock !== null || rawProjects === undefined) {
       return;
     }
     prunePinnedProjects(projects.map((project) => project.id)).catch(
       () => undefined
     );
-  }, [projects, prunePinnedProjects, rawProjects]);
+  }, [devMock, projects, prunePinnedProjects, rawProjects]);
 
   const projectHistoryEmptyState = useMemo(
-    () => projectHistoryErrorEmptyState(projectsError),
-    [projectsError]
+    () => (devMock ? undefined : projectHistoryErrorEmptyState(projectsError)),
+    [devMock, projectsError]
   );
 
   const states = useMemo(
@@ -244,6 +272,7 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
 
   return {
     data,
+    devMockActive: devMock !== null,
     hasKubeconfig,
     kubeconfig,
     mutate,
@@ -258,10 +287,11 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
 export function useProjectsExplorerReadModel(
   options: ProjectsExplorerReadModelOptions
 ): ProjectsExplorerReadModel {
-  const { data, mutate, states } = useProjectsExplorerModel(options);
+  const { data, devMockActive, mutate, states } =
+    useProjectsExplorerModel(options);
   return useMemo(
-    () => ({ data, refreshProjects: mutate, states }),
-    [data, mutate, states]
+    () => ({ data, devMockActive, refreshProjects: mutate, states }),
+    [data, devMockActive, mutate, states]
   );
 }
 
@@ -272,6 +302,7 @@ export function useProjectsExplorer(
   const onNewProjectOverride = options.onNewProject;
   const {
     data,
+    devMockActive,
     hasKubeconfig,
     kubeconfig,
     mutate,
@@ -406,15 +437,36 @@ export function useProjectsExplorer(
     [hasKubeconfig, pinnedProjectLimit, togglePinnedProject]
   );
 
+  // Fixture rows keep every affordance (hover, pin, row menu) so the list can
+  // be designed whole, but the handlers are stand-ins: nothing navigates and
+  // nothing reaches a real endpoint with an ID that does not exist.
+  const onMockRowClick = useCallback(() => undefined, []);
+  const onMockRowMutation = useCallback(() => {
+    toast.info("Projects mock is on — row actions do nothing.");
+  }, []);
+
   const actions = useMemo(
-    (): ProjectExplorerActions => ({
-      onNewProject,
-      onProjectClick,
-      onProjectDelete,
-      onProjectPinToggle,
-      onProjectUpdate,
-    }),
+    (): ProjectExplorerActions =>
+      devMockActive
+        ? {
+            // New Project stays live; it never takes a fixture ID.
+            onNewProject,
+            onProjectClick: onMockRowClick,
+            onProjectDelete: onMockRowMutation,
+            onProjectPinToggle: onMockRowMutation,
+            onProjectUpdate: onMockRowMutation,
+          }
+        : {
+            onNewProject,
+            onProjectClick,
+            onProjectDelete,
+            onProjectPinToggle,
+            onProjectUpdate,
+          },
     [
+      devMockActive,
+      onMockRowClick,
+      onMockRowMutation,
       onNewProject,
       onProjectClick,
       onProjectDelete,
@@ -423,5 +475,5 @@ export function useProjectsExplorer(
     ]
   );
 
-  return { actions, data, states, refreshProjects: mutate };
+  return { actions, data, devMockActive, states, refreshProjects: mutate };
 }
