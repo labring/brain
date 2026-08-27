@@ -1,5 +1,4 @@
 import type { NotificationCRItem } from "@workspace/api/hooks";
-
 import type { BillingDevScenario } from "@/features/billing/dev-mock-cookie";
 import {
   markNotificationReadRequestSchema,
@@ -7,6 +6,7 @@ import {
   type NotificationMessage,
   type NotificationPayload,
 } from "@/features/notifications/types";
+import { DAY_MS, HOUR_MS } from "@/lib/time";
 
 import { billingDevMockWorkspace, resolveBillingDevMock } from "./index";
 
@@ -25,8 +25,6 @@ import { billingDevMockWorkspace, resolveBillingDevMock } from "./index";
 
 /** Anchored at module load so fixture ids stay stable across polls. */
 const FIXTURE_NOW_MS = Date.now();
-const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 
 const DEBT_SYSTEM = "Debt-System";
 const SUBSCRIPTION_SYSTEM = "Workspace-Subscription-System";
@@ -314,6 +312,7 @@ function platformItem(
     namespace: workspace,
     timestamp: Math.floor((FIXTURE_NOW_MS - fixture.ago) / 1000),
     title: fixture.title,
+    version: Math.floor((FIXTURE_NOW_MS - fixture.ago) / 1000),
   };
 }
 

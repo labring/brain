@@ -1,6 +1,7 @@
 import type { BillingCurrency } from "@/features/billing/config-core";
 
-const MICRO_UNITS_PER_CURRENCY_UNIT = 1_000_000;
+/** Upstream money is carried in micro-units: 1,000,000 per dollar (or yuan). */
+export const MICRO_UNITS_PER_CURRENCY_UNIT = 1_000_000;
 const USD_FORMATTER = new Intl.NumberFormat("en-US", {
   currency: "USD",
   currencyDisplay: "narrowSymbol",

@@ -78,6 +78,30 @@ export function createNotificationHandlers(
       : result;
   };
 
+  /** Verify the actor, then parse the JSON body; a bad body is a 400. */
+  const authorizeBody = async <T>(
+    request: Request,
+    schema: z.ZodType<T>,
+    message: string
+  ): Promise<
+    | { ok: true; actor: VerifiedPersonalResourceActor; input: T }
+    | { ok: false; response: Response }
+  > => {
+    const authorization = await authorize(request);
+    if (!authorization.ok) {
+      return authorization;
+    }
+    const body = await request.json().catch(() => null);
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        response: jsonError({ code: "invalid_request", message, status: 400 }),
+      };
+    }
+    return { actor: authorization.actor, input: parsed.data, ok: true };
+  };
+
   /**
    * Every producer's observation point has one shape: verify the actor,
    * parse the body, hand the verified namespace (and user) to the producer,
@@ -95,22 +119,17 @@ export function createNotificationHandlers(
       unavailableMessage: string;
     }) =>
     async (request: Request): Promise<Response> => {
-      const authorization = await authorize(request);
-      if (!authorization.ok) {
-        return authorization.response;
-      }
-      const body = await request.json().catch(() => null);
-      const parsed = config.schema.safeParse(body);
-      if (!parsed.success) {
-        return jsonError({
-          code: "invalid_request",
-          message: config.message,
-          status: 400,
-        });
+      const authorized = await authorizeBody(
+        request,
+        config.schema,
+        config.message
+      );
+      if (!authorized.ok) {
+        return authorized.response;
       }
       try {
         return Response.json(
-          await config.produce(authorization.actor, parsed.data)
+          await config.produce(authorized.actor, authorized.input)
         );
       } catch {
         return unavailable(config.route, config.unavailableMessage);
@@ -136,25 +155,18 @@ export function createNotificationHandlers(
       }
     },
     markRead: async (request: Request): Promise<Response> => {
-      const authorization = await authorize(request);
-      if (!authorization.ok) {
-        return authorization.response;
+      const authorized = await authorizeBody(
+        request,
+        markNotificationReadRequestSchema,
+        "Invalid mark-read request."
+      );
+      if (!authorized.ok) {
+        return authorized.response;
       }
-      const body = await request.json().catch(() => null);
-      const parsed = markNotificationReadRequestSchema.safeParse(body);
-      if (!parsed.success) {
-        return jsonError({
-          code: "invalid_request",
-          message: "Invalid mark-read request.",
-          status: 400,
-        });
-      }
+      const { ids } = authorized.input;
       try {
-        await dependencies.store.markRead(
-          readerOf(authorization.actor),
-          parsed.data.ids
-        );
-        return Response.json({ read: parsed.data.ids });
+        await dependencies.store.markRead(readerOf(authorized.actor), ids);
+        return Response.json({ read: ids });
       } catch (error) {
         const superseded = supersededBindingResponse(error);
         if (superseded != null) {

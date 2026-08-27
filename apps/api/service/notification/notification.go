@@ -51,6 +51,7 @@ type Item struct {
 	Importance        string `json:"importance,omitempty" doc:"High, Medium, or Low"`
 	DesktopPopup      bool   `json:"desktopPopup"`
 	Timestamp         int64  `json:"timestamp" doc:"spec.timestamp (Unix seconds); creationTimestamp when upstream omitted it"`
+	Version           int64  `json:"version" doc:"The id's version component: spec.timestamp, or metadata.generation when upstream omitted it. An in-place overwrite changes it; a label patch never does."`
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
 }
 
@@ -182,11 +183,22 @@ func itemFromUnstructured(obj *unstructured.Unstructured, now time.Time) (Item, 
 		DesktopPopup: boolField(spec, "desktopPopup"),
 		Timestamp:    int64Field(spec, "timestamp"),
 	}
+	// The id is versioned so an upstream overwrite of a fixed-name CR reads
+	// as a new message: spec.timestamp when the writer set one, else the
+	// object's generation — creationTimestamp would survive the overwrite and
+	// let an old receipt hide the revived message.
+	item.Version = item.Timestamp
+	if item.Version == 0 {
+		item.Version = obj.GetGeneration()
+	}
 	created := obj.GetCreationTimestamp()
 	if !created.IsZero() {
 		item.CreationTimestamp = created.UTC().Format(time.RFC3339)
 		if item.Timestamp == 0 {
 			item.Timestamp = created.Unix()
+		}
+		if item.Version == 0 {
+			item.Version = created.Unix()
 		}
 	}
 	return item, true

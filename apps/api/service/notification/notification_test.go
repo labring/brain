@@ -96,15 +96,18 @@ func TestListWithClientFlattensAndOrdersNewestFirst(t *testing.T) {
 	if second.CreationTimestamp != "2026-08-20T10:00:00Z" {
 		t.Fatalf("expected creationTimestamp to pass through, got %q", second.CreationTimestamp)
 	}
+	if second.Version != 1756200000 {
+		t.Fatalf("expected the id version to be spec.timestamp, got %d", second.Version)
+	}
 }
 
 func TestListWithClientFallsBackToCreationTimestampAndTreatsMissingLabelAsUnread(t *testing.T) {
-	client := testClient(
-		testNotification("announcement", "ns-a", "", map[string]interface{}{
-			"title":   "Welcome",
-			"message": "Hello",
-		}),
-	)
+	announcement := testNotification("announcement", "ns-a", "", map[string]interface{}{
+		"title":   "Welcome",
+		"message": "Hello",
+	})
+	announcement.SetGeneration(3)
+	client := testClient(announcement)
 
 	got, err := ListWithClient(context.Background(), client, "ns-a", testNow())
 	if err != nil {
@@ -120,6 +123,11 @@ func TestListWithClientFallsBackToCreationTimestampAndTreatsMissingLabelAsUnread
 	wantCreated := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC).Unix()
 	if item.Timestamp != wantCreated {
 		t.Fatalf("expected timestamp to fall back to creationTimestamp %d, got %d", wantCreated, item.Timestamp)
+	}
+	// The display time may fall back to creation, but the id must not: an
+	// in-place overwrite keeps creationTimestamp and bumps generation.
+	if item.Version != 3 {
+		t.Fatalf("expected the id version to fall back to metadata.generation 3, got %d", item.Version)
 	}
 }
 

@@ -7,8 +7,9 @@ import { Info, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { BILLING_SURFACE_TONES } from "@/features/billing/billing-surface-tones";
 
-import type { StatusHint, StatusHintTone } from "./status-hint-model";
+import type { StatusHint } from "./status-hint-model";
 import { useStatusHint } from "./use-status-hint";
 
 /**
@@ -17,13 +18,6 @@ import { useStatusHint } from "./use-status-hint";
  * billing state and offers the fix. One tonal recipe across tones — a
  * payment-due stage only ever changes its words, never its visuals.
  */
-
-// Same tint recipe as the Billing Area's subscription warning banner.
-const SURFACE_TONES: Record<StatusHintTone, string> = {
-  destructive: "bg-red-500/10 text-destructive",
-  info: "bg-blue-400/10 text-blue-600 dark:text-blue-400",
-  warning: "bg-amber-400/10 text-amber-600 dark:text-amber-400",
-};
 
 export function StatusHintBannerView({
   hint,
@@ -37,7 +31,7 @@ export function StatusHintBannerView({
     <div
       className={cn(
         "relative flex shrink-0 items-center justify-center gap-2.5 px-4 py-2 text-sm",
-        SURFACE_TONES[hint.tone]
+        BILLING_SURFACE_TONES[hint.tone]
       )}
       data-slot="status-hint-banner"
       data-state={hint.id}

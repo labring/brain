@@ -4,13 +4,12 @@ import { test } from "node:test";
 import type { NotificationCRItem } from "@workspace/api/hooks";
 
 import {
-  crNotificationId,
   isGiftOnlyNewcomer,
   mergeNotificationFeed,
   notificationKindForCR,
-  notificationSource,
   renderNotificationMessage,
 } from "./feed-model";
+import { crNotificationId, notificationSource } from "./notification-ids";
 import { formatNotificationDate } from "./notification-time";
 import type { NotificationMessage } from "./types";
 
@@ -18,6 +17,8 @@ const T0 = 1_756_200_000; // Unix seconds
 const QUOTA_BODY_RE = /New deployments can't start/;
 
 function cr(overrides: Partial<NotificationCRItem>): NotificationCRItem {
+  // As upstream writes them: the version is the spec timestamp.
+  const timestamp = overrides.timestamp ?? T0;
   return {
     desktopPopup: true,
     from: "Debt-System",
@@ -26,8 +27,9 @@ function cr(overrides: Partial<NotificationCRItem>): NotificationCRItem {
     message: "Your account balance is exhausted; services are suspended.",
     name: "debt-choice-debtperiod",
     namespace: "ns-a",
-    timestamp: T0,
+    timestamp,
     title: "Balance exhausted",
+    version: timestamp,
     ...overrides,
   };
 }

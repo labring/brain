@@ -1,5 +1,6 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import {
   Popover,
   PopoverContent,
@@ -103,19 +104,25 @@ function NotificationRow({
         </span>
       </button>
       {cta == null ? null : (
-        <Link
-          className="shrink-0 rounded-md bg-input/40 px-2 py-1 font-medium text-neutral-50 text-xs transition-colors hover:bg-input/60"
-          data-slot="app-sidebar-notification-cta"
-          href={cta.href}
-          onClick={() => {
-            if (cta.href.startsWith("/billing")) {
-              recordBillingReturnRoute();
-            }
-            onRead();
-          }}
-        >
-          {cta.label}
-        </Link>
+        <AppButton
+          className="shrink-0"
+          nativeButton={false}
+          render={
+            <Link
+              href={cta.href}
+              onClick={() => {
+                if (cta.href.startsWith("/billing")) {
+                  recordBillingReturnRoute();
+                }
+                onRead();
+              }}
+            >
+              {cta.label}
+            </Link>
+          }
+          size="sm"
+          variant="secondary"
+        />
       )}
       <span
         aria-hidden

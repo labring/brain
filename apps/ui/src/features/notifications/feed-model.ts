@@ -1,14 +1,14 @@
 import type { NotificationCRItem } from "@workspace/api/hooks";
 
+import { MICRO_UNITS_PER_CURRENCY_UNIT } from "@/features/billing/billing-amount";
 import type {
   AppNotification,
   AppNotificationKind,
-  AppNotificationSource,
   NotificationCTA,
 } from "@/features/shell/app-sidebar-notifications-model";
 
 import { CR_OVERRIDES, GIFT_FILTERED_CR_NAMES } from "./cr-overrides";
-import { dbNotificationId } from "./notification-ids";
+import { crNotificationId, dbNotificationId } from "./notification-ids";
 import { formatNotificationDate } from "./notification-time";
 import type {
   NotificationMessage,
@@ -23,25 +23,6 @@ import type {
  * computed from each source's own state and the user's receipts. Pure, so
  * fixture CRs and rows pin contents, order, and unread here.
  */
-
-/**
- * A platform notification's id is versioned by the CR's own timestamp: the
- * platform overwrites fixed-name CRs in place on escalation, and the newer
- * timestamp makes the revived message a new id that no old receipt covers.
- */
-export function crNotificationId(name: string, timestamp: number): string {
-  return `cr:${name}:${timestamp}`;
-}
-
-export function notificationSource(id: string): AppNotificationSource | null {
-  if (id.startsWith("cr:")) {
-    return "cr";
-  }
-  if (id.startsWith("db:")) {
-    return "db";
-  }
-  return null;
-}
 
 /** Upstream `spec.from` values written by the platform's billing controllers. */
 const BILLING_SENDERS: ReadonlySet<string> = new Set([
@@ -77,15 +58,13 @@ interface RenderedNotification {
   title: string;
 }
 
-const MICRO_UNITS_PER_DOLLAR = 1_000_000;
-
 /**
  * The gift's nominal whole-dollar amount (design spec §10 rule 5): the gift
  * is granted in whole dollars and only burns down, so rounding the remainder
  * up recovers the grant a newcomer was told about.
  */
 function wholeDollars(microUnits: number): string {
-  return `$${Math.max(1, Math.ceil(microUnits / MICRO_UNITS_PER_DOLLAR))}`;
+  return `$${Math.max(1, Math.ceil(microUnits / MICRO_UNITS_PER_CURRENCY_UNIT))}`;
 }
 
 const SUBSCRIPTION_CHANGE_TITLES: Record<SubscriptionChange, string> = {
@@ -214,7 +193,7 @@ export function platformNotification(
   item: NotificationCRItem,
   receipts: ReadonlySet<string>
 ): AppNotification {
-  const id = crNotificationId(item.name, item.timestamp);
+  const id = crNotificationId(item.name, item.version);
   const override = CR_OVERRIDES[item.name];
   return {
     body: override?.body ?? item.message,

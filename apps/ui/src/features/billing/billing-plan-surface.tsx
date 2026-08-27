@@ -51,6 +51,7 @@ import {
   type SubscriptionWarningStage,
   subscriptionLifecycleAllowsBillingActions,
 } from "@/features/billing/billing-plan-data";
+import { BILLING_SURFACE_TONES } from "@/features/billing/billing-surface-tones";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
@@ -280,9 +281,9 @@ const ACCOUNT_DEBT_WARNING_COPY: Partial<
 // destructive (red). The semantic color stays on the icon and title only —
 // the description keeps its muted default.
 const SUBSCRIPTION_WARNING_TONES: Record<SubscriptionWarningStage, string> = {
-  cancelling: "bg-amber-400/10 text-amber-600 dark:text-amber-400",
-  "deletion-imminent": "bg-red-500/10 text-destructive",
-  expired: "bg-red-500/10 text-destructive",
+  cancelling: BILLING_SURFACE_TONES.warning,
+  "deletion-imminent": BILLING_SURFACE_TONES.destructive,
+  expired: BILLING_SURFACE_TONES.destructive,
 };
 
 function SubscriptionWarningBanner({

@@ -1,8 +1,11 @@
 import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
+import type { BillingSurfaceTone } from "@/features/billing/billing-surface-tones";
 import type {
   BillingQuotaType,
   BillingUsageRow,
 } from "@/features/billing/billing-usage-data";
+import type { NotificationCTA } from "@/features/shell/app-sidebar-notifications-model";
+import { DAY_MS } from "@/lib/time";
 
 /**
  * The status hint surface's domain model (design spec §7): which billing
@@ -17,10 +20,11 @@ export type StatusHintId =
   | "quota-full"
   | "trial-expiry";
 
-export type StatusHintTone = "destructive" | "info" | "warning";
+export type StatusHintTone = BillingSurfaceTone;
 
 export interface StatusHint {
-  cta: { href: string; label: string };
+  /** The fix, deep-linking to the page that solves the problem. */
+  cta: NotificationCTA;
   description: string;
   /** Critical, blocking, system-condition hints get no close button. */
   dismissible: boolean;
@@ -62,8 +66,6 @@ const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   month: "short",
 });
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The trial-expiry state opens this many days before the Free trial ends. */
 export const TRIAL_EXPIRY_NOTICE_DAYS = 3;

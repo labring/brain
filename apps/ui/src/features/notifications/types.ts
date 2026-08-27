@@ -1,3 +1,4 @@
+import type { NotificationCRItem } from "@workspace/api/hooks";
 import { z } from "zod";
 
 import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
@@ -96,9 +97,9 @@ export const notificationMessageSchema = z
 export type NotificationMessage = z.infer<typeof notificationMessageSchema>;
 
 /**
- * One upstream Notification CR as the Go read proxy flattens it (mirrors
- * `NotificationCRItem` in `@workspace/api/hooks`); only the dev fixtures
- * ever send it over Brain's own wire.
+ * One upstream Notification CR as the Go read proxy flattens it — pinned to
+ * `NotificationCRItem` from `@workspace/api/hooks` so the two cannot drift;
+ * only the dev fixtures ever send it over Brain's own wire.
  */
 export const notificationCRItemSchema = z
   .object({
@@ -114,8 +115,10 @@ export const notificationCRItemSchema = z
     timestamp: z.number().int().nonnegative(),
     title: z.string(),
     uid: z.string().optional(),
+    /** The id's version component (see `NotificationCRItem.version`). */
+    version: z.number().int().nonnegative(),
   })
-  .strict();
+  .strict() satisfies z.ZodType<NotificationCRItem>;
 
 export const notificationFeedResponseSchema = z
   .object({

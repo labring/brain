@@ -7,7 +7,9 @@ import type { SubscriptionChange } from "./types";
  * transaction observation point. The platform's transaction id is the
  * identity — the same change observed again (a checkout poll and the Stripe
  * return leg both settle the same payment) writes nothing. Never released:
- * a receipt records history, it has no recovery.
+ * a receipt records history, it has no recovery — an upgrade over a still
+ * scheduled downgrade is simply the next receipt, and the superseded
+ * downgrade's entry stays as the record of what the user did.
  */
 
 export const SUBSCRIPTION_CHANGE_DEDUPE_PREFIX = "subscription-change";

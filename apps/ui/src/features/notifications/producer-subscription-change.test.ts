@@ -84,6 +84,51 @@ test("one receipt per successful change; the same transaction observed twice wri
   );
 });
 
+test("an upgrade over a scheduled downgrade is the next receipt; the superseded downgrade stays as history and never re-writes", async () => {
+  const scheduled = await observeSubscriptionChangeForNotifications(store, {
+    change: "downgraded",
+    effectiveAt: "2026-09-27T12:00:00.000Z",
+    namespace: "ns-seq",
+    now: NOW,
+    planName: "Hobby",
+    transactionId: "txn-down",
+  });
+  const upgrade = await observeSubscriptionChangeForNotifications(store, {
+    change: "upgraded",
+    namespace: "ns-seq",
+    now: new Date(NOW.getTime() + 60_000),
+    planName: "Pro",
+    transactionId: "txn-up",
+  });
+  // The platform later settles the same downgrade transaction: same id, no
+  // second entry.
+  const settled = await observeSubscriptionChangeForNotifications(store, {
+    change: "downgraded",
+    effectiveAt: "2026-09-27T12:00:00.000Z",
+    namespace: "ns-seq",
+    now: new Date(NOW.getTime() + 120_000),
+    planName: "Hobby",
+    transactionId: "txn-down",
+  });
+
+  assert.deepEqual(scheduled, { produced: true });
+  assert.deepEqual(upgrade, { produced: true });
+  assert.deepEqual(settled, { produced: false });
+  const messages = await store.listMessages("ns-seq");
+  assert.deepEqual(
+    messages.map((message) => message.payload),
+    [
+      { change: "upgraded", kind: "subscription-change", planName: "Pro" },
+      {
+        change: "downgraded",
+        effectiveAt: "2026-09-27T12:00:00.000Z",
+        kind: "subscription-change",
+        planName: "Hobby",
+      },
+    ]
+  );
+});
+
 test("the same transaction id in another workspace is another receipt; blanks write nothing", async () => {
   assert.deepEqual(
     await observeSubscriptionChangeForNotifications(store, {

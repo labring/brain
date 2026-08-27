@@ -25,10 +25,16 @@ export interface NotificationCRItem {
   message: string;
   name: string;
   namespace: string;
-  /** `spec.timestamp` in Unix seconds. */
+  /** `spec.timestamp` in Unix seconds (creation time when upstream omitted it). */
   timestamp: number;
   title: string;
   uid?: string;
+  /**
+   * The id's version component: `spec.timestamp`, or the CR's generation
+   * when upstream omitted it. Changes on an in-place overwrite, never on a
+   * label patch — so a revived fixed-name CR is a new id no receipt covers.
+   */
+  version: number;
 }
 
 export interface NotificationCRListResponse {

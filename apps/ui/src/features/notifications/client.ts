@@ -44,23 +44,16 @@ export async function postNotificationReadReceipts(
   if (ids.length === 0) {
     return;
   }
-  const response = await fetchImpl(
-    notificationsUrl("/read", credentials.namespace),
-    {
-      body: JSON.stringify({ ids }),
-      headers: {
-        ...personalResourceAuthHeaders(credentials),
-        "content-type": "application/json",
-      },
-      method: "POST",
-    }
+  await postNotificationJson(
+    "/read",
+    credentials,
+    { ids },
+    "Mark-read",
+    fetchImpl
   );
-  if (!response.ok) {
-    throw new Error(`Mark-read request failed (${response.status})`);
-  }
 }
 
-async function postObservation(
+async function postNotificationJson(
   pathname: string,
   credentials: NotificationClientCredentials,
   body: unknown,
@@ -92,7 +85,7 @@ export function reportWorkspaceQuotaObservation(
   snapshot: WorkspaceResourceQuotaSnapshot,
   fetchImpl: typeof fetch = globalThis.fetch
 ): Promise<void> {
-  return postObservation(
+  return postNotificationJson(
     "/quota-observation",
     credentials,
     { quota: snapshot },
@@ -107,7 +100,7 @@ export function reportGiftCreditObservation(
   observation: GiftObservationRequest,
   fetchImpl: typeof fetch = globalThis.fetch
 ): Promise<void> {
-  return postObservation(
+  return postNotificationJson(
     "/gift-observation",
     credentials,
     observation,
@@ -122,7 +115,7 @@ export function reportSubscriptionChangeObservation(
   observation: SubscriptionChangeObservationRequest,
   fetchImpl: typeof fetch = globalThis.fetch
 ): Promise<void> {
-  return postObservation(
+  return postNotificationJson(
     "/subscription-change",
     credentials,
     observation,

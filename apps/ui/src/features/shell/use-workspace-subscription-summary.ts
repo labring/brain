@@ -1,5 +1,6 @@
 "use client";
 
+import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
 import { useAtomValue } from "jotai";
 import useSWR from "swr";
 
@@ -26,7 +27,12 @@ export function useWorkspaceSubscriptionSummary(
   // hint follow the same subscription route as the Billing Area's hooks.
   return useSWR(
     credentialsReady
-      ? (["app-sidebar-subscription", workspace, kubeconfig, appToken] as const)
+      ? ([
+          "app-sidebar-subscription",
+          workspace,
+          kubeconfigCredentialKey(kubeconfig),
+          appToken,
+        ] as const)
       : null,
     () => loadWorkspaceSubscriptionSummary({ appToken, kubeconfig, workspace }),
     {

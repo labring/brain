@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 
 import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
+import { DAY_MS } from "@/lib/time";
 
 import type { NotificationPgDatabase } from "./db-types";
 import { DB_NOTIFICATION_ID_PREFIX } from "./notification-ids";
@@ -17,8 +18,6 @@ import type {
   NotificationMessageKind,
   NotificationPayload,
 } from "./types";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 type ReceiptInsert = typeof notificationReadReceipts.$inferInsert;
 
