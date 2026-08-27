@@ -26,8 +26,8 @@ export interface BuildSealosSkillsInstallCommandOptions {
 
 /**
  * Builds the single installation flow shared by Chat Devboxes and deployment
- * task Devboxes. Chat uses marker-based idempotency; deployment tasks force a
- * fresh install after preparing their workspace.
+ * task Devboxes. The configured source owns what gets installed; existing
+ * workspace skills and lock files are intentionally preserved.
  */
 export function buildSealosSkillsInstallCommand({
   force,
@@ -43,7 +43,6 @@ export function buildSealosSkillsInstallCommand({
     `skill_source=${shellQuote(skillSource)}`,
     `install_marker=${marker}`,
     'install_lock_path="$workspace_dir/.sealos/sealos-skills-install.lock"',
-    'skills_lock_path="$workspace_dir/skills-lock.json"',
     `install_lock_wait_seconds=${timeoutSeconds}`,
     `marker_content=${shellQuote(markerContent)}`,
     'mkdir -p -- "$workspace_dir/.sealos"',
@@ -71,9 +70,6 @@ export function buildSealosSkillsInstallCommand({
           "  exit 0",
           "fi",
         ]),
-    'rm -rf -- "$workspace_dir/.agents/skills"',
-    'rm -rf -- "$workspace_dir/.codex/skills"',
-    'rm -f -- "$skills_lock_path"',
     'cd -- "$workspace_dir"',
     `timeout ${timeoutSeconds} npx --yes skills@${SEALOS_SKILLS_CLI_VERSION} add "$skill_source" -y`,
     'printf \'%s\' "$marker_content" > "$install_marker"',
