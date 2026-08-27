@@ -135,9 +135,14 @@ test("every scenario passes every loader's schemas", async () => {
       `${scenario}: AI Credits load`
     );
     assert.equal(
-      giftCredits.usableMicroUnits,
+      giftCredits.giftMicroUnits,
       scenario === "free" ? 720_000 : 0,
       `${scenario}: only the Free trial carries an active gift credit`
+    );
+    assert.equal(
+      giftCredits.usableMicroUnits,
+      { active: 1_800_000, free: 720_000 }[scenario as string] ?? 0,
+      `${scenario}: the aggregate covers the gift or the plan grant alone`
     );
     if (CREDITLESS_SCENARIOS.has(scenario)) {
       assert.equal(

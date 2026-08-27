@@ -233,7 +233,11 @@ test("Free workspaces rows carry no Renewal Time", async () => {
 });
 
 async function renderBalanceValue(
-  props: { availableMicroUnits: number; giftMicroUnits: number },
+  props: {
+    availableMicroUnits: number;
+    creditsResolved?: boolean;
+    giftMicroUnits: number;
+  },
   run: (rendered: ReturnType<typeof render>) => void | Promise<void>
 ) {
   await withTestDom(async (act) => {
@@ -241,7 +245,9 @@ async function renderBalanceValue(
     let rendered: ReturnType<typeof render> | undefined;
     try {
       await act(() => {
-        rendered = render(<BillingBalanceValue currency="usd" {...props} />);
+        rendered = render(
+          <BillingBalanceValue creditsResolved currency="usd" {...props} />
+        );
       });
       if (rendered != null) {
         await run(rendered);
@@ -292,6 +298,27 @@ test("a non-positive available total voices Account Debt", async () => {
           "Top up from the Sealos Desktop to restore your services."
         ),
         "the debt caption renders"
+      );
+    }
+  );
+});
+
+test("unresolved credits withhold the debt voice", async () => {
+  // A failed or pending credits fetch leaves the figure cash-only; unseen
+  // credits could still cover the account, so no red tint and no caption.
+  await renderBalanceValue(
+    {
+      availableMicroUnits: -6_320_000,
+      creditsResolved: false,
+      giftMicroUnits: 0,
+    },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("-$6.32"), "the cash figure still renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "no debt caption without the full formula"
       );
     }
   );

@@ -273,13 +273,13 @@ function accountBalanceContent(input: {
   balance: AccountBalance | undefined;
   credentialsReady: boolean;
   error: unknown;
-  /** Undefined while loading or after a failed fetch — either renders as
-   *  no gift, so the figure quietly falls back to Balance − Deduction. */
+  /** Undefined while loading or after a failed fetch — either renders the
+   *  cash figure alone (no chip) with the debt voice withheld, since unseen
+   *  credits could still cover the account. */
   giftCredits: AccountCredits | undefined;
-  giftCreditsLoading: boolean;
   isLoading: boolean;
 }): ReactNode {
-  if (!input.credentialsReady || input.isLoading || input.giftCreditsLoading) {
+  if (!input.credentialsReady || input.isLoading) {
     return (
       <Skeleton aria-label="Loading Account Balance" className="h-8 w-28" />
     );
@@ -294,12 +294,14 @@ function accountBalanceContent(input: {
   if (input.balance == null) {
     return null;
   }
-  const giftMicroUnits = input.giftCredits?.usableMicroUnits ?? 0;
   return (
     <BillingBalanceValue
-      availableMicroUnits={input.balance.microUnits + giftMicroUnits}
+      availableMicroUnits={
+        input.balance.microUnits + (input.giftCredits?.usableMicroUnits ?? 0)
+      }
+      creditsResolved={input.giftCredits != null}
       currency={input.balance.currency}
-      giftMicroUnits={giftMicroUnits}
+      giftMicroUnits={input.giftCredits?.giftMicroUnits ?? 0}
     />
   );
 }
@@ -390,7 +392,7 @@ export function BillingPlan({
     () => loadAccountBalance({ appToken, currency, kubeconfig }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
-  const { data: giftCredits, isLoading: giftCreditsLoading } = useSWR(
+  const { data: giftCredits } = useSWR(
     credentialsReady ? accountCreditsSwrKey({ appToken, kubeconfig }) : null,
     () => loadAccountCredits({ appToken, kubeconfig }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
@@ -634,7 +636,6 @@ export function BillingPlan({
             credentialsReady,
             error: balanceError,
             giftCredits,
-            giftCreditsLoading,
             isLoading: balanceLoading,
           })}
         </div>
