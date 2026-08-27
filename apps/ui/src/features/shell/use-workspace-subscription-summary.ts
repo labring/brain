@@ -9,10 +9,13 @@ import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 /**
  * The App Sidebar's shared read of the Workspace Subscription summary — the
  * account row's badge and hint, and the Notification Center's role check for
- * the best-effort CR read patch. One SWR key, so both consumers share the
- * request.
+ * the best-effort CR read patch, and the status hint's state evaluation.
+ * One SWR key, so every consumer shares the request; a consumer that needs
+ * the state to clear on its own passes a `refreshInterval`.
  */
-export function useWorkspaceSubscriptionSummary() {
+export function useWorkspaceSubscriptionSummary(
+  options: { refreshInterval?: number } = {}
+) {
   const appToken = useAtomValue(appTokenAtom).trim();
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const workspace = useAtomValue(namespaceAtom).trim();
@@ -26,6 +29,10 @@ export function useWorkspaceSubscriptionSummary() {
       ? (["app-sidebar-subscription", workspace, kubeconfig, appToken] as const)
       : null,
     () => loadWorkspaceSubscriptionSummary({ appToken, kubeconfig, workspace }),
-    { revalidateOnFocus: false, shouldRetryOnError: false }
+    {
+      refreshInterval: options.refreshInterval,
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    }
   );
 }

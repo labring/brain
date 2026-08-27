@@ -726,8 +726,15 @@ export interface WorkspaceSubscriptionSummary {
   isPayg: boolean;
   lifecycle: SubscriptionLifecycle;
   planName: string;
+  recoveryVoice: RecoveryVoice;
   /** Null when the record names no role (PAYG workspaces). */
   role: WorkspaceSubscriptionRole | null;
+  /**
+   * The Deletion Countdown's next deadline, derived client-side exactly as
+   * the Plan view derives it (ADR-0063). Set only while `warningStage` is.
+   */
+  warningDeadlineAt: string | null;
+  warningStage: SubscriptionWarningStage | null;
 }
 
 export async function loadWorkspaceSubscriptionSummary(
@@ -755,6 +762,19 @@ export async function loadWorkspaceSubscriptionSummary(
     ).subscription
   );
 
+  // Pending upgrades are invisible to this read (no transaction request);
+  // they surface as the quiet "active" state, which is what the account
+  // row's second line wants anyway.
+  const lifecycle = subscriptionLifecycle({
+    cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
+    isPayg: subscription.type === "PAYG",
+    planName: subscription.PlanName,
+    status: subscription.Status,
+  });
+  const warningStage = subscriptionWarningStage({
+    lifecycle,
+    status: subscription.Status,
+  });
   return {
     currentPeriodEndAt: subscription.CurrentPeriodEndAt,
     isActiveFreeTrial: isActiveFreeTrialSubscription({
@@ -763,17 +783,16 @@ export async function loadWorkspaceSubscriptionSummary(
       type: subscription.type ?? "",
     }),
     isPayg: subscription.type === "PAYG",
-    // Pending upgrades are invisible to this read (no transaction request);
-    // they surface as the quiet "active" state, which is what the account
-    // row's second line wants anyway.
-    lifecycle: subscriptionLifecycle({
-      cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
-      isPayg: subscription.type === "PAYG",
-      planName: subscription.PlanName,
-      status: subscription.Status,
-    }),
+    lifecycle,
     planName: subscription.PlanName,
+    recoveryVoice: recoveryVoice(subscription.PlanName),
     role: subscription.role ?? null,
+    warningDeadlineAt: subscriptionWarningDeadline({
+      currentPeriodEndAt: subscription.CurrentPeriodEndAt,
+      expireAt: subscription.ExpireAt ?? null,
+      stage: warningStage,
+    }),
+    warningStage,
   };
 }
 

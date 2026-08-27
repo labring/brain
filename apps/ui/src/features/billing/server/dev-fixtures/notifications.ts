@@ -219,6 +219,11 @@ function scenarioFixture(scenario: BillingDevScenario): ScenarioFixture {
           unread: "debt-choice-criticalbalanceperiod",
         }),
       };
+    // The trial's advance reminders (C1) are upstream's to write; until they
+    // ship, an expiring trial's inbox is quiet and the status hint carries
+    // the notice alone.
+    case "free-expiring":
+      return { brain: [], platform: [] };
     case "free-expired":
       return {
         brain: [{ ...GIFT_HINT, ago: 20 * DAY_MS }],

@@ -1174,7 +1174,10 @@ test("loads the sidebar subscription summary with only region-addressed reads", 
     isPayg: false,
     lifecycle: "active",
     planName: "Pro",
+    recoveryVoice: "renew",
     role: "OWNER",
+    warningDeadlineAt: null,
+    warningStage: null,
   });
   assert.deepEqual(
     requests.map((request) => request.url),
@@ -1198,7 +1201,10 @@ test("the sidebar summary reports an Active Free Trial and its period end", asyn
     isPayg: false,
     lifecycle: "active",
     planName: "Free",
+    recoveryVoice: "resubscribe",
     role: "OWNER",
+    warningDeadlineAt: null,
+    warningStage: null,
   });
 });
 
@@ -1222,6 +1228,23 @@ test("the sidebar summary presents a deleted subscription as PAYG", async () => 
     isPayg: true,
     lifecycle: "active",
     planName: "PAYG",
+    recoveryVoice: "renew",
     role: "OWNER",
+    warningDeadlineAt: null,
+    warningStage: null,
   });
+});
+
+test("the sidebar summary carries the Deletion Countdown's stage and derived deadline", async () => {
+  // ADR-0063: the status hint states the deletion date exactly as the Plan
+  // view does — expiry plus the fixed grace, derived client-side.
+  const { summary } = loadSummaryWithSubscription({
+    CurrentPeriodEndAt: "2026-08-20T00:00:00Z",
+    Status: "DEBT",
+  });
+  const result = await summary;
+  assert.equal(result.lifecycle, "payment-due");
+  assert.equal(result.warningStage, "expired");
+  assert.equal(result.warningDeadlineAt, "2026-09-03T00:00:00.000Z");
+  assert.equal(result.recoveryVoice, "renew");
 });

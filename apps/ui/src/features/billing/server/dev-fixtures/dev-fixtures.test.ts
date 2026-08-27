@@ -74,6 +74,7 @@ const DATE_RANGE = {
 
 const CREDITLESS_SCENARIOS = new Set([
   "free",
+  "free-expiring",
   "free-expired",
   "paused",
   "payg",

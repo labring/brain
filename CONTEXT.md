@@ -724,6 +724,12 @@ One message addressed to the current user in the Notification Center: a system e
 
 _Avoid_: alert, toast (for persistent items), event (for the user-facing message).
 
+### Status Hint
+
+The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt, a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
+
+_Avoid_: alert bar, global notification, sticky toast, warning strip (as the concept's name).
+
 ## Design System
 
 ### Component Registry

@@ -73,6 +73,7 @@ export const PAYG_SCENARIOS = new Set<BillingDevScenario>([
 const CARDLESS_SCENARIOS = new Set<BillingDevScenario>([
   "active-balance",
   "free",
+  "free-expiring",
   "free-expired",
   "paused",
   ...PAYG_SCENARIOS,
@@ -81,6 +82,7 @@ const CARDLESS_SCENARIOS = new Set<BillingDevScenario>([
 /** Scenarios with no subscription transaction history. */
 const TRANSACTIONLESS_SCENARIOS = new Set<BillingDevScenario>([
   "free",
+  "free-expiring",
   "free-expired",
   "paused",
   ...PAYG_SCENARIOS,
@@ -156,8 +158,11 @@ function subscriptionPayload(
       return { ...base, CancelAtPeriodEnd: true };
     // The platform creates Free subscriptions with CancelAtPeriodEnd already
     // true; a trial runs a period, a paused (no-trial) Free has none.
-    case "free": {
-      const trialEnd = daysFromNow(10);
+    case "free":
+    case "free-expiring": {
+      // free-expiring sits inside the status hint's three-day notice window
+      // (catalog C2); free is a mid-trial newcomer.
+      const trialEnd = daysFromNow(scenario === "free-expiring" ? 3 : 10);
       return {
         ...base,
         CancelAtPeriodEnd: true,
@@ -737,6 +742,7 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
     const isPaygMode = PAYG_SCENARIOS.has(context.scenario);
     const isFreePlan =
       context.scenario === "free" ||
+      context.scenario === "free-expiring" ||
       context.scenario === "free-expired" ||
       context.scenario === "paused";
     return {
@@ -884,6 +890,7 @@ const PAY_TRANSITIONS: Record<
     active: "active",
     "active-balance": "active",
     free: "active",
+    "free-expiring": "active",
     "mixed-workspaces": "active",
     paused: "active",
     "quota-full": "active",

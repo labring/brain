@@ -17,6 +17,7 @@ export const BILLING_DEV_SCENARIOS = [
   "payg-debt-deletion",
   "payg-debt-final",
   "free",
+  "free-expiring",
   "free-expired",
   "paused",
   "active",

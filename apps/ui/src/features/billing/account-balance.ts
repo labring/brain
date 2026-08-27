@@ -18,14 +18,15 @@ export interface AccountBalance {
   microUnits: number;
 }
 
-export async function loadAccountBalance(
-  credentials: {
-    appToken: string;
-    currency: BillingCurrency;
-    kubeconfig: string;
-  },
+/**
+ * The cash term of the available Account Balance: Balance − DeductionBalance,
+ * before credits. Currency-free, for surfaces that judge the amount rather
+ * than display it (the status hint's Account Debt evaluation).
+ */
+export async function loadAccountBalanceMicroUnits(
+  credentials: { appToken: string; kubeconfig: string },
   fetch: BillingFetch = globalThis.fetch
-): Promise<AccountBalance> {
+): Promise<number> {
   const requestBillingJson = createBillingJsonRequester({
     credentials,
     fallbackErrorMessage: "Could not load Account Balance.",
@@ -36,9 +37,22 @@ export async function loadAccountBalance(
   if (!parsed.success) {
     throw new Error("Account Balance response is invalid.");
   }
+  return parsed.data.account.Balance - parsed.data.account.DeductionBalance;
+}
+
+export async function loadAccountBalance(
+  credentials: {
+    appToken: string;
+    currency: BillingCurrency;
+    kubeconfig: string;
+  },
+  fetch: BillingFetch = globalThis.fetch
+): Promise<AccountBalance> {
   return {
     currency: credentials.currency,
-    microUnits:
-      parsed.data.account.Balance - parsed.data.account.DeductionBalance,
+    microUnits: await loadAccountBalanceMicroUnits(
+      { appToken: credentials.appToken, kubeconfig: credentials.kubeconfig },
+      fetch
+    ),
   };
 }
