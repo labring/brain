@@ -10,7 +10,17 @@ import { useSidebar } from "@workspace/ui/components/sidebar";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
-import { Check, Copy, Sparkles, User } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  Copy,
+  CreditCard,
+  Gauge,
+  House,
+  Sparkles,
+  User,
+} from "lucide-react";
 import Link from "next/link";
 import {
   type ReactNode,
@@ -54,6 +64,7 @@ import {
   kubeconfigAtom,
   namespaceAtom,
 } from "@/lib/auth-store";
+import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
 const HINT_TEXT_CLASS: Record<AppSidebarAccountHint["tone"], string> = {
   danger: "text-red-400",
@@ -431,11 +442,304 @@ function shouldShowAiSkeleton(
   return !aiSlot.settled && expected && (subscriptionPending || aiSlot.pending);
 }
 
+const MENU_ROW_CLASS =
+  "group/menurow flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-sm transition-colors hover:bg-input/30";
+
+function AppSidebarAccountMenuRow({
+  href,
+  icon,
+  label,
+  onClick,
+  rel,
+  target,
+  trailing,
+}: {
+  href: string;
+  icon: ReactNode;
+  label: string;
+  onClick?: () => void;
+  rel?: string;
+  target?: string;
+  trailing?: ReactNode;
+}) {
+  return (
+    <Link
+      className={MENU_ROW_CLASS}
+      href={href}
+      onClick={onClick}
+      rel={rel}
+      target={target}
+    >
+      <span className="flex w-5 shrink-0 items-center justify-center text-neutral-50 transition-colors group-hover/menurow:text-blue-400">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {trailing == null ? null : (
+        <span className="flex shrink-0 items-center text-muted-foreground">
+          {trailing}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+// The row closest to its limit — drives the collapsed Usage row's summary.
+function worstUsageRow(
+  aiRow: AppSidebarQuotaRow | null,
+  quotaRows: AppSidebarQuotaRow[] | null
+): AppSidebarQuotaRow | null {
+  let worst: AppSidebarQuotaRow | null = null;
+  for (const row of [aiRow, ...(quotaRows ?? [])]) {
+    if (row?.percent == null) {
+      continue;
+    }
+    if (worst?.percent == null || row.percent > worst.percent) {
+      worst = row;
+    }
+  }
+  return worst;
+}
+
+/**
+ * The collapsed Usage row's trailing summary: the worst row's label and
+ * percentage, toned like the row itself once it crosses warn/danger.
+ */
+function usageStatusSlot(worst: AppSidebarQuotaRow | null): ReactNode {
+  if (worst?.percent == null) {
+    return null;
+  }
+  const tone = quotaUsageTone(worst.percent);
+  return (
+    <span
+      className={cn(
+        "text-xs tabular-nums",
+        tone == null ? undefined : HINT_TEXT_CLASS[tone]
+      )}
+    >
+      {`${worst.label === "Memory" ? "Mem" : worst.label} ${Math.round(worst.percent)}%`}
+    </span>
+  );
+}
+
+/**
+ * The Usage entry: a plain menu row that expands in place, morphing the whole
+ * block (row + usage rows) into a card. The chrome sits exactly on the
+ * block's own bounds — the row keeps its full plain-sibling width open or
+ * closed, and opening only fades in the background and ring (drawn inside
+ * the box, so nothing shifts).
+ */
+function AppSidebarUsageAccordion({
+  onToggle,
+  open,
+  statusSlot,
+  usageSection,
+}: {
+  onToggle: () => void;
+  open: boolean;
+  statusSlot: ReactNode;
+  usageSection: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-md ring-1 ring-inset transition-[margin,box-shadow,background-color] duration-200 ease-out motion-reduce:transition-none",
+        open ? "mb-0.5 bg-input/30 ring-border/60" : "mb-0 ring-transparent"
+      )}
+    >
+      <div className="flex flex-col">
+        <button
+          aria-expanded={open}
+          className={MENU_ROW_CLASS}
+          onClick={onToggle}
+          type="button"
+        >
+          <span
+            className={cn(
+              "flex w-5 shrink-0 items-center justify-center transition-colors group-hover/menurow:text-blue-400",
+              open ? "text-blue-400" : "text-neutral-50"
+            )}
+          >
+            <Gauge aria-hidden className="size-4" strokeWidth={1.8} />
+          </span>
+          <span className="min-w-0 flex-1 truncate">Usage</span>
+          <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+            {statusSlot}
+            <ChevronRight
+              aria-hidden
+              className={cn(
+                "size-3.5 transition-transform duration-150 motion-reduce:transition-none",
+                open && "rotate-90"
+              )}
+              strokeWidth={1.8}
+            />
+          </span>
+        </button>
+        <div
+          className={cn(
+            "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+            open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="px-2.5 pt-1.5 pb-2.5 [&>div]:gap-2">
+              {usageSection}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AppSidebarDesktopMenuRow() {
+  const desktopUrl = useSealosDesktopUrl();
+  return (
+    <AppSidebarAccountMenuRow
+      href={desktopUrl ?? "#"}
+      icon={<House aria-hidden className="size-4" strokeWidth={1.8} />}
+      label="Sealos Desktop"
+      rel={desktopUrl ? "noopener noreferrer" : undefined}
+      target={desktopUrl ? "_blank" : undefined}
+      trailing={
+        <ArrowUpRight aria-hidden className="size-3.5" strokeWidth={1.8} />
+      }
+    />
+  );
+}
+
+/**
+ * The popover's functional block: the Usage entry, Billing, and the Sealos
+ * Desktop Entry as menu rows, closed by the divider that separates them from
+ * the Upgrade entry.
+ */
+function AppSidebarAccountMenuRows({
+  aiRow,
+  onToggleUsage,
+  quotaRows,
+  usageOpen,
+  usageSection,
+}: {
+  aiRow: AppSidebarQuotaRow | null;
+  onToggleUsage: () => void;
+  quotaRows: AppSidebarQuotaRow[] | null;
+  usageOpen: boolean;
+  usageSection: ReactNode;
+}) {
+  const statusSlot = usageStatusSlot(worstUsageRow(aiRow, quotaRows));
+  return (
+    <>
+      <div className="-mx-1.5 flex flex-col">
+        <AppSidebarUsageAccordion
+          onToggle={onToggleUsage}
+          open={usageOpen}
+          statusSlot={statusSlot}
+          usageSection={usageSection}
+        />
+        <AppSidebarAccountMenuRow
+          href="/billing"
+          icon={<CreditCard aria-hidden className="size-4" strokeWidth={1.8} />}
+          label="Billing"
+          onClick={recordBillingReturnRoute}
+        />
+        <AppSidebarDesktopMenuRow />
+      </div>
+      <div aria-hidden className="h-px w-full bg-border" />
+    </>
+  );
+}
+
+/**
+ * The account popover's body: identity, copyable ID, status hint, the menu
+ * rows (Usage, Billing, Sealos Desktop), and the Upgrade entry.
+ */
+function AppSidebarAccountMenuView({
+  aiRow,
+  badge,
+  copied,
+  displayName,
+  hint,
+  onCopyId,
+  onToggleUsage,
+  quotaRows,
+  usageOpen,
+  usageSection,
+  userAvatar,
+  userId,
+  userName,
+}: {
+  aiRow: AppSidebarQuotaRow | null;
+  badge: AppSidebarAccountBadge | null;
+  copied: boolean;
+  displayName: string;
+  hint: AppSidebarAccountHint | null;
+  onCopyId: () => void;
+  onToggleUsage: () => void;
+  quotaRows: AppSidebarQuotaRow[] | null;
+  usageOpen: boolean;
+  usageSection: ReactNode;
+  userAvatar: string;
+  userId: string;
+  userName: string;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <AppSidebarAccountAvatar
+          avatarUrl={userAvatar}
+          className="size-6 text-[10px]"
+          name={userName}
+        />
+        <span className="min-w-0 flex-1 truncate font-medium text-sm">
+          {displayName}
+        </span>
+        <AppSidebarAccountBadgeSlot badge={badge} />
+      </div>
+      {userId === "" ? null : (
+        <button
+          aria-label="Copy user ID"
+          className="flex cursor-pointer items-center gap-1 text-muted-foreground text-xs tabular-nums transition-colors hover:text-neutral-50"
+          onClick={onCopyId}
+          type="button"
+        >
+          <span className="truncate">ID: {userId}</span>
+          {copied ? (
+            <Check aria-hidden className="size-3" strokeWidth={1.8} />
+          ) : (
+            <Copy aria-hidden className="size-3" strokeWidth={1.8} />
+          )}
+        </button>
+      )}
+      {hint == null ? null : (
+        <div className={cn("text-xs", HINT_TEXT_CLASS[hint.tone])}>
+          {hint.text}
+        </div>
+      )}
+      <div aria-hidden className="h-px w-full bg-border" />
+      <AppSidebarAccountMenuRows
+        aiRow={aiRow}
+        onToggleUsage={onToggleUsage}
+        quotaRows={quotaRows}
+        usageOpen={usageOpen}
+        usageSection={usageSection}
+      />
+      <Link
+        className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-input/40 font-medium text-neutral-50 text-sm transition-colors hover:bg-input/60"
+        href="/billing?mode=upgrade"
+        onClick={recordBillingReturnRoute}
+      >
+        <Sparkles aria-hidden className="size-4" strokeWidth={1.75} />
+        Upgrade
+      </Link>
+    </div>
+  );
+}
+
 /**
  * The App Sidebar's account section (AIM-308): identity row with the plan
  * badge, opening the compact account popover — identity, copyable user ID,
- * status hint, workspace quota bars, and the upgrade entry. Replaces the old
- * Upgrade button as the sidebar's single quota surface.
+ * status hint, the menu rows (Usage with the quota bars folded into its
+ * expansion, Billing, the Sealos Desktop Entry), and the upgrade entry.
+ * Replaces the old Upgrade button as the sidebar's single quota surface.
  *
  * The usage section's first open renders skeleton rows at the final
  * geometry; the AI and quota slots then fill independently. Reopens show the
@@ -513,6 +817,10 @@ export function AppSidebarAccount() {
   );
   const resetQuotaFade = quotaSlot.resetFade;
   const resetAiFade = aiSlot.resetFade;
+  // The Usage entry starts collapsed on every popover open instead of
+  // remembering the last toggle.
+  const [usageOpen, setUsageOpen] = useState(false);
+  const toggleUsage = useCallback(() => setUsageOpen((value) => !value), []);
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       setOpen(nextOpen);
@@ -520,11 +828,13 @@ export function AppSidebarAccount() {
         // Reopens mount straight from the snapshot — no replay of the fade.
         resetQuotaFade();
         resetAiFade();
+        setUsageOpen(false);
       }
     },
     [resetAiFade, resetQuotaFade]
   );
   const [copied, copy] = useCopyFeedback();
+  const copyUserId = useCallback(() => copy(userId), [copy, userId]);
 
   const displayName = userName === "" ? "Account" : userName;
   const secondLine = hint?.text ?? (userId === "" ? null : `ID: ${userId}`);
@@ -543,14 +853,26 @@ export function AppSidebarAccount() {
   );
   const showQuotaSkeleton = quotaSlot.data == null && quotaSlot.pending;
 
+  const usageSection = (
+    <AppSidebarUsageSection
+      aiJustFilled={aiSlot.justFilled}
+      aiRow={aiSlot.data}
+      aiSkeletonLabel={aiPresentation.skeletonLabel}
+      quotaJustFilled={quotaSlot.justFilled}
+      quotaRows={quotaSlot.data}
+      showAiSkeleton={showAiSkeleton}
+      showQuotaSkeleton={showQuotaSkeleton}
+    />
+  );
+
   const trigger = (
     <button
       aria-label={`Account: ${displayName}`}
       className={cn(
         "group/account relative flex w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left transition-[height,margin] motion-reduce:transition-none",
         expanded
-          ? "h-11 duration-300 ease-sidebar"
-          : "h-8 duration-200 ease-out"
+          ? "h-12 duration-300 ease-sidebar"
+          : "h-9 duration-200 ease-out"
       )}
       data-slot="app-sidebar-account"
       type="button"
@@ -623,57 +945,21 @@ export function AppSidebarAccount() {
         side={expanded ? "top" : "right"}
         sideOffset={6}
       >
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-center gap-2">
-            <AppSidebarAccountAvatar
-              avatarUrl={userAvatar}
-              className="size-6 text-[10px]"
-              name={userName}
-            />
-            <span className="min-w-0 flex-1 truncate font-medium text-sm">
-              {displayName}
-            </span>
-            <AppSidebarAccountBadgeSlot badge={badge} />
-          </div>
-          {userId === "" ? null : (
-            <button
-              aria-label="Copy user ID"
-              className="flex cursor-pointer items-center gap-1 text-muted-foreground text-xs tabular-nums transition-colors hover:text-neutral-50"
-              onClick={() => copy(userId)}
-              type="button"
-            >
-              <span className="truncate">ID: {userId}</span>
-              {copied ? (
-                <Check aria-hidden className="size-3" strokeWidth={1.8} />
-              ) : (
-                <Copy aria-hidden className="size-3" strokeWidth={1.8} />
-              )}
-            </button>
-          )}
-          {hint == null ? null : (
-            <div className={cn("text-xs", HINT_TEXT_CLASS[hint.tone])}>
-              {hint.text}
-            </div>
-          )}
-          <div aria-hidden className="h-px w-full bg-border" />
-          <AppSidebarUsageSection
-            aiJustFilled={aiSlot.justFilled}
-            aiRow={aiSlot.data}
-            aiSkeletonLabel={aiPresentation.skeletonLabel}
-            quotaJustFilled={quotaSlot.justFilled}
-            quotaRows={quotaSlot.data}
-            showAiSkeleton={showAiSkeleton}
-            showQuotaSkeleton={showQuotaSkeleton}
-          />
-          <Link
-            className="flex h-8 items-center justify-center gap-1.5 rounded-md bg-input/40 font-medium text-neutral-50 text-sm transition-colors hover:bg-input/60"
-            href="/billing?mode=upgrade"
-            onClick={recordBillingReturnRoute}
-          >
-            <Sparkles aria-hidden className="size-4" strokeWidth={1.75} />
-            Upgrade
-          </Link>
-        </div>
+        <AppSidebarAccountMenuView
+          aiRow={aiSlot.data}
+          badge={badge}
+          copied={copied}
+          displayName={displayName}
+          hint={hint}
+          onCopyId={copyUserId}
+          onToggleUsage={toggleUsage}
+          quotaRows={quotaSlot.data}
+          usageOpen={usageOpen}
+          usageSection={usageSection}
+          userAvatar={userAvatar}
+          userId={userId}
+          userName={userName}
+        />
       </PopoverContent>
     </Popover>
   );

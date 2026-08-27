@@ -28,7 +28,7 @@ _Avoid_: Project list, left Side Pane, Project Shortcut (retired term), open/clo
 
 ### Sealos Desktop Entry
 
-The App Sidebar's app-level link out to the platform's Sealos Desktop (user-visible label: Sealos Desktop). It opens the Desktop alongside Brain rather than replacing it — an exit to the platform layer, not in-app navigation, which is why the label names the destination instead of claiming a return.
+The app-level link out to the platform's Sealos Desktop (user-visible label: Sealos Desktop), a menu row inside the App Sidebar's account popover. It opens the Desktop alongside Brain rather than replacing it — an exit to the platform layer, not in-app navigation, which is why the label names the destination instead of claiming a return.
 
 _Avoid_: Back to Desktop (retired label), desktop return, home.
 
@@ -574,7 +574,7 @@ Account-level money and workspace subscriptions, owned by the platform's account
 
 ### Billing Area
 
-The product area under the `/billing` URL prefix where users manage the current workspace's Workspace Subscription and inspect costs, usage quota, and pricing. It is entered from a single App Sidebar entry and presented as one surface with Plan, Costs, Usage, and Pricing tabs; the Plan view is the area's index and the landing point of a Stripe Checkout Round-Trip.
+The product area under the `/billing` URL prefix where users manage the current workspace's Workspace Subscription and inspect costs, usage quota, and pricing. It is entered from a single entry — the Billing row in the App Sidebar's account popover — and presented as one surface with Plan, Costs, Usage, and Pricing tabs; the Plan view is the area's index and the landing point of a Stripe Checkout Round-Trip.
 
 _Avoid_: cost center, billing app, separate billing pages.
 
