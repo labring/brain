@@ -39,7 +39,8 @@ then edit `$private_values_file`, especially:
 - `api.env.VLSELECT_*` or `api.env.VMAUTH_SECRET_*` if VictoriaLogs requires authentication
 - GitHub App and OAuth values (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`)
 - `GITHUB_USER_TOKEN_ENCRYPTION_KEY`: keep stable; changing it prevents decrypting previously stored GitHub user tokens
-- assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
+- assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`, optional `CODEX_GATEWAY_MODEL` for the Assistant chat model)
+- optional GitHub Deploy model (`GITHUB_DEPLOY_MODEL`); blank uses `gpt-5.5`. Independent of `CODEX_GATEWAY_MODEL`, which selects the Assistant chat model
 - optional GitHub Deploy OpenAI override (`GITHUB_DEPLOY_OPENAI_API_KEY`, `GITHUB_DEPLOY_OPENAI_BASE_URL`); when both are set, GitHub Deploy uses them instead of the caller's AI Proxy. If they are unset, GitHub Deploy reuses `CODEX_GATEWAY_OPENAI_*` then `SYSTEM_OPENAI_*` when that pair is complete
 - `MARKETING_EVENTS_INGEST_SECRET`: shared bearer secret for trusted lifecycle event producers
 - `MARKETING_CONSENT_SIGNING_KEY`: shared HS256 secret used to verify Desktop-issued consent tokens

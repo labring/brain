@@ -21,7 +21,7 @@ const CODEX_GATEWAY_STARTUP_RETRY_MS = 1000;
 export const DEPLOY_GATEWAY_MODEL = "gpt-5.5";
 
 export function resolveDeployGatewayModel(): string {
-  const configured = process.env.CODEX_GATEWAY_MODEL?.trim();
+  const configured = process.env.GITHUB_DEPLOY_MODEL?.trim();
   return configured ? configured : DEPLOY_GATEWAY_MODEL;
 }
 

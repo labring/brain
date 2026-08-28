@@ -1058,6 +1058,8 @@ export function buildCodexGatewayEnv(
   credentials?: CodexGatewayOpenAiCredentials
 ): Record<string, string> {
   const env: Record<string, string> = {
+    // Codex inside the Devbox still reads this name. The Brain UI process
+    // chooses the value from GITHUB_DEPLOY_MODEL.
     CODEX_GATEWAY_MODEL: resolveDeployGatewayModel(),
   };
   const apiKey = credentials
