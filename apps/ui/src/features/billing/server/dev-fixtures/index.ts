@@ -1,10 +1,11 @@
 import {
-  BILLING_DEV_MOCK_COOKIE,
-  BILLING_DEV_SCENARIOS,
   type BillingDevScenario,
-  formatBillingDevMockCookie,
-  parseBillingDevMockCookie,
+  billingDevMockCookie,
 } from "@/features/billing/dev-mock-cookie";
+import {
+  type DevMockResolution,
+  resolveDevMock,
+} from "@/features/dev-mock/server/resolve";
 import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 /**
@@ -897,71 +898,28 @@ const PAY_TRANSITIONS: Record<
   },
 };
 
-function mockCookieValue(request: Request): string | undefined {
-  const header = request.headers.get("cookie") ?? "";
-  for (const pair of header.split(";")) {
-    const separator = pair.indexOf("=");
-    if (separator === -1) {
-      continue;
-    }
-    if (pair.slice(0, separator).trim() === BILLING_DEV_MOCK_COOKIE) {
-      return decodeURIComponent(pair.slice(separator + 1).trim());
-    }
-  }
-  return undefined;
-}
-
 function transitionHeaders(
   nextScenario: BillingDevScenario
 ): Record<string, string> {
-  const value = formatBillingDevMockCookie({
-    enabled: true,
-    scenario: nextScenario,
-  });
   return {
-    "set-cookie": `${BILLING_DEV_MOCK_COOKIE}=${value}; Path=/; SameSite=Lax`,
+    "set-cookie": billingDevMockCookie.setCookieHeader({
+      enabled: true,
+      scenario: nextScenario,
+    }),
   };
 }
 
-export type BillingDevMockResolution =
-  | { kind: "invalid"; response: Response }
-  | { kind: "off" }
-  | { kind: "set"; scenario: BillingDevScenario };
+export type BillingDevMockResolution = DevMockResolution<BillingDevScenario>;
 
 /**
- * Reads the mock cookie off a request: off (no cookie, or disabled, or a
- * real production build), invalid (a 500 that names the valid scenarios so
- * typos fail loud), or the scenario to serve. Shared by every fixture
- * dispatcher so the one cookie drives billing and notifications alike.
+ * Reads the billing mock cookie off a request (see `resolveDevMock`). Shared
+ * by every fixture dispatcher the billing scenario drives — billing,
+ * billing-born notifications, the chat free-trial judgment.
  */
 export function resolveBillingDevMock(
   request: Request
 ): BillingDevMockResolution {
-  if (
-    process.env.NODE_ENV === "production" &&
-    process.env.NEXT_PUBLIC_DEV_TWEAKS !== "1"
-  ) {
-    return { kind: "off" };
-  }
-  const parsed = parseBillingDevMockCookie(mockCookieValue(request));
-  if (
-    parsed.kind === "unset" ||
-    (parsed.kind === "set" && !parsed.state.enabled)
-  ) {
-    return { kind: "off" };
-  }
-  if (parsed.kind === "invalid") {
-    return {
-      kind: "invalid",
-      response: Response.json(
-        {
-          error: `Unknown billing mock scenario "${parsed.raw}". Valid scenarios: ${BILLING_DEV_SCENARIOS.join(", ")}. Toggle the mock from the dev tweaks pane (⌃⌥T).`,
-        },
-        { status: 500 }
-      ),
-    };
-  }
-  return { kind: "set", scenario: parsed.state.scenario };
+  return resolveDevMock(billingDevMockCookie, request, "billing");
 }
 
 /** The workspace fixtures address when the request names none. */
