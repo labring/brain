@@ -2,6 +2,67 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.9] - 2026-08-28
+
+### Added
+
+- Added billing interruption scenes: deploy failure billing forms and a
+  paid-chat wall (AIM-329, AIM-330). Deployments that die on a money or quota
+  wall now report a curated `balance-exhausted` reason with structured Billing
+  Evidence, and the GitHub/Docker/Database/Template panes plus the assistant's
+  deploy tool refuse with the same pre-deploy wall. Chat turns now judge a
+  paid source server-side and refuse an exhausted source with 402 rather than
+  mutating state.
+- Added a dual-stream Notification Center with a Status Hint banner (AIM-332,
+  AIM-333, AIM-334). A Go read proxy merges upstream Notification CRs with the
+  Brain store, per-user read receipts, a Brain-voiced override table for the
+  debt-ladder, a gift-only filter, and gift-observation plus
+  subscription-change producers.
+- Surfaced usable gift credit in the Plan Account Balance block, proxied via
+  `/api/billing/credits` and degrading quietly when unavailable.
+
+### Changed
+
+- Gave GitHub Deploy its own `GITHUB_DEPLOY_MODEL` so the assistant model no
+  longer cascades into deploy sessions.
+
+### Fixed
+
+- Corrected the Devbox Skill discovery shell loop.
+- Made Sealos skill installation source-driven so configured sources provide
+  their own skill sets and stale managed skills are cleared before reinstall.
+- Aligned the account popover columns and anchored it to the rail button.
+
+## [2.0.8] - 2026-08-27
+
+### Added
+
+- Added a Project list Dev Mock with a count slider for designing the project
+  index and App Sidebar against any list size.
+- Injected Sealos skills into Brain and installed them in the Chat Devbox.
+- Routed chat deploy intent through the curated template catalog and unblocked
+  GitHub deployment from chat without a Deployment Credential Binding.
+- Injected workspace resource quota context into assistant turns.
+- Added meaningful Resource Display Names for child resources via the ADR 0062
+  resolution chain, and carried the `brain.io/display-name` annotation through
+  the AP and DB product APIs.
+- Deep-linked the blocked card's upgrade CTA to the Plan Picker and unified the
+  free allowance label on "Free trial messages".
+- Gave an expired Free plan a "resubscribe" recovery voice instead of "renew".
+
+### Changed
+
+- Folded menu rows into the account popover and unified sidebar icon blue
+  states.
+- Made the App Sidebar collapsible with Expanded and Collapsed states, a
+  width-driven transition, and a 365-day persistence cookie.
+
+### Fixed
+
+- Used a shared model for thread titles.
+- Respected managed gateway turn outcomes and preserved gateway turn failure
+  reasons.
+
 ## [2.0.7] - 2026-08-21
 
 ### Added
