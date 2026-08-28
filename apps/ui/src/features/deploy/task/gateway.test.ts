@@ -42,6 +42,7 @@ const {
   resolveDeployGatewayModel,
   runDeployTaskGateway: runDeployTaskGatewayRaw,
 } = requireModule("./gateway") as typeof import("./gateway");
+const originalGithubDeployModel = process.env.GITHUB_DEPLOY_MODEL;
 const originalCodexGatewayModel = process.env.CODEX_GATEWAY_MODEL;
 
 function runDeployTaskGateway(
@@ -209,18 +210,25 @@ describe("deployment Codex gateway interruption", () => {
     recordedEvents.length = 0;
     updateDeployTaskStateImpl = () => Promise.resolve();
     console.warn = () => undefined;
+    delete process.env.GITHUB_DEPLOY_MODEL;
     delete process.env.CODEX_GATEWAY_MODEL;
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
+    delete process.env.GITHUB_DEPLOY_MODEL;
     delete process.env.CODEX_GATEWAY_MODEL;
   });
 
   afterAll(() => {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
+    if (originalGithubDeployModel === undefined) {
+      delete process.env.GITHUB_DEPLOY_MODEL;
+    } else {
+      process.env.GITHUB_DEPLOY_MODEL = originalGithubDeployModel;
+    }
     if (originalCodexGatewayModel === undefined) {
       delete process.env.CODEX_GATEWAY_MODEL;
     } else {
@@ -606,8 +614,8 @@ describe("deployment Codex gateway interruption", () => {
     expect(sessionHeaders[0]?.["x-sealai-control-token"]).toBeUndefined();
   });
 
-  it("uses CODEX_GATEWAY_MODEL for a new session when it is set", async () => {
-    process.env.CODEX_GATEWAY_MODEL = "  gpt-custom-deploy  ";
+  it("uses GITHUB_DEPLOY_MODEL for a new session when it is set", async () => {
+    process.env.GITHUB_DEPLOY_MODEL = "  gpt-custom-deploy  ";
     const sessionBodies: Record<string, unknown>[] = [];
     installGatewayFetch({
       sessionBodies,
@@ -623,9 +631,16 @@ describe("deployment Codex gateway interruption", () => {
     expect(sessionBodies[0]?.model).toBe("gpt-custom-deploy");
   });
 
-  it("treats a blank CODEX_GATEWAY_MODEL as unset", () => {
-    process.env.CODEX_GATEWAY_MODEL = "   ";
+  it("treats a blank GITHUB_DEPLOY_MODEL as unset", () => {
+    process.env.GITHUB_DEPLOY_MODEL = "   ";
     expect(resolveDeployGatewayModel()).toBe(DEPLOY_GATEWAY_MODEL);
+  });
+
+  it("ignores CODEX_GATEWAY_MODEL when resolving the deploy session model", () => {
+    process.env.CODEX_GATEWAY_MODEL = "gpt-chat-only";
+    expect(resolveDeployGatewayModel()).toBe(DEPLOY_GATEWAY_MODEL);
+    process.env.GITHUB_DEPLOY_MODEL = "gpt-custom-deploy";
+    expect(resolveDeployGatewayModel()).toBe("gpt-custom-deploy");
   });
 
   it("resumes the recorded Codex Thread when a session is lost", async () => {

@@ -24,6 +24,7 @@ const ENV_KEYS = [
   "DEPLOY_DEVBOX_STORAGE_LIMIT",
   "DEVBOX_API_BASE_URL",
   "DEVBOX_TOKEN",
+  "GITHUB_DEPLOY_MODEL",
   "GITHUB_DEPLOY_OPENAI_API_KEY",
   "GITHUB_DEPLOY_OPENAI_BASE_URL",
   "SYSTEM_OPENAI_API_KEY",
@@ -228,7 +229,8 @@ describe("deployment AI Proxy credentials", () => {
   beforeEach(() => {
     setPlatformCredentials();
     process.env.AI_PROXY_TOKEN_NAME = "github-deploy-token";
-    process.env.CODEX_GATEWAY_MODEL = "deploy-model";
+    process.env.GITHUB_DEPLOY_MODEL = "deploy-model";
+    delete process.env.CODEX_GATEWAY_MODEL;
     delete process.env.DEPLOY_DEVBOX_STORAGE_LIMIT;
     process.env.DEVBOX_API_BASE_URL = "https://devbox.test";
     process.env.DEVBOX_TOKEN = "devbox-test-token";
@@ -361,9 +363,17 @@ describe("deployment AI Proxy credentials", () => {
     });
   });
 
-  it("falls back to gpt-5.5 when CODEX_GATEWAY_MODEL is unset", () => {
-    delete process.env.CODEX_GATEWAY_MODEL;
+  it("falls back to gpt-5.5 when GITHUB_DEPLOY_MODEL is unset", () => {
+    delete process.env.GITHUB_DEPLOY_MODEL;
     expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("gpt-5.5");
+  });
+
+  it("does not take the Devbox model from CODEX_GATEWAY_MODEL", () => {
+    delete process.env.GITHUB_DEPLOY_MODEL;
+    process.env.CODEX_GATEWAY_MODEL = "gpt-chat-only";
+    expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("gpt-5.5");
+    process.env.GITHUB_DEPLOY_MODEL = "deploy-model";
+    expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("deploy-model");
   });
 
   it("uses GITHUB_DEPLOY_OPENAI_* when both are set", () => {

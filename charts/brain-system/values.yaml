@@ -129,6 +129,9 @@ ui:
     MARKETING_CONSENT_SIGNING_KEY: ""
     GITHUB_APP_ID: ""
     GITHUB_APP_PRIVATE_KEY: ""
+    # Optional. Model id for GitHub Deploy Codex gateway sessions. Blank uses
+    # gpt-5.5. Independent of CODEX_GATEWAY_MODEL (Assistant chat).
+    GITHUB_DEPLOY_MODEL: ""
     # Optional. When both are set, GitHub Deploy uses this OpenAI-compatible
     # endpoint instead of the caller's AI Proxy. Leave empty to reuse
     # CODEX_GATEWAY_OPENAI_* then SYSTEM_OPENAI_* when that pair is complete.
@@ -141,6 +144,9 @@ ui:
     SYSTEM_OPENAI_API_KEY: ""
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
     FREE_CHAT_TURNS: "5"
+    # Optional. Assistant chat model id. Blank uses gpt-5.5.
+    # Independent of GITHUB_DEPLOY_MODEL.
+    CODEX_GATEWAY_MODEL: ""
     AI_PROXY_TOKEN_NAME: "sealos-brain"
     DEVBOX_API_BASE_URL: ""
     DEVBOX_TOKEN: ""

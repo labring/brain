@@ -6,6 +6,7 @@ import type { streamText } from "ai";
 type ChatModel = Parameters<typeof streamText>[0]["model"];
 
 const DEFAULT_CHAT_MODEL_ID = "gpt-5.5";
+/** Assistant chat model. GitHub Deploy sessions use `GITHUB_DEPLOY_MODEL`. */
 export const CHAT_MODEL_ID =
   process.env.CODEX_GATEWAY_MODEL?.trim() || DEFAULT_CHAT_MODEL_ID;
 /** Thread titles use the same model as regular chat responses. */
