@@ -1,4 +1,4 @@
-import type { NotificationStore } from "./store";
+import type { NotificationAccountOwner, NotificationStore } from "./store";
 
 /**
  * The $1 gift hint producer (catalog row D4): the first time a new user's
@@ -25,14 +25,15 @@ export type GiftCreditObservationStore = Pick<NotificationStore, "produce">;
 export async function observeGiftCreditForNotifications(
   store: GiftCreditObservationStore,
   input: {
+    /** The verified person the hint is for; the write re-checks the binding. */
+    account: NotificationAccountOwner;
     giftMicroUnits: number;
     namespace: string;
     now?: Date;
-    userUid: string;
   }
 ): Promise<GiftCreditObservationResult> {
   const namespace = input.namespace.trim();
-  const userUid = input.userUid.trim();
+  const userUid = input.account.userUid.trim();
   if (
     namespace === "" ||
     userUid === "" ||
@@ -41,12 +42,12 @@ export async function observeGiftCreditForNotifications(
     return { produced: false };
   }
   const produced = await store.produce({
+    account: { ...input.account, userUid },
     dedupeKey: creditHintDedupeKey(userUid),
     kind: "credit-hint",
     namespace,
     now: input.now,
     payload: { giftMicroUnits: input.giftMicroUnits, kind: "credit-hint" },
-    userUid,
   });
   return { produced };
 }

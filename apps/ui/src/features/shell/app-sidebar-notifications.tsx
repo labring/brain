@@ -20,6 +20,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { BillingDevMockGate } from "@/features/billing/billing-dev-mock-gate";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { NotificationsDevMockGate } from "@/features/notifications/dev-mock-gate";
 import {
   formatNotificationTime,
   formatNotificationTimestamp,
@@ -189,7 +190,7 @@ function NotificationsEmptyState({ tab }: { tab: NotificationTab }) {
   );
 }
 
-function NotificationsPanel({ feed }: { feed: NotificationFeed }) {
+export function NotificationsPanel({ feed }: { feed: NotificationFeed }) {
   const { items, markAllRead, markRead, readIds, unreadCount } = feed;
   const [tab, setTab] = useState<NotificationTab>("all");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
@@ -315,6 +316,7 @@ export function AppSidebarNotifications() {
       {/* The billing Dev Mock's scenarios drive the inbox fixtures too, so
           its panel entry is reachable from anywhere the inbox is. */}
       <BillingDevMockGate />
+      <NotificationsDevMockGate />
       <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger render={trigger}>
           <span

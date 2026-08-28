@@ -132,7 +132,11 @@ export function createNotificationHandlers(
         return Response.json(
           await config.produce(authorized.actor, authorized.input)
         );
-      } catch {
+      } catch (error) {
+        const superseded = supersededBindingResponse(error);
+        if (superseded != null) {
+          return superseded;
+        }
         return unavailable(config.route, config.unavailableMessage);
       }
     };
@@ -181,8 +185,11 @@ export function createNotificationHandlers(
       produce: (actor, input) =>
         observeGiftCreditForNotifications(dependencies.store, {
           ...input,
+          account: {
+            legacyWorkspaceActor: actor.legacyWorkspaceActor,
+            userUid: actor.owner.userUid,
+          },
           namespace: actor.owner.namespace,
-          userUid: actor.owner.userUid,
         }),
       route: "gift-observation",
       schema: giftObservationRequestSchema,

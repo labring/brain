@@ -35,6 +35,16 @@ afterAll(() => pglite.close());
 
 const NOW = new Date("2026-08-27T12:00:00Z");
 
+/** The verified binding every account-scoped write re-checks (ADR-0059). */
+async function account(name: string) {
+  const owner = { legacyWorkspaceActor: name, userUid: `uid-${name}` };
+  await db
+    .insert(identityFingerprints)
+    .values({ crName: name, mintedAt: 1, userUid: owner.userUid })
+    .onConflictDoNothing();
+  return owner;
+}
+
 test("the dedupe key names the user, not the workspace", () => {
   assert.equal(creditHintDedupeKey("uid-alice"), "credit-hint:uid-alice");
 });
@@ -44,19 +54,19 @@ test("a visible gift writes one hint per user; retries and other workspaces writ
     giftMicroUnits: 720_000,
     namespace: "ns-a",
     now: NOW,
-    userUid: "uid-alice",
+    account: await account("alice"),
   });
   const retry = await observeGiftCreditForNotifications(store, {
     giftMicroUnits: 700_000,
     namespace: "ns-a",
     now: new Date(NOW.getTime() + 60_000),
-    userUid: "uid-alice",
+    account: await account("alice"),
   });
   const elsewhere = await observeGiftCreditForNotifications(store, {
     giftMicroUnits: 700_000,
     namespace: "ns-b",
     now: new Date(NOW.getTime() + 120_000),
-    userUid: "uid-alice",
+    account: await account("alice"),
   });
 
   assert.deepEqual(first, { produced: true });
@@ -89,7 +99,7 @@ test("another user gets their own hint; no gift writes nothing", async () => {
       giftMicroUnits: 0,
       namespace: "ns-a",
       now: NOW,
-      userUid: "uid-bob",
+      account: await account("bob"),
     }),
     { produced: false }
   );
@@ -98,7 +108,7 @@ test("another user gets their own hint; no gift writes nothing", async () => {
       giftMicroUnits: 1_000_000,
       namespace: "ns-a",
       now: NOW,
-      userUid: "uid-bob",
+      account: await account("bob"),
     }),
     { produced: true }
   );
@@ -115,15 +125,15 @@ test("a blank user or workspace observes nothing", async () => {
     await observeGiftCreditForNotifications(store, {
       giftMicroUnits: 1_000_000,
       namespace: " ",
-      userUid: "uid-carol",
+      account: await account("carol"),
     }),
     { produced: false }
   );
   assert.deepEqual(
     await observeGiftCreditForNotifications(store, {
+      account: { legacyWorkspaceActor: "carol", userUid: "" },
       giftMicroUnits: 1_000_000,
       namespace: "ns-a",
-      userUid: "",
     }),
     { produced: false }
   );

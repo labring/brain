@@ -41,6 +41,11 @@ await migrate(db, {
   ),
 });
 const store = createNotificationStore(() => db);
+// The gift hint is account-scoped: its write re-checks this binding.
+await db
+  .insert(identityFingerprints)
+  .values({ crName: "newcomer", mintedAt: 1, userUid: "uid-newcomer" })
+  .onConflictDoNothing();
 
 afterAll(() => pglite.close());
 
@@ -122,9 +127,9 @@ test("free's visible gift writes the hint once; active carries no gift", async (
   assert.ok(gift.giftMicroUnits > 0);
   const observe = (giftMicroUnits: number) =>
     observeGiftCreditForNotifications(store, {
+      account: { legacyWorkspaceActor: "newcomer", userUid: "uid-newcomer" },
       giftMicroUnits,
       namespace: WORKSPACE,
-      userUid: "uid-newcomer",
     });
   assert.deepEqual(await observe(gift.giftMicroUnits), { produced: true });
   assert.deepEqual(await observe(gift.giftMicroUnits), { produced: false });

@@ -174,12 +174,12 @@ test("receipts are per user, follow the person across workspaces, and db receipt
 
 test("an account-scoped message follows the person into every workspace and takes its receipt from any of them", async () => {
   await store.produce({
+    account: { legacyWorkspaceActor: "alice", userUid: "alice-uid" },
     dedupeKey: "credit-hint:alice-uid",
     kind: "credit-hint",
     namespace: "ns-a",
     now: NOW,
     payload: { giftMicroUnits: 720_000, kind: "credit-hint" },
-    userUid: "alice-uid",
   });
   const inNsB = await store.listMessages({
     namespace: "ns-b",
@@ -234,6 +234,41 @@ test("marking read refuses a superseded identity binding", async () => {
       ["cr:x:1"]
     ),
     SUPERSEDED_RE
+  );
+});
+
+test("producing an account-scoped message refuses a superseded identity binding; workspace rows need none", async () => {
+  await assert.rejects(
+    store.produce({
+      account: { legacyWorkspaceActor: "alice", userUid: "someone-else-uid" },
+      dedupeKey: "credit-hint:someone-else-uid",
+      kind: "credit-hint",
+      namespace: "ns-a",
+      now: NOW,
+      payload: { giftMicroUnits: 720_000, kind: "credit-hint" },
+    }),
+    SUPERSEDED_RE
+  );
+  assert.equal(
+    (
+      await db
+        .select({ id: notificationMessages.id })
+        .from(notificationMessages)
+        .where(eq(notificationMessages.userUid, "someone-else-uid"))
+    ).length,
+    0,
+    "the refused write left no row"
+  );
+  // A workspace-scoped row is not a personal resource: no binding involved.
+  assert.equal(
+    await store.produce({
+      dedupeKey: "quota-exhausted:ns-guard:memory",
+      kind: "quota-exhausted",
+      namespace: "ns-guard",
+      now: NOW,
+      payload: quotaPayload("memory"),
+    }),
+    true
   );
 });
 

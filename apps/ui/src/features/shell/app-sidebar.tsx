@@ -33,7 +33,7 @@ import {
   useState,
 } from "react";
 import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
-import { reportWorkspaceQuotaObservation } from "@/features/notifications/client";
+import { observeWorkspaceQuotaForInbox } from "@/features/notifications/quota-observation";
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
@@ -559,19 +559,16 @@ function AppSidebarChrome({
 
   // Warm the workspace-quota cache so chat turns can inject the snapshot
   // without waiting on the desktop SDK (see project-workspace-layout), and
-  // let the quota-exhausted producer observe the same snapshot.
+  // let the quota-exhausted producer observe the first snapshot; the Status
+  // Hint keeps observing on its polling cadence.
   useEffect(() => {
-    loadWorkspaceQuotaSnapshot(namespace)
-      .then((snapshot) => {
-        if (snapshot == null || appToken === "" || kubeconfig === "") {
-          return;
-        }
-        return reportWorkspaceQuotaObservation(
-          { appToken, kubeconfig, namespace },
-          snapshot
-        );
-      })
-      .catch(() => undefined);
+    if (appToken === "" || kubeconfig === "") {
+      loadWorkspaceQuotaSnapshot(namespace).catch(() => undefined);
+      return;
+    }
+    observeWorkspaceQuotaForInbox({ appToken, kubeconfig, namespace }).catch(
+      () => undefined
+    );
   }, [appToken, kubeconfig, namespace]);
 
   return (

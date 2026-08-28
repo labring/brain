@@ -9,6 +9,7 @@ import { loadAccountBalanceMicroUnits } from "@/features/billing/account-balance
 import { loadAccountCredits } from "@/features/billing/account-credits";
 import { accountCreditsSwrKey } from "@/features/billing/billing-subscription-settlement";
 import { loadWorkspaceQuotaUsage } from "@/features/billing/billing-usage-data";
+import { observeWorkspaceQuotaForInbox } from "@/features/notifications/quota-observation";
 import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
@@ -66,12 +67,25 @@ export function useStatusHint(): StatusHintSlot {
     () => loadAccountCredits({ appToken, kubeconfig }),
     swrOptions
   );
+  // Every quota poll is also the quota-exhausted producer's observation
+  // point (A1): the inbox observes on the banner's cadence, so the two
+  // cannot disagree for minutes, and a recovery between chat turns still
+  // releases the live key.
   const quota = useSWR(
     credentialsReady
       ? (["status-hint-quota", workspace, credentialKey, appToken] as const)
       : null,
     () => loadWorkspaceQuotaUsage({ appToken, kubeconfig, workspace }),
-    swrOptions
+    {
+      ...swrOptions,
+      onSuccess: () => {
+        observeWorkspaceQuotaForInbox({
+          appToken,
+          kubeconfig,
+          namespace: workspace,
+        }).catch(() => undefined);
+      },
+    }
   );
 
   // Trial-expiry is a clock state as much as a data state: the window opens

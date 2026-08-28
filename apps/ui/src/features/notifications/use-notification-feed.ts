@@ -83,17 +83,58 @@ export function useNotificationFeed(): NotificationFeed {
   });
   const { mutate: refreshCRList } = crList;
 
+  // The gift hint's observation point: a read that shows gift credit reports
+  // it. The latch holds while a report is in flight or after one landed; a
+  // failed report clears it so the next credits read (or a workspace or
+  // credential change) tries again instead of leaving D4 missing for the
+  // rest of the session. The producer dedupes by user, so a repeat is
+  // harmless.
+  const giftObservedFor = useRef<string | null>(null);
+  const observeGift = useCallback(
+    (giftMicroUnits: number) => {
+      const key = `${namespace}|${credentialKey}`;
+      if (
+        !credentialsReady ||
+        giftMicroUnits <= 0 ||
+        giftObservedFor.current === key
+      ) {
+        return;
+      }
+      giftObservedFor.current = key;
+      reportGiftCreditObservation(
+        { appToken, kubeconfig, namespace },
+        { giftMicroUnits }
+      )
+        .then(() => refreshBrainFeed())
+        .catch(() => {
+          if (giftObservedFor.current === key) {
+            giftObservedFor.current = null;
+          }
+        });
+    },
+    [
+      appToken,
+      credentialKey,
+      credentialsReady,
+      kubeconfig,
+      namespace,
+      refreshBrainFeed,
+    ]
+  );
   // Account facts for the display layer: gift and usable credit plus whether
   // the account ever topped up. Both are account-scoped, so they key on the
   // credentials alone. Credits burn down, so they follow the inbox's own
-  // cadence; top-up history only ever grows, so one read per session is
-  // the truth for the session.
+  // cadence and every answered poll is a gift observation opportunity even
+  // when nothing changed (SWR keeps equal `data` referentially stable);
+  // top-up history only ever grows, so one read per session is the truth
+  // for the session.
   const credits = useSWR(
     credentialsReady
       ? (["notifications-credits", credentialKey, appToken] as const)
       : null,
     () => loadAccountCredits({ appToken, kubeconfig }),
     {
+      onSuccess: (data) => observeGift(data.giftMicroUnits),
       refreshInterval: NOTIFICATION_CR_REFRESH_INTERVAL_MS,
       revalidateOnFocus: false,
       shouldRetryOnError: false,
@@ -113,35 +154,12 @@ export function useNotificationFeed(): NotificationFeed {
     toppedUp.data != null &&
     isGiftOnlyNewcomer({ ...credits.data, hasToppedUp: toppedUp.data });
 
-  // The gift hint's observation point: the first read that shows gift credit
-  // reports it once per session; the producer dedupes by user beyond that.
-  const giftObservedFor = useRef<string | null>(null);
+  // Data already in SWR's cache answers without a fetch, so the first
+  // render observes it here; later polls observe through `onSuccess`.
   const giftMicroUnits = credits.data?.giftMicroUnits ?? 0;
   useEffect(() => {
-    const key = `${namespace}|${credentialKey}`;
-    if (
-      !credentialsReady ||
-      giftMicroUnits <= 0 ||
-      giftObservedFor.current === key
-    ) {
-      return;
-    }
-    giftObservedFor.current = key;
-    reportGiftCreditObservation(
-      { appToken, kubeconfig, namespace },
-      { giftMicroUnits }
-    )
-      .then(() => refreshBrainFeed())
-      .catch(() => undefined);
-  }, [
-    appToken,
-    credentialKey,
-    credentialsReady,
-    giftMicroUnits,
-    kubeconfig,
-    namespace,
-    refreshBrainFeed,
-  ]);
+    observeGift(giftMicroUnits);
+  }, [giftMicroUnits, observeGift]);
 
   const items = useMemo(() => {
     const crItems = fixturePlatformItems ?? crList.data?.items;

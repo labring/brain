@@ -38,7 +38,23 @@ export interface NotificationReader extends NotificationInbox {
   legacyWorkspaceActor: string;
 }
 
+/**
+ * The verified person an account-scoped row is keyed by: the bare uid the
+ * row carries plus the crName the write re-checks the binding against
+ * (ADR-0059), so a merge either sweeps the row or refuses the stale write.
+ */
+export interface NotificationAccountOwner {
+  legacyWorkspaceActor: string;
+  userUid: string;
+}
+
 export interface ProduceNotificationInput {
+  /**
+   * Set for account-scoped messages (the gift hint, later the expiry
+   * reminder): the row follows the person into every workspace's inbox and
+   * `namespace` only records where it was first observed.
+   */
+  account?: NotificationAccountOwner | null;
   dedupeKey: string;
   kind: NotificationMessageKind;
   namespace: string;
@@ -46,12 +62,6 @@ export interface ProduceNotificationInput {
   now?: Date;
   payload: NotificationPayload;
   projectUid?: string | null;
-  /**
-   * Set for account-scoped messages (the gift hint, later the expiry
-   * reminder): the row follows the person into every workspace's inbox and
-   * `namespace` only records where it was first observed.
-   */
-  userUid?: string | null;
 }
 
 export interface NotificationStore {
@@ -198,6 +208,16 @@ export function createNotificationStore(
     produce: (input) =>
       getDb().transaction(async (tx) => {
         const now = input.now ?? new Date();
+        // An account-scoped row is a uid-keyed personal resource: re-check
+        // the fingerprint in the same transaction, as markRead does, so an
+        // observation that authorized before a merge cannot commit a
+        // tombstone-keyed row after the merge's sweep (ADR-0059).
+        if (input.account != null) {
+          await requireCurrentIdentityBinding(tx, {
+            crName: input.account.legacyWorkspaceActor,
+            userUid: input.account.userUid,
+          });
+        }
         const inserted = await tx
           .insert(notificationMessages)
           .values({
@@ -208,7 +228,7 @@ export function createNotificationStore(
             namespace: input.namespace,
             payload: input.payload,
             projectUid: input.projectUid ?? null,
-            userUid: input.userUid ?? null,
+            userUid: input.account?.userUid ?? null,
           })
           .onConflictDoNothing({
             target: notificationMessages.dedupeKey,
