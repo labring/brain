@@ -9,15 +9,18 @@ import {
   type UIMessage,
   type UIMessageStreamOnFinishCallback,
 } from "ai";
-import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
 import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
 } from "@/features/chat/ai-proxy/resolve-chat-open-ai-connection";
 import {
+  type ChatBillingActor,
+  judgeChatBilling,
+  withPaidChatWall,
+} from "@/features/chat/persistence/chat-billing-judgment";
+import {
   getFreeTierSnapshot,
-  isSystemOpenAiConfigured,
   releaseReservedFreeTurn,
   reserveFreeTurnIfAvailable,
 } from "@/features/chat/persistence/free-tier";
@@ -51,6 +54,10 @@ import {
   normalizeAssistantNamespace,
   type VerifiedAssistantConversationActor,
 } from "@/features/chat/persistence/types";
+import {
+  chatStreamErrorText,
+  isAiProxyBillingRefusal,
+} from "@/features/chat/runtime/ai-proxy-billing-refusal";
 import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
 import {
   type ChatStreamLeaseHeartbeat,
@@ -87,9 +94,36 @@ function chatBillingHeaders(state: FreeTierState): Record<string, string> {
     "X-Chat-Billing": state.billing,
     "X-Chat-Free-Remaining": String(state.remaining),
     "X-Chat-Free-Limit": String(state.limit),
+    "X-Chat-Paid-Source": state.paidSource ?? "",
+    "X-Chat-Wall": state.wall ?? "",
   };
 }
 
+/** The paid wall's refusal (design spec row E3): the 402 sibling of the free-turns one. */
+function paidWallResponse(state: FreeTierState): Response {
+  const body: ChatApiErrorBody =
+    state.wall === "ai-credits"
+      ? {
+          code: "ai_credits_exhausted",
+          error:
+            "This workspace's AI Credits are used up. Upgrade the plan to keep chatting with the assistant.",
+        }
+      : {
+          code: "account_balance_exhausted",
+          error:
+            "Your account balance can't cover AI usage. Top up to keep chatting with the assistant.",
+        };
+  return Response.json(body, {
+    headers: chatBillingHeaders(state),
+    status: 402,
+  });
+}
+
+/**
+ * A `user` turn spends AI Credits or the Account Balance; judge the wall
+ * before the turn the way the free allowance is judged (row E3 follows the
+ * E4 template). Unknown standing fails open.
+ */
 function freeTurnsExhaustedResponse(state: FreeTierState): Response {
   return Response.json(
     {
@@ -591,13 +625,10 @@ async function cleanUpFailedChatPipeline(input: {
  * reserved on the counter when it returns `billing: "free"`. Reserving before
  * any model execution makes concurrent turns race on the counter itself, so
  * the allowance can never be overspent; the caller owns rolling the
- * reservation back on every unsuccessful path.
+ * reservation back on every unsuccessful path. The trial judgment and the
+ * paid wall's standing reads run in parallel under one budget (ADR-0068).
  */
-async function settleTurnBillingPosture(input: {
-  accountUserId: string | null;
-  cookieHeader: string | null;
-  owner: AssistantConversationOwner;
-}): Promise<
+async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
   | { response: Response; billing?: never }
   | {
       billing: ChatBillingMode;
@@ -607,31 +638,25 @@ async function settleTurnBillingPosture(input: {
       response?: never;
     }
 > {
-  const { owner } = input;
-  const freeTier = await getFreeTierSnapshot(owner.namespace);
-  const systemModelConfigured = isSystemOpenAiConfigured();
-  const trial =
-    freeTier.limit > 0 && systemModelConfigured
-      ? await judgeActiveFreeTrialForWorkspace({
-          cookieHeader: input.cookieHeader,
-          userId: input.accountUserId,
-          userUid: owner.userUid,
-          workspace: owner.namespace,
-        })
-      : "not-trial";
+  const judgment = await judgeChatBilling(actor);
+  const { snapshot: freeTier, systemModelConfigured, trial } = judgment;
   const posture = freeTierPosture(freeTier, systemModelConfigured, trial);
   if (posture.billing === "blocked") {
     return { response: freeTurnsExhaustedResponse(posture) };
   }
   if (posture.billing !== "free") {
+    const walled = await withPaidChatWall(posture, judgment);
+    if (walled.wall != null) {
+      return { response: paidWallResponse(walled) };
+    }
     return {
-      billing: posture.billing,
-      clientFreeTier: posture,
+      billing: "user",
+      clientFreeTier: walled,
       reserved: false,
     };
   }
 
-  if (await reserveFreeTurnIfAvailable(owner.namespace)) {
+  if (await reserveFreeTurnIfAvailable(actor.namespace)) {
     // Headers carry the POST-turn posture: the turn spending the last free
     // turn already reports `blocked`, so the pane flips the moment that
     // message finishes streaming instead of one composed message later. With
@@ -649,8 +674,9 @@ async function settleTurnBillingPosture(input: {
 
   // Lost the counter race to a concurrent turn: re-judge on a fresh
   // snapshot. A confirmed trial is now exhausted (402); otherwise the turn
-  // degrades to `user`, matching the exhausted fail-open case.
-  const contested = await getFreeTierSnapshot(owner.namespace);
+  // degrades to `user`, matching the exhausted fail-open case — walled on
+  // the standing already read for this request.
+  const contested = await getFreeTierSnapshot(actor.namespace);
   const contestedPosture = freeTierPosture(
     contested,
     systemModelConfigured,
@@ -659,9 +685,16 @@ async function settleTurnBillingPosture(input: {
   if (contestedPosture.billing === "blocked") {
     return { response: freeTurnsExhaustedResponse(contestedPosture) };
   }
+  const walled = await withPaidChatWall(
+    { ...contestedPosture, billing: "user" },
+    judgment
+  );
+  if (walled.wall != null) {
+    return { response: paidWallResponse(walled) };
+  }
   return {
     billing: "user",
-    clientFreeTier: contestedPosture,
+    clientFreeTier: walled,
     reserved: false,
   };
 }
@@ -689,7 +722,8 @@ async function runChatPipeline(input: {
     const settled = await settleTurnBillingPosture({
       accountUserId: actor.accountUserId ?? null,
       cookieHeader: input.cookieHeader,
-      owner,
+      namespace: owner.namespace,
+      userUid: owner.userUid,
     });
     if (settled.response != null) {
       return settled.response;
@@ -730,6 +764,11 @@ async function runChatPipeline(input: {
     // kubeconfig-verified identity (AIM-154 keeps them token-free).
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
+      billingActor: {
+        cookieHeader: input.cookieHeader,
+        userId: actor.accountUserId ?? null,
+        userUid: owner.userUid,
+      },
       chatId,
       kubeconfig,
       kubernetesNamespace: owner.namespace,
@@ -743,6 +782,21 @@ async function runChatPipeline(input: {
       billing,
     });
     if (!openAi.ok) {
+      // aiproxy refuses an exhausted group at the token request too; the
+      // pane must hear "billing", not "connection unavailable".
+      if (
+        isAiProxyBillingRefusal({
+          bodyText: openAi.message,
+          status: openAi.status,
+        })
+      ) {
+        return jsonError(
+          "ai_proxy_billing_refused",
+          "The AI proxy refused this turn for billing reasons.",
+          openAi.status,
+          { paidSource: clientFreeTier.paidSource ?? null }
+        );
+      }
       return jsonError(
         "ai_connection_unavailable",
         openAi.message,
@@ -829,6 +883,10 @@ async function runChatPipeline(input: {
       originalMessages: history,
       generateMessageId: generateId,
       headers: responseHeaders,
+      // A mid-stream aiproxy billing refusal reaches the pane classified;
+      // every other error stays masked.
+      onError: (error) =>
+        chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
       onFinish: createChatStreamFinishHandler({
         billing,
         chatId,
@@ -881,7 +939,30 @@ async function runChatPipeline(input: {
   }
 }
 
+/**
+ * Lets the Conversation Dev Mock stage an aiproxy billing refusal mid-stream
+ * in dev and demo builds (`NEXT_PUBLIC_DEV_TWEAKS=1` marks a demo image); a
+ * production build statically drops the dynamic import — the same gate as
+ * the persistence routes.
+ */
+async function devMockStreamResponse(req: Request): Promise<Response | null> {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PUBLIC_DEV_TWEAKS !== "1"
+  ) {
+    return null;
+  }
+  const { chatDevMockStreamResponse } = await import(
+    "@/features/chat/dev-fixtures"
+  );
+  return chatDevMockStreamResponse(req);
+}
+
 export async function POST(req: Request) {
+  const staged = await devMockStreamResponse(req);
+  if (staged != null) {
+    return staged;
+  }
   const body = await req.json().catch(() => null);
   if (body == null) {
     return jsonError("invalid_request", "Invalid JSON body", 400);

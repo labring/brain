@@ -66,10 +66,23 @@ export const assistantThreadDTOSchema = z.object({
  * pane on load. Computed server-side only (ADR-0065): bootstrap payload and
  * `X-Chat-*` headers agree; clients render, never derive.
  */
+/**
+ * What a `user` turn spends (CONTEXT.md): a subscribed workspace's AI
+ * Credits, a Pay-As-You-Go workspace's Account Balance.
+ */
+export type ChatPaidSource = "ai-credits" | "balance";
+
 export interface FreeTierState {
   billing: "blocked" | "free" | "user";
   limit: number;
+  /** The paid source the next `user` turn spends; absent/null while unknown. */
+  paidSource?: ChatPaidSource | null;
   remaining: number;
+  /**
+   * The exhausted paid source that blocks the next `user` turn (design spec
+   * row E3, judged server-side like `blocked`); absent/null while open.
+   */
+  wall?: ChatPaidSource | null;
 }
 
 /** Bootstrap payload returned by `GET /api/chat/session`. */

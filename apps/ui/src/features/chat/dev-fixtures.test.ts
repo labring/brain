@@ -1,12 +1,36 @@
 import { describe, expect, test } from "bun:test";
-import { chatDevMockResponse } from "./dev-fixtures";
-import { CHAT_DEV_SCENARIOS, chatDevMockCookie } from "./dev-mock-cookie";
+import { chatDevMockResponse, chatDevMockStreamResponse } from "./dev-fixtures";
+import {
+  CHAT_DEV_SCENARIOS,
+  chatDevMockCookie,
+  isChatDevRefusalScenario,
+} from "./dev-mock-cookie";
 import { readSelectedResourceContext } from "./persistence/types";
 
 function request(path: string, scenario: string): Request {
   const req = new Request(`http://localhost${path}`);
   req.headers.set("cookie", `${chatDevMockCookie.name}=${scenario}`);
   return req;
+}
+
+function sendRequest(scenario: string): Request {
+  const req = new Request("http://localhost/api/chat", {
+    body: JSON.stringify({ chatId: "mock-chat-short", message: {} }),
+    method: "POST",
+  });
+  req.headers.set("cookie", `${chatDevMockCookie.name}=${scenario}`);
+  return req;
+}
+
+/** Every `data:` JSON chunk of a UI message SSE stream, in order. */
+async function streamChunks(
+  response: Response
+): Promise<Record<string, unknown>[]> {
+  const text = await response.text();
+  return text
+    .split("\n")
+    .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
+    .map((line) => JSON.parse(line.slice("data: ".length)));
 }
 
 const realSession = () =>
@@ -37,7 +61,13 @@ describe("conversation dev fixtures", () => {
         realSession
       );
       const body = (await response.json()) as SessionBody;
-      expect(body.chatId).toBe(`mock-chat-${scenario}`);
+      // The refusal scenarios stage the short transcript: the scene is the
+      // interrupted reply, not the history behind it.
+      expect(body.chatId).toBe(
+        isChatDevRefusalScenario(scenario)
+          ? "mock-chat-short"
+          : `mock-chat-${scenario}`
+      );
       if (scenario !== "empty") {
         expect(body.threads.map((thread) => thread.id)).toContain(body.chatId);
       }
@@ -121,5 +151,46 @@ describe("conversation dev fixtures", () => {
       realSession
     );
     expect(((await off.json()) as SessionBody).chatId).toBe("real");
+  });
+
+  test("a refusal scenario answers the send with a stream that dies on a billing refusal", async () => {
+    for (const [scenario, paidSource] of [
+      ["refused-ai-credits", "ai-credits"],
+      ["refused-balance", "balance"],
+    ] as const) {
+      const response = await chatDevMockStreamResponse(sendRequest(scenario));
+      expect(response).not.toBeNull();
+      if (response == null) {
+        return;
+      }
+      expect(response.headers.get("X-Chat-Billing")).toBe("user");
+      expect(response.headers.get("X-Chat-Paid-Source")).toBe(paidSource);
+      expect(response.headers.get("X-Chat-Wall")).toBe("");
+      expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+      expect(response.headers.get("X-Chat-Free-Limit")).toBe("0");
+
+      const chunks = await streamChunks(response);
+      const deltas = chunks.filter((chunk) => chunk.type === "text-delta");
+      expect(deltas.length).toBeGreaterThan(0);
+      const error = chunks.find((chunk) => chunk.type === "error");
+      expect(error).toBeDefined();
+      const body = JSON.parse(String(error?.errorText)) as {
+        code: string;
+        detail: { paidSource: string };
+      };
+      expect(body.code).toBe("ai_proxy_billing_refused");
+      expect(body.detail.paidSource).toBe(paidSource);
+      // The reply dies mid-stream: nothing after the refusal.
+      expect(chunks.at(-1)?.type).toBe("error");
+    }
+  });
+
+  test("the send passes through untouched outside a refusal scenario", async () => {
+    expect(await chatDevMockStreamResponse(sendRequest("long"))).toBeNull();
+    expect(
+      await chatDevMockStreamResponse(sendRequest("off:refused-balance"))
+    ).toBeNull();
+    const invalid = await chatDevMockStreamResponse(sendRequest("bogus"));
+    expect(invalid?.status).toBe(500);
   });
 });

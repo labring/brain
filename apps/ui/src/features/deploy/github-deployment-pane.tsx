@@ -3,6 +3,7 @@
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DeployBillingWallCard } from "@/features/deploy/deploy-billing-wall-card";
 import {
   type DeploymentTaskEditRedeploy,
   REDEPLOY_OVERWRITE_WARNING,
@@ -25,6 +26,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeployBillingWall } from "@/features/deploy/use-deploy-billing-wall";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
@@ -98,6 +100,9 @@ export function GitHubDeploymentPane({
     kubeconfig,
     namespace,
   });
+  // The pre-deploy wall (E1/E2): a fact that will certainly fail the deploy
+  // replaces the deployer instead of letting the run die on it.
+  const billingWall = useDeployBillingWall();
 
   const states: GithubDeployerStates = useMemo(
     () => ({
@@ -300,9 +305,13 @@ export function GitHubDeploymentPane({
       })}
     >
       <div className="min-w-0" data-slot="github-deployment-pane">
-        <GithubDeployer.Root actions={actions} states={states}>
-          <GithubDeployer.Shell />
-        </GithubDeployer.Root>
+        {billingWall == null ? (
+          <GithubDeployer.Root actions={actions} states={states}>
+            <GithubDeployer.Shell />
+          </GithubDeployer.Root>
+        ) : (
+          <DeployBillingWallCard wall={billingWall} />
+        )}
       </div>
     </SidePane>
   );

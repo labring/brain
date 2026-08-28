@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { judgeWorkspaceBillingStandingForActor } from "@/features/billing/server/billing-standing";
 import {
   createDeployTaskToolInputSchema,
   defaultRunnerForSource,
@@ -8,6 +9,7 @@ import {
   chatToolIntentionField,
   logChatToolIntention,
 } from "@/features/chat/tool/chat-tool-intention";
+import { deployBillingWallFromStanding } from "@/features/deploy/deploy-billing-wall";
 import {
   adoptLegacyGithubConnectionForOwner,
   getGithubConnectionStatusForOwner,
@@ -16,6 +18,7 @@ import {
   CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
   type VerifiedGithubConnectionActor,
 } from "@/features/deploy/github/owner-identity";
+import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
@@ -91,6 +94,8 @@ export function createDeployTaskTools(
       projectName?: string;
       projectId?: string;
     };
+    /** Request-memory identity for a run's billing reverse-check (E1/E2). */
+    billingActor?: DeployBillingActor;
     kubeconfig: string;
     kubernetesNamespace: string;
     workspaceActor: string;
@@ -103,6 +108,7 @@ export function createDeployTaskTools(
     getDeployTaskEngineContext?: typeof getDeployTaskEngineContext;
     getDeployTaskSnapshot?: typeof getDeployTaskSnapshot;
     getDeployTaskTimelineSnapshot?: typeof getDeployTaskTimelineSnapshot;
+    judgeWorkspaceBillingStandingForActor?: typeof judgeWorkspaceBillingStandingForActor;
     runDeployTask?: typeof runDeployTask;
     submitDeployTaskInputAction?: typeof submitDeployTaskInputAction;
     toDeployTaskDTO?: typeof toDeployTaskDTO;
@@ -129,6 +135,28 @@ export function createDeployTaskTools(
   const adoptLegacyGithubConnection =
     dependencies.adoptLegacyGithubConnectionForOwner ??
     adoptLegacyGithubConnectionForOwner;
+
+  const judgeStanding =
+    dependencies.judgeWorkspaceBillingStandingForActor ??
+    judgeWorkspaceBillingStandingForActor;
+  /** Unknown standing never walls; a failing read never fails the tool. */
+  async function deployWall() {
+    const actor = options.billingActor;
+    if (actor == null || actor.userUid.trim() === "") {
+      return null;
+    }
+    try {
+      const standing = await judgeStanding({
+        cookieHeader: actor.cookieHeader,
+        userId: actor.userId,
+        userUid: actor.userUid,
+        workspace: namespace,
+      });
+      return deployBillingWallFromStanding(standing);
+    } catch {
+      return null;
+    }
+  }
 
   const githubActor: VerifiedGithubConnectionActor = {
     legacyWorkspaceActor: options.workspaceActor,
@@ -193,6 +221,13 @@ export function createDeployTaskTools(
             "No deployment target was provided. Use target.kind newProject with a displayName, or open a Project first.",
         };
       }
+      // The assistant is a deploy entry too: the pre-deploy wall (E1/E2)
+      // refuses here the way the panes replace their form.
+      const wall = await deployWall();
+      if (wall != null) {
+        return { ok: false, error: `${wall.title}. ${wall.body}` };
+      }
+
       let credentialBinding: DeploymentCredentialBinding | undefined;
       if (input.source.kind === "github") {
         const bindingResolution = await resolveChatGithubBinding();
@@ -216,6 +251,9 @@ export function createDeployTaskTools(
         resolveTarget: resolveDeployTaskTargetForCreate,
         run: (handle, task) =>
           runTask(handle, {
+            ...(options.billingActor == null
+              ? {}
+              : { billingActor: options.billingActor }),
             encodedKubeconfig,
             // Full template args from the chat request: the engine
             // persists a stripped copy, so sensitive values reach the
@@ -274,6 +312,9 @@ export function createDeployTaskTools(
         namespace,
         run: (handle, task, currentBlockingInputs, values) =>
           runTask(handle, {
+            ...(options.billingActor == null
+              ? {}
+              : { billingActor: options.billingActor }),
             currentBlockingInputs,
             encodedKubeconfig,
             submittedInputValues: values,

@@ -16,8 +16,36 @@ async function cardModules() {
   return await import("./chat-billing-cards");
 }
 
-test("card arbitration is blocked > error > counter, nothing on user billing", async () => {
+test("card arbitration is wall > blocked > billing-error > error > counter, nothing on open user billing", async () => {
   const { resolveChatBillingCard } = await cardModules();
+
+  assert.equal(
+    resolveChatBillingCard({
+      billing: "user",
+      errored: true,
+      interruption: { paidSource: "balance" },
+      wall: "balance",
+    }),
+    "wall"
+  );
+  assert.equal(
+    resolveChatBillingCard({
+      billing: "user",
+      errored: true,
+      interruption: { paidSource: "ai-credits" },
+      wall: null,
+    }),
+    "billing-error"
+  );
+  assert.equal(
+    resolveChatBillingCard({
+      billing: "user",
+      errored: false,
+      interruption: { paidSource: "ai-credits" },
+      wall: null,
+    }),
+    null
+  );
 
   assert.equal(
     resolveChatBillingCard({ billing: "blocked", errored: true }),
@@ -191,6 +219,83 @@ test("steady-state user billing renders no card at all", async () => {
         );
       });
       assert.equal(rendered?.container.textContent, "");
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("paid wall card speaks the exhausted source loudly and links to its fix", async () => {
+  await withTestDom(async (act) => {
+    const { ChatBillingCardSlot } = await cardModules();
+    const navigations: string[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <ChatBillingCardSlot
+            errored={false}
+            freeTier={{ ...USER, paidSource: "ai-credits", wall: "ai-credits" }}
+            onNavigateToBilling={(destination) => navigations.push(destination)}
+          />
+        );
+      });
+      const wall = rendered?.container.querySelector(
+        '[data-slot="chat-paid-wall-card"]'
+      );
+      assert.ok(wall, "the wall card renders");
+      const text = wall?.textContent ?? "";
+      assert.ok(text.includes("AI Credits used up"));
+      const upgrade = rendered?.getByRole("button", { name: "Upgrade plan" });
+      fireEvent.click(upgrade as HTMLElement);
+      assert.deepEqual(navigations, ["upgrade"]);
+
+      await act(() => {
+        rendered?.rerender(
+          <ChatBillingCardSlot
+            errored={false}
+            freeTier={{ ...USER, paidSource: "balance", wall: "balance" }}
+            onNavigateToBilling={(destination) => navigations.push(destination)}
+          />
+        );
+      });
+      const paygText = rendered?.container.textContent ?? "";
+      assert.ok(paygText.includes("Account balance too low"));
+      const topUp = rendered?.getByRole("button", { name: "Top up balance" });
+      fireEvent.click(topUp as HTMLElement);
+      assert.deepEqual(navigations, ["upgrade", "plans"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a billing interruption turns the error card truthful without locking anything", async () => {
+  await withTestDom(async (act) => {
+    const { ChatBillingCardSlot } = await cardModules();
+    const navigations: string[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <ChatBillingCardSlot
+            errored
+            freeTier={{ ...USER, paidSource: "balance", wall: null }}
+            interruption={{ paidSource: "balance" }}
+            onNavigateToBilling={(destination) => navigations.push(destination)}
+          />
+        );
+      });
+      const card = rendered?.container.querySelector(
+        '[data-slot="chat-billing-error-card"]'
+      );
+      assert.ok(card, "the billing-ized error card renders");
+      const text = card?.textContent ?? "";
+      assert.ok(text.includes("Message not sent — balance too low"));
+      assert.equal(text.includes("Something went wrong on our side"), false);
+      const topUp = rendered?.getByRole("button", { name: "Top up balance" });
+      fireEvent.click(topUp as HTMLElement);
+      assert.deepEqual(navigations, ["plans"]);
     } finally {
       await act(() => rendered?.unmount());
     }

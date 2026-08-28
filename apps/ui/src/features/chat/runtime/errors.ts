@@ -9,7 +9,10 @@ import type { WorkspaceActorAuthFailureCode } from "@/lib/request-kubeconfig-aut
 /** Every `code` the chat API's error envelope may carry (ADR-0065). */
 export type ChatApiErrorCode =
   | WorkspaceActorAuthFailureCode
+  | "account_balance_exhausted"
   | "ai_connection_unavailable"
+  | "ai_credits_exhausted"
+  | "ai_proxy_billing_refused"
   | "assistant_chat_unavailable"
   | "assistant_conversation_not_found"
   | "assistant_thread_conflict"

@@ -125,6 +125,51 @@ function quotaRows(
 }
 
 /**
+ * The quota rows a deployment can actually run into (design spec catalog
+ * A1/A2): the resources a new workload asks for. Traffic and GPU stay out.
+ */
+export const DEPLOYABLE_QUOTA_TYPES: ReadonlySet<BillingQuotaType> = new Set([
+  "cpu",
+  "memory",
+  "storage",
+  "pod",
+  "nodeport",
+]);
+
+export type QuotaFullnessRow = Pick<
+  BillingUsageRow,
+  "label" | "percentUsed" | "type"
+>;
+
+/** "CPU" keeps its initialism mid-sentence; the rest read as common nouns. */
+export function quotaResourceNoun(label: string): string {
+  return label === label.toUpperCase() ? label : label.toLowerCase();
+}
+
+/** The first deployable quota row at or past its ceiling, if any. */
+export function firstFullQuotaRow<Row extends QuotaFullnessRow>(
+  rows: readonly Row[]
+): Row | null {
+  return (
+    rows.find(
+      (row) => DEPLOYABLE_QUOTA_TYPES.has(row.type) && row.percentUsed >= 100
+    ) ?? null
+  );
+}
+
+/**
+ * The quota rows of a raw account-service resource-quota payload, or null
+ * when the payload is not one — for server-side judgments that hold the
+ * upstream response rather than a fetcher.
+ */
+export function workspaceQuotaRowsFromPayload(
+  payload: unknown
+): BillingUsageRow[] | null {
+  const parsed = quotaResponseSchema.safeParse(payload);
+  return parsed.success ? quotaRows(parsed.data) : null;
+}
+
+/**
  * One workspace's quota rows from the proxied resource-quota read — the
  * Usage view's table without its workspace picker, for surfaces that only
  * judge fullness (the status hint's quota-full evaluation).

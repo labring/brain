@@ -17,10 +17,13 @@ const uiMessageSchema = z
   })
   .passthrough() as unknown as z.ZodType<UIMessage>;
 
+const paidSourceSchema = z.enum(["ai-credits", "balance"]).nullable();
 const freeTierSchema = z.object({
   billing: z.enum(["blocked", "free", "user"]),
   remaining: z.number(),
   limit: z.number(),
+  paidSource: paidSourceSchema.optional(),
+  wall: paidSourceSchema.optional(),
 });
 
 const sessionResponseSchema = z.object({

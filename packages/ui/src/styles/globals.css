@@ -17,6 +17,11 @@
   /* Matches the App Sidebar container's expand curve (see the
      app-sidebar-surface rules); collapse pairs it with ease-out. */
   --ease-sidebar: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Caption size one step under `text-xs` (11px): dock chip short codes and
+     reason phrases. Registered as a theme token so no surface spells the
+     size inline. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
 }
 
 @theme inline {

@@ -147,3 +147,39 @@ describe("deployment task dev fixtures", () => {
     expect(invalid?.status).toBe(500);
   });
 });
+
+describe("interruption fixtures (catalog E1/E2)", () => {
+  test("failed-balance is a balance-exhausted task with its billing evidence and chip reason", () => {
+    const { task } = deployTaskDevMockTask("failed-balance", {
+      namespace: "ns-test",
+      nowMs: NOW_MS,
+      projectId: "project-1",
+    });
+    expect(task.status).toBe("failed");
+    expect(task.failureDetails?.reason).toBe("balance-exhausted");
+    expect(task.failureDetails?.billingEvidence?.kind).toBe("account-debt");
+    expect(
+      deployTaskDevMockProjection("failed-balance", {
+        namespace: "ns-test",
+        nowMs: NOW_MS,
+        projectId: "project-1",
+      }).failureReason
+    ).toBe("balance-exhausted");
+  });
+
+  test("failed-quota is a quota-exceeded task naming the full storage quota", () => {
+    const { task } = deployTaskDevMockTask("failed-quota", {
+      namespace: "ns-test",
+      nowMs: NOW_MS,
+      projectId: "project-1",
+    });
+    expect(task.failureDetails?.reason).toBe("quota-exceeded");
+    expect(task.failureDetails?.billingEvidence).toEqual({
+      kind: "quota-full",
+      label: "Storage",
+      percentUsed: 100,
+      type: "storage",
+    });
+    expect(task.error).toContain("exceeded quota");
+  });
+});

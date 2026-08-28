@@ -7,14 +7,10 @@ import {
   judgeFreeTrialFromSubscriptionInfo,
 } from "@/lib/account-service/free-trial-core";
 
+import { BILLING_JUDGMENT_TIMEOUT_MS } from "./judgment-budget";
+
 const SUBSCRIPTION_INFO_PATHNAME =
   "/account/v1alpha1/workspace-subscription/info";
-
-/**
- * The judgment runs under a seconds-long LLM turn; a slow account service
- * must degrade to fail-open, never stall the turn (ADR-0065).
- */
-const JUDGMENT_TIMEOUT_MS = 5000;
 
 export interface ActiveFreeTrialJudgmentInput {
   /**
@@ -23,6 +19,12 @@ export interface ActiveFreeTrialJudgmentInput {
    * Posture exactly like they drive the /api/billing routes.
    */
   cookieHeader?: string | null;
+  /**
+   * The caller's deadline when this judgment shares a budget with other
+   * reads (ADR-0068); on its own it runs under a seconds-long LLM turn and
+   * must degrade to fail-open, never stall the turn (ADR-0065).
+   */
+  signal?: AbortSignal;
   userId: string | null;
   userUid: string;
   workspace: string;
@@ -89,7 +91,8 @@ export async function judgeActiveFreeTrialForWorkspace(
       init: {
         body,
         method: "POST",
-        signal: AbortSignal.timeout(JUDGMENT_TIMEOUT_MS),
+        signal:
+          input.signal ?? AbortSignal.timeout(BILLING_JUDGMENT_TIMEOUT_MS),
       },
       pathname: SUBSCRIPTION_INFO_PATHNAME,
     });

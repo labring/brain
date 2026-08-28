@@ -39,6 +39,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { deploymentBillingInterruption } from "@/features/deploy/deploy-billing-interruption";
+import { DeploymentBillingInterruptionCard } from "@/features/deploy/deploy-billing-interruption-card";
 import { useCancelConfirmGate } from "@/features/deploy/deployment-task-cancel";
 import {
   editRedeploySurfaceKind,
@@ -72,6 +74,7 @@ import type {
   DeploymentTaskTimelineSnapshotDTO,
   DeployTaskBlockingInput,
   DeployTaskDTO,
+  DeployTaskFailureDetails,
   DeployTaskStatus,
 } from "@/features/deploy/task/types";
 import { useDeploymentTaskActions } from "@/features/deploy/task/use-deployment-task-actions";
@@ -1148,6 +1151,7 @@ function TimelineTaskIdRow({ taskId }: { taskId: string }) {
 const TimelineSteps = memo(function TimelineSteps({
   blockingInputs,
   failureDetail,
+  failureDetails,
   kubeconfig,
   namespace,
   plan,
@@ -1157,6 +1161,7 @@ const TimelineSteps = memo(function TimelineSteps({
 }: {
   blockingInputs: DeployTaskBlockingInput[];
   failureDetail: string | undefined;
+  failureDetails: DeployTaskFailureDetails | null;
   kubeconfig: string;
   namespace: string;
   plan: DeploymentTaskDeploymentPlan | undefined;
@@ -1166,6 +1171,12 @@ const TimelineSteps = memo(function TimelineSteps({
 }) {
   const ordered = useMemo(() => orderedSteps(steps), [steps]);
   const configurationStepId = deploymentConfigurationStepId(ordered);
+  // A money or quota wall gets its own callout under the failed step
+  // (design spec §5.4); the error details stay collapsed beneath it.
+  const interruption = useMemo(
+    () => deploymentBillingInterruption(failureDetails),
+    [failureDetails]
+  );
   return (
     <div className="flex flex-col gap-4">
       {ordered.map((step) => (
@@ -1179,6 +1190,9 @@ const TimelineSteps = memo(function TimelineSteps({
               status={status}
               taskId={taskId}
             />
+          ) : null}
+          {step.status === "failed" && interruption != null ? (
+            <DeploymentBillingInterruptionCard interruption={interruption} />
           ) : null}
           {step.status === "failed" && failureDetail != null ? (
             <FailureDetail detail={failureDetail} />
@@ -1228,6 +1242,7 @@ export function DeploymentTaskTimelinePaneContent({
       <TimelineSteps
         blockingInputs={snapshot.task.blockingInputs}
         failureDetail={failureDetail}
+        failureDetails={snapshot.task.failureDetails}
         kubeconfig={kubeconfig}
         namespace={namespace}
         plan={snapshot.task.artifactSummary.deploymentPlan}

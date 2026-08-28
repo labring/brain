@@ -2,12 +2,8 @@ import "server-only";
 
 import { and, eq, gt, lt, sql } from "drizzle-orm";
 
-import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
-
 import { getAssistantDb } from "./db";
-import { freeTierPosture } from "./free-tier-core";
 import { assistantEntitlements } from "./schema";
-import type { FreeTierState } from "./types";
 
 const DEFAULT_FREE_CHAT_TURNS = 5;
 
@@ -55,32 +51,6 @@ export async function getFreeTierSnapshot(
   const used = row?.freeTurnsUsed ?? 0;
   const remaining = Math.max(0, limit - used);
   return { limit, used, remaining };
-}
-
-/**
- * Chat Billing Posture for one verified actor (ADR-0065): local usage
- * snapshot + live Active Free Trial judgment. The judgment is skipped when
- * the feature cannot produce anything but `user` anyway (no platform model,
- * or `FREE_CHAT_TURNS=0`).
- */
-export async function resolveFreeTierPosture(input: {
-  accountUserId: string | null;
-  cookieHeader?: string | null;
-  namespace: string;
-  userUid: string;
-}): Promise<FreeTierState> {
-  const snapshot = await getFreeTierSnapshot(input.namespace);
-  const systemModelConfigured = isSystemOpenAiConfigured();
-  const trial =
-    snapshot.limit > 0 && systemModelConfigured
-      ? await judgeActiveFreeTrialForWorkspace({
-          cookieHeader: input.cookieHeader,
-          userId: input.accountUserId,
-          userUid: input.userUid,
-          workspace: input.namespace,
-        })
-      : "not-trial";
-  return freeTierPosture(snapshot, systemModelConfigured, trial);
 }
 
 /**

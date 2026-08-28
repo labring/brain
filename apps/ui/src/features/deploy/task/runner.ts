@@ -77,6 +77,10 @@ import {
   prepareBrainManifestArtifact,
   sealosTemplateArtifactSummary,
 } from "./artifacts";
+import {
+  type DeployBillingActor,
+  judgeDeployBillingFailure,
+} from "./billing-failure-judgment";
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
 import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
@@ -234,6 +238,12 @@ const TEMPLATE_CLEANUP_KINDS = [
 ] as const;
 
 export interface StartDeployTaskRunnerInput {
+  /**
+   * The launching request's verified account identity, request memory only
+   * (like the kubeconfig), so a terminal failure can re-read the workspace's
+   * billing standing and name a money or quota wall (design spec E1/E2).
+   */
+  billingActor?: DeployBillingActor;
   /** Authoritative blockers captured immediately before the resume claim. */
   currentBlockingInputs?: readonly DeployTaskBlockingInput[];
   encodedKubeconfig?: string;
@@ -4349,8 +4359,65 @@ export async function runDeployTask(
     if (isDeployTaskAbortError(error) || handle.outcome() != null) {
       throw error;
     }
-    await resolveDeployTaskRunFailure({ error, handle, task });
+    await resolveDeployTaskRunFailure({
+      billingActor: input.billingActor,
+      error,
+      handle,
+      task,
+    });
   }
+}
+
+/**
+ * The failure details the terminal write persists: the scrubbed provider
+ * record for raw-surfacing runners, the allowlisted structured set for the
+ * AI runner (ADR 0042); billing evidence rides both.
+ */
+function terminalFailureDetails(input: {
+  attachedDetails: DeployTaskFailureDetails;
+  billingDetails: Pick<DeployTaskFailureDetails, "billingEvidence">;
+  /** The billing reverse-check named a cause the runner never saw (ADR 0068). */
+  billingSupersedesError: boolean;
+  error: unknown;
+  reasonCode: DeployTaskFailureReason | null;
+  reasonMessage: string;
+  sensitiveValues: readonly string[];
+  surfacesRaw: boolean;
+  task: DeployTaskRow;
+}): DeployTaskFailureDetails {
+  const { attachedDetails, reasonCode, reasonMessage } = input;
+  if (input.surfacesRaw) {
+    return scrubSensitiveJsonValue(
+      {
+        ...deployFailureDetails({
+          error: input.error,
+          phase: input.task.phase,
+          source: "runDeployTask",
+          task: input.task,
+        }),
+        ...attachedDetails,
+        ...(input.billingSupersedesError
+          ? { errorMessage: reasonMessage }
+          : {}),
+        ...input.billingDetails,
+        failureMessage: reasonMessage,
+        ...(reasonCode == null ? {} : { reason: reasonCode }),
+      },
+      input.sensitiveValues
+    );
+  }
+  return {
+    ...input.billingDetails,
+    failureMessage: reasonMessage,
+    ...(typeof attachedDetails.httpStatus === "number"
+      ? { httpStatus: attachedDetails.httpStatus }
+      : {}),
+    reason: reasonCode ?? "unknown",
+    ...(attachedDetails.stage === "apply" ||
+    attachedDetails.stage === "readiness"
+      ? { stage: attachedDetails.stage }
+      : {}),
+  };
 }
 
 /**
@@ -4358,6 +4425,7 @@ export async function runDeployTask(
  * fenced `failed` transition carrying the aggregated failure details.
  */
 async function resolveDeployTaskRunFailure(input: {
+  billingActor?: DeployBillingActor;
   error: unknown;
   handle: DeployTaskHandle;
   task: DeployTaskRow;
@@ -4375,42 +4443,44 @@ async function resolveDeployTaskRunFailure(input: {
   const surfacesRaw = deployRunnerSurfacesRawFailure(latestTask.runner);
   const attachedDetails = attachedDeployFailureDetails(error);
   const attachedReason = attachedDeployFailureReason(error);
-  const reasonCode =
+  const runnerReasonCode =
     attachedReason ??
     (latestTask.runner.kind === "ai"
       ? (aiFailureReason(rawMessage) ?? "unknown")
       : null);
+  // A suspended workspace or an unschedulable pod only ever looks like a
+  // stall from here; the billing reverse-check names the wall (E1/E2).
+  const billing = await judgeDeployBillingFailure({
+    actor: input.billingActor,
+    namespace: latestTask.namespace,
+    reason: runnerReasonCode,
+  });
+  const reasonCode = billing?.reason ?? runnerReasonCode;
+  const billingDetails =
+    billing == null ? {} : { billingEvidence: billing.billingEvidence };
   const reasonMessage = deploymentFailureReason({
     rawMessage: message,
     reasonCode,
     surfacesRaw,
   });
-  const persistedMessage = surfacesRaw ? message : reasonMessage;
-  const failureDetails: DeployTaskFailureDetails = surfacesRaw
-    ? scrubSensitiveJsonValue(
-        {
-          ...deployFailureDetails({
-            error,
-            phase: latestTask.phase,
-            source: "runDeployTask",
-            task: latestTask,
-          }),
-          ...attachedDetails,
-          failureMessage: reasonMessage,
-        },
-        sensitiveValues
-      )
-    : {
-        failureMessage: reasonMessage,
-        ...(typeof attachedDetails.httpStatus === "number"
-          ? { httpStatus: attachedDetails.httpStatus }
-          : {}),
-        reason: reasonCode ?? "unknown",
-        ...(attachedDetails.stage === "apply" ||
-        attachedDetails.stage === "readiness"
-          ? { stage: attachedDetails.stage }
-          : {}),
-      };
+  // A billing cause the runner never saw (an exhausted balance, a full quota
+  // behind a pod that never came up) contradicts the stall text it arrived
+  // as, so the curated reason replaces the raw error on every runner; an
+  // apply-time quota error keeps the provider's own numbers (ADR 0068).
+  const billingSupersedesError = billing?.supersedesRunnerError === true;
+  const persistedMessage =
+    surfacesRaw && !billingSupersedesError ? message : reasonMessage;
+  const failureDetails = terminalFailureDetails({
+    attachedDetails,
+    billingDetails,
+    billingSupersedesError,
+    error,
+    reasonCode,
+    reasonMessage,
+    sensitiveValues,
+    surfacesRaw,
+    task: latestTask,
+  });
 
   await markDeployTaskFailureTimeline({
     detailMessage: persistedMessage,
@@ -4424,7 +4494,9 @@ async function resolveDeployTaskRunFailure(input: {
       kind: "deployment_task.failed",
       message: reasonMessage,
       payload: {
-        ...(surfacesRaw ? { error: persistedMessage } : {}),
+        ...(surfacesRaw && !billingSupersedesError
+          ? { error: persistedMessage }
+          : {}),
         ...(reasonCode == null ? {} : { reason: reasonCode }),
       },
       phase: latestTask.phase,

@@ -10,6 +10,8 @@ export const DEPLOY_TASK_DEV_SCENARIOS = [
   "running",
   "blocked",
   "failed",
+  "failed-balance",
+  "failed-quota",
   "succeeded",
   "cancelled",
 ] as const;

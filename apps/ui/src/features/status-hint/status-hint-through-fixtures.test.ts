@@ -57,6 +57,7 @@ async function hintFor(scenario: BillingDevScenario) {
 const EXPECTED: Record<BillingDevScenario, StatusHintId | null> = {
   active: null,
   "active-balance": null,
+  "ai-credits-exhausted": null,
   cancelling: null,
   deleted: null,
   free: null,

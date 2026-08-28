@@ -30,5 +30,5 @@ Free Chat Turns become a benefit of the Active Free Trial instead of an uncondit
 - The blocking card and its upgrade CTA can only appear inside a live trial: the workspace is alive and the upgrade flow is guaranteed walkable. Expired-trial messaging belongs to the Billing Area, not the chat panel.
 - The Billing Area Plan view renders its free-allowance block under exactly the same predicate — trial only, no PAUSED/DEBT rendering.
 - The crossing toast and its two client code paths are deleted outright.
-- Per-turn judgment adds one in-cluster call per turn and accepts stale-free-turn edge cases within a single in-flight turn (a turn runs to completion under the judgment it started with).
+- Per-turn judgment adds in-cluster calls per turn — one for the trial, and since ADR-0068 the billing-standing reads beside it under the same 5 s budget — and accepts stale-free-turn edge cases within a single in-flight turn (a turn runs to completion under the judgment it started with).
 - The last free turn's `blocked` header is a fact at send time (the turn is already reserved), but a failed stream rolls the reservation back after the header shipped; the chat client refetches the session on stream error as well as on finish, so a rolled-back turn unlocks the composer again.

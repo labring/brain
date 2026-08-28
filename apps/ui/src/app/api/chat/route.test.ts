@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { simulateReadableStream, tool, type UIMessage } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
+import { BILLING_JUDGMENT_TIMEOUT_MS } from "@/features/billing/server/judgment-budget";
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
 const actualKubeconfig = { ...(await import("@/lib/kubeconfig")) };
@@ -59,6 +60,20 @@ let releaseCalls = 0;
 let reserveCalls = 0;
 let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
 let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
+let billingStanding = {
+  accountDebt: null as boolean | null,
+  aiCredits: null as { totalMicroUnits: number; usedMicroUnits: number } | null,
+  availableBalanceMicroUnits: null as number | null,
+  fullQuota: null,
+  paidSource: null as "ai-credits" | "balance" | null,
+  quotaKnown: false,
+};
+let standingCalls: {
+  userId: string | null;
+  userUid: string;
+  workspace: string;
+}[] = [];
+let connectionRefusal: { message: string; status: number } | null = null;
 let workspaceResourceQuota: WorkspaceResourceQuotaSnapshot | undefined = {
   items: [
     { limit: 36_000, type: "cpu", used: 19_200 },
@@ -224,6 +239,9 @@ function persistToHistory(message: UIMessage): void {
 mock.module("server-only", () => ({}));
 mock.module("@/features/chat/ai-proxy/resolve-chat-open-ai-connection", () => ({
   resolveChatOpenAiConnection: () => {
+    if (connectionRefusal != null) {
+      return Promise.resolve({ ...connectionRefusal, ok: false as const });
+    }
     if (!connectionAvailable) {
       return Promise.resolve({
         message: "AI connection unavailable",
@@ -246,6 +264,20 @@ mock.module("@/features/billing/server/free-trial-judgment", () => ({
       workspace: input.workspace,
     });
     return Promise.resolve(trialJudgment);
+  },
+}));
+mock.module("@/features/billing/server/billing-standing", () => ({
+  judgeWorkspaceBillingStandingForActor: (input: {
+    userId: string | null;
+    userUid: string;
+    workspace: string;
+  }) => {
+    standingCalls.push({
+      userId: input.userId,
+      userUid: input.userUid,
+      workspace: input.workspace,
+    });
+    return Promise.resolve({ ...billingStanding });
   },
 }));
 mock.module("@/features/chat/persistence/free-tier", () => ({
@@ -666,6 +698,16 @@ beforeEach(() => {
   adoptionCalls = [];
   appendCalls = [];
   connectionAvailable = true;
+  connectionRefusal = null;
+  billingStanding = {
+    accountDebt: null,
+    aiCredits: null,
+    availableBalanceMicroUnits: null,
+    fullQuota: null,
+    paidSource: null,
+    quotaKnown: false,
+  };
+  standingCalls = [];
   denyReservation = null;
   releaseCalls = 0;
   reserveCalls = 0;
@@ -924,9 +966,13 @@ test("never binds the model stream to a wall-clock deadline", async () => {
     expect(response.status).toBe(200);
     await drain(response);
 
-    // The auto-title deadline is the only timer left; the turn itself ends on
-    // client disconnect or lease loss, never on elapsed time.
-    expect(timeoutSpy.mock.calls.flat()).toEqual([5000]);
+    // The billing judgment's one budget (ADR-0068) and the auto-title
+    // deadline are the only timers left; the turn itself ends on client
+    // disconnect or lease loss, never on elapsed time.
+    expect(timeoutSpy.mock.calls.flat()).toEqual([
+      BILLING_JUDGMENT_TIMEOUT_MS,
+      5000,
+    ]);
     const modelSignal = modelAbortSignals[0];
     expect(modelSignal).toBeDefined();
     timeoutController.abort();
@@ -1698,4 +1744,122 @@ test("a stream error on the last free turn rolls the reservation back", async ()
   expect(reserveCalls).toBe(1);
   expect(releaseCalls).toBe(1);
   expect(freeTierSnapshot).toEqual({ limit: 5, remaining: 1, used: 4 });
+});
+
+test("a PAYG workspace in Account Debt is walled with 402 before the model, headers naming the wall", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: true,
+    availableBalanceMicroUnits: -6_320_000,
+    paidSource: "balance",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-walled", "deploy something"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(await response.json()).toEqual({
+    code: "account_balance_exhausted",
+    error:
+      "Your account balance can't cover AI usage. Top up to keep chatting with the assistant.",
+  });
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+  expect(response.headers.get("X-Chat-Wall")).toBe("balance");
+  expect(standingCalls).toEqual([
+    { userId: null, userUid: `${WORKSPACE_ACTOR}-uid`, workspace: NAMESPACE },
+  ]);
+  // Refused before any conversation state mutates.
+  expect(history).toEqual([]);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+});
+
+test("a subscribed workspace with its AI Credits spent is walled on credits", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 3_000_000 },
+    paidSource: "ai-credits",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-credits", "deploy something"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(((await response.json()) as { code: string }).code).toBe(
+    "ai_credits_exhausted"
+  );
+  expect(response.headers.get("X-Chat-Wall")).toBe("ai-credits");
+  expect(modelCalls).toBe(0);
+});
+
+test("an open paid workspace streams with its paid source in the headers; unknown standing fails open", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 1_200_000 },
+    paidSource: "ai-credits",
+  };
+
+  const open = await POST(chatRequest(userMessage("user-open", "hi")));
+  expect(open.status).toBe(200);
+  expect(open.headers.get("X-Chat-Paid-Source")).toBe("ai-credits");
+  expect(open.headers.get("X-Chat-Wall")).toBe("");
+  await drain(open);
+
+  billingStanding = { ...billingStanding, paidSource: null, aiCredits: null };
+  const unknown = await POST(chatRequest(userMessage("user-unknown", "hi")));
+  expect(unknown.status).toBe(200);
+  expect(unknown.headers.get("X-Chat-Paid-Source")).toBe("");
+  await drain(unknown);
+});
+
+test("a free turn never consults the paid wall — the standing read beside the trial judgment is ignored", async () => {
+  // ADR-0068: the standing reads leave with the trial judgment under one
+  // budget, so they happen; only a `user` posture looks at the answer.
+  trialJudgment = "trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: true,
+    paidSource: "balance",
+  };
+
+  const response = await POST(chatRequest(userMessage("user-free", "hi")));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("free");
+  expect(response.headers.get("X-Chat-Wall")).toBe("");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("");
+  expect(standingCalls).toHaveLength(1);
+  await drain(response);
+});
+
+test("aiproxy refusing the token request for balance reads as a billing refusal, not a connection outage", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    paidSource: "balance",
+  };
+  connectionRefusal = {
+    message:
+      '{"type":"group_balance_not_enough","message":"group `ns` balance not enough"}',
+    status: 403,
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-refused", "deploy something"))
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({
+    code: "ai_proxy_billing_refused",
+    detail: { paidSource: "balance" },
+    error: "The AI proxy refused this turn for billing reasons.",
+  });
 });

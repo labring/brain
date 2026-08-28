@@ -350,7 +350,21 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Failure Reason
 
-The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error.
+The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Two reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt on a Pay-As-You-Go workspace — the only kind the platform suspends for it; a subscribed workspace's failures keep their own reason) and a resource-attributed `quota-exceeded` (a full deployable quota); each carries Billing Evidence, the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
+
+_Avoid_: workspace not ready (for a suspended workspace), timed out (as the reason for a billing stop).
+
+### Billing Evidence
+
+The structured record of what the Billing Interruption judgment found behind a `balance-exhausted` or resource-attributed `quota-exceeded` Deployment Failure Reason — the available-balance formula's result, or the quota that was full — safe for every runner to persist and show. It stands in for the runner's own error whenever that error was only a stall; the provider's own apply-time quota error keeps its numbers.
+
+_Avoid_: raw timeout text, stack trace, billing dump.
+
+### Deploy Billing Wall
+
+The refusal a deployment pane and the assistant's deploy tool show in place of the form while a Pay-As-You-Go workspace is in Account Debt or any deployable quota is full — a fact that would certainly end the run as a Billing Interruption, so it wears the same billing callout and CTA. A low but positive balance never walls.
+
+_Avoid_: low balance warning, pre-flight check, deploy disabled.
 
 ### Deployment Task Dock
 
@@ -496,9 +510,21 @@ _Avoid_: shared namespace chat, per-namespace chat history.
 
 ### Chat Billing Mode
 
-Who pays for one assistant model call — or whether it happens at all: `free` spends a Free Chat Turn, `user` bills the caller's AI Proxy, and `blocked` refuses the call because an Active Free Trial workspace has exhausted its Free Chat Turns. The server decides per turn and client surfaces render the mode without deriving it; there is no automatic `free`→`user` handoff — exhaustion during the trial blocks instead of billing. The mode, not the remaining count, is the reliable signal of being charged: a namespace with no platform model bills `user` from its first turn with turns unspent, and is never `blocked`.
+Who pays for one assistant model call — or whether it happens at all: `free` spends a Free Chat Turn, `user` bills the caller's AI Proxy, and `blocked` refuses the call because an Active Free Trial workspace has exhausted its Free Chat Turns. The server decides per turn and client surfaces render the mode without deriving it; there is no automatic `free`→`user` handoff — exhaustion during the trial blocks instead of billing. The mode, not the remaining count, is the reliable signal of being charged: a namespace with no platform model bills `user` from its first turn with turns unspent, and is never `blocked`. A `user` turn spends a Paid Source; an exhausted one is refused by the Paid Chat Wall before the turn, or told as a Billing Interruption when the AI Proxy refuses a turn already under way.
 
 _Avoid_: subscription tier, plan.
+
+### Paid Source
+
+What a `user` Chat Billing Mode turn spends: a subscribed workspace's AI Credits, or a Pay-As-You-Go workspace's Account Balance. The server names it with every turn so a refusal can say which one ran out and which fix applies (upgrade the plan, or top up).
+
+_Avoid_: wallet, credits (for a PAYG workspace), balance (for a subscribed workspace).
+
+### Paid Chat Wall
+
+The pre-send refusal of a `user` turn whose Paid Source is exhausted: a billing callout in the card slot naming the fix, and a locked composer stating why. The paid sibling of the Free Chat Turns block, and the only thing that locks the composer — a Billing Interruption behind an error card locks nothing, because the next send re-gates.
+
+_Avoid_: paywall, quota exceeded (for chat), chat disabled.
 
 ### Free Chat Turns
 
@@ -673,6 +699,12 @@ _Avoid_: PAYG plan, pay-as-you-go plan, free mode, plan named "PAYG".
 The state of an Account Balance that has fallen to or below zero — the platform's debt pipeline treats only a strictly positive available amount as in good standing: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing.
 
 _Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due (user-facing), negative balance (as the state's name), arrears.
+
+### Billing Interruption
+
+A deployment or a paid assistant turn the platform stopped because the workspace hit its money or quota wall — Account Debt, a full deployable quota, or an exhausted Paid Source. The platform sends no signal, so it is judged after the fact from the workspace's billing standing and told as a billing callout: the truthful cause and one CTA to the fix (top up, view usage, or upgrade). The same judgment made before the action is a wall — the Deploy Billing Wall, the Paid Chat Wall.
+
+_Avoid_: outage, something went wrong on our side, timed out (as its name), billing error (as the concept's name).
 
 ### Subscription Payment
 

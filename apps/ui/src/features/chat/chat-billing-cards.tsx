@@ -4,9 +4,22 @@ import { AppButton } from "@workspace/ui/components/app-button";
 import { cn } from "@workspace/ui/lib/utils";
 import { Gift, TriangleAlert } from "lucide-react";
 
-import type { FreeTierState } from "./persistence/types";
+import { BillingCalloutCard } from "@/features/billing/billing-callout-card";
 
-export type ChatBillingCard = "blocked" | "counter" | "error";
+import {
+  type ChatBillingCopy,
+  type ChatBillingInterruption,
+  chatBillingInterruptionCopy,
+  chatBillingWallCopy,
+} from "./chat-billing-interruption";
+import type { ChatPaidSource, FreeTierState } from "./persistence/types";
+
+export type ChatBillingCard =
+  | "billing-error"
+  | "blocked"
+  | "counter"
+  | "error"
+  | "wall";
 
 /**
  * Where a chat billing CTA lands in the Billing Area: `upgrade` deep-links
@@ -16,20 +29,27 @@ export type ChatBillingCard = "blocked" | "counter" | "error";
 export type ChatBillingDestination = "plans" | "upgrade";
 
 /**
- * Card-slot arbitration for the Project Assistant Pane (ADR-0065): exactly
- * one card renders at a time, blocked > error > counter. `blocked` outranks
- * the error card because "try again" is a lie once the server refuses chat;
- * on `user` billing the error card is the only card that can ever show.
+ * Card-slot arbitration for the Project Assistant Pane (ADR-0065, design
+ * spec row E3): exactly one card renders at a time, wall > blocked >
+ * billing-error > error > counter. The two gates outrank every error card
+ * because "try again" is a lie once the server refuses chat; a billing
+ * interruption outranks the generic error because it knows why. On open
+ * `user` billing only an error card can ever show.
  */
 export function resolveChatBillingCard(input: {
   billing: FreeTierState["billing"] | null;
   errored: boolean;
+  interruption?: ChatBillingInterruption | null;
+  wall?: ChatPaidSource | null;
 }): ChatBillingCard | null {
+  if (input.wall != null) {
+    return "wall";
+  }
   if (input.billing === "blocked") {
     return "blocked";
   }
   if (input.errored) {
-    return "error";
+    return input.interruption == null ? "error" : "billing-error";
   }
   return input.billing === "free" ? "counter" : null;
 }
@@ -136,6 +156,71 @@ function BlockedCard({
   );
 }
 
+/**
+ * The paid wall (design spec row E3), the loud sibling of the quiet Free
+ * Chat Turns card: a destructive tint marks a hard stop the pre-send gate
+ * caught, and the CTA names the fix the Chat Billing Mode calls for.
+ */
+function PaidWallCard({
+  copy,
+  onNavigateToBilling,
+}: {
+  copy: ChatBillingCopy;
+  onNavigateToBilling: (destination: ChatBillingDestination) => void;
+}) {
+  return (
+    <BillingCalloutCard
+      action={
+        <AppButton
+          onClick={() => onNavigateToBilling(copy.cta.destination)}
+          size="sm"
+        >
+          {copy.cta.label}
+        </AppButton>
+      }
+      body={copy.body}
+      className="rounded-xl p-3"
+      data-slot="chat-paid-wall-card"
+      icon={TriangleAlert}
+      layout="inline"
+      title={copy.title}
+    />
+  );
+}
+
+/**
+ * The error card once the failed turn is known to be a billing refusal: the
+ * error frame stays, the copy tells the truth and offers the fix. It locks
+ * nothing — the next send re-gates, and the lock lives in exactly one place.
+ */
+function BillingErrorCard({
+  copy,
+  onNavigateToBilling,
+}: {
+  copy: ChatBillingCopy;
+  onNavigateToBilling: (destination: ChatBillingDestination) => void;
+}) {
+  return (
+    <BillingCalloutCard
+      action={
+        <AppButton
+          onClick={() => onNavigateToBilling(copy.cta.destination)}
+          size="sm"
+          variant="secondary"
+        >
+          {copy.cta.label}
+        </AppButton>
+      }
+      body={copy.body}
+      className="rounded-xl p-3"
+      data-slot="chat-billing-error-card"
+      icon={TriangleAlert}
+      layout="inline"
+      title={copy.title}
+    />
+  );
+}
+
 function ErrorCard() {
   return (
     <div
@@ -160,33 +245,51 @@ function ErrorCard() {
 /**
  * The Project Assistant Pane's billing card slot between transcript and
  * composer. Steady-state `user` billing renders nothing at all — paying is
- * the ambient baseline, and the error card carries zero billing markings.
+ * the ambient baseline, and the generic error card carries zero billing
+ * markings; only a refusal the server classified as billing speaks money.
  */
 export function ChatBillingCardSlot({
   errored,
   freeTier,
+  interruption = null,
   onNavigateToBilling,
 }: {
   errored: boolean;
   freeTier: FreeTierState | null;
+  /** The billing refusal behind the current error, when the pane knows one. */
+  interruption?: ChatBillingInterruption | null;
   /**
-   * Both CTAs are full-page navigations into the Billing Area: the blocked
-   * card's "Upgrade plan" deep-links the Plan Picker open (`upgrade`), the
-   * counter's "View plans" lands on the Plan view (`plans`).
+   * Every CTA is a full-page navigation into the Billing Area: `upgrade`
+   * deep-links the Plan Picker open, `plans` lands on the Plan view.
    */
   onNavigateToBilling: (destination: ChatBillingDestination) => void;
 }) {
+  const wall = freeTier?.wall ?? null;
   const card = resolveChatBillingCard({
     billing: freeTier?.billing ?? null,
     errored,
+    interruption,
+    wall,
   });
   if (card == null) {
     return null;
   }
   return (
     <div className="shrink-0 px-2.5 pt-1">
+      {card === "wall" && wall != null ? (
+        <PaidWallCard
+          copy={chatBillingWallCopy(wall)}
+          onNavigateToBilling={onNavigateToBilling}
+        />
+      ) : null}
       {card === "blocked" ? (
         <BlockedCard onNavigateToBilling={onNavigateToBilling} />
+      ) : null}
+      {card === "billing-error" ? (
+        <BillingErrorCard
+          copy={chatBillingInterruptionCopy(interruption?.paidSource ?? null)}
+          onNavigateToBilling={onNavigateToBilling}
+        />
       ) : null}
       {card === "error" ? <ErrorCard /> : null}
       {card === "counter" && freeTier != null ? (

@@ -3,6 +3,7 @@ import {
   isDeployTaskFailureReason,
 } from "./failure-summary";
 import type {
+  DeployBillingEvidence,
   DeploymentTaskRunner,
   DeployTaskFailureDetails,
   DeployTaskFailureReason,
@@ -66,6 +67,61 @@ export function deployFailureError(reason: DeployTaskFailureReason): Error {
   return error;
 }
 
+/** Validates persisted billing evidence before it reaches a public DTO. */
+export function deployBillingEvidence(
+  value: unknown
+): DeployBillingEvidence | null {
+  if (typeof value !== "object" || value == null) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.kind === "account-debt" &&
+    typeof record.checkedAt === "string" &&
+    (record.availableBalanceMicroUnits === null ||
+      typeof record.availableBalanceMicroUnits === "number")
+  ) {
+    return {
+      availableBalanceMicroUnits: record.availableBalanceMicroUnits as
+        | number
+        | null,
+      checkedAt: record.checkedAt,
+      kind: "account-debt",
+    };
+  }
+  if (
+    record.kind === "quota-full" &&
+    typeof record.label === "string" &&
+    typeof record.percentUsed === "number" &&
+    typeof record.type === "string"
+  ) {
+    return {
+      kind: "quota-full",
+      label: record.label,
+      percentUsed: record.percentUsed,
+      type: record.type,
+    };
+  }
+  return null;
+}
+
+const MICRO_UNITS_PER_CURRENCY_UNIT = 1_000_000;
+
+/** The billing check's lines for the Deployment Failure Detail (never raw upstream text). */
+function billingEvidenceLines(evidence: DeployBillingEvidence): string[] {
+  if (evidence.kind === "account-debt") {
+    const available =
+      evidence.availableBalanceMicroUnits == null
+        ? "reported in debt by the platform"
+        : `${evidence.availableBalanceMicroUnits / MICRO_UNITS_PER_CURRENCY_UNIT} <= 0`;
+    return [
+      `Billing check: available = balance - deductions + credits = ${available}`,
+      `Checked at: ${evidence.checkedAt}`,
+    ];
+  }
+  return [`Quota: ${evidence.label} at ${evidence.percentUsed}%`];
+}
+
 export function publicDeployTaskFailureDetails(input: {
   details: DeployTaskFailureDetails | null;
   runner: DeploymentTaskRunner;
@@ -88,7 +144,9 @@ export function publicDeployTaskFailureDetails(input: {
 
   const httpStatus = input.details?.httpStatus;
   const stage = input.details?.stage;
+  const billingEvidence = deployBillingEvidence(input.details?.billingEvidence);
   return {
+    ...(billingEvidence == null ? {} : { billingEvidence }),
     failureMessage: deploymentFailureMessage(reason),
     ...(typeof httpStatus === "number" &&
     Number.isInteger(httpStatus) &&
@@ -131,9 +189,35 @@ export function deploymentFailureTechnicalDetail(input: {
   if (input.status !== "failed") {
     return undefined;
   }
+  const evidence = deployBillingEvidence(input.details?.billingEvidence);
+  // A billing cause the runner never saw reached it only as a stall — a
+  // timeout, a pod that never came up — and that text contradicts the
+  // classification, so the billing check stands in for it on every runner
+  // (design spec rows E1/E2, ADR 0068). An exhausted balance is always such
+  // a cause; a full quota is one unless the apply step itself reported the
+  // quota error, the one stage where the provider's own numbers are worth
+  // keeping.
+  const billingReason = input.details?.reason;
+  const billingSupersedesError =
+    evidence != null &&
+    (billingReason === "balance-exhausted" ||
+      (billingReason === "quota-exceeded" && input.details?.stage !== "apply"));
+  if (billingSupersedesError) {
+    return [
+      `Reason: ${billingReason}`,
+      `Phase: ${input.phase}`,
+      ...billingEvidenceLines(evidence),
+      `Task ID: ${input.id}`,
+    ].join("\n");
+  }
   if (input.runner.kind !== "ai") {
     const error = input.error?.trim();
-    return error ? error : undefined;
+    if (!error) {
+      return undefined;
+    }
+    return evidence == null
+      ? error
+      : [error, ...billingEvidenceLines(evidence)].join("\n");
   }
 
   const details = publicDeployTaskFailureDetails(input);
@@ -146,6 +230,7 @@ export function deploymentFailureTechnicalDetail(input: {
     `Reason: ${reason}`,
     `Phase: ${input.phase}`,
     ...(typeof httpStatus === "number" ? [`HTTP status: ${httpStatus}`] : []),
+    ...(evidence == null ? [] : billingEvidenceLines(evidence)),
     `Task ID: ${input.id}`,
   ].join("\n");
 }

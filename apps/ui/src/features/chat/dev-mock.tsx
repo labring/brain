@@ -23,7 +23,7 @@ const chatDevMockSource = createDevMockCookieSource(chatDevMockCookie, {
 export function ChatDevMockTweaks() {
   useDevTweaksMock(CHAT_DEV_MOCK_KEY, {
     defaultScenario: DEFAULT_CHAT_DEV_SCENARIO,
-    note: "Serves the assistant transcript from fixtures; sending still hits the model; toggling reloads the page",
+    note: "Serves the assistant transcript from fixtures; sending still hits the model, except refused-* scenarios, which stage an aiproxy billing refusal; toggling reloads the page",
     scenarios: CHAT_DEV_SCENARIOS,
     source: chatDevMockSource,
     title: "Chat mock",

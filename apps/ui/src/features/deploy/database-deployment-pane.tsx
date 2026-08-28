@@ -8,6 +8,7 @@ import {
   DatabaseDeployer,
   type DatabaseDeploymentSettings,
 } from "@/features/deploy/database-deployer";
+import { DeployBillingWallCard } from "@/features/deploy/deploy-billing-wall-card";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
@@ -19,6 +20,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeployBillingWall } from "@/features/deploy/use-deploy-billing-wall";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -75,6 +77,9 @@ export function DatabaseDeploymentPane({
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false
   );
+  // The pre-deploy wall (E1/E2): a fact that will certainly fail the deploy
+  // replaces the form instead of letting the run die on it.
+  const billingWall = useDeployBillingWall();
   const initialSettings = useMemo(
     () => databaseInitialSettings(redeploy),
     [redeploy]
@@ -147,24 +152,28 @@ export function DatabaseDeploymentPane({
       }
       title={redeploy == null ? "Deploy Database" : "Edit & Redeploy Database"}
     >
-      <DatabaseDeployer.Root
-        busy={deploying || currentProject.isLoading}
-        databaseOptions={databaseOptions}
-        initialSettings={initialSettings}
-        onDeploy={(settings) => {
-          overwriteGate.gate(() => {
-            deploy(settings).catch(() => undefined);
-          });
-        }}
-      >
-        <DatabaseDeployer.Fields />
-        <SidePaneFooter>
-          <DatabaseDeployer.Submit
-            className="w-full"
-            label={redeploy == null ? undefined : "Redeploy"}
-          />
-        </SidePaneFooter>
-      </DatabaseDeployer.Root>
+      {billingWall == null ? (
+        <DatabaseDeployer.Root
+          busy={deploying || currentProject.isLoading}
+          databaseOptions={databaseOptions}
+          initialSettings={initialSettings}
+          onDeploy={(settings) => {
+            overwriteGate.gate(() => {
+              deploy(settings).catch(() => undefined);
+            });
+          }}
+        >
+          <DatabaseDeployer.Fields />
+          <SidePaneFooter>
+            <DatabaseDeployer.Submit
+              className="w-full"
+              label={redeploy == null ? undefined : "Redeploy"}
+            />
+          </SidePaneFooter>
+        </DatabaseDeployer.Root>
+      ) : (
+        <DeployBillingWallCard wall={billingWall} />
+      )}
       {overwriteGate.dialog}
     </SidePane>
   );

@@ -1,11 +1,14 @@
 import { resolveDevMock } from "@/features/dev-mock/server/resolve";
 import { MINUTE_MS } from "@/lib/time";
-
 import {
   type DeployTaskDevScenario,
   deployTaskDevMockCookie,
   deployTaskDevMockTaskId,
 } from "./dev-mock-cookie";
+import {
+  deploymentFailureMessage,
+  isDeployTaskFailureReason,
+} from "./failure-summary";
 import type { DeploymentTaskProjection } from "./projection";
 import type { DeployTaskStatus } from "./schema";
 import {
@@ -293,6 +296,89 @@ function scenarioShape(
           ]),
         ],
       };
+    // The interruption scenes (catalog E1/E2): the run died on the
+    // platform's money or quota wall and the reverse-check named it.
+    case "failed-balance": {
+      const message = deploymentFailureMessage("balance-exhausted");
+      return {
+        cancelRequestedAt: null,
+        completedAt: time.at(-MINUTE_MS),
+        error: message,
+        failureDetails: {
+          billingEvidence: {
+            availableBalanceMicroUnits: -6_320_000,
+            checkedAt: time.at(-MINUTE_MS),
+            kind: "account-debt",
+          },
+          failureMessage: message,
+          reason: "balance-exhausted",
+          stage: "apply",
+        },
+        phase: "apply",
+        resultUrl: null,
+        status: "failed",
+        steps: [
+          prepare,
+          analyze,
+          generate,
+          step("create-resources", "Create resources", 3, "failed", [
+            event(
+              time,
+              -90 * SECOND_MS,
+              "evt-5",
+              "Applying deployment artifacts."
+            ),
+            event(time, -MINUTE_MS, "evt-6", message, {
+              dedupeKey: DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
+              reason: "balance-exhausted",
+              severity: "error",
+            }),
+          ]),
+        ],
+      };
+    }
+    case "failed-quota": {
+      const message = deploymentFailureMessage("quota-exceeded");
+      const rawError =
+        'persistentvolumeclaims "web-app-data" is forbidden: exceeded quota: quota-ns-test, requested: requests.storage=2Gi, used: requests.storage=20Gi, limited: requests.storage=20Gi';
+      return {
+        cancelRequestedAt: null,
+        completedAt: time.at(-MINUTE_MS),
+        error: rawError,
+        failureDetails: {
+          billingEvidence: {
+            kind: "quota-full",
+            label: "Storage",
+            percentUsed: 100,
+            type: "storage",
+          },
+          failureMessage: message,
+          reason: "quota-exceeded",
+          stage: "apply",
+        },
+        phase: "apply",
+        resultUrl: null,
+        status: "failed",
+        steps: [
+          prepare,
+          analyze,
+          generate,
+          step("create-resources", "Create resources", 3, "failed", [
+            event(
+              time,
+              -90 * SECOND_MS,
+              "evt-5",
+              "Applying deployment artifacts."
+            ),
+            event(time, -MINUTE_MS, "evt-6", message, {
+              dedupeKey: DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
+              reason: "quota-exceeded",
+              severity: "error",
+            }),
+          ]),
+        ],
+      };
+    }
     case "succeeded":
       return {
         cancelRequestedAt: null,
@@ -513,6 +599,11 @@ export function deployTaskDevMockProjection(
       sourceKind: "github",
       sourceSummary: `${REPO}@main`,
     },
+    failureReason:
+      task.status === "failed" &&
+      isDeployTaskFailureReason(task.failureDetails?.reason)
+        ? task.failureDetails.reason
+        : null,
     id: task.id,
     namespace: task.namespace,
     phase: task.phase,
