@@ -1,0 +1,149 @@
+import { describe, expect, test } from "bun:test";
+import {
+  deployTaskDevMockProjection,
+  deployTaskDevMockResponse,
+  deployTaskDevMockTask,
+} from "./dev-fixtures";
+import {
+  DEPLOY_TASK_DEV_SCENARIOS,
+  deployTaskDevMockCookie,
+  deployTaskDevMockTaskId,
+} from "./dev-mock-cookie";
+import { deploymentTaskProjectionIsVisible } from "./projection";
+
+const NOW_MS = Date.parse("2026-08-28T10:00:00.000Z");
+
+function request(path: string, scenario: string): Request {
+  const req = new Request(`http://localhost${path}`);
+  req.headers.set("cookie", `${deployTaskDevMockCookie.name}=${scenario}`);
+  return req;
+}
+
+describe("deployment task dev fixtures", () => {
+  for (const scenario of DEPLOY_TASK_DEV_SCENARIOS) {
+    test(`${scenario} is a coherent task, timeline and projection`, () => {
+      const snapshot = deployTaskDevMockTask(scenario, {
+        namespace: "ns-test",
+        nowMs: NOW_MS,
+        projectId: "project-1",
+      });
+      expect(snapshot.task.id).toBe(deployTaskDevMockTaskId(scenario));
+      expect(snapshot.timeline.taskId).toBe(snapshot.task.id);
+      expect(snapshot.timeline.status).toBe(snapshot.task.status);
+      expect(snapshot.timeline.steps.length).toBeGreaterThan(0);
+      expect(snapshot.timeline.steps.map((step) => step.order)).toEqual([
+        ...snapshot.timeline.steps.keys(),
+      ]);
+      const projection = deployTaskDevMockProjection(scenario, {
+        namespace: "ns-test",
+        nowMs: NOW_MS,
+        projectId: "project-1",
+      });
+      expect(projection.id).toBe(snapshot.task.id);
+      expect(projection.projectId).toBe("project-1");
+      expect(projection.status).toBe(snapshot.task.status);
+    });
+  }
+
+  test("an active task places itself on the canvas", () => {
+    const projection = deployTaskDevMockProjection("running", {
+      namespace: "ns-test",
+      nowMs: NOW_MS,
+      projectId: "project-1",
+    });
+    expect(
+      deploymentTaskProjectionIsVisible(projection, new Date(NOW_MS))
+    ).toBe(true);
+  });
+
+  test("blocked carries the inputs the pane asks for", () => {
+    const { task } = deployTaskDevMockTask("blocked", {
+      namespace: "ns-test",
+      nowMs: NOW_MS,
+      projectId: null,
+    });
+    expect(task.blockingInputs.length).toBeGreaterThan(0);
+  });
+
+  test("failed names a scrubbed failure reason", () => {
+    const { task, timeline } = deployTaskDevMockTask("failed", {
+      namespace: "ns-test",
+      nowMs: NOW_MS,
+      projectId: null,
+    });
+    expect(task.failureDetails?.reason).toBe("image-build-failed");
+    expect(timeline.steps.at(-1)?.status).toBe("failed");
+  });
+
+  test("the timeline route answers only for the fixture task", async () => {
+    const mocked = deployTaskDevMockResponse(
+      "timeline",
+      request("/api/deploy-tasks/x/timeline?namespace=ns-test", "succeeded"),
+      deployTaskDevMockTaskId("succeeded")
+    );
+    expect(mocked?.status).toBe(200);
+    const body = (await mocked?.json()) as { task: { status: string } };
+    expect(body.task.status).toBe("completed");
+    expect(
+      deployTaskDevMockResponse(
+        "timeline",
+        request(
+          "/api/deploy-tasks/real/timeline?namespace=ns-test",
+          "succeeded"
+        ),
+        "real-task"
+      )
+    ).toBeNull();
+  });
+
+  test("the list answers with the fixture projection for the project", async () => {
+    const mocked = deployTaskDevMockResponse(
+      "list",
+      request("/api/deploy-tasks?namespace=ns-test&projectId=p1", "failed"),
+      null
+    );
+    const body = (await mocked?.json()) as { projections: { id: string }[] };
+    expect(body.projections.map((item) => item.id)).toEqual([
+      "mock-task-failed",
+    ]);
+  });
+
+  test("the stream sends one snapshot frame and stays open", async () => {
+    const controller = new AbortController();
+    const req = new Request(
+      "http://localhost/api/deploy-tasks/mock-task-running/timeline/stream?namespace=ns-test",
+      { signal: controller.signal }
+    );
+    req.headers.set("cookie", `${deployTaskDevMockCookie.name}=running`);
+    const mocked = deployTaskDevMockResponse(
+      "timeline-stream",
+      req,
+      "mock-task-running"
+    );
+    expect(mocked?.headers.get("content-type")).toContain("text/event-stream");
+    const reader = mocked?.body?.getReader();
+    const first = await reader?.read();
+    const text = new TextDecoder().decode(first?.value);
+    expect(text.startsWith("event: snapshot\n")).toBe(true);
+    expect(JSON.parse(text.split("data: ")[1] ?? "{}").type).toBe("snapshot");
+    controller.abort();
+    const last = await reader?.read();
+    expect(last?.done).toBe(true);
+  });
+
+  test("off and invalid behave like every Dev Mock", () => {
+    expect(
+      deployTaskDevMockResponse(
+        "list",
+        request("/api/deploy-tasks?projectId=p1", "off:running"),
+        null
+      )
+    ).toBeNull();
+    const invalid = deployTaskDevMockResponse(
+      "list",
+      request("/api/deploy-tasks?projectId=p1", "nope"),
+      null
+    );
+    expect(invalid?.status).toBe(500);
+  });
+});

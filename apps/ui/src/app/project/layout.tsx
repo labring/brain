@@ -1,3 +1,4 @@
+import { DeployTaskDevMockGate } from "@/features/deploy/task/dev-mock-gate";
 import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
 import { ProjectsExplorerDevMockGate } from "@/features/projects/explorer/projects-dev-mock-gate";
 import {
@@ -28,6 +29,7 @@ export default function ProjectLayout({
       <DevboxBootstrap />
       <OnboardingGate />
       <ProjectsExplorerDevMockGate />
+      <DeployTaskDevMockGate />
       <AppSidebarCookieBridge>
         <AppShellSidebar />
         <AppShellView className="min-w-0 flex-1 basis-0">
