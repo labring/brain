@@ -1,5 +1,5 @@
 {
-  "id": "bda42e6a-255a-42d0-a8c4-4f3a7505c783",
+  "id": "0dbbaddf-7e79-4f0e-83bf-b3eb789b1de9",
   "prevId": "67332fdf-15e9-467a-aecf-25706210e908",
   "version": "7",
   "dialect": "postgresql",
@@ -2074,6 +2074,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "user_uid": {
+          "name": "user_uid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -2134,6 +2140,27 @@
           "columns": [
             {
               "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_messages_user_uid_created_at_idx": {
+          "name": "notification_messages_user_uid_created_at_idx",
+          "columns": [
+            {
+              "expression": "user_uid",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
