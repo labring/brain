@@ -9,7 +9,10 @@ import type { BillingDevScenario } from "@/features/billing/dev-mock-cookie";
 import { scenarioTestFetch } from "@/features/billing/server/dev-fixtures/scenario-test-fetch";
 import type { StatusHintInputs } from "@/features/status-hint/status-hint-model";
 
-import { resolveDeployBillingWall } from "./deploy-billing-wall";
+import {
+  deployBillingWallFromStanding,
+  resolveDeployBillingWall,
+} from "./deploy-billing-wall";
 
 /**
  * The pre-deploy wall (design spec rows E1/E2) is the same judgment the
@@ -52,6 +55,33 @@ async function inputsFor(
     subscription,
   };
 }
+
+test("the server-side standing judges the same wall the panes do", () => {
+  const base = {
+    accountDebt: false,
+    aiCredits: null,
+    availableBalanceMicroUnits: 50_000_000,
+    fullQuota: null,
+    paidSource: "balance" as const,
+    quotaKnown: true,
+  };
+  assert.equal(deployBillingWallFromStanding(base), null);
+  assert.equal(
+    deployBillingWallFromStanding({ ...base, accountDebt: true })?.kind,
+    "balance"
+  );
+  assert.equal(
+    deployBillingWallFromStanding({
+      ...base,
+      fullQuota: { label: "Pods", percentUsed: 100, type: "pod" },
+    })?.title,
+    "Pods quota is full"
+  );
+  assert.equal(
+    deployBillingWallFromStanding({ ...base, accountDebt: null }),
+    null
+  );
+});
 
 test("a quiet workspace is not walled; traffic never counts", () => {
   assert.equal(resolveDeployBillingWall(QUIET), null);

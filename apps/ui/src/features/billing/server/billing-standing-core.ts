@@ -124,7 +124,9 @@ function subscriptionFacts(subscription: unknown): {
   if (type === "") {
     return { inDebt: false, paidSource: null };
   }
-  const payg = type !== "subscription";
+  // An upstream record in DELETED status is not a Workspace Subscription:
+  // the workspace is Pay-As-You-Go (CONTEXT.md, Workspace Subscription).
+  const payg = type !== "subscription" || status === "DELETED";
   return {
     // A PAYG workspace the platform reports on the debt ladder is Account
     // Debt by definition — no timestamps, no subscription (CONTEXT.md).

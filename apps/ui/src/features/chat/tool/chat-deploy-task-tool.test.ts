@@ -428,3 +428,54 @@ test("chat createDeployTask propagates GitHub connection lookup failures", async
     );
   }, CONNECTION_DATABASE_UNAVAILABLE_RE);
 });
+
+test("chat createDeployTask refuses behind the pre-deploy wall and never creates the task", async () => {
+  let createCalls = 0;
+  const standingReads: string[] = [];
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(
+    {
+      ...githubToolOptions(),
+      billingActor: { userId: "user-alice", userUid: "uid-alice" },
+    },
+    {
+      adoptLegacyGithubConnectionForOwner: () =>
+        Promise.resolve(undefined as never),
+      createDeployTaskAction: () => {
+        createCalls += 1;
+        return Promise.resolve({ kind: "invalid", message: "unexpected" });
+      },
+      getGithubConnectionStatusForOwner: () =>
+        Promise.resolve(githubConnection()),
+      judgeWorkspaceBillingStandingForActor: (input) => {
+        standingReads.push(input.workspace);
+        return Promise.resolve({
+          accountDebt: true,
+          aiCredits: null,
+          availableBalanceMicroUnits: -6_320_000,
+          fullQuota: null,
+          paidSource: "balance",
+          quotaKnown: true,
+        });
+      },
+    }
+  );
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the glpi repository",
+      source: githubSource,
+      target: { kind: "newProject", displayName: "glpi" },
+    },
+    { messages: [], toolCallId: "tool-call-wall" }
+  );
+
+  assert.deepEqual(standingReads, ["ns-test"]);
+  assert.deepEqual(result, {
+    ok: false,
+    error:
+      "Account balance in debt. Pay-as-you-go workspaces are suspended, so new deployments can't start. Top up your balance to restore them.",
+  });
+  assert.equal(createCalls, 0);
+});

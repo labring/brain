@@ -31,6 +31,22 @@ const PROVEN_ELSEWHERE: ReadonlySet<DeployTaskFailureReason> = new Set([
   "deployment-output-missing",
 ]);
 
+/**
+ * Failures that look like a stall: nothing was proven wrong, something
+ * simply never came up. Only these may be attributed to a full quota (an
+ * unschedulable pod); an apply error keeps the truth the provider told.
+ */
+const STALL_SHAPED: ReadonlySet<DeployTaskFailureReason | "none"> = new Set([
+  "none",
+  "unknown",
+  "timeout",
+  "readiness-timeout",
+  "deploy-runtime-unavailable",
+  "build-runtime-unavailable",
+  "gateway-timeout",
+  "runner-error",
+]);
+
 export function resolveBillingFailureOverride(input: {
   now: Date;
   reason: DeployTaskFailureReason | null;
@@ -40,6 +56,8 @@ export function resolveBillingFailureOverride(input: {
   if (reason != null && PROVEN_ELSEWHERE.has(reason)) {
     return null;
   }
+  // A workspace in Account Debt is suspended: whatever the run tripped on
+  // afterwards, the plug was already pulled.
   if (standing.accountDebt === true) {
     return {
       billingEvidence: {
@@ -51,7 +69,10 @@ export function resolveBillingFailureOverride(input: {
     };
   }
   const full = standing.fullQuota;
-  if (full == null) {
+  if (
+    full == null ||
+    !(reason === "quota-exceeded" || STALL_SHAPED.has(reason ?? "none"))
+  ) {
     return null;
   }
   return {

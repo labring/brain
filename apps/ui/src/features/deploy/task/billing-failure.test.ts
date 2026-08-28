@@ -93,6 +93,16 @@ describe("resolveBillingFailureOverride", () => {
     ).toBeNull();
   });
 
+  it("leaves an apply error the provider explained alone, even with a full quota", () => {
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "apply-failed",
+        standing: STORAGE_FULL,
+      })
+    ).toBeNull();
+  });
+
   it("lets debt outrank a full quota", () => {
     expect(
       resolveBillingFailureOverride({

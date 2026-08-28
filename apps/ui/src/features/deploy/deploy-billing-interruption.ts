@@ -1,3 +1,5 @@
+import { quotaResourceNoun } from "@/features/billing/billing-usage-data";
+
 import { deployBillingEvidence } from "./task/failure-details";
 import type { DeployTaskFailureDetails } from "./task/schema";
 
@@ -12,11 +14,6 @@ export interface DeploymentBillingInterruption {
   cta: { href: string; label: string };
   icon: "alert" | "wallet";
   title: string;
-}
-
-/** "CPU" keeps its initialism mid-sentence; the rest read as common nouns. */
-function resourceNoun(label: string): string {
-  return label === label.toUpperCase() ? label : label.toLowerCase();
 }
 
 export function deploymentBillingInterruption(
@@ -40,7 +37,7 @@ export function deploymentBillingInterruption(
       body:
         label == null
           ? "This workspace doesn't have enough quota to finish the deployment. Free resources or upgrade the plan, then redeploy."
-          : `This workspace doesn't have enough ${resourceNoun(label)} quota to finish the deployment. Free resources or upgrade the plan, then redeploy.`,
+          : `This workspace doesn't have enough ${quotaResourceNoun(label)} quota to finish the deployment. Free resources or upgrade the plan, then redeploy.`,
       cta: { href: "/billing/usage", label: "View usage" },
       icon: "alert",
       title:

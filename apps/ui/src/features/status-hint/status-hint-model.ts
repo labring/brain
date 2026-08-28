@@ -3,6 +3,7 @@ import type { BillingSurfaceTone } from "@/features/billing/billing-surface-tone
 import {
   type BillingUsageRow,
   firstFullQuotaRow,
+  quotaResourceNoun,
 } from "@/features/billing/billing-usage-data";
 import type { NotificationCTA } from "@/features/shell/app-sidebar-notifications-model";
 import { DAY_MS } from "@/lib/time";
@@ -155,11 +156,6 @@ export function accountDebtHolds(
   return inputs.availableBalanceMicroUnits <= 0;
 }
 
-/** "CPU" keeps its initialism mid-sentence; the rest read as common nouns. */
-function resourceNoun(label: string): string {
-  return label === label.toUpperCase() ? label : label.toLowerCase();
-}
-
 function quotaFullHint(
   quota: readonly StatusHintQuotaRow[]
 ): StatusHint | null {
@@ -169,7 +165,7 @@ function quotaFullHint(
   }
   return {
     cta: { href: "/billing/usage", label: "View usage" },
-    description: `New deployments can't start until ${resourceNoun(full.label)} is freed or the plan is upgraded.`,
+    description: `New deployments can't start until ${quotaResourceNoun(full.label)} is freed or the plan is upgraded.`,
     dismissible: true,
     id: "quota-full",
     title: `${full.label} quota is full`,

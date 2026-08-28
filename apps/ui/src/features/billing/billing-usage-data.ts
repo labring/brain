@@ -141,6 +141,11 @@ export type QuotaFullnessRow = Pick<
   "label" | "percentUsed" | "type"
 >;
 
+/** "CPU" keeps its initialism mid-sentence; the rest read as common nouns. */
+export function quotaResourceNoun(label: string): string {
+  return label === label.toUpperCase() ? label : label.toLowerCase();
+}
+
 /** The first deployable quota row at or past its ceiling, if any. */
 export function firstFullQuotaRow<Row extends QuotaFullnessRow>(
   rows: readonly Row[]

@@ -194,7 +194,7 @@ function DeploymentTaskDockTask({
             </span>
             {reasonPhrase == null ? null : (
               <span
-                className="ml-1.5 font-normal text-[0.6875rem] text-red-400"
+                className="ml-1.5 font-normal text-[0.6875rem] text-destructive"
                 data-slot="deployment-task-dock-reason"
               >
                 {reasonPhrase}

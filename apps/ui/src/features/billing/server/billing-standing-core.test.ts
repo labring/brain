@@ -115,6 +115,24 @@ describe("judgeWorkspaceBillingStanding", () => {
     });
   });
 
+  it("reads a DELETED subscription record as Pay-As-You-Go", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: DEBT_ACCOUNT,
+      credits: NO_CREDITS,
+      quota: quota({}),
+      subscription: {
+        subscription: {
+          PlanName: "Hobby",
+          Status: "DELETED",
+          type: "SUBSCRIPTION",
+        },
+      },
+    });
+    expect(standing.paidSource).toBe("balance");
+    expect(standing.aiCredits).toBeNull();
+    expect(standing.accountDebt).toBe(true);
+  });
+
   it("names the first deployable quota that is full and ignores traffic", () => {
     const standing = judgeWorkspaceBillingStanding({
       account: HEALTHY_ACCOUNT,
