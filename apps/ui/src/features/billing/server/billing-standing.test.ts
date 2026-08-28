@@ -5,6 +5,7 @@ import {
   type BillingDevScenario,
 } from "@/features/billing/dev-mock-cookie";
 
+import { debtSuspendsWorkspace } from "./billing-standing-core";
 import {
   type BillingPayloadFetch,
   readWorkspaceBillingStanding,
@@ -41,12 +42,22 @@ function read(scenario: BillingDevScenario) {
 }
 
 describe("workspace billing standing through the billing fixtures", () => {
-  it("payg-debt is Account Debt paid from the balance", async () => {
+  it("payg-debt is Account Debt paid from the balance, and suspended for it", async () => {
     const standing = await read("payg-debt");
     expect(standing.accountDebt).toBe(true);
     expect(standing.paidSource).toBe("balance");
     expect(standing.fullQuota).toBeNull();
     expect(standing.quotaKnown).toBe(true);
+    expect(debtSuspendsWorkspace(standing)).toBe(true);
+  });
+
+  it("payment-due is a subscription under the Deletion Countdown, not a workspace suspended for Account Debt", async () => {
+    // The fixture's account is in debt too (the renewal that never
+    // happened), which must not turn the Renew-plan story into a top-up one.
+    const standing = await read("payment-due");
+    expect(standing.accountDebt).toBe(true);
+    expect(standing.paidSource).toBe("ai-credits");
+    expect(debtSuspendsWorkspace(standing)).toBe(false);
   });
 
   it("payg stands clear", async () => {

@@ -1,10 +1,8 @@
 import "server-only";
 
 import type { ChatDevMockHandler } from "../dev-fixtures";
-import {
-  getFreeTierSnapshot,
-  resolveFreeTierPosture,
-} from "../persistence/free-tier";
+import { resolveFreeTierPosture } from "../persistence/chat-billing-judgment";
+import { getFreeTierSnapshot } from "../persistence/free-tier";
 import {
   adoptLegacyAssistantConversationsForActor,
   bootstrapAssistantSession,

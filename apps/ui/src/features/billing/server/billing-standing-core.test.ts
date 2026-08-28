@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  debtSuspendsWorkspace,
   judgeWorkspaceBillingStanding,
   UNKNOWN_BILLING_STANDING,
 } from "./billing-standing-core";
@@ -157,5 +158,64 @@ describe("judgeWorkspaceBillingStanding", () => {
       })
     ).toEqual(UNKNOWN_BILLING_STANDING);
     expect(UNKNOWN_BILLING_STANDING.quotaKnown).toBe(false);
+  });
+});
+
+describe("debtSuspendsWorkspace", () => {
+  it("suspends a PAYG workspace in Account Debt", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: DEBT_ACCOUNT,
+      credits: NO_CREDITS,
+      quota: quota({}),
+      subscription: PAYG,
+    });
+    expect(standing.accountDebt).toBe(true);
+    expect(debtSuspendsWorkspace(standing)).toBe(true);
+  });
+
+  it("never suspends a subscribed workspace on its account's debt — its resources ride the plan", () => {
+    // Account Debt is account-level (the banner shows it everywhere), but
+    // the platform's debt pipeline stops only PAYG workspaces (CONTEXT.md).
+    // A Stripe-paying subscriber whose $1 gift credit has expired sits at
+    // exactly 0 available and must keep deploying.
+    const zeroBalance = judgeWorkspaceBillingStanding({
+      account: { account: { Balance: 0, DeductionBalance: 0 } },
+      credits: NO_CREDITS,
+      quota: quota({ aiHard: 3_000_000, aiUsed: 100_000 }),
+      subscription: HOBBY,
+    });
+    expect(zeroBalance.accountDebt).toBe(true);
+    expect(debtSuspendsWorkspace(zeroBalance)).toBe(false);
+
+    const inDebt = judgeWorkspaceBillingStanding({
+      account: DEBT_ACCOUNT,
+      credits: NO_CREDITS,
+      quota: quota({ aiHard: 3_000_000 }),
+      subscription: HOBBY,
+    });
+    expect(debtSuspendsWorkspace(inDebt)).toBe(false);
+  });
+
+  it("keeps a payment-due subscription out of Account Debt's wall — that is the Deletion Countdown's voice", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: DEBT_ACCOUNT,
+      credits: NO_CREDITS,
+      quota: quota({ aiHard: 3_000_000 }),
+      subscription: {
+        subscription: { PlanName: "Pro", Status: "DEBT", type: "SUBSCRIPTION" },
+      },
+    });
+    expect(standing.paidSource).toBe("ai-credits");
+    expect(debtSuspendsWorkspace(standing)).toBe(false);
+  });
+
+  it("is unknown while the paid source or the debt is", () => {
+    expect(debtSuspendsWorkspace(UNKNOWN_BILLING_STANDING)).toBeNull();
+    expect(
+      debtSuspendsWorkspace({ accountDebt: true, paidSource: null })
+    ).toBeNull();
+    expect(
+      debtSuspendsWorkspace({ accountDebt: null, paidSource: "balance" })
+    ).toBeNull();
   });
 });

@@ -184,3 +184,25 @@ export function judgeWorkspaceBillingStanding(
     quotaKnown: rows != null,
   };
 }
+
+/**
+ * Whether the platform has suspended THIS workspace for Account Debt.
+ * Account Debt is an account-level state — the Status Hint voices it in
+ * every workspace — but the platform's debt pipeline stops only
+ * Pay-As-You-Go workspaces; a subscribed workspace's resources ride its plan
+ * and its AI usage its AI Credits (CONTEXT.md, Account Debt; design spec
+ * row E1). So only a workspace paying from the balance can be walled or
+ * have its failure reclassified on debt. Null while either fact is unknown:
+ * every seam fails open (ADR-0068).
+ */
+export function debtSuspendsWorkspace(
+  standing: Pick<WorkspaceBillingStanding, "accountDebt" | "paidSource">
+): boolean | null {
+  if (standing.paidSource == null) {
+    return null;
+  }
+  if (standing.paidSource !== "balance") {
+    return false;
+  }
+  return standing.accountDebt;
+}

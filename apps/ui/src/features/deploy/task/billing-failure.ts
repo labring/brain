@@ -1,4 +1,7 @@
-import type { WorkspaceBillingStanding } from "@/features/billing/server/billing-standing-core";
+import {
+  debtSuspendsWorkspace,
+  type WorkspaceBillingStanding,
+} from "@/features/billing/server/billing-standing-core";
 
 import type { DeployBillingEvidence, DeployTaskFailureReason } from "./schema";
 
@@ -64,12 +67,13 @@ export function resolveBillingFailureOverride(input: {
   if (reason != null && PROVEN_ELSEWHERE.has(reason)) {
     return null;
   }
-  // A workspace in Account Debt is suspended: whatever the run tripped on
-  // afterwards, the plug was already pulled. That includes an apply-time
+  // A PAYG workspace in Account Debt is suspended: whatever the run tripped
+  // on afterwards, the plug was already pulled. That includes an apply-time
   // quota error — the platform suspends by pinning the namespace under a
   // zero quota (`debt-limit0`), so "exceeded quota" there is a symptom of
-  // the debt, not a quota to enlarge (ADR 0068).
-  if (standing.accountDebt === true) {
+  // the debt, not a quota to enlarge (ADR 0068). A subscribed workspace's
+  // resources ride its plan, so its account's debt never rewrites anything.
+  if (debtSuspendsWorkspace(standing) === true) {
     return {
       billingEvidence: {
         availableBalanceMicroUnits: standing.availableBalanceMicroUnits,

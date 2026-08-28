@@ -350,7 +350,7 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Failure Reason
 
-The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Two reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt) and a resource-attributed `quota-exceeded` (a full deployable quota); each carries Billing Evidence, the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
+The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Two reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt on a Pay-As-You-Go workspace — the only kind the platform suspends for it; a subscribed workspace's failures keep their own reason) and a resource-attributed `quota-exceeded` (a full deployable quota); each carries Billing Evidence, the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
 
 _Avoid_: workspace not ready (for a suspended workspace), timed out (as the reason for a billing stop).
 
@@ -362,7 +362,7 @@ _Avoid_: raw timeout text, stack trace, billing dump.
 
 ### Deploy Billing Wall
 
-The refusal a deployment pane and the assistant's deploy tool show in place of the form while the workspace is in Account Debt or any deployable quota is full — a fact that would certainly end the run as a Billing Interruption, so it wears the same billing callout and CTA. A low but positive balance never walls.
+The refusal a deployment pane and the assistant's deploy tool show in place of the form while a Pay-As-You-Go workspace is in Account Debt or any deployable quota is full — a fact that would certainly end the run as a Billing Interruption, so it wears the same billing callout and CTA. A low but positive balance never walls.
 
 _Avoid_: low balance warning, pre-flight check, deploy disabled.
 

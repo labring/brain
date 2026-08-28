@@ -8,18 +8,12 @@ import {
   type BillingPayloadFetch,
   readWorkspaceBillingStanding,
 } from "./billing-standing-reader";
+import { BILLING_JUDGMENT_TIMEOUT_MS } from "./judgment-budget";
 
 export type {
   WorkspaceAiPaidSource,
   WorkspaceBillingStanding,
 } from "./billing-standing-core";
-
-/**
- * A billing judgment runs inside a chat turn or a deployment's terminal
- * failure write; a slow account service must degrade to unknown, never
- * stall either (the free-trial judgment's budget).
- */
-const STANDING_TIMEOUT_MS = 5000;
 
 export interface WorkspaceBillingStandingInput {
   /**
@@ -28,6 +22,13 @@ export interface WorkspaceBillingStandingInput {
    * reverse-check exactly like they drive the /api/billing routes.
    */
   cookieHeader?: string | null;
+  /**
+   * The caller's deadline when the reads share a budget with the free-trial
+   * judgment (ADR-0068). On their own — a deployment's terminal failure
+   * write, the assistant's deploy tool — they run under the same budget
+   * alone; a slow account service degrades to unknown, never stalls.
+   */
+  signal?: AbortSignal;
   userId: string | null;
   userUid: string;
   workspace: string;
@@ -64,6 +65,8 @@ function payloadFetch(
 ): BillingPayloadFetch {
   const userId = input.userId?.trim() ?? "";
   const userUid = input.userUid.trim();
+  const signal =
+    input.signal ?? AbortSignal.timeout(BILLING_JUDGMENT_TIMEOUT_MS);
   return async (pathname, body) => {
     const mocked = await devMockPayload(pathname, body, input.cookieHeader);
     if (mocked != null) {
@@ -77,7 +80,7 @@ function payloadFetch(
       init: {
         body: JSON.stringify(body),
         method: "POST",
-        signal: AbortSignal.timeout(STANDING_TIMEOUT_MS),
+        signal,
       },
       pathname,
     });

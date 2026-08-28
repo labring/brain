@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { simulateReadableStream, tool, type UIMessage } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
+import { BILLING_JUDGMENT_TIMEOUT_MS } from "@/features/billing/server/judgment-budget";
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
 const actualKubeconfig = { ...(await import("@/lib/kubeconfig")) };
@@ -965,9 +966,13 @@ test("never binds the model stream to a wall-clock deadline", async () => {
     expect(response.status).toBe(200);
     await drain(response);
 
-    // The auto-title deadline is the only timer left; the turn itself ends on
-    // client disconnect or lease loss, never on elapsed time.
-    expect(timeoutSpy.mock.calls.flat()).toEqual([5000]);
+    // The billing judgment's one budget (ADR-0068) and the auto-title
+    // deadline are the only timers left; the turn itself ends on client
+    // disconnect or lease loss, never on elapsed time.
+    expect(timeoutSpy.mock.calls.flat()).toEqual([
+      BILLING_JUDGMENT_TIMEOUT_MS,
+      5000,
+    ]);
     const modelSignal = modelAbortSignals[0];
     expect(modelSignal).toBeDefined();
     timeoutController.abort();
@@ -1815,7 +1820,9 @@ test("an open paid workspace streams with its paid source in the headers; unknow
   await drain(unknown);
 });
 
-test("a free turn never consults the paid wall", async () => {
+test("a free turn never consults the paid wall — the standing read beside the trial judgment is ignored", async () => {
+  // ADR-0068: the standing reads leave with the trial judgment under one
+  // budget, so they happen; only a `user` posture looks at the answer.
   trialJudgment = "trial";
   billingStanding = {
     ...billingStanding,
@@ -1826,7 +1833,9 @@ test("a free turn never consults the paid wall", async () => {
   const response = await POST(chatRequest(userMessage("user-free", "hi")));
   expect(response.status).toBe(200);
   expect(response.headers.get("X-Chat-Billing")).toBe("free");
-  expect(standingCalls).toEqual([]);
+  expect(response.headers.get("X-Chat-Wall")).toBe("");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("");
+  expect(standingCalls).toHaveLength(1);
   await drain(response);
 });
 

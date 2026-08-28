@@ -9,16 +9,18 @@ import {
   type UIMessage,
   type UIMessageStreamOnFinishCallback,
 } from "ai";
-import { judgeWorkspaceBillingStandingForActor } from "@/features/billing/server/billing-standing";
-import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
 import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
 } from "@/features/chat/ai-proxy/resolve-chat-open-ai-connection";
 import {
+  type ChatBillingActor,
+  judgeChatBilling,
+  withPaidChatWall,
+} from "@/features/chat/persistence/chat-billing-judgment";
+import {
   getFreeTierSnapshot,
-  isSystemOpenAiConfigured,
   releaseReservedFreeTurn,
   reserveFreeTurnIfAvailable,
 } from "@/features/chat/persistence/free-tier";
@@ -26,7 +28,6 @@ import {
   freeTierPosture,
   freeTierPostureAfterTurn,
 } from "@/features/chat/persistence/free-tier-core";
-import { paidChatWall } from "@/features/chat/persistence/paid-chat-wall";
 import {
   acquireChatStreamLease,
   adoptLegacyAssistantConversationsForActor,
@@ -123,26 +124,6 @@ function paidWallResponse(state: FreeTierState): Response {
  * before the turn the way the free allowance is judged (row E3 follows the
  * E4 template). Unknown standing fails open.
  */
-async function withPaidWall(
-  posture: FreeTierState,
-  input: {
-    accountUserId: string | null;
-    cookieHeader: string | null;
-    owner: AssistantConversationOwner;
-  }
-): Promise<FreeTierState> {
-  if (posture.billing !== "user") {
-    return posture;
-  }
-  const standing = await judgeWorkspaceBillingStandingForActor({
-    cookieHeader: input.cookieHeader,
-    userId: input.accountUserId,
-    userUid: input.owner.userUid,
-    workspace: input.owner.namespace,
-  });
-  return { ...posture, ...paidChatWall(standing) };
-}
-
 function freeTurnsExhaustedResponse(state: FreeTierState): Response {
   return Response.json(
     {
@@ -644,13 +625,10 @@ async function cleanUpFailedChatPipeline(input: {
  * reserved on the counter when it returns `billing: "free"`. Reserving before
  * any model execution makes concurrent turns race on the counter itself, so
  * the allowance can never be overspent; the caller owns rolling the
- * reservation back on every unsuccessful path.
+ * reservation back on every unsuccessful path. The trial judgment and the
+ * paid wall's standing reads run in parallel under one budget (ADR-0068).
  */
-async function settleTurnBillingPosture(input: {
-  accountUserId: string | null;
-  cookieHeader: string | null;
-  owner: AssistantConversationOwner;
-}): Promise<
+async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
   | { response: Response; billing?: never }
   | {
       billing: ChatBillingMode;
@@ -660,24 +638,14 @@ async function settleTurnBillingPosture(input: {
       response?: never;
     }
 > {
-  const { owner } = input;
-  const freeTier = await getFreeTierSnapshot(owner.namespace);
-  const systemModelConfigured = isSystemOpenAiConfigured();
-  const trial =
-    freeTier.limit > 0 && systemModelConfigured
-      ? await judgeActiveFreeTrialForWorkspace({
-          cookieHeader: input.cookieHeader,
-          userId: input.accountUserId,
-          userUid: owner.userUid,
-          workspace: owner.namespace,
-        })
-      : "not-trial";
+  const judgment = await judgeChatBilling(actor);
+  const { snapshot: freeTier, systemModelConfigured, trial } = judgment;
   const posture = freeTierPosture(freeTier, systemModelConfigured, trial);
   if (posture.billing === "blocked") {
     return { response: freeTurnsExhaustedResponse(posture) };
   }
   if (posture.billing !== "free") {
-    const walled = await withPaidWall(posture, input);
+    const walled = await withPaidChatWall(posture, judgment);
     if (walled.wall != null) {
       return { response: paidWallResponse(walled) };
     }
@@ -688,7 +656,7 @@ async function settleTurnBillingPosture(input: {
     };
   }
 
-  if (await reserveFreeTurnIfAvailable(owner.namespace)) {
+  if (await reserveFreeTurnIfAvailable(actor.namespace)) {
     // Headers carry the POST-turn posture: the turn spending the last free
     // turn already reports `blocked`, so the pane flips the moment that
     // message finishes streaming instead of one composed message later. With
@@ -706,8 +674,9 @@ async function settleTurnBillingPosture(input: {
 
   // Lost the counter race to a concurrent turn: re-judge on a fresh
   // snapshot. A confirmed trial is now exhausted (402); otherwise the turn
-  // degrades to `user`, matching the exhausted fail-open case.
-  const contested = await getFreeTierSnapshot(owner.namespace);
+  // degrades to `user`, matching the exhausted fail-open case — walled on
+  // the standing already read for this request.
+  const contested = await getFreeTierSnapshot(actor.namespace);
   const contestedPosture = freeTierPosture(
     contested,
     systemModelConfigured,
@@ -716,9 +685,9 @@ async function settleTurnBillingPosture(input: {
   if (contestedPosture.billing === "blocked") {
     return { response: freeTurnsExhaustedResponse(contestedPosture) };
   }
-  const walled = await withPaidWall(
+  const walled = await withPaidChatWall(
     { ...contestedPosture, billing: "user" },
-    input
+    judgment
   );
   if (walled.wall != null) {
     return { response: paidWallResponse(walled) };
@@ -753,7 +722,8 @@ async function runChatPipeline(input: {
     const settled = await settleTurnBillingPosture({
       accountUserId: actor.accountUserId ?? null,
       cookieHeader: input.cookieHeader,
-      owner,
+      namespace: owner.namespace,
+      userUid: owner.userUid,
     });
     if (settled.response != null) {
       return settled.response;

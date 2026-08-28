@@ -27,6 +27,13 @@ const DEBT = standing({
 const STORAGE_FULL = standing({
   fullQuota: { label: "Storage", percentUsed: 100, type: "storage" },
 });
+/** A subscribed workspace whose account sits in debt: the plan carries it. */
+const SUBSCRIBED_ACCOUNT_IN_DEBT = standing({
+  accountDebt: true,
+  aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 1_200_000 },
+  availableBalanceMicroUnits: -6_320_000,
+  paidSource: "ai-credits",
+});
 
 describe("resolveBillingFailureOverride", () => {
   it("reclassifies a runtime timeout as balance-exhausted when the account is in debt", () => {
@@ -62,6 +69,28 @@ describe("resolveBillingFailureOverride", () => {
       reason: "balance-exhausted",
       supersedesRunnerError: true,
     });
+  });
+
+  it("never rewrites a subscribed workspace's failure on its account's debt", () => {
+    // Account Debt suspends only PAYG workspaces (CONTEXT.md); a subscriber
+    // at zero balance keeps the runner's own story — or the quota's.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "deploy-runtime-unavailable",
+        standing: SUBSCRIBED_ACCOUNT_IN_DEBT,
+      })
+    ).toBeNull();
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "quota-exceeded",
+        standing: {
+          ...SUBSCRIBED_ACCOUNT_IN_DEBT,
+          fullQuota: { label: "Storage", percentUsed: 100, type: "storage" },
+        },
+      })
+    ).toMatchObject({ reason: "quota-exceeded", supersedesRunnerError: false });
   });
 
   it("names the full quota behind a readiness timeout the runner could not attribute", () => {
