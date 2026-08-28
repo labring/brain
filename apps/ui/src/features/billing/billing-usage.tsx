@@ -12,6 +12,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import {
+  Boxes,
   CircuitBoard,
   Cpu,
   HardDrive,
@@ -45,6 +46,7 @@ const QUOTA_ICONS = {
   gpu: CircuitBoard,
   memory: MemoryStick,
   nodeport: HdmiPort,
+  pod: Boxes,
   storage: HardDrive,
   traffic: Network,
 } satisfies Record<BillingQuotaType, LucideIcon>;

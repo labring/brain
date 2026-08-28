@@ -30,12 +30,8 @@ import {
   useRef,
   useState,
 } from "react";
-import useSWR from "swr";
 import { loadAiCredits } from "@/features/billing/billing-ai-credits";
-import {
-  loadWorkspaceSubscriptionSummary,
-  type WorkspaceSubscriptionSummary,
-} from "@/features/billing/billing-plan-data";
+import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { fetchFreeChatTurnsUsage } from "@/features/chat/persistence/client";
@@ -56,6 +52,7 @@ import {
   quotaUsageTone,
 } from "@/features/shell/app-sidebar-quota";
 import { useCloseOnSidebarToggle } from "@/features/shell/use-close-on-sidebar-toggle";
+import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
 import {
   appTokenAtom,
   desktopUserAvatarAtom,
@@ -758,15 +755,8 @@ export function AppSidebarAccount() {
   const credentialsReady =
     appToken !== "" && kubeconfig !== "" && workspace !== "";
 
-  // Live billing data, not the login-time session snapshot: the badge and
-  // hint follow the same subscription route as the Billing Area's hooks.
-  const { data: subscriptionSummary, isLoading: subscriptionPending } = useSWR(
-    credentialsReady
-      ? (["app-sidebar-subscription", workspace, kubeconfig, appToken] as const)
-      : null,
-    () => loadWorkspaceSubscriptionSummary({ appToken, kubeconfig, workspace }),
-    { revalidateOnFocus: false, shouldRetryOnError: false }
-  );
+  const { data: subscriptionSummary, isLoading: subscriptionPending } =
+    useWorkspaceSubscriptionSummary();
   const { badge, hint } = useMemo(
     () =>
       deriveAppSidebarAccountPresentation(

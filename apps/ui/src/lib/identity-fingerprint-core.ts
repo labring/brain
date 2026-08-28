@@ -1,4 +1,4 @@
-import { and, eq, notExists, sql } from "drizzle-orm";
+import { and, eq, isNull, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import type {
@@ -17,6 +17,10 @@ import {
   marketingAttributionSubjects,
   marketingLifecycleEvents,
 } from "@/features/marketing/schema";
+import {
+  notificationMessages,
+  notificationReadReceipts,
+} from "@/features/notifications/schema";
 import { onboardingProfiles } from "@/features/onboarding/schema";
 import { rekeyCanonicalIdentityUids } from "@/lib/identity-uid-canonicalization";
 
@@ -228,8 +232,12 @@ async function rekeyPersonalResources(
   identityUidCanonicalizationsRekeyed: number;
   installSessionsRekeyed: number;
   lifecycleEventsRekeyed: number;
+  messagesReleased: number;
+  messagesRekeyed: number;
   profilesReleased: number;
   profilesRekeyed: number;
+  receiptsReleased: number;
+  receiptsRekeyed: number;
 }> {
   const identityUidCanonicalizationsRekeyed = await rekeyCanonicalIdentityUids(
     tx,
@@ -413,6 +421,73 @@ async function rekeyPersonalResources(
     .where(eq(onboardingProfiles.userUid, input.tombstoneUserUid))
     .returning({ userUid: onboardingProfiles.userUid });
 
+  // Notification read receipts are keyed by (uid, message key): the
+  // tombstone's receipts follow the survivor except where the survivor
+  // already read the same message, and the rest are deleted — a receipt is
+  // a fact about one person, so two rows for one message collapse to one.
+  const survivorReceipts = alias(notificationReadReceipts, "survivor_receipts");
+  const rekeyedReceipts = await tx
+    .update(notificationReadReceipts)
+    .set({ userUid: input.survivorUserUid })
+    .where(
+      and(
+        eq(notificationReadReceipts.userUid, input.tombstoneUserUid),
+        notExists(
+          tx
+            .select({ userUid: survivorReceipts.userUid })
+            .from(survivorReceipts)
+            .where(
+              and(
+                eq(survivorReceipts.userUid, input.survivorUserUid),
+                eq(
+                  survivorReceipts.messageKey,
+                  notificationReadReceipts.messageKey
+                )
+              )
+            )
+        )
+      )
+    )
+    .returning({ messageKey: notificationReadReceipts.messageKey });
+  const releasedReceipts = await tx
+    .delete(notificationReadReceipts)
+    .where(eq(notificationReadReceipts.userUid, input.tombstoneUserUid))
+    .returning({ messageKey: notificationReadReceipts.messageKey });
+
+  // Account-scoped notification messages (ADR-0067: the gift hint) are
+  // uid-keyed rows whose dedupe key names the uid too, so the key moves with
+  // the row — a later observation then finds the survivor's row instead of
+  // writing a second welcome. Where the survivor already holds a live row
+  // under the re-keyed name, the tombstone's is a duplicate of the same
+  // one-per-person fact and is deleted (its receipts cascade).
+  const survivorDedupeKey = sql<string>`replace(${notificationMessages.dedupeKey}, ${input.tombstoneUserUid}, ${input.survivorUserUid})`;
+  const survivorMessages = alias(notificationMessages, "survivor_messages");
+  const rekeyedMessages = await tx
+    .update(notificationMessages)
+    .set({ dedupeKey: survivorDedupeKey, userUid: input.survivorUserUid })
+    .where(
+      and(
+        eq(notificationMessages.userUid, input.tombstoneUserUid),
+        notExists(
+          tx
+            .select({ id: survivorMessages.id })
+            .from(survivorMessages)
+            .where(
+              and(
+                eq(survivorMessages.userUid, input.survivorUserUid),
+                isNull(survivorMessages.releasedAt),
+                eq(survivorMessages.dedupeKey, survivorDedupeKey)
+              )
+            )
+        )
+      )
+    )
+    .returning({ id: notificationMessages.id });
+  const releasedMessages = await tx
+    .delete(notificationMessages)
+    .where(eq(notificationMessages.userUid, input.tombstoneUserUid))
+    .returning({ id: notificationMessages.id });
+
   return {
     attributionSubjectsRekeyed: rekeyedAttributionSubjects.length,
     attributionSubjectsReleased: releasedAttributionSubjects.length,
@@ -424,7 +499,11 @@ async function rekeyPersonalResources(
     identityUidCanonicalizationsRekeyed,
     installSessionsRekeyed: rekeyedInstallSessions.length,
     lifecycleEventsRekeyed: rekeyedLifecycleEvents.length,
+    messagesReleased: releasedMessages.length,
+    messagesRekeyed: rekeyedMessages.length,
     profilesReleased: releasedProfiles.length,
     profilesRekeyed: rekeyedProfiles.length,
+    receiptsReleased: releasedReceipts.length,
+    receiptsRekeyed: rekeyedReceipts.length,
   };
 }

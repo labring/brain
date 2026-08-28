@@ -15,6 +15,10 @@ function summary(
     isPayg: false,
     lifecycle: "active",
     planName: "PRO",
+    recoveryVoice: "renew",
+    role: null,
+    warningDeadlineAt: null,
+    warningStage: null,
     ...overrides,
   };
 }

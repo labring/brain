@@ -24,6 +24,10 @@ import {
   marketingAttributionSubjects,
   marketingLifecycleEvents,
 } from "@/features/marketing/schema";
+import {
+  notificationMessages,
+  notificationReadReceipts,
+} from "@/features/notifications/schema";
 import { onboardingProfiles } from "@/features/onboarding/schema";
 
 import {
@@ -680,6 +684,185 @@ test("where both merged accounts hold a profile, the survivor's row wins and the
   );
   assert.equal(telemetry?.profilesRekeyed, 0);
   assert.equal(telemetry?.profilesReleased, 1);
+});
+
+function selectReceipts(userUids: string[]) {
+  return db
+    .select({
+      messageId: notificationReadReceipts.messageId,
+      messageKey: notificationReadReceipts.messageKey,
+      userUid: notificationReadReceipts.userUid,
+    })
+    .from(notificationReadReceipts)
+    .where(inArray(notificationReadReceipts.userUid, userUids))
+    .orderBy(
+      notificationReadReceipts.userUid,
+      notificationReadReceipts.messageKey
+    );
+}
+
+function selectMessages(userUids: string[]) {
+  return db
+    .select({
+      dedupeKey: notificationMessages.dedupeKey,
+      id: notificationMessages.id,
+      namespace: notificationMessages.namespace,
+      releasedAt: notificationMessages.releasedAt,
+      userUid: notificationMessages.userUid,
+    })
+    .from(notificationMessages)
+    .where(inArray(notificationMessages.userUid, userUids))
+    .orderBy(notificationMessages.userUid, notificationMessages.id);
+}
+
+test("a merge re-keys the tombstone's read receipts and drops those the survivor already holds", async () => {
+  await observe({
+    crName: "receipt-cr",
+    mintedAt: 10_000,
+    userUid: "receipt-tombstone-uid",
+  });
+  await db.insert(notificationMessages).values({
+    dedupeKey: "quota-exhausted:receipt-ns:cpu",
+    id: "receipt-msg",
+    kind: "quota-exhausted",
+    namespace: "receipt-ns",
+    payload: { kind: "quota-exhausted", limit: 1, resource: "cpu", used: 1 },
+  });
+  await db.insert(notificationReadReceipts).values([
+    // Only the tombstone read these: they follow the survivor, the db one
+    // still attached to its row.
+    {
+      messageKey: "cr:debt-choice-debtperiod:1",
+      userUid: "receipt-tombstone-uid",
+    },
+    {
+      messageId: "receipt-msg",
+      messageKey: "db:receipt-msg",
+      userUid: "receipt-tombstone-uid",
+    },
+    // Both read this one: the survivor's stands, the tombstone's is dropped.
+    {
+      messageKey: "cr:workspace-debt-debt:1",
+      userUid: "receipt-tombstone-uid",
+    },
+    { messageKey: "cr:workspace-debt-debt:1", userUid: "receipt-survivor-uid" },
+  ]);
+
+  const telemetry = await observeCapturingTelemetry({
+    crName: "receipt-cr",
+    mintedAt: 11_000,
+    userUid: "receipt-survivor-uid",
+  });
+
+  assert.deepEqual(
+    await selectReceipts(["receipt-tombstone-uid", "receipt-survivor-uid"]),
+    [
+      {
+        messageId: null,
+        messageKey: "cr:debt-choice-debtperiod:1",
+        userUid: "receipt-survivor-uid",
+      },
+      {
+        messageId: null,
+        messageKey: "cr:workspace-debt-debt:1",
+        userUid: "receipt-survivor-uid",
+      },
+      {
+        messageId: "receipt-msg",
+        messageKey: "db:receipt-msg",
+        userUid: "receipt-survivor-uid",
+      },
+    ]
+  );
+  assert.equal(telemetry?.receiptsRekeyed, 2);
+  assert.equal(telemetry?.receiptsReleased, 1);
+});
+
+test("a merge re-keys the tombstone's account-scoped messages, key included, and collapses onto the survivor's live row", async () => {
+  await observe({
+    crName: "message-cr",
+    mintedAt: 12_000,
+    userUid: "message-tombstone-uid",
+  });
+  const giftPayload = {
+    giftMicroUnits: 1_000_000,
+    kind: "credit-hint",
+  } as const;
+  await db.insert(notificationMessages).values([
+    // The tombstone's welcome, observed in its own workspace.
+    {
+      dedupeKey: "credit-hint:message-tombstone-uid",
+      id: "message-tombstone-gift",
+      kind: "credit-hint",
+      namespace: "tombstone-ns",
+      payload: giftPayload,
+      userUid: "message-tombstone-uid",
+    },
+  ]);
+
+  const first = await observeCapturingTelemetry({
+    crName: "message-cr",
+    mintedAt: 13_000,
+    userUid: "message-survivor-uid",
+  });
+
+  // The row and its dedupe key follow the survivor: a later gift observation
+  // for the survivor finds this row and writes no second welcome.
+  assert.deepEqual(
+    await selectMessages(["message-tombstone-uid", "message-survivor-uid"]),
+    [
+      {
+        dedupeKey: "credit-hint:message-survivor-uid",
+        id: "message-tombstone-gift",
+        namespace: "tombstone-ns",
+        releasedAt: null,
+        userUid: "message-survivor-uid",
+      },
+    ]
+  );
+  assert.equal(first?.messagesRekeyed, 1);
+  assert.equal(first?.messagesReleased, 0);
+
+  // A second merge into the same survivor, from an account that also holds
+  // a live welcome: one row per person, so the newcomer's is deleted and
+  // its receipt cascades.
+  await observe({
+    crName: "message-cr-2",
+    mintedAt: 14_000,
+    userUid: "message-tombstone-2-uid",
+  });
+  await db.insert(notificationMessages).values({
+    dedupeKey: "credit-hint:message-tombstone-2-uid",
+    id: "message-tombstone-2-gift",
+    kind: "credit-hint",
+    namespace: "tombstone-2-ns",
+    payload: giftPayload,
+    userUid: "message-tombstone-2-uid",
+  });
+  await db.insert(notificationReadReceipts).values({
+    messageId: "message-tombstone-2-gift",
+    messageKey: "db:message-tombstone-2-gift",
+    userUid: "message-tombstone-2-uid",
+  });
+
+  const second = await observeCapturingTelemetry({
+    crName: "message-cr-2",
+    mintedAt: 15_000,
+    userUid: "message-survivor-uid",
+  });
+
+  assert.deepEqual(
+    (
+      await selectMessages(["message-tombstone-2-uid", "message-survivor-uid"])
+    ).map((row) => row.id),
+    ["message-tombstone-gift"]
+  );
+  assert.deepEqual(
+    await selectReceipts(["message-tombstone-2-uid", "message-survivor-uid"]),
+    []
+  );
+  assert.equal(second?.messagesRekeyed, 0);
+  assert.equal(second?.messagesReleased, 1);
 });
 
 test("a write-transaction re-check passes only while the binding is current", async () => {

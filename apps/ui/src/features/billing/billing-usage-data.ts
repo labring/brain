@@ -12,6 +12,7 @@ export type BillingQuotaType =
   | "gpu"
   | "memory"
   | "nodeport"
+  | "pod"
   | "storage"
   | "traffic";
 
@@ -56,6 +57,7 @@ const QUOTA_RESOURCES: ReadonlyArray<{
   { keys: ["limits.cpu"], label: "CPU", type: "cpu" },
   { keys: ["limits.memory"], label: "Memory", type: "memory" },
   { keys: ["requests.storage"], label: "Storage", type: "storage" },
+  { keys: ["pods", "count/pods"], label: "Pods", type: "pod" },
   { keys: ["services.nodeports"], label: "Ports", type: "nodeport" },
   { keys: ["traffic"], label: "Traffic", type: "traffic" },
   {
@@ -122,6 +124,30 @@ function quotaRows(
   });
 }
 
+/**
+ * One workspace's quota rows from the proxied resource-quota read — the
+ * Usage view's table without its workspace picker, for surfaces that only
+ * judge fullness (the status hint's quota-full evaluation).
+ */
+export async function loadWorkspaceQuotaUsage(
+  credentials: BillingCredentials & { workspace: string },
+  fetch: BillingFetch = globalThis.fetch
+): Promise<BillingUsageRow[]> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: {
+      appToken: credentials.appToken,
+      kubeconfig: credentials.kubeconfig,
+    },
+    fallbackErrorMessage: "Could not load workspace usage.",
+    fetch,
+  });
+  const quotaPayload = await requestBillingJson(
+    "/api/billing/workspace-quota",
+    { workspace: credentials.workspace }
+  );
+  return quotaRows(quotaResponseSchema.parse(quotaPayload));
+}
+
 export async function loadBillingUsage(
   input: BillingCredentials & { workspace: string },
   dependencies: BillingUsageDependencies = {}
@@ -163,14 +189,11 @@ export async function loadBillingUsage(
     return { rows: [], selectedWorkspace, workspaces };
   }
 
-  const quotaPayload = await requestBillingJson(
-    "/api/billing/workspace-quota",
-    {
-      workspace: selectedWorkspace,
-    }
-  );
   return {
-    rows: quotaRows(quotaResponseSchema.parse(quotaPayload)),
+    rows: await loadWorkspaceQuotaUsage(
+      { ...credentials, workspace: selectedWorkspace },
+      fetch
+    ),
     selectedWorkspace,
     workspaces,
   };

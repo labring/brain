@@ -660,7 +660,7 @@ _Avoid_: free workspace, trial period (for the state), Free plan (bare, for this
 
 The platform's fixed grace timeline that starts the moment a Workspace Subscription expires: the workspace is suspended immediately, the warning escalates as the countdown runs, and the workspace's resources are permanently deleted when it ends. Both roads into expiry — failed renewal payment and cancelled-then-lapsed — join the same countdown. The Billing Area surfaces it as a destructive warning carrying the stage's next deadline — the suspension date while a cancelled subscription's paid period still runs, the deletion date once expiry has passed; renewing (or resuming, before expiry) exits the countdown.
 
-_Avoid_: grace period (as the user-facing name), debt period, deletion schedule.
+_Avoid_: grace period (as the user-facing name), debt period, deletion schedule, paused (for the suspended workspace).
 
 ### Pay-As-You-Go (PAYG)
 
@@ -714,15 +714,27 @@ _Avoid_: user currency preference, build-time currency.
 
 ### Notification Center
 
-The user's single inbox for Notifications, opened from the App Sidebar's Notifications entry (below the Projects row). User-scoped and global: it aggregates messages across every Project rather than belonging to one. It is not the Deployment Task Dock and does not manage running tasks; it holds messages, not work.
+The user's single inbox for Notifications, opened from the App Sidebar's Notifications entry (below the Projects row). Global across every Project in the current workspace rather than belonging to one: every Workspace Actor sees the same messages, and only read state is personal. It is not the Deployment Task Dock and does not manage running tasks; it holds messages, not work.
 
 _Avoid_: task center, activity feed, message center, alerts panel.
 
 ### Notification
 
-One message addressed to the current user in the Notification Center: a system event (a deployment outcome, a database event), a billing or quota event, or a product announcement. Persistent and individually read/unread, which distinguishes it from a toast (ephemeral feedback that vanishes on its own); a Notification names its source Project when it has one.
+One message addressed to the current user in the Notification Center: a billing, subscription, or quota event, or a platform announcement, each carrying a Notification Severity. Persistent and individually read/unread — read state is per message and per user, never a workspace-shared fact — which distinguishes it from a toast (ephemeral feedback that vanishes on its own); a Notification names its source Project when it has one. A Notification originates from the platform or from Brain itself; the two read identically in the Notification Center, though a platform-origin message may be withdrawn or revived by the platform when its underlying condition changes.
 
 _Avoid_: alert, toast (for persistent items), event (for the user-facing message).
+
+### Notification Severity
+
+How much a Notification's message matters to the reader, on three levels — **critical** (something is already suspended or faces deletion), **warning** (a threshold was crossed or a deadline approaches; action prevents the next stage), **info** (a receipt, a hint, or an announcement; nothing to fix). Derived from what the message is about, never chosen per message, and shown without visual escalation: a critical item is marked, not shouted.
+
+_Avoid_: priority, importance (the platform CR field), level, tone.
+
+### Status Hint
+
+The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt, a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
+
+_Avoid_: alert bar, global notification, sticky toast, warning strip (as the concept's name).
 
 ## Design System
 
@@ -760,7 +772,7 @@ _Avoid_: indicator capsule, FAB.
 
 ### Dev Mock
 
-A dev/demo-only mode in which one feature's API answers are served from fixtures according to the selected Mock Scenario. Its state lives outside the dev tweaks panel — the panel is only its remote control, never the source of truth — which separates it from a tweak, an override value the panel owns. While a Dev Mock is enabled, the pages it covers show fixture data, not real state.
+A dev/demo-only mode in which a feature's API answers are served from fixtures according to the selected Mock Scenario. One Dev Mock answers for every surface that derives from the same facts — the billing mock also serves the billing-born Notifications and, through them, the Status Hint — so those surfaces can never disagree; surfaces with unrelated facts (platform-origin Notifications, a Deployment Task Timeline, a Conversation) get Dev Mocks of their own, and independent Dev Mocks compose. Its state lives outside the dev tweaks panel — the panel is only its remote control, never the source of truth — which separates it from a tweak, an override value the panel owns. While a Dev Mock is enabled, the pages it covers show fixture data, not real state.
 
 _Avoid_: mock group, mock tweak, mock override.
 

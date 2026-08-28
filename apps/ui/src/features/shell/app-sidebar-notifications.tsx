@@ -1,110 +1,176 @@
 "use client";
 
+import { AppButton } from "@workspace/ui/components/app-button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
 import { useSidebar } from "@workspace/ui/components/sidebar";
+import { SlidingToggle } from "@workspace/ui/components/sliding-toggle";
 import { cn } from "@workspace/ui/lib/utils";
-import { useAtom, useAtomValue } from "jotai";
 import {
   Bell,
-  CheckCheck,
-  CircleCheck,
-  CircleX,
-  CreditCard,
-  Gauge,
+  CircleAlert,
+  Info,
   type LucideIcon,
-  Megaphone,
+  TriangleAlert,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
-import { AppSidebarNotificationsDevMockGate } from "@/features/shell/app-sidebar-notifications-dev-mock-gate";
+import Link from "next/link";
+import { useRef, useState } from "react";
+import { BillingDevMockGate } from "@/features/billing/billing-dev-mock-gate";
+import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { NotificationsDevMockGate } from "@/features/notifications/dev-mock-gate";
+import {
+  formatNotificationTime,
+  formatNotificationTimestamp,
+} from "@/features/notifications/notification-time";
+import {
+  type NotificationFeed,
+  useNotificationFeed,
+} from "@/features/notifications/use-notification-feed";
 import {
   type AppNotification,
-  type AppNotificationKind,
-  countUnreadNotifications,
   isNotificationUnread,
+  type NotificationSeverity,
   type NotificationTab,
   notificationBadgeLabel,
   visibleNotifications,
 } from "@/features/shell/app-sidebar-notifications-model";
-import {
-  appNotificationsAtom,
-  notificationReadIdsAtom,
-} from "@/features/shell/app-sidebar-notifications-store";
 import { useCloseOnSidebarToggle } from "@/features/shell/use-close-on-sidebar-toggle";
 
-const KIND_META: Record<
-  AppNotificationKind,
+/**
+ * Severity is marked, never shouted (CONTEXT.md, Notification Severity): the
+ * icon and the CTA chip take the semantic color, the same three hues as the
+ * Status Hint's tint recipe; the card itself stays neutral at every level.
+ */
+const SEVERITY_META: Record<
+  NotificationSeverity,
   { icon: LucideIcon; tint: string }
 > = {
-  announcement: { icon: Megaphone, tint: "text-blue-400" },
-  billing: { icon: CreditCard, tint: "text-neutral-300" },
-  "deploy-failure": { icon: CircleX, tint: "text-red-400" },
-  "deploy-success": { icon: CircleCheck, tint: "text-emerald-400" },
-  quota: { icon: Gauge, tint: "text-amber-400" },
+  critical: { icon: CircleAlert, tint: "text-destructive" },
+  info: { icon: Info, tint: "text-blue-600 dark:text-blue-400" },
+  warning: { icon: TriangleAlert, tint: "text-amber-600 dark:text-amber-400" },
 };
 
-function NotificationKindIcon({ kind }: { kind: AppNotificationKind }) {
-  const meta = KIND_META[kind];
-  const Icon = meta.icon;
+function NotificationTime({ timestamp }: { timestamp: number }) {
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-input/40">
-      <Icon
-        aria-hidden
-        className={cn("size-3.5", meta.tint)}
-        strokeWidth={1.8}
-      />
-    </span>
+    <time
+      className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
+      dateTime={new Date(timestamp).toISOString()}
+      title={formatNotificationTimestamp(timestamp)}
+    >
+      {formatNotificationTime(timestamp)}
+    </time>
   );
 }
 
-function NotificationRow({
+function NotificationCard({
+  expanded,
   item,
   onRead,
+  onToggle,
   unread,
 }: {
+  expanded: boolean;
   item: AppNotification;
   onRead: () => void;
+  onToggle: () => void;
   unread: boolean;
 }) {
-  const meta = [item.project, item.time].filter(Boolean).join(" · ");
+  const meta = SEVERITY_META[item.severity];
+  const Icon = meta.icon;
+  // The CTA is the card's one way out (design spec §10): a sibling link
+  // below the message, not a control nested in the row button. Billing CTAs
+  // record the return route first so the Billing Area's close button comes
+  // back here.
+  const cta = item.cta;
   return (
-    <button
-      className="flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-2 text-left transition-colors hover:bg-input/30"
+    <div
+      className={cn(
+        "relative rounded-lg border bg-input/20 transition-colors hover:bg-input/35",
+        unread ? "border-border/60" : "border-transparent"
+      )}
+      data-severity={item.severity}
       data-slot="app-sidebar-notification-row"
-      onClick={onRead}
-      type="button"
     >
-      <NotificationKindIcon kind={item.kind} />
-      <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block truncate text-sm",
-            unread ? "font-medium text-neutral-50" : "text-neutral-300"
-          )}
-        >
-          {item.title}
+      {/* Click = read it: expands a clamped body and marks the item read. */}
+      <button
+        className="flex w-full cursor-pointer gap-2.5 px-2.5 pt-2.5 text-left"
+        onClick={onToggle}
+        type="button"
+      >
+        <Icon
+          aria-hidden
+          className={cn("mt-0.5 size-4 shrink-0", meta.tint)}
+          strokeWidth={1.8}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline justify-between gap-2">
+            <span
+              className={cn(
+                "min-w-0 truncate text-sm",
+                unread ? "font-medium text-neutral-50" : "text-neutral-300"
+              )}
+            >
+              {item.title}
+            </span>
+            <NotificationTime timestamp={item.timestamp} />
+          </span>
+          {item.body ? (
+            <span
+              className={cn(
+                "mt-0.5 block text-muted-foreground text-xs leading-relaxed",
+                !expanded && "line-clamp-3"
+              )}
+            >
+              {item.body}
+            </span>
+          ) : null}
         </span>
-        <span className="mt-0.5 block truncate text-muted-foreground text-xs">
-          {meta}
-        </span>
-      </span>
+      </button>
+      <div className={cn("px-2.5 pb-2.5", cta == null ? "pt-0" : "pt-2")}>
+        {cta == null ? null : (
+          <AppButton
+            // Tonal: the Status Hint's chip recipe, colored by severity.
+            className={cn(
+              "ml-[26px] h-6 bg-current/15 px-2 text-xs hover:bg-current/25",
+              meta.tint
+            )}
+            nativeButton={false}
+            render={
+              <Link
+                href={cta.href}
+                onClick={() => {
+                  if (cta.href.startsWith("/billing")) {
+                    recordBillingReturnRoute();
+                  }
+                  onRead();
+                }}
+              >
+                {cta.label}
+              </Link>
+            }
+            size="sm"
+            variant="secondary"
+          />
+        )}
+      </div>
       <span
         aria-hidden
         className={cn(
-          "size-1.5 shrink-0 rounded-full bg-blue-400",
+          "absolute top-2.5 right-2.5 size-1.5 rounded-full bg-blue-400 transition-opacity",
           unread ? "opacity-100" : "opacity-0"
         )}
       />
-    </button>
+    </div>
   );
 }
 
-function NotificationsEmptyState() {
+function NotificationsEmptyState({ tab }: { tab: NotificationTab }) {
+  const nothingYet = tab === "all";
   return (
-    <div className="flex flex-col items-center gap-2 px-4 py-9 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-9 text-center">
       <span className="flex size-9 items-center justify-center rounded-full bg-input/40">
         <Bell
           aria-hidden
@@ -113,90 +179,94 @@ function NotificationsEmptyState() {
         />
       </span>
       <span className="font-medium text-neutral-50 text-sm">
-        No notifications
+        {nothingYet ? "No notifications yet" : "You're all caught up"}
       </span>
       <span className="text-muted-foreground text-xs">
-        You're all caught up.
+        {nothingYet
+          ? "Billing, quota, and platform messages land here."
+          : "Nothing unread."}
       </span>
     </div>
   );
 }
 
-function NotificationsPanel() {
-  const items = useAtomValue(appNotificationsAtom);
-  const [readIds, setReadIds] = useAtom(notificationReadIdsAtom);
+export function NotificationsPanel({ feed }: { feed: NotificationFeed }) {
+  const { items, markAllRead, markRead, readIds, unreadCount } = feed;
   const [tab, setTab] = useState<NotificationTab>("all");
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
 
-  const unreadCount = countUnreadNotifications(items, readIds);
   const visible = visibleNotifications(items, tab, readIds);
 
-  const markRead = useCallback(
-    (id: string) => {
-      setReadIds((previous) => new Set(previous).add(id));
-    },
-    [setReadIds]
-  );
-  const markAllRead = useCallback(() => {
-    setReadIds((previous) => {
-      const next = new Set(previous);
-      for (const item of items) {
+  const toggle = (item: AppNotification) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) {
+        next.delete(item.id);
+      } else {
         next.add(item.id);
       }
       return next;
     });
-  }, [items, setReadIds]);
+    markRead(item);
+  };
 
   return (
     <>
-      <div className="flex h-9 shrink-0 items-center justify-between pr-1.5 pl-3">
+      <div className="flex h-10 shrink-0 items-center justify-between pr-2 pl-3">
         <span className="font-medium text-sm">Notifications</span>
-        <button
-          aria-label="Mark all as read"
-          className={cn(
-            "flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-input/40 hover:text-neutral-50",
-            unreadCount === 0 && "pointer-events-none opacity-40"
-          )}
+        <AppButton
+          className="text-muted-foreground hover:text-neutral-50"
+          disabled={unreadCount === 0}
           onClick={markAllRead}
-          type="button"
+          size="sm"
+          variant="quiet"
         >
-          <CheckCheck aria-hidden className="size-3.5" strokeWidth={1.8} />
-        </button>
+          Mark all as read
+        </AppButton>
       </div>
-      <div className="flex shrink-0 items-center gap-1 px-3 pb-2">
-        {(
-          [
-            { key: "all", label: "All" },
+      <div className="shrink-0 px-2 pb-2">
+        <SlidingToggle
+          ariaLabel="Notification filter"
+          indicatorClassName="dark:bg-input/40"
+          onValueChange={setTab}
+          options={[
+            { label: "All", value: "all" },
             {
-              key: "unread",
-              label: unreadCount > 0 ? `Unread ${unreadCount}` : "Unread",
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  Unread
+                  {unreadCount > 0 ? (
+                    <span
+                      className="rounded-full bg-blue-400/15 px-1.5 text-[10px] text-blue-400 tabular-nums"
+                      data-slot="app-sidebar-notifications-unread-count"
+                    >
+                      {unreadCount}
+                    </span>
+                  ) : null}
+                </span>
+              ),
+              value: "unread",
             },
-          ] as const
-        ).map((entry) => (
-          <button
-            className={cn(
-              "cursor-pointer rounded-md px-2 py-1 text-xs transition-colors",
-              tab === entry.key
-                ? "bg-input/40 font-medium text-neutral-50"
-                : "text-muted-foreground hover:text-neutral-50"
-            )}
-            key={entry.key}
-            onClick={() => setTab(entry.key)}
-            type="button"
-          >
-            {entry.label}
-          </button>
-        ))}
+          ]}
+          size="sm"
+          value={tab}
+          width="full"
+        />
       </div>
       {visible.length === 0 ? (
-        <NotificationsEmptyState />
+        <NotificationsEmptyState tab={tab} />
       ) : (
-        <div className="max-h-88 overflow-y-auto px-1.5 pb-1.5">
-          <div className="flex flex-col">
+        <div className="max-h-[30rem] flex-1 overflow-y-auto px-2 pb-2">
+          <div className="flex flex-col gap-1.5">
             {visible.map((item) => (
-              <NotificationRow
+              <NotificationCard
+                expanded={expanded.has(item.id)}
                 item={item}
                 key={item.id}
-                onRead={() => markRead(item.id)}
+                onRead={() => markRead(item)}
+                onToggle={() => toggle(item)}
                 unread={isNotificationUnread(item, readIds)}
               />
             ))}
@@ -218,9 +288,8 @@ function NotificationsPanel() {
 export function AppSidebarNotifications() {
   const { state } = useSidebar();
   const expanded = state === "expanded";
-  const items = useAtomValue(appNotificationsAtom);
-  const readIds = useAtomValue(notificationReadIdsAtom);
-  const unreadCount = countUnreadNotifications(items, readIds);
+  const feed = useNotificationFeed();
+  const { unreadCount } = feed;
   const badgeLabel = notificationBadgeLabel(unreadCount);
   const [open, setOpen] = useState(false);
   // Collapsed anchor: the row keeps its full expanded width under the rail's
@@ -244,7 +313,10 @@ export function AppSidebarNotifications() {
 
   return (
     <>
-      <AppSidebarNotificationsDevMockGate />
+      {/* The billing Dev Mock's scenarios drive the inbox fixtures too, so
+          its panel entry is reachable from anywhere the inbox is. */}
+      <BillingDevMockGate />
+      <NotificationsDevMockGate />
       <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger render={trigger}>
           <span
@@ -301,15 +373,17 @@ export function AppSidebarNotifications() {
         </PopoverTrigger>
         {/* Collapsed rail: anchor the icon slot, sideOffset 6 (the rail-wide
             convention for popovers) — the default trigger anchor sits at the
-            clipped full-width row's edge, far past the visible rail. */}
+            clipped full-width row's edge, far past the visible rail. The
+            panel keeps a floor height so an empty inbox and a one-item inbox
+            read as the same surface. */}
         <PopoverContent
           align="start"
           anchor={expanded ? undefined : iconSlotRef}
-          className="w-80 gap-0 rounded-lg border border-border bg-input/30 p-0 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
+          className="flex min-h-80 w-96 flex-col gap-0 rounded-lg border border-border bg-input/30 p-0 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
           side="right"
           sideOffset={expanded ? 10 : 6}
         >
-          <NotificationsPanel />
+          <NotificationsPanel feed={feed} />
         </PopoverContent>
       </Popover>
     </>

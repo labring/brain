@@ -1,28 +1,50 @@
 /**
  * The Notification Center's model: what one Notification is, plus the pure
  * derivations the panel renders from (unread accounting, tab filtering, the
- * entry badge). No data source is wired yet — items arrive via the
- * notifications store, which only the dev mock writes today.
+ * entry badge). Items arrive from the merged feed
+ * (`@/features/notifications/feed-model`): platform CRs read live from the
+ * cluster and Brain-produced entries from Brain's own store, one list sorted
+ * by real time.
  */
 
-export type AppNotificationKind =
-  | "announcement"
-  | "billing"
-  | "deploy-failure"
-  | "deploy-success"
-  | "quota";
+/**
+ * Notification Severity: how much the message matters, derived from what it
+ * is about — critical (already suspended or facing deletion), warning (a
+ * threshold crossed or a deadline near; action prevents the next stage),
+ * info (a receipt, a hint, an announcement). Shown without escalation.
+ */
+export type NotificationSeverity = "critical" | "warning" | "info";
+
+/** Which stream a Notification came from; also its id prefix. */
+export type AppNotificationSource = "cr" | "db";
+
+/**
+ * The one way out a Notification offers (design spec §10 rule 6): a verb
+ * from the CTA table deep-linking to the page that solves the problem.
+ * Receipts and hints carry none.
+ */
+export interface NotificationCTA {
+  href: string;
+  label: string;
+}
 
 /**
  * One Notification: a message addressed to the current user, aggregated
- * across Projects. `time` is a preformatted display string until a real
- * data source lands; `unread` is the item's own state before session read
- * receipts are applied on top.
+ * across Projects. `id` is source-prefixed (`cr:<name>:<timestamp>` or
+ * `db:<id>`) and doubles as the read-receipt key; `timestamp` is epoch
+ * milliseconds; `unread` is the item's own state (the CR label, or "never
+ * read" for Brain entries) before receipts are applied on top.
  */
 export interface AppNotification {
+  body?: string;
+  /** The CR to patch when a `cr:` item is marked read (best-effort). */
+  crName?: string;
+  cta?: NotificationCTA;
   id: string;
-  kind: AppNotificationKind;
   project?: string;
-  time: string;
+  severity: NotificationSeverity;
+  source: AppNotificationSource;
+  timestamp: number;
   title: string;
   unread: boolean;
 }

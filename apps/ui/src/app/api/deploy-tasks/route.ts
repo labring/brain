@@ -10,6 +10,7 @@ import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/features/deploy/task/api-auth";
+import { withDeployTaskDevMock } from "@/features/deploy/task/dev-mock-route";
 import { createDeployTaskAction } from "@/features/deploy/task/engine/actions";
 import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
 import {
@@ -165,7 +166,7 @@ async function resolveCredentialBinding(input: {
   };
 }
 
-export async function GET(request: Request) {
+async function handleGet(request: Request) {
   const url = new URL(request.url);
   const params = deployTaskRequestParams(request);
   const namespaceResolved = await resolveDeployTaskRequestNamespace({
@@ -220,6 +221,8 @@ export async function GET(request: Request) {
   });
   return NextResponse.json({ projections });
 }
+
+export const GET = withDeployTaskDevMock("list", handleGet);
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);

@@ -210,9 +210,11 @@ test("a payment started from Pricing ends in the shared congratulations", async 
             loadTransaction: () =>
               Promise.resolve({
                 id: "transaction-1",
+                operator: "upgraded",
                 payId: "payment-1",
                 planName: "Team",
                 status: "completed",
+                startAt: null,
               }),
             loadUpgradeQuote: () =>
               Promise.resolve({

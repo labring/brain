@@ -38,6 +38,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0064 — Pin the Current Billing Region by Deployment-Declared Domain](0064-pin-the-current-billing-region-by-deployment-declared-domain.md)
 - [0065 — Gate Free Chat Turns on the Active Free Trial and block on exhaustion](0065-gate-free-chat-turns-on-the-active-free-trial-and-block-on-exhaustion.md) *(replaces the deleted ADR-0033)*
 - [0066 — Give Canvas Resources Editable Display Names Stored on the Resource](0066-store-resource-display-names-in-annotations.md)
+- [0067 — Store Notifications Hybrid: Read Platform CRs Live, Keep Brain's Own in App Postgres](0067-store-notifications-hybrid-cr-read-proxy-and-brain-postgres.md)
 
 ## Conventions
 

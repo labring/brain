@@ -33,6 +33,7 @@ import {
   useState,
 } from "react";
 import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
+import { observeWorkspaceQuotaForInbox } from "@/features/notifications/quota-observation";
 import { projectIdFromPathname } from "@/features/panes/use-project-id";
 import { useProjectsExplorerReadModel } from "@/features/projects/explorer/use-projects-explorer";
 import type {
@@ -42,7 +43,7 @@ import type {
 import { createAppSidebarProjectGroups } from "@/features/shell/app-sidebar.groups";
 import { AppSidebarAccount } from "@/features/shell/app-sidebar-account";
 import { AppSidebarNotifications } from "@/features/shell/app-sidebar-notifications";
-import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 const APP_SIDEBAR_NAV_ID = "app-sidebar-nav";
 const APP_SIDEBAR_WIDTH = "13.75rem";
@@ -540,6 +541,7 @@ function AppSidebarChrome({
   currentProjectId: string | undefined;
   projectsActive: boolean;
 }) {
+  const appToken = useAtomValue(appTokenAtom).trim();
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const namespace = useAtomValue(namespaceAtom);
   const { devMockActive, states } = useProjectsExplorerReadModel({
@@ -556,10 +558,18 @@ function AppSidebarChrome({
   );
 
   // Warm the workspace-quota cache so chat turns can inject the snapshot
-  // without waiting on the desktop SDK (see project-workspace-layout).
+  // without waiting on the desktop SDK (see project-workspace-layout), and
+  // let the quota-exhausted producer observe the first snapshot; the Status
+  // Hint keeps observing on its polling cadence.
   useEffect(() => {
-    loadWorkspaceQuotaSnapshot(namespace).catch(() => undefined);
-  }, [namespace]);
+    if (appToken === "" || kubeconfig === "") {
+      loadWorkspaceQuotaSnapshot(namespace).catch(() => undefined);
+      return;
+    }
+    observeWorkspaceQuotaForInbox({ appToken, kubeconfig, namespace }).catch(
+      () => undefined
+    );
+  }, [appToken, kubeconfig, namespace]);
 
   return (
     <Sidebar

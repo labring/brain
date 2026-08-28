@@ -1199,9 +1199,11 @@ test("upgrade waiting ignores other payments, polls, times out, reopens, and can
                 events.push("poll");
                 return Promise.resolve({
                   id: "transaction-1",
+                  operator: "upgraded",
                   payId: "payment-old",
                   planName: "Team",
                   status: "completed",
+                  startAt: null,
                 });
               },
               loadUpgradeQuote: () =>
@@ -1315,8 +1317,10 @@ test("upgrade waiting stops immediately for the matching failed payment", async 
                 transactionChecks += 1;
                 return Promise.resolve({
                   id: "transaction-1",
+                  operator: "upgraded",
                   payId: "payment-1",
                   planName: "Team",
+                  startAt: null,
                   status: transactionChecks === 1 ? "failed" : "pending",
                 });
               },
@@ -1418,8 +1422,10 @@ test("cancel failure resolves a concurrently completed payment", async () => {
                 transactionChecks += 1;
                 return Promise.resolve({
                   id: "transaction-1",
+                  operator: "upgraded",
                   payId: "payment-1",
                   planName: "Team",
+                  startAt: null,
                   status: transactionChecks === 1 ? "pending" : "completed",
                 });
               },
@@ -1640,9 +1646,11 @@ test("payment waiting keeps the quote surface and disables its dismissals", asyn
               loadTransaction: () =>
                 Promise.resolve({
                   id: "transaction-1",
+                  operator: "upgraded",
                   payId: "payment-1",
                   planName: "Team",
                   status: "pending",
+                  startAt: null,
                 }),
               loadUpgradeQuote: () =>
                 Promise.resolve({
@@ -1757,9 +1765,11 @@ test("a completed payment confirms in place before the checkout hands off", asyn
               loadTransaction: () =>
                 Promise.resolve({
                   id: "transaction-1",
+                  operator: "upgraded",
                   payId: "payment-1",
                   planName: "Team",
                   status: "completed",
+                  startAt: null,
                 }),
               loadUpgradeQuote: () =>
                 Promise.resolve({

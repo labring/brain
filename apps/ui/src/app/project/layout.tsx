@@ -1,3 +1,5 @@
+import { ChatDevMockGate } from "@/features/chat/dev-mock-gate";
+import { DeployTaskDevMockGate } from "@/features/deploy/task/dev-mock-gate";
 import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
 import { ProjectsExplorerDevMockGate } from "@/features/projects/explorer/projects-dev-mock-gate";
 import {
@@ -11,6 +13,7 @@ import AuthBootstrap, {
   SealosSdkBootstrap,
 } from "@/features/shell/auth-bootstrap";
 import ProjectWorkspaceLayout from "@/features/shell/project-workspace-layout";
+import { StatusHintBanner } from "@/features/status-hint/status-hint-banner";
 
 /** Desktop iframe auth is resolved on the client through the Sealos SDK. */
 export const dynamic = "force-dynamic";
@@ -27,9 +30,12 @@ export default function ProjectLayout({
       <DevboxBootstrap />
       <OnboardingGate />
       <ProjectsExplorerDevMockGate />
+      <DeployTaskDevMockGate />
+      <ChatDevMockGate />
       <AppSidebarCookieBridge>
         <AppShellSidebar />
         <AppShellView className="min-w-0 flex-1 basis-0">
+          <StatusHintBanner />
           <ProjectWorkspaceLayout>{children}</ProjectWorkspaceLayout>
         </AppShellView>
       </AppSidebarCookieBridge>

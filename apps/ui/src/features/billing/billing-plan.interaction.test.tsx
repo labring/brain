@@ -347,9 +347,11 @@ test("a settled poll closes the checkout and picker into congratulations", async
               loadTransaction: () =>
                 Promise.resolve({
                   id: "transaction-1",
+                  operator: "upgraded",
                   payId: "payment-1",
                   planName: "Team",
                   status: "completed",
+                  startAt: null,
                 }),
               loadUpgradeQuote: () =>
                 Promise.resolve({

@@ -2,6 +2,7 @@ import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/features/deploy/task/api-auth";
+import { withDeployTaskDevMock } from "@/features/deploy/task/dev-mock-route";
 import type { DeploymentTaskProjectionStreamEvent } from "@/features/deploy/task/projection";
 import {
   type DeploymentTaskEventsSubscription,
@@ -22,7 +23,7 @@ function encodeSse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-export async function GET(request: Request) {
+async function handleGet(request: Request) {
   const url = new URL(request.url);
   const params = deployTaskRequestParams(request);
   const namespaceResolved = await resolveDeployTaskRequestNamespace({
@@ -157,3 +158,5 @@ export async function GET(request: Request) {
     },
   });
 }
+
+export const GET = withDeployTaskDevMock("projections-stream", handleGet);
