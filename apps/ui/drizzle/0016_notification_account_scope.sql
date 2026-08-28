@@ -1,0 +1,2 @@
+ALTER TABLE "sealai_notification"."notification_messages" ADD COLUMN "user_uid" text;--> statement-breakpoint
+CREATE INDEX "notification_messages_user_uid_created_at_idx" ON "sealai_notification"."notification_messages" USING btree ("user_uid","created_at");

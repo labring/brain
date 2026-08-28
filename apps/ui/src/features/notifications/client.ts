@@ -3,6 +3,7 @@ import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 import {
   type GiftObservationRequest,
+  NOTIFICATION_READ_BATCH_LIMIT,
   type NotificationFeedResponse,
   notificationFeedResponseSchema,
   type SubscriptionChangeObservationRequest,
@@ -35,22 +36,37 @@ export async function fetchNotificationFeed(
   return notificationFeedResponseSchema.parse(await response.json());
 }
 
-/** Records per-user receipts for the given source-prefixed ids. */
+/** Splits ids into request-sized batches so "mark all" never exceeds the route's limit. */
+export function readReceiptBatches(
+  ids: readonly string[],
+  limit: number = NOTIFICATION_READ_BATCH_LIMIT
+): string[][] {
+  const batches: string[][] = [];
+  for (let start = 0; start < ids.length; start += limit) {
+    batches.push(ids.slice(start, start + limit));
+  }
+  return batches;
+}
+
+/**
+ * Records per-user receipts for the given source-prefixed ids, one request
+ * per batch in order. Rejects on the first failed batch; earlier batches
+ * stay recorded (receipts are idempotent, so a retry re-sends them all).
+ */
 export async function postNotificationReadReceipts(
   credentials: NotificationClientCredentials,
   ids: readonly string[],
   fetchImpl: typeof fetch = globalThis.fetch
 ): Promise<void> {
-  if (ids.length === 0) {
-    return;
+  for (const batch of readReceiptBatches(ids)) {
+    await postNotificationJson(
+      "/read",
+      credentials,
+      { ids: batch },
+      "Mark-read",
+      fetchImpl
+    );
   }
-  await postNotificationJson(
-    "/read",
-    credentials,
-    { ids },
-    "Mark-read",
-    fetchImpl
-  );
 }
 
 async function postNotificationJson(

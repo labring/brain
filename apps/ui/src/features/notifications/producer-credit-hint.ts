@@ -3,10 +3,11 @@ import type { NotificationStore } from "./store";
 /**
  * The $1 gift hint producer (catalog row D4): the first time a new user's
  * gift credit is visible during one of their requests, exactly one
- * reassuring entry appears — per user, not per workspace, so the dedupe key
- * carries the bare user uid and the row lands in the workspace that first
- * observed it. The key is never released: the gift is reissued monthly, the
- * welcome is said once.
+ * reassuring entry appears — per user, not per workspace. The dedupe key
+ * carries the bare user uid and the row is account-scoped (`userUid` set),
+ * so it follows the person into every workspace's inbox; `namespace` only
+ * records where it was first observed. The key is never released: the gift
+ * is reissued monthly, the welcome is said once.
  */
 
 export const CREDIT_HINT_DEDUPE_PREFIX = "credit-hint";
@@ -45,6 +46,7 @@ export async function observeGiftCreditForNotifications(
     namespace,
     now: input.now,
     payload: { giftMicroUnits: input.giftMicroUnits, kind: "credit-hint" },
+    userUid,
   });
   return { produced };
 }

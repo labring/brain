@@ -106,7 +106,15 @@ test("quota-full's storage crosses 100% once; active's usage releases it", async
     snapshot: await quotaSnapshotFor("active"),
   });
   assert.deepEqual(recovered, { produced: [], released: ["storage"] });
-  assert.equal((await store.listMessages(WORKSPACE)).length, 1);
+  assert.equal(
+    (
+      await store.listMessages({
+        namespace: WORKSPACE,
+        userUid: "uid-newcomer",
+      })
+    ).length,
+    1
+  );
 });
 
 test("free's visible gift writes the hint once; active carries no gift", async () => {
@@ -148,9 +156,9 @@ test("active's settled checkout is one upgrade receipt, however often it is obse
   assert.deepEqual(await observe(), { produced: true });
   assert.deepEqual(await observe(), { produced: false });
 
-  const kinds = (await store.listMessages(WORKSPACE)).map(
-    (message) => message.kind
-  );
+  const kinds = (
+    await store.listMessages({ namespace: WORKSPACE, userUid: "uid-newcomer" })
+  ).map((message) => message.kind);
   assert.deepEqual([...kinds].sort(), [
     "credit-hint",
     "quota-exhausted",

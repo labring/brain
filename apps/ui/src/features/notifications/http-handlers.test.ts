@@ -245,6 +245,19 @@ test("a visible gift writes one hint per user through the route; a retry writes 
     giftMicroUnits: 720_000,
     kind: "credit-hint",
   });
+  // Account-scoped (catalog D4): the same hint is listed from a workspace
+  // that never observed the gift.
+  const elsewhere = notificationFeedResponseSchema.parse(
+    await (
+      await handlers.feed(
+        await request("", { actor: "carol", namespace: "ns-b" })
+      )
+    ).json()
+  );
+  assert.deepEqual(
+    elsewhere.messages.filter((message) => message.kind === "credit-hint"),
+    [hint]
+  );
 
   const bad = await handlers.observeGift(
     await request("/gift-observation", {

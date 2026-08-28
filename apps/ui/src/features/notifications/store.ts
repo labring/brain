@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
 import { DAY_MS } from "@/lib/time";
@@ -22,13 +22,20 @@ import type {
 type ReceiptInsert = typeof notificationReadReceipts.$inferInsert;
 
 /**
- * The reader marking notifications read: bare uid key + crName for the
- * re-check, plus the workspace whose `db:` rows the receipts may attach to.
+ * Whose inbox: the workspace's own messages plus the account-scoped ones
+ * that follow this person into every workspace.
  */
-export interface NotificationReader {
-  legacyWorkspaceActor: string;
+export interface NotificationInbox {
   namespace: string;
   userUid: string;
+}
+
+/**
+ * The reader marking notifications read: bare uid key + crName for the
+ * re-check, plus the inbox whose `db:` rows the receipts may attach to.
+ */
+export interface NotificationReader extends NotificationInbox {
+  legacyWorkspaceActor: string;
 }
 
 export interface ProduceNotificationInput {
@@ -39,11 +46,17 @@ export interface ProduceNotificationInput {
   now?: Date;
   payload: NotificationPayload;
   projectUid?: string | null;
+  /**
+   * Set for account-scoped messages (the gift hint, later the expiry
+   * reminder): the row follows the person into every workspace's inbox and
+   * `namespace` only records where it was first observed.
+   */
+  userUid?: string | null;
 }
 
 export interface NotificationStore {
-  /** The namespace's entries, newest first. */
-  listMessages(namespace: string): Promise<NotificationMessage[]>;
+  /** The inbox's entries — the workspace's own plus the person's account-scoped ones — newest first. */
+  listMessages(inbox: NotificationInbox): Promise<NotificationMessage[]>;
   /** The user's receipts, as source-prefixed ids. */
   listReceipts(userUid: string): Promise<string[]>;
   /**
@@ -69,7 +82,7 @@ export interface NotificationStore {
 
 /**
  * `db:` receipts attach their message row so the sweep cascades; a `db:` id
- * this namespace does not hold is skipped (it would outlive nothing). Every
+ * this inbox does not hold is skipped (it would outlive nothing). Every
  * other id is a platform key and stands alone.
  */
 function receiptRows(
@@ -101,6 +114,17 @@ function toMessage(row: NotificationMessageRow): NotificationMessage {
   };
 }
 
+/** The rows one inbox holds: the workspace's own and the person's account-scoped ones. */
+function inboxMessages(inbox: NotificationInbox) {
+  return or(
+    and(
+      eq(notificationMessages.namespace, inbox.namespace),
+      isNull(notificationMessages.userUid)
+    ),
+    eq(notificationMessages.userUid, inbox.userUid)
+  );
+}
+
 /**
  * Persistence for the Notification Center's Brain-produced stream and read
  * receipts (ADR-0067). The handle's schema carries `identity_fingerprints`
@@ -110,11 +134,11 @@ export function createNotificationStore(
   getDb: () => NotificationPgDatabase
 ): NotificationStore {
   return {
-    listMessages: async (namespace) => {
+    listMessages: async (inbox) => {
       const rows = await getDb()
         .select()
         .from(notificationMessages)
-        .where(eq(notificationMessages.namespace, namespace))
+        .where(inboxMessages(inbox))
         .orderBy(
           desc(notificationMessages.createdAt),
           desc(notificationMessages.id)
@@ -152,7 +176,7 @@ export function createNotificationStore(
                 .from(notificationMessages)
                 .where(
                   and(
-                    eq(notificationMessages.namespace, reader.namespace),
+                    inboxMessages(reader),
                     inArray(notificationMessages.id, dbIds)
                   )
                 );
@@ -184,6 +208,7 @@ export function createNotificationStore(
             namespace: input.namespace,
             payload: input.payload,
             projectUid: input.projectUid ?? null,
+            userUid: input.userUid ?? null,
           })
           .onConflictDoNothing({
             target: notificationMessages.dedupeKey,

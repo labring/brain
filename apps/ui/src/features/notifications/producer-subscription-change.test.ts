@@ -69,7 +69,10 @@ test("one receipt per successful change; the same transaction observed twice wri
   assert.deepEqual(first, { produced: true });
   assert.deepEqual(again, { produced: false });
   assert.deepEqual(downgrade, { produced: true });
-  const messages = await store.listMessages("ns-a");
+  const messages = await store.listMessages({
+    namespace: "ns-a",
+    userUid: "viewer-uid",
+  });
   assert.deepEqual(
     messages.map((message) => message.payload),
     [
@@ -114,7 +117,10 @@ test("an upgrade over a scheduled downgrade is the next receipt; the superseded 
   assert.deepEqual(scheduled, { produced: true });
   assert.deepEqual(upgrade, { produced: true });
   assert.deepEqual(settled, { produced: false });
-  const messages = await store.listMessages("ns-seq");
+  const messages = await store.listMessages({
+    namespace: "ns-seq",
+    userUid: "viewer-uid",
+  });
   assert.deepEqual(
     messages.map((message) => message.payload),
     [

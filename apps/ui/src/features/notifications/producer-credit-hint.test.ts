@@ -39,7 +39,7 @@ test("the dedupe key names the user, not the workspace", () => {
   assert.equal(creditHintDedupeKey("uid-alice"), "credit-hint:uid-alice");
 });
 
-test("a visible gift writes one hint per user; retries and other workspaces write nothing", async () => {
+test("a visible gift writes one hint per user; retries and other workspaces write nothing, and every workspace lists it", async () => {
   const first = await observeGiftCreditForNotifications(store, {
     giftMicroUnits: 720_000,
     namespace: "ns-a",
@@ -62,13 +62,25 @@ test("a visible gift writes one hint per user; retries and other workspaces writ
   assert.deepEqual(first, { produced: true });
   assert.deepEqual(retry, { produced: false });
   assert.deepEqual(elsewhere, { produced: false });
-  const messages = await store.listMessages("ns-a");
+  const messages = await store.listMessages({
+    namespace: "ns-a",
+    userUid: "uid-alice",
+  });
   assert.equal(messages.length, 1);
   assert.deepEqual(messages[0]?.payload, {
     giftMicroUnits: 720_000,
     kind: "credit-hint",
   });
-  assert.deepEqual(await store.listMessages("ns-b"), []);
+  // Account-scoped: the one row follows the person into a workspace that
+  // never observed the gift, and stays out of another person's inbox there.
+  assert.deepEqual(
+    await store.listMessages({ namespace: "ns-b", userUid: "uid-alice" }),
+    messages
+  );
+  assert.deepEqual(
+    await store.listMessages({ namespace: "ns-a", userUid: "uid-someone" }),
+    []
+  );
 });
 
 test("another user gets their own hint; no gift writes nothing", async () => {
@@ -90,7 +102,12 @@ test("another user gets their own hint; no gift writes nothing", async () => {
     }),
     { produced: true }
   );
-  assert.equal((await store.listMessages("ns-a")).length, 2);
+  assert.equal(
+    (await store.listMessages({ namespace: "ns-a", userUid: "uid-bob" }))
+      .length,
+    1,
+    "bob's inbox holds his own hint, not alice's"
+  );
 });
 
 test("a blank user or workspace observes nothing", async () => {

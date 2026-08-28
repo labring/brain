@@ -8,6 +8,7 @@ import {
 } from "@workspace/api/hooks";
 import { useAtom, useAtomValue } from "jotai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import useSWR from "swr";
 
 import { loadAccountCredits } from "@/features/billing/account-credits";
@@ -44,9 +45,11 @@ export interface NotificationFeed {
  * (≤5 minutes) and Brain-produced entries plus the user's receipts from
  * Brain's store, merged client-side into one list with the display layer
  * applied (override table, gift-only filter). Mark-read is optimistic and
- * dispatched per source. The account's credits and top-up history decide the
- * gift-only filter and are the gift hint's observation point; while the
- * billing Dev Mock serves the feed, its fixture CRs replace the cluster poll.
+ * dispatched per source; a failed receipt rolls the optimistic state back so
+ * the item reads unread again and the click can be retried. The account's
+ * credits and top-up history decide the gift-only filter and are the gift
+ * hint's observation point; while the billing Dev Mock serves the feed, its
+ * fixture CRs replace the cluster poll.
  */
 export function useNotificationFeed(): NotificationFeed {
   const appToken = useAtomValue(appTokenAtom).trim();
@@ -158,10 +161,11 @@ export function useNotificationFeed(): NotificationFeed {
       if (targets.length === 0) {
         return;
       }
+      const targetIds = targets.map((target) => target.id);
       setReadIds((previous) => {
         const next = new Set(previous);
-        for (const target of targets) {
-          next.add(target.id);
+        for (const id of targetIds) {
+          next.add(id);
         }
         return next;
       });
@@ -170,9 +174,25 @@ export function useNotificationFeed(): NotificationFeed {
       }
       const plan = planReadDispatch(targets, subscription?.role);
       const credentials = { appToken, kubeconfig, namespace };
+      // The receipt is the read state's source of truth (`readIds` is
+      // session-only): a failed write rolls the optimistic ids back so the
+      // dot returns and the user can click again, and says so once.
       postNotificationReadReceipts(credentials, plan.receiptIds)
         .then(() => refreshBrainFeed())
-        .catch(() => undefined);
+        .catch(() => {
+          setReadIds((previous) => {
+            const next = new Set(previous);
+            for (const id of targetIds) {
+              next.delete(id);
+            }
+            return next;
+          });
+          toast.error(
+            targetIds.length === 1
+              ? "Couldn't mark the notification as read. Try again."
+              : "Couldn't mark notifications as read. Try again."
+          );
+        });
       if (fixturePlatformItems != null) {
         return;
       }

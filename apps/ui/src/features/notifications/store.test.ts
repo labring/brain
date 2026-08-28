@@ -75,7 +75,10 @@ test("produce writes one entry per dedupe key and retries dedupe", async () => {
 
   assert.equal(first, true);
   assert.equal(retry, false);
-  const messages = await store.listMessages("ns-a");
+  const messages = await store.listMessages({
+    namespace: "ns-a",
+    userUid: "alice-uid",
+  });
   assert.equal(messages.length, 1);
   assert.equal(messages[0]?.kind, "quota-exhausted");
   assert.deepEqual(messages[0]?.payload, quotaPayload("storage"));
@@ -101,7 +104,10 @@ test("release frees the dedupe key, keeps history, and lets the next crossing wr
   assert.equal(released, true);
   assert.equal(releasedAgain, false, "a released key releases nothing twice");
   assert.equal(reproduced, true, "recovery resets the edge trigger");
-  const messages = await store.listMessages("ns-a");
+  const messages = await store.listMessages({
+    namespace: "ns-a",
+    userUid: "alice-uid",
+  });
   assert.equal(messages.length, 2, "the released entry stays as history");
   assert.equal(messages[0]?.createdAt, NOW.getTime() + 3000, "newest first");
 });
@@ -115,8 +121,14 @@ test("messages are isolated per namespace", async () => {
     payload: quotaPayload("cpu"),
   });
 
-  const a = await store.listMessages("ns-a");
-  const b = await store.listMessages("ns-b");
+  const a = await store.listMessages({
+    namespace: "ns-a",
+    userUid: "alice-uid",
+  });
+  const b = await store.listMessages({
+    namespace: "ns-b",
+    userUid: "alice-uid",
+  });
   assert.equal(a.length, 2);
   assert.equal(b.length, 1);
   assert.equal(
@@ -128,7 +140,10 @@ test("messages are isolated per namespace", async () => {
 test("receipts are per user, follow the person across workspaces, and db receipts attach their row", async () => {
   await bindIdentity("alice", "alice-uid");
   await bindIdentity("bob", "bob-uid");
-  const [message] = await store.listMessages("ns-b");
+  const [message] = await store.listMessages({
+    namespace: "ns-b",
+    userUid: "alice-uid",
+  });
   assert.ok(message);
   const dbId = dbNotificationId(message.id);
   const crId = "cr:debt-choice-debtperiod:1756200000";
@@ -157,8 +172,49 @@ test("receipts are per user, follow the person across workspaces, and db receipt
   assert.equal(receipt?.messageId, message.id);
 });
 
+test("an account-scoped message follows the person into every workspace and takes its receipt from any of them", async () => {
+  await store.produce({
+    dedupeKey: "credit-hint:alice-uid",
+    kind: "credit-hint",
+    namespace: "ns-a",
+    now: NOW,
+    payload: { giftMicroUnits: 720_000, kind: "credit-hint" },
+    userUid: "alice-uid",
+  });
+  const inNsB = await store.listMessages({
+    namespace: "ns-b",
+    userUid: "alice-uid",
+  });
+  const hint = inNsB.find((message) => message.kind === "credit-hint");
+  assert.ok(hint, "a workspace that never observed the gift lists the hint");
+  assert.equal(
+    (await store.listMessages({ namespace: "ns-a", userUid: "bob-uid" })).some(
+      (message) => message.kind === "credit-hint"
+    ),
+    false,
+    "another person's inbox in the observing workspace does not"
+  );
+
+  // The receipt attaches the row from a workspace other than the observing one.
+  const dbId = dbNotificationId(hint.id);
+  await store.markRead(reader({ namespace: "ns-b" }), [dbId]);
+  const [receipt] = await db
+    .select({ messageId: notificationReadReceipts.messageId })
+    .from(notificationReadReceipts)
+    .where(
+      and(
+        eq(notificationReadReceipts.userUid, "alice-uid"),
+        eq(notificationReadReceipts.messageKey, dbId)
+      )
+    );
+  assert.equal(receipt?.messageId, hint.id);
+});
+
 test("a db receipt for a foreign or unknown message is ignored, not refused", async () => {
-  const [foreign] = await store.listMessages("ns-a");
+  const [foreign] = await store.listMessages({
+    namespace: "ns-a",
+    userUid: "alice-uid",
+  });
   assert.ok(foreign);
 
   await store.markRead(reader({ namespace: "ns-b" }), [
@@ -190,7 +246,10 @@ test("writes sweep entries older than 365 days and their receipts cascade", asyn
     now: old,
     payload: quotaPayload("memory"),
   });
-  const [oldMessage] = await store.listMessages("ns-c");
+  const [oldMessage] = await store.listMessages({
+    namespace: "ns-c",
+    userUid: "carol-uid",
+  });
   assert.ok(oldMessage);
   await bindIdentity("carol", "carol-uid");
   const carol = reader({
@@ -209,15 +268,19 @@ test("writes sweep entries older than 365 days and their receipts cascade", asyn
     payload: quotaPayload("cpu"),
   });
 
-  assert.deepEqual(await store.listMessages("ns-c"), []);
+  assert.deepEqual(
+    await store.listMessages({ namespace: "ns-c", userUid: "carol-uid" }),
+    []
+  );
   assert.deepEqual(
     await store.listReceipts("carol-uid"),
     ["cr:keep:1"],
     "the swept row's receipt cascades; the CR receipt stays"
   );
   assert.equal(
-    (await store.listMessages("ns-a")).length,
-    2,
-    "entries inside the window survive"
+    (await store.listMessages({ namespace: "ns-a", userUid: "alice-uid" }))
+      .length,
+    3,
+    "entries inside the window survive (two workspace rows and alice's hint)"
   );
 });

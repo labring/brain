@@ -26,8 +26,13 @@ Each message has exactly one source of truth, chosen by who produces it.
   text as written.
 - **Brain-produced messages live in Brain's own Postgres** under a new schema,
   `sealai_notification`: `notification_messages` (namespace, kind, project,
-  structured payload, `dedupe_key`) rendered client-side, isolated per
-  workspace namespace like the rest of the app's schemas. Producers write at
+  structured payload, `dedupe_key`, optional `user_uid`) rendered
+  client-side. A message is workspace-scoped (its namespace is the inbox,
+  like the rest of the app's schemas) or account-scoped (`user_uid` names
+  the person, the row follows them into every workspace's inbox, and the
+  namespace only records where it was first observed — the gift hint, later
+  the expiry reminder). An inbox lists its workspace's rows plus its
+  person's account rows. Producers write at
   natural observation points during user requests — no scheduler, no
   controller. The dedupe key is the idempotency mechanism (naming is dedupe;
   a partial unique index spans live keys, and recovery releases the key so a
@@ -76,7 +81,9 @@ keeping Brain's own messages in Brain's own database needs none.
 
 - The inbox's aggregation boundary is the current workspace, because the
   caller's kubeconfig reaches one namespace. Account-level platform messages
-  still appear everywhere since upstream writes them to every user namespace.
+  still appear everywhere since upstream writes them to every user namespace;
+  account-scoped Brain messages appear everywhere because the inbox query
+  adds the person's `user_uid` rows.
 - Brain-produced messages are invisible to the desktop's own inbox; the
   desktop is a later channel if ever wanted.
 - Read state can diverge between Brain and the desktop for Developers (no

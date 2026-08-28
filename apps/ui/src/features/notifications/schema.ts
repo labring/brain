@@ -31,14 +31,20 @@ export const NOTIFICATION_RETENTION_DAYS = 365;
  * naming is dedupe, so a retried request re-inserts nothing. A producer
  * "releases" the key (`releasedAt`) when the underlying state recovers so the
  * next threshold crossing writes a fresh entry while history keeps the old
- * one; the unique index therefore only spans live keys.
+ * one; the unique index therefore only spans live keys. A message is either
+ * workspace-scoped (`namespace` is the inbox it belongs to, `userUid` null)
+ * or account-scoped (`userUid` names the person: the message follows them
+ * into every workspace's inbox, and `namespace` only records where it was
+ * first observed).
  */
 export const notificationMessages = ns.table(
   "notification_messages",
   {
     id: text("id").primaryKey(),
-    /** Workspace namespace; the inbox's aggregation boundary. */
+    /** Workspace namespace: the inbox for workspace-scoped messages, the observing workspace for account-scoped ones. */
     namespace: text("namespace").notNull(),
+    /** Bare global user UID (ADR-0059) for account-scoped messages; null for workspace-scoped ones. */
+    userUid: text("user_uid"),
     kind: text("kind").notNull().$type<NotificationMessageKind>(),
     /** Source Project when the message has one (deploy outcomes, later). */
     projectUid: text("project_uid"),
@@ -55,6 +61,10 @@ export const notificationMessages = ns.table(
       .where(sql`${table.releasedAt} IS NULL`),
     index("notification_messages_namespace_created_at_idx").on(
       table.namespace,
+      table.createdAt
+    ),
+    index("notification_messages_user_uid_created_at_idx").on(
+      table.userUid,
       table.createdAt
     ),
     index("notification_messages_created_at_idx").on(table.createdAt),

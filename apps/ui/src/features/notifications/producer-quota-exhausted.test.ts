@@ -84,7 +84,10 @@ test("crossing 100% writes one entry per resource; a retry writes nothing", asyn
 
   assert.deepEqual(first, { produced: ["cpu", "storage"], released: [] });
   assert.deepEqual(retry, { produced: [], released: [] });
-  const messages = await store.listMessages("ns-a");
+  const messages = await store.listMessages({
+    namespace: "ns-a",
+    userUid: "viewer-uid",
+  });
   assert.equal(messages.length, 2, "exactly one entry per exhausted resource");
   const resources = messages.map((message) =>
     message.payload.kind === "quota-exhausted" ? message.payload.resource : ""
@@ -130,7 +133,10 @@ test("falling below 100% resets; staying full re-sends nothing; re-crossing writ
   });
   assert.deepEqual(reCrossed, { produced: ["storage"], released: [] });
 
-  const messages = await store.listMessages("ns-a");
+  const messages = await store.listMessages({
+    namespace: "ns-a",
+    userUid: "viewer-uid",
+  });
   assert.equal(messages.length, 3, "cpu once, storage twice across a recovery");
 });
 

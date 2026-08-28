@@ -56,8 +56,9 @@ function unavailable(route: string, message: string): Response {
  * stream plus the user's receipts, the per-user mark-read write, and the
  * producers' observation points (quota, gift credit, subscription change).
  * Every handler travels the verified-personal-actor choke point — receipts
- * are uid-keyed rows (ADR-0059) and the stream is namespace-scoped, so both
- * the workspace and the user must be verified.
+ * are uid-keyed rows (ADR-0059) and the stream is the verified workspace's
+ * messages plus the verified person's account-scoped ones, so both the
+ * workspace and the user must be verified.
  */
 export function createNotificationHandlers(
   dependencies: NotificationHandlerDependencies
@@ -145,7 +146,7 @@ export function createNotificationHandlers(
       const reader = readerOf(authorization.actor);
       try {
         const [messages, receipts] = await Promise.all([
-          dependencies.store.listMessages(reader.namespace),
+          dependencies.store.listMessages(reader),
           dependencies.store.listReceipts(reader.userUid),
         ]);
         const body: NotificationFeedResponse = { messages, receipts };

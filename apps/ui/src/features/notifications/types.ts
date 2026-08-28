@@ -141,9 +141,15 @@ export type NotificationFeedResponse = z.infer<
 /** A notification id is source-prefixed: `cr:<name>:<timestamp>` or `db:<id>`. */
 export const NOTIFICATION_ID_PATTERN = /^(cr|db):.+$/;
 
+/** Ids per mark-read request; the client splits larger batches. */
+export const NOTIFICATION_READ_BATCH_LIMIT = 200;
+
 export const markNotificationReadRequestSchema = z
   .object({
-    ids: z.array(z.string().regex(NOTIFICATION_ID_PATTERN)).min(1).max(200),
+    ids: z
+      .array(z.string().regex(NOTIFICATION_ID_PATTERN))
+      .min(1)
+      .max(NOTIFICATION_READ_BATCH_LIMIT),
   })
   .strict();
 
