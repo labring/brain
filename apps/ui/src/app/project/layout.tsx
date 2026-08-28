@@ -1,3 +1,4 @@
+import { ChatDevMockGate } from "@/features/chat/dev-mock-gate";
 import { DeployTaskDevMockGate } from "@/features/deploy/task/dev-mock-gate";
 import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
 import { ProjectsExplorerDevMockGate } from "@/features/projects/explorer/projects-dev-mock-gate";
@@ -30,6 +31,7 @@ export default function ProjectLayout({
       <OnboardingGate />
       <ProjectsExplorerDevMockGate />
       <DeployTaskDevMockGate />
+      <ChatDevMockGate />
       <AppSidebarCookieBridge>
         <AppShellSidebar />
         <AppShellView className="min-w-0 flex-1 basis-0">
