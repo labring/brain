@@ -78,9 +78,7 @@ function isInternalChatSkill(name: string): boolean {
 function skillDiscoveryCommand(): string {
   return [
     "set -euo pipefail",
-    "for skill_root in",
-    ...SKILL_ROOTS.map((root) => `  ${root}`),
-    "do",
+    `for skill_root in ${SKILL_ROOTS.map((root) => `"${root}"`).join(" ")}; do`,
     '  if [ -d "$skill_root" ]; then',
     '    find "$skill_root" -mindepth 2 -maxdepth 2 -type f -name SKILL.md -print',
     "  fi",
