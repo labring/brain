@@ -9,6 +9,7 @@ import {
   type UIMessage,
   type UIMessageStreamOnFinishCallback,
 } from "ai";
+import { judgeWorkspaceBillingStandingForActor } from "@/features/billing/server/billing-standing";
 import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
 import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
@@ -25,6 +26,7 @@ import {
   freeTierPosture,
   freeTierPostureAfterTurn,
 } from "@/features/chat/persistence/free-tier-core";
+import { paidChatWall } from "@/features/chat/persistence/paid-chat-wall";
 import {
   acquireChatStreamLease,
   adoptLegacyAssistantConversationsForActor,
@@ -51,6 +53,10 @@ import {
   normalizeAssistantNamespace,
   type VerifiedAssistantConversationActor,
 } from "@/features/chat/persistence/types";
+import {
+  chatStreamErrorText,
+  isAiProxyBillingRefusal,
+} from "@/features/chat/runtime/ai-proxy-billing-refusal";
 import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
 import {
   type ChatStreamLeaseHeartbeat,
@@ -87,7 +93,54 @@ function chatBillingHeaders(state: FreeTierState): Record<string, string> {
     "X-Chat-Billing": state.billing,
     "X-Chat-Free-Remaining": String(state.remaining),
     "X-Chat-Free-Limit": String(state.limit),
+    "X-Chat-Paid-Source": state.paidSource ?? "",
+    "X-Chat-Wall": state.wall ?? "",
   };
+}
+
+/** The paid wall's refusal (design spec row E3): the 402 sibling of the free-turns one. */
+function paidWallResponse(state: FreeTierState): Response {
+  const body: ChatApiErrorBody =
+    state.wall === "ai-credits"
+      ? {
+          code: "ai_credits_exhausted",
+          error:
+            "This workspace's AI Credits are used up. Upgrade the plan to keep chatting with the assistant.",
+        }
+      : {
+          code: "account_balance_exhausted",
+          error:
+            "Your account balance can't cover AI usage. Top up to keep chatting with the assistant.",
+        };
+  return Response.json(body, {
+    headers: chatBillingHeaders(state),
+    status: 402,
+  });
+}
+
+/**
+ * A `user` turn spends AI Credits or the Account Balance; judge the wall
+ * before the turn the way the free allowance is judged (row E3 follows the
+ * E4 template). Unknown standing fails open.
+ */
+async function withPaidWall(
+  posture: FreeTierState,
+  input: {
+    accountUserId: string | null;
+    cookieHeader: string | null;
+    owner: AssistantConversationOwner;
+  }
+): Promise<FreeTierState> {
+  if (posture.billing !== "user") {
+    return posture;
+  }
+  const standing = await judgeWorkspaceBillingStandingForActor({
+    cookieHeader: input.cookieHeader,
+    userId: input.accountUserId,
+    userUid: input.owner.userUid,
+    workspace: input.owner.namespace,
+  });
+  return { ...posture, ...paidChatWall(standing) };
 }
 
 function freeTurnsExhaustedResponse(state: FreeTierState): Response {
@@ -624,9 +677,13 @@ async function settleTurnBillingPosture(input: {
     return { response: freeTurnsExhaustedResponse(posture) };
   }
   if (posture.billing !== "free") {
+    const walled = await withPaidWall(posture, input);
+    if (walled.wall != null) {
+      return { response: paidWallResponse(walled) };
+    }
     return {
-      billing: posture.billing,
-      clientFreeTier: posture,
+      billing: "user",
+      clientFreeTier: walled,
       reserved: false,
     };
   }
@@ -659,9 +716,16 @@ async function settleTurnBillingPosture(input: {
   if (contestedPosture.billing === "blocked") {
     return { response: freeTurnsExhaustedResponse(contestedPosture) };
   }
+  const walled = await withPaidWall(
+    { ...contestedPosture, billing: "user" },
+    input
+  );
+  if (walled.wall != null) {
+    return { response: paidWallResponse(walled) };
+  }
   return {
     billing: "user",
-    clientFreeTier: contestedPosture,
+    clientFreeTier: walled,
     reserved: false,
   };
 }
@@ -730,6 +794,11 @@ async function runChatPipeline(input: {
     // kubeconfig-verified identity (AIM-154 keeps them token-free).
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
+      billingActor: {
+        cookieHeader: input.cookieHeader,
+        userId: actor.accountUserId ?? null,
+        userUid: owner.userUid,
+      },
       chatId,
       kubeconfig,
       kubernetesNamespace: owner.namespace,
@@ -743,6 +812,21 @@ async function runChatPipeline(input: {
       billing,
     });
     if (!openAi.ok) {
+      // aiproxy refuses an exhausted group at the token request too; the
+      // pane must hear "billing", not "connection unavailable".
+      if (
+        isAiProxyBillingRefusal({
+          bodyText: openAi.message,
+          status: openAi.status,
+        })
+      ) {
+        return jsonError(
+          "ai_proxy_billing_refused",
+          "The AI proxy refused this turn for billing reasons.",
+          openAi.status,
+          { paidSource: clientFreeTier.paidSource ?? null }
+        );
+      }
       return jsonError(
         "ai_connection_unavailable",
         openAi.message,
@@ -829,6 +913,10 @@ async function runChatPipeline(input: {
       originalMessages: history,
       generateMessageId: generateId,
       headers: responseHeaders,
+      // A mid-stream aiproxy billing refusal reaches the pane classified;
+      // every other error stays masked.
+      onError: (error) =>
+        chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
       onFinish: createChatStreamFinishHandler({
         billing,
         chatId,
@@ -881,7 +969,30 @@ async function runChatPipeline(input: {
   }
 }
 
+/**
+ * Lets the Conversation Dev Mock stage an aiproxy billing refusal mid-stream
+ * in dev and demo builds (`NEXT_PUBLIC_DEV_TWEAKS=1` marks a demo image); a
+ * production build statically drops the dynamic import — the same gate as
+ * the persistence routes.
+ */
+async function devMockStreamResponse(req: Request): Promise<Response | null> {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PUBLIC_DEV_TWEAKS !== "1"
+  ) {
+    return null;
+  }
+  const { chatDevMockStreamResponse } = await import(
+    "@/features/chat/dev-fixtures"
+  );
+  return chatDevMockStreamResponse(req);
+}
+
 export async function POST(req: Request) {
+  const staged = await devMockStreamResponse(req);
+  if (staged != null) {
+    return staged;
+  }
   const body = await req.json().catch(() => null);
   if (body == null) {
     return jsonError("invalid_request", "Invalid JSON body", 400);

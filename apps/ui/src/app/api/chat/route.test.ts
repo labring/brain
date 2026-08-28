@@ -59,6 +59,20 @@ let releaseCalls = 0;
 let reserveCalls = 0;
 let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
 let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
+let billingStanding = {
+  accountDebt: null as boolean | null,
+  aiCredits: null as { totalMicroUnits: number; usedMicroUnits: number } | null,
+  availableBalanceMicroUnits: null as number | null,
+  fullQuota: null,
+  paidSource: null as "ai-credits" | "balance" | null,
+  quotaKnown: false,
+};
+let standingCalls: {
+  userId: string | null;
+  userUid: string;
+  workspace: string;
+}[] = [];
+let connectionRefusal: { message: string; status: number } | null = null;
 let workspaceResourceQuota: WorkspaceResourceQuotaSnapshot | undefined = {
   items: [
     { limit: 36_000, type: "cpu", used: 19_200 },
@@ -224,6 +238,9 @@ function persistToHistory(message: UIMessage): void {
 mock.module("server-only", () => ({}));
 mock.module("@/features/chat/ai-proxy/resolve-chat-open-ai-connection", () => ({
   resolveChatOpenAiConnection: () => {
+    if (connectionRefusal != null) {
+      return Promise.resolve({ ...connectionRefusal, ok: false as const });
+    }
     if (!connectionAvailable) {
       return Promise.resolve({
         message: "AI connection unavailable",
@@ -246,6 +263,20 @@ mock.module("@/features/billing/server/free-trial-judgment", () => ({
       workspace: input.workspace,
     });
     return Promise.resolve(trialJudgment);
+  },
+}));
+mock.module("@/features/billing/server/billing-standing", () => ({
+  judgeWorkspaceBillingStandingForActor: (input: {
+    userId: string | null;
+    userUid: string;
+    workspace: string;
+  }) => {
+    standingCalls.push({
+      userId: input.userId,
+      userUid: input.userUid,
+      workspace: input.workspace,
+    });
+    return Promise.resolve({ ...billingStanding });
   },
 }));
 mock.module("@/features/chat/persistence/free-tier", () => ({
@@ -666,6 +697,16 @@ beforeEach(() => {
   adoptionCalls = [];
   appendCalls = [];
   connectionAvailable = true;
+  connectionRefusal = null;
+  billingStanding = {
+    accountDebt: null,
+    aiCredits: null,
+    availableBalanceMicroUnits: null,
+    fullQuota: null,
+    paidSource: null,
+    quotaKnown: false,
+  };
+  standingCalls = [];
   denyReservation = null;
   releaseCalls = 0;
   reserveCalls = 0;
@@ -1698,4 +1739,118 @@ test("a stream error on the last free turn rolls the reservation back", async ()
   expect(reserveCalls).toBe(1);
   expect(releaseCalls).toBe(1);
   expect(freeTierSnapshot).toEqual({ limit: 5, remaining: 1, used: 4 });
+});
+
+test("a PAYG workspace in Account Debt is walled with 402 before the model, headers naming the wall", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: true,
+    availableBalanceMicroUnits: -6_320_000,
+    paidSource: "balance",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-walled", "deploy something"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(await response.json()).toEqual({
+    code: "account_balance_exhausted",
+    error:
+      "Your account balance can't cover AI usage. Top up to keep chatting with the assistant.",
+  });
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+  expect(response.headers.get("X-Chat-Wall")).toBe("balance");
+  expect(standingCalls).toEqual([
+    { userId: null, userUid: `${WORKSPACE_ACTOR}-uid`, workspace: NAMESPACE },
+  ]);
+  // Refused before any conversation state mutates.
+  expect(history).toEqual([]);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+});
+
+test("a subscribed workspace with its AI Credits spent is walled on credits", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 3_000_000 },
+    paidSource: "ai-credits",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-credits", "deploy something"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(((await response.json()) as { code: string }).code).toBe(
+    "ai_credits_exhausted"
+  );
+  expect(response.headers.get("X-Chat-Wall")).toBe("ai-credits");
+  expect(modelCalls).toBe(0);
+});
+
+test("an open paid workspace streams with its paid source in the headers; unknown standing fails open", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 1_200_000 },
+    paidSource: "ai-credits",
+  };
+
+  const open = await POST(chatRequest(userMessage("user-open", "hi")));
+  expect(open.status).toBe(200);
+  expect(open.headers.get("X-Chat-Paid-Source")).toBe("ai-credits");
+  expect(open.headers.get("X-Chat-Wall")).toBe("");
+  await drain(open);
+
+  billingStanding = { ...billingStanding, paidSource: null, aiCredits: null };
+  const unknown = await POST(chatRequest(userMessage("user-unknown", "hi")));
+  expect(unknown.status).toBe(200);
+  expect(unknown.headers.get("X-Chat-Paid-Source")).toBe("");
+  await drain(unknown);
+});
+
+test("a free turn never consults the paid wall", async () => {
+  trialJudgment = "trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: true,
+    paidSource: "balance",
+  };
+
+  const response = await POST(chatRequest(userMessage("user-free", "hi")));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("free");
+  expect(standingCalls).toEqual([]);
+  await drain(response);
+});
+
+test("aiproxy refusing the token request for balance reads as a billing refusal, not a connection outage", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    paidSource: "balance",
+  };
+  connectionRefusal = {
+    message:
+      '{"type":"group_balance_not_enough","message":"group `ns` balance not enough"}',
+    status: 403,
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-refused", "deploy something"))
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({
+    code: "ai_proxy_billing_refused",
+    detail: { paidSource: "balance" },
+    error: "The AI proxy refused this turn for billing reasons.",
+  });
 });

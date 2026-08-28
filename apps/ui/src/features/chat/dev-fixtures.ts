@@ -1,15 +1,26 @@
-import type { UIMessage } from "ai";
+import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  type UIMessage,
+} from "ai";
 
 import { resolveDevMock } from "@/features/dev-mock/server/resolve";
 import { HOUR_MS, MINUTE_MS } from "@/lib/time";
 
-import { type ChatDevScenario, chatDevMockCookie } from "./dev-mock-cookie";
+import {
+  type ChatDevRefusalScenario,
+  type ChatDevScenario,
+  chatDevMockCookie,
+  isChatDevRefusalScenario,
+} from "./dev-mock-cookie";
 import type {
   AssistantSessionPayload,
   AssistantThreadDTO,
+  ChatPaidSource,
   FreeTierState,
 } from "./persistence/types";
 import { SELECTED_RESOURCE_CONTEXT_PART_TYPE } from "./persistence/types";
+import { aiProxyBillingRefusedBody } from "./runtime/ai-proxy-billing-refusal";
 
 /**
  * Conversation dev fixtures: three threads' worth of transcript so the chat
@@ -271,13 +282,23 @@ function threads(namespace: string): AssistantThreadDTO[] {
   ];
 }
 
+/**
+ * The thread a scenario opens. The refusal scenarios stage the short
+ * transcript: the scene is the reply that dies, not the history behind it.
+ */
+function scenarioThreadId(scenario: ChatDevScenario): string {
+  return isChatDevRefusalScenario(scenario)
+    ? THREAD_IDS.short
+    : THREAD_IDS[scenario];
+}
+
 /** Every scenario shows the same three threads; the scenario picks which one is open. */
 function scenarioSession(
   scenario: ChatDevScenario,
   namespace: string,
   freeTier: FreeTierState
 ): AssistantSessionPayload {
-  const chatId = THREAD_IDS[scenario];
+  const chatId = scenarioThreadId(scenario);
   return {
     chatId,
     freeTier,
@@ -359,4 +380,68 @@ export async function chatDevMockResponse(
     default:
       return handler satisfies never;
   }
+}
+
+const REFUSAL_PAID_SOURCE: Record<ChatDevRefusalScenario, ChatPaidSource> = {
+  "refused-ai-credits": "ai-credits",
+  "refused-balance": "balance",
+};
+
+/** The reply the staged refusal cuts off mid-word (the AIM-325 scene). */
+const REFUSED_REPLY_DELTAS = [
+  "Starting the deployment now. ",
+  "First I'll set up the Postgres datab—",
+] as const;
+
+/**
+ * Answers `POST /api/chat` with the interruption moment while a `refused-*`
+ * scenario is on: the `X-Chat-*` headers report open `user` billing (the
+ * pre-send gate let the turn through), the reply streams a sentence and a
+ * half, then dies on the same structured aiproxy refusal the real stream
+ * emits — so the pane's billing-ized error card renders exactly as in
+ * production. Nothing is persisted. `null` hands the send to the real
+ * handler (mock off, or a transcript-only scenario); an invalid cookie
+ * fails loud like every other Dev Mock route.
+ */
+export function chatDevMockStreamResponse(
+  request: Request
+): Promise<Response | null> {
+  const resolution = resolveDevMock(chatDevMockCookie, request, "chat");
+  if (resolution.kind === "off") {
+    return Promise.resolve(null);
+  }
+  if (resolution.kind === "invalid") {
+    return Promise.resolve(resolution.response);
+  }
+  const { scenario } = resolution;
+  if (!isChatDevRefusalScenario(scenario)) {
+    return Promise.resolve(null);
+  }
+  const paidSource = REFUSAL_PAID_SOURCE[scenario];
+  const stream = createUIMessageStream({
+    execute: ({ writer }) => {
+      const id = "mock-refused-reply";
+      writer.write({ type: "start" });
+      writer.write({ type: "text-start", id });
+      for (const delta of REFUSED_REPLY_DELTAS) {
+        writer.write({ delta, id, type: "text-delta" });
+      }
+      writer.write({
+        errorText: JSON.stringify(aiProxyBillingRefusedBody(paidSource)),
+        type: "error",
+      });
+    },
+  });
+  return Promise.resolve(
+    createUIMessageStreamResponse({
+      headers: {
+        "X-Chat-Billing": "user",
+        "X-Chat-Free-Limit": "0",
+        "X-Chat-Free-Remaining": "0",
+        "X-Chat-Paid-Source": paidSource,
+        "X-Chat-Wall": "",
+      },
+      stream,
+    })
+  );
 }

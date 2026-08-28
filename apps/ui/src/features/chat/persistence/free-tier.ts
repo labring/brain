@@ -2,10 +2,12 @@ import "server-only";
 
 import { and, eq, gt, lt, sql } from "drizzle-orm";
 
+import { judgeWorkspaceBillingStandingForActor } from "@/features/billing/server/billing-standing";
 import { judgeActiveFreeTrialForWorkspace } from "@/features/billing/server/free-trial-judgment";
 
 import { getAssistantDb } from "./db";
 import { freeTierPosture } from "./free-tier-core";
+import { paidChatWall } from "./paid-chat-wall";
 import { assistantEntitlements } from "./schema";
 import type { FreeTierState } from "./types";
 
@@ -80,7 +82,20 @@ export async function resolveFreeTierPosture(input: {
           workspace: input.namespace,
         })
       : "not-trial";
-  return freeTierPosture(snapshot, systemModelConfigured, trial);
+  const posture = freeTierPosture(snapshot, systemModelConfigured, trial);
+  if (posture.billing !== "user") {
+    return posture;
+  }
+  // A `user` turn spends AI Credits or the Account Balance: the paid wall
+  // (design spec row E3) is judged here so the pane locks before the first
+  // refused send, exactly like the free allowance.
+  const standing = await judgeWorkspaceBillingStandingForActor({
+    cookieHeader: input.cookieHeader,
+    userId: input.accountUserId,
+    userUid: input.userUid,
+    workspace: input.namespace,
+  });
+  return { ...posture, ...paidChatWall(standing) };
 }
 
 /**

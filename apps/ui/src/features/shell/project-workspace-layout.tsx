@@ -49,6 +49,11 @@ import {
   type ChatBillingDestination,
 } from "@/features/chat/chat-billing-cards";
 import {
+  CHAT_WALL_PLACEHOLDER,
+  type ChatBillingInterruption,
+  chatBillingInterruptionFromError,
+} from "@/features/chat/chat-billing-interruption";
+import {
   fetchAssistantSession,
   fetchAssistantThreadMessages,
 } from "@/features/chat/persistence/client";
@@ -56,6 +61,7 @@ import {
   type AssistantContextPayload,
   type AssistantSessionPayload,
   type AssistantThreadDTO,
+  type ChatPaidSource,
   type FreeTierState,
   SELECTED_RESOURCE_CONTEXT_PART_TYPE,
   type SelectedResourceContext,
@@ -308,6 +314,7 @@ function ComposerContextIndicator({
 function ProjectAssistantComposer({
   busy,
   messagingLocked,
+  lockedPlaceholder,
   projectId,
   onDatabaseIntent,
   onDockerIntent,
@@ -323,6 +330,8 @@ function ProjectAssistantComposer({
    * working — they open side-pane surfaces and never touch the chat API.
    */
   messagingLocked: boolean;
+  /** What the locked textarea says — the lock always names its reason. */
+  lockedPlaceholder: string;
   projectId: string;
   onDatabaseIntent: () => void;
   onDockerIntent: () => void;
@@ -369,7 +378,7 @@ function ProjectAssistantComposer({
           onValueChange={setInput}
           placeholder={
             messagingLocked
-              ? "Upgrade your plan to keep chatting…"
+              ? lockedPlaceholder
               : "Ask Sealos Agent to inspect, deploy, or explain this project..."
           }
           responding={busy}
@@ -456,6 +465,16 @@ function ProjectAssistantChatSession({
   // still read the latest values. The volatile canvas selection is pinned
   // per-message (see submitComposerText), so only thread-stable fields go here.
   const [transportToken] = useState<object>(() => ({}));
+  // The billing refusal behind the current error, if the server named one
+  // (design spec row E3). Cleared on the next send: the error card locks
+  // nothing, the pre-send gate owns the lock.
+  const [billingInterruption, setBillingInterruption] =
+    useState<ChatBillingInterruption | null>(null);
+  const paidSourceRef = useRef<ChatPaidSource | null>(null);
+  const knownPaidSource = freeTier?.paidSource ?? null;
+  useEffect(() => {
+    paidSourceRef.current = knownPaidSource;
+  }, [knownPaidSource]);
   useInsertionEffect(() => {
     transportLatestStore.set(transportToken, {
       namespace: assistantNamespaceRaw,
@@ -558,7 +577,10 @@ function ProjectAssistantChatSession({
     // reservation back, but this pane already applied the optimistic
     // `blocked` header. Refetching the session restores the authoritative
     // posture and unlocks the composer.
-    async onError() {
+    async onError(error) {
+      setBillingInterruption(
+        chatBillingInterruptionFromError(error, paidSourceRef.current)
+      );
       await onAssistantStreamFinished?.();
     },
     async onToolCall({ toolCall }) {
@@ -714,6 +736,7 @@ function ProjectAssistantChatSession({
           view_name: "ai_chat_engaged",
         });
       }
+      setBillingInterruption(null);
       const snapshot = buildSelectedResourceSnapshot(selected);
       if (snapshot == null) {
         sendMessage({ text }).catch(() => undefined);
@@ -771,11 +794,19 @@ function ProjectAssistantChatSession({
         <ChatBillingCardSlot
           errored={status === "error"}
           freeTier={freeTier}
+          interruption={billingInterruption}
           onNavigateToBilling={navigateToBilling}
         />
         <ProjectAssistantComposerMemo
           busy={busy}
-          messagingLocked={freeTier?.billing === "blocked"}
+          lockedPlaceholder={
+            freeTier?.wall == null
+              ? "Upgrade your plan to keep chatting…"
+              : CHAT_WALL_PLACEHOLDER
+          }
+          messagingLocked={
+            freeTier?.billing === "blocked" || freeTier?.wall != null
+          }
           onDatabaseIntent={onDatabaseIntent}
           onDockerIntent={onDockerIntent}
           onGithubIntent={onGithubIntent}
@@ -787,6 +818,10 @@ function ProjectAssistantChatSession({
       </Chat>
     </Chat.Root>
   );
+}
+
+function chatPaidSourceHeader(value: string | null): ChatPaidSource | null {
+  return value === "ai-credits" || value === "balance" ? value : null;
 }
 
 function ProjectAssistantChatPane() {
@@ -859,13 +894,17 @@ function ProjectAssistantChatPane() {
       10
     );
     const limit = Number.parseInt(headers.get("X-Chat-Free-Limit") ?? "", 10);
+    // The paid wall rides the same header set (row E3): a 402 that slipped
+    // past the panel's pre-check locks the composer here.
+    const paidSource = chatPaidSourceHeader(headers.get("X-Chat-Paid-Source"));
+    const wall = chatPaidSourceHeader(headers.get("X-Chat-Wall"));
     setFreeTier((prev) => {
       if (Number.isFinite(remaining) && Number.isFinite(limit)) {
-        return { billing: billingHeader, remaining, limit };
+        return { billing: billingHeader, limit, paidSource, remaining, wall };
       }
       return prev == null
-        ? { billing: billingHeader, remaining: 0, limit: 0 }
-        : { ...prev, billing: billingHeader };
+        ? { billing: billingHeader, limit: 0, paidSource, remaining: 0, wall }
+        : { ...prev, billing: billingHeader, paidSource, wall };
     });
   }, []);
 
