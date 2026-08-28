@@ -1,5 +1,6 @@
 import { test } from "bun:test";
 import assert from "node:assert/strict";
+import { spawn } from "bun";
 import type { ChatDevboxSandbox } from "@/features/chat/devbox/chat-runtime";
 import {
   discoverChatDevboxSkills,
@@ -28,6 +29,34 @@ function createSandbox(files: Record<string, string>): ChatDevboxSandbox {
     writeFiles: () => Promise.resolve(),
   };
 }
+
+function createLocalBashSandbox(): ChatDevboxSandbox {
+  return {
+    executeCommand: async (command) => {
+      const child = spawn(["bash", "-c", command], {
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+      const [exitCode, stderr, stdout] = await Promise.all([
+        child.exited,
+        new Response(child.stderr).text(),
+        new Response(child.stdout).text(),
+      ]);
+      return { exitCode, stderr, stdout };
+    },
+    getDevboxName: async () => "chat-runtime",
+    readFile: () => Promise.reject(new Error("unexpected Skill file read")),
+    runWithAbortSignal: async (_signal, operation) => await operation(),
+    stop: () => Promise.resolve(),
+    writeFiles: () => Promise.resolve(),
+  };
+}
+
+test("Skill discovery emits valid Bash", async () => {
+  await assert.doesNotReject(
+    discoverChatDevboxSkills(createLocalBashSandbox())
+  );
+});
 
 test("discovers user-facing Skills from both supported Devbox roots", async () => {
   const deployPath =
