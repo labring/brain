@@ -1,3 +1,4 @@
+import { isDeployTaskFailureReason } from "./failure-summary";
 import { publicDeployTaskArtifactSummary } from "./public-artifact-summary";
 import type {
   DeploymentTaskCanvasProjection,
@@ -5,6 +6,8 @@ import type {
   DeploymentTaskRunner,
   DeploymentTaskSource,
   DeployTaskArtifactSummary,
+  DeployTaskFailureDetails,
+  DeployTaskFailureReason,
   DeployTaskPhase,
   DeployTaskStatus,
 } from "./schema";
@@ -66,6 +69,8 @@ export interface DeploymentTaskProjection {
   canvasProjection: DeploymentTaskCanvasProjection;
   completedAt: string | null;
   display?: DeploymentTaskDisplaySummary;
+  /** The failed task's Deployment Failure Reason, for the dock chip's reason phrase. */
+  failureReason?: DeployTaskFailureReason | null;
   id: string;
   namespace: string;
   phase: DeployTaskPhase;
@@ -111,6 +116,7 @@ interface DeploymentTaskProjectionSource {
   cancelRequestedAt?: Date | string | null;
   canvasProjection: DeploymentTaskCanvasProjection;
   completedAt: Date | string | null;
+  failureDetails?: DeployTaskFailureDetails | null;
   id: string;
   namespace: string;
   phase: DeployTaskPhase;
@@ -530,6 +536,11 @@ export function toDeploymentTaskProjection(
       canvasProjection,
       source: task.source,
     }),
+    failureReason:
+      task.status === "failed" &&
+      isDeployTaskFailureReason(task.failureDetails?.reason)
+        ? task.failureDetails.reason
+        : null,
     id: task.id,
     namespace: task.namespace,
     phase: task.phase,

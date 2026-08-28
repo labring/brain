@@ -4,6 +4,7 @@ import { SidePane, SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { Blocks } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DeployBillingWallCard } from "@/features/deploy/deploy-billing-wall-card";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
@@ -16,6 +17,7 @@ import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-e
 import type { TemplateDeploymentSettings } from "@/features/deploy/template-deployer";
 import { TemplateDeployer } from "@/features/deploy/template-deployer";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeployBillingWall } from "@/features/deploy/use-deploy-billing-wall";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
@@ -60,6 +62,10 @@ export function TemplateDeploymentPane({
         : undefined,
     [redeploy]
   );
+
+  // The pre-deploy wall (E1/E2): a fact that will certainly fail the deploy
+  // replaces the form instead of letting the run die on it.
+  const billingWall = useDeployBillingWall();
 
   const deploy = useCallback(
     async (settings: TemplateDeploymentSettings) => {
@@ -130,28 +136,32 @@ export function TemplateDeploymentPane({
       }
       title={redeploy == null ? "Deploy Template" : "Edit & Redeploy Template"}
     >
-      <TemplateDeployer.Root
-        busy={
-          deploying || currentProject.isLoading || templateCatalog.isLoading
-        }
-        errorMessage={templateCatalog.error?.message}
-        initialSettings={initialSettings}
-        loading={templateCatalog.isLoading}
-        onDeploy={(settings) => {
-          overwriteGate.gate(() => {
-            deploy(settings).catch(() => undefined);
-          });
-        }}
-        templateOptions={templateCatalog.templates}
-      >
-        <TemplateDeployer.Fields />
-        <SidePaneFooter>
-          <TemplateDeployer.Submit
-            className="w-full"
-            label={redeploy == null ? undefined : "Redeploy"}
-          />
-        </SidePaneFooter>
-      </TemplateDeployer.Root>
+      {billingWall == null ? (
+        <TemplateDeployer.Root
+          busy={
+            deploying || currentProject.isLoading || templateCatalog.isLoading
+          }
+          errorMessage={templateCatalog.error?.message}
+          initialSettings={initialSettings}
+          loading={templateCatalog.isLoading}
+          onDeploy={(settings) => {
+            overwriteGate.gate(() => {
+              deploy(settings).catch(() => undefined);
+            });
+          }}
+          templateOptions={templateCatalog.templates}
+        >
+          <TemplateDeployer.Fields />
+          <SidePaneFooter>
+            <TemplateDeployer.Submit
+              className="w-full"
+              label={redeploy == null ? undefined : "Redeploy"}
+            />
+          </SidePaneFooter>
+        </TemplateDeployer.Root>
+      ) : (
+        <DeployBillingWallCard wall={billingWall} />
+      )}
       {overwriteGate.dialog}
     </SidePane>
   );

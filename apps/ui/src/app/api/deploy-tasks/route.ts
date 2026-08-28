@@ -10,6 +10,7 @@ import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/features/deploy/task/api-auth";
+import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 import { withDeployTaskDevMock } from "@/features/deploy/task/dev-mock-route";
 import { createDeployTaskAction } from "@/features/deploy/task/engine/actions";
 import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
@@ -88,18 +89,28 @@ function identityBindingFailureResponse(error: unknown): NextResponse {
  */
 async function resolveCredentialBinding(input: {
   appToken: string;
+  cookieHeader: string | null;
   encodedKubeconfig?: string;
   namespace: string;
   requiresMarketingIdentity: boolean;
   sourceKind?: DeploymentTaskSource["kind"];
 }): Promise<
   | {
+      /** Request-memory identity for the run's billing reverse-check (E1/E2). */
+      billingActor?: DeployBillingActor;
       credentialBinding?: DeploymentCredentialBinding;
       marketingConsentSubject?: string;
     }
   | { response: NextResponse }
 > {
-  if (input.sourceKind !== "github" && !input.requiresMarketingIdentity) {
+  // Every source tries to bind the actor now: the run's terminal failure
+  // wants an account identity to ask billing with. Only GitHub (credentials)
+  // and consented attribution ever fail closed on a missing one.
+  if (
+    input.sourceKind !== "github" &&
+    !input.requiresMarketingIdentity &&
+    input.appToken.trim() === ""
+  ) {
     return {};
   }
   const authorization = await authorizeWorkspaceActor({
@@ -125,9 +136,19 @@ async function resolveCredentialBinding(input: {
       ),
     };
   }
-  const marketingConsentSubject = authorization.actorBinding.userUid;
+  const marketingConsentSubject = input.requiresMarketingIdentity
+    ? authorization.actorBinding.userUid
+    : undefined;
+  const billingActor: DeployBillingActor = {
+    cookieHeader: input.cookieHeader,
+    userId: authorization.actorBinding.userId,
+    userUid: authorization.actorBinding.userUid,
+  };
   if (input.sourceKind !== "github") {
-    return { marketingConsentSubject };
+    return {
+      billingActor,
+      ...(marketingConsentSubject == null ? {} : { marketingConsentSubject }),
+    };
   }
   const actor = verifiedGithubConnectionActor(authorization);
   // Every verified entry request first adopts the initiator's legacy
@@ -157,12 +178,13 @@ async function resolveCredentialBinding(input: {
     };
   }
   return {
+    billingActor,
     credentialBinding: {
       connectionRef: connection.id,
       credentialOwner: actor.owner.userUid,
       version: CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
     },
-    marketingConsentSubject,
+    ...(marketingConsentSubject == null ? {} : { marketingConsentSubject }),
   };
 }
 
@@ -269,6 +291,7 @@ export async function POST(request: Request) {
     : undefined;
   const bindingResolution = await resolveCredentialBinding({
     appToken: appTokenFromRequest(request),
+    cookieHeader: request.headers.get("cookie"),
     encodedKubeconfig: parsed.data.encodedKubeconfig,
     namespace: taskNamespace,
     requiresMarketingIdentity: marketingAttribution?.consent_token != null,
@@ -277,7 +300,8 @@ export async function POST(request: Request) {
   if ("response" in bindingResolution) {
     return bindingResolution.response;
   }
-  const { credentialBinding, marketingConsentSubject } = bindingResolution;
+  const { billingActor, credentialBinding, marketingConsentSubject } =
+    bindingResolution;
 
   const {
     encodedKubeconfig,
@@ -301,6 +325,7 @@ export async function POST(request: Request) {
       resolveTarget: resolveDeployTaskTargetForCreate,
       run: (handle, task) =>
         runDeployTask(handle, {
+          ...(billingActor == null ? {} : { billingActor }),
           encodedKubeconfig,
           // Full template args from the request body: the engine persists a
           // stripped copy, so sensitive values reach the runner only through

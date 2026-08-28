@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { resolveDeployTaskRequestNamespace } from "@/features/deploy/task/api-auth";
+import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 import { submitDeployTaskInputAction } from "@/features/deploy/task/engine/actions";
 import { getDeployTaskEngineContext } from "@/features/deploy/task/engine/server";
 import { runDeployTask } from "@/features/deploy/task/runner";
@@ -11,6 +12,8 @@ import {
   toDeployTaskDTO,
 } from "@/features/deploy/task/service";
 import { submitDeployTaskInputSchema } from "@/features/deploy/task/types";
+import { appTokenFromRequest } from "@/lib/app-token";
+import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,6 +29,34 @@ const requestSchema = submitDeployTaskInputSchema.extend({
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
+}
+
+/**
+ * Best-effort account identity for the resumed run's billing reverse-check
+ * (design spec E1/E2): a submission without a verifiable app token still
+ * resumes, its failure just keeps the runner's own classification.
+ */
+async function billingActorFor(
+  request: Request,
+  input: { encodedKubeconfig?: string; namespace: string }
+): Promise<DeployBillingActor | undefined> {
+  const appToken = appTokenFromRequest(request);
+  if (appToken.trim() === "") {
+    return undefined;
+  }
+  const authorization = await authorizeWorkspaceActor({
+    appToken,
+    encodedKubeconfig: input.encodedKubeconfig,
+    expectedNamespace: input.namespace,
+  });
+  if (!authorization.ok) {
+    return undefined;
+  }
+  return {
+    cookieHeader: request.headers.get("cookie"),
+    userId: authorization.actorBinding.userId,
+    userUid: authorization.actorBinding.userUid,
+  };
 }
 
 /**
@@ -67,6 +98,10 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const submittedValues = parsed.data.values;
+  const billingActor = await billingActorFor(request, {
+    encodedKubeconfig: parsed.data.encodedKubeconfig,
+    namespace: namespaceResolved.namespace,
+  });
   const result = await submitDeployTaskInputAction(
     getDeployTaskEngineContext(),
     {
@@ -74,6 +109,7 @@ export async function POST(request: Request, context: RouteContext) {
       namespace: namespaceResolved.namespace,
       run: (handle, task, currentBlockingInputs, values) =>
         runDeployTask(handle, {
+          ...(billingActor == null ? {} : { billingActor }),
           currentBlockingInputs,
           encodedKubeconfig: parsed.data.encodedKubeconfig,
           submittedInputValues: values,

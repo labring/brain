@@ -192,6 +192,7 @@ export type DeployTaskFailureReason =
   | "template-output-invalid"
   | "apply-failed"
   | "quota-exceeded"
+  | "balance-exhausted"
   | "readiness-timeout"
   | "interrupted"
   | "timeout"
@@ -202,7 +203,28 @@ export type DeployTaskFailureReason =
 
 export type DeployTaskFailureStage = "apply" | "readiness";
 
+/**
+ * What the billing reverse-check found at failure time (design spec rows
+ * E1/E2): the structured, allowlisted evidence behind a `balance-exhausted`
+ * or resource-attributed `quota-exceeded` classification — never raw
+ * upstream text, so every runner may persist and display it (ADR 0042).
+ */
+export type DeployBillingEvidence =
+  | {
+      /** Balance − DeductionBalance + usable credits; null when only the platform's DEBT status was readable. */
+      availableBalanceMicroUnits: number | null;
+      checkedAt: string;
+      kind: "account-debt";
+    }
+  | {
+      kind: "quota-full";
+      label: string;
+      percentUsed: number;
+      type: string;
+    };
+
 export interface DeployTaskFailureDetails extends Record<string, unknown> {
+  billingEvidence?: DeployBillingEvidence;
   failureMessage?: string;
   httpStatus?: number;
   reason?: DeployTaskFailureReason;

@@ -27,6 +27,7 @@ import {
 } from "@/features/chat/tool/chat-tool-intention";
 import { sliceOpenApiDocsTool } from "@/features/chat/tool/openapi-doc-slice-tool";
 import { readApiOpenApiDocsTool } from "@/features/chat/tool/read-api-openapi-docs-tool";
+import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 
 import { CHAT_BASE_SYSTEM_PROMPT } from "./model";
 import { buildAssistantWorkspaceContextPrompt } from "./workspace-context-prompt";
@@ -57,6 +58,7 @@ export interface ChatToolset {
  *   background warmup cache and never blocks the chat stream preflight.
  */
 export async function buildChatToolset({
+  billingActor,
   kubeconfig,
   kubernetesNamespace,
   chatId,
@@ -64,6 +66,8 @@ export async function buildChatToolset({
   workspaceUserUid,
   assistantContext,
 }: {
+  /** Request-memory identity for a chat-created run's billing reverse-check. */
+  billingActor?: DeployBillingActor;
   chatId: string;
   kubeconfig: string;
   kubernetesNamespace: string;
@@ -81,6 +85,7 @@ export async function buildChatToolset({
   });
   const deployTaskTools = createDeployTaskTools({
     assistantContext,
+    ...(billingActor == null ? {} : { billingActor }),
     kubeconfig,
     kubernetesNamespace,
     workspaceActor,

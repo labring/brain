@@ -96,6 +96,16 @@ const TRANSACTIONLESS_SCENARIOS = new Set<BillingDevScenario>([
  */
 export const NEVER_TOPPED_UP_SCENARIOS = new Set<BillingDevScenario>(["free"]);
 
+function aiCreditsUsed(
+  scenario: BillingDevScenario,
+  isFreePlan: boolean
+): number {
+  if (isFreePlan) {
+    return 0;
+  }
+  return scenario === "ai-credits-exhausted" ? 3_000_000 : 1_200_000;
+}
+
 function daysFromNow(days: number): string {
   return new Date(Date.now() + days * DAY_IN_MILLISECONDS).toISOString();
 }
@@ -766,7 +776,11 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
             context.scenario === "quota-full" ? "20Gi" : "12Gi",
           "services.nodeports": "2",
           traffic: "26843545600",
-          ...(isPaygMode ? {} : { ai_quota: isFreePlan ? 0 : 1_200_000 }),
+          // ai-credits-exhausted: the plan's AI Credits are spent (catalog
+          // E3), so a paid chat turn hits the wall.
+          ...(isPaygMode
+            ? {}
+            : { ai_quota: aiCreditsUsed(context.scenario, isFreePlan) }),
         },
       },
     };

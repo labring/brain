@@ -4,6 +4,7 @@ import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-ico
 import { SidePane, SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DeployBillingWallCard } from "@/features/deploy/deploy-billing-wall-card";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
@@ -18,6 +19,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeployBillingWall } from "@/features/deploy/use-deploy-billing-wall";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -100,6 +102,9 @@ export function DockerDeploymentPane({
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false
   );
+  // The pre-deploy wall (E1/E2): a fact that will certainly fail the deploy
+  // replaces the form instead of letting the run die on it.
+  const billingWall = useDeployBillingWall();
   const initialSettings = useMemo(
     () => dockerInitialSettings(redeploy),
     [redeploy]
@@ -179,23 +184,27 @@ export function DockerDeploymentPane({
       }
       width="wide"
     >
-      <DockerDeployer.Root
-        busy={deploying || currentProject.isLoading}
-        initialSettings={initialSettings}
-        onDeploy={(settings) => {
-          overwriteGate.gate(() => {
-            deploy(settings).catch(() => undefined);
-          });
-        }}
-      >
-        <DockerDeployer.Fields />
-        <SidePaneFooter>
-          <DockerDeployer.Submit
-            className="w-full"
-            label={redeploy == null ? undefined : "Redeploy"}
-          />
-        </SidePaneFooter>
-      </DockerDeployer.Root>
+      {billingWall == null ? (
+        <DockerDeployer.Root
+          busy={deploying || currentProject.isLoading}
+          initialSettings={initialSettings}
+          onDeploy={(settings) => {
+            overwriteGate.gate(() => {
+              deploy(settings).catch(() => undefined);
+            });
+          }}
+        >
+          <DockerDeployer.Fields />
+          <SidePaneFooter>
+            <DockerDeployer.Submit
+              className="w-full"
+              label={redeploy == null ? undefined : "Redeploy"}
+            />
+          </SidePaneFooter>
+        </DockerDeployer.Root>
+      ) : (
+        <DeployBillingWallCard wall={billingWall} />
+      )}
       {overwriteGate.dialog}
     </SidePane>
   );

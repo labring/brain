@@ -350,7 +350,9 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Failure Reason
 
-The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error.
+The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Two reasons are proven by a billing reverse-check at the terminal failure rather than by the runner, because a suspended workspace or an unschedulable pod shows the runner nothing but a stall: `balance-exhausted` (the account was in Account Debt) and a resource-attributed `quota-exceeded` (a deployable quota was full). Each carries structured Billing Evidence — the platform's formula result or the full quota — which stands in for the raw timeout text on every runner, and the failed step then shows a billing callout whose CTA leads to the fix while Redeploy stays in the pane footer; the Deployment Task Dock chip carries the reason phrase. The same judgment walls a deployment pane before the run starts (Deploy Billing Wall) when the fact already holds.
+
+_Avoid_: workspace not ready (for a suspended workspace), timed out (as the reason for a billing stop).
 
 ### Deployment Task Dock
 
@@ -496,7 +498,9 @@ _Avoid_: shared namespace chat, per-namespace chat history.
 
 ### Chat Billing Mode
 
-Who pays for one assistant model call — or whether it happens at all: `free` spends a Free Chat Turn, `user` bills the caller's AI Proxy, and `blocked` refuses the call because an Active Free Trial workspace has exhausted its Free Chat Turns. The server decides per turn and client surfaces render the mode without deriving it; there is no automatic `free`→`user` handoff — exhaustion during the trial blocks instead of billing. The mode, not the remaining count, is the reliable signal of being charged: a namespace with no platform model bills `user` from its first turn with turns unspent, and is never `blocked`.
+Who pays for one assistant model call — or whether it happens at all: `free` spends a Free Chat Turn, `user` bills the caller's AI Proxy, and `blocked` refuses the call because an Active Free Trial workspace has exhausted its Free Chat Turns. The server decides per turn and client surfaces render the mode without deriving it; there is no automatic `free`→`user` handoff — exhaustion during the trial blocks instead of billing. The mode, not the remaining count, is the reliable signal of being charged: a namespace with no platform model bills `user` from its first turn with turns unspent, and is never `blocked`. A `user` turn spends a Paid Source — a subscribed workspace's AI Credits, a Pay-As-You-Go workspace's Account Balance — and the server judges the Paid Chat Wall before the turn the same way it judges the free allowance: an exhausted Paid Source refuses the send and locks the composer with a card naming the fix (upgrade the plan, or top up). The AI Proxy's own billing refusal of a turn already under way is classified rather than reported as an outage: the error card says which Paid Source ran out and locks nothing — the next send re-gates.
+
+_Avoid_: something went wrong on our side (for a billing refusal), connection unavailable (for an exhausted Paid Source).
 
 _Avoid_: subscription tier, plan.
 

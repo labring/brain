@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { deploymentFailureChipPhrase } from "@/features/deploy/task/failure-summary";
 import {
   type DeploymentTaskDisplaySummary,
   type DeploymentTaskProjection,
@@ -154,9 +155,12 @@ function DeploymentTaskDockTask({
   const { task } = item;
   const display = taskDisplay(task);
   const sourceLabel = sourceKindLabel(display.sourceKind);
+  // A money or quota wall names itself on the chip (design spec rows
+  // E1/E2); every other failure keeps the plain red dot.
+  const reasonPhrase = deploymentFailureChipPhrase(task.failureReason);
   const title = `${display.sourceSummary} · ${display.resultSummary} · ${statusLabel(
     task.status
-  )} · ${task.phase}`;
+  )} · ${task.phase}${reasonPhrase == null ? "" : ` · ${reasonPhrase}`}`;
   return (
     <div
       className={cn(
@@ -188,6 +192,14 @@ function DeploymentTaskDockTask({
             <span className="ml-1.5 font-mono font-normal text-[0.6875rem] text-white/45">
               #{deploymentTaskShortCode(task.id)}
             </span>
+            {reasonPhrase == null ? null : (
+              <span
+                className="ml-1.5 font-normal text-[0.6875rem] text-red-400"
+                data-slot="deployment-task-dock-reason"
+              >
+                {reasonPhrase}
+              </span>
+            )}
           </span>
         </span>
         <TaskStatusIndicator task={task} />

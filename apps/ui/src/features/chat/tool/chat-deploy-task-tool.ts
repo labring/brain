@@ -16,6 +16,7 @@ import {
   CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
   type VerifiedGithubConnectionActor,
 } from "@/features/deploy/github/owner-identity";
+import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
@@ -91,6 +92,8 @@ export function createDeployTaskTools(
       projectName?: string;
       projectId?: string;
     };
+    /** Request-memory identity for a run's billing reverse-check (E1/E2). */
+    billingActor?: DeployBillingActor;
     kubeconfig: string;
     kubernetesNamespace: string;
     workspaceActor: string;
@@ -216,6 +219,9 @@ export function createDeployTaskTools(
         resolveTarget: resolveDeployTaskTargetForCreate,
         run: (handle, task) =>
           runTask(handle, {
+            ...(options.billingActor == null
+              ? {}
+              : { billingActor: options.billingActor }),
             encodedKubeconfig,
             // Full template args from the chat request: the engine
             // persists a stripped copy, so sensitive values reach the
@@ -274,6 +280,9 @@ export function createDeployTaskTools(
         namespace,
         run: (handle, task, currentBlockingInputs, values) =>
           runTask(handle, {
+            ...(options.billingActor == null
+              ? {}
+              : { billingActor: options.billingActor }),
             currentBlockingInputs,
             encodedKubeconfig,
             submittedInputValues: values,

@@ -27,6 +27,7 @@ export const BILLING_DEV_SCENARIOS = [
   "payment-due-final",
   "pending-upgrade",
   "quota-full",
+  "ai-credits-exhausted",
   "deleted",
   "status-unknown",
   "mixed-workspaces",

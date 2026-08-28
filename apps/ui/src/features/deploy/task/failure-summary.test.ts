@@ -132,6 +132,7 @@ describe("deploymentFailureReason", () => {
     const expectedFragments = {
       "ai-proxy-unavailable": "credentials could not be prepared",
       "apply-failed": "could not be applied",
+      "balance-exhausted": "balance is exhausted",
       "build-runtime-unavailable": "required build service",
       "buildkit-start-failed": "BuildKit could not start",
       cancelled: "was cancelled",
@@ -185,5 +186,23 @@ describe("deploymentFailureReason", () => {
         'Generated Sealos template declaration is invalid for input "smtp_from_address".'
       )
     ).toBe("template-output-invalid");
+  });
+});
+
+describe("billing interruption vocabulary (catalog E1/E2)", () => {
+  it("names an exhausted balance and its suspension in the reason message", () => {
+    expect(deploymentFailureMessage("balance-exhausted")).toBe(
+      "Deployment stopped — the account balance is exhausted and the workspace is suspended. Top up, then redeploy."
+    );
+  });
+
+  it("gives the dock chip a reason phrase only for money and quota walls", async () => {
+    const { deploymentFailureChipPhrase } = await import("./failure-summary");
+    expect(deploymentFailureChipPhrase("balance-exhausted")).toBe(
+      "out of balance"
+    );
+    expect(deploymentFailureChipPhrase("quota-exceeded")).toBe("quota full");
+    expect(deploymentFailureChipPhrase("timeout")).toBeNull();
+    expect(deploymentFailureChipPhrase(null)).toBeNull();
   });
 });

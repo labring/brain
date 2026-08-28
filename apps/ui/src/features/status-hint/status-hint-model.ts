@@ -1,8 +1,8 @@
 import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 import type { BillingSurfaceTone } from "@/features/billing/billing-surface-tones";
-import type {
-  BillingQuotaType,
-  BillingUsageRow,
+import {
+  type BillingUsageRow,
+  firstFullQuotaRow,
 } from "@/features/billing/billing-usage-data";
 import type { NotificationCTA } from "@/features/shell/app-sidebar-notifications-model";
 import { DAY_MS } from "@/lib/time";
@@ -70,15 +70,6 @@ const DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
 /** The trial-expiry state opens this many days before the Free trial ends. */
 export const TRIAL_EXPIRY_NOTICE_DAYS = 3;
 
-/** The quota resources the catalog names (A2); traffic and GPU stay out. */
-const QUOTA_FULL_TYPES: ReadonlySet<BillingQuotaType> = new Set([
-  "cpu",
-  "memory",
-  "storage",
-  "pod",
-  "nodeport",
-]);
-
 function parsedDate(iso: string | null): Date | null {
   if (iso == null || iso.trim() === "") {
     return null;
@@ -143,7 +134,13 @@ const ACCOUNT_DEBT_HINT: StatusHint = {
   tone: "destructive",
 };
 
-function accountDebtHolds(inputs: StatusHintInputs): boolean | null {
+/**
+ * Whether Account Debt holds — the state, shared with the pre-deploy wall
+ * so the banner and the blocked deploy entry can never disagree.
+ */
+export function accountDebtHolds(
+  inputs: Pick<StatusHintInputs, "availableBalanceMicroUnits" | "subscription">
+): boolean | null {
   // The platform treats only a strictly positive available amount as good
   // standing; a PAYG workspace it already reports in DEBT is the same fact.
   if (
@@ -166,9 +163,7 @@ function resourceNoun(label: string): string {
 function quotaFullHint(
   quota: readonly StatusHintQuotaRow[]
 ): StatusHint | null {
-  const full = quota.find(
-    (row) => QUOTA_FULL_TYPES.has(row.type) && row.percentUsed >= 100
-  );
+  const full = firstFullQuotaRow(quota);
   if (full == null) {
     return null;
   }
