@@ -8,10 +8,12 @@ import { notificationStore } from "./server-store";
 type NotificationRouteHandler = (request: Request) => Promise<Response>;
 
 /**
- * Lets the billing Dev Mock's notification fixtures answer first in dev and
- * demo builds (`NEXT_PUBLIC_DEV_TWEAKS=1` marks a demo image); a real
- * production build statically drops the dynamic import, so fixtures never
- * reach production bundles — the same gate as the /api/billing routes.
+ * Lets the Dev Mocks answer first in dev and demo builds
+ * (`NEXT_PUBLIC_DEV_TWEAKS=1` marks a demo image): the Notification Center
+ * mock layers its platform fixtures over the billing mock's feed or the
+ * real handler, whichever is below. A real production build statically
+ * drops the dynamic imports, so fixtures never reach production bundles —
+ * the same gate as the /api/billing routes.
  */
 function withNotificationDevMock(
   handler: NotificationDevMockHandler,
@@ -24,11 +26,19 @@ function withNotificationDevMock(
     return real;
   }
   return async (request) => {
-    const { notificationDevMockResponse } = await import(
-      "@/features/billing/server/dev-fixtures/notifications"
+    const [
+      { notificationDevMockResponse },
+      { withPlatformNotificationDevMock },
+    ] = await Promise.all([
+      import("@/features/billing/server/dev-fixtures/notifications"),
+      import("./dev-fixtures"),
+    ]);
+    return withPlatformNotificationDevMock(
+      handler,
+      request,
+      async (layered) =>
+        (await notificationDevMockResponse(handler, layered)) ?? real(layered)
     );
-    const mocked = await notificationDevMockResponse(handler, request);
-    return mocked ?? real(request);
   };
 }
 
