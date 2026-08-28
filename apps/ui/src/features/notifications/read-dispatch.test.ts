@@ -8,7 +8,7 @@ import { planReadDispatch, shouldSyncCRReadLabel } from "./read-dispatch";
 function item(overrides: Partial<AppNotification>): AppNotification {
   return {
     id: "db:m1",
-    kind: "quota",
+    severity: "warning",
     source: "db",
     timestamp: 0,
     title: "Storage quota is full",

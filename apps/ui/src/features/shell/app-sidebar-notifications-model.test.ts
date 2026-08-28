@@ -12,10 +12,10 @@ import {
 function item(overrides: Partial<AppNotification>): AppNotification {
   return {
     id: "db:n1",
-    kind: "deploy-success",
+    severity: "info",
     source: "db",
     timestamp: Date.UTC(2026, 7, 27, 12, 0, 0),
-    title: "Deployment complete",
+    title: "Subscription upgraded",
     unread: false,
     ...overrides,
   };

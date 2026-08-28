@@ -7,12 +7,13 @@
  * by real time.
  */
 
-export type AppNotificationKind =
-  | "announcement"
-  | "billing"
-  | "deploy-failure"
-  | "deploy-success"
-  | "quota";
+/**
+ * Notification Severity: how much the message matters, derived from what it
+ * is about — critical (already suspended or facing deletion), warning (a
+ * threshold crossed or a deadline near; action prevents the next stage),
+ * info (a receipt, a hint, an announcement). Shown without escalation.
+ */
+export type NotificationSeverity = "critical" | "warning" | "info";
 
 /** Which stream a Notification came from; also its id prefix. */
 export type AppNotificationSource = "cr" | "db";
@@ -40,8 +41,8 @@ export interface AppNotification {
   crName?: string;
   cta?: NotificationCTA;
   id: string;
-  kind: AppNotificationKind;
   project?: string;
+  severity: NotificationSeverity;
   source: AppNotificationSource;
   timestamp: number;
   title: string;

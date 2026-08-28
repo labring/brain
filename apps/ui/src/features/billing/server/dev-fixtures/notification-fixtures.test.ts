@@ -131,7 +131,9 @@ test("payg-debt-final: the whole account debt ladder, overridden, with only the 
 
 test("active: an unknown platform name falls back to its own text beside the upgrade receipt", async () => {
   const merged = await mergedFor("active");
-  const announcement = merged.find((item) => item.kind === "announcement");
+  const announcement = merged.find(
+    (item) => item.source === "cr" && item.severity === "info"
+  );
   assert.equal(announcement?.cta, undefined);
   assert.ok(announcement?.body, "the original body survives");
   assert.ok(

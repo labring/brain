@@ -6,7 +6,7 @@ import type { NotificationCRItem } from "@workspace/api/hooks";
 import {
   isGiftOnlyNewcomer,
   mergeNotificationFeed,
-  notificationKindForCR,
+  notificationSeverityForCR,
   renderNotificationMessage,
 } from "./feed-model";
 import { crNotificationId, notificationSource } from "./notification-ids";
@@ -84,7 +84,7 @@ test("both streams merge into one list, newest first, with source-prefixed ids",
   );
 });
 
-test("platform copy outside the override table is shown as-is and kinds follow the upstream sender", () => {
+test("platform copy outside the override table is shown as-is and severity follows name and sender", () => {
   const [item] = mergeNotificationFeed({
     crItems: [cr({ name: "debt-choice-newtier" })],
     dbMessages: [],
@@ -95,26 +95,33 @@ test("platform copy outside the override table is shown as-is and kinds follow t
     item?.body,
     "Your account balance is exhausted; services are suspended."
   );
-  assert.equal(item?.kind, "billing");
+  assert.equal(item?.severity, "critical");
   assert.equal(item?.crName, "debt-choice-newtier");
 
   assert.equal(
-    notificationKindForCR({ from: "Debt-System", name: "x" }),
-    "billing"
+    notificationSeverityForCR({ from: "Debt-System", name: "x" }),
+    "warning"
   );
   assert.equal(
-    notificationKindForCR({ name: "workspace-debt-debt-pre-deletion" }),
-    "billing"
+    notificationSeverityForCR({ name: "workspace-debt-debt-pre-deletion" }),
+    "critical"
   );
   assert.equal(
-    notificationKindForCR({ from: "Admin", name: "release-notes" }),
-    "announcement"
+    notificationSeverityForCR({
+      from: "Debt-System",
+      name: "debt-choice-lowbalanceperiod",
+    }),
+    "warning"
+  );
+  assert.equal(
+    notificationSeverityForCR({ from: "Admin", name: "release-notes" }),
+    "info"
   );
 });
 
 test("Brain entries render from their payload", () => {
   const rendered = renderNotificationMessage(dbMessage({}));
-  assert.equal(rendered.kind, "quota");
+  assert.equal(rendered.severity, "warning");
   assert.equal(rendered.title, "Storage quota is full");
   assert.match(rendered.body, QUOTA_BODY_RE);
   assert.equal(
@@ -209,7 +216,7 @@ test("the 8 fixed platform names render Brain-voiced copy and a CTA; the CR text
     "Resources can be permanently deleted at any time. This cannot be undone."
   );
   assert.deepEqual(item?.cta, { href: "/billing", label: "Renew plan" });
-  assert.equal(item?.kind, "billing");
+  assert.equal(item?.severity, "critical");
   assert.equal(item?.crName, "workspace-debt-debtfinaldeletion");
   assert.equal(source.message, "Radical resource release", "display-only");
 
@@ -348,7 +355,7 @@ test("the gift hint renders the reassuring welcome copy with no CTA", () => {
       payload: { giftMicroUnits: 720_000, kind: "credit-hint" },
     })
   );
-  assert.equal(rendered.kind, "billing");
+  assert.equal(rendered.severity, "info");
   assert.equal(rendered.title, "You have a $1 welcome gift");
   assert.equal(
     rendered.body,
@@ -385,7 +392,7 @@ test("subscription-change receipts are one factual sentence per change, no CTA",
       },
     })
   );
-  assert.equal(upgraded.kind, "billing");
+  assert.equal(upgraded.severity, "info");
   assert.equal(upgraded.title, "Subscription upgraded");
   assert.equal(upgraded.body, "This workspace is now on Pro.");
   assert.equal(upgraded.cta, undefined);

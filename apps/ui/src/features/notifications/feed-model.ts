@@ -3,8 +3,8 @@ import type { NotificationCRItem } from "@workspace/api/hooks";
 import { MICRO_UNITS_PER_CURRENCY_UNIT } from "@/features/billing/billing-amount";
 import type {
   AppNotification,
-  AppNotificationKind,
   NotificationCTA,
+  NotificationSeverity,
 } from "@/features/shell/app-sidebar-notifications-model";
 
 import { CR_OVERRIDES, GIFT_FILTERED_CR_NAMES } from "./cr-overrides";
@@ -30,17 +30,35 @@ const BILLING_SENDERS: ReadonlySet<string> = new Set([
   "Workspace-Subscription-System",
 ]);
 
-export function notificationKindForCR(
+/** The low-balance warning tiers: a threshold crossed, nothing suspended yet. */
+const WARNING_TIER_CR_NAMES: ReadonlySet<string> = new Set([
+  "debt-choice-lowbalanceperiod",
+  "debt-choice-criticalbalanceperiod",
+]);
+
+/**
+ * A platform message's Severity from its fixed name and sender: the debt
+ * ladder from `debtperiod` on and every `workspace-debt-*` stage mean
+ * something is already suspended or faces deletion (critical); the
+ * low-balance tiers and any other billing-controller message warn; anything
+ * else is an announcement (info).
+ */
+export function notificationSeverityForCR(
   item: Pick<NotificationCRItem, "from" | "name">
-): AppNotificationKind {
-  if (
-    (item.from != null && BILLING_SENDERS.has(item.from)) ||
-    item.name.startsWith("debt-choice-") ||
-    item.name.startsWith("workspace-debt-")
-  ) {
-    return "billing";
+): NotificationSeverity {
+  if (item.name.startsWith("workspace-debt-")) {
+    return "critical";
   }
-  return "announcement";
+  if (WARNING_TIER_CR_NAMES.has(item.name)) {
+    return "warning";
+  }
+  if (item.name.startsWith("debt-choice-")) {
+    return "critical";
+  }
+  if (item.from != null && BILLING_SENDERS.has(item.from)) {
+    return "warning";
+  }
+  return "info";
 }
 
 const QUOTA_RESOURCE_LABELS: Record<QuotaExhaustedResource, string> = {
@@ -54,7 +72,7 @@ const QUOTA_RESOURCE_LABELS: Record<QuotaExhaustedResource, string> = {
 interface RenderedNotification {
   body: string;
   cta?: NotificationCTA;
-  kind: AppNotificationKind;
+  severity: NotificationSeverity;
   title: string;
 }
 
@@ -121,7 +139,7 @@ const RENDERERS: {
         date === ""
           ? "It covers your first deployments and expires a month after it was granted."
           : `It covers your first deployments and expires on ${date}.`,
-      kind: "billing",
+      severity: "info",
       title: `You have a ${wholeDollars(payload.giftMicroUnits)} welcome gift`,
     };
   },
@@ -130,13 +148,13 @@ const RENDERERS: {
     return {
       body: `${label} is at 100%. New deployments can't start.`,
       cta: { href: "/billing/usage", label: "View usage" },
-      kind: "quota",
+      severity: "warning",
       title: `${label} quota is full`,
     };
   },
   "subscription-change": (payload) => ({
     body: subscriptionChangeBody(payload),
-    kind: "billing",
+    severity: "info",
     title: SUBSCRIPTION_CHANGE_TITLES[payload.change],
   }),
 };
@@ -200,7 +218,7 @@ export function platformNotification(
     crName: item.name,
     ...(override == null ? {} : { cta: override.cta }),
     id,
-    kind: notificationKindForCR(item),
+    severity: notificationSeverityForCR(item),
     source: "cr",
     timestamp: item.timestamp * 1000,
     title: override?.title ?? item.title,
@@ -220,7 +238,7 @@ export function brainNotification(
     body: rendered.body,
     ...(rendered.cta == null ? {} : { cta: rendered.cta }),
     id,
-    kind: rendered.kind,
+    severity: rendered.severity,
     source: "db",
     timestamp: message.createdAt,
     title: rendered.title,

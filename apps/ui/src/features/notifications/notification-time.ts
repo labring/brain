@@ -1,8 +1,9 @@
 import { DAY_MS, HOUR_MS, MINUTE_MS } from "@/lib/time";
 
 /**
- * Relative time for a Notification row, from a real timestamp (epoch ms):
- * "Just now", "26m ago", "3h ago", "Yesterday", "5d ago", then a short date.
+ * The short relative time on a Notification row, from a real timestamp
+ * (epoch ms): "now", "26m", "3h", "5d", then a short date. The row pairs it
+ * with `formatNotificationTimestamp` as a tooltip for the exact moment.
  */
 export function formatNotificationTime(
   timestamp: number,
@@ -13,23 +14,34 @@ export function formatNotificationTime(
   }
   const elapsed = Math.max(0, now - timestamp);
   if (elapsed < MINUTE_MS) {
-    return "Just now";
+    return "now";
   }
   if (elapsed < HOUR_MS) {
-    return `${Math.floor(elapsed / MINUTE_MS)}m ago`;
+    return `${Math.floor(elapsed / MINUTE_MS)}m`;
   }
   if (elapsed < DAY_MS) {
-    return `${Math.floor(elapsed / HOUR_MS)}h ago`;
-  }
-  if (elapsed < 2 * DAY_MS) {
-    return "Yesterday";
+    return `${Math.floor(elapsed / HOUR_MS)}h`;
   }
   if (elapsed < 7 * DAY_MS) {
-    return `${Math.floor(elapsed / DAY_MS)}d ago`;
+    return `${Math.floor(elapsed / DAY_MS)}d`;
   }
   return new Date(timestamp).toLocaleDateString("en-US", {
     day: "numeric",
     month: "short",
+  });
+}
+
+/** The absolute moment behind a row's short time ("Aug 21, 2026, 3:05 PM"). */
+export function formatNotificationTimestamp(timestamp: number): string {
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  return new Date(timestamp).toLocaleString("en-US", {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    year: "numeric",
   });
 }
 
