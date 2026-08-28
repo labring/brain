@@ -243,16 +243,19 @@ describe("billing evidence in failure details (catalog E1/E2)", () => {
     expect(detail).not.toContain("Timed out");
   });
 
-  it("appends the quota evidence to a raw runner's own error", () => {
+  const STORAGE_FULL_EVIDENCE = {
+    kind: "quota-full" as const,
+    label: "Storage",
+    percentUsed: 100,
+    type: "storage",
+  };
+
+  it("appends the quota evidence to the apply error a raw runner's provider explained", () => {
     const detail = deploymentFailureTechnicalDetail({
       details: {
-        billingEvidence: {
-          kind: "quota-full",
-          label: "Storage",
-          percentUsed: 100,
-          type: "storage",
-        },
+        billingEvidence: STORAGE_FULL_EVIDENCE,
         reason: "quota-exceeded",
+        stage: "apply",
       },
       error: "exceeded quota: requested: requests.storage=2Gi",
       id: "task-1",
@@ -262,5 +265,28 @@ describe("billing evidence in failure details (catalog E1/E2)", () => {
     });
     expect(detail).toContain("exceeded quota: requested: requests.storage=2Gi");
     expect(detail).toContain("Quota: Storage at 100%");
+  });
+
+  it("shows the billing check instead of the raw stall for a quota the runner could not see", () => {
+    // A pod that never scheduled reached the runner as a readiness timeout;
+    // that text contradicts "quota full" exactly as it contradicts "balance
+    // exhausted" (design spec row E2).
+    const detail = deploymentFailureTechnicalDetail({
+      details: {
+        billingEvidence: STORAGE_FULL_EVIDENCE,
+        reason: "quota-exceeded",
+        stage: "readiness",
+      },
+      error: "Timed out waiting for the workload to become ready after 600s",
+      id: "task-1",
+      phase: "verify",
+      runner: { kind: "template" },
+      status: "failed",
+    });
+    expect(detail).toContain("Reason: quota-exceeded");
+    expect(detail).toContain("Phase: verify");
+    expect(detail).toContain("Quota: Storage at 100%");
+    expect(detail).toContain("Task ID: task-1");
+    expect(detail).not.toContain("Timed out");
   });
 });

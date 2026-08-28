@@ -4,6 +4,8 @@ import { AppButton } from "@workspace/ui/components/app-button";
 import { cn } from "@workspace/ui/lib/utils";
 import { Gift, TriangleAlert } from "lucide-react";
 
+import { BillingCalloutCard } from "@/features/billing/billing-callout-card";
+
 import {
   type ChatBillingCopy,
   type ChatBillingInterruption,
@@ -167,29 +169,22 @@ function PaidWallCard({
   onNavigateToBilling: (destination: ChatBillingDestination) => void;
 }) {
   return (
-    <div
-      className="flex items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3"
+    <BillingCalloutCard
+      action={
+        <AppButton
+          onClick={() => onNavigateToBilling(copy.cta.destination)}
+          size="sm"
+        >
+          {copy.cta.label}
+        </AppButton>
+      }
+      body={copy.body}
+      className="rounded-xl p-3"
       data-slot="chat-paid-wall-card"
-      role="alert"
-    >
-      <div className="flex min-w-0 items-start gap-2.5">
-        <TriangleAlert
-          aria-hidden
-          className="mt-0.5 size-4 shrink-0 text-destructive"
-        />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="font-medium text-foreground text-xs">{copy.title}</p>
-          <p className="text-muted-foreground text-xs">{copy.body}</p>
-        </div>
-      </div>
-      <AppButton
-        className="shrink-0"
-        onClick={() => onNavigateToBilling(copy.cta.destination)}
-        size="sm"
-      >
-        {copy.cta.label}
-      </AppButton>
-    </div>
+      icon={TriangleAlert}
+      layout="inline"
+      title={copy.title}
+    />
   );
 }
 
@@ -206,30 +201,23 @@ function BillingErrorCard({
   onNavigateToBilling: (destination: ChatBillingDestination) => void;
 }) {
   return (
-    <div
-      className="flex items-start justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3"
+    <BillingCalloutCard
+      action={
+        <AppButton
+          onClick={() => onNavigateToBilling(copy.cta.destination)}
+          size="sm"
+          variant="secondary"
+        >
+          {copy.cta.label}
+        </AppButton>
+      }
+      body={copy.body}
+      className="rounded-xl p-3"
       data-slot="chat-billing-error-card"
-      role="alert"
-    >
-      <div className="flex min-w-0 items-start gap-2.5">
-        <TriangleAlert
-          aria-hidden
-          className="mt-0.5 size-4 shrink-0 text-destructive"
-        />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="font-medium text-foreground text-sm">{copy.title}</p>
-          <p className="text-muted-foreground text-xs">{copy.body}</p>
-        </div>
-      </div>
-      <AppButton
-        className="shrink-0"
-        onClick={() => onNavigateToBilling(copy.cta.destination)}
-        size="sm"
-        variant="secondary"
-      >
-        {copy.cta.label}
-      </AppButton>
-    </div>
+      icon={TriangleAlert}
+      layout="inline"
+      title={copy.title}
+    />
   );
 }
 

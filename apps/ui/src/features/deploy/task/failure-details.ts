@@ -190,12 +190,21 @@ export function deploymentFailureTechnicalDetail(input: {
     return undefined;
   }
   const evidence = deployBillingEvidence(input.details?.billingEvidence);
-  // An exhausted balance only ever reached the runner as a timeout; the
-  // timeout text contradicts the classification, so the billing check
-  // stands in for it on every runner (design spec row E1).
-  if (input.details?.reason === "balance-exhausted" && evidence != null) {
+  // A billing cause the runner never saw reached it only as a stall — a
+  // timeout, a pod that never came up — and that text contradicts the
+  // classification, so the billing check stands in for it on every runner
+  // (design spec rows E1/E2, ADR 0068). An exhausted balance is always such
+  // a cause; a full quota is one unless the apply step itself reported the
+  // quota error, the one stage where the provider's own numbers are worth
+  // keeping.
+  const billingReason = input.details?.reason;
+  const billingSupersedesError =
+    evidence != null &&
+    (billingReason === "balance-exhausted" ||
+      (billingReason === "quota-exceeded" && input.details?.stage !== "apply"));
+  if (billingSupersedesError) {
     return [
-      "Reason: balance-exhausted",
+      `Reason: ${billingReason}`,
       `Phase: ${input.phase}`,
       ...billingEvidenceLines(evidence),
       `Task ID: ${input.id}`,

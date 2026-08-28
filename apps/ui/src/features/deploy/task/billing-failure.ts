@@ -13,6 +13,14 @@ import type { DeployBillingEvidence, DeployTaskFailureReason } from "./schema";
 export interface BillingFailureOverride {
   billingEvidence: DeployBillingEvidence;
   reason: DeployTaskFailureReason;
+  /**
+   * Whether the override names a cause the runner never saw. The runner's
+   * own text was then only a stall (a timeout, a pod that never came up)
+   * that contradicts the headline, so the curated reason replaces it on
+   * every runner. False only for an apply-time quota error the provider
+   * explained itself, which keeps the requested/used/limited numbers.
+   */
+  supersedesRunnerError: boolean;
 }
 
 /**
@@ -57,7 +65,10 @@ export function resolveBillingFailureOverride(input: {
     return null;
   }
   // A workspace in Account Debt is suspended: whatever the run tripped on
-  // afterwards, the plug was already pulled.
+  // afterwards, the plug was already pulled. That includes an apply-time
+  // quota error — the platform suspends by pinning the namespace under a
+  // zero quota (`debt-limit0`), so "exceeded quota" there is a symptom of
+  // the debt, not a quota to enlarge (ADR 0068).
   if (standing.accountDebt === true) {
     return {
       billingEvidence: {
@@ -66,6 +77,7 @@ export function resolveBillingFailureOverride(input: {
         kind: "account-debt",
       },
       reason: "balance-exhausted",
+      supersedesRunnerError: true,
     };
   }
   const full = standing.fullQuota;
@@ -83,5 +95,6 @@ export function resolveBillingFailureOverride(input: {
       type: full.type,
     },
     reason: "quota-exceeded",
+    supersedesRunnerError: reason !== "quota-exceeded",
   };
 }

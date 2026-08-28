@@ -4373,8 +4373,9 @@ export async function runDeployTask(
  */
 function terminalFailureDetails(input: {
   attachedDetails: DeployTaskFailureDetails;
-  balanceExhausted: boolean;
   billingDetails: Pick<DeployTaskFailureDetails, "billingEvidence">;
+  /** The billing reverse-check named a cause the runner never saw (ADR 0068). */
+  billingSupersedesError: boolean;
   error: unknown;
   reasonCode: DeployTaskFailureReason | null;
   reasonMessage: string;
@@ -4393,7 +4394,9 @@ function terminalFailureDetails(input: {
           task: input.task,
         }),
         ...attachedDetails,
-        ...(input.balanceExhausted ? { errorMessage: reasonMessage } : {}),
+        ...(input.billingSupersedesError
+          ? { errorMessage: reasonMessage }
+          : {}),
         ...input.billingDetails,
         failureMessage: reasonMessage,
         ...(reasonCode == null ? {} : { reason: reasonCode }),
@@ -4458,15 +4461,17 @@ async function resolveDeployTaskRunFailure(input: {
     reasonCode,
     surfacesRaw,
   });
-  // An exhausted balance contradicts the raw timeout text it arrived as, so
-  // the curated reason replaces the raw error on every runner.
-  const balanceExhausted = reasonCode === "balance-exhausted";
+  // A billing cause the runner never saw (an exhausted balance, a full quota
+  // behind a pod that never came up) contradicts the stall text it arrived
+  // as, so the curated reason replaces the raw error on every runner; an
+  // apply-time quota error keeps the provider's own numbers (ADR 0068).
+  const billingSupersedesError = billing?.supersedesRunnerError === true;
   const persistedMessage =
-    surfacesRaw && !balanceExhausted ? message : reasonMessage;
+    surfacesRaw && !billingSupersedesError ? message : reasonMessage;
   const failureDetails = terminalFailureDetails({
     attachedDetails,
-    balanceExhausted,
     billingDetails,
+    billingSupersedesError,
     error,
     reasonCode,
     reasonMessage,
@@ -4487,7 +4492,7 @@ async function resolveDeployTaskRunFailure(input: {
       kind: "deployment_task.failed",
       message: reasonMessage,
       payload: {
-        ...(surfacesRaw && !balanceExhausted
+        ...(surfacesRaw && !billingSupersedesError
           ? { error: persistedMessage }
           : {}),
         ...(reasonCode == null ? {} : { reason: reasonCode }),

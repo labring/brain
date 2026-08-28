@@ -45,6 +45,22 @@ describe("resolveBillingFailureOverride", () => {
         kind: "account-debt",
       },
       reason: "balance-exhausted",
+      supersedesRunnerError: true,
+    });
+  });
+
+  it("lets debt supersede even an apply-time quota error", () => {
+    // Suspension pins the namespace under a zero quota, so the provider's
+    // "exceeded quota" is the debt speaking — its numbers would mislead.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "quota-exceeded",
+        standing: DEBT,
+      })
+    ).toMatchObject({
+      reason: "balance-exhausted",
+      supersedesRunnerError: true,
     });
   });
 
@@ -65,6 +81,8 @@ describe("resolveBillingFailureOverride", () => {
         type: "storage",
       },
       reason: "quota-exceeded",
+      // The runner's text was only a stall; it would contradict the headline.
+      supersedesRunnerError: true,
     });
   });
 
@@ -83,6 +101,8 @@ describe("resolveBillingFailureOverride", () => {
         type: "storage",
       },
       reason: "quota-exceeded",
+      // The provider explained the quota itself; its numbers stay.
+      supersedesRunnerError: false,
     });
     expect(
       resolveBillingFailureOverride({

@@ -136,9 +136,11 @@ async function resolveCredentialBinding(input: {
       ),
     };
   }
-  const marketingConsentSubject = input.requiresMarketingIdentity
-    ? authorization.actorBinding.userUid
-    : undefined;
+  // The verified uid is the consent subject whenever the actor bound at all:
+  // a Redeploy that carries no fresh consent token still has to prove it is
+  // the same person before the engine lets it inherit the predecessor's
+  // consent provenance (an unset subject reads as a changed identity).
+  const marketingConsentSubject = authorization.actorBinding.userUid;
   const billingActor: DeployBillingActor = {
     cookieHeader: input.cookieHeader,
     userId: authorization.actorBinding.userId,
