@@ -1,4 +1,3 @@
-import { BillingDevMockGate } from "@/features/billing/billing-dev-mock-gate";
 import BillingTabShell from "@/features/billing/billing-tab-shell";
 import {
   AppShellChrome,
@@ -23,7 +22,6 @@ export default function BillingLayout({
     <AppShellChrome>
       <AuthBootstrap serverEncodedKubeconfig="" serverNamespace="" />
       <SealosSdkBootstrap />
-      <BillingDevMockGate />
       <AppSidebarCookieBridge>
         <AppShellSidebar />
         <AppShellView className="min-w-0 flex-1 basis-0">

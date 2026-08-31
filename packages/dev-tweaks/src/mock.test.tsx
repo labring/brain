@@ -16,6 +16,8 @@ import {
 
 const SCENARIOS = ["active", "free", "debt"] as const;
 
+const WRITE_DID_NOT_TAKE = /write did not take/;
+
 /** A source over a plain variable, standing in for the cookie. */
 function createFakeSource(initial: DevTweaksMockState | null = null) {
   const backing = { state: initial };
@@ -162,6 +164,183 @@ test("external source changes are adopted, and unchanged echoes are deduped", as
     await actAndDrain(() => {
       cleanup();
     });
+  } finally {
+    restoreActEnvironment(previousAct);
+    await dom.restore();
+  }
+});
+
+test("revalidate runs only when the served answers change", async () => {
+  const { MockStore } = await import("./panel/index");
+  const fake = createFakeSource();
+  const revalidations: string[] = [];
+  const KEY = "revalidate-policy-mock";
+  MockStore.register(KEY, {
+    revalidate: () => revalidations.push("hit"),
+    scenarios: SCENARIOS,
+    source: fake.source,
+    title: "Revalidate policy mock",
+  });
+  try {
+    // Picking a scenario while the mock is off changes nothing served: the
+    // panel adopts it, but nothing may refetch (or reload the page).
+    MockStore.setScenario(KEY, "debt");
+    assert.deepEqual(MockStore.getState(KEY), {
+      enabled: false,
+      scenario: "debt",
+    });
+    assert.equal(revalidations.length, 0);
+
+    MockStore.setEnabled(KEY, true);
+    assert.equal(revalidations.length, 1);
+
+    MockStore.setScenario(KEY, "free");
+    assert.equal(revalidations.length, 2);
+
+    // An external rewrite (the server advancing its cookie) revalidates too
+    // — the page must refetch, not just the panel.
+    fake.backing.state = { enabled: true, scenario: "active" };
+    fake.notifyWatchers();
+    assert.equal(revalidations.length, 3);
+
+    // An echo revalidates nothing.
+    fake.notifyWatchers();
+    assert.equal(revalidations.length, 3);
+
+    MockStore.setEnabled(KEY, false);
+    assert.equal(revalidations.length, 4);
+  } finally {
+    MockStore.unregister(KEY);
+  }
+});
+
+test("a second registration adopts the def without clobbering live state", async () => {
+  const { MockStore } = await import("./panel/index");
+  const fake = createFakeSource();
+  const KEY = "double-registration-mock";
+  const def = {
+    scenarios: SCENARIOS,
+    source: fake.source,
+    title: "Doubly mounted mock",
+  };
+  MockStore.register(KEY, def);
+  try {
+    MockStore.setEnabled(KEY, true);
+    assert.deepEqual(MockStore.getState(KEY), {
+      enabled: true,
+      scenario: "active",
+    });
+
+    // A second mount of the same key (the def is a fresh object each time).
+    MockStore.register(KEY, { ...def });
+    assert.deepEqual(
+      MockStore.getState(KEY),
+      { enabled: true, scenario: "active" },
+      "registering again must not reset the mock"
+    );
+
+    MockStore.unregister(KEY);
+    assert.deepEqual(
+      MockStore.getState(KEY),
+      { enabled: true, scenario: "active" },
+      "one registrant unmounting must not reset the mock"
+    );
+  } finally {
+    MockStore.unregister(KEY);
+  }
+});
+
+test("a write the source rejects warns instead of failing silently", async () => {
+  const { MockStore } = await import("./panel/index");
+  const KEY = "rejecting-source-mock";
+  // A source whose writes never take — a blocked cookie, say.
+  const source: DevTweaksMockSource = {
+    load: () => null,
+    set: () => undefined,
+  };
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+  MockStore.register(KEY, {
+    scenarios: SCENARIOS,
+    source,
+    title: "Rejecting mock",
+  });
+  try {
+    MockStore.setEnabled(KEY, true);
+    assert.deepEqual(
+      MockStore.getState(KEY),
+      { enabled: false, scenario: "active" },
+      "the panel stays truthful: the source still says off"
+    );
+    assert.equal(warnings.length, 1);
+    assert.match(String(warnings[0]?.[0]), WRITE_DID_NOT_TAKE);
+  } finally {
+    console.warn = originalWarn;
+    MockStore.unregister(KEY);
+  }
+});
+
+test("a reload-revalidating mock reopens the panel after the reload", async () => {
+  const dom = installTestDom();
+  const previousAct = setActEnvironment(true);
+  try {
+    const { DevTweaksRoot, useDevTweaksMock } = await import("./index");
+    const { preserveDevTweaksPanelAcrossReload, resetPanelVisibilityForTests } =
+      await import("./panel/panel-visibility");
+    const { cleanup, render, within } = await import(
+      "@testing-library/react/pure"
+    );
+    const body = () => within(document.body);
+    const fake = createFakeSource();
+
+    function Probe() {
+      useDevTweaksMock("reload-reopen-mock", {
+        scenarios: SCENARIOS,
+        source: fake.source,
+        title: "Reloading mock",
+      });
+      return null;
+    }
+
+    // Panel open (defaultOpen), the revalidator arms the reopen request…
+    await actAndDrain(() => {
+      render(
+        <>
+          <Probe />
+          <DevTweaksRoot defaultOpen={true} launcher="dirty" />
+        </>
+      );
+    });
+    preserveDevTweaksPanelAcrossReload();
+    await actAndDrain(() => {
+      cleanup();
+    });
+
+    // …and the next mount (the reloaded page) consumes it: the panel opens
+    // even though its default is closed.
+    await actAndDrain(() => {
+      render(
+        <>
+          <Probe />
+          <DevTweaksRoot defaultOpen={false} launcher="dirty" />
+        </>
+      );
+    });
+    assert.ok(body().getByText("Reloading mock"));
+    const inner = document.querySelector(".dev-tweaks-panel-inner");
+    assert.equal(inner?.getAttribute("data-collapsed"), "false");
+
+    // One-shot: consuming the request cleared it from storage (the in-page
+    // cache stands in for "same page load"; a real reload starts fresh).
+    assert.equal(window.sessionStorage.getItem("dev-tweaks.reopen-once"), null);
+
+    await actAndDrain(() => {
+      cleanup();
+    });
+    resetPanelVisibilityForTests();
   } finally {
     restoreActEnvironment(previousAct);
     await dom.restore();

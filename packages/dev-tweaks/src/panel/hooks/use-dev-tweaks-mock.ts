@@ -12,8 +12,11 @@ const UNREGISTERED_STATE: DevTweaksMockState = Object.freeze({
 /**
  * Registers a mock with the dev tweaks panel while the caller is mounted.
  * The mock's truth stays in `def.source`; the returned state is the panel's
- * current view of it. Mount this from the screens the mock affects — the
- * mock leaves the panel when the last registration unmounts.
+ * current view of it. Mount this from an app-global registry, not from the
+ * screens the mock affects: the mock's state (a path-global cookie) outlives
+ * any one route, and the panel must show every live mock wherever the user
+ * is — a mock that serves fixtures while missing from the panel cannot be
+ * seen or turned off.
  */
 export function useDevTweaksMock(
   key: string,

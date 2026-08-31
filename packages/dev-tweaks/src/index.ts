@@ -6,6 +6,7 @@ export { type CssVarBinding, cssVarOverrides } from "./css-vars";
 export { DevTweaksRoot } from "./panel/components/dev-tweaks-root";
 export { useDevTweaks } from "./panel/hooks/use-dev-tweaks";
 export { useDevTweaksMock } from "./panel/hooks/use-dev-tweaks-mock";
+export { preserveDevTweaksPanelAcrossReload } from "./panel/panel-visibility";
 export type {
   DevTweaksConfig,
   ResolvedValues,
