@@ -1065,28 +1065,15 @@ export interface CodexGatewayOpenAiCredentials {
 }
 
 export function buildCodexGatewayEnv(
-  credentials?: CodexGatewayOpenAiCredentials
+  credentials: CodexGatewayOpenAiCredentials
 ): Record<string, string> {
   const env: Record<string, string> = {
     // Codex inside the Devbox still reads this name. The Brain UI process
     // chooses the value from GITHUB_DEPLOY_MODEL.
     CODEX_GATEWAY_MODEL: resolveDeployGatewayModel(),
   };
-  const apiKey = credentials
-    ? credentials.apiKey
-    : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_API_KEY) ??
-      compactEnvValue(process.env.SYSTEM_OPENAI_API_KEY));
-  const baseUrl = credentials
-    ? credentials.baseUrl
-    : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_BASE_URL) ??
-      compactEnvValue(process.env.SYSTEM_OPENAI_API_BASE_URL));
-
-  if (apiKey != null) {
-    env.CODEX_GATEWAY_OPENAI_API_KEY = apiKey;
-  }
-  if (baseUrl != null) {
-    env.CODEX_GATEWAY_OPENAI_BASE_URL = baseUrl;
-  }
+  env.CODEX_GATEWAY_OPENAI_API_KEY = credentials.apiKey;
+  env.CODEX_GATEWAY_OPENAI_BASE_URL = credentials.baseUrl;
 
   const langfusePublicKey = compactEnvValue(process.env.LANGFUSE_PUBLIC_KEY);
   const langfuseSecretKey = compactEnvValue(process.env.LANGFUSE_SECRET_KEY);
@@ -1104,18 +1091,6 @@ export function buildCodexGatewayEnv(
   return env;
 }
 
-function openAiCredentialPair(
-  apiKey: string | undefined,
-  baseUrl: string | undefined
-): CodexGatewayOpenAiCredentials | null {
-  const compactApiKey = compactEnvValue(apiKey);
-  const compactBaseUrl = compactEnvValue(baseUrl);
-  if (compactApiKey != null && compactBaseUrl != null) {
-    return { apiKey: compactApiKey, baseUrl: compactBaseUrl };
-  }
-  return null;
-}
-
 export function githubDeployOpenAiOverride(): CodexGatewayOpenAiCredentials | null {
   const apiKey = compactEnvValue(process.env.GITHUB_DEPLOY_OPENAI_API_KEY);
   const baseUrl = compactEnvValue(process.env.GITHUB_DEPLOY_OPENAI_BASE_URL);
@@ -1127,16 +1102,7 @@ export function githubDeployOpenAiOverride(): CodexGatewayOpenAiCredentials | nu
       "GitHub deploy OpenAI override requires both GITHUB_DEPLOY_OPENAI_API_KEY and GITHUB_DEPLOY_OPENAI_BASE_URL."
     );
   }
-  return (
-    openAiCredentialPair(
-      process.env.CODEX_GATEWAY_OPENAI_API_KEY,
-      process.env.CODEX_GATEWAY_OPENAI_BASE_URL
-    ) ??
-    openAiCredentialPair(
-      process.env.SYSTEM_OPENAI_API_KEY,
-      process.env.SYSTEM_OPENAI_API_BASE_URL
-    )
-  );
+  return null;
 }
 
 export async function resolveCodexGatewayCredentials(input: {
@@ -1859,7 +1825,7 @@ async function ensureDeployDevbox(input: {
   githubToken?: string;
   namespace: string;
   repoUrl: string;
-  resolveGatewayCredentials?: (
+  resolveGatewayCredentials: (
     signal?: AbortSignal
   ) => Promise<CodexGatewayOpenAiCredentials>;
   signal?: AbortSignal;
@@ -1915,7 +1881,7 @@ async function ensureDeployDevbox(input: {
     return { info, name: existing.name };
   }
 
-  const gatewayCredentials = await input.resolveGatewayCredentials?.(
+  const gatewayCredentials = await input.resolveGatewayCredentials(
     input.signal
   );
   try {

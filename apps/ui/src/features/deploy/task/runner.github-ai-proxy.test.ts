@@ -38,6 +38,10 @@ const ENV_KEYS = [
 const originalEnv = Object.fromEntries(
   ENV_KEYS.map((key) => [key, process.env[key]])
 ) as Record<(typeof ENV_KEYS)[number], string | undefined>;
+const RESOLVED_GATEWAY_CREDENTIALS = {
+  apiKey: "resolved-key",
+  baseUrl: "https://resolved.example/v1",
+};
 
 mock.module("server-only", () => ({}));
 
@@ -361,25 +365,23 @@ describe("deployment AI Proxy credentials", () => {
     expect(fetchCalled).toBe(false);
   });
 
-  it("preserves the existing platform env behavior when no user credentials are supplied", () => {
-    expect(buildCodexGatewayEnv()).toEqual({
-      CODEX_GATEWAY_MODEL: "deploy-model",
-      CODEX_GATEWAY_OPENAI_API_KEY: "gateway-platform-key",
-      CODEX_GATEWAY_OPENAI_BASE_URL: "https://gateway-platform.example/v1",
-    });
-  });
-
   it("falls back to gpt-5.5 when GITHUB_DEPLOY_MODEL is unset", () => {
     delete process.env.GITHUB_DEPLOY_MODEL;
-    expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("gpt-5.5");
+    expect(
+      buildCodexGatewayEnv(RESOLVED_GATEWAY_CREDENTIALS).CODEX_GATEWAY_MODEL
+    ).toBe("gpt-5.5");
   });
 
   it("does not take the Devbox model from CODEX_GATEWAY_MODEL", () => {
     delete process.env.GITHUB_DEPLOY_MODEL;
     process.env.CODEX_GATEWAY_MODEL = "gpt-chat-only";
-    expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("gpt-5.5");
+    expect(
+      buildCodexGatewayEnv(RESOLVED_GATEWAY_CREDENTIALS).CODEX_GATEWAY_MODEL
+    ).toBe("gpt-5.5");
     process.env.GITHUB_DEPLOY_MODEL = "deploy-model";
-    expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("deploy-model");
+    expect(
+      buildCodexGatewayEnv(RESOLVED_GATEWAY_CREDENTIALS).CODEX_GATEWAY_MODEL
+    ).toBe("deploy-model");
   });
 
   it("forwards trimmed LANGFUSE_* values when they are set", () => {
@@ -405,27 +407,11 @@ describe("deployment AI Proxy credentials", () => {
     });
   });
 
-  it("reuses CODEX_GATEWAY_OPENAI_* when GITHUB_DEPLOY_OPENAI_* is unset", () => {
-    expect(githubDeployOpenAiOverride()).toEqual({
-      apiKey: "gateway-platform-key",
-      baseUrl: "https://gateway-platform.example/v1",
-    });
+  it("does not reuse Chat Agent or host Codex credentials when the GitHub pair is unset", () => {
+    expect(githubDeployOpenAiOverride()).toBeNull();
   });
 
-  it("reuses SYSTEM_OPENAI_* when GITHUB_DEPLOY_OPENAI_* and CODEX_GATEWAY_OPENAI_* are unset", () => {
-    delete process.env.CODEX_GATEWAY_OPENAI_API_KEY;
-    delete process.env.CODEX_GATEWAY_OPENAI_BASE_URL;
-    expect(githubDeployOpenAiOverride()).toEqual({
-      apiKey: "system-platform-key",
-      baseUrl: "https://system-platform.example/v1",
-    });
-  });
-
-  it("ignores blank GITHUB_DEPLOY_OPENAI_* values and incomplete fallback pairs", () => {
-    delete process.env.CODEX_GATEWAY_OPENAI_API_KEY;
-    delete process.env.CODEX_GATEWAY_OPENAI_BASE_URL;
-    delete process.env.SYSTEM_OPENAI_API_KEY;
-    process.env.SYSTEM_OPENAI_API_BASE_URL = "https://api.openai.com/v1";
+  it("treats blank GITHUB_DEPLOY_OPENAI_* values as unset", () => {
     process.env.GITHUB_DEPLOY_OPENAI_API_KEY = "   ";
     process.env.GITHUB_DEPLOY_OPENAI_BASE_URL = "";
     expect(githubDeployOpenAiOverride()).toBeNull();
@@ -711,12 +697,17 @@ describe("deployment AI Proxy credentials", () => {
     });
   });
 
-  it("injects CODEX_GATEWAY_OPENAI_* into GitHub Devboxes when GITHUB_DEPLOY_OPENAI_* is unset", async () => {
+  it("uses the caller's AI Proxy for GitHub Devboxes when GITHUB_DEPLOY_OPENAI_* is unset", async () => {
     const requests: Request[] = [];
     let createdEnv: Record<string, string> | undefined;
     installFetchHandler(async (request) => {
       requests.push(request);
       const url = new URL(request.url);
+      if (url.hostname === "aiproxy-web.test.sealos.io") {
+        return new Response(JSON.stringify({ key: "github-user-key" }), {
+          status: 200,
+        });
+      }
       if (url.pathname === "/api/v1/devbox" && request.method === "GET") {
         return devboxEnvelope({ items: [] });
       }
@@ -749,11 +740,17 @@ describe("deployment AI Proxy credentials", () => {
         (request) =>
           new URL(request.url).hostname === "aiproxy-web.test.sealos.io"
       )
-    ).toBe(false);
+    ).toBe(true);
     expect(createdEnv).toMatchObject({
-      CODEX_GATEWAY_OPENAI_API_KEY: "gateway-platform-key",
-      CODEX_GATEWAY_OPENAI_BASE_URL: "https://gateway-platform.example/v1",
+      CODEX_GATEWAY_OPENAI_API_KEY: "github-user-key",
+      CODEX_GATEWAY_OPENAI_BASE_URL: "https://aiproxy.test.sealos.io/v1",
     });
+    expect(Object.values(createdEnv ?? {})).not.toContain(
+      "gateway-platform-key"
+    );
+    expect(Object.values(createdEnv ?? {})).not.toContain(
+      "system-platform-key"
+    );
   });
 
   it("does not apply GITHUB_DEPLOY_OPENAI_* to prompt deployments", async () => {

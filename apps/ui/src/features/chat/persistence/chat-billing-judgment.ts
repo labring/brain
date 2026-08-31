@@ -16,8 +16,8 @@ import { type PaidChatWall, paidChatWall } from "./paid-chat-wall";
 import type { FreeTierState } from "./types";
 
 /**
- * The live billing facts one chat request is judged on (ADR-0065,
- * ADR-0068): the local free-turn snapshot, the Active Free Trial judgment,
+ * The live billing facts one chat request is judged on (ADR-0065, ADR-0068,
+ * ADR-0069): the local free-turn snapshot, the Active Free Trial judgment,
  * and — for the `user` posture only — the Paid Chat Wall. The trial
  * judgment and the four standing reads leave together under ONE budget, so
  * an unanswering account service costs the request at most that budget

@@ -19,7 +19,7 @@ const uiMessageSchema = z
 
 const paidSourceSchema = z.enum(["ai-credits", "balance"]).nullable();
 const freeTierSchema = z.object({
-  billing: z.enum(["blocked", "free", "user"]),
+  billing: z.enum(["free", "user"]),
   remaining: z.number(),
   limit: z.number(),
   paidSource: paidSourceSchema.optional(),

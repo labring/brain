@@ -42,9 +42,9 @@ export interface AssistantConversationHandlerDependencies {
     chatId: string
   ) => Promise<UIMessage[] | null>;
   /**
-   * Chat Billing Posture for the session bootstrap (ADR-0065): local usage
-   * plus the live Active Free Trial judgment. The cookie header forwards the
-   * billing dev-mock scenario in dev/demo builds.
+   * Chat Billing Posture for the session bootstrap (ADR-0065/0069): local
+   * usage plus the live Active Free Trial judgment. The cookie header forwards
+   * the billing dev-mock scenario in dev/demo builds.
    */
   resolveFreeTier: (input: {
     actor: VerifiedAssistantConversationActor;

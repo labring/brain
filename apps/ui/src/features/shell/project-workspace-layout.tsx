@@ -325,9 +325,9 @@ function ProjectAssistantComposer({
 }: {
   busy: boolean;
   /**
-   * Blocked Chat Billing Posture locks only the message path (ADR-0065):
-   * textarea and send go dark while the deploy/skills intent buttons keep
-   * working — they open side-pane surfaces and never touch the chat API.
+   * The Paid Chat Wall locks only the message path (ADR-0068): textarea and
+   * send go dark while the deploy/skills intent buttons keep working — they
+   * open side-pane surfaces and never touch the chat API.
    */
   messagingLocked: boolean;
   /** What the locked textarea says — the lock always names its reason. */
@@ -573,10 +573,9 @@ function ProjectAssistantChatSession({
       await onAssistantStreamFinished?.();
     },
     // A failed stream can leave the header-derived posture stale — most
-    // acutely when the last free turn errors: the server rolled its
-    // reservation back, but this pane already applied the optimistic
-    // `blocked` header. Refetching the session restores the authoritative
-    // posture and unlocks the composer.
+    // acutely when the last free turn errors: the server rolls its reservation
+    // back after this pane applied the post-turn `user` header. Refetching the
+    // session restores the authoritative free-turn posture.
     async onError(error) {
       setBillingInterruption(
         chatBillingInterruptionFromError(error, paidSourceRef.current)
@@ -757,8 +756,6 @@ function ProjectAssistantChatSession({
     stop();
   }, [stop]);
 
-  // Full-page navigation: returning from the Billing Area remounts the pane
-  // and re-fetches the session, which is the only way out of `blocked`.
   // Recording the return route lets the Billing Area close button land back
   // on this project instead of the sidebar's last entry point.
   const navigateToBilling = useCallback(
@@ -799,14 +796,8 @@ function ProjectAssistantChatSession({
         />
         <ProjectAssistantComposerMemo
           busy={busy}
-          lockedPlaceholder={
-            freeTier?.wall == null
-              ? "Upgrade your plan to keep chatting…"
-              : CHAT_WALL_PLACEHOLDER
-          }
-          messagingLocked={
-            freeTier?.billing === "blocked" || freeTier?.wall != null
-          }
+          lockedPlaceholder={CHAT_WALL_PLACEHOLDER}
+          messagingLocked={freeTier?.wall != null}
           onDatabaseIntent={onDatabaseIntent}
           onDockerIntent={onDockerIntent}
           onGithubIntent={onGithubIntent}
@@ -875,18 +866,13 @@ function ProjectAssistantChatPane() {
     };
   }, [appToken, kubeconfig, namespaceRaw, namespaceReady]);
 
-  // Every chat response — the 402 refusal included — carries the server's
+  // Every chat response — paid-wall refusals included — carries the server's
   // Chat Billing Posture in the `X-Chat-*` headers; the pane renders it and
-  // never derives its own (ADR-0065). A `blocked` header flips the pane the
-  // moment the last free message finishes streaming, and a 402 that slips
-  // past the panel's pre-check lands here too, zeroing the counter.
+  // never derives its own (ADR-0069). The last free message reports `user`,
+  // and a 402 that slips past the panel's pre-check carries the paid wall.
   const handleBillingHeaders = useCallback((headers: Headers) => {
     const billingHeader = headers.get("X-Chat-Billing");
-    if (
-      billingHeader !== "blocked" &&
-      billingHeader !== "free" &&
-      billingHeader !== "user"
-    ) {
+    if (billingHeader !== "free" && billingHeader !== "user") {
       return;
     }
     const remaining = Number.parseInt(
