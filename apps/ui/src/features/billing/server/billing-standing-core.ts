@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { accountDebtFromMoney } from "@/features/billing/account-debt";
 import {
   firstFullQuotaRow,
   type QuotaFullnessRow,
@@ -26,7 +27,10 @@ export interface WorkspaceAiCredits {
 }
 
 export interface WorkspaceBillingStanding {
-  /** Available amount ≤ 0 (the platform's debt formula); null while unknown. */
+  /**
+   * Available amount ≤ 0 on an ever-billed account (the platform's debt
+   * formula, which skips never-billed accounts); null while unknown.
+   */
   accountDebt: boolean | null;
   /** The subscription's AI Credits; null on PAYG or while unknown. */
   aiCredits: WorkspaceAiCredits | null;
@@ -94,10 +98,16 @@ function microUnits(value: string | number | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function cashMicroUnits(account: unknown): number | null {
+function accountTerms(
+  account: unknown
+): { cashMicroUnits: number; lifetimeDeductionMicroUnits: number } | null {
   const parsed = accountSchema.safeParse(account);
   return parsed.success
-    ? parsed.data.account.Balance - parsed.data.account.DeductionBalance
+    ? {
+        cashMicroUnits:
+          parsed.data.account.Balance - parsed.data.account.DeductionBalance,
+        lifetimeDeductionMicroUnits: parsed.data.account.DeductionBalance,
+      }
     : null;
 }
 
@@ -153,15 +163,19 @@ function aiCreditsFromQuota(quota: unknown): WorkspaceAiCredits | null {
 export function judgeWorkspaceBillingStanding(
   payloads: WorkspaceBillingPayloads
 ): WorkspaceBillingStanding {
-  const cash = cashMicroUnits(payloads.account);
+  const terms = accountTerms(payloads.account);
   const credits = usableCreditMicroUnits(payloads.credits);
-  const available = cash == null || credits == null ? null : cash + credits;
+  const available =
+    terms == null || credits == null ? null : terms.cashMicroUnits + credits;
   const facts = subscriptionFacts(payloads.subscription);
   let accountDebt: boolean | null = null;
   if (facts.inDebt) {
     accountDebt = true;
-  } else if (available != null) {
-    accountDebt = available <= 0;
+  } else if (available != null && terms != null) {
+    accountDebt = accountDebtFromMoney({
+      availableBalanceMicroUnits: available,
+      lifetimeDeductionMicroUnits: terms.lifetimeDeductionMicroUnits,
+    });
   }
   const rows = workspaceQuotaRowsFromPayload(payloads.quota);
   const fullRow = rows == null ? null : firstFullQuotaRow(rows);
@@ -187,9 +201,9 @@ export function judgeWorkspaceBillingStanding(
 
 /**
  * Whether the platform has suspended THIS workspace for Account Debt.
- * Account Debt is an account-level state — the Status Hint voices it in
- * every workspace — but the platform's debt pipeline stops only
- * Pay-As-You-Go workspaces; a subscribed workspace's resources ride its plan
+ * Account Debt is an account-level state, but the platform's debt pipeline
+ * stops only Pay-As-You-Go workspaces — so the Status Hint voices it only
+ * there; a subscribed workspace's resources ride its plan
  * and its AI usage its AI Credits (CONTEXT.md, Account Debt; design spec
  * row E1). So only a workspace paying from the balance can be walled or
  * have its failure reclassified on debt. Null while either fact is unknown:

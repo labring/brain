@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { loadAccountBalanceMicroUnits } from "@/features/billing/account-balance";
+import { loadAccountBalanceTerms } from "@/features/billing/account-balance";
 import { loadAccountCredits } from "@/features/billing/account-credits";
 import {
   loadWorkspaceSubscriptionSummary,
@@ -50,6 +50,7 @@ const HOBBY: WorkspaceSubscriptionSummary = {
 
 const QUIET: StatusHintInputs = {
   availableBalanceMicroUnits: 50_000_000,
+  lifetimeDeductionMicroUnits: 23_450_000,
   now: NOW,
   quota: [
     { label: "CPU", percentUsed: 37.5, type: "cpu" },
@@ -65,12 +66,14 @@ async function inputsFor(
   const fetch = scenarioTestFetch(scenario);
   const [subscription, balance, credits, quota] = await Promise.all([
     loadWorkspaceSubscriptionSummary(CREDENTIALS, { fetch }),
-    loadAccountBalanceMicroUnits(CREDENTIALS, fetch),
+    loadAccountBalanceTerms(CREDENTIALS, fetch),
     loadAccountCredits(CREDENTIALS, fetch),
     loadWorkspaceQuotaUsage(CREDENTIALS, fetch),
   ]);
   return {
-    availableBalanceMicroUnits: balance + credits.usableMicroUnits,
+    availableBalanceMicroUnits:
+      balance.cashMicroUnits + credits.usableMicroUnits,
+    lifetimeDeductionMicroUnits: balance.lifetimeDeductionMicroUnits,
     now: NOW,
     quota,
     subscription,
@@ -156,8 +159,8 @@ test("a full deployable quota walls the entry naming the resource", () => {
 });
 
 test("a subscribed workspace is never walled on its account's debt", () => {
-  // The banner voices account-level debt everywhere; the wall only where
-  // the platform actually suspends for it. A subscriber at zero balance
+  // Banner and wall share one predicate: Account Debt holds only where the
+  // platform actually suspends for it. A subscriber at zero balance
   // (its $1 gift credit expired) keeps deploying; so does one under the
   // Deletion Countdown — that story belongs to the payment-due hint.
   assert.equal(
@@ -185,6 +188,17 @@ test("a subscribed workspace is never walled on its account's debt", () => {
       subscription: HOBBY,
     })?.kind,
     "quota"
+  );
+});
+
+test("a never-billed zero-balance account is not walled — the platform skips it", () => {
+  assert.equal(
+    resolveDeployBillingWall({
+      ...QUIET,
+      availableBalanceMicroUnits: 0,
+      lifetimeDeductionMicroUnits: 0,
+    }),
+    null
   );
 });
 

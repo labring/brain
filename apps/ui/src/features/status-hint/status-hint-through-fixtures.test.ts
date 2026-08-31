@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { loadAccountBalanceMicroUnits } from "@/features/billing/account-balance";
+import { loadAccountBalanceTerms } from "@/features/billing/account-balance";
 import { loadAccountCredits } from "@/features/billing/account-credits";
 import { loadWorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 import { loadWorkspaceQuotaUsage } from "@/features/billing/billing-usage-data";
@@ -36,12 +36,14 @@ async function hintFor(scenario: BillingDevScenario) {
   const fetch = scenarioTestFetch(scenario);
   const [subscription, balance, credits, quota] = await Promise.all([
     loadWorkspaceSubscriptionSummary(CREDENTIALS, { fetch }),
-    loadAccountBalanceMicroUnits(CREDENTIALS, fetch),
+    loadAccountBalanceTerms(CREDENTIALS, fetch),
     loadAccountCredits(CREDENTIALS, fetch),
     loadWorkspaceQuotaUsage(CREDENTIALS, fetch),
   ]);
   const evaluation = evaluateStatusHints({
-    availableBalanceMicroUnits: balance + credits.usableMicroUnits,
+    availableBalanceMicroUnits:
+      balance.cashMicroUnits + credits.usableMicroUnits,
+    lifetimeDeductionMicroUnits: balance.lifetimeDeductionMicroUnits,
     now: new Date(),
     quota,
     subscription,
@@ -97,12 +99,12 @@ test("the payment-due scenarios walk the stages with identical visuals", async (
     assert.equal(stage?.dismissible, false);
     assert.deepEqual(stage?.cta, suspended?.cta);
   }
-  // Account Debt is suppressed behind payment-due here and takes over once
-  // the subscription recovers; the slot is one banner regardless.
+  // The fixture's account is in debt too, but a subscribed workspace never
+  // voices Account Debt (ADR-0068) — the Deletion Countdown owns the flow.
   const { evaluation } = await hintFor("payment-due");
   assert.deepEqual(
     evaluation.hints.map((hint) => hint.id),
-    ["payment-due", "account-debt"]
+    ["payment-due"]
   );
 });
 

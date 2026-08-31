@@ -31,6 +31,7 @@ function subscription(
 
 const QUIET: StatusHintInputs = {
   availableBalanceMicroUnits: 50_000_000,
+  lifetimeDeductionMicroUnits: 23_450_000,
   now: NOW,
   quota: [
     { label: "CPU", percentUsed: 37.5, type: "cpu" },
@@ -138,10 +139,17 @@ test("a missing deadline speaks of deletion without inventing a date", () => {
   );
 });
 
-test("Account Debt lights up from the available balance and never mentions a subscription", () => {
+const PAYG: Partial<WorkspaceSubscriptionSummary> = {
+  isPayg: true,
+  planName: "PAYG",
+  role: null,
+};
+
+test("Account Debt lights up on a billed PAYG workspace at zero available and never mentions a subscription", () => {
   const [hint] = evaluateStatusHints({
     ...QUIET,
     availableBalanceMicroUnits: 0,
+    subscription: subscription(PAYG),
   }).hints;
   assert.deepEqual(hint, {
     cta: { href: "/billing", label: "Top up balance" },
@@ -154,6 +162,41 @@ test("Account Debt lights up from the available balance and never mentions a sub
   });
 });
 
+test("a subscribed workspace settles Account Debt absent even at zero available", () => {
+  // ADR-0068: a subscriber whose gift credit expired sits at exactly zero
+  // and must not be told to top up — the platform suspends only PAYG.
+  const evaluation = evaluateStatusHints({
+    ...QUIET,
+    availableBalanceMicroUnits: 0,
+  });
+  assert.deepEqual(evaluation.hints, []);
+  assert.ok(evaluation.settled.includes("account-debt"));
+});
+
+test("a never-billed PAYG account at zero is in good standing, not in debt", () => {
+  // The platform's state machine skips accounts with zero lifetime
+  // deduction, so a fresh account is never greeted with a debt banner.
+  const evaluation = evaluateStatusHints({
+    ...QUIET,
+    availableBalanceMicroUnits: 0,
+    lifetimeDeductionMicroUnits: 0,
+    subscription: subscription(PAYG),
+  });
+  assert.deepEqual(evaluation.hints, []);
+  assert.ok(evaluation.settled.includes("account-debt"));
+});
+
+test("an unknown lifetime deduction leaves Account Debt unsettled", () => {
+  const evaluation = evaluateStatusHints({
+    ...QUIET,
+    availableBalanceMicroUnits: 0,
+    lifetimeDeductionMicroUnits: null,
+    subscription: subscription(PAYG),
+  });
+  assert.deepEqual(evaluation.hints, []);
+  assert.ok(!evaluation.settled.includes("account-debt"));
+});
+
 test("a PAYG workspace reported in debt is Account Debt, not payment-due", () => {
   // The platform reports it as a DEBT status with no subscription and no
   // timestamps — CONTEXT.md: never voice it as a subscription expiring.
@@ -162,9 +205,8 @@ test("a PAYG workspace reported in debt is Account Debt, not payment-due", () =>
       ...QUIET,
       availableBalanceMicroUnits: null,
       subscription: subscription({
-        isPayg: true,
+        ...PAYG,
         lifecycle: "payment-due",
-        planName: "PAYG",
         warningStage: "expired",
       }),
     }),
@@ -258,19 +300,30 @@ test("trial-expiry opens three days before the Free trial ends and counts down",
 });
 
 test("severity orders payment-due > account-debt > quota-full > trial-expiry", () => {
+  // A subscribed workspace's account debt is settled absent — only the
+  // Deletion Countdown's own voice speaks there.
   assert.deepEqual(
     ids({
+      ...QUIET,
       availableBalanceMicroUnits: -1,
-      now: NOW,
       quota: [{ label: "Storage", percentUsed: 100, type: "storage" }],
       subscription: subscription(PAYMENT_DUE),
     }),
-    ["payment-due", "account-debt", "quota-full"]
+    ["payment-due", "quota-full"]
   );
   assert.deepEqual(
     ids({
+      ...QUIET,
       availableBalanceMicroUnits: -1,
-      now: NOW,
+      quota: [{ label: "Storage", percentUsed: 100, type: "storage" }],
+      subscription: subscription(PAYG),
+    }),
+    ["account-debt", "quota-full"]
+  );
+  assert.deepEqual(
+    ids({
+      ...QUIET,
+      availableBalanceMicroUnits: -1,
       quota: [{ label: "Storage", percentUsed: 100, type: "storage" }],
       subscription: subscription({
         currentPeriodEndAt: "2026-08-27T12:00:00Z",
@@ -278,26 +331,41 @@ test("severity orders payment-due > account-debt > quota-full > trial-expiry", (
         planName: "Free",
       }),
     }),
-    ["account-debt", "quota-full", "trial-expiry"]
+    ["quota-full", "trial-expiry"]
   );
 });
 
 test("unknown inputs neither light a state nor settle it", () => {
   const evaluation = evaluateStatusHints({
     availableBalanceMicroUnits: null,
+    lifetimeDeductionMicroUnits: null,
     now: NOW,
     quota: null,
     subscription: null,
   });
   assert.deepEqual(evaluation.hints, []);
   assert.deepEqual(evaluation.settled, []);
-  // The subscription alone settles the subscription-driven states.
+  // A subscribed workspace's subscription alone settles the
+  // subscription-driven states — Account Debt included, since the platform
+  // never suspends a subscribed workspace for it.
   assert.deepEqual(
     evaluateStatusHints({
       availableBalanceMicroUnits: null,
+      lifetimeDeductionMicroUnits: null,
       now: NOW,
       quota: null,
       subscription: subscription({}),
+    }).settled,
+    ["payment-due", "account-debt", "trial-expiry"]
+  );
+  // On a PAYG workspace the money reads must answer first.
+  assert.deepEqual(
+    evaluateStatusHints({
+      availableBalanceMicroUnits: null,
+      lifetimeDeductionMicroUnits: null,
+      now: NOW,
+      quota: null,
+      subscription: subscription(PAYG),
     }).settled,
     ["payment-due", "trial-expiry"]
   );
@@ -323,11 +391,13 @@ test("a suppressed state takes over when the higher one clears", () => {
     ...QUIET,
     availableBalanceMicroUnits: 0,
     quota: [{ label: "Storage", percentUsed: 100, type: "storage" }],
+    subscription: subscription(PAYG),
   });
   assert.equal(selectStatusHint(withDebt.hints, [])?.id, "account-debt");
   const recovered = evaluateStatusHints({
     ...QUIET,
     quota: [{ label: "Storage", percentUsed: 100, type: "storage" }],
+    subscription: subscription(PAYG),
   });
   assert.equal(selectStatusHint(recovered.hints, [])?.id, "quota-full");
 });

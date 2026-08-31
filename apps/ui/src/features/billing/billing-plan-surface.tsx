@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
+import { accountDebtFromMoney } from "@/features/billing/account-debt";
 import {
   type AiCredits,
   aiCreditsPercentUsed,
@@ -785,16 +786,20 @@ export function BillingAiCreditsSection({
  * Balance − DeductionBalance + usable credits across every active row, the
  * upstream debt formula — with any remaining new-user gift (and only the
  * gift: plan grants feed the total unlabeled) pinned beside it as a
- * borderless chip. Debt (≤ 0) tints the amount and adds the Account Debt
- * caption (recovery is a top-up, never a plan). The $5 low-balance threshold
- * deliberately does not tint this persistent display — that voice belongs to
- * notifications.
+ * borderless chip. A negative amount tints the figure; the Account Debt
+ * caption (recovery is a top-up, never a plan) appears only when the
+ * platform's actual debt predicate holds — a PAYG workspace, ever billed,
+ * available ≤ 0 — the same judgment the status hint and the walls make.
+ * The $5 low-balance threshold deliberately does not tint this persistent
+ * display — that voice belongs to notifications.
  */
 export function BillingBalanceValue({
   availableMicroUnits,
   creditsResolved,
   currency,
   giftMicroUnits,
+  lifetimeDeductionMicroUnits,
+  payg,
 }: {
   availableMicroUnits: number;
   /**
@@ -805,15 +810,30 @@ export function BillingBalanceValue({
   creditsResolved: boolean;
   currency: BillingCurrency;
   giftMicroUnits: number;
+  /** Lifetime deductions — zero means the account has never been billed. */
+  lifetimeDeductionMicroUnits: number;
+  /** Whether this workspace is Pay-As-You-Go — the only mode debt suspends. */
+  payg: boolean;
 }) {
-  const inDebt = creditsResolved && availableMicroUnits <= 0;
+  // Account Debt holds only where the platform would actually suspend: a
+  // PAYG workspace on an ever-billed account with nothing available. A
+  // subscribed workspace's negative balance still reddens, but carries no
+  // service-restoration claim — its resources ride the plan.
+  const inDebt =
+    creditsResolved &&
+    payg &&
+    accountDebtFromMoney({
+      availableBalanceMicroUnits: availableMicroUnits,
+      lifetimeDeductionMicroUnits,
+    });
+  const tinted = inDebt || (creditsResolved && availableMicroUnits < 0);
   return (
     <>
       <div className="flex flex-wrap items-baseline gap-2.5">
         <p
           className={cn(
             "font-semibold text-2xl tabular-nums",
-            inDebt ? "text-red-400" : "text-foreground"
+            tinted ? "text-red-400" : "text-foreground"
           )}
         >
           {formatBillingAmount(availableMicroUnits, currency)}

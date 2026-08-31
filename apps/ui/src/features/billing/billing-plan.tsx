@@ -279,6 +279,8 @@ function accountBalanceContent(input: {
    *  credits could still cover the account. */
   giftCredits: AccountCredits | undefined;
   isLoading: boolean;
+  /** Whether this workspace is Pay-As-You-Go — the only mode debt suspends. */
+  payg: boolean;
 }): ReactNode {
   if (!input.credentialsReady || input.isLoading) {
     return (
@@ -303,6 +305,8 @@ function accountBalanceContent(input: {
       creditsResolved={input.giftCredits != null}
       currency={input.balance.currency}
       giftMicroUnits={input.giftCredits?.giftMicroUnits ?? 0}
+      lifetimeDeductionMicroUnits={input.balance.lifetimeDeductionMicroUnits}
+      payg={input.payg}
     />
   );
 }
@@ -663,6 +667,7 @@ export function BillingPlan({
             error: balanceError,
             giftCredits,
             isLoading: balanceLoading,
+            payg: snapshot.current.isPayg,
           })}
         </div>
       }

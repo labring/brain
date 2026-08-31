@@ -52,28 +52,16 @@ function wallFor(
 }
 
 /**
- * `debtSuspendsWorkspace` over the status hint's inputs: the banner's
- * account-level Account Debt, narrowed to the workspace the platform would
- * actually suspend for it. Unknown subscription fails open.
+ * The wall as the panes judge it, from the status hint's client-side
+ * inputs. `accountDebtHolds` is already narrowed to the workspace the
+ * platform would actually suspend (unknown subscription fails open), so the
+ * banner and the wall are literally the same predicate.
  */
-function debtSuspendsWorkspaceFromInputs(
-  inputs: StatusHintInputs
-): boolean | null {
-  if (inputs.subscription == null) {
-    return null;
-  }
-  if (!inputs.subscription.isPayg) {
-    return false;
-  }
-  return accountDebtHolds(inputs);
-}
-
-/** The wall as the panes judge it, from the status hint's client-side inputs. */
 export function resolveDeployBillingWall(
   inputs: StatusHintInputs
 ): DeployBillingWall | null {
   return wallFor(
-    debtSuspendsWorkspaceFromInputs(inputs),
+    accountDebtHolds(inputs),
     inputs.quota == null ? null : firstFullQuotaRow(inputs.quota)
   );
 }

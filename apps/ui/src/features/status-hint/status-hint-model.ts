@@ -1,3 +1,4 @@
+import { accountDebtFromMoney } from "@/features/billing/account-debt";
 import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 import type { BillingSurfaceTone } from "@/features/billing/billing-surface-tones";
 import {
@@ -43,6 +44,8 @@ export type StatusHintQuotaRow = Pick<
 export interface StatusHintInputs {
   /** Balance − DeductionBalance + usable credits, the platform's debt formula. */
   availableBalanceMicroUnits: number | null;
+  /** Lifetime deductions — zero means the account has never been billed. */
+  lifetimeDeductionMicroUnits: number | null;
   now: Date;
   quota: readonly StatusHintQuotaRow[] | null;
   subscription: WorkspaceSubscriptionSummary | null;
@@ -136,24 +139,43 @@ const ACCOUNT_DEBT_HINT: StatusHint = {
 };
 
 /**
- * Whether Account Debt holds — the state, shared with the pre-deploy wall
- * so the banner and the blocked deploy entry can never disagree.
+ * Whether Account Debt suspends this workspace — the state, shared with the
+ * pre-deploy wall so the banner and the blocked deploy entry can never
+ * disagree. The platform's debt pipeline stops only Pay-As-You-Go
+ * workspaces (a subscribed workspace's resources ride its plan, and its
+ * zero balance must not be voiced as debt — ADR-0068), and its state
+ * machine skips accounts that have never been billed, so the state holds
+ * only where the platform would actually suspend.
  */
 export function accountDebtHolds(
-  inputs: Pick<StatusHintInputs, "availableBalanceMicroUnits" | "subscription">
+  inputs: Pick<
+    StatusHintInputs,
+    | "availableBalanceMicroUnits"
+    | "lifetimeDeductionMicroUnits"
+    | "subscription"
+  >
 ): boolean | null {
-  // The platform treats only a strictly positive available amount as good
-  // standing; a PAYG workspace it already reports in DEBT is the same fact.
-  if (
-    inputs.subscription?.isPayg &&
-    inputs.subscription.lifecycle === "payment-due"
-  ) {
-    return true;
-  }
-  if (inputs.availableBalanceMicroUnits == null) {
+  const { subscription } = inputs;
+  if (subscription == null) {
     return null;
   }
-  return inputs.availableBalanceMicroUnits <= 0;
+  if (!subscription.isPayg) {
+    return false;
+  }
+  // A PAYG workspace the platform already reports in DEBT is the fact itself.
+  if (subscription.lifecycle === "payment-due") {
+    return true;
+  }
+  if (
+    inputs.availableBalanceMicroUnits == null ||
+    inputs.lifetimeDeductionMicroUnits == null
+  ) {
+    return null;
+  }
+  return accountDebtFromMoney({
+    availableBalanceMicroUnits: inputs.availableBalanceMicroUnits,
+    lifetimeDeductionMicroUnits: inputs.lifetimeDeductionMicroUnits,
+  });
 }
 
 function quotaFullHint(

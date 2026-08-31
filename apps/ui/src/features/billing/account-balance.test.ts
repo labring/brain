@@ -31,5 +31,9 @@ test("loads the verified account's net Account Balance", async () => {
   assert.equal(headers.get("Authorization"), "Bearer apiVersion%3A%20v1");
   assert.equal(headers.get("X-Sealos-App-Token"), "desktop-app-token");
   assert.equal(requestInit?.cache, "no-store");
-  assert.deepEqual(balance, { currency: "usd", microUnits: 3_000_000 });
+  assert.deepEqual(balance, {
+    currency: "usd",
+    lifetimeDeductionMicroUnits: 1_200_000,
+    microUnits: 3_000_000,
+  });
 });

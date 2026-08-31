@@ -92,6 +92,18 @@ describe("judgeWorkspaceBillingStanding", () => {
     expect(standing.availableBalanceMicroUnits).toBeNull();
   });
 
+  it("keeps a never-billed zero-balance account in good standing — the platform's state machine skips it", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: { account: { Balance: 0, DeductionBalance: 0 } },
+      credits: NO_CREDITS,
+      quota: quota({}),
+      subscription: PAYG,
+    });
+    expect(standing.accountDebt).toBe(false);
+    expect(standing.availableBalanceMicroUnits).toBe(0);
+    expect(debtSuspendsWorkspace(standing)).toBe(false);
+  });
+
   it("leaves Account Debt unknown while either money read is missing", () => {
     const standing = judgeWorkspaceBillingStanding({
       account: DEBT_ACCOUNT,
@@ -174,12 +186,14 @@ describe("debtSuspendsWorkspace", () => {
   });
 
   it("never suspends a subscribed workspace on its account's debt — its resources ride the plan", () => {
-    // Account Debt is account-level (the banner shows it everywhere), but
-    // the platform's debt pipeline stops only PAYG workspaces (CONTEXT.md).
-    // A Stripe-paying subscriber whose $1 gift credit has expired sits at
-    // exactly 0 available and must keep deploying.
+    // Account Debt is account-level, but the platform's debt pipeline stops
+    // only PAYG workspaces (CONTEXT.md). A Stripe-paying subscriber whose
+    // $1 gift credit has expired sits at exactly 0 available and must keep
+    // deploying.
     const zeroBalance = judgeWorkspaceBillingStanding({
-      account: { account: { Balance: 0, DeductionBalance: 0 } },
+      account: {
+        account: { Balance: 11_320_000, DeductionBalance: 11_320_000 },
+      },
       credits: NO_CREDITS,
       quota: quota({ aiHard: 3_000_000, aiUsed: 100_000 }),
       subscription: HOBBY,

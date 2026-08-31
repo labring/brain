@@ -5,7 +5,7 @@ import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 
-import { loadAccountBalanceMicroUnits } from "@/features/billing/account-balance";
+import { loadAccountBalanceTerms } from "@/features/billing/account-balance";
 import { loadAccountCredits } from "@/features/billing/account-credits";
 import { accountCreditsSwrKey } from "@/features/billing/billing-subscription-settlement";
 import { loadWorkspaceQuotaUsage } from "@/features/billing/billing-usage-data";
@@ -47,7 +47,7 @@ export function useStatusHintInputs(): StatusHintInputs {
     credentialsReady
       ? (["status-hint-balance", credentialKey, appToken] as const)
       : null,
-    () => loadAccountBalanceMicroUnits({ appToken, kubeconfig }),
+    () => loadAccountBalanceTerms({ appToken, kubeconfig }),
     swrOptions
   );
   // The settlement flow refreshes this key after a payment, so a top-up
@@ -91,26 +91,22 @@ export function useStatusHintInputs(): StatusHintInputs {
     };
   }, []);
 
-  const balanceMicroUnits = balance.data;
+  const balanceTerms = balance.data;
   const usableCreditMicroUnits = credits.data?.usableMicroUnits;
   const quotaRows = quota.data;
   const subscriptionSummary = subscription.data;
   return useMemo(
     () => ({
       availableBalanceMicroUnits:
-        balanceMicroUnits == null || usableCreditMicroUnits == null
+        balanceTerms == null || usableCreditMicroUnits == null
           ? null
-          : balanceMicroUnits + usableCreditMicroUnits,
+          : balanceTerms.cashMicroUnits + usableCreditMicroUnits,
+      lifetimeDeductionMicroUnits:
+        balanceTerms?.lifetimeDeductionMicroUnits ?? null,
       now,
       quota: quotaRows ?? null,
       subscription: subscriptionSummary ?? null,
     }),
-    [
-      balanceMicroUnits,
-      now,
-      quotaRows,
-      subscriptionSummary,
-      usableCreditMicroUnits,
-    ]
+    [balanceTerms, now, quotaRows, subscriptionSummary, usableCreditMicroUnits]
   );
 }
