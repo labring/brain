@@ -35,6 +35,13 @@ export interface DevMockCookie<S extends string> extends DevMockCookieDef<S> {
   /** The `document.cookie` assignment the client writes on a toggle. */
   documentCookie(state: DevMockState<S>): string;
   format(state: DevMockState<S>): string;
+  /**
+   * The raw cookie value off a `Cookie`-header-shaped string, if present.
+   * `document.cookie` reads back in exactly this shape, so the client passes
+   * it here directly — never through a constructed `Request`, whose `Cookie`
+   * header a browser silently drops (forbidden request header).
+   */
+  fromCookieHeader(header: string | null): string | undefined;
   /** The raw cookie value off a request's `cookie` header, if present. */
   fromRequest(request: Request): string | undefined;
   is(value: string): value is S;
@@ -50,7 +57,14 @@ function cookieValue(header: string | null, name: string): string | undefined {
       continue;
     }
     if (pair.slice(0, separator).trim() === name) {
-      return decodeURIComponent(pair.slice(separator + 1).trim());
+      const raw = pair.slice(separator + 1).trim();
+      try {
+        return decodeURIComponent(raw);
+      } catch {
+        // A malformed %-sequence (some other cookie's doing) must surface as
+        // an invalid value, not throw out of every load().
+        return raw;
+      }
     }
   }
   return undefined;
@@ -68,6 +82,7 @@ export function defineDevMockCookie<S extends string>(
     documentCookie: (state) =>
       `${def.name}=${format(state)}; path=/; samesite=lax`,
     format,
+    fromCookieHeader: (header) => cookieValue(header, def.name),
     fromRequest: (request) =>
       cookieValue(request.headers.get("cookie"), def.name),
     is,

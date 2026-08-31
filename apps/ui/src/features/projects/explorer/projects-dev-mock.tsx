@@ -1,13 +1,10 @@
 "use client";
 
-import {
-  type DevTweaksMockSource,
-  type DevTweaksMockState,
-  useDevTweaks,
-  useDevTweaksMock,
-} from "@workspace/dev-tweaks";
+import { useDevTweaks, useDevTweaksMock } from "@workspace/dev-tweaks";
 import type { CanvasNodeVisualStatusTone } from "@workspace/ui/components/canvas-node/canvas-node.types";
 import { useEffect } from "react";
+import { defineDevMockCookie } from "@/features/dev-mock/cookie";
+import { createDevMockCookieSource } from "@/features/dev-mock/source";
 import type { ProjectIconKey } from "@/features/projects/project-icons";
 import type { ProjectExplorerProject } from "./project-explorer.types";
 import {
@@ -29,16 +26,17 @@ export const PROJECTS_DEV_MOCK_KEY = "projects-mock";
 
 const PROJECTS_DEV_SCENARIOS = ["plain", "edge"] as const;
 
-// In-memory source: the mock has no server side and nothing rewrites it
-// behind the panel's back, so session-only module state is the whole truth.
-let mockState: DevTweaksMockState | null = null;
+// Cookie-backed like every other Dev Mock, so the state survives reloads
+// (including the reload-revalidating mocks' toggles). No server reads this
+// cookie — the mock swaps the client read model only — but the shared
+// grammar and session lifetime are the point.
+const projectsDevMockCookie = defineDevMockCookie({
+  defaultScenario: "plain",
+  name: "sealai-projects-dev-mock",
+  scenarios: PROJECTS_DEV_SCENARIOS,
+});
 
-const projectsDevMockSource: DevTweaksMockSource = {
-  load: () => mockState,
-  set: (state) => {
-    mockState = state;
-  },
-};
+const projectsDevMockSource = createDevMockCookieSource(projectsDevMockCookie);
 
 const PLAIN_NAMES = [
   "api-server",
@@ -186,7 +184,7 @@ function ProjectsExplorerDevMockGenerator({ scenario }: { scenario: string }) {
   return null;
 }
 
-/** Registers the mock while the `/project` shell is mounted; renders nothing. */
+/** Registers the mock with the app-global registry; renders nothing visible. */
 export function ProjectsExplorerDevMock() {
   const mock = useDevTweaksMock(PROJECTS_DEV_MOCK_KEY, {
     note: "Replaces the Project list with generated fixture rows",

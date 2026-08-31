@@ -32,6 +32,13 @@ export interface DevTweaksMockDef {
   defaultScenario?: string;
   /** Short explanation shown under the controls (what the mock serves). */
   note?: string;
+  /**
+   * Called by the store after the mock's served answers changed — a toggle,
+   * an enabled scenario switch, or an external rewrite (the server advancing
+   * its cookie). Not called for changes that cannot affect what is served,
+   * such as picking a scenario while the mock is off.
+   */
+  revalidate?(): void;
   scenarios: readonly string[];
   source: DevTweaksMockSource;
   title: string;
@@ -81,6 +88,18 @@ function statesEqual(a: DevTweaksMockState, b: DevTweaksMockState): boolean {
   return a.enabled === b.enabled && a.scenario === b.scenario;
 }
 
+/**
+ * True when the change alters what the mock serves: a toggle either way, or
+ * a scenario switch while it serves. A scenario picked while the mock is off
+ * changes nothing on the page, so it must not revalidate (or reload).
+ */
+function servedAnswersDiffer(
+  a: DevTweaksMockState,
+  b: DevTweaksMockState
+): boolean {
+  return a.enabled !== b.enabled || (b.enabled && a.scenario !== b.scenario);
+}
+
 class MockStoreClass {
   private readonly listeners: Set<Listener> = new Set();
   private readonly mocks: Map<string, MockRecord> = new Map();
@@ -104,14 +123,20 @@ class MockStoreClass {
     this.publish();
   }
 
-  /** Adopts an edited def (HMR) and re-loads through it. */
+  /** Adopts an edited def (HMR) without disturbing the current state. */
   update(key: string, def: DevTweaksMockDef): void {
     const record = this.mocks.get(key);
     if (!record) {
       return;
     }
+    if (record.def.source !== def.source) {
+      record.unwatch?.();
+      record.unwatch = def.source.watch?.(() => this.refresh(key));
+    }
     record.def = def;
-    record.state = sanitizeState(def, def.source.load());
+    // Re-clamp against the (possibly changed) scenario list, but never
+    // re-load: a second registrant of the same key must not clobber state.
+    record.state = sanitizeState(def, record.state);
     this.publish();
   }
 
@@ -146,7 +171,7 @@ class MockStoreClass {
     if (!record) {
       return;
     }
-    this.setState(key, { ...record.state, enabled });
+    this.setState(key, { ...this.currentSourceState(record), enabled });
   }
 
   setScenario(key: string, scenario: string): void {
@@ -154,7 +179,7 @@ class MockStoreClass {
     if (!record) {
       return;
     }
-    this.setState(key, { ...record.state, scenario });
+    this.setState(key, { ...this.currentSourceState(record), scenario });
   }
 
   /** Writes through the source, then re-loads so the source stays the truth. */
@@ -163,8 +188,16 @@ class MockStoreClass {
     if (!record) {
       return;
     }
-    record.def.source.set(sanitizeState(record.def, state));
+    const target = sanitizeState(record.def, state);
+    record.def.source.set(target);
     this.refresh(key);
+    // The source is the truth: a write it did not adopt is a failed write,
+    // and silence here is what turns that into a dead control.
+    if (!statesEqual(this.currentSourceState(record), target)) {
+      console.warn(
+        `[dev-tweaks] mock "${key}" write did not take — its source still reports a different state`
+      );
+    }
   }
 
   subscribe(listener: Listener): () => void {
@@ -172,7 +205,22 @@ class MockStoreClass {
     return () => this.listeners.delete(listener);
   }
 
-  /** Re-adopts the source's state; unchanged loads are a no-op (echo dedupe). */
+  /**
+   * The source's state right now — the base every write builds on, so a
+   * change made behind the panel's back (a server `Set-Cookie` transition the
+   * watch has not delivered yet) is merged instead of clobbered.
+   */
+  private currentSourceState(record: MockRecord): DevTweaksMockState {
+    return sanitizeState(record.def, record.def.source.load());
+  }
+
+  /**
+   * Re-adopts the source's state; unchanged loads are a no-op (echo dedupe).
+   * When the adopted change alters what the mock serves, the def's
+   * `revalidate` runs — this covers both panel writes (setState lands here)
+   * and external rewrites delivered through `watch`, so a server-advanced
+   * scenario refreshes the page's data, not just the panel.
+   */
   private refresh(key: string): void {
     const record = this.mocks.get(key);
     if (!record) {
@@ -182,8 +230,12 @@ class MockStoreClass {
     if (statesEqual(record.state, next)) {
       return;
     }
+    const revalidate = servedAnswersDiffer(record.state, next);
     record.state = next;
     this.publish();
+    if (revalidate) {
+      record.def.revalidate?.();
+    }
   }
 
   private publish(): void {

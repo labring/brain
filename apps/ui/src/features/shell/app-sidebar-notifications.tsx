@@ -18,9 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { BillingDevMockGate } from "@/features/billing/billing-dev-mock-gate";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
-import { NotificationsDevMockGate } from "@/features/notifications/dev-mock-gate";
 import {
   formatNotificationTime,
   formatNotificationTimestamp,
@@ -312,80 +310,74 @@ export function AppSidebarNotifications() {
   );
 
   return (
-    <>
-      {/* The billing Dev Mock's scenarios drive the inbox fixtures too, so
-          its panel entry is reachable from anywhere the inbox is. */}
-      <BillingDevMockGate />
-      <NotificationsDevMockGate />
-      <Popover onOpenChange={setOpen} open={open}>
-        <PopoverTrigger render={trigger}>
+    <Popover onOpenChange={setOpen} open={open}>
+      <PopoverTrigger render={trigger}>
+        <span
+          aria-hidden
+          className={cn(
+            "absolute inset-y-0 left-0 rounded-md transition-[width,background-color] group-hover/nbell:bg-input/30 motion-reduce:transition-none",
+            expanded
+              ? "w-full duration-300 ease-sidebar"
+              : "w-9 duration-200 ease-out"
+          )}
+        />
+        <span
+          className="relative flex w-9 shrink-0 items-center justify-center transition-colors group-hover/nbell:text-blue-400"
+          ref={iconSlotRef}
+        >
+          <Bell aria-hidden className="size-4" strokeWidth={1.8} />
           <span
             aria-hidden
             className={cn(
-              "absolute inset-y-0 left-0 rounded-md transition-[width,background-color] group-hover/nbell:bg-input/30 motion-reduce:transition-none",
-              expanded
-                ? "w-full duration-300 ease-sidebar"
-                : "w-9 duration-200 ease-out"
+              "absolute top-2 right-2 size-1.5 rounded-full bg-blue-400 transition-opacity motion-reduce:transition-none",
+              !expanded && unreadCount > 0
+                ? "opacity-100 duration-200 ease-out"
+                : "opacity-0 duration-300 ease-sidebar"
             )}
           />
-          <span
-            className="relative flex w-9 shrink-0 items-center justify-center transition-colors group-hover/nbell:text-blue-400"
-            ref={iconSlotRef}
-          >
-            <Bell aria-hidden className="size-4" strokeWidth={1.8} />
+        </span>
+        <span
+          className={cn(
+            "relative min-w-0 flex-1 truncate whitespace-nowrap pr-2 transition-opacity motion-reduce:transition-none",
+            expanded
+              ? "opacity-100 duration-300 ease-sidebar"
+              : "opacity-0 duration-200 ease-out"
+          )}
+        >
+          Notifications
+        </span>
+        <span
+          className={cn(
+            "relative flex shrink-0 items-center pr-2 transition-opacity motion-reduce:transition-none",
+            expanded
+              ? "opacity-100 duration-300 ease-sidebar"
+              : "opacity-0 duration-200 ease-out"
+          )}
+        >
+          {badgeLabel == null ? null : (
             <span
-              aria-hidden
-              className={cn(
-                "absolute top-2 right-2 size-1.5 rounded-full bg-blue-400 transition-opacity motion-reduce:transition-none",
-                !expanded && unreadCount > 0
-                  ? "opacity-100 duration-200 ease-out"
-                  : "opacity-0 duration-300 ease-sidebar"
-              )}
-            />
-          </span>
-          <span
-            className={cn(
-              "relative min-w-0 flex-1 truncate whitespace-nowrap pr-2 transition-opacity motion-reduce:transition-none",
-              expanded
-                ? "opacity-100 duration-300 ease-sidebar"
-                : "opacity-0 duration-200 ease-out"
-            )}
-          >
-            Notifications
-          </span>
-          <span
-            className={cn(
-              "relative flex shrink-0 items-center pr-2 transition-opacity motion-reduce:transition-none",
-              expanded
-                ? "opacity-100 duration-300 ease-sidebar"
-                : "opacity-0 duration-200 ease-out"
-            )}
-          >
-            {badgeLabel == null ? null : (
-              <span
-                className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-400/15 px-1 font-medium text-[10px] text-blue-400 tabular-nums"
-                data-slot="app-sidebar-notifications-badge"
-              >
-                {badgeLabel}
-              </span>
-            )}
-          </span>
-        </PopoverTrigger>
-        {/* Collapsed rail: anchor the icon slot, sideOffset 6 (the rail-wide
+              className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-400/15 px-1 font-medium text-[10px] text-blue-400 tabular-nums"
+              data-slot="app-sidebar-notifications-badge"
+            >
+              {badgeLabel}
+            </span>
+          )}
+        </span>
+      </PopoverTrigger>
+      {/* Collapsed rail: anchor the icon slot, sideOffset 6 (the rail-wide
             convention for popovers) — the default trigger anchor sits at the
             clipped full-width row's edge, far past the visible rail. The
             panel keeps a floor height so an empty inbox and a one-item inbox
             read as the same surface. */}
-        <PopoverContent
-          align="start"
-          anchor={expanded ? undefined : iconSlotRef}
-          className="flex min-h-80 w-96 flex-col gap-0 rounded-lg border border-border bg-input/30 p-0 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
-          side="right"
-          sideOffset={expanded ? 10 : 6}
-        >
-          <NotificationsPanel feed={feed} />
-        </PopoverContent>
-      </Popover>
-    </>
+      <PopoverContent
+        align="start"
+        anchor={expanded ? undefined : iconSlotRef}
+        className="flex min-h-80 w-96 flex-col gap-0 rounded-lg border border-border bg-input/30 p-0 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
+        side="right"
+        sideOffset={expanded ? 10 : 6}
+      >
+        <NotificationsPanel feed={feed} />
+      </PopoverContent>
+    </Popover>
   );
 }

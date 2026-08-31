@@ -19,6 +19,10 @@ import {
   getPanelOriginX,
   hasPanelDragMoved,
 } from "../panel-drag";
+import {
+  consumePanelReopenRequest,
+  reportPanelOpenState,
+} from "../panel-visibility";
 import { DevTweaksStore, type PanelConfig } from "../store/dev-tweaks-store";
 import { type MockEntry, MockStore } from "../store/mock-store";
 import { TimelineStore } from "../store/timeline-store";
@@ -144,12 +148,16 @@ export function DevTweaksRoot({
   const inline = mode === "inline";
 
   // Root open state — controlled here so the hotkey, the bubble, and the
-  // header all drive the same switch.
-  const [rootOpen, setRootOpen] = useState(inline || defaultOpen);
+  // header all drive the same switch. A one-shot reopen request (armed by a
+  // revalidation-by-reload while the panel was open) wins over defaultOpen.
+  const [rootOpen, setRootOpen] = useState(
+    () => inline || defaultOpen || consumePanelReopenRequest()
+  );
   const rootOpenRef = useRef(rootOpen);
   const applyRootOpen = useCallback(
     (next: boolean) => {
       setRootOpen(next);
+      reportPanelOpenState(next);
       if (rootOpenRef.current !== next) {
         rootOpenRef.current = next;
         onOpenChange?.(next);
@@ -243,6 +251,7 @@ export function DevTweaksRoot({
   // in DevTweaksTimeline, but their presence adds a visibility toggle here.
   useEffect(() => {
     setMounted(true);
+    reportPanelOpenState(rootOpenRef.current);
     setPanels(DevTweaksStore.getPanels("panel"));
     setMocks(MockStore.getMocks());
     setTimelineCount(TimelineStore.getTimelines().length);
