@@ -696,7 +696,7 @@ _Avoid_: PAYG plan, pay-as-you-go plan, free mode, plan named "PAYG".
 
 ### Account Debt
 
-The state of an Account Balance that has fallen to or below zero — the platform's debt pipeline treats only a strictly positive available amount as in good standing: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing.
+The state of an Account Balance that has fallen to or below zero — the platform's debt pipeline treats only a strictly positive available amount as in good standing: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. An account that has never been billed is exempt: with zero lifetime deductions the platform's debt pipeline skips it, so a fresh zero-balance account stays in good standing and is never in Account Debt. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing, and because the platform suspends only PAYG workspaces for it, the warning is voiced only on a Pay-As-You-Go workspace — a subscribed workspace's zero balance is not spoken of as debt.
 
 _Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due (user-facing), negative balance (as the state's name), arrears.
 
@@ -764,7 +764,7 @@ _Avoid_: priority, importance (the platform CR field), level, tone.
 
 ### Status Hint
 
-The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt, a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
+The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt (on a Pay-As-You-Go workspace only — the same judgment as the Deploy Billing Wall, so the banner and the wall can never disagree), a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
 
 _Avoid_: alert bar, global notification, sticky toast, warning strip (as the concept's name).
 

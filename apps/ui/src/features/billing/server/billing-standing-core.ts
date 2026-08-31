@@ -26,7 +26,10 @@ export interface WorkspaceAiCredits {
 }
 
 export interface WorkspaceBillingStanding {
-  /** Available amount ≤ 0 (the platform's debt formula); null while unknown. */
+  /**
+   * Available amount ≤ 0 on an ever-billed account (the platform's debt
+   * formula, which skips never-billed accounts); null while unknown.
+   */
   accountDebt: boolean | null;
   /** The subscription's AI Credits; null on PAYG or while unknown. */
   aiCredits: WorkspaceAiCredits | null;
@@ -94,10 +97,16 @@ function microUnits(value: string | number | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function cashMicroUnits(account: unknown): number | null {
+function accountTerms(
+  account: unknown
+): { cashMicroUnits: number; lifetimeDeductionMicroUnits: number } | null {
   const parsed = accountSchema.safeParse(account);
   return parsed.success
-    ? parsed.data.account.Balance - parsed.data.account.DeductionBalance
+    ? {
+        cashMicroUnits:
+          parsed.data.account.Balance - parsed.data.account.DeductionBalance,
+        lifetimeDeductionMicroUnits: parsed.data.account.DeductionBalance,
+      }
     : null;
 }
 
@@ -153,15 +162,18 @@ function aiCreditsFromQuota(quota: unknown): WorkspaceAiCredits | null {
 export function judgeWorkspaceBillingStanding(
   payloads: WorkspaceBillingPayloads
 ): WorkspaceBillingStanding {
-  const cash = cashMicroUnits(payloads.account);
+  const terms = accountTerms(payloads.account);
   const credits = usableCreditMicroUnits(payloads.credits);
-  const available = cash == null || credits == null ? null : cash + credits;
+  const available =
+    terms == null || credits == null ? null : terms.cashMicroUnits + credits;
   const facts = subscriptionFacts(payloads.subscription);
   let accountDebt: boolean | null = null;
   if (facts.inDebt) {
     accountDebt = true;
-  } else if (available != null) {
-    accountDebt = available <= 0;
+  } else if (available != null && terms != null) {
+    // The platform's state machine skips never-billed accounts: a fresh
+    // zero-balance account is in good standing, not in debt.
+    accountDebt = terms.lifetimeDeductionMicroUnits > 0 && available <= 0;
   }
   const rows = workspaceQuotaRowsFromPayload(payloads.quota);
   const fullRow = rows == null ? null : firstFullQuotaRow(rows);

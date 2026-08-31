@@ -806,7 +806,10 @@ export function BillingBalanceValue({
   currency: BillingCurrency;
   giftMicroUnits: number;
 }) {
-  const inDebt = creditsResolved && availableMicroUnits <= 0;
+  // The display reddens only below zero: a zero balance is a resting state
+  // (an expired gift, a fresh account), not money owed. The Account Debt
+  // state itself stays the status hint's and the walls' judgment.
+  const inDebt = creditsResolved && availableMicroUnits < 0;
   return (
     <>
       <div className="flex flex-wrap items-baseline gap-2.5">
