@@ -2,22 +2,37 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.10] - 2026-08-31
+
+### Changed
+
+- Made the App Sidebar default to Collapsed on first visit. An explicit
+  expand or collapse is still remembered per browser and wins over the
+  default; the persistence cookie moved to `sidebar_state_v2`, resetting
+  every previously remembered state once.
+
+### Fixed
+
+- Narrowed Account Debt to pay-as-you-go workspaces and skipped never-billed
+  accounts, so a subscribed workspace with a zero balance no longer sees the
+  "Pay-as-you-go workspaces are suspended" Status Hint or the pre-deploy
+  wall. The Billing Plan balance now turns red only below zero.
+
 ## [2.0.9] - 2026-08-28
 
 ### Added
 
 - Added billing interruption scenes: deploy failure billing forms and a
-  paid-chat wall (AIM-329, AIM-330). Deployments that die on a money or quota
-  wall now report a curated `balance-exhausted` reason with structured Billing
-  Evidence, and the GitHub/Docker/Database/Template panes plus the assistant's
-  deploy tool refuse with the same pre-deploy wall. Chat turns now judge a
-  paid source server-side and refuse an exhausted source with 402 rather than
-  mutating state.
-- Added a dual-stream Notification Center with a Status Hint banner (AIM-332,
-  AIM-333, AIM-334). A Go read proxy merges upstream Notification CRs with the
-  Brain store, per-user read receipts, a Brain-voiced override table for the
-  debt-ladder, a gift-only filter, and gift-observation plus
-  subscription-change producers.
+  paid-chat wall. Deployments that die on a money or quota wall now report a
+  curated `balance-exhausted` reason with structured Billing Evidence, and
+  the GitHub/Docker/Database/Template panes plus the assistant's deploy tool
+  refuse with the same pre-deploy wall. Chat turns now judge a paid source
+  server-side and refuse an exhausted source with 402 rather than mutating
+  state.
+- Added a dual-stream Notification Center with a Status Hint banner. A Go
+  read proxy merges upstream Notification CRs with the Brain store, per-user
+  read receipts, a Brain-voiced override table for the debt-ladder, a
+  gift-only filter, and gift-observation plus subscription-change producers.
 - Surfaced usable gift credit in the Plan Account Balance block, proxied via
   `/api/billing/credits` and degrading quietly when unavailable.
 
@@ -389,6 +404,10 @@ databases, and day-to-day operations into one Project workspace.
 - Added Project Assistant for understanding the current Project context and
   starting supported operations.
 
+[2.0.10]: https://github.com/labring/brain/compare/v2.0.9...v2.0.10
+[2.0.9]: https://github.com/labring/brain/compare/v2.0.8...v2.0.9
+[2.0.8]: https://github.com/labring/brain/compare/v2.0.7...v2.0.8
+[2.0.7]: https://github.com/labring/brain/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/labring/brain/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/labring/brain/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/labring/brain/compare/v2.0.3...v2.0.4
