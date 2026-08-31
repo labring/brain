@@ -636,7 +636,7 @@ function AppSidebarChrome({
 
 export function AppSidebarShell({
   children,
-  defaultOpen = true,
+  defaultOpen = false,
 }: {
   children: ReactNode;
   defaultOpen?: boolean;
