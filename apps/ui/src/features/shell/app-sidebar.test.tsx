@@ -186,7 +186,8 @@ await moduleDom.restore();
 
 async function withSidebar(
   run: () => void | Promise<void>,
-  defaultOpen = true,
+  // "unset" omits the prop so the scenario exercises the shell's own default.
+  defaultOpen: boolean | "unset" = true,
   beforeRender?: () => void
 ): Promise<void> {
   const dom = installTestDom();
@@ -198,7 +199,9 @@ async function withSidebar(
     await actAndDrain(() => {
       rendered = render(
         <JotaiProvider>
-          <AppSidebarShell defaultOpen={defaultOpen}>
+          <AppSidebarShell
+            {...(defaultOpen === "unset" ? {} : { defaultOpen })}
+          >
             <AppSidebar />
           </AppSidebarShell>
         </JotaiProvider>
@@ -247,7 +250,13 @@ function cookieValue(name: string): string | undefined {
     ?.slice(prefix.length);
 }
 
-test("app sidebar defaults to Expanded and collapses from the header button", async () => {
+test("the shell renders Collapsed when no remembered state is provided", async () => {
+  await withSidebar(() => {
+    assert.equal(sidebarState(), "collapsed");
+  }, "unset");
+});
+
+test("a remembered Expanded state renders Expanded and collapses from the header button", async () => {
   await withSidebar(async () => {
     assert.equal(sidebarState(), "expanded");
     const collapse = document.querySelector<HTMLButtonElement>(

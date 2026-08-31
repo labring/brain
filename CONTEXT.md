@@ -22,7 +22,7 @@ _Avoid_: Favorite Project, starred Project, recent Project.
 
 ### App Sidebar
 
-The persistent left-edge product navigation surface containing product-level navigation, Project navigation (Pinned Projects and all other Projects), and app-level actions. It is outside the Project Canvas and is not a Side Pane or a Project list. It has exactly two user-controlled states, and these are their canonical names: **Expanded** (icons with text labels) and **Collapsed** (an icon rail with tooltips). State changes only by explicit user action and is independent of viewport width.
+The persistent left-edge product navigation surface containing product-level navigation, Project navigation (Pinned Projects and all other Projects), and app-level actions. It is outside the Project Canvas and is not a Side Pane or a Project list. It has exactly two user-controlled states, and these are their canonical names: **Expanded** (icons with text labels) and **Collapsed** (an icon rail with tooltips). Before the user has ever changed it, the App Sidebar is Collapsed; thereafter the user's last chosen state is remembered per browser. State changes only by explicit user action and is independent of viewport width.
 
 _Avoid_: Project list, left Side Pane, Project Shortcut (retired term), open/closed sidebar, full/mini sidebar, rail mode.
 

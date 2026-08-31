@@ -9,7 +9,7 @@ export async function AppSidebarCookieBridge({
   children: ReactNode;
 }) {
   const cookieStore = await cookies();
-  const defaultOpen = cookieStore.get(SIDEBAR_COOKIE_NAME)?.value !== "false";
+  const defaultOpen = cookieStore.get(SIDEBAR_COOKIE_NAME)?.value === "true";
 
   return (
     <AppSidebarShell defaultOpen={defaultOpen}>{children}</AppSidebarShell>
