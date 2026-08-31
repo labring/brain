@@ -15,6 +15,8 @@ const accountBalanceResponseSchema = z.object({
 
 export interface AccountBalance {
   currency: BillingCurrency;
+  /** Lifetime deductions — zero means the account has never been billed. */
+  lifetimeDeductionMicroUnits: number;
   microUnits: number;
 }
 
@@ -66,6 +68,7 @@ export async function loadAccountBalance(
   );
   return {
     currency: credentials.currency,
+    lifetimeDeductionMicroUnits: terms.lifetimeDeductionMicroUnits,
     microUnits: terms.cashMicroUnits,
   };
 }

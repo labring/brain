@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { accountDebtFromMoney } from "@/features/billing/account-debt";
 import {
   firstFullQuotaRow,
   type QuotaFullnessRow,
@@ -171,9 +172,10 @@ export function judgeWorkspaceBillingStanding(
   if (facts.inDebt) {
     accountDebt = true;
   } else if (available != null && terms != null) {
-    // The platform's state machine skips never-billed accounts: a fresh
-    // zero-balance account is in good standing, not in debt.
-    accountDebt = terms.lifetimeDeductionMicroUnits > 0 && available <= 0;
+    accountDebt = accountDebtFromMoney({
+      availableBalanceMicroUnits: available,
+      lifetimeDeductionMicroUnits: terms.lifetimeDeductionMicroUnits,
+    });
   }
   const rows = workspaceQuotaRowsFromPayload(payloads.quota);
   const fullRow = rows == null ? null : firstFullQuotaRow(rows);
@@ -199,9 +201,9 @@ export function judgeWorkspaceBillingStanding(
 
 /**
  * Whether the platform has suspended THIS workspace for Account Debt.
- * Account Debt is an account-level state — the Status Hint voices it in
- * every workspace — but the platform's debt pipeline stops only
- * Pay-As-You-Go workspaces; a subscribed workspace's resources ride its plan
+ * Account Debt is an account-level state, but the platform's debt pipeline
+ * stops only Pay-As-You-Go workspaces — so the Status Hint voices it only
+ * there; a subscribed workspace's resources ride its plan
  * and its AI usage its AI Credits (CONTEXT.md, Account Debt; design spec
  * row E1). So only a workspace paying from the balance can be walled or
  * have its failure reclassified on debt. Null while either fact is unknown:

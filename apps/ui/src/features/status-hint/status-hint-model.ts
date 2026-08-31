@@ -1,3 +1,4 @@
+import { accountDebtFromMoney } from "@/features/billing/account-debt";
 import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 import type { BillingSurfaceTone } from "@/features/billing/billing-surface-tones";
 import {
@@ -171,13 +172,10 @@ export function accountDebtHolds(
   ) {
     return null;
   }
-  // The platform's state machine skips never-billed accounts: a fresh
-  // zero-balance account is in good standing, not in debt.
-  if (inputs.lifetimeDeductionMicroUnits <= 0) {
-    return false;
-  }
-  // Only a strictly positive available amount is good standing upstream.
-  return inputs.availableBalanceMicroUnits <= 0;
+  return accountDebtFromMoney({
+    availableBalanceMicroUnits: inputs.availableBalanceMicroUnits,
+    lifetimeDeductionMicroUnits: inputs.lifetimeDeductionMicroUnits,
+  });
 }
 
 function quotaFullHint(

@@ -237,6 +237,8 @@ async function renderBalanceValue(
     availableMicroUnits: number;
     creditsResolved?: boolean;
     giftMicroUnits: number;
+    lifetimeDeductionMicroUnits?: number;
+    payg?: boolean;
   },
   run: (rendered: ReturnType<typeof render>) => void | Promise<void>
 ) {
@@ -245,8 +247,16 @@ async function renderBalanceValue(
     let rendered: ReturnType<typeof render> | undefined;
     try {
       await act(() => {
+        // Default: an ever-billed PAYG workspace — the mode where Account
+        // Debt actually suspends.
         rendered = render(
-          <BillingBalanceValue creditsResolved currency="usd" {...props} />
+          <BillingBalanceValue
+            creditsResolved
+            currency="usd"
+            lifetimeDeductionMicroUnits={1_000_000}
+            payg
+            {...props}
+          />
         );
       });
       if (rendered != null) {
@@ -303,11 +313,15 @@ test("a negative available total voices Account Debt", async () => {
   );
 });
 
-test("an exactly-zero available total stays plain — a resting state, not debt", async () => {
-  // An expired gift or a fresh account sits at $0.00; the figure must not
-  // go red or ask for a top-up.
+test("a never-billed account's zero total stays plain — good standing, not debt", async () => {
+  // The platform's state machine skips never-billed accounts: a fresh
+  // zero-balance account must not go red or ask for a top-up.
   await renderBalanceValue(
-    { availableMicroUnits: 0, giftMicroUnits: 0 },
+    {
+      availableMicroUnits: 0,
+      giftMicroUnits: 0,
+      lifetimeDeductionMicroUnits: 0,
+    },
     (rendered) => {
       const text = rendered.container.textContent ?? "";
       assert.ok(text.includes("$0.00"), "the zero total renders");
@@ -315,6 +329,46 @@ test("an exactly-zero available total stays plain — a resting state, not debt"
         text.includes("Top up from the Sealos Desktop"),
         false,
         "no debt caption at zero"
+      );
+    }
+  );
+});
+
+test("an ever-billed account at exactly zero voices Account Debt", async () => {
+  // Only a strictly positive available amount is good standing upstream:
+  // a billed-down-to-zero PAYG account is real debt, not a resting state.
+  await renderBalanceValue(
+    { availableMicroUnits: 0, giftMicroUnits: 0 },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("$0.00"), "the zero total renders");
+      assert.ok(
+        text.includes(
+          "Top up from the Sealos Desktop to restore your services."
+        ),
+        "the debt caption renders"
+      );
+    }
+  );
+});
+
+test("a subscribed workspace's negative total carries no restoration claim", async () => {
+  // The platform suspends only PAYG workspaces for Account Debt — a
+  // subscribed workspace's resources ride its plan, so promising a top-up
+  // would "restore your services" is false. The figure still reddens.
+  await renderBalanceValue(
+    { availableMicroUnits: -6_320_000, giftMicroUnits: 0, payg: false },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("-$6.32"), "the negative total renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "no service-restoration caption off PAYG"
+      );
+      assert.ok(
+        rendered.container.querySelector(".text-red-400") != null,
+        "the negative figure still tints"
       );
     }
   );
