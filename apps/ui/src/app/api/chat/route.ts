@@ -88,7 +88,7 @@ const CHAT_TITLE_TIMEOUT_MS = 5000;
 const INTERRUPTED_TOOL_ERROR =
   "Tool execution was interrupted before a result was available.";
 
-/** The `X-Chat-*` set every chat response carries — the 402 refusal included. */
+/** The `X-Chat-*` set every chat response carries — paid-wall refusals included. */
 function chatBillingHeaders(state: FreeTierState): Record<string, string> {
   return {
     "X-Chat-Billing": state.billing,
@@ -99,7 +99,7 @@ function chatBillingHeaders(state: FreeTierState): Record<string, string> {
   };
 }
 
-/** The paid wall's refusal (design spec row E3): the 402 sibling of the free-turns one. */
+/** The paid wall's refusal (design spec row E3). */
 function paidWallResponse(state: FreeTierState): Response {
   const body: ChatApiErrorBody =
     state.wall === "ai-credits"
@@ -117,22 +117,6 @@ function paidWallResponse(state: FreeTierState): Response {
     headers: chatBillingHeaders(state),
     status: 402,
   });
-}
-
-/**
- * A `user` turn spends AI Credits or the Account Balance; judge the wall
- * before the turn the way the free allowance is judged (row E3 follows the
- * E4 template). Unknown standing fails open.
- */
-function freeTurnsExhaustedResponse(state: FreeTierState): Response {
-  return Response.json(
-    {
-      code: "free_chat_turns_exhausted",
-      error:
-        "Free trial messages are used up. Upgrade your plan to keep chatting with the assistant.",
-    } satisfies ChatApiErrorBody,
-    { headers: chatBillingHeaders(state), status: 402 }
-  );
 }
 
 async function releaseReservedFreeTurnQuietly(
@@ -621,7 +605,7 @@ async function cleanUpFailedChatPipeline(input: {
 }
 
 /**
- * Chat Billing Posture for this turn (ADR-0065), with the free turn already
+ * Chat Billing Posture for this turn (ADR-0069), with the free turn already
  * reserved on the counter when it returns `billing: "free"`. Reserving before
  * any model execution makes concurrent turns race on the counter itself, so
  * the allowance can never be overspent; the caller owns rolling the
@@ -641,9 +625,6 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
   const judgment = await judgeChatBilling(actor);
   const { snapshot: freeTier, systemModelConfigured, trial } = judgment;
   const posture = freeTierPosture(freeTier, systemModelConfigured, trial);
-  if (posture.billing === "blocked") {
-    return { response: freeTurnsExhaustedResponse(posture) };
-  }
   if (posture.billing !== "free") {
     const walled = await withPaidChatWall(posture, judgment);
     if (walled.wall != null) {
@@ -658,9 +639,8 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
 
   if (await reserveFreeTurnIfAvailable(actor.namespace)) {
     // Headers carry the POST-turn posture: the turn spending the last free
-    // turn already reports `blocked`, so the pane flips the moment that
-    // message finishes streaming instead of one composed message later. With
-    // the turn reserved up front, that posture is a fact, not a prediction.
+    // turn already reports `user`, so the next request uses the caller's AI
+    // Proxy without one-message-late client inference.
     return {
       billing: "free",
       clientFreeTier: freeTierPostureAfterTurn(
@@ -672,19 +652,15 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
     };
   }
 
-  // Lost the counter race to a concurrent turn: re-judge on a fresh
-  // snapshot. A confirmed trial is now exhausted (402); otherwise the turn
-  // degrades to `user`, matching the exhausted fail-open case — walled on
-  // the standing already read for this request.
+  // Lost the counter race to a concurrent turn: re-judge on a fresh snapshot
+  // and continue as a user-billed turn, walled on the standing already read
+  // for this request.
   const contested = await getFreeTierSnapshot(actor.namespace);
   const contestedPosture = freeTierPosture(
     contested,
     systemModelConfigured,
     trial
   );
-  if (contestedPosture.billing === "blocked") {
-    return { response: freeTurnsExhaustedResponse(contestedPosture) };
-  }
   const walled = await withPaidChatWall(
     { ...contestedPosture, billing: "user" },
     judgment
@@ -716,9 +692,9 @@ async function runChatPipeline(input: {
   let rollbackAssistant: PendingAssistantReplacement | null = null;
   let ownedFreeTurnReservation = false;
   try {
-    // The Active Free Trial is judged live on every turn (ADR-0065). A
-    // confirmed-blocked request is refused before any conversation state
-    // mutates, so a stale tab or scripted client cannot bypass the panel.
+    // The Active Free Trial is judged live on every turn (ADR-0069). Once its
+    // allowance is exhausted, the same request continues through the paid
+    // wall and the caller's AI Proxy.
     const settled = await settleTurnBillingPosture({
       accountUserId: actor.accountUserId ?? null,
       cookieHeader: input.cookieHeader,

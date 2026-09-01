@@ -37,7 +37,7 @@ const realSession = () =>
   Promise.resolve(
     Response.json({
       chatId: "real",
-      freeTier: { billing: "blocked", limit: 10, remaining: 0 },
+      freeTier: { billing: "user", limit: 10, remaining: 0 },
       messages: [],
       threads: [],
     })
@@ -91,7 +91,7 @@ describe("conversation dev fixtures", () => {
       realSession
     );
     const body = (await response.json()) as SessionBody;
-    expect(body.freeTier.billing).toBe("blocked");
+    expect(body.freeTier.billing).toBe("user");
     expect(body.messages).toHaveLength(4);
   });
 

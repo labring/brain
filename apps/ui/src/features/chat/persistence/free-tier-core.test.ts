@@ -22,9 +22,9 @@ test("posture is user when no platform model is configured, even with a full all
   );
 });
 
-test("posture is blocked when an active trial exhausts the allowance", () => {
+test("posture hands an exhausted active trial off to user billing", () => {
   assert.deepEqual(freeTierPosture({ limit: 5, remaining: 0 }, true, "trial"), {
-    billing: "blocked",
+    billing: "user",
     limit: 5,
     remaining: 0,
   });
@@ -41,7 +41,7 @@ test("a non-trial workspace bills user from its first turn, full allowance inclu
   );
 });
 
-test("a non-trial workspace is never blocked at exhaustion", () => {
+test("a non-trial workspace stays user-billed at exhaustion", () => {
   assert.deepEqual(
     freeTierPosture({ limit: 5, remaining: 0 }, true, "not-trial"),
     {
@@ -64,8 +64,8 @@ test("an unknown judgment with turns remaining serves free", () => {
   );
 });
 
-// …and degrades to user when exhausted — blocking needs a confirmed trial.
-test("an unknown judgment with the allowance exhausted degrades to user, never blocked", () => {
+// …and degrades to user when exhausted.
+test("an unknown judgment with the allowance exhausted degrades to user", () => {
   assert.deepEqual(
     freeTierPosture({ limit: 5, remaining: 0 }, true, "unknown"),
     {
@@ -76,7 +76,7 @@ test("an unknown judgment with the allowance exhausted degrades to user, never b
   );
 });
 
-// FREE_CHAT_TURNS=0 disables the feature entirely: silent user, never blocked.
+// FREE_CHAT_TURNS=0 disables the feature entirely: silent user billing.
 test("a zero limit keeps silent user billing even on a confirmed trial", () => {
   assert.deepEqual(freeTierPosture({ limit: 0, remaining: 0 }, true, "trial"), {
     billing: "user",
@@ -85,7 +85,7 @@ test("a zero limit keeps silent user billing even on a confirmed trial", () => {
   });
 });
 
-test("a missing platform model keeps silent user at exhaustion, never blocked", () => {
+test("a missing platform model keeps silent user at exhaustion", () => {
   assert.deepEqual(
     freeTierPosture({ limit: 5, remaining: 0 }, false, "trial"),
     {
@@ -107,21 +107,20 @@ test("a mid-allowance free turn reports free with one fewer turn", () => {
   );
 });
 
-// The turn that spends the LAST free turn must already report `blocked`, so
-// the pane flips the moment that message finishes streaming — not one
-// message later (ADR-0065 replaces the old `user` endpoint + crossing toast).
-test("the turn that spends the last free turn reports blocked on a trial", () => {
+// The turn that spends the LAST free turn already reports `user`, so the next
+// request is ready to use the caller's AI Proxy.
+test("the turn that spends the last free turn reports user billing", () => {
   assert.deepEqual(
     freeTierPostureAfterTurn({ limit: 5, remaining: 1 }, true, "trial"),
     {
-      billing: "blocked",
+      billing: "user",
       limit: 5,
       remaining: 0,
     }
   );
 });
 
-test("the last free turn under an unknown judgment degrades to user, never blocked", () => {
+test("the last free turn under an unknown judgment degrades to user", () => {
   assert.deepEqual(
     freeTierPostureAfterTurn({ limit: 5, remaining: 1 }, true, "unknown"),
     {
@@ -139,9 +138,9 @@ test("a user-billed turn leaves the snapshot untouched", () => {
   );
 });
 
-test("a blocked turn never decrements below zero", () => {
+test("an exhausted user-billed turn never decrements below zero", () => {
   assert.deepEqual(
     freeTierPostureAfterTurn({ limit: 5, remaining: 0 }, true, "trial"),
-    { billing: "blocked", limit: 5, remaining: 0 }
+    { billing: "user", limit: 5, remaining: 0 }
   );
 });

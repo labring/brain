@@ -14,12 +14,7 @@ import {
 } from "./chat-billing-interruption";
 import type { ChatPaidSource, FreeTierState } from "./persistence/types";
 
-export type ChatBillingCard =
-  | "billing-error"
-  | "blocked"
-  | "counter"
-  | "error"
-  | "wall";
+export type ChatBillingCard = "billing-error" | "counter" | "error" | "wall";
 
 /**
  * Where a chat billing CTA lands in the Billing Area: `upgrade` deep-links
@@ -29,12 +24,12 @@ export type ChatBillingCard =
 export type ChatBillingDestination = "plans" | "upgrade";
 
 /**
- * Card-slot arbitration for the Project Assistant Pane (ADR-0065, design
- * spec row E3): exactly one card renders at a time, wall > blocked >
- * billing-error > error > counter. The two gates outrank every error card
- * because "try again" is a lie once the server refuses chat; a billing
- * interruption outranks the generic error because it knows why. On open
- * `user` billing only an error card can ever show.
+ * Card-slot arbitration for the Project Assistant Pane (ADR-0069, design
+ * spec row E3): exactly one card renders at a time, wall > billing-error >
+ * error > counter. The paid wall outranks every error card because "try
+ * again" is a lie once the server refuses chat; a billing interruption
+ * outranks the generic error because it knows why. On open `user` billing
+ * only an error card can ever show.
  */
 export function resolveChatBillingCard(input: {
   billing: FreeTierState["billing"] | null;
@@ -44,9 +39,6 @@ export function resolveChatBillingCard(input: {
 }): ChatBillingCard | null {
   if (input.wall != null) {
     return "wall";
-  }
-  if (input.billing === "blocked") {
-    return "blocked";
   }
   if (input.errored) {
     return input.interruption == null ? "error" : "billing-error";
@@ -123,34 +115,6 @@ function CounterCard({
         variant="quiet"
       >
         View plans
-      </AppButton>
-    </div>
-  );
-}
-
-function BlockedCard({
-  onNavigateToBilling,
-}: {
-  onNavigateToBilling: (destination: ChatBillingDestination) => void;
-}) {
-  return (
-    <div
-      className="flex items-center justify-between gap-3 rounded-xl border border-border/35 bg-input/20 p-3"
-      data-slot="chat-blocked-card"
-    >
-      <div className="flex min-w-0 items-center gap-2.5">
-        <GiftTile />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="font-medium text-foreground text-xs">
-            Free trial messages used up
-          </p>
-          <p className="text-muted-foreground text-xs">
-            Upgrade to keep chatting with the assistant.
-          </p>
-        </div>
-      </div>
-      <AppButton onClick={() => onNavigateToBilling("upgrade")} size="sm">
-        Upgrade plan
       </AppButton>
     </div>
   );
@@ -281,9 +245,6 @@ export function ChatBillingCardSlot({
           copy={chatBillingWallCopy(wall)}
           onNavigateToBilling={onNavigateToBilling}
         />
-      ) : null}
-      {card === "blocked" ? (
-        <BlockedCard onNavigateToBilling={onNavigateToBilling} />
       ) : null}
       {card === "billing-error" ? (
         <BillingErrorCard

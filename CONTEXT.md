@@ -510,7 +510,7 @@ _Avoid_: shared namespace chat, per-namespace chat history.
 
 ### Chat Billing Mode
 
-Who pays for one assistant model call — or whether it happens at all: `free` spends a Free Chat Turn, `user` bills the caller's AI Proxy, and `blocked` refuses the call because an Active Free Trial workspace has exhausted its Free Chat Turns. The server decides per turn and client surfaces render the mode without deriving it; there is no automatic `free`→`user` handoff — exhaustion during the trial blocks instead of billing. The mode, not the remaining count, is the reliable signal of being charged: a namespace with no platform model bills `user` from its first turn with turns unspent, and is never `blocked`. A `user` turn spends a Paid Source; an exhausted one is refused by the Paid Chat Wall before the turn, or told as a Billing Interruption when the AI Proxy refuses a turn already under way.
+Who pays for one assistant model call: `free` spends a Free Chat Turn through the platform Chat Agent connection, while `user` bills the caller's AI Proxy. The server decides per turn and client surfaces render the mode without deriving it. Only an Active Free Trial workspace can enter `free`; after its allowance is exhausted it hands off to `user`. Paid plans, Pay-As-You-Go workspaces, PAUSED Free workspaces, expired trials, and a deployment with no complete platform Chat Agent connection use `user` from their first turn with any allowance unspent. A `user` turn spends a Paid Source; an exhausted one is refused by the Paid Chat Wall before the turn, or told as a Billing Interruption when the AI Proxy refuses a turn already under way.
 
 _Avoid_: subscription tier, plan.
 
@@ -522,13 +522,13 @@ _Avoid_: wallet, credits (for a PAYG workspace), balance (for a subscribed works
 
 ### Paid Chat Wall
 
-The pre-send refusal of a `user` turn whose Paid Source is exhausted: a billing callout in the card slot naming the fix, and a locked composer stating why. The paid sibling of the Free Chat Turns block, and the only thing that locks the composer — a Billing Interruption behind an error card locks nothing, because the next send re-gates.
+The pre-send refusal of a `user` turn whose Paid Source is exhausted: a billing callout in the card slot naming the fix, and a locked composer stating why. The only Chat Billing state that locks the composer — a Billing Interruption behind an error card locks nothing, because the next send re-gates.
 
 _Avoid_: paywall, quota exceeded (for chat), chat disabled.
 
 ### Free Chat Turns
 
-A platform-funded allowance of assistant turns per namespace (user-visible label: Free trial messages), spendable only during the workspace's Active Free Trial; a turn is reserved when it starts and returned if it fails, so only successfully completed turns stay spent. A lifetime entitlement counter — namespace-shared, never per-user, never reset — not a rate limit; exhausting it blocks further assistant requests rather than falling through to `user` billing.
+A platform-funded allowance of Chat Agent turns per namespace (user-visible label: Free trial messages), spendable only during the workspace's Active Free Trial through `SYSTEM_OPENAI_API_KEY` and `SYSTEM_OPENAI_API_BASE_URL`; a turn is reserved when it starts and returned if it fails, so only successfully completed turns stay spent. A lifetime entitlement counter — namespace-shared, never per-user, never reset — not a rate limit; exhausting it hands subsequent turns to `user` billing through the caller's AI Proxy.
 
 _Avoid_: free tier, trial credits, free assistant messages, free messages.
 
@@ -678,7 +678,7 @@ _Avoid_: quota reset (for a Free period end), renewal time (for a Free subscript
 
 ### Active Free Trial
 
-The state of a workspace whose Free Subscription Plan is currently running its trial: a Free subscription in normal standing, as opposed to one born paused with no trial (a user's second and later workspaces) or one expired into the same payment-due pipeline as any paid plan. The sole eligibility gate for spending Free Chat Turns and for rendering the Plan view's free-allowance usage block — assistant blocking and its upgrade call-to-action can therefore only ever appear inside a live trial.
+The state of a workspace whose Free Subscription Plan is currently running its trial: a Free subscription in normal standing, as opposed to one born paused with no trial (a user's second and later workspaces) or one expired into the same payment-due pipeline as any paid plan. The sole eligibility gate for spending Free Chat Turns and for rendering the Plan view's free-allowance usage block; when the allowance is exhausted, Chat Billing Mode becomes `user` rather than extending trial eligibility.
 
 _Avoid_: free workspace, trial period (for the state), Free plan (bare, for this state).
 

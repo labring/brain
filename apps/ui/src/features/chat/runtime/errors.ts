@@ -17,7 +17,6 @@ export type ChatApiErrorCode =
   | "assistant_conversation_not_found"
   | "assistant_thread_conflict"
   | "assistant_turn_in_progress"
-  | "free_chat_turns_exhausted"
   | "incomplete_tool_history"
   | "invalid_request"
   | "stale_assistant_continuation"

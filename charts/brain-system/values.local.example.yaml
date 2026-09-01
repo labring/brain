@@ -75,7 +75,12 @@ ui:
     # (https://cloud.langfuse.com). Do not append /api/public/otel.
     LANGFUSE_HOST: ""
     # User-billed turns use the Sealos AI proxy.
+    # Later Chat Agent turns use the caller's Sealos AI Proxy.
     AI_PROXY_TOKEN_NAME: "sealos-brain"
+    # Optional platform-funded GitHub Deployment Tasks. Leave both blank to
+    # use the caller's AI Proxy; setting only one is a configuration error.
+    GITHUB_DEPLOY_OPENAI_API_KEY: ""
+    GITHUB_DEPLOY_OPENAI_BASE_URL: ""
     # Leave empty to use https://devbox-server.<cloudDomain>.
     DEVBOX_API_BASE_URL: ""
     DEVBOX_TOKEN: ""
