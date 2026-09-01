@@ -16,7 +16,7 @@ const originalFetch = globalThis.fetch;
 const PINNED_SKILL_COMMIT_SOURCE_RE = /sealos-skills\.git#[0-9a-f]{7,}/;
 const ENV_KEYS = [
   "AI_PROXY_TOKEN_NAME",
-  "CODEX_GATEWAY_MODEL",
+  "ASSISTANT_GATEWAY_MODEL",
   "CODEX_GATEWAY_OPENAI_API_KEY",
   "CODEX_GATEWAY_OPENAI_BASE_URL",
   "DEV_OPENAI_API_KEY",
@@ -240,7 +240,7 @@ describe("deployment AI Proxy credentials", () => {
     setPlatformCredentials();
     process.env.AI_PROXY_TOKEN_NAME = "github-deploy-token";
     process.env.GITHUB_DEPLOY_MODEL = "deploy-model";
-    delete process.env.CODEX_GATEWAY_MODEL;
+    delete process.env.ASSISTANT_GATEWAY_MODEL;
     delete process.env.DEPLOY_DEVBOX_STORAGE_LIMIT;
     process.env.DEVBOX_API_BASE_URL = "https://devbox.test";
     process.env.DEVBOX_TOKEN = "devbox-test-token";
@@ -375,9 +375,9 @@ describe("deployment AI Proxy credentials", () => {
     ).toBe("gpt-5.5");
   });
 
-  it("does not take the Devbox model from CODEX_GATEWAY_MODEL", () => {
+  it("does not take the Devbox model from ASSISTANT_GATEWAY_MODEL", () => {
     delete process.env.GITHUB_DEPLOY_MODEL;
-    process.env.CODEX_GATEWAY_MODEL = "gpt-chat-only";
+    process.env.ASSISTANT_GATEWAY_MODEL = "gpt-chat-only";
     expect(
       buildCodexGatewayEnv(RESOLVED_GATEWAY_CREDENTIALS).CODEX_GATEWAY_MODEL
     ).toBe("gpt-5.5");

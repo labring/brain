@@ -130,7 +130,7 @@ ui:
     GITHUB_APP_ID: ""
     GITHUB_APP_PRIVATE_KEY: ""
     # Optional. Model id for GitHub Deploy Codex gateway sessions. Blank uses
-    # gpt-5.5. Independent of CODEX_GATEWAY_MODEL (Assistant chat).
+    # gpt-5.5. Independent of ASSISTANT_GATEWAY_MODEL (Chat Agent).
     GITHUB_DEPLOY_MODEL: ""
     # Optional platform-funded GitHub Deployment Task connection. When both
     # are set, GitHub Deploy uses them; when both are blank, it uses the
@@ -157,7 +157,7 @@ ui:
     FREE_CHAT_TURNS: "5"
     # Optional. Assistant chat model id. Blank uses gpt-5.5.
     # Independent of GITHUB_DEPLOY_MODEL.
-    CODEX_GATEWAY_MODEL: ""
+    ASSISTANT_GATEWAY_MODEL: ""
     AI_PROXY_TOKEN_NAME: "sealos-brain"
     DEVBOX_API_BASE_URL: ""
     DEVBOX_TOKEN: ""

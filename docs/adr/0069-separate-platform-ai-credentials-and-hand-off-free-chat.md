@@ -40,10 +40,11 @@ Deploy Devbox after Brain has selected either the GitHub platform connection or
 the caller's AI Proxy. Prompt-source AI Runner work always uses the caller's AI
 Proxy.
 
-**Model selection stays independent.** `CODEX_GATEWAY_MODEL` selects the Chat
-Agent model. `GITHUB_DEPLOY_MODEL` selects the model used by Codex inside a
-GitHub Deployment Task's Deploy Devbox. Neither model variable selects or
-implies credentials.
+**Model selection stays independent.** `ASSISTANT_GATEWAY_MODEL` selects the
+Chat Agent model. `GITHUB_DEPLOY_MODEL` selects the model used by Codex inside
+a GitHub Deployment Task's Deploy Devbox. Neither model variable selects or
+implies credentials. `CODEX_GATEWAY_MODEL` remains an internal Deploy Devbox
+variable and is not a Brain configuration input.
 
 ## Considered Options
 
