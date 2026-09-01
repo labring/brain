@@ -12,6 +12,7 @@ import { cn } from "@workspace/ui/lib/utils";
 import {
   Bell,
   CircleAlert,
+  ExternalLink,
   Info,
   type LucideIcon,
   TriangleAlert,
@@ -19,6 +20,7 @@ import {
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { useResolvedBillingCta } from "@/features/billing/use-billing-cta";
 import {
   formatNotificationTime,
   formatNotificationTimestamp,
@@ -30,6 +32,7 @@ import {
 import {
   type AppNotification,
   isNotificationUnread,
+  type NotificationCTA,
   type NotificationSeverity,
   type NotificationTab,
   notificationBadgeLabel,
@@ -60,6 +63,70 @@ function NotificationTime({ timestamp }: { timestamp: number }) {
     >
       {formatNotificationTime(timestamp)}
     </time>
+  );
+}
+
+/**
+ * The CTA chip — the Status Hint's tonal recipe, colored by severity. A
+ * Desktop-resolved top-up leaves in a new tab; in-app billing hops record
+ * the return route first so the Billing Area's close button comes back
+ * here. Both count as reading the card.
+ */
+function NotificationCtaChip({
+  cta,
+  onRead,
+  tint,
+}: {
+  cta: NotificationCTA;
+  onRead: () => void;
+  tint: string;
+}) {
+  const resolved = useResolvedBillingCta(cta);
+  const className = cn(
+    "ml-[26px] h-6 bg-current/15 px-2 text-xs hover:bg-current/25",
+    tint
+  );
+  if (resolved.external) {
+    return (
+      <AppButton
+        className={className}
+        nativeButton={false}
+        render={
+          <a
+            href={resolved.href}
+            onClick={onRead}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <ExternalLink aria-hidden data-icon="inline-start" />
+            {resolved.label}
+          </a>
+        }
+        size="sm"
+        variant="secondary"
+      />
+    );
+  }
+  return (
+    <AppButton
+      className={className}
+      nativeButton={false}
+      render={
+        <Link
+          href={resolved.href}
+          onClick={() => {
+            if (resolved.href.startsWith("/billing")) {
+              recordBillingReturnRoute();
+            }
+            onRead();
+          }}
+        >
+          {resolved.label}
+        </Link>
+      }
+      size="sm"
+      variant="secondary"
+    />
   );
 }
 
@@ -129,29 +196,7 @@ function NotificationCard({
       </button>
       <div className={cn("px-2.5 pb-2.5", cta == null ? "pt-0" : "pt-2")}>
         {cta == null ? null : (
-          <AppButton
-            // Tonal: the Status Hint's chip recipe, colored by severity.
-            className={cn(
-              "ml-[26px] h-6 bg-current/15 px-2 text-xs hover:bg-current/25",
-              meta.tint
-            )}
-            nativeButton={false}
-            render={
-              <Link
-                href={cta.href}
-                onClick={() => {
-                  if (cta.href.startsWith("/billing")) {
-                    recordBillingReturnRoute();
-                  }
-                  onRead();
-                }}
-              >
-                {cta.label}
-              </Link>
-            }
-            size="sm"
-            variant="secondary"
-          />
+          <NotificationCtaChip cta={cta} onRead={onRead} tint={meta.tint} />
         )}
       </div>
       <span

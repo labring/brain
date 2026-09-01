@@ -183,7 +183,11 @@ test("Account Debt notices the entry with the top-up voice", () => {
   });
   assert.deepEqual(notice, {
     body: "Pay-as-you-go workspaces are suspended, so deployments will fail. Top up your balance to restore them.",
-    cta: { href: "/billing", label: "Top up balance" },
+    cta: {
+      desktop: { app: "system-costcenter", label: "Top up in Sealos Desktop" },
+      href: "/billing",
+      label: "Top up balance",
+    },
     kind: "balance",
     title: "Account balance in debt",
   });
@@ -199,10 +203,45 @@ test("a full universal quota notices the entry naming the resource", () => {
   });
   assert.deepEqual(notice, {
     body: "New deployments will fail until pods is freed or the plan is upgraded.",
-    cta: { href: "/billing/usage", label: "View usage" },
+    // A PAYG workspace subscribes rather than upgrades; usage stays the
+    // quiet second way out.
+    cta: { href: "/billing?mode=upgrade", label: "Subscribe" },
     kind: "quota",
+    secondaryCta: { href: "/billing/usage", label: "View usage" },
     title: "Pods quota is full",
   });
+});
+
+test("the quota CTA forks on the subscription and steps aside at the plan ceiling", () => {
+  const full: StatusHintInputs["quota"] = [
+    { label: "Pods", percentUsed: 100, type: "pod" },
+  ];
+  // A subscribed workspace upgrades.
+  const subscribed = resolveDeployBillingNotice({
+    ...QUIET,
+    quota: full,
+    subscription: HOBBY,
+  });
+  assert.deepEqual(subscribed?.cta, {
+    href: "/billing?mode=upgrade",
+    label: "Upgrade plan",
+  });
+  assert.deepEqual(subscribed?.secondaryCta, {
+    href: "/billing/usage",
+    label: "View usage",
+  });
+  // A confirmed plan ceiling has no plan to sell: usage is the only way out.
+  const ceiling = resolveDeployBillingNotice({
+    ...QUIET,
+    planCeiling: true,
+    quota: full,
+    subscription: HOBBY,
+  });
+  assert.deepEqual(ceiling?.cta, {
+    href: "/billing/usage",
+    label: "View usage",
+  });
+  assert.equal(ceiling?.secondaryCta, undefined);
 });
 
 test("a full storage quota is not the notice's voice — unless the pane's every deploy requests storage", () => {

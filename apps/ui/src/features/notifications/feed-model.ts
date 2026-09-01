@@ -139,6 +139,9 @@ const RENDERERS: {
         date === ""
           ? "It covers your first deployments and expires a month after it was granted."
           : `It covers your first deployments and expires on ${date}.`,
+      // The newcomer's first billing touchpoint: a quiet pointer at the
+      // plans, not a sell — the gift itself needs no action.
+      cta: { href: "/billing", label: "View plans" },
       severity: "info",
       title: `You have a ${wholeDollars(payload.giftMicroUnits)} welcome gift`,
     };

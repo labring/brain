@@ -3,11 +3,13 @@
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { cn } from "@workspace/ui/lib/utils";
-import { Info, TriangleAlert, X } from "lucide-react";
+import { ExternalLink, Info, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 
+import type { BillingCta } from "@/features/billing/billing-cta";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { BILLING_SURFACE_TONES } from "@/features/billing/billing-surface-tones";
+import { useResolvedBillingCta } from "@/features/billing/use-billing-cta";
 
 import type { StatusHint } from "./status-hint-model";
 import { useStatusHint } from "./use-status-hint";
@@ -18,6 +20,55 @@ import { useStatusHint } from "./use-status-hint";
  * billing state and offers the fix. One tonal recipe across tones — a
  * payment-due stage only ever changes its words, never its visuals.
  */
+
+/**
+ * One CTA chip — the tint recipe one step deeper, identical across tones.
+ * A Desktop-resolved top-up CTA leaves in a new tab; everything else is a
+ * full-page hop into the Billing Area with the return route recorded. The
+ * quiet variant is the secondary way out beside a plan-first quota CTA.
+ */
+function StatusHintCtaChip({
+  cta,
+  quiet = false,
+}: {
+  cta: BillingCta;
+  quiet?: boolean;
+}) {
+  const resolved = useResolvedBillingCta(cta);
+  const className = cn(
+    "shrink-0 text-current",
+    quiet ? "hover:bg-current/15" : "bg-current/15 hover:bg-current/25"
+  );
+  if (resolved.external) {
+    return (
+      <AppButton
+        className={className}
+        nativeButton={false}
+        render={
+          <a href={resolved.href} rel="noreferrer" target="_blank">
+            <ExternalLink aria-hidden data-icon="inline-start" />
+            {resolved.label}
+          </a>
+        }
+        size="sm"
+        variant="secondary"
+      />
+    );
+  }
+  return (
+    <AppButton
+      className={className}
+      nativeButton={false}
+      render={
+        <Link href={resolved.href} onClick={recordBillingReturnRoute}>
+          {resolved.label}
+        </Link>
+      }
+      size="sm"
+      variant="secondary"
+    />
+  );
+}
 
 export function StatusHintBannerView({
   hint,
@@ -49,18 +100,10 @@ export function StatusHintBannerView({
       <span className="hidden min-w-0 max-w-lg truncate text-muted-foreground lg:inline">
         {hint.description}
       </span>
-      <AppButton
-        // Tonal: the tint recipe one step deeper, identical across tones.
-        className="shrink-0 bg-current/15 text-current hover:bg-current/25"
-        nativeButton={false}
-        render={
-          <Link href={hint.cta.href} onClick={recordBillingReturnRoute}>
-            {hint.cta.label}
-          </Link>
-        }
-        size="sm"
-        variant="secondary"
-      />
+      <StatusHintCtaChip cta={hint.cta} />
+      {hint.secondaryCta == null ? null : (
+        <StatusHintCtaChip cta={hint.secondaryCta} quiet />
+      )}
       {hint.dismissible ? (
         <AppIconButton
           aria-label="Dismiss"

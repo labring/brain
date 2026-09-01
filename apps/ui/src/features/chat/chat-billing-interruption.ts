@@ -77,8 +77,8 @@ export function chatBillingWallCopy(
   }
   return {
     body: "Chat is paused because your account balance can't cover AI usage. Top up to continue.",
-    cta: { destination: "plans", label: "Top up balance" },
-    title: "Account balance too low",
+    cta: { destination: "top-up", label: "Top up balance" },
+    title: "Account balance in debt",
   };
 }
 
@@ -96,8 +96,8 @@ export function chatBillingInterruptionCopy(
   if (paidSource === "balance") {
     return {
       body: "The reply stopped because your account balance can't cover AI usage. Top up to continue.",
-      cta: { destination: "plans", label: "Top up balance" },
-      title: "Message not sent — balance too low",
+      cta: { destination: "top-up", label: "Top up balance" },
+      title: "Message not sent — account balance in debt",
     };
   }
   return {

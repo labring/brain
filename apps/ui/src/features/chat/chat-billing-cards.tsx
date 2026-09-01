@@ -22,11 +22,13 @@ export type ChatBillingCard =
   | "wall";
 
 /**
- * Where a chat billing CTA lands in the Billing Area: `upgrade` deep-links
- * the Plan Picker open (`/billing?mode=upgrade`, the App Sidebar precedent),
- * `plans` lands on the Plan view without opening it.
+ * Where a chat billing CTA lands: `upgrade` deep-links the Plan Picker open
+ * (`/billing?mode=upgrade`, the App Sidebar precedent), `plans` lands on the
+ * Plan view without opening it, and `top-up` leaves for the Sealos Desktop
+ * cost center — the one place a top-up exists — falling back to the Plan
+ * view while the desktop link is unresolved.
  */
-export type ChatBillingDestination = "plans" | "upgrade";
+export type ChatBillingDestination = "plans" | "top-up" | "upgrade";
 
 /**
  * Card-slot arbitration for the Project Assistant Pane (ADR-0065, design

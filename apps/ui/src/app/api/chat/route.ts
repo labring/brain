@@ -111,7 +111,7 @@ function paidWallResponse(state: FreeTierState): Response {
       : {
           code: "account_balance_exhausted",
           error:
-            "Your account balance can't cover AI usage. Top up to keep chatting with the assistant.",
+            "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
         };
   return Response.json(body, {
     headers: chatBillingHeaders(state),

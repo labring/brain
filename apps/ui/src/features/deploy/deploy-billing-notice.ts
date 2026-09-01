@@ -1,3 +1,7 @@
+import {
+  type BillingCta,
+  TOP_UP_DESKTOP,
+} from "@/features/billing/billing-cta";
 import type { RecoveryVoice } from "@/features/billing/billing-plan-data";
 import {
   type BillingQuotaType,
@@ -29,16 +33,21 @@ import {
  */
 export interface DeployBillingNotice {
   body: string;
-  cta: { href: string; label: string };
+  cta: BillingCta;
   kind: "balance" | "payment-due" | "quota";
+  /** The quiet second way out beside a plan-first quota CTA. */
+  secondaryCta?: { href: string; label: string };
   title: string;
 }
 
 export interface DeployBillingNoticeFacts {
   debtSuspended: boolean | null;
   full: QuotaFullnessRow | null;
+  payg: boolean | null;
   /** How payment-due recovery speaks; false when not payment-due, null unknown. */
   paymentDue: RecoveryVoice | false | null;
+  /** Whether the current plan has no upgrade target; null while unknown. */
+  planCeiling: boolean | null;
 }
 
 // Exported for the pane's dev tweak, which forges facts rather than copy so
@@ -64,7 +73,11 @@ export function noticeFor(
   if (facts.debtSuspended === true) {
     return {
       body: "Pay-as-you-go workspaces are suspended, so deployments will fail. Top up your balance to restore them.",
-      cta: { href: "/billing", label: "Top up balance" },
+      cta: {
+        desktop: TOP_UP_DESKTOP,
+        href: "/billing",
+        label: "Top up balance",
+      },
       kind: "balance",
       title: "Account balance in debt",
     };
@@ -72,11 +85,28 @@ export function noticeFor(
   if (facts.full == null) {
     return null;
   }
+  const body = `New deployments will fail until ${quotaResourceNoun(facts.full.label)} is freed or the plan is upgraded.`;
+  const title = `${facts.full.label} quota is full`;
+  // A confirmed plan ceiling has no plan to sell: usage is the only way out.
+  if (facts.planCeiling === true) {
+    return {
+      body,
+      cta: { href: "/billing/usage", label: "View usage" },
+      kind: "quota",
+      title,
+    };
+  }
   return {
-    body: `New deployments will fail until ${quotaResourceNoun(facts.full.label)} is freed or the plan is upgraded.`,
-    cta: { href: "/billing/usage", label: "View usage" },
+    body,
+    // A PAYG workspace subscribes rather than upgrades (CONTEXT.md,
+    // Pay-As-You-Go): the label follows, the destination is the same picker.
+    cta: {
+      href: "/billing?mode=upgrade",
+      label: facts.payg === true ? "Subscribe" : "Upgrade plan",
+    },
     kind: "quota",
-    title: `${facts.full.label} quota is full`,
+    secondaryCta: { href: "/billing/usage", label: "View usage" },
+    title,
   };
 }
 
@@ -110,6 +140,8 @@ export function resolveDeployBillingNotice(
         ? null
         : firstDoomingQuotaRow(inputs.quota, options.paneConsumes ?? []),
     paymentDue: paymentDueVoice(inputs.subscription),
+    payg: inputs.subscription?.isPayg ?? null,
+    planCeiling: inputs.planCeiling ?? null,
   });
 }
 
@@ -135,5 +167,10 @@ export function deployBillingNoticeFromStanding(
     debtSuspended: debtSuspendsWorkspace(standing),
     full: standing.fullUniversalQuota,
     paymentDue: standingPaymentDueVoice(standing),
+    payg:
+      standing.paidSource == null ? null : standing.paidSource === "balance",
+    // The standing carries no plan catalog; the tool relays title and body
+    // only, so the ceiling never matters here.
+    planCeiling: null,
   });
 }

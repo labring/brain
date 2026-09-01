@@ -223,7 +223,7 @@ test("the 8 fixed platform names render Brain-voiced copy and a CTA; the CR text
   const expected: Record<string, [string, string]> = {
     "debt-choice-criticalbalanceperiod": [
       "Account balance almost empty",
-      "Top up balance",
+      "View plans",
     ],
     "debt-choice-debtdeletionperiod": [
       "Account resources scheduled for deletion",
@@ -234,10 +234,7 @@ test("the 8 fixed platform names render Brain-voiced copy and a CTA; the CR text
       "Account resources face final deletion",
       "Top up balance",
     ],
-    "debt-choice-lowbalanceperiod": [
-      "Account balance is low",
-      "Top up balance",
-    ],
+    "debt-choice-lowbalanceperiod": ["Account balance is low", "View plans"],
     "workspace-debt-debt": ["Workspace suspended — payment due", "Renew plan"],
     "workspace-debt-debtfinaldeletion": [
       "Workspace faces final deletion",
@@ -347,7 +344,7 @@ test("isGiftOnlyNewcomer: never topped up and nothing but gift credit; one top-u
   );
 });
 
-test("the gift hint renders the reassuring welcome copy with no CTA", () => {
+test("the gift hint renders the reassuring welcome copy and a quiet plans pointer", () => {
   const rendered = renderNotificationMessage(
     dbMessage({
       id: "m2",
@@ -361,7 +358,7 @@ test("the gift hint renders the reassuring welcome copy with no CTA", () => {
     rendered.body,
     "It covers your first deployments and expires a month after it was granted."
   );
-  assert.equal(rendered.cta, undefined);
+  assert.deepEqual(rendered.cta, { href: "/billing", label: "View plans" });
 
   const dated = renderNotificationMessage(
     dbMessage({

@@ -7,6 +7,8 @@ import useSWR from "swr";
 
 import { loadAccountBalanceTerms } from "@/features/billing/account-balance";
 import { loadAccountCredits } from "@/features/billing/account-credits";
+import { planUpgradeCeiling } from "@/features/billing/billing-plan-catalog";
+import { loadBillingPlans } from "@/features/billing/billing-plan-data";
 import { accountCreditsSwrKey } from "@/features/billing/billing-subscription-settlement";
 import { loadWorkspaceQuotaUsage } from "@/features/billing/billing-usage-data";
 import { observeWorkspaceQuotaForInbox } from "@/features/notifications/quota-observation";
@@ -17,6 +19,26 @@ import type { StatusHintInputs } from "./status-hint-model";
 
 /** States clear on their own; the inputs follow the inbox's polling cadence. */
 export const STATUS_HINT_REFRESH_INTERVAL_MS = 5 * 60_000;
+
+/**
+ * A PAYG workspace always has plans to subscribe to; a subscribed one asks
+ * the catalog whether any step up remains. Unanswered reads stay unknown.
+ */
+function planCeilingFrom(
+  subscription: { isPayg: boolean; planName: string } | undefined,
+  plans: Parameters<typeof planUpgradeCeiling>[0] | undefined
+): boolean | null {
+  if (subscription == null) {
+    return null;
+  }
+  if (subscription.isPayg) {
+    return false;
+  }
+  if (plans == null) {
+    return null;
+  }
+  return planUpgradeCeiling(plans, subscription.planName);
+}
 
 /**
  * The already-proxied reads every billing-state judgment evaluates from —
@@ -77,6 +99,16 @@ export function useStatusHintInputs(): StatusHintInputs {
       },
     }
   );
+  // The quota reminders' plan CTA steps aside only on a confirmed plan
+  // ceiling, so the catalog rides the same cadence; an unanswered read
+  // leaves the ceiling unknown, never assumed.
+  const plans = useSWR(
+    credentialsReady
+      ? (["status-hint-plans", credentialKey, appToken] as const)
+      : null,
+    () => loadBillingPlans({ appToken, kubeconfig }),
+    swrOptions
+  );
 
   // Trial-expiry is a clock state as much as a data state: the window opens
   // and the title counts down while the subscription payload stays the same,
@@ -95,6 +127,7 @@ export function useStatusHintInputs(): StatusHintInputs {
   const usableCreditMicroUnits = credits.data?.usableMicroUnits;
   const quotaRows = quota.data;
   const subscriptionSummary = subscription.data;
+  const planCatalog = plans.data;
   return useMemo(
     () => ({
       availableBalanceMicroUnits:
@@ -104,9 +137,17 @@ export function useStatusHintInputs(): StatusHintInputs {
       lifetimeDeductionMicroUnits:
         balanceTerms?.lifetimeDeductionMicroUnits ?? null,
       now,
+      planCeiling: planCeilingFrom(subscriptionSummary, planCatalog),
       quota: quotaRows ?? null,
       subscription: subscriptionSummary ?? null,
     }),
-    [balanceTerms, now, quotaRows, subscriptionSummary, usableCreditMicroUnits]
+    [
+      balanceTerms,
+      now,
+      planCatalog,
+      quotaRows,
+      subscriptionSummary,
+      usableCreditMicroUnits,
+    ]
   );
 }

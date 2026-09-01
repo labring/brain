@@ -5,6 +5,7 @@ import { CalendarClock, TriangleAlert, Wallet } from "lucide-react";
 import {
   BillingCalloutCard,
   BillingCalloutLink,
+  BillingCalloutSecondaryLink,
   type BillingCalloutTone,
 } from "@/features/billing/billing-callout-card";
 
@@ -28,7 +29,8 @@ const NOTICE_TONES: Record<DeployBillingNotice["kind"], BillingCalloutTone> = {
 /**
  * The advisory card a deployment pane shows above its still-usable form
  * while the Deploy Billing Notice holds (ADR-0069): the billing callout
- * family's container, one CTA to the fix. Not dismissible, but not a block
+ * family's container, one primary CTA to the fix (a quota notice adds a
+ * quiet View usage beside it). Not dismissible, but not a block
  * either — the deploy action stays enabled, and a run pressed through a
  * correct notice fails at the platform and comes back explained.
  */
@@ -39,7 +41,14 @@ export function DeployBillingNoticeCard({
 }) {
   return (
     <BillingCalloutCard
-      action={<BillingCalloutLink cta={notice.cta} />}
+      action={
+        <span className="flex flex-wrap items-center gap-2">
+          <BillingCalloutLink cta={notice.cta} />
+          {notice.secondaryCta == null ? null : (
+            <BillingCalloutSecondaryLink cta={notice.secondaryCta} />
+          )}
+        </span>
+      }
       body={notice.body}
       data-notice={notice.kind}
       data-slot="deploy-billing-notice-card"

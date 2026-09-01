@@ -1,3 +1,4 @@
+import { TOP_UP_DESKTOP } from "@/features/billing/billing-cta";
 import type { NotificationCTA } from "@/features/shell/app-sidebar-notifications-model";
 
 /**
@@ -16,19 +17,29 @@ export interface CROverride {
   title: string;
 }
 
-/** Account money recovers by top-up: the Billing Plan page holds the balance. */
+/**
+ * Account money recovers by a Desktop top-up (CONTEXT.md, Account Debt);
+ * the Plan view is only the fallback while the desktop link is unresolved.
+ */
 const TOP_UP_BALANCE: NotificationCTA = {
+  desktop: TOP_UP_DESKTOP,
   href: "/billing",
   label: "Top up balance",
 };
+
+/**
+ * The pre-debt warning tiers are conversion touchpoints, not recovery: the
+ * one CTA goes to the in-app plans (the body keeps the top-up path named).
+ */
+const VIEW_PLANS: NotificationCTA = { href: "/billing", label: "View plans" };
 
 /** A lapsed Workspace Subscription recovers by renewing on the Plan page. */
 const RENEW_PLAN: NotificationCTA = { href: "/billing", label: "Renew plan" };
 
 export const CR_OVERRIDES: Readonly<Record<string, CROverride>> = {
   "debt-choice-criticalbalanceperiod": {
-    body: "Your balance is under $5. Pay-as-you-go workspaces are suspended at $0.",
-    cta: TOP_UP_BALANCE,
+    body: "Your balance is under $5. Pay-as-you-go workspaces are suspended at $0 — subscribe to a plan, or top up in Sealos Desktop.",
+    cta: VIEW_PLANS,
     title: "Account balance almost empty",
   },
   "debt-choice-debtdeletionperiod": {
@@ -47,8 +58,8 @@ export const CR_OVERRIDES: Readonly<Record<string, CROverride>> = {
     title: "Account resources face final deletion",
   },
   "debt-choice-lowbalanceperiod": {
-    body: "Your balance is under $10. Top up to keep pay-as-you-go workspaces running.",
-    cta: TOP_UP_BALANCE,
+    body: "Your balance is under $10. Pay-as-you-go workspaces suspend at $0 — subscribe to a plan, or top up in Sealos Desktop.",
+    cta: VIEW_PLANS,
     title: "Account balance is low",
   },
   "workspace-debt-debt": {

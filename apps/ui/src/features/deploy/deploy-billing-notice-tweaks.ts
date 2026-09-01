@@ -12,21 +12,35 @@ import {
 // card, not by billing scenario. Facts are forged and fed to the real
 // judgment, so the forced card can never drift from shipped copy.
 const FORCED_FACTS = {
-  balance: { debtSuspended: true, full: null, paymentDue: false },
+  balance: {
+    debtSuspended: true,
+    full: null,
+    paymentDue: false,
+    payg: true,
+    planCeiling: null,
+  },
   "payment-due-renew": {
     debtSuspended: false,
     full: null,
     paymentDue: "renew",
+    payg: false,
+    planCeiling: null,
   },
   "payment-due-resubscribe": {
     debtSuspended: false,
     full: null,
     paymentDue: "resubscribe",
+    payg: false,
+    planCeiling: null,
   },
+  // Subscribed below the ceiling: the quota card's fullest form — the
+  // plan-first primary CTA beside the quiet View usage.
   quota: {
     debtSuspended: false,
     full: { label: "CPU", percentUsed: 100, type: "cpu" },
     paymentDue: false,
+    payg: false,
+    planCeiling: false,
   },
 } satisfies Record<string, DeployBillingNoticeFacts>;
 

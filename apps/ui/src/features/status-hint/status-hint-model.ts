@@ -2,6 +2,7 @@ import {
   accountDebtFromMoney,
   accountDebtSuspends,
 } from "@/features/billing/account-debt";
+import { TOP_UP_DESKTOP } from "@/features/billing/billing-cta";
 import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 import type { BillingSurfaceTone } from "@/features/billing/billing-surface-tones";
 import {
@@ -35,6 +36,8 @@ export interface StatusHint {
   /** Critical, blocking, system-condition hints get no close button. */
   dismissible: boolean;
   id: StatusHintId;
+  /** The quiet second way out beside a plan-first quota CTA. */
+  secondaryCta?: NotificationCTA;
   title: string;
   tone: StatusHintTone;
 }
@@ -51,6 +54,11 @@ export interface StatusHintInputs {
   /** Lifetime deductions — zero means the account has never been billed. */
   lifetimeDeductionMicroUnits: number | null;
   now: Date;
+  /**
+   * Whether the current plan tops the catalog (no upgrade target) — the one
+   * fact that demotes a quota hint's plan CTA; absent or null while unknown.
+   */
+  planCeiling?: boolean | null;
   quota: readonly StatusHintQuotaRow[] | null;
   subscription: WorkspaceSubscriptionSummary | null;
 }
@@ -133,7 +141,7 @@ function paymentDueHint(
 }
 
 const ACCOUNT_DEBT_HINT: StatusHint = {
-  cta: { href: "/billing", label: "Top up balance" },
+  cta: { desktop: TOP_UP_DESKTOP, href: "/billing", label: "Top up balance" },
   description:
     "Pay-as-you-go workspaces are suspended. Top up your balance to restore them.",
   dismissible: false,
@@ -179,24 +187,39 @@ export function accountDebtHolds(
 }
 
 function quotaFullHint(
-  quota: readonly StatusHintQuotaRow[]
+  quota: readonly StatusHintQuotaRow[],
+  context: { payg: boolean | null; planCeiling: boolean | null }
 ): StatusHint | null {
   const full = firstFullQuotaRow(quota);
   if (full == null) {
     return null;
   }
   const noun = quotaResourceNoun(full.label);
-  return {
-    cta: { href: "/billing/usage", label: "View usage" },
-    // Storage and nodeport doom only workloads that request them, so their
-    // banner must not claim every deployment fails (ADR-0069).
-    description: UNIVERSAL_DEPLOYABLE_QUOTA_TYPES.has(full.type)
-      ? `New deployments will fail until ${noun} is freed or the plan is upgraded.`
-      : `Deployments requesting more ${noun} will fail until it is freed or the plan is upgraded.`,
+  // Storage and nodeport doom only workloads that request them, so their
+  // banner must not claim every deployment fails (ADR-0069).
+  const description = UNIVERSAL_DEPLOYABLE_QUOTA_TYPES.has(full.type)
+    ? `New deployments will fail until ${noun} is freed or the plan is upgraded.`
+    : `Deployments requesting more ${noun} will fail until it is freed or the plan is upgraded.`;
+  const base = {
+    description,
     dismissible: true,
-    id: "quota-full",
+    id: "quota-full" as const,
     title: `${full.label} quota is full`,
-    tone: "warning",
+    tone: "warning" as const,
+  };
+  // A confirmed plan ceiling has no plan to sell: usage is the only way out.
+  if (context.planCeiling === true) {
+    return { ...base, cta: { href: "/billing/usage", label: "View usage" } };
+  }
+  return {
+    ...base,
+    // A PAYG workspace subscribes rather than upgrades (CONTEXT.md,
+    // Pay-As-You-Go): the label follows, the destination is the same picker.
+    cta: {
+      href: "/billing?mode=upgrade",
+      label: context.payg === true ? "Subscribe" : "Upgrade plan",
+    },
+    secondaryCta: { href: "/billing/usage", label: "View usage" },
   };
 }
 
@@ -241,7 +264,7 @@ function trialExpiryHint(
     return null;
   }
   return {
-    cta: { href: "/billing?mode=upgrade", label: "View plans" },
+    cta: { href: "/billing?mode=upgrade", label: "Upgrade plan" },
     description: `Your workspace will be suspended when the trial ends on ${formatDate(endsAt)}. Upgrade to keep it running.`,
     dismissible: true,
     id: "trial-expiry",
@@ -264,7 +287,12 @@ export function evaluateStatusHints(
     "payment-due":
       subscription == null ? undefined : paymentDueHint(subscription),
     "quota-full":
-      inputs.quota == null ? undefined : quotaFullHint(inputs.quota),
+      inputs.quota == null
+        ? undefined
+        : quotaFullHint(inputs.quota, {
+            payg: subscription?.isPayg ?? null,
+            planCeiling: inputs.planCeiling ?? null,
+          }),
     "trial-expiry":
       subscription == null
         ? undefined
