@@ -2,7 +2,6 @@ import "server-only";
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import type { Sandbox as BashToolSandbox } from "bash-tool";
 import {
   type ChatSkillMeta,
   discoverChatDevboxSkills,
@@ -49,14 +48,26 @@ export interface ChatDevboxRuntimeSummary {
   skippedExisting: boolean;
 }
 
-export type ChatDevboxSandbox = BashToolSandbox & {
+export interface ChatDevboxCommandResult {
+  exitCode: number;
+  stderr: string;
+  stdout: string;
+}
+
+export interface ChatDevboxSandbox {
+  executeCommand: (
+    command: string,
+    timeoutSeconds?: number
+  ) => Promise<ChatDevboxCommandResult>;
   getDevboxName: () => Promise<string>;
+  readFile: (path: string) => Promise<string>;
   runWithAbortSignal: <T>(
     signal: AbortSignal | undefined,
     operation: () => Promise<T>
   ) => Promise<T>;
   stop: () => Promise<void>;
-};
+  writeFiles: (files: { content: string; path: string }[]) => Promise<void>;
+}
 
 export function getChatDevboxSkillsSnapshot(
   options: ChatDevboxRuntimeOptions
@@ -436,7 +447,10 @@ export function createChatDevboxSandbox(
   const getInvocationSignal = () => abortSignalStorage.getStore();
 
   return {
-    async executeCommand(command) {
+    async executeCommand(
+      command,
+      timeoutSeconds = DEVBOX_COMMAND_TIMEOUT_SECONDS
+    ) {
       const signal = getInvocationSignal();
       signal?.throwIfAborted();
       const { name } = await getRuntime(signal);
@@ -444,7 +458,7 @@ export function createChatDevboxSandbox(
         options.namespace,
         name,
         command,
-        DEVBOX_COMMAND_TIMEOUT_SECONDS,
+        timeoutSeconds,
         signal
       );
       return {

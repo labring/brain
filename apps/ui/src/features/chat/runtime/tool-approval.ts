@@ -5,5 +5,6 @@
  */
 export const CHAT_TOOL_APPROVAL = {
   bash: "user-approval",
-  writeFile: "user-approval",
+  edit: "user-approval",
+  write: "user-approval",
 } as const;
