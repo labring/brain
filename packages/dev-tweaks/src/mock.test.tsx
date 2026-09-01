@@ -375,13 +375,34 @@ test("an enabled mock lights the dirty-only launcher", async () => {
     });
     const panel = () =>
       document.querySelector<HTMLElement>(".dev-tweaks-panel");
+    const inner = () =>
+      document.querySelector<HTMLElement>(".dev-tweaks-panel-inner");
     assert.equal(panel()?.style.display, "none");
+    assert.equal(inner()?.getAttribute("data-mock-form"), null);
 
     await actAndDrain(() => {
       MockStore.setEnabled("billing-mock", true);
     });
     assert.notEqual(panel()?.style.display, "none");
     assert.deepEqual(fake.backing.state, { enabled: true, scenario: "active" });
+
+    // …and takes its mock form: an amber capsule naming the mode and
+    // counting the enabled mocks instead of the anonymous bubble.
+    assert.equal(inner()?.getAttribute("data-mock-form"), "true");
+    const capsule = document.querySelector(".dev-tweaks-launcher-mock");
+    assert.equal(
+      capsule?.querySelector(".dev-tweaks-launcher-mock-label")?.textContent,
+      "MOCK"
+    );
+    assert.equal(
+      capsule?.querySelector(".dev-tweaks-launcher-mock-count")?.textContent,
+      "1"
+    );
+
+    await actAndDrain(() => {
+      MockStore.setEnabled("billing-mock", false);
+    });
+    assert.equal(inner()?.getAttribute("data-mock-form"), null);
 
     await actAndDrain(() => {
       cleanup();

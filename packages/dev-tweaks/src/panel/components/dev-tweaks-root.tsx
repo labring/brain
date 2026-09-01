@@ -274,9 +274,9 @@ export function DevTweaksRoot({
   }, []);
 
   // An enabled mock is dirty state: the page shows fixture data, not the real
-  // thing, and the launcher must say so.
-  const mockEnabled = mocks.some((mock) => mock.state.enabled);
-  const dirty = useAnyPanelDirty(panels) || mockEnabled;
+  // thing, and the launcher must say so — visibility plus its mock form.
+  const enabledMockCount = mocks.filter((mock) => mock.state.enabled).length;
+  const dirty = useAnyPanelDirty(panels) || enabledMockCount > 0;
 
   // Watch for panel open/close — snap to corner on open, restore drag position on close
   useEffect(() => {
@@ -561,6 +561,7 @@ export function DevTweaksRoot({
           headerActions={headerActions}
           inline={inline}
           isRoot={true}
+          mockCount={enabledMockCount}
           onOpenChange={applyRootOpen}
           open={controlledOpen}
           panelHeightOffset={2}

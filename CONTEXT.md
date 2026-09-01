@@ -798,9 +798,9 @@ _Avoid_: posture (for popover/inline).
 
 ### Launcher
 
-The collapsed bubble that stands in for the closed dev tweaks panel in popover mode. It can be pinned always-visible or shown only while some tweak deviates from its default (dirty indicator). An enabled Dev Mock counts as dirty.
+The collapsed bubble that stands in for the closed dev tweaks panel in popover mode. It can be pinned always-visible or shown only while some tweak deviates from its default (dirty indicator). An enabled Dev Mock counts as dirty and puts the Launcher in its mock form: instead of the neutral bubble, a capsule naming the mode and counting the enabled Dev Mocks.
 
-_Avoid_: indicator capsule, FAB.
+_Avoid_: indicator capsule, FAB (for the Launcher itself).
 
 ### Dev Mock
 
