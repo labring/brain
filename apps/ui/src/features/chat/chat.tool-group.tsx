@@ -282,6 +282,55 @@ interface PendingApproval {
   type: string;
 }
 
+export type DevboxApprovalInput =
+  | {
+      command: string;
+      intention?: string;
+      kind: "bash";
+    }
+  | {
+      content: string;
+      intention?: string;
+      kind: "write";
+      path: string;
+    };
+
+export function devboxApprovalInput(
+  type: string,
+  input: unknown
+): DevboxApprovalInput | null {
+  if (input == null || typeof input !== "object") {
+    return null;
+  }
+  const value = input as {
+    command?: unknown;
+    content?: unknown;
+    intention?: unknown;
+    path?: unknown;
+  };
+  const intention = readIntention(input);
+  if (type === "tool-bash" && typeof value.command === "string") {
+    return {
+      command: value.command,
+      ...(intention === undefined ? {} : { intention }),
+      kind: "bash",
+    };
+  }
+  if (
+    type === "tool-writeFile" &&
+    typeof value.path === "string" &&
+    typeof value.content === "string"
+  ) {
+    return {
+      content: value.content,
+      ...(intention === undefined ? {} : { intention }),
+      kind: "write",
+      path: value.path,
+    };
+  }
+  return null;
+}
+
 function collectPendingApprovals(parts: ChatToolPart[]): PendingApproval[] {
   return parts.flatMap((part) => {
     if (part.state !== "approval-requested") {
@@ -384,6 +433,67 @@ function ProjectDeletionApprovalCard({
   );
 }
 
+function DevboxApprovalCard({
+  approval,
+  input,
+  onRespond,
+}: {
+  approval: PendingApproval;
+  input: DevboxApprovalInput;
+  onRespond?: ChatAddToolApproveResponseFunction;
+}) {
+  const isBash = input.kind === "bash";
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3"
+      data-slot="chat-devbox-tool-approval"
+    >
+      <div className="flex min-w-0 flex-col gap-1">
+        <p className="font-medium text-foreground text-sm">
+          {isBash ? "Run this shell command?" : "Write this file?"}
+        </p>
+        {input.intention === undefined ? null : (
+          <p className="text-muted-foreground text-xs">{input.intention}</p>
+        )}
+      </div>
+      {input.kind === "write" ? (
+        <p className="break-all font-mono text-foreground/90 text-xs">
+          {input.path}
+        </p>
+      ) : null}
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/35 bg-input/15 p-2 font-mono text-foreground/90 text-xs">
+        {input.kind === "bash" ? input.command : input.content}
+      </pre>
+      <div className="flex flex-wrap gap-2">
+        <AppButton
+          onClick={() =>
+            onRespond?.({
+              approved: false,
+              id: approval.id,
+              reason: isBash
+                ? "User declined shell execution."
+                : "User declined file write.",
+            })
+          }
+          size="sm"
+          type="button"
+          variant="quiet"
+        >
+          Deny
+        </AppButton>
+        <AppButton
+          onClick={() => onRespond?.({ approved: true, id: approval.id })}
+          size="sm"
+          type="button"
+          variant="secondary"
+        >
+          {isBash ? "Run command" : "Write file"}
+        </AppButton>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Approval prompt for a pending tool call. Rendered OUTSIDE the collapsible
  * `Task` group so it stays visible even when the group is collapsed — an
@@ -405,6 +515,16 @@ function ChatToolApprovalCard({
       <ProjectDeletionApprovalCard
         approval={approval}
         input={projectDeletion}
+        onRespond={onRespond}
+      />
+    );
+  }
+  const devboxInput = devboxApprovalInput(approval.type, approval.input);
+  if (devboxInput !== null) {
+    return (
+      <DevboxApprovalCard
+        approval={approval}
+        input={devboxInput}
         onRespond={onRespond}
       />
     );
