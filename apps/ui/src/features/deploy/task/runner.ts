@@ -3204,9 +3204,15 @@ export async function ensureAiDeploymentDevbox(input: {
       repoUrl: aiSourceKey(input.task),
       resolveGatewayCredentials: async (signal) => {
         if (input.task.source.kind === "github") {
-          const override = githubDeployOpenAiOverride();
-          if (override != null) {
-            return override;
+          try {
+            const override = githubDeployOpenAiOverride();
+            if (override != null) {
+              return override;
+            }
+          } catch (error) {
+            throw withDeployFailureDetails(error, {
+              reason: "deploy-configuration-invalid",
+            });
           }
         }
         try {

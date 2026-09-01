@@ -171,6 +171,7 @@ describe("resolveBillingFailureOverride", () => {
       "cancelled",
       "github-authentication",
       "repository-clone-failed",
+      "deploy-configuration-invalid",
       "image-build-failed",
       "template-output-invalid",
       "deploy-skill-install-failed",

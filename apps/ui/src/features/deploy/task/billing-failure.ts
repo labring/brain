@@ -36,6 +36,7 @@ const PROVEN_ELSEWHERE: ReadonlySet<DeployTaskFailureReason> = new Set([
   "interrupted",
   "github-authentication",
   "repository-clone-failed",
+  "deploy-configuration-invalid",
   "image-build-failed",
   "deploy-skill-install-failed",
   "template-output-invalid",

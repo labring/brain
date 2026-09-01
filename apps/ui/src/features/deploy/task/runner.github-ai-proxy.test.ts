@@ -58,6 +58,9 @@ const {
 const { getDeploySkillSourceFromEnv } = requireModule(
   "./runtime-config"
 ) as typeof import("./runtime-config");
+const { attachedDeployFailureReason } = requireModule(
+  "./failure-details"
+) as typeof import("./failure-details");
 const {
   CodexGatewayApiError,
   CodexGatewayTimeoutError,
@@ -388,10 +391,10 @@ describe("deployment AI Proxy credentials", () => {
     process.env.LANGFUSE_PUBLIC_KEY = "  pk-lf-test  ";
     process.env.LANGFUSE_SECRET_KEY = " sk-lf-test ";
     process.env.LANGFUSE_HOST = " https://langfuse.example.com ";
-    expect(buildCodexGatewayEnv()).toEqual({
+    expect(buildCodexGatewayEnv(RESOLVED_GATEWAY_CREDENTIALS)).toEqual({
       CODEX_GATEWAY_MODEL: "deploy-model",
-      CODEX_GATEWAY_OPENAI_API_KEY: "gateway-platform-key",
-      CODEX_GATEWAY_OPENAI_BASE_URL: "https://gateway-platform.example/v1",
+      CODEX_GATEWAY_OPENAI_API_KEY: "resolved-key",
+      CODEX_GATEWAY_OPENAI_BASE_URL: "https://resolved.example/v1",
       LANGFUSE_PUBLIC_KEY: "pk-lf-test",
       LANGFUSE_SECRET_KEY: "sk-lf-test",
       LANGFUSE_HOST: "https://langfuse.example.com",
@@ -422,6 +425,39 @@ describe("deployment AI Proxy credentials", () => {
     expect(() => githubDeployOpenAiOverride()).toThrow(
       "GitHub deploy OpenAI override requires both GITHUB_DEPLOY_OPENAI_API_KEY and GITHUB_DEPLOY_OPENAI_BASE_URL."
     );
+  });
+
+  it("classifies a partial GitHub override before creating a Devbox", async () => {
+    process.env.GITHUB_DEPLOY_OPENAI_API_KEY = "github-override-key";
+    let createDevboxCalled = false;
+    installFetchHandler((request) => {
+      const url = new URL(request.url);
+      if (url.pathname === "/api/v1/devbox" && request.method === "GET") {
+        return devboxEnvelope({ items: [] });
+      }
+      if (url.pathname === "/api/v1/devbox" && request.method === "POST") {
+        createDevboxCalled = true;
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    let failure: unknown;
+    try {
+      await ensureAiDeploymentDevbox({
+        encodedKubeconfig: encodeURIComponent(kubeconfig()),
+        kubeconfig: kubeconfig(),
+        task: githubTask(null),
+        taskDeadlineAtMs: Date.now() + 60_000,
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(attachedDeployFailureReason(failure)).toBe(
+      "deploy-configuration-invalid"
+    );
+    expect(createDevboxCalled).toBe(false);
   });
 
   it("resumes the recorded Devbox without requesting AI Proxy credentials", async () => {

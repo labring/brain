@@ -1584,6 +1584,57 @@ test("hands an exhausted active trial off to the user's AI Proxy", async () => {
   expect(reserveCalls).toBe(0);
 });
 
+test.each([
+  {
+    code: "account_balance_exhausted",
+    paidSource: "balance" as const,
+    standing: {
+      accountDebt: true,
+      availableBalanceMicroUnits: -6_320_000,
+      paidSource: "balance" as const,
+    },
+    wall: "balance",
+  },
+  {
+    code: "ai_credits_exhausted",
+    paidSource: "ai-credits" as const,
+    standing: {
+      accountDebt: false,
+      aiCredits: {
+        totalMicroUnits: 3_000_000,
+        usedMicroUnits: 3_000_000,
+      },
+      paidSource: "ai-credits" as const,
+    },
+    wall: "ai-credits",
+  },
+])("walls an exhausted active trial before handing off to an exhausted $paidSource source", async ({
+  code,
+  paidSource,
+  standing,
+  wall,
+}) => {
+  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  trialJudgment = "trial";
+  billingStanding = { ...billingStanding, ...standing };
+
+  const response = await POST(
+    chatRequest(userMessage(`user-exhausted-${paidSource}`, "one more message"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(((await response.json()) as { code: string }).code).toBe(code);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe(paidSource);
+  expect(response.headers.get("X-Chat-Wall")).toBe(wall);
+  expect(history).toEqual([]);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
+});
+
 test("judges the trial per turn with the verified workspace identity", async () => {
   const response = await POST(
     chatRequest(userMessage("user-judged", "inspect the cluster"))

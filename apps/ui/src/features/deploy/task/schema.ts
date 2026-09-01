@@ -178,6 +178,7 @@ export interface DeployTaskEventPayload {
 export type DeployTaskFailureReason =
   | "github-authentication"
   | "repository-clone-failed"
+  | "deploy-configuration-invalid"
   | "ai-proxy-unavailable"
   | "deploy-runtime-unavailable"
   | "build-runtime-unavailable"
