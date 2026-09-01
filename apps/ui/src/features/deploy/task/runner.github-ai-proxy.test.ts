@@ -27,6 +27,9 @@ const ENV_KEYS = [
   "GITHUB_DEPLOY_MODEL",
   "GITHUB_DEPLOY_OPENAI_API_KEY",
   "GITHUB_DEPLOY_OPENAI_BASE_URL",
+  "LANGFUSE_HOST",
+  "LANGFUSE_PUBLIC_KEY",
+  "LANGFUSE_SECRET_KEY",
   "SYSTEM_OPENAI_API_KEY",
   "SYSTEM_OPENAI_API_BASE_URL",
   "SEALAI_DEPLOY_LABELS_JSON",
@@ -238,6 +241,9 @@ describe("deployment AI Proxy credentials", () => {
       "https://brain.test/api/deploy-agent/mcp/v1";
     delete process.env.GITHUB_DEPLOY_OPENAI_API_KEY;
     delete process.env.GITHUB_DEPLOY_OPENAI_BASE_URL;
+    delete process.env.LANGFUSE_HOST;
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
   });
 
   afterEach(() => {
@@ -374,6 +380,20 @@ describe("deployment AI Proxy credentials", () => {
     expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("gpt-5.5");
     process.env.GITHUB_DEPLOY_MODEL = "deploy-model";
     expect(buildCodexGatewayEnv().CODEX_GATEWAY_MODEL).toBe("deploy-model");
+  });
+
+  it("forwards trimmed LANGFUSE_* values when they are set", () => {
+    process.env.LANGFUSE_PUBLIC_KEY = "  pk-lf-test  ";
+    process.env.LANGFUSE_SECRET_KEY = " sk-lf-test ";
+    process.env.LANGFUSE_HOST = " https://langfuse.example.com ";
+    expect(buildCodexGatewayEnv()).toEqual({
+      CODEX_GATEWAY_MODEL: "deploy-model",
+      CODEX_GATEWAY_OPENAI_API_KEY: "gateway-platform-key",
+      CODEX_GATEWAY_OPENAI_BASE_URL: "https://gateway-platform.example/v1",
+      LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+      LANGFUSE_SECRET_KEY: "sk-lf-test",
+      LANGFUSE_HOST: "https://langfuse.example.com",
+    });
   });
 
   it("uses GITHUB_DEPLOY_OPENAI_* when both are set", () => {

@@ -67,6 +67,13 @@ ui:
     SYSTEM_OPENAI_API_KEY: "REPLACE_ME_OPENAI_COMPATIBLE_KEY"
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
     FREE_CHAT_TURNS: "5"
+    # Optional. When both keys are set, GitHub Deploy Devboxes export Codex
+    # traces to Langfuse. Leave empty to disable tracing.
+    LANGFUSE_PUBLIC_KEY: ""
+    LANGFUSE_SECRET_KEY: ""
+    # Optional. Langfuse base URL. Blank uses the gateway default
+    # (https://cloud.langfuse.com). Do not append /api/public/otel.
+    LANGFUSE_HOST: ""
     # User-billed turns use the Sealos AI proxy.
     AI_PROXY_TOKEN_NAME: "sealos-brain"
     # Leave empty to use https://devbox-server.<cloudDomain>.

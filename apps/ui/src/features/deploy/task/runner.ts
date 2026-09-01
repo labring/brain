@@ -1088,6 +1088,19 @@ export function buildCodexGatewayEnv(
     env.CODEX_GATEWAY_OPENAI_BASE_URL = baseUrl;
   }
 
+  const langfusePublicKey = compactEnvValue(process.env.LANGFUSE_PUBLIC_KEY);
+  const langfuseSecretKey = compactEnvValue(process.env.LANGFUSE_SECRET_KEY);
+  const langfuseHost = compactEnvValue(process.env.LANGFUSE_HOST);
+  if (langfusePublicKey != null) {
+    env.LANGFUSE_PUBLIC_KEY = langfusePublicKey;
+  }
+  if (langfuseSecretKey != null) {
+    env.LANGFUSE_SECRET_KEY = langfuseSecretKey;
+  }
+  if (langfuseHost != null) {
+    env.LANGFUSE_HOST = langfuseHost;
+  }
+
   return env;
 }
 
