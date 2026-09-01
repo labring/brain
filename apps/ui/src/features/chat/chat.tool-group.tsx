@@ -287,13 +287,73 @@ export type DevboxApprovalInput =
       command: string;
       intention?: string;
       kind: "bash";
+      timeoutSeconds?: number;
     }
   | {
       content: string;
       intention?: string;
       kind: "write";
       path: string;
+    }
+  | {
+      edits: { newText: string; oldText: string }[];
+      intention?: string;
+      kind: "edit";
+      path: string;
     };
+
+function readDevboxWriteApproval(
+  type: string,
+  value: { content?: unknown; path?: unknown },
+  intention: string | undefined
+): DevboxApprovalInput | null {
+  if (
+    (type !== "tool-write" && type !== "tool-writeFile") ||
+    typeof value.path !== "string" ||
+    typeof value.content !== "string"
+  ) {
+    return null;
+  }
+  return {
+    content: value.content,
+    ...(intention === undefined ? {} : { intention }),
+    kind: "write",
+    path: value.path,
+  };
+}
+
+function readDevboxEditApproval(
+  type: string,
+  value: { edits?: unknown; path?: unknown },
+  intention: string | undefined
+): DevboxApprovalInput | null {
+  if (
+    type !== "tool-edit" ||
+    typeof value.path !== "string" ||
+    !Array.isArray(value.edits)
+  ) {
+    return null;
+  }
+  const edits = value.edits.flatMap((edit) => {
+    if (edit == null || typeof edit !== "object") {
+      return [];
+    }
+    const candidate = edit as { newText?: unknown; oldText?: unknown };
+    return typeof candidate.oldText === "string" &&
+      typeof candidate.newText === "string"
+      ? [{ newText: candidate.newText, oldText: candidate.oldText }]
+      : [];
+  });
+  if (edits.length !== value.edits.length || edits.length === 0) {
+    return null;
+  }
+  return {
+    edits,
+    ...(intention === undefined ? {} : { intention }),
+    kind: "edit",
+    path: value.path,
+  };
+}
 
 export function devboxApprovalInput(
   type: string,
@@ -305,30 +365,26 @@ export function devboxApprovalInput(
   const value = input as {
     command?: unknown;
     content?: unknown;
+    edits?: unknown;
     intention?: unknown;
     path?: unknown;
+    timeoutSeconds?: unknown;
   };
   const intention = readIntention(input);
   if (type === "tool-bash" && typeof value.command === "string") {
+    const timeoutSeconds =
+      typeof value.timeoutSeconds === "number" ? value.timeoutSeconds : 60;
     return {
       command: value.command,
       ...(intention === undefined ? {} : { intention }),
       kind: "bash",
+      timeoutSeconds,
     };
   }
-  if (
-    type === "tool-writeFile" &&
-    typeof value.path === "string" &&
-    typeof value.content === "string"
-  ) {
-    return {
-      content: value.content,
-      ...(intention === undefined ? {} : { intention }),
-      kind: "write",
-      path: value.path,
-    };
-  }
-  return null;
+  return (
+    readDevboxWriteApproval(type, value, intention) ??
+    readDevboxEditApproval(type, value, intention)
+  );
 }
 
 function collectPendingApprovals(parts: ChatToolPart[]): PendingApproval[] {
@@ -442,37 +498,82 @@ function DevboxApprovalCard({
   input: DevboxApprovalInput;
   onRespond?: ChatAddToolApproveResponseFunction;
 }) {
-  const isBash = input.kind === "bash";
+  const copy = {
+    bash: {
+      action: "Run command",
+      denied: "User declined shell execution.",
+      title: "Run this shell command?",
+    },
+    edit: {
+      action: "Apply edits",
+      denied: "User declined file edits.",
+      title: "Apply these file edits?",
+    },
+    write: {
+      action: "Write file",
+      denied: "User declined file write.",
+      title: "Write this file?",
+    },
+  }[input.kind];
   return (
     <div
       className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3"
       data-slot="chat-devbox-tool-approval"
     >
       <div className="flex min-w-0 flex-col gap-1">
-        <p className="font-medium text-foreground text-sm">
-          {isBash ? "Run this shell command?" : "Write this file?"}
-        </p>
+        <p className="font-medium text-foreground text-sm">{copy.title}</p>
         {input.intention === undefined ? null : (
           <p className="text-muted-foreground text-xs">{input.intention}</p>
         )}
       </div>
-      {input.kind === "write" ? (
+      {input.kind === "write" || input.kind === "edit" ? (
         <p className="break-all font-mono text-foreground/90 text-xs">
           {input.path}
         </p>
       ) : null}
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/35 bg-input/15 p-2 font-mono text-foreground/90 text-xs">
-        {input.kind === "bash" ? input.command : input.content}
-      </pre>
+      {input.kind === "bash" ? (
+        <p className="text-muted-foreground text-xs">
+          Timeout: {input.timeoutSeconds ?? 60} seconds
+        </p>
+      ) : null}
+      {input.kind === "edit" ? (
+        <div className="flex max-h-80 flex-col gap-3 overflow-auto rounded-md border border-border/35 bg-input/15 p-2">
+          {input.edits.map((edit) => (
+            <div
+              className="grid gap-2"
+              key={`${edit.oldText}\u0000${edit.newText}`}
+            >
+              <div className="grid gap-1">
+                <p className="font-medium text-muted-foreground text-xs">
+                  Current text
+                </p>
+                <pre className="whitespace-pre-wrap break-words font-mono text-foreground/90 text-xs">
+                  {edit.oldText}
+                </pre>
+              </div>
+              <div className="grid gap-1 border-border/35 border-t pt-2">
+                <p className="font-medium text-muted-foreground text-xs">
+                  Replacement
+                </p>
+                <pre className="whitespace-pre-wrap break-words font-mono text-foreground/90 text-xs">
+                  {edit.newText}
+                </pre>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/35 bg-input/15 p-2 font-mono text-foreground/90 text-xs">
+          {input.kind === "bash" ? input.command : input.content}
+        </pre>
+      )}
       <div className="flex flex-wrap gap-2">
         <AppButton
           onClick={() =>
             onRespond?.({
               approved: false,
               id: approval.id,
-              reason: isBash
-                ? "User declined shell execution."
-                : "User declined file write.",
+              reason: copy.denied,
             })
           }
           size="sm"
@@ -487,7 +588,7 @@ function DevboxApprovalCard({
           type="button"
           variant="secondary"
         >
-          {isBash ? "Run command" : "Write file"}
+          {copy.action}
         </AppButton>
       </div>
     </div>
