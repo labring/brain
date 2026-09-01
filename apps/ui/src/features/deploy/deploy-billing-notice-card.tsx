@@ -19,7 +19,7 @@ const NOTICE_ICONS = {
 
 // The same state never wears two colors: tones mirror the status hint
 // banner's — a suspension (debt, payment-due) is destructive, a full quota
-// a caution (ADR-0069: the notice advises, it does not refuse).
+// a caution (ADR-0070: the notice advises, it does not refuse).
 const NOTICE_TONES: Record<DeployBillingNotice["kind"], BillingCalloutTone> = {
   balance: "destructive",
   "payment-due": "destructive",
@@ -28,7 +28,7 @@ const NOTICE_TONES: Record<DeployBillingNotice["kind"], BillingCalloutTone> = {
 
 /**
  * The advisory card a deployment pane shows above its still-usable form
- * while the Deploy Billing Notice holds (ADR-0069): the billing callout
+ * while the Deploy Billing Notice holds (ADR-0070): the billing callout
  * family's container, one primary CTA to the fix (a quota notice adds a
  * quiet View usage beside it). Not dismissible, but not a block
  * either — the deploy action stays enabled, and a run pressed through a

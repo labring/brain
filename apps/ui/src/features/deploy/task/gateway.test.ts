@@ -43,7 +43,7 @@ const {
   runDeployTaskGateway: runDeployTaskGatewayRaw,
 } = requireModule("./gateway") as typeof import("./gateway");
 const originalGithubDeployModel = process.env.GITHUB_DEPLOY_MODEL;
-const originalCodexGatewayModel = process.env.CODEX_GATEWAY_MODEL;
+const originalAssistantGatewayModel = process.env.ASSISTANT_GATEWAY_MODEL;
 
 function runDeployTaskGateway(
   input: Omit<Parameters<typeof runDeployTaskGatewayRaw>[0], "resumeMode"> & {
@@ -211,14 +211,14 @@ describe("deployment Codex gateway interruption", () => {
     updateDeployTaskStateImpl = () => Promise.resolve();
     console.warn = () => undefined;
     delete process.env.GITHUB_DEPLOY_MODEL;
-    delete process.env.CODEX_GATEWAY_MODEL;
+    delete process.env.ASSISTANT_GATEWAY_MODEL;
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
     delete process.env.GITHUB_DEPLOY_MODEL;
-    delete process.env.CODEX_GATEWAY_MODEL;
+    delete process.env.ASSISTANT_GATEWAY_MODEL;
   });
 
   afterAll(() => {
@@ -229,10 +229,10 @@ describe("deployment Codex gateway interruption", () => {
     } else {
       process.env.GITHUB_DEPLOY_MODEL = originalGithubDeployModel;
     }
-    if (originalCodexGatewayModel === undefined) {
-      delete process.env.CODEX_GATEWAY_MODEL;
+    if (originalAssistantGatewayModel === undefined) {
+      delete process.env.ASSISTANT_GATEWAY_MODEL;
     } else {
-      process.env.CODEX_GATEWAY_MODEL = originalCodexGatewayModel;
+      process.env.ASSISTANT_GATEWAY_MODEL = originalAssistantGatewayModel;
     }
     mock.module("./runner-writes", () => ({ ...realRunnerWrites }));
   });
@@ -636,8 +636,8 @@ describe("deployment Codex gateway interruption", () => {
     expect(resolveDeployGatewayModel()).toBe(DEPLOY_GATEWAY_MODEL);
   });
 
-  it("ignores CODEX_GATEWAY_MODEL when resolving the deploy session model", () => {
-    process.env.CODEX_GATEWAY_MODEL = "gpt-chat-only";
+  it("ignores ASSISTANT_GATEWAY_MODEL when resolving the deploy session model", () => {
+    process.env.ASSISTANT_GATEWAY_MODEL = "gpt-chat-only";
     expect(resolveDeployGatewayModel()).toBe(DEPLOY_GATEWAY_MODEL);
     process.env.GITHUB_DEPLOY_MODEL = "gpt-custom-deploy";
     expect(resolveDeployGatewayModel()).toBe("gpt-custom-deploy");

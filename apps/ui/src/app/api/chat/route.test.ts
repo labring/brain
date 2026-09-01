@@ -55,6 +55,7 @@ let activeLease: TestLease | null = null;
 let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
 let appendCalls: UIMessage[] = [];
 let connectionAvailable = true;
+let connectionBillingCalls: ("free" | "user")[] = [];
 let denyReservation: (() => void) | null = null;
 let releaseCalls = 0;
 let reserveCalls = 0;
@@ -238,7 +239,8 @@ function persistToHistory(message: UIMessage): void {
 
 mock.module("server-only", () => ({}));
 mock.module("@/features/chat/ai-proxy/resolve-chat-open-ai-connection", () => ({
-  resolveChatOpenAiConnection: () => {
+  resolveChatOpenAiConnection: (options: { billing: "free" | "user" }) => {
+    connectionBillingCalls.push(options.billing);
     if (connectionRefusal != null) {
       return Promise.resolve({ ...connectionRefusal, ok: false as const });
     }
@@ -698,6 +700,7 @@ beforeEach(() => {
   adoptionCalls = [];
   appendCalls = [];
   connectionAvailable = true;
+  connectionBillingCalls = [];
   connectionRefusal = null;
   billingStanding = {
     accountDebt: null,
@@ -1562,26 +1565,71 @@ test("drops partial tool input when an errored stream has durable text", async (
   expect(titleCalls).toBe(0);
 });
 
-test("refuses a confirmed-blocked trial request with 402 and the full header set", async () => {
+test("hands an exhausted active trial off to the user's AI Proxy", async () => {
   freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
   trialJudgment = "trial";
 
   const response = await POST(
-    chatRequest(userMessage("user-blocked", "one more message"))
+    chatRequest(userMessage("user-paid-after-free", "one more message"))
+  );
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
+  await drain(response);
+
+  expect(connectionBillingCalls).toEqual(["user"]);
+  expect(modelCalls).toBe(1);
+  expect(reserveCalls).toBe(0);
+});
+
+test.each([
+  {
+    code: "account_balance_exhausted",
+    paidSource: "balance" as const,
+    standing: {
+      accountDebt: true,
+      availableBalanceMicroUnits: -6_320_000,
+      paidSource: "balance" as const,
+    },
+    wall: "balance",
+  },
+  {
+    code: "ai_credits_exhausted",
+    paidSource: "ai-credits" as const,
+    standing: {
+      accountDebt: false,
+      aiCredits: {
+        totalMicroUnits: 3_000_000,
+        usedMicroUnits: 3_000_000,
+      },
+      paidSource: "ai-credits" as const,
+    },
+    wall: "ai-credits",
+  },
+])("walls an exhausted active trial before handing off to an exhausted $paidSource source", async ({
+  code,
+  paidSource,
+  standing,
+  wall,
+}) => {
+  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  trialJudgment = "trial";
+  billingStanding = { ...billingStanding, ...standing };
+
+  const response = await POST(
+    chatRequest(userMessage(`user-exhausted-${paidSource}`, "one more message"))
   );
 
   expect(response.status).toBe(402);
-  expect(await response.json()).toEqual({
-    code: "free_chat_turns_exhausted",
-    error:
-      "Free trial messages are used up. Upgrade your plan to keep chatting with the assistant.",
-  });
-  expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
-  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(((await response.json()) as { code: string }).code).toBe(code);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
   expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
-  // Refused before any conversation state mutates.
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe(paidSource);
+  expect(response.headers.get("X-Chat-Wall")).toBe(wall);
   expect(history).toEqual([]);
-  expect(appendCalls).toHaveLength(0);
   expect(leaseAcquireCalls).toBe(0);
   expect(modelCalls).toBe(0);
   expect(reserveCalls).toBe(0);
@@ -1647,7 +1695,7 @@ test("a non-trial workspace bills user from its first message, allowance untouch
   expect(reserveCalls).toBe(0);
 });
 
-test("the turn spending the last free message already reports blocked", async () => {
+test("the turn spending the last free message reports the next user-billed posture", async () => {
   freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
   trialJudgment = "trial";
 
@@ -1655,13 +1703,14 @@ test("the turn spending the last free message already reports blocked", async ()
     chatRequest(userMessage("user-last-free", "inspect the cluster"))
   );
   expect(response.status).toBe(200);
-  expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
   expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
   expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
   await drain(response);
 
   expect(reserveCalls).toBe(1);
   expect(releaseCalls).toBe(0);
+  expect(connectionBillingCalls).toEqual(["free"]);
 });
 
 test("FREE_CHAT_TURNS=0 keeps silent user billing and never judges the trial", async () => {
@@ -1678,7 +1727,7 @@ test("FREE_CHAT_TURNS=0 keeps silent user billing and never judges the trial", a
   expect(reserveCalls).toBe(0);
 });
 
-test("a lost reservation race on a confirmed trial refuses with 402 before the model", async () => {
+test("a lost reservation race on a confirmed trial continues with user billing", async () => {
   freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
   trialJudgment = "trial";
   denyReservation = () => {
@@ -1690,18 +1739,13 @@ test("a lost reservation race on a confirmed trial refuses with 402 before the m
     chatRequest(userMessage("user-race-loser", "one more message"))
   );
 
-  expect(response.status).toBe(402);
-  expect(await response.json()).toEqual({
-    code: "free_chat_turns_exhausted",
-    error:
-      "Free trial messages are used up. Upgrade your plan to keep chatting with the assistant.",
-  });
-  expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
   expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
-  // Refused before any conversation state mutates or a model runs.
-  expect(history).toEqual([]);
-  expect(leaseAcquireCalls).toBe(0);
-  expect(modelCalls).toBe(0);
+  await drain(response);
+
+  expect(connectionBillingCalls).toEqual(["user"]);
+  expect(modelCalls).toBe(1);
   expect(reserveCalls).toBe(1);
   expect(releaseCalls).toBe(0);
 });
@@ -1737,7 +1781,7 @@ test("a stream error on the last free turn rolls the reservation back", async ()
   expect(response.status).toBe(200);
   // The optimistic post-turn header is truthful at send time: the turn is
   // already reserved when the response starts streaming…
-  expect(response.headers.get("X-Chat-Billing")).toBe("blocked");
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
   await drain(response);
 
   // …and the failed stream rolls it back, so the turn stays spendable.
@@ -1763,7 +1807,7 @@ test("a PAYG workspace in Account Debt is walled with 402 before the model, head
   expect(await response.json()).toEqual({
     code: "account_balance_exhausted",
     error:
-      "Your account balance can't cover AI usage. Top up to keep chatting with the assistant.",
+      "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
   });
   expect(response.headers.get("X-Chat-Billing")).toBe("user");
   expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");

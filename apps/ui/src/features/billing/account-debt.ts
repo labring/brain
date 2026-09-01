@@ -21,7 +21,7 @@ export function accountDebtFromMoney(input: {
 /**
  * Whether Account Debt suspends THIS workspace — the one predicate behind
  * the Deploy Billing Notice, the Status Hint banner, and the server-side
- * standing (ADR-0069 merged the client and server variants). The platform's
+ * standing (ADR-0070 merged the client and server variants). The platform's
  * debt pipeline stops only Pay-As-You-Go workspaces; whether the account is
  * in debt at all is a money fact (`accountDebtFromMoney`) or the platform's
  * own DEBT report, judged by the caller. Null while either fact is unknown:

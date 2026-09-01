@@ -10,6 +10,9 @@ All notable changes to Brain are documented in this file.
   expand or collapse is still remembered per browser and wins over the
   default; the persistence cookie moved to `sidebar_state_v2`, resetting
   every previously remembered state once.
+- Renamed the Chat Agent model override from `CODEX_GATEWAY_MODEL` to
+  `ASSISTANT_GATEWAY_MODEL`. `CODEX_GATEWAY_MODEL` remains only as an internal
+  variable inside GitHub Deployment Task Devboxes.
 
 ### Fixed
 

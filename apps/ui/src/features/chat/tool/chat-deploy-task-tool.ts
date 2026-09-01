@@ -224,7 +224,7 @@ export function createDeployTaskTools(
       // The assistant is a deploy entry too, but the only one that refuses:
       // the panes voice the same Deploy Billing Notice above a usable form,
       // while the tool must not silently spend the user's doomed run
-      // (ADR-0069). The refusal names the pane as the deliberate way through.
+      // (ADR-0070). The refusal names the pane as the deliberate way through.
       const notice = await deployNotice();
       if (notice != null) {
         return {

@@ -73,7 +73,7 @@ export function forcedDeployBillingNotice(
  * card, every deployment pane renders it regardless of the real judgment.
  * A tweak, not a Dev Mock, and deliberately pane-only — the status hint
  * banner, the chat wall, and the field-level quota warnings keep their real
- * state, so ADR-0069's judgment is only ever overridden where the dev
+ * state, so ADR-0070's judgment is only ever overridden where the dev
  * tweaks panel exists. The section appears once a deployment pane mounts.
  */
 export function useDeployBillingNoticeForce(): DeployBillingNotice | null {

@@ -20,7 +20,7 @@ import {
 import { forcedDeployBillingNotice } from "./deploy-billing-notice-tweaks";
 
 /**
- * The pre-deploy notice (ADR-0069) is the same judgment the status hint
+ * The pre-deploy notice (ADR-0070) is the same judgment the status hint
  * makes from the same reads, so the fixtures that light the banner are the
  * ones that voice the deploy entry — advisory now, never a block.
  */
@@ -110,7 +110,7 @@ test("the server-side standing judges the same notice the panes do", () => {
     "Pods quota is full"
   );
   // A full storage quota dooms only workloads that request storage, so it is
-  // not the notice's voice (ADR-0069) — form validation speaks instead.
+  // not the notice's voice (ADR-0070) — form validation speaks instead.
   assert.equal(
     deployBillingNoticeFromStanding({
       ...QUIET_STANDING,
@@ -142,7 +142,7 @@ test("the server-side standing judges the same notice the panes do", () => {
   );
 });
 
-test("a payment-due subscription is noticed with its recovery voice (ADR-0069)", () => {
+test("a payment-due subscription is noticed with its recovery voice (ADR-0070)", () => {
   const renew = deployBillingNoticeFromStanding({
     ...QUIET_STANDING,
     paidSource: "ai-credits",
@@ -253,7 +253,7 @@ test("a full storage quota is not the notice's voice — unless the pane's every
     ],
   };
   assert.equal(resolveDeployBillingNotice(inputs), null);
-  // The database pane's presets all include storage (ADR-0069).
+  // The database pane's presets all include storage (ADR-0070).
   assert.equal(
     resolveDeployBillingNotice(inputs, { paneConsumes: ["storage"] })?.title,
     "Storage quota is full"
@@ -273,7 +273,7 @@ test("a subscribed workspace is never noticed on its account's debt", () => {
     null
   );
   // …but one under the Deletion Countdown is payment-due: suspended, so the
-  // deploy is doomed and the notice says so (ADR-0069 closed this gap).
+  // deploy is doomed and the notice says so (ADR-0070 closed this gap).
   assert.equal(
     resolveDeployBillingNotice({
       ...QUIET,
@@ -359,7 +359,7 @@ test("the billing fixtures notice exactly the scenarios the banner lights for de
   );
   assert.equal(resolveDeployBillingNotice(await inputsFor("active")), null);
   // The payment-due fixture's workspace is suspended under its expired
-  // subscription: since ADR-0069 the notice voices that too.
+  // subscription: since ADR-0070 the notice voices that too.
   assert.equal(
     resolveDeployBillingNotice(await inputsFor("payment-due"))?.kind,
     "payment-due"

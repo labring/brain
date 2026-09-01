@@ -209,7 +209,7 @@ function DockerDeployerRoot({
   /**
    * Whether the workspace's storage quota sits at its ceiling. Storage is
    * request-scoped, so the Deploy Billing Notice does not voice it; the
-   * storage mount rows warn instead (ADR-0069).
+   * storage mount rows warn instead (ADR-0070).
    */
   storageQuotaFull?: boolean;
 }) {
@@ -756,7 +756,7 @@ function DockerDeployerFields({
       >
         {storageQuotaFull && storageRows.length > 0 ? (
           // Storage is request-scoped: the quota warning belongs to the rows
-          // that request it, not the pane's notice (ADR-0069). Advisory only
+          // that request it, not the pane's notice (ADR-0070). Advisory only
           // — the deploy stays available and would fail explained.
           <p className="text-amber-600 text-xs leading-4 dark:text-amber-400">
             Storage quota is full — mounts requesting more storage will fail

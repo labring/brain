@@ -119,7 +119,7 @@ test("an expired Free trial asks for an upgrade, never a renewal", async () => {
 
 test("quota-full names the first full quota (CPU) and stays a warning", async () => {
   // The fixture maxes CPU and storage; CPU sits first in the quota rows and
-  // is a universal deployable quota, so it is the banner's voice (ADR-0069).
+  // is a universal deployable quota, so it is the banner's voice (ADR-0070).
   const { hint } = await hintFor("quota-full");
   assert.equal(hint?.title, "CPU quota is full");
   assert.equal(hint?.tone, "warning");

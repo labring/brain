@@ -206,7 +206,7 @@ export function deploymentFailureTechnicalDetail(input: {
   // timeout, a pod that never came up — and that text contradicts the
   // classification, so the billing check stands in for it on every runner
   // (design spec rows E1/E2, ADR 0068). An exhausted balance or an expired
-  // subscription (ADR-0069) is always such a cause; a full quota is one
+  // subscription (ADR-0070) is always such a cause; a full quota is one
   // unless the apply step itself reported the quota error, the one stage
   // where the provider's own numbers are worth keeping.
   const billingReason = input.details?.reason;

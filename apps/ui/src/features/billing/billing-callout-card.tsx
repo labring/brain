@@ -25,7 +25,7 @@ import { useResolvedBillingCta } from "./use-billing-cta";
  * variant, and the copy keeps the foreground/muted pair so the semantic
  * color stays on the icon and the border. Tones follow the status hint
  * banner's severity language (billing-surface-tones): destructive for a
- * refusal or a proven failure, warning for an advisory caution (ADR-0069).
+ * refusal or a proven failure, warning for an advisory caution (ADR-0070).
  */
 const CALLOUT_TONES = {
   destructive: "border-destructive/30 bg-destructive/10 text-destructive",

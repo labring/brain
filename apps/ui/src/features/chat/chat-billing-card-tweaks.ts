@@ -22,11 +22,13 @@ const TWEAKABLE_BUILD =
 /**
  * Styling override for the pane's billing card slot: while the panel toggle
  * is on, the slider fabricates the rendered Chat Billing Posture — 0 Free
- * Chat Turns left renders the blocked card (locking the composer, like the
- * real posture), 1–5 render the counter card. A tweak, not a Dev Mock, and
- * deliberately chat-pane-only: the server, the sidebar's free-turns row,
- * and the Plan view keep their real state, so ADR-0065's server-computed
- * posture is only ever overridden where the dev tweaks panel exists.
+ * Chat Turns left renders the paid wall card (locking the composer, like
+ * the real exhausted-Paid-Source posture; ADR-0069 replaced the free-turn
+ * blocked card with the `user` handoff), 1–5 render the counter card. A
+ * tweak, not a Dev Mock, and deliberately chat-pane-only: the server, the
+ * sidebar's free-turns row, and the Plan view keep their real state, so
+ * ADR-0065's server-computed posture is only ever overridden where the dev
+ * tweaks panel exists.
  */
 export function useChatBillingCardFreeTierOverride(): FreeTierState | null {
   const values = useDevTweaks("Chat · billing card", CHAT_BILLING_CARD_TWEAKS, {
@@ -40,8 +42,17 @@ export function useChatBillingCardFreeTierOverride(): FreeTierState | null {
     FREE_CHAT_TURNS_LIMIT,
     Math.max(0, Math.round(values.remaining))
   );
+  if (remaining === 0) {
+    return {
+      billing: "user",
+      limit: FREE_CHAT_TURNS_LIMIT,
+      paidSource: "ai-credits",
+      remaining,
+      wall: "ai-credits",
+    };
+  }
   return {
-    billing: remaining === 0 ? "blocked" : "free",
+    billing: "free",
     limit: FREE_CHAT_TURNS_LIMIT,
     paidSource: null,
     remaining,

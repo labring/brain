@@ -9,17 +9,16 @@ export interface FreeTurnsSnapshot {
 }
 
 /**
- * Chat Billing Posture for the next assistant turn (ADR-0065): Free Chat
- * Turns are a benefit of the Active Free Trial.
+ * Chat Billing Posture for the next assistant turn (ADR-0069): Free Chat
+ * Turns are a benefit of the Active Free Trial, then billing hands off to the
+ * caller's AI Proxy.
  *
  * - `free` while spendable turns remain, a platform model is configured, and
  *   the workspace is on a trial — or the judgment is `unknown` (fail-open:
  *   the console never yields to billing judgment).
- * - `blocked` only on a confirmed trial with the feature live (model
- *   configured, limit > 0) and the allowance exhausted.
- * - `user` everywhere else: paid plans, PAYG, PAUSED Free, expired trials,
- *   disabled feature (`FREE_CHAT_TURNS=0`), missing platform model, and the
- *   exhausted fail-open case.
+ * - `user` everywhere else: exhausted allowances, paid plans, PAYG, PAUSED
+ *   Free, expired trials, disabled feature (`FREE_CHAT_TURNS=0`), and missing
+ *   platform model.
  */
 export function freeTierPosture(
   snapshot: FreeTurnsSnapshot,
@@ -28,19 +27,8 @@ export function freeTierPosture(
 ): FreeTierState {
   const spendable =
     snapshot.remaining > 0 && systemModelConfigured && trial !== "not-trial";
-  const blocked =
-    snapshot.remaining === 0 &&
-    snapshot.limit > 0 &&
-    systemModelConfigured &&
-    trial === "trial";
-  let billing: FreeTierState["billing"] = "user";
-  if (spendable) {
-    billing = "free";
-  } else if (blocked) {
-    billing = "blocked";
-  }
   return {
-    billing,
+    billing: spendable ? "free" : "user",
     limit: snapshot.limit,
     remaining: snapshot.remaining,
   };
@@ -49,8 +37,8 @@ export function freeTierPosture(
 /**
  * Posture the client should hold once the current turn completes — what the
  * `X-Chat-*` response headers report. A `free` turn spends one Free Chat
- * Turn, so the turn that spends the last one already reports `blocked`: the
- * pane flips at exhaustion, not one message later.
+ * Turn, so the turn that spends the last one already reports `user`: the next
+ * request is ready to use the caller's AI Proxy without client-side inference.
  */
 export function freeTierPostureAfterTurn(
   snapshot: FreeTurnsSnapshot,

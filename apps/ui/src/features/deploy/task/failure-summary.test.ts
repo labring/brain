@@ -136,6 +136,7 @@ describe("deploymentFailureReason", () => {
       "build-runtime-unavailable": "required build service",
       "buildkit-start-failed": "BuildKit could not start",
       cancelled: "was cancelled",
+      "deploy-configuration-invalid": "not configured correctly",
       "deploy-runtime-unavailable": "workspace did not become ready",
       "deploy-skill-install-failed": "skill installation failed",
       "deployment-output-missing": "without a deployable result",

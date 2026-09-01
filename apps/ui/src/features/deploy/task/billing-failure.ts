@@ -36,6 +36,7 @@ const PROVEN_ELSEWHERE: ReadonlySet<DeployTaskFailureReason> = new Set([
   "interrupted",
   "github-authentication",
   "repository-clone-failed",
+  "deploy-configuration-invalid",
   "image-build-failed",
   "deploy-skill-install-failed",
   "template-output-invalid",
@@ -87,7 +88,7 @@ export function resolveBillingFailureOverride(input: {
   // A payment-due Workspace Subscription suspends its workspace the same
   // way: whatever the run tripped on afterwards, the platform had already
   // pulled the plug — so the suspension outranks any not-elsewhere-proven
-  // reason, quota errors included (ADR-0069).
+  // reason, quota errors included (ADR-0070).
   if (standing.paymentDue === true) {
     return {
       billingEvidence: {

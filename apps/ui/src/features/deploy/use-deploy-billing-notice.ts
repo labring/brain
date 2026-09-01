@@ -13,7 +13,7 @@ import { useDeployBillingNoticeForce } from "./deploy-billing-notice-tweaks";
 
 /**
  * The pre-deploy notice for the current workspace, judged from the same
- * reads the status hint evaluates (ADR-0069). Null while the facts are
+ * reads the status hint evaluates (ADR-0070). Null while the facts are
  * still unknown — a notice is never guessed. `paneConsumes` names quota
  * types this pane's every deploy request includes, which then doom like the
  * universal cpu/memory/pod set.
@@ -34,7 +34,7 @@ export function useDeployBillingNotice(
 /**
  * Whether one quota type sits at its ceiling — for field-level warnings on
  * the request-scoped quotas (storage, nodeport) the notice deliberately
- * does not voice (ADR-0069).
+ * does not voice (ADR-0070).
  */
 export function useQuotaTypeFull(type: BillingQuotaType): boolean {
   const inputs = useStatusHintInputs();

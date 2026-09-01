@@ -9,14 +9,13 @@ import type { FreeTierState } from "./persistence/types";
 
 const TRIAL_MID: FreeTierState = { billing: "free", limit: 5, remaining: 3 };
 const TRIAL_LAST: FreeTierState = { billing: "free", limit: 5, remaining: 1 };
-const BLOCKED: FreeTierState = { billing: "blocked", limit: 5, remaining: 0 };
 const USER: FreeTierState = { billing: "user", limit: 5, remaining: 0 };
 
 async function cardModules() {
   return await import("./chat-billing-cards");
 }
 
-test("card arbitration is wall > blocked > billing-error > error > counter, nothing on open user billing", async () => {
+test("card arbitration is wall > billing-error > error > counter, nothing on open user billing", async () => {
   const { resolveChatBillingCard } = await cardModules();
 
   assert.equal(
@@ -47,10 +46,6 @@ test("card arbitration is wall > blocked > billing-error > error > counter, noth
     null
   );
 
-  assert.equal(
-    resolveChatBillingCard({ billing: "blocked", errored: true }),
-    "blocked"
-  );
   assert.equal(
     resolveChatBillingCard({ billing: "free", errored: true }),
     "error"
@@ -113,38 +108,6 @@ test("counter card keeps identical wording at every remaining count and links to
       fireEvent.click(viewPlans as HTMLElement);
       // "View plans" lands on the Plan view without deep-linking the picker.
       assert.deepEqual(navigations, ["plans"]);
-    } finally {
-      await act(() => rendered?.unmount());
-    }
-  });
-});
-
-test("blocked card carries the upgrade CTA and outranks an error", async () => {
-  await withTestDom(async (act) => {
-    const { ChatBillingCardSlot } = await cardModules();
-    const navigations: string[] = [];
-    let rendered: ReturnType<typeof render> | undefined;
-    try {
-      await act(() => {
-        rendered = render(
-          <ChatBillingCardSlot
-            errored
-            freeTier={BLOCKED}
-            onNavigateToBilling={(destination) => navigations.push(destination)}
-          />
-        );
-      });
-      const text = rendered?.container.textContent ?? "";
-      assert.ok(text.includes("Free trial messages used up"));
-      assert.ok(text.includes("Upgrade to keep chatting with the assistant."));
-      // The error card lost the arbitration: "try again" would be a lie.
-      assert.equal(text.includes("Message not sent"), false);
-
-      const upgrade = rendered?.getByRole("button", { name: "Upgrade plan" });
-      assert.ok(upgrade);
-      fireEvent.click(upgrade as HTMLElement);
-      // The blocked CTA deep-links the Plan Picker open (`?mode=upgrade`).
-      assert.deepEqual(navigations, ["upgrade"]);
     } finally {
       await act(() => rendered?.unmount());
     }

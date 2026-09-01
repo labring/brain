@@ -9,6 +9,8 @@ const FAILURE_MESSAGES = {
     "GitHub authorization is unavailable. Reconnect GitHub, then redeploy.",
   "repository-clone-failed":
     "The repository could not be cloned. Check repository access and the selected branch, then redeploy.",
+  "deploy-configuration-invalid":
+    "Deployment analysis is not configured correctly. Contact support.",
   "ai-proxy-unavailable":
     "Deployment analysis credentials could not be prepared. Redeploy; if the problem continues, contact support.",
   "deploy-runtime-unavailable":

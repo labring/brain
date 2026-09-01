@@ -48,7 +48,7 @@ function databaseInitialSettings(
 }
 
 // Every database preset carries a storage request, so a full storage quota
-// dooms this pane's every deploy (ADR-0069).
+// dooms this pane's every deploy (ADR-0070).
 const DATABASE_PANE_CONSUMES = ["storage"] as const;
 
 export function DatabaseDeploymentPane({
@@ -81,7 +81,7 @@ export function DatabaseDeploymentPane({
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false
   );
-  // The pre-deploy notice (ADR-0069): a condition that dooms this deploy is
+  // The pre-deploy notice (ADR-0070): a condition that dooms this deploy is
   // voiced above the form, which stays usable — enforcement lives at the
   // platform, and a pressed-through failure comes back explained. Every
   // database preset includes storage, so a full storage quota dooms this

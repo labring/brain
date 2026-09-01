@@ -100,7 +100,7 @@ export function GitHubDeploymentPane({
     kubeconfig,
     namespace,
   });
-  // The pre-deploy notice (ADR-0069): a condition that dooms this deploy is
+  // The pre-deploy notice (ADR-0070): a condition that dooms this deploy is
   // voiced above the deployer, which stays usable — enforcement lives at the
   // platform, and a pressed-through failure comes back explained.
   const billingNotice = useDeployBillingNotice();

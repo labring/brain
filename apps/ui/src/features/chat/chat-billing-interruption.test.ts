@@ -55,9 +55,7 @@ describe("chatBillingInterruptionFromError", () => {
     ).toBeNull();
     expect(
       chatBillingInterruptionFromError(
-        new Error(
-          JSON.stringify({ code: "free_chat_turns_exhausted", error: "x" })
-        ),
+        new Error(JSON.stringify({ code: "invalid_request", error: "x" })),
         "balance"
       )
     ).toBeNull();

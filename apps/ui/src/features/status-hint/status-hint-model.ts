@@ -158,7 +158,7 @@ const ACCOUNT_DEBT_HINT: StatusHint = {
  * not be voiced as debt — ADR-0068), and its state machine skips accounts
  * that have never been billed, so the state holds only where the platform
  * would actually suspend. The PAYG gate itself is `accountDebtSuspends`,
- * the one function the server-side standing also judges by (ADR-0069).
+ * the one function the server-side standing also judges by (ADR-0070).
  */
 export function accountDebtHolds(
   inputs: Pick<
@@ -196,7 +196,7 @@ function quotaFullHint(
   }
   const noun = quotaResourceNoun(full.label);
   // Storage and nodeport doom only workloads that request them, so their
-  // banner must not claim every deployment fails (ADR-0069).
+  // banner must not claim every deployment fails (ADR-0070).
   const description = UNIVERSAL_DEPLOYABLE_QUOTA_TYPES.has(full.type)
     ? `New deployments will fail until ${noun} is freed or the plan is upgraded.`
     : `Deployments requesting more ${noun} will fail until it is freed or the plan is upgraded.`;

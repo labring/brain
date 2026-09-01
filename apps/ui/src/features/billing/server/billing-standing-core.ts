@@ -45,7 +45,7 @@ export interface WorkspaceBillingStanding {
   fullQuota: QuotaFullnessRow | null;
   /**
    * The first full quota among those every workload consumes (cpu, memory,
-   * pod) — what the Deploy Billing Notice voices (ADR-0069); null when none
+   * pod) — what the Deploy Billing Notice voices (ADR-0070); null when none
    * or unread.
    */
   fullUniversalQuota: QuotaFullnessRow | null;
@@ -266,7 +266,7 @@ export function judgeWorkspaceBillingStanding(
  * row E1). So only a workspace paying from the balance can be noticed or
  * have its failure reclassified on debt. The judgment itself is
  * `accountDebtSuspends`, shared with the client-side `accountDebtHolds`
- * (ADR-0069). Null while either fact is unknown: every seam fails open
+ * (ADR-0070). Null while either fact is unknown: every seam fails open
  * (ADR-0068).
  */
 export function debtSuspendsWorkspace(

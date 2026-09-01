@@ -178,6 +178,7 @@ export interface DeployTaskEventPayload {
 export type DeployTaskFailureReason =
   | "github-authentication"
   | "repository-clone-failed"
+  | "deploy-configuration-invalid"
   | "ai-proxy-unavailable"
   | "deploy-runtime-unavailable"
   | "build-runtime-unavailable"
@@ -207,7 +208,7 @@ export type DeployTaskFailureStage = "apply" | "readiness";
 /**
  * What the billing reverse-check found at failure time (design spec rows
  * E1/E2): the structured, allowlisted evidence behind a `balance-exhausted`,
- * `subscription-expired` (ADR-0069), or resource-attributed `quota-exceeded`
+ * `subscription-expired` (ADR-0070), or resource-attributed `quota-exceeded`
  * classification — never raw upstream text, so every runner may persist and
  * display it (ADR 0042).
  */

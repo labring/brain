@@ -19,7 +19,7 @@ import {
 } from "@/features/status-hint/status-hint-model";
 
 /**
- * The Deploy Billing Notice (ADR-0069, formerly the Deploy Billing Wall):
+ * The Deploy Billing Notice (ADR-0070, formerly the Deploy Billing Wall):
  * an advisory callout above a still-usable deployment form while a
  * condition dooms every deployment the pane could start — Account Debt on a
  * Pay-As-You-Go workspace, a payment-due Workspace Subscription, or a full
@@ -148,7 +148,7 @@ export function resolveDeployBillingNotice(
 /**
  * The same notice as the server judges it, for deploy entries that never
  * render a pane — the assistant's deploy tool, which relays it as a refusal
- * rather than an advisory (ADR-0069: the assistant must not silently spend
+ * rather than an advisory (ADR-0070: the assistant must not silently spend
  * a doomed run).
  */
 function standingPaymentDueVoice(

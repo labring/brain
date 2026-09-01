@@ -149,7 +149,7 @@ const RENDERERS: {
   "quota-exhausted": (payload) => {
     const label = QUOTA_RESOURCE_LABELS[payload.resource];
     // Storage and nodeport doom only workloads that request them, so their
-    // message must not claim every deployment fails (ADR-0069).
+    // message must not claim every deployment fails (ADR-0070).
     const universal =
       payload.resource === "cpu" ||
       payload.resource === "memory" ||

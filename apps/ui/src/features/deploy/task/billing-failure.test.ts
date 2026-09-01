@@ -96,7 +96,7 @@ describe("resolveBillingFailureOverride", () => {
     ).toMatchObject({ reason: "quota-exceeded", supersedesRunnerError: false });
   });
 
-  it("reclassifies a suspended payment-due workspace's stall as subscription-expired (ADR-0069)", () => {
+  it("reclassifies a suspended payment-due workspace's stall as subscription-expired (ADR-0070)", () => {
     const paymentDue = standing({
       aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 1_200_000 },
       paidSource: "ai-credits",
@@ -216,6 +216,7 @@ describe("resolveBillingFailureOverride", () => {
       "cancelled",
       "github-authentication",
       "repository-clone-failed",
+      "deploy-configuration-invalid",
       "image-build-failed",
       "template-output-invalid",
       "deploy-skill-install-failed",
