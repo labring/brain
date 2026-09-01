@@ -20,7 +20,7 @@ function mergeChunkToolMetadata<
 }
 
 /**
- * Merges `durationMs` (from `experimental_onToolCallFinish`) into streaming
+ * Merges `durationMs` (from `onToolExecutionEnd`) into streaming
  * `tool-result` / `tool-error` parts so `toUIMessageStreamResponse` passes it
  * through to the client as `toolMetadata.durationMs` on each tool UI part.
  */

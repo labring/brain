@@ -3,8 +3,8 @@ import {
   consumeStream,
   convertToModelMessages,
   generateId,
+  isStepCount,
   isToolUIPart,
-  stepCountIs,
   streamText,
   type UIMessage,
   type UIMessageStreamOnFinishCallback,
@@ -839,15 +839,18 @@ async function runChatPipeline(input: {
           reasoningEffort: "high",
         },
       },
-      system: systemPrompt,
+      instructions: systemPrompt,
       messages: modelMessages,
       tools,
-      stopWhen: stepCountIs(CHAT_MAX_STEPS),
+      stopWhen: isStepCount(CHAT_MAX_STEPS),
       experimental_transform: createInjectToolDurationStreamTransform(
         toolDurationMsByCallId
       ),
-      experimental_onToolCallFinish: (event) => {
-        toolDurationMsByCallId.set(event.toolCall.toolCallId, event.durationMs);
+      onToolExecutionEnd: (event) => {
+        toolDurationMsByCallId.set(
+          event.toolCall.toolCallId,
+          event.toolExecutionMs
+        );
       },
     });
 

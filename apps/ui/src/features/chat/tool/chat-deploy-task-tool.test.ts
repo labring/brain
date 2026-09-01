@@ -192,7 +192,7 @@ test("chat getDeployTaskStatus returns the safe task timeline snapshot", async (
       intention: "inspect safe deployment progress",
       taskId: "task-1",
     },
-    { messages: [], toolCallId: "tool-call-1" }
+    { context: {}, messages: [], toolCallId: "tool-call-1" }
   );
 
   assert.deepEqual(timelineSnapshotReads, [
@@ -254,7 +254,7 @@ test("chat submitDeployTaskInput preserves the active blocker keys", async () =>
       taskId: "task-1",
       values: { API_KEY: "secret-value" },
     },
-    { messages: [], toolCallId: "tool-call-2" }
+    { context: {}, messages: [], toolCallId: "tool-call-2" }
   );
 
   assert.deepEqual(runInput, {
@@ -326,7 +326,7 @@ test("chat createDeployTask requires a GitHub connection before task creation", 
       source: githubSource,
       target: { kind: "newProject", displayName: "glpi" },
     },
-    { messages: [], toolCallId: "tool-call-3" }
+    { context: {}, messages: [], toolCallId: "tool-call-3" }
   );
 
   assert.deepEqual(result, {
@@ -365,7 +365,7 @@ test("chat createDeployTask binds the initiator's GitHub connection", async () =
       source: githubSource,
       target: { kind: "newProject", displayName: "glpi" },
     },
-    { messages: [], toolCallId: "tool-call-4" }
+    { context: {}, messages: [], toolCallId: "tool-call-4" }
   );
 
   assert.ok(result != null && "ok" in result && result.ok);
@@ -396,7 +396,7 @@ test("chat createDeployTask surfaces a superseded identity without creating a ta
       source: githubSource,
       target: { kind: "newProject", displayName: "glpi" },
     },
-    { messages: [], toolCallId: "tool-call-5" }
+    { context: {}, messages: [], toolCallId: "tool-call-5" }
   );
 
   assert.deepEqual(result, {
@@ -424,7 +424,7 @@ test("chat createDeployTask propagates GitHub connection lookup failures", async
         source: githubSource,
         target: { kind: "newProject", displayName: "glpi" },
       },
-      { messages: [], toolCallId: "tool-call-6" }
+      { context: {}, messages: [], toolCallId: "tool-call-6" }
     );
   }, CONNECTION_DATABASE_UNAVAILABLE_RE);
 });
@@ -468,7 +468,7 @@ test("chat createDeployTask refuses behind the pre-deploy wall and never creates
       source: githubSource,
       target: { kind: "newProject", displayName: "glpi" },
     },
-    { messages: [], toolCallId: "tool-call-wall" }
+    { context: {}, messages: [], toolCallId: "tool-call-wall" }
   );
 
   assert.deepEqual(standingReads, ["ns-test"]);
