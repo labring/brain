@@ -22,10 +22,11 @@ import { useStatusHint } from "./use-status-hint";
  */
 
 /**
- * One CTA chip — the tint recipe one step deeper, identical across tones.
+ * One CTA chip — the shared notification CTA recipe (app-button's chip
+ * variant, ADR-0071), tinted by the banner's tone through currentColor.
  * A Desktop-resolved top-up CTA leaves in a new tab; everything else is a
  * full-page hop into the Billing Area with the return route recorded. The
- * quiet variant is the secondary way out beside a plan-first quota CTA.
+ * quiet chip is the secondary way out beside a plan-first quota CTA.
  */
 function StatusHintCtaChip({
   cta,
@@ -35,14 +36,11 @@ function StatusHintCtaChip({
   quiet?: boolean;
 }) {
   const resolved = useResolvedBillingCta(cta);
-  const className = cn(
-    "shrink-0 text-current",
-    quiet ? "hover:bg-current/15" : "bg-current/15 hover:bg-current/25"
-  );
+  const variant = quiet ? "chip-quiet" : "chip";
   if (resolved.external) {
     return (
       <AppButton
-        className={className}
+        className="shrink-0"
         nativeButton={false}
         render={
           <a href={resolved.href} rel="noreferrer" target="_blank">
@@ -51,13 +49,13 @@ function StatusHintCtaChip({
           </a>
         }
         size="sm"
-        variant="secondary"
+        variant={variant}
       />
     );
   }
   return (
     <AppButton
-      className={className}
+      className="shrink-0"
       nativeButton={false}
       render={
         <Link href={resolved.href} onClick={recordBillingReturnRoute}>
@@ -65,7 +63,7 @@ function StatusHintCtaChip({
         </Link>
       }
       size="sm"
-      variant="secondary"
+      variant={variant}
     />
   );
 }

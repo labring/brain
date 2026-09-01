@@ -67,7 +67,8 @@ function NotificationTime({ timestamp }: { timestamp: number }) {
 }
 
 /**
- * The CTA chip — the Status Hint's tonal recipe, colored by severity. A
+ * The CTA chip — the shared notification CTA recipe (app-button's chip
+ * variant, ADR-0071), colored by severity through currentColor. A
  * Desktop-resolved top-up leaves in a new tab; in-app billing hops record
  * the return route first so the Billing Area's close button comes back
  * here. Both count as reading the card.
@@ -82,10 +83,7 @@ function NotificationCtaChip({
   tint: string;
 }) {
   const resolved = useResolvedBillingCta(cta);
-  const className = cn(
-    "ml-[26px] h-6 bg-current/15 px-2 text-xs hover:bg-current/25",
-    tint
-  );
+  const className = cn("ml-[26px]", tint);
   if (resolved.external) {
     return (
       <AppButton
@@ -103,7 +101,7 @@ function NotificationCtaChip({
           </a>
         }
         size="sm"
-        variant="secondary"
+        variant="chip"
       />
     );
   }
@@ -125,7 +123,7 @@ function NotificationCtaChip({
         </Link>
       }
       size="sm"
-      variant="secondary"
+      variant="chip"
     />
   );
 }

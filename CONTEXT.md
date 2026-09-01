@@ -788,6 +788,12 @@ The dark material shared by immersive product surfaces: a near-black canvas base
 
 _Avoid_: surface style (when meaning the material), canvas material, glow overlay.
 
+### CTA Chip
+
+The one visual recipe for a call-to-action on a notification surface — Notification Center cards, the Status Hint, the billing callout family, toast actions: a small chip washed in the surface's own tone color, defined once in the design system's shared button and only tinted by its host. The chip never picks a hue of its own, so severity stays marked, not shouted; a notification renders at most one chip, an optional quiet sibling beside it, and a dismiss.
+
+_Avoid_: CTA button (for the recipe), pill, tag, badge.
+
 ## Dev Tweaks
 
 ### Panel Posture

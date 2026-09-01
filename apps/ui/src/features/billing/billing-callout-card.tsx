@@ -24,7 +24,7 @@ import { useResolvedBillingCta } from "./use-billing-cta";
  * it). Composes the shared Alert for its role, slots and icon grid; the
  * tint is the family's own rather than Alert's card-on-white destructive
  * variant, and the copy keeps the foreground/muted pair so the semantic
- * color stays on the icon and the border. Tones follow the status hint
+ * color stays on the icon, the border, and the CTA chip. Tones follow the status hint
  * banner's severity language (billing-surface-tones): destructive for a
  * refusal or a proven failure, warning for an advisory caution (ADR-0070).
  */
@@ -91,7 +91,9 @@ export function BillingCalloutCard({
  * The callout CTA as a full-page navigation into the Billing Area, recording
  * the route to return to once the fix is made — or, when the CTA names a
  * Desktop app and its deep link resolves, an external hop to the one place
- * the fix actually exists (a top-up is not a Brain capability).
+ * the fix actually exists (a top-up is not a Brain capability). Rendered as
+ * the shared CTA chip (ADR-0071), which reads its tint from the card's tone
+ * through currentColor.
  */
 export function BillingCalloutLink({ cta }: { cta: BillingCta }) {
   const resolved = useResolvedBillingCta(cta);
@@ -106,6 +108,7 @@ export function BillingCalloutLink({ cta }: { cta: BillingCta }) {
           </a>
         }
         size="sm"
+        variant="chip"
       />
     );
   }
@@ -118,6 +121,7 @@ export function BillingCalloutLink({ cta }: { cta: BillingCta }) {
         </Link>
       }
       size="sm"
+      variant="chip"
     />
   );
 }
@@ -140,7 +144,7 @@ export function BillingCalloutSecondaryLink({
         </Link>
       }
       size="sm"
-      variant="quiet"
+      variant="chip-quiet"
     />
   );
 }

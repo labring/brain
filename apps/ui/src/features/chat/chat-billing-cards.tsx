@@ -140,6 +140,7 @@ function PaidWallCard({
         <AppButton
           onClick={() => onNavigateToBilling(copy.cta.destination)}
           size="sm"
+          variant="chip"
         >
           {copy.cta.label}
         </AppButton>
@@ -172,7 +173,7 @@ function BillingErrorCard({
         <AppButton
           onClick={() => onNavigateToBilling(copy.cta.destination)}
           size="sm"
-          variant="secondary"
+          variant="chip"
         >
           {copy.cta.label}
         </AppButton>

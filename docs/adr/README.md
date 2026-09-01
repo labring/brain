@@ -42,6 +42,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0068 — Judge Billing Interruptions from billing standing, after a deployment fails and before a paid chat turn starts](0068-judge-billing-interruptions-from-billing-standing.md) *(extends ADR-0042 and ADR-0065; paid handoff extended by ADR-0069; pre-deploy seam softened by ADR-0070)*
 - [0069 — Separate platform AI credentials and hand off exhausted Free Chat Turns](0069-separate-platform-ai-credentials-and-hand-off-free-chat.md) *(revises ADR-0065 and extends ADR-0068)*
 - [0070 — Soften the Deploy Billing Wall into the Deploy Billing Notice](0070-soften-the-deploy-billing-wall-into-the-deploy-billing-notice.md) *(revises ADR-0068's pre-deploy seam)*
+- [0071 — Unify notification CTA styling into the CTA Chip](0071-unify-notification-cta-styling-into-the-cta-chip.md)
 
 ## Conventions
 
