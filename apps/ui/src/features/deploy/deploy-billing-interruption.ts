@@ -1,5 +1,7 @@
 import {
   type BillingCta,
+  type QuotaCtaContext,
+  quotaCtaFor,
   TOP_UP_DESKTOP,
 } from "@/features/billing/billing-cta";
 import { quotaResourceNoun } from "@/features/billing/billing-usage-data";
@@ -23,10 +25,7 @@ export interface DeploymentBillingInterruption {
 }
 
 /** Subscription facts the quota CTA forks on; null marks unknown. */
-export interface DeploymentBillingInterruptionContext {
-  payg?: boolean | null;
-  planCeiling?: boolean | null;
-}
+export type DeploymentBillingInterruptionContext = Partial<QuotaCtaContext>;
 
 export function deploymentBillingInterruption(
   details: Pick<DeployTaskFailureDetails, "billingEvidence" | "reason"> | null,
@@ -67,25 +66,13 @@ export function deploymentBillingInterruption(
         : `This workspace doesn't have enough ${quotaResourceNoun(label)} quota to finish the deployment. Free resources or upgrade the plan, then redeploy.`;
     const title =
       label == null ? "Resource quota is full" : `${label} quota is full`;
-    // A confirmed plan ceiling has no plan to sell: usage is the only way out.
-    if (context.planCeiling === true) {
-      return {
-        body,
-        cta: { href: "/billing/usage", label: "View usage" },
-        icon: "alert",
-        title,
-      };
-    }
     return {
       body,
-      // A PAYG workspace subscribes rather than upgrades (CONTEXT.md,
-      // Pay-As-You-Go): the label follows, the destination is the same picker.
-      cta: {
-        href: "/billing?mode=upgrade",
-        label: context.payg === true ? "Subscribe" : "Upgrade plan",
-      },
+      ...quotaCtaFor({
+        payg: context.payg ?? null,
+        planCeiling: context.planCeiling ?? null,
+      }),
       icon: "alert",
-      secondaryCta: { href: "/billing/usage", label: "View usage" },
       title,
     };
   }

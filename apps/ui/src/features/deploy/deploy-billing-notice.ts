@@ -1,5 +1,6 @@
 import {
   type BillingCta,
+  quotaCtaFor,
   TOP_UP_DESKTOP,
 } from "@/features/billing/billing-cta";
 import type { RecoveryVoice } from "@/features/billing/billing-plan-data";
@@ -85,28 +86,11 @@ export function noticeFor(
   if (facts.full == null) {
     return null;
   }
-  const body = `New deployments will fail until ${quotaResourceNoun(facts.full.label)} is freed or the plan is upgraded.`;
-  const title = `${facts.full.label} quota is full`;
-  // A confirmed plan ceiling has no plan to sell: usage is the only way out.
-  if (facts.planCeiling === true) {
-    return {
-      body,
-      cta: { href: "/billing/usage", label: "View usage" },
-      kind: "quota",
-      title,
-    };
-  }
   return {
-    body,
-    // A PAYG workspace subscribes rather than upgrades (CONTEXT.md,
-    // Pay-As-You-Go): the label follows, the destination is the same picker.
-    cta: {
-      href: "/billing?mode=upgrade",
-      label: facts.payg === true ? "Subscribe" : "Upgrade plan",
-    },
+    body: `New deployments will fail until ${quotaResourceNoun(facts.full.label)} is freed or the plan is upgraded.`,
+    ...quotaCtaFor({ payg: facts.payg, planCeiling: facts.planCeiling }),
     kind: "quota",
-    secondaryCta: { href: "/billing/usage", label: "View usage" },
-    title,
+    title: `${facts.full.label} quota is full`,
   };
 }
 

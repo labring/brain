@@ -2,7 +2,11 @@ import {
   accountDebtFromMoney,
   accountDebtSuspends,
 } from "@/features/billing/account-debt";
-import { TOP_UP_DESKTOP } from "@/features/billing/billing-cta";
+import {
+  type QuotaCtaContext,
+  quotaCtaFor,
+  TOP_UP_DESKTOP,
+} from "@/features/billing/billing-cta";
 import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 import type { BillingSurfaceTone } from "@/features/billing/billing-surface-tones";
 import {
@@ -188,7 +192,7 @@ export function accountDebtHolds(
 
 function quotaFullHint(
   quota: readonly StatusHintQuotaRow[],
-  context: { payg: boolean | null; planCeiling: boolean | null }
+  context: QuotaCtaContext
 ): StatusHint | null {
   const full = firstFullQuotaRow(quota);
   if (full == null) {
@@ -207,20 +211,7 @@ function quotaFullHint(
     title: `${full.label} quota is full`,
     tone: "warning" as const,
   };
-  // A confirmed plan ceiling has no plan to sell: usage is the only way out.
-  if (context.planCeiling === true) {
-    return { ...base, cta: { href: "/billing/usage", label: "View usage" } };
-  }
-  return {
-    ...base,
-    // A PAYG workspace subscribes rather than upgrades (CONTEXT.md,
-    // Pay-As-You-Go): the label follows, the destination is the same picker.
-    cta: {
-      href: "/billing?mode=upgrade",
-      label: context.payg === true ? "Subscribe" : "Upgrade plan",
-    },
-    secondaryCta: { href: "/billing/usage", label: "View usage" },
-  };
+  return { ...base, ...quotaCtaFor(context) };
 }
 
 /** Whole calendar days from `now` to `target` in the viewer's time zone. */
