@@ -350,21 +350,27 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Failure Reason
 
-The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Two reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt on a Pay-As-You-Go workspace — the only kind the platform suspends for it; a subscribed workspace's failures keep their own reason) and a resource-attributed `quota-exceeded` (a full deployable quota); each carries Billing Evidence, the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
+The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Three reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt on a Pay-As-You-Go workspace — the only kind the platform suspends for it), `subscription-expired` (a subscribed workspace suspended under a payment-due Workspace Subscription), and a resource-attributed `quota-exceeded` (a full Deployable Quota); each carries Billing Evidence, the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
 
 _Avoid_: workspace not ready (for a suspended workspace), timed out (as the reason for a billing stop).
 
 ### Billing Evidence
 
-The structured record of what the Billing Interruption judgment found behind a `balance-exhausted` or resource-attributed `quota-exceeded` Deployment Failure Reason — the available-balance formula's result, or the quota that was full — safe for every runner to persist and show. It stands in for the runner's own error whenever that error was only a stall; the provider's own apply-time quota error keeps its numbers.
+The structured record of what the Billing Interruption judgment found behind a `balance-exhausted`, `subscription-expired`, or resource-attributed `quota-exceeded` Deployment Failure Reason — the available-balance formula's result, the expired subscription, or the quota that was full — safe for every runner to persist and show. It stands in for the runner's own error whenever that error was only a stall; the provider's own apply-time quota error keeps its numbers.
 
 _Avoid_: raw timeout text, stack trace, billing dump.
 
-### Deploy Billing Wall
+### Deploy Billing Notice
 
-The refusal a deployment pane and the assistant's deploy tool show in place of the form while a Pay-As-You-Go workspace is in Account Debt or any deployable quota is full — a fact that would certainly end the run as a Billing Interruption, so it wears the same billing callout and CTA. A low but positive balance never walls.
+The advisory billing callout a deployment pane shows above a still-usable form while a condition dooms every deployment the workspace could start — Account Debt on a Pay-As-You-Go workspace, a full cpu/memory/pod Deployable Quota, or a payment-due Workspace Subscription — wearing the Billing Interruption's callout and CTA. It informs and never blocks: the deploy action stays enabled, and a run pressed through a correct notice fails at the platform and comes back explained as a Billing Interruption; the assistant's deploy tool alone still refuses, pointing the user at the pane. A low but positive balance never shows it, and a full storage or nodeport quota speaks through form validation instead.
 
-_Avoid_: low balance warning, pre-flight check, deploy disabled.
+_Avoid_: Deploy Billing Wall, billing wall, low balance warning, pre-flight check, deploy disabled.
+
+### Deployable Quota
+
+The workspace quota types a new workload consumes and the Billing Interruption judgment therefore inspects: cpu, memory, storage, pod, and nodeport — traffic and GPU stay out. Cpu, memory, and pod are spent by every deployment, so any of them being full dooms all deployment work and is voiced by the Deploy Billing Notice; storage and nodeport doom only workloads that request them and are voiced by form validation.
+
+_Avoid_: resource quota (for this set), workspace limits, all quotas.
 
 ### Deployment Task Dock
 
@@ -702,7 +708,7 @@ _Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due
 
 ### Billing Interruption
 
-A deployment or a paid assistant turn the platform stopped because the workspace hit its money or quota wall — Account Debt, a full deployable quota, or an exhausted Paid Source. The platform sends no signal, so it is judged after the fact from the workspace's billing standing and told as a billing callout: the truthful cause and one CTA to the fix (top up, view usage, or upgrade). The same judgment made before the action is a wall — the Deploy Billing Wall, the Paid Chat Wall.
+A deployment or a paid assistant turn the platform stopped because the workspace hit its money or quota wall — Account Debt, a payment-due Workspace Subscription, a full Deployable Quota, or an exhausted Paid Source. The platform sends no signal, so it is judged after the fact from the workspace's billing standing and told as a billing callout: the truthful cause and one CTA to the fix (top up, view usage, or upgrade). The same judgment made before the action is the advisory Deploy Billing Notice before a deployment and the refusing Paid Chat Wall before a paid turn — deploy advises because its failure comes back explained, chat walls because a spent turn has no after-the-fact scene.
 
 _Avoid_: outage, something went wrong on our side, timed out (as its name), billing error (as the concept's name).
 
@@ -764,7 +770,7 @@ _Avoid_: priority, importance (the platform CR field), level, tone.
 
 ### Status Hint
 
-The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt (on a Pay-As-You-Go workspace only — the same judgment as the Deploy Billing Wall, so the banner and the wall can never disagree), a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
+The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt (on a Pay-As-You-Go workspace only — the same judgment as the Deploy Billing Notice, so the banner and the notice can never disagree), a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
 
 _Avoid_: alert bar, global notification, sticky toast, warning strip (as the concept's name).
 

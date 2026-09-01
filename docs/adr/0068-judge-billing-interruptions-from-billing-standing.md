@@ -1,6 +1,10 @@
 # Judge Billing Interruptions from billing standing, after a deployment fails and before a paid chat turn starts
 
-The platform stops a workspace's work when its money or quota runs out, but it tells Brain nothing: Sealos suspends an account in Account Debt by pinning the namespace under a zero `debt-limit0` ResourceQuota and scaling its workloads to zero, and a full deployable quota simply leaves a pod unschedulable. A Deployment Runner sees only a stall (a runtime or readiness timeout, or an `exceeded quota` apply error naming `debt-limit0`), and an AI Proxy turn sees a `403 group_balance_not_enough`. We decided to name these Billing Interruptions by **re-reading the workspace's billing standing** — one account-service read of account, credits, subscription and resource quota, judged into Account Debt / full quota / Paid Source — at three seams that must never disagree: the Deploy Billing Wall before a run, the deployment's terminal failure write, and the Paid Chat Wall before a `user` turn.
+## Status
+
+Accepted; the pre-deploy seam's posture is revised by ADR-0069 — the Deploy Billing Wall's refusal is softened into the advisory Deploy Billing Notice. The judgment itself, the terminal failure reverse-check, and the Paid Chat Wall stand.
+
+The platform stops a workspace's work when its money or quota runs out, but it tells Brain nothing: Sealos suspends an account in Account Debt by pinning the namespace under a zero `debt-limit0` ResourceQuota and scaling its workloads to zero, and a full deployable quota simply leaves a pod unschedulable. A Deployment Runner sees only a stall (a runtime or readiness timeout, or an `exceeded quota` apply error naming `debt-limit0`), and an AI Proxy turn sees a `403 group_balance_not_enough`. We decided to name these Billing Interruptions by **re-reading the workspace's billing standing** — one account-service read of account, credits, subscription and resource quota, judged into Account Debt / full quota / Paid Source — at three seams that must never disagree: the pre-deploy judgment before a run (then the Deploy Billing Wall, since ADR-0069 the advisory Deploy Billing Notice), the deployment's terminal failure write, and the Paid Chat Wall before a `user` turn.
 
 ## Decision
 
@@ -25,7 +29,7 @@ The platform stops a workspace's work when its money or quota runs out, but it t
 - The terminal failure write is now also the billing chokepoint: a run launched without a verifiable Workspace Actor cannot reverse-check and keeps its stall classification.
 - Two Deployment Failure Reasons and their Billing Evidence are proven by a read of account-service, not by the runner; tests exercise the judgment as a pure function over a standing.
 - `/api/chat` grows two 402 codes beside `free_chat_turns_exhausted`; ADR-0065's per-turn cost line now reads "several reads under one budget".
-- A subscription under the Deletion Countdown (payment-due) is suspended too, but it is neither Account Debt nor a full quota: its deployment still fails as the stall the runner saw, and the payment-due status hint carries the Renew voice. Walling or naming it needs its own Deployment Failure Reason and a revision of the Deploy Billing Wall — a follow-up, not this decision.
+- A subscription under the Deletion Countdown (payment-due) is suspended too, but it is neither Account Debt nor a full quota: its deployment still fails as the stall the runner saw, and the payment-due status hint carries the Renew voice. Walling or naming it needs its own Deployment Failure Reason and a revision of the Deploy Billing Wall — a follow-up taken by ADR-0069, which folds payment-due into the Deploy Billing Notice and commissions its reason.
 - Dev fixtures can stage both walls and both interruptions (`failed-balance`, `failed-quota`, `ai-credits-exhausted`, `refused-*`), since the platform's steady-state mocks alone cannot.
 
 ## Addendum (2026-08-31): the status hint narrows like the wall, and the debt formula gains the never-billed skip

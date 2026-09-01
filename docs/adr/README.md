@@ -39,7 +39,8 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0065 — Gate Free Chat Turns on the Active Free Trial and block on exhaustion](0065-gate-free-chat-turns-on-the-active-free-trial-and-block-on-exhaustion.md) *(replaces the deleted ADR-0033; paid-turn wall and per-turn reads extended by ADR-0068)*
 - [0066 — Give Canvas Resources Editable Display Names Stored on the Resource](0066-store-resource-display-names-in-annotations.md)
 - [0067 — Store Notifications Hybrid: Read Platform CRs Live, Keep Brain's Own in App Postgres](0067-store-notifications-hybrid-cr-read-proxy-and-brain-postgres.md)
-- [0068 — Judge Billing Interruptions from billing standing, after a deployment fails and before a paid chat turn starts](0068-judge-billing-interruptions-from-billing-standing.md) *(extends ADR-0042 and ADR-0065)*
+- [0068 — Judge Billing Interruptions from billing standing, after a deployment fails and before a paid chat turn starts](0068-judge-billing-interruptions-from-billing-standing.md) *(extends ADR-0042 and ADR-0065; pre-deploy seam softened by ADR-0069)*
+- [0069 — Soften the Deploy Billing Wall into the Deploy Billing Notice](0069-soften-the-deploy-billing-wall-into-the-deploy-billing-notice.md) *(revises ADR-0068's pre-deploy seam)*
 
 ## Conventions
 
