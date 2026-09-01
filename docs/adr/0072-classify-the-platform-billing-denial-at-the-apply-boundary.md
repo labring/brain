@@ -1,0 +1,26 @@
+# Classify the platform's billing denial at the apply boundary, and send the App Token on every deployment source
+
+ADR-0068 judges Billing Interruptions by re-reading the workspace's billing standing, because "the platform sends no signal". It also accepted a chokepoint: a run launched without a verifiable Workspace Actor cannot reverse-check and keeps its stall classification. Production showed both premises failing at once. A workspace whose Free-plan Workspace Subscription had expired (platform status `DEBT`) deployed from the docker pane; the platform's admission webhook (`debt.sealos.io`) denied the apply and **named the cause in the error text** — "the subscription status of workspace … is expired" — but the run had no Workspace Actor, because the client sent the App Token only for GitHub sources and consented attribution. The reverse-check was skipped, the failure stayed `apply-failed`, and the timeline showed raw JSON where the Billing Interruption card belonged. The premise "no signal" is false at exactly one seam: an apply-time denial is the platform explaining itself.
+
+## Decision
+
+**Every deployment source sends the App Token when one is hydrated — create and redeploy alike.** The server already binds a Workspace Actor for any source and fails closed only for GitHub and consented attribution; the client gates were the only reason a docker/template/database run reached its terminal failure without one. An unverifiable token still degrades to an unattributed run, never a blocked one. A proven same-person actor is also what the engine's consent-provenance inheritance was designed to key on; the token-free redeploy contract for namespace-shared predecessors is retired.
+
+**The apply-boundary classifier reads the platform's billing denial — matched on the webhook's identity, never its wording.** A denial by `admission webhook "debt.sealos.io"` that names a subscription classifies as `subscription-expired`; one that names a balance as `balance-exhausted`. The message copy is not stable upstream (the same denial has said "is expired" and "is suspended" across platform versions, and "expired" upstream means any non-`NORMAL` status), so wording beyond those two cause nouns is not trusted: the namespace-suspension phrasing covers both causes and stays unclassified for the standing reverse-check to resolve — a wrong billing CTA is worse than none. The classifier is a pure function beside the standing judgment, and runs only at the provider/Kubernetes apply boundary (ADR-0042's scope).
+
+**The standing judgment stays the senior evidence chain; the denial is the junior one.** A webhook-proven reason carries no Billing Evidence of its own — the Billing Interruption card already speaks plan-neutrally without evidence. When the reverse-check can run and agrees, it enriches the same reason with evidence and the persisted recovery voice, and — like the provider's own apply-time quota error — the platform-explained denial text keeps its raw display rather than being superseded. When the reverse-check cannot run (no actor, unreadable standing, mispinned region), the denial alone still names the cause.
+
+## Considered Options
+
+- **Only fix the token gates (main path only).** Rejected: the reverse-check still dies with any one of a stale token, an account-service timeout, or a mispinned Current Region (the exact hazard ADR-0070 names), and the platform's own explanation would still be ignored while sitting in the error text.
+- **Only the denial regex (no actor change).** Rejected: evidence-less classification can never carry the recovery voice or balance numbers, and ADR-0068's judgment remains the only source that can; the actor was designed to flow on every source, the client just never sent it.
+- **Match the denial's message wording.** Rejected: upstream rewrote the wording within four days of this incident's build, and its "expired" word means any non-`NORMAL` status (including never-subscribed `PAUSED`); the webhook's identity is the stable part.
+- **Judge from the client in the timeline pane.** Rejected: splits the judgment across surfaces and leaves the persisted reason wrong for exports, the assistant, and notifications — the seams ADR-0068 exists to keep agreeing.
+
+## Consequences
+
+- The production scenario is covered twice over: pre-deploy by the Deploy Billing Notice (standing-read, needs no actor) and post-failure by the denial classifier even when every reverse-check breakpoint fails.
+- `subscription-expired` and `balance-exhausted` can now exist without Billing Evidence; consumers must not assume evidence presence (the interruption card already doesn't).
+- Namespace-shared creates and redeploys now authorize the actor when a token is hydrated; a same-person redeploy can legitimately inherit consent provenance where the token-free contract always redacted it.
+- The classifier's cause-noun test is deliberately coarse; a future webhook wording that names neither noun falls back to the standing judgment, not to a guess.
+- Known residual gap, out of scope here: Brain's payment-due predicate recognizes only the `DEBT*` ladder, while the platform denies every non-`NORMAL` status — a never-subscribed `PAUSED` workspace is denied with no notice and, unless the webhook denial names a cause noun, no card.
