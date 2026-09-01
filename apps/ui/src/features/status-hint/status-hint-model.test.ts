@@ -226,7 +226,7 @@ test("quota-full names the first full resource and is a warning, not red", () =>
   assert.deepEqual(hint, {
     cta: { href: "/billing/usage", label: "View usage" },
     description:
-      "New deployments can't start until memory is freed or the plan is upgraded.",
+      "New deployments will fail until memory is freed or the plan is upgraded.",
     dismissible: true,
     id: "quota-full",
     title: "Memory quota is full",
@@ -242,7 +242,7 @@ test("quota-full covers pods", () => {
   assert.equal(pods?.title, "Pods quota is full");
   assert.equal(
     pods?.description,
-    "New deployments can't start until pods is freed or the plan is upgraded."
+    "New deployments will fail until pods is freed or the plan is upgraded."
   );
 });
 
@@ -254,7 +254,7 @@ test("quota-full keeps CPU capitalised and ignores traffic", () => {
   assert.equal(cpu?.title, "CPU quota is full");
   assert.equal(
     cpu?.description,
-    "New deployments can't start until CPU is freed or the plan is upgraded."
+    "New deployments will fail until CPU is freed or the plan is upgraded."
   );
   assert.deepEqual(
     ids({

@@ -56,7 +56,10 @@ describe("judgeWorkspaceBillingStanding", () => {
       aiCredits: null,
       availableBalanceMicroUnits: 104_550_000,
       fullQuota: null,
+      fullUniversalQuota: null,
       paidSource: "balance",
+      paymentDue: false,
+      paymentDueRecovery: null,
       quotaKnown: true,
     });
   });

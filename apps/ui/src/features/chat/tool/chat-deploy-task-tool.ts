@@ -9,7 +9,7 @@ import {
   chatToolIntentionField,
   logChatToolIntention,
 } from "@/features/chat/tool/chat-tool-intention";
-import { deployBillingWallFromStanding } from "@/features/deploy/deploy-billing-wall";
+import { deployBillingNoticeFromStanding } from "@/features/deploy/deploy-billing-notice";
 import {
   adoptLegacyGithubConnectionForOwner,
   getGithubConnectionStatusForOwner,
@@ -139,8 +139,8 @@ export function createDeployTaskTools(
   const judgeStanding =
     dependencies.judgeWorkspaceBillingStandingForActor ??
     judgeWorkspaceBillingStandingForActor;
-  /** Unknown standing never walls; a failing read never fails the tool. */
-  async function deployWall() {
+  /** Unknown standing never notices; a failing read never fails the tool. */
+  async function deployNotice() {
     const actor = options.billingActor;
     if (actor == null || actor.userUid.trim() === "") {
       return null;
@@ -152,7 +152,7 @@ export function createDeployTaskTools(
         userUid: actor.userUid,
         workspace: namespace,
       });
-      return deployBillingWallFromStanding(standing);
+      return deployBillingNoticeFromStanding(standing);
     } catch {
       return null;
     }
@@ -221,11 +221,16 @@ export function createDeployTaskTools(
             "No deployment target was provided. Use target.kind newProject with a displayName, or open a Project first.",
         };
       }
-      // The assistant is a deploy entry too: the pre-deploy wall (E1/E2)
-      // refuses here the way the panes replace their form.
-      const wall = await deployWall();
-      if (wall != null) {
-        return { ok: false, error: `${wall.title}. ${wall.body}` };
+      // The assistant is a deploy entry too, but the only one that refuses:
+      // the panes voice the same Deploy Billing Notice above a usable form,
+      // while the tool must not silently spend the user's doomed run
+      // (ADR-0069). The refusal names the pane as the deliberate way through.
+      const notice = await deployNotice();
+      if (notice != null) {
+        return {
+          ok: false,
+          error: `${notice.title}. ${notice.body} The deployment was not started. If the user wants to try anyway, the deployment pane shows this same notice but does not block.`,
+        };
       }
 
       let credentialBinding: DeploymentCredentialBinding | undefined;

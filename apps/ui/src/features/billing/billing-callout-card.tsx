@@ -15,13 +15,23 @@ import { recordBillingReturnRoute } from "./billing-return-route";
 
 /**
  * The billing callout family (design spec rows E1–E3, AIM-325 variant B):
- * the one destructive container a Billing Interruption or a billing wall
- * renders in — icon, headline, one-line explanation, exactly one CTA to the
- * fix. Composes the shared Alert for its role, slots and icon grid; the tint
- * is the family's own rather than Alert's card-on-white destructive variant,
- * and the copy keeps the foreground/muted pair so the red stays on the icon
- * and the border.
+ * the one container a Billing Interruption, a billing wall, or the Deploy
+ * Billing Notice renders in — icon, headline, one-line explanation, exactly
+ * one CTA to the fix. Composes the shared Alert for its role, slots and icon
+ * grid; the tint is the family's own rather than Alert's card-on-white
+ * destructive variant, and the copy keeps the foreground/muted pair so the
+ * semantic color stays on the icon and the border. Tones follow the status
+ * hint banner's severity language (billing-surface-tones): destructive for a
+ * refusal or a proven failure, warning for an advisory caution (ADR-0069).
  */
+const CALLOUT_TONES = {
+  destructive: "border-destructive/30 bg-destructive/10 text-destructive",
+  warning:
+    "border-amber-400/30 bg-amber-400/10 text-amber-600 dark:text-amber-400",
+} as const;
+
+export type BillingCalloutTone = keyof typeof CALLOUT_TONES;
+
 export function BillingCalloutCard({
   action,
   body,
@@ -29,6 +39,7 @@ export function BillingCalloutCard({
   icon: Icon,
   layout = "stacked",
   title,
+  tone = "destructive",
   ...props
 }: Omit<React.ComponentProps<"div">, "title"> & {
   /** The CTA; the family always offers exactly one. */
@@ -42,12 +53,13 @@ export function BillingCalloutCard({
    */
   layout?: "inline" | "stacked";
   title: React.ReactNode;
+  tone?: BillingCalloutTone;
 }) {
   const inline = layout === "inline";
   return (
     <Alert
       className={cn(
-        "border-destructive/30 bg-destructive/10 text-destructive",
+        CALLOUT_TONES[tone],
         inline && "has-[>svg]:grid-cols-[auto_1fr_auto]",
         className
       )}

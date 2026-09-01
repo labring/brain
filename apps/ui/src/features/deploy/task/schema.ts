@@ -193,6 +193,7 @@ export type DeployTaskFailureReason =
   | "apply-failed"
   | "quota-exceeded"
   | "balance-exhausted"
+  | "subscription-expired"
   | "readiness-timeout"
   | "interrupted"
   | "timeout"
@@ -205,9 +206,10 @@ export type DeployTaskFailureStage = "apply" | "readiness";
 
 /**
  * What the billing reverse-check found at failure time (design spec rows
- * E1/E2): the structured, allowlisted evidence behind a `balance-exhausted`
- * or resource-attributed `quota-exceeded` classification — never raw
- * upstream text, so every runner may persist and display it (ADR 0042).
+ * E1/E2): the structured, allowlisted evidence behind a `balance-exhausted`,
+ * `subscription-expired` (ADR-0069), or resource-attributed `quota-exceeded`
+ * classification — never raw upstream text, so every runner may persist and
+ * display it (ADR 0042).
  */
 export type DeployBillingEvidence =
   | {
@@ -221,6 +223,10 @@ export type DeployBillingEvidence =
       label: string;
       percentUsed: number;
       type: string;
+    }
+  | {
+      checkedAt: string;
+      kind: "subscription-expired";
     };
 
 export interface DeployTaskFailureDetails extends Record<string, unknown> {

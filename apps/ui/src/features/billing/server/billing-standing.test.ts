@@ -66,13 +66,21 @@ describe("workspace billing standing through the billing fixtures", () => {
     expect(standing.aiCredits).toBeNull();
   });
 
-  it("quota-full names the full storage quota", async () => {
+  it("quota-full names the first full quota, CPU, which is also the universal one", async () => {
+    // The fixture maxes CPU and storage; CPU sits first in the rows, and as
+    // a universal deployable quota it also feeds the Deploy Billing Notice
+    // (ADR-0069).
     const standing = await read("quota-full");
     expect(standing.accountDebt).toBe(false);
     expect(standing.fullQuota).toEqual({
-      label: "Storage",
+      label: "CPU",
       percentUsed: 100,
-      type: "storage",
+      type: "cpu",
+    });
+    expect(standing.fullUniversalQuota).toEqual({
+      label: "CPU",
+      percentUsed: 100,
+      type: "cpu",
     });
   });
 

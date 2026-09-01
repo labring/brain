@@ -145,8 +145,16 @@ const RENDERERS: {
   },
   "quota-exhausted": (payload) => {
     const label = QUOTA_RESOURCE_LABELS[payload.resource];
+    // Storage and nodeport doom only workloads that request them, so their
+    // message must not claim every deployment fails (ADR-0069).
+    const universal =
+      payload.resource === "cpu" ||
+      payload.resource === "memory" ||
+      payload.resource === "pod";
     return {
-      body: `${label} is at 100%. New deployments can't start.`,
+      body: universal
+        ? `${label} is at 100%. New deployments will fail.`
+        : `${label} is at 100%. Deployments requesting more will fail.`,
       cta: { href: "/billing/usage", label: "View usage" },
       severity: "warning",
       title: `${label} quota is full`,

@@ -152,6 +152,7 @@ describe("deploymentFailureReason", () => {
       "readiness-timeout": "didn't become ready",
       "repository-clone-failed": "could not be cloned",
       "runner-error": "internal error",
+      "subscription-expired": "expired subscription",
       timeout: "maximum run time",
       unknown: "unknown reason",
     } satisfies Record<DeployTaskFailureReason, string>;

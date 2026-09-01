@@ -174,7 +174,7 @@ test("Brain-produced entries render the sentence that carries the fact", async (
     assert.ok(text.includes("This workspace moves to Hobby on"));
     // A1: the resource, the consequence, and the way out.
     assert.ok(text.includes("CPU quota is full"));
-    assert.ok(text.includes("CPU is at 100%. New deployments can't start."));
+    assert.ok(text.includes("CPU is at 100%. New deployments will fail."));
     assert.equal(
       rendered.getByRole("button", { name: "View usage" }).getAttribute("href"),
       "/billing/usage"

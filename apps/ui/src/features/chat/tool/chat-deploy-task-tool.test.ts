@@ -454,7 +454,10 @@ test("chat createDeployTask refuses behind the pre-deploy wall and never creates
           aiCredits: null,
           availableBalanceMicroUnits: -6_320_000,
           fullQuota: null,
+          fullUniversalQuota: null,
           paidSource: "balance",
+          paymentDue: false,
+          paymentDueRecovery: null,
           quotaKnown: true,
         });
       },
@@ -475,7 +478,7 @@ test("chat createDeployTask refuses behind the pre-deploy wall and never creates
   assert.deepEqual(result, {
     ok: false,
     error:
-      "Account balance in debt. Pay-as-you-go workspaces are suspended, so new deployments can't start. Top up your balance to restore them.",
+      "Account balance in debt. Pay-as-you-go workspaces are suspended, so deployments will fail. Top up your balance to restore them. The deployment was not started. If the user wants to try anyway, the deployment pane shows this same notice but does not block.",
   });
   assert.equal(createCalls, 0);
 });

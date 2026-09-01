@@ -8,7 +8,7 @@ import {
   DatabaseDeployer,
   type DatabaseDeploymentSettings,
 } from "@/features/deploy/database-deployer";
-import { DeployBillingWallCard } from "@/features/deploy/deploy-billing-wall-card";
+import { DeployBillingNoticeCard } from "@/features/deploy/deploy-billing-notice-card";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
@@ -20,7 +20,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
-import { useDeployBillingWall } from "@/features/deploy/use-deploy-billing-wall";
+import { useDeployBillingNotice } from "@/features/deploy/use-deploy-billing-notice";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -46,6 +46,10 @@ function databaseInitialSettings(
       : {}),
   };
 }
+
+// Every database preset carries a storage request, so a full storage quota
+// dooms this pane's every deploy (ADR-0069).
+const DATABASE_PANE_CONSUMES = ["storage"] as const;
 
 export function DatabaseDeploymentPane({
   kubeconfig,
@@ -77,9 +81,14 @@ export function DatabaseDeploymentPane({
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false
   );
-  // The pre-deploy wall (E1/E2): a fact that will certainly fail the deploy
-  // replaces the form instead of letting the run die on it.
-  const billingWall = useDeployBillingWall();
+  // The pre-deploy notice (ADR-0069): a condition that dooms this deploy is
+  // voiced above the form, which stays usable — enforcement lives at the
+  // platform, and a pressed-through failure comes back explained. Every
+  // database preset includes storage, so a full storage quota dooms this
+  // pane like the universal quotas do.
+  const billingNotice = useDeployBillingNotice({
+    paneConsumes: DATABASE_PANE_CONSUMES,
+  });
   const initialSettings = useMemo(
     () => databaseInitialSettings(redeploy),
     [redeploy]
@@ -152,28 +161,27 @@ export function DatabaseDeploymentPane({
       }
       title={redeploy == null ? "Deploy Database" : "Edit & Redeploy Database"}
     >
-      {billingWall == null ? (
-        <DatabaseDeployer.Root
-          busy={deploying || currentProject.isLoading}
-          databaseOptions={databaseOptions}
-          initialSettings={initialSettings}
-          onDeploy={(settings) => {
-            overwriteGate.gate(() => {
-              deploy(settings).catch(() => undefined);
-            });
-          }}
-        >
-          <DatabaseDeployer.Fields />
-          <SidePaneFooter>
-            <DatabaseDeployer.Submit
-              className="w-full"
-              label={redeploy == null ? undefined : "Redeploy"}
-            />
-          </SidePaneFooter>
-        </DatabaseDeployer.Root>
-      ) : (
-        <DeployBillingWallCard wall={billingWall} />
+      {billingNotice != null && (
+        <DeployBillingNoticeCard notice={billingNotice} />
       )}
+      <DatabaseDeployer.Root
+        busy={deploying || currentProject.isLoading}
+        databaseOptions={databaseOptions}
+        initialSettings={initialSettings}
+        onDeploy={(settings) => {
+          overwriteGate.gate(() => {
+            deploy(settings).catch(() => undefined);
+          });
+        }}
+      >
+        <DatabaseDeployer.Fields />
+        <SidePaneFooter>
+          <DatabaseDeployer.Submit
+            className="w-full"
+            label={redeploy == null ? undefined : "Redeploy"}
+          />
+        </SidePaneFooter>
+      </DatabaseDeployer.Root>
       {overwriteGate.dialog}
     </SidePane>
   );

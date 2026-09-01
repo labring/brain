@@ -30,6 +30,17 @@ export function deploymentBillingInterruption(
       title: "Account balance exhausted",
     };
   }
+  if (details.reason === "subscription-expired") {
+    // Voice stays plan-neutral: an expired Free plan must not be asked to
+    // renew (CONTEXT.md, Workspace Subscription Renewal), and the evidence
+    // does not carry the plan.
+    return {
+      body: "The workspace's subscription expired, so the workspace is suspended and this deployment stopped. Restore a plan, then redeploy.",
+      cta: { href: "/billing", label: "View plan" },
+      icon: "alert",
+      title: "Subscription expired",
+    };
+  }
   if (details.reason === "quota-exceeded") {
     const evidence = deployBillingEvidence(details.billingEvidence);
     const label = evidence?.kind === "quota-full" ? evidence.label : null;

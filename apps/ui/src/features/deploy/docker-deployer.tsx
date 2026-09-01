@@ -173,6 +173,7 @@ interface DockerDeployerContextValue {
   setImage: Dispatch<SetStateAction<string>>;
   setImageTouched: Dispatch<SetStateAction<boolean>>;
   setStorageRows: Dispatch<SetStateAction<DockerDeploymentStorageRowState[]>>;
+  storageQuotaFull: boolean;
   storageRows: DockerDeploymentStorageRowState[];
   validation: ReturnType<typeof validateDockerDeploymentSettings>;
   visibleImageError: DockerDeploymentValidationError | undefined;
@@ -198,12 +199,19 @@ function DockerDeployerRoot({
   children,
   initialSettings,
   onDeploy,
+  storageQuotaFull = false,
 }: {
   busy?: boolean;
   children?: ReactNode;
   /** Prefill (US10): any subset; missing fields fall back to defaults. */
   initialSettings?: Partial<DockerDeploymentSettings>;
   onDeploy?: (settings: DockerDeploymentSettings) => void | Promise<void>;
+  /**
+   * Whether the workspace's storage quota sits at its ceiling. Storage is
+   * request-scoped, so the Deploy Billing Notice does not voice it; the
+   * storage mount rows warn instead (ADR-0069).
+   */
+  storageQuotaFull?: boolean;
 }) {
   const [image, setImage] = useState(
     initialSettings?.image ?? DEFAULT_DOCKER_IMAGE
@@ -360,6 +368,7 @@ function DockerDeployerRoot({
       setImage,
       setImageTouched,
       setStorageRows,
+      storageQuotaFull,
       storageRows,
       validation,
       visibleImageError,
@@ -381,6 +390,7 @@ function DockerDeployerRoot({
       removeEnvRow,
       requestDeploy,
       requestEnvEditorMode,
+      storageQuotaFull,
       storageRows,
       validation,
       visibleImageError,
@@ -425,6 +435,7 @@ function DockerDeployerFields({
     setImage,
     setImageTouched,
     setStorageRows,
+    storageQuotaFull,
     storageRows,
     validation,
     visibleImageError,
@@ -743,6 +754,15 @@ function DockerDeployerFields({
         icon={<HardDrive aria-hidden className="size-4" />}
         title="Storage"
       >
+        {storageQuotaFull && storageRows.length > 0 ? (
+          // Storage is request-scoped: the quota warning belongs to the rows
+          // that request it, not the pane's notice (ADR-0069). Advisory only
+          // — the deploy stays available and would fail explained.
+          <p className="text-amber-600 text-xs leading-4 dark:text-amber-400">
+            Storage quota is full — mounts requesting more storage will fail
+            until storage is freed or the plan is upgraded.
+          </p>
+        ) : null}
         {storageRows.length === 0 ? null : (
           <div className="flex min-w-0 flex-col gap-2">
             {storageRows.map((row, index) => {

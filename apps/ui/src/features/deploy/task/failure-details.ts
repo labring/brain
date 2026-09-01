@@ -102,6 +102,12 @@ export function deployBillingEvidence(
       type: record.type,
     };
   }
+  if (
+    record.kind === "subscription-expired" &&
+    typeof record.checkedAt === "string"
+  ) {
+    return { checkedAt: record.checkedAt, kind: "subscription-expired" };
+  }
   return null;
 }
 
@@ -116,6 +122,12 @@ function billingEvidenceLines(evidence: DeployBillingEvidence): string[] {
         : `${evidence.availableBalanceMicroUnits / MICRO_UNITS_PER_CURRENCY_UNIT} <= 0`;
     return [
       `Billing check: available = balance - deductions + credits = ${available}`,
+      `Checked at: ${evidence.checkedAt}`,
+    ];
+  }
+  if (evidence.kind === "subscription-expired") {
+    return [
+      "Billing check: the workspace subscription is expired (payment-due), so the workspace is suspended",
       `Checked at: ${evidence.checkedAt}`,
     ];
   }
@@ -193,14 +205,15 @@ export function deploymentFailureTechnicalDetail(input: {
   // A billing cause the runner never saw reached it only as a stall — a
   // timeout, a pod that never came up — and that text contradicts the
   // classification, so the billing check stands in for it on every runner
-  // (design spec rows E1/E2, ADR 0068). An exhausted balance is always such
-  // a cause; a full quota is one unless the apply step itself reported the
-  // quota error, the one stage where the provider's own numbers are worth
-  // keeping.
+  // (design spec rows E1/E2, ADR 0068). An exhausted balance or an expired
+  // subscription (ADR-0069) is always such a cause; a full quota is one
+  // unless the apply step itself reported the quota error, the one stage
+  // where the provider's own numbers are worth keeping.
   const billingReason = input.details?.reason;
   const billingSupersedesError =
     evidence != null &&
     (billingReason === "balance-exhausted" ||
+      billingReason === "subscription-expired" ||
       (billingReason === "quota-exceeded" && input.details?.stage !== "apply"));
   if (billingSupersedesError) {
     return [

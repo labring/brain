@@ -14,7 +14,7 @@ import { formatNotificationDate } from "./notification-time";
 import type { NotificationMessage } from "./types";
 
 const T0 = 1_756_200_000; // Unix seconds
-const QUOTA_BODY_RE = /New deployments can't start/;
+const QUOTA_BODY_RE = /Deployments requesting more will fail/;
 
 function cr(overrides: Partial<NotificationCRItem>): NotificationCRItem {
   // As upstream writes them: the version is the spec timestamp.

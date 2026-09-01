@@ -1,7 +1,12 @@
 import { z } from "zod";
 
-import { accountDebtFromMoney } from "@/features/billing/account-debt";
 import {
+  accountDebtFromMoney,
+  accountDebtSuspends,
+} from "@/features/billing/account-debt";
+import type { RecoveryVoice } from "@/features/billing/billing-plan-data";
+import {
+  firstDoomingQuotaRow,
   firstFullQuotaRow,
   type QuotaFullnessRow,
   workspaceQuotaRowsFromPayload,
@@ -38,8 +43,25 @@ export interface WorkspaceBillingStanding {
   availableBalanceMicroUnits: number | null;
   /** The first deployable quota at or past 100%; null when none — or when unread (see quotaKnown). */
   fullQuota: QuotaFullnessRow | null;
+  /**
+   * The first full quota among those every workload consumes (cpu, memory,
+   * pod) — what the Deploy Billing Notice voices (ADR-0069); null when none
+   * or unread.
+   */
+  fullUniversalQuota: QuotaFullnessRow | null;
   /** What paid AI usage spends; null while the subscription type is unknown. */
   paidSource: WorkspaceAiPaidSource | null;
+  /**
+   * Whether an expired Workspace Subscription (payment-due) suspends this
+   * workspace; null while the subscription read is unknown.
+   */
+  paymentDue: boolean | null;
+  /**
+   * How payment-due recovery speaks — an expired Free plan must not be
+   * asked to renew (CONTEXT.md, Workspace Subscription Renewal). Null
+   * unless paymentDue is true.
+   */
+  paymentDueRecovery: RecoveryVoice | null;
   /** Whether the quota read answered, so a null fullQuota is a fact. */
   quotaKnown: boolean;
 }
@@ -49,7 +71,10 @@ export const UNKNOWN_BILLING_STANDING: WorkspaceBillingStanding = {
   aiCredits: null,
   availableBalanceMicroUnits: null,
   fullQuota: null,
+  fullUniversalQuota: null,
   paidSource: null,
+  paymentDue: null,
+  paymentDueRecovery: null,
   quotaKnown: false,
 };
 
@@ -77,6 +102,7 @@ const creditsSchema = z.object({
 
 const subscriptionSchema = z.object({
   subscription: z.object({
+    PlanName: z.string().optional(),
     Status: z.string().optional(),
     type: z.string().optional(),
   }),
@@ -124,24 +150,45 @@ function usableCreditMicroUnits(credits: unknown): number | null {
 function subscriptionFacts(subscription: unknown): {
   inDebt: boolean;
   paidSource: WorkspaceAiPaidSource | null;
+  paymentDue: boolean | null;
+  paymentDueRecovery: RecoveryVoice | null;
 } {
+  const unknown = {
+    inDebt: false,
+    paidSource: null,
+    paymentDue: null,
+    paymentDueRecovery: null,
+  };
   const parsed = subscriptionSchema.safeParse(subscription);
   if (!parsed.success) {
-    return { inDebt: false, paidSource: null };
+    return unknown;
   }
   const type = parsed.data.subscription.type?.trim().toLowerCase() ?? "";
   const status = parsed.data.subscription.Status?.trim().toUpperCase() ?? "";
   if (type === "") {
-    return { inDebt: false, paidSource: null };
+    return unknown;
   }
   // An upstream record in DELETED status is not a Workspace Subscription:
   // the workspace is Pay-As-You-Go (CONTEXT.md, Workspace Subscription).
   const payg = type !== "subscription" || status === "DELETED";
+  // A subscribed workspace on the platform's DEBT ladder is payment-due:
+  // expired and suspended under the Deletion Countdown (CONTEXT.md).
+  const paymentDue = !payg && status.startsWith("DEBT");
+  let paymentDueRecovery: RecoveryVoice | null = null;
+  if (paymentDue) {
+    // An expired Free plan is not a renewal target (CONTEXT.md, Workspace
+    // Subscription Renewal): its recovery voice upgrades instead.
+    const freePlan =
+      parsed.data.subscription.PlanName?.trim().toLowerCase() === "free";
+    paymentDueRecovery = freePlan ? "resubscribe" : "renew";
+  }
   return {
     // A PAYG workspace the platform reports on the debt ladder is Account
     // Debt by definition — no timestamps, no subscription (CONTEXT.md).
     inDebt: payg && status.startsWith("DEBT"),
     paidSource: payg ? "balance" : "ai-credits",
+    paymentDue,
+    paymentDueRecovery,
   };
 }
 
@@ -179,6 +226,7 @@ export function judgeWorkspaceBillingStanding(
   }
   const rows = workspaceQuotaRowsFromPayload(payloads.quota);
   const fullRow = rows == null ? null : firstFullQuotaRow(rows);
+  const universalRow = rows == null ? null : firstDoomingQuotaRow(rows);
   return {
     accountDebt,
     aiCredits:
@@ -194,7 +242,17 @@ export function judgeWorkspaceBillingStanding(
             percentUsed: fullRow.percentUsed,
             type: fullRow.type,
           },
+    fullUniversalQuota:
+      universalRow == null
+        ? null
+        : {
+            label: universalRow.label,
+            percentUsed: universalRow.percentUsed,
+            type: universalRow.type,
+          },
     paidSource: facts.paidSource,
+    paymentDue: facts.paymentDue,
+    paymentDueRecovery: facts.paymentDueRecovery,
     quotaKnown: rows != null,
   };
 }
@@ -205,18 +263,18 @@ export function judgeWorkspaceBillingStanding(
  * stops only Pay-As-You-Go workspaces — so the Status Hint voices it only
  * there; a subscribed workspace's resources ride its plan
  * and its AI usage its AI Credits (CONTEXT.md, Account Debt; design spec
- * row E1). So only a workspace paying from the balance can be walled or
- * have its failure reclassified on debt. Null while either fact is unknown:
- * every seam fails open (ADR-0068).
+ * row E1). So only a workspace paying from the balance can be noticed or
+ * have its failure reclassified on debt. The judgment itself is
+ * `accountDebtSuspends`, shared with the client-side `accountDebtHolds`
+ * (ADR-0069). Null while either fact is unknown: every seam fails open
+ * (ADR-0068).
  */
 export function debtSuspendsWorkspace(
   standing: Pick<WorkspaceBillingStanding, "accountDebt" | "paidSource">
 ): boolean | null {
-  if (standing.paidSource == null) {
-    return null;
-  }
-  if (standing.paidSource !== "balance") {
-    return false;
-  }
-  return standing.accountDebt;
+  return accountDebtSuspends({
+    accountDebt: standing.accountDebt,
+    isPayg:
+      standing.paidSource == null ? null : standing.paidSource === "balance",
+  });
 }
