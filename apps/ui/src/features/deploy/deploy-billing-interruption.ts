@@ -27,6 +27,42 @@ export interface DeploymentBillingInterruption {
 /** Subscription facts the quota CTA forks on; null marks unknown. */
 export type DeploymentBillingInterruptionContext = Partial<QuotaCtaContext>;
 
+/**
+ * With the evidence's persisted recovery voice, the card keeps the Deploy
+ * Billing Notice's headline and CTA — a run pressed through the notice
+ * fails into the same words, and an expired Free plan is never asked to
+ * renew (CONTEXT.md, Workspace Subscription Renewal). Evidence from before
+ * the voice was persisted stays plan-neutral.
+ */
+function subscriptionExpiredInterruption(
+  billingEvidence: DeployTaskFailureDetails["billingEvidence"]
+): DeploymentBillingInterruption {
+  const evidence = deployBillingEvidence(billingEvidence);
+  const recovery =
+    evidence?.kind === "subscription-expired"
+      ? (evidence.recovery ?? null)
+      : null;
+  if (recovery == null) {
+    return {
+      body: "The workspace's subscription expired, so the workspace is suspended and this deployment stopped. Restore a plan, then redeploy.",
+      cta: { href: "/billing", label: "View plan" },
+      icon: "alert",
+      title: "Subscription expired",
+    };
+  }
+  const resubscribe = recovery === "resubscribe";
+  return {
+    body: resubscribe
+      ? "The workspace's subscription expired, so the workspace is suspended and this deployment stopped. Upgrade to a paid plan, then redeploy."
+      : "The workspace's subscription expired, so the workspace is suspended and this deployment stopped. Renew the plan, then redeploy.",
+    cta: resubscribe
+      ? { href: "/billing?mode=upgrade", label: "Upgrade plan" }
+      : { href: "/billing", label: "Renew plan" },
+    icon: "alert",
+    title: "Workspace suspended — payment due",
+  };
+}
+
 export function deploymentBillingInterruption(
   details: Pick<DeployTaskFailureDetails, "billingEvidence" | "reason"> | null,
   context: DeploymentBillingInterruptionContext = {}
@@ -47,15 +83,7 @@ export function deploymentBillingInterruption(
     };
   }
   if (details.reason === "subscription-expired") {
-    // Voice stays plan-neutral: an expired Free plan must not be asked to
-    // renew (CONTEXT.md, Workspace Subscription Renewal), and the evidence
-    // does not carry the plan.
-    return {
-      body: "The workspace's subscription expired, so the workspace is suspended and this deployment stopped. Restore a plan, then redeploy.",
-      cta: { href: "/billing", label: "View plan" },
-      icon: "alert",
-      title: "Subscription expired",
-    };
+    return subscriptionExpiredInterruption(details.billingEvidence);
   }
   if (details.reason === "quota-exceeded") {
     const evidence = deployBillingEvidence(details.billingEvidence);

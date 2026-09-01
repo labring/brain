@@ -113,9 +113,24 @@ describe("resolveBillingFailureOverride", () => {
       billingEvidence: {
         checkedAt: "2026-08-28T10:00:00.000Z",
         kind: "subscription-expired",
+        recovery: "renew",
       },
       reason: "subscription-expired",
       supersedesRunnerError: true,
+    });
+    // The recovery voice rides the evidence, so the Billing Interruption
+    // card can keep the Deploy Billing Notice's words (expired Free plans
+    // resubscribe, never renew).
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "readiness-timeout",
+        standing: { ...paymentDue, paymentDueRecovery: "resubscribe" },
+      })?.billingEvidence
+    ).toEqual({
+      checkedAt: "2026-08-28T10:00:00.000Z",
+      kind: "subscription-expired",
+      recovery: "resubscribe",
     });
     // The suspension outranks even an apply-time quota error, like debt does.
     expect(

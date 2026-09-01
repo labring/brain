@@ -12,6 +12,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+import type { RecoveryVoice } from "@/features/billing/billing-plan-data";
 import type {
   TemplateDefaultValue,
   TemplateSourceInput,
@@ -228,6 +229,12 @@ export type DeployBillingEvidence =
   | {
       checkedAt: string;
       kind: "subscription-expired";
+      /**
+       * How recovery speaks (renew vs resubscribe), persisted so the
+       * Billing Interruption card keeps the Deploy Billing Notice's voice.
+       * Absent on records from before the field existed.
+       */
+      recovery?: RecoveryVoice;
     };
 
 export interface DeployTaskFailureDetails extends Record<string, unknown> {

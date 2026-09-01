@@ -78,6 +78,60 @@ describe("deploymentBillingInterruption", () => {
     });
   });
 
+  it("keeps the Deploy Billing Notice's voice on an expired subscription", () => {
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "subscription-expired",
+          recovery: "renew",
+        },
+        reason: "subscription-expired",
+      })
+    ).toEqual({
+      body: "The workspace's subscription expired, so the workspace is suspended and this deployment stopped. Renew the plan, then redeploy.",
+      cta: { href: "/billing", label: "Renew plan" },
+      icon: "alert",
+      title: "Workspace suspended — payment due",
+    });
+    // An expired Free plan must not be asked to renew.
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "subscription-expired",
+          recovery: "resubscribe",
+        },
+        reason: "subscription-expired",
+      })
+    ).toEqual({
+      body: "The workspace's subscription expired, so the workspace is suspended and this deployment stopped. Upgrade to a paid plan, then redeploy.",
+      cta: { href: "/billing?mode=upgrade", label: "Upgrade plan" },
+      icon: "alert",
+      title: "Workspace suspended — payment due",
+    });
+  });
+
+  it("stays plan-neutral when the evidence carries no recovery voice", () => {
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "subscription-expired",
+        },
+        reason: "subscription-expired",
+      })
+    ).toEqual({
+      body: "The workspace's subscription expired, so the workspace is suspended and this deployment stopped. Restore a plan, then redeploy.",
+      cta: { href: "/billing", label: "View plan" },
+      icon: "alert",
+      title: "Subscription expired",
+    });
+    expect(
+      deploymentBillingInterruption({ reason: "subscription-expired" })
+    ).toMatchObject({ cta: { label: "View plan" } });
+  });
+
   it("is null for every other failure reason", () => {
     expect(deploymentBillingInterruption({ reason: "timeout" })).toBeNull();
     expect(deploymentBillingInterruption(null)).toBeNull();

@@ -106,7 +106,13 @@ export function deployBillingEvidence(
     record.kind === "subscription-expired" &&
     typeof record.checkedAt === "string"
   ) {
-    return { checkedAt: record.checkedAt, kind: "subscription-expired" };
+    return {
+      checkedAt: record.checkedAt,
+      kind: "subscription-expired",
+      ...(record.recovery === "renew" || record.recovery === "resubscribe"
+        ? { recovery: record.recovery }
+        : {}),
+    };
   }
   return null;
 }

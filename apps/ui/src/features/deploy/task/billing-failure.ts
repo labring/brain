@@ -94,6 +94,7 @@ export function resolveBillingFailureOverride(input: {
       billingEvidence: {
         checkedAt: input.now.toISOString(),
         kind: "subscription-expired",
+        recovery: standing.paymentDueRecovery ?? "renew",
       },
       reason: "subscription-expired",
       supersedesRunnerError: true,
