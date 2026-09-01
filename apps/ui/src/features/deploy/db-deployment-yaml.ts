@@ -109,6 +109,8 @@ export function renderDbDeploymentYaml(
       )
     ),
     engine: options.engine,
+    // Always false today. The first field that exposes one owes the nodeport
+    // quota validation ADR-0070 places on requesting fields.
     exposeNodePort: false,
     projectId: options.projectName,
     quota: options.quota,

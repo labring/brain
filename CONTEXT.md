@@ -362,13 +362,13 @@ _Avoid_: raw timeout text, stack trace, billing dump.
 
 ### Deploy Billing Notice
 
-The advisory billing callout a deployment pane shows above a still-usable form while a condition dooms every deployment the workspace could start — Account Debt on a Pay-As-You-Go workspace, a full cpu/memory/pod Deployable Quota, or a payment-due Workspace Subscription — wearing the Billing Interruption's callout and CTA. It informs and never blocks: the deploy action stays enabled, and a run pressed through a correct notice fails at the platform and comes back explained as a Billing Interruption; the assistant's deploy tool alone still refuses, pointing the user at the pane. A low but positive balance never shows it, and a full storage or nodeport quota speaks through form validation instead.
+The advisory billing callout a deployment pane shows above a still-usable form while a condition dooms every deployment the workspace could start — Account Debt on a Pay-As-You-Go workspace, a full cpu/memory/pod Deployable Quota, or a payment-due Workspace Subscription — wearing the Billing Interruption's callout and CTA. It informs and never blocks: the deploy action stays enabled, and a run pressed through a correct notice fails at the platform and comes back explained as a Billing Interruption; the assistant's deploy tool alone still refuses, pointing the user at the pane. A low but positive balance never shows it, and a full storage or nodeport quota speaks through form validation instead — unless the pane's every deployment requests it, where the notice speaks (the database presets all carry storage).
 
 _Avoid_: Deploy Billing Wall, billing wall, low balance warning, pre-flight check, deploy disabled.
 
 ### Deployable Quota
 
-The workspace quota types a new workload consumes and the Billing Interruption judgment therefore inspects: cpu, memory, storage, pod, and nodeport — traffic and GPU stay out. Cpu, memory, and pod are spent by every deployment, so any of them being full dooms all deployment work and is voiced by the Deploy Billing Notice; storage and nodeport doom only workloads that request them and are voiced by form validation.
+The workspace quota types a new workload consumes and the Billing Interruption judgment therefore inspects: cpu, memory, storage, pod, and nodeport — traffic and GPU stay out. Cpu, memory, and pod are spent by every deployment, so any of them being full dooms all deployment work and is voiced by the Deploy Billing Notice; storage and nodeport doom only workloads that request them and are voiced by form validation on the requesting fields — or by the Deploy Billing Notice in a pane whose every deployment requests them.
 
 _Avoid_: resource quota (for this set), workspace limits, all quotas.
 
@@ -708,7 +708,7 @@ _Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due
 
 ### Billing Interruption
 
-A deployment or a paid assistant turn the platform stopped because the workspace hit its money or quota wall — Account Debt, a payment-due Workspace Subscription, a full Deployable Quota, or an exhausted Paid Source. The platform sends no signal, so it is judged after the fact from the workspace's billing standing and told as a billing callout: the truthful cause and one CTA to the fix (top up, view usage, or upgrade). The same judgment made before the action is the advisory Deploy Billing Notice before a deployment and the refusing Paid Chat Wall before a paid turn — deploy advises because its failure comes back explained, chat walls because a spent turn has no after-the-fact scene.
+A deployment or a paid assistant turn the platform stopped because the workspace hit its money or quota wall — Account Debt, a payment-due Workspace Subscription, a full Deployable Quota, or an exhausted Paid Source. The platform sends no signal, so it is judged after the fact from the workspace's billing standing and told as a billing callout: the truthful cause and the CTA to the fix (top up, renew, or upgrade — a quota callout leads with the plan and keeps View usage beside it). The same judgment made before the action is the advisory Deploy Billing Notice before a deployment and the refusing Paid Chat Wall before a paid turn — deploy advises because its failure comes back explained, chat walls because a spent turn has no after-the-fact scene.
 
 _Avoid_: outage, something went wrong on our side, timed out (as its name), billing error (as the concept's name).
 
