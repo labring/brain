@@ -30,6 +30,7 @@ import { readApiOpenApiDocsTool } from "@/features/chat/tool/read-api-openapi-do
 import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 
 import { CHAT_BASE_SYSTEM_PROMPT } from "./model";
+import { CHAT_TOOL_APPROVAL } from "./tool-approval";
 import { buildAssistantWorkspaceContextPrompt } from "./workspace-context-prompt";
 
 const emitGenUISpecInputSchema = genUISpecInputSchema.extend({
@@ -47,6 +48,10 @@ const emitGenUISpec = tool({
 
 export interface ChatToolset {
   systemPrompt: string;
+  toolApproval: {
+    bash: "user-approval";
+    writeFile: "user-approval";
+  };
   tools: ToolSet;
 }
 
@@ -131,5 +136,5 @@ export async function buildChatToolset({
 
   const systemPrompt = systemPromptParts.join("\n\n");
 
-  return { tools, systemPrompt };
+  return { toolApproval: CHAT_TOOL_APPROVAL, tools, systemPrompt };
 }
