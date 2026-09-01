@@ -158,6 +158,34 @@ export function firstFullQuotaRow<Row extends QuotaFullnessRow>(
 }
 
 /**
+ * The deployable quotas every new workload consumes whatever its shape — a
+ * full one dooms all deployment work, so only these speak through the
+ * Deploy Billing Notice (ADR-0070). Storage and nodeport doom only
+ * workloads that request them; they speak through form validation instead.
+ */
+export const UNIVERSAL_DEPLOYABLE_QUOTA_TYPES: ReadonlySet<BillingQuotaType> =
+  new Set(["cpu", "memory", "pod"]);
+
+/**
+ * The first full quota row that dooms every deployment a pane could start:
+ * the universal set plus any types the pane's every deploy request consumes
+ * (ADR-0070) — the database pane's presets all include storage.
+ */
+export function firstDoomingQuotaRow<Row extends QuotaFullnessRow>(
+  rows: readonly Row[],
+  paneConsumes: readonly BillingQuotaType[] = []
+): Row | null {
+  return (
+    rows.find(
+      (row) =>
+        (UNIVERSAL_DEPLOYABLE_QUOTA_TYPES.has(row.type) ||
+          paneConsumes.includes(row.type)) &&
+        row.percentUsed >= 100
+    ) ?? null
+  );
+}
+
+/**
  * The quota rows of a raw account-service resource-quota payload, or null
  * when the payload is not one — for server-side judgments that hold the
  * upstream response rather than a fetcher.

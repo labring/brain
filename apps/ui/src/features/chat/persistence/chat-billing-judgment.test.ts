@@ -12,7 +12,10 @@ const OPEN_PAYG: WorkspaceBillingStanding = {
   aiCredits: null,
   availableBalanceMicroUnits: 50_000_000,
   fullQuota: null,
+  fullUniversalQuota: null,
   paidSource: "balance",
+  paymentDue: false,
+  paymentDueRecovery: null,
   quotaKnown: true,
 };
 

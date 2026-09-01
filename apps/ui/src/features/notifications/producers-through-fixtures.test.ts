@@ -93,7 +93,7 @@ async function quotaSnapshotFor(
   };
 }
 
-test("quota-full's storage crosses 100% once; active's usage releases it", async () => {
+test("quota-full's CPU and storage cross 100% once; active's usage releases them", async () => {
   const full = await quotaSnapshotFor("quota-full");
   const first = await observeWorkspaceQuotaForNotifications(store, {
     namespace: WORKSPACE,
@@ -103,14 +103,14 @@ test("quota-full's storage crosses 100% once; active's usage releases it", async
     namespace: WORKSPACE,
     snapshot: full,
   });
-  assert.deepEqual(first, { produced: ["storage"], released: [] });
+  assert.deepEqual(first, { produced: ["cpu", "storage"], released: [] });
   assert.deepEqual(retry, { produced: [], released: [] });
 
   const recovered = await observeWorkspaceQuotaForNotifications(store, {
     namespace: WORKSPACE,
     snapshot: await quotaSnapshotFor("active"),
   });
-  assert.deepEqual(recovered, { produced: [], released: ["storage"] });
+  assert.deepEqual(recovered, { produced: [], released: ["cpu", "storage"] });
   assert.equal(
     (
       await store.listMessages({
@@ -118,7 +118,7 @@ test("quota-full's storage crosses 100% once; active's usage releases it", async
         userUid: "uid-newcomer",
       })
     ).length,
-    1
+    2
   );
 });
 
@@ -166,6 +166,7 @@ test("active's settled checkout is one upgrade receipt, however often it is obse
   ).map((message) => message.kind);
   assert.deepEqual([...kinds].sort(), [
     "credit-hint",
+    "quota-exhausted",
     "quota-exhausted",
     "subscription-change",
   ]);

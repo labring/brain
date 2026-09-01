@@ -12,6 +12,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+import type { RecoveryVoice } from "@/features/billing/billing-plan-data";
 import type {
   TemplateDefaultValue,
   TemplateSourceInput,
@@ -194,6 +195,7 @@ export type DeployTaskFailureReason =
   | "apply-failed"
   | "quota-exceeded"
   | "balance-exhausted"
+  | "subscription-expired"
   | "readiness-timeout"
   | "interrupted"
   | "timeout"
@@ -206,9 +208,10 @@ export type DeployTaskFailureStage = "apply" | "readiness";
 
 /**
  * What the billing reverse-check found at failure time (design spec rows
- * E1/E2): the structured, allowlisted evidence behind a `balance-exhausted`
- * or resource-attributed `quota-exceeded` classification — never raw
- * upstream text, so every runner may persist and display it (ADR 0042).
+ * E1/E2): the structured, allowlisted evidence behind a `balance-exhausted`,
+ * `subscription-expired` (ADR-0070), or resource-attributed `quota-exceeded`
+ * classification — never raw upstream text, so every runner may persist and
+ * display it (ADR 0042).
  */
 export type DeployBillingEvidence =
   | {
@@ -222,6 +225,16 @@ export type DeployBillingEvidence =
       label: string;
       percentUsed: number;
       type: string;
+    }
+  | {
+      checkedAt: string;
+      kind: "subscription-expired";
+      /**
+       * How recovery speaks (renew vs resubscribe), persisted so the
+       * Billing Interruption card keeps the Deploy Billing Notice's voice.
+       * Absent on records from before the field existed.
+       */
+      recovery?: RecoveryVoice;
     };
 
 export interface DeployTaskFailureDetails extends Record<string, unknown> {

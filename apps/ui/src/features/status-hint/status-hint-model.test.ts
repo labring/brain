@@ -152,7 +152,11 @@ test("Account Debt lights up on a billed PAYG workspace at zero available and ne
     subscription: subscription(PAYG),
   }).hints;
   assert.deepEqual(hint, {
-    cta: { href: "/billing", label: "Top up balance" },
+    cta: {
+      desktop: { app: "system-costcenter", label: "Top up in Sealos Desktop" },
+      href: "/billing",
+      label: "Top up balance",
+    },
     description:
       "Pay-as-you-go workspaces are suspended. Top up your balance to restore them.",
     dismissible: false,
@@ -224,14 +228,41 @@ test("quota-full names the first full resource and is a warning, not red", () =>
     ],
   }).hints;
   assert.deepEqual(hint, {
-    cta: { href: "/billing/usage", label: "View usage" },
+    // Plan-first: the paid fix leads, usage stays the quiet second way out.
+    cta: { href: "/billing?mode=upgrade", label: "Upgrade plan" },
     description:
-      "New deployments can't start until memory is freed or the plan is upgraded.",
+      "New deployments will fail until memory is freed or the plan is upgraded.",
     dismissible: true,
     id: "quota-full",
+    secondaryCta: { href: "/billing/usage", label: "View usage" },
     title: "Memory quota is full",
     tone: "warning",
   });
+});
+
+test("quota-full's plan CTA forks on the subscription and steps aside at the plan ceiling", () => {
+  const full = [{ label: "Pods", percentUsed: 100, type: "pod" as const }];
+  // A PAYG workspace subscribes rather than upgrades.
+  const [payg] = evaluateStatusHints({
+    ...QUIET,
+    quota: full,
+    subscription: subscription(PAYG),
+  }).hints;
+  assert.deepEqual(payg?.cta, {
+    href: "/billing?mode=upgrade",
+    label: "Subscribe",
+  });
+  // A confirmed plan ceiling has no plan to sell: usage is the only way out.
+  const [ceiling] = evaluateStatusHints({
+    ...QUIET,
+    planCeiling: true,
+    quota: full,
+  }).hints;
+  assert.deepEqual(ceiling?.cta, {
+    href: "/billing/usage",
+    label: "View usage",
+  });
+  assert.equal(ceiling?.secondaryCta, undefined);
 });
 
 test("quota-full covers pods", () => {
@@ -242,7 +273,7 @@ test("quota-full covers pods", () => {
   assert.equal(pods?.title, "Pods quota is full");
   assert.equal(
     pods?.description,
-    "New deployments can't start until pods is freed or the plan is upgraded."
+    "New deployments will fail until pods is freed or the plan is upgraded."
   );
 });
 
@@ -254,7 +285,7 @@ test("quota-full keeps CPU capitalised and ignores traffic", () => {
   assert.equal(cpu?.title, "CPU quota is full");
   assert.equal(
     cpu?.description,
-    "New deployments can't start until CPU is freed or the plan is upgraded."
+    "New deployments will fail until CPU is freed or the plan is upgraded."
   );
   assert.deepEqual(
     ids({
@@ -278,7 +309,7 @@ test("trial-expiry opens three days before the Free trial ends and counts down",
   assert.deepEqual(trial("2026-09-04T12:00:00Z"), []);
   assert.deepEqual(trial("2026-08-28T12:00:00Z"), [
     {
-      cta: { href: "/billing?mode=upgrade", label: "View plans" },
+      cta: { href: "/billing?mode=upgrade", label: "Upgrade plan" },
       description:
         "Your workspace will be suspended when the trial ends on Aug 28. Upgrade to keep it running.",
       dismissible: true,

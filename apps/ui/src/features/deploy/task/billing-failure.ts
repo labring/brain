@@ -85,6 +85,21 @@ export function resolveBillingFailureOverride(input: {
       supersedesRunnerError: true,
     };
   }
+  // A payment-due Workspace Subscription suspends its workspace the same
+  // way: whatever the run tripped on afterwards, the platform had already
+  // pulled the plug — so the suspension outranks any not-elsewhere-proven
+  // reason, quota errors included (ADR-0070).
+  if (standing.paymentDue === true) {
+    return {
+      billingEvidence: {
+        checkedAt: input.now.toISOString(),
+        kind: "subscription-expired",
+        recovery: standing.paymentDueRecovery ?? "renew",
+      },
+      reason: "subscription-expired",
+      supersedesRunnerError: true,
+    };
+  }
   const full = standing.fullQuota;
   if (
     full == null ||

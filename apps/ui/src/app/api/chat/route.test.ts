@@ -1807,7 +1807,7 @@ test("a PAYG workspace in Account Debt is walled with 402 before the model, head
   expect(await response.json()).toEqual({
     code: "account_balance_exhausted",
     error:
-      "Your account balance can't cover AI usage. Top up to keep chatting with the assistant.",
+      "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
   });
   expect(response.headers.get("X-Chat-Billing")).toBe("user");
   expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");

@@ -14,7 +14,10 @@ function standing(
     aiCredits: null,
     availableBalanceMicroUnits: 50_000_000,
     fullQuota: null,
+    fullUniversalQuota: null,
     paidSource: "balance",
+    paymentDue: false,
+    paymentDueRecovery: null,
     quotaKnown: true,
     ...overrides,
   };
@@ -91,6 +94,63 @@ describe("resolveBillingFailureOverride", () => {
         },
       })
     ).toMatchObject({ reason: "quota-exceeded", supersedesRunnerError: false });
+  });
+
+  it("reclassifies a suspended payment-due workspace's stall as subscription-expired (ADR-0070)", () => {
+    const paymentDue = standing({
+      aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 1_200_000 },
+      paidSource: "ai-credits",
+      paymentDue: true,
+      paymentDueRecovery: "renew",
+    });
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "readiness-timeout",
+        standing: paymentDue,
+      })
+    ).toEqual({
+      billingEvidence: {
+        checkedAt: "2026-08-28T10:00:00.000Z",
+        kind: "subscription-expired",
+        recovery: "renew",
+      },
+      reason: "subscription-expired",
+      supersedesRunnerError: true,
+    });
+    // The recovery voice rides the evidence, so the Billing Interruption
+    // card can keep the Deploy Billing Notice's words (expired Free plans
+    // resubscribe, never renew).
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "readiness-timeout",
+        standing: { ...paymentDue, paymentDueRecovery: "resubscribe" },
+      })?.billingEvidence
+    ).toEqual({
+      checkedAt: "2026-08-28T10:00:00.000Z",
+      kind: "subscription-expired",
+      recovery: "resubscribe",
+    });
+    // The suspension outranks even an apply-time quota error, like debt does.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "quota-exceeded",
+        standing: {
+          ...paymentDue,
+          fullQuota: { label: "CPU", percentUsed: 100, type: "cpu" },
+        },
+      })?.reason
+    ).toBe("subscription-expired");
+    // …but a proven-elsewhere cause still keeps the runner's story.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "image-build-failed",
+        standing: paymentDue,
+      })
+    ).toBeNull();
   });
 
   it("names the full quota behind a readiness timeout the runner could not attribute", () => {

@@ -7,21 +7,34 @@ import {
 } from "@workspace/ui/components/alert";
 import { AppButton } from "@workspace/ui/components/app-button";
 import { cn } from "@workspace/ui/lib/utils";
-import type { LucideIcon } from "lucide-react";
+import { ExternalLink, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import type * as React from "react";
 
+import type { BillingCta } from "./billing-cta";
 import { recordBillingReturnRoute } from "./billing-return-route";
+import { BILLING_SURFACE_TONES } from "./billing-surface-tones";
+import { useResolvedBillingCta } from "./use-billing-cta";
 
 /**
  * The billing callout family (design spec rows E1–E3, AIM-325 variant B):
- * the one destructive container a Billing Interruption or a billing wall
- * renders in — icon, headline, one-line explanation, exactly one CTA to the
- * fix. Composes the shared Alert for its role, slots and icon grid; the tint
- * is the family's own rather than Alert's card-on-white destructive variant,
- * and the copy keeps the foreground/muted pair so the red stays on the icon
- * and the border.
+ * the one container a Billing Interruption, a billing wall, or the Deploy
+ * Billing Notice renders in — icon, headline, one-line explanation, one
+ * primary CTA to the fix (a quota callout may add a quiet secondary beside
+ * it). Composes the shared Alert for its role, slots and icon grid; the
+ * tint is the family's own rather than Alert's card-on-white destructive
+ * variant, and the copy keeps the foreground/muted pair so the semantic
+ * color stays on the icon, the border, and the CTA chip. Tones follow the status hint
+ * banner's severity language (billing-surface-tones): destructive for a
+ * refusal or a proven failure, warning for an advisory caution (ADR-0070).
  */
+const CALLOUT_TONES = {
+  destructive: "border-destructive/30 bg-destructive/10 text-destructive",
+  warning: `border-amber-400/30 ${BILLING_SURFACE_TONES.warning}`,
+} as const;
+
+export type BillingCalloutTone = keyof typeof CALLOUT_TONES;
+
 export function BillingCalloutCard({
   action,
   body,
@@ -29,9 +42,10 @@ export function BillingCalloutCard({
   icon: Icon,
   layout = "stacked",
   title,
+  tone = "destructive",
   ...props
 }: Omit<React.ComponentProps<"div">, "title"> & {
-  /** The CTA; the family always offers exactly one. */
+  /** The CTA area: one primary fix, optionally beside a quiet secondary. */
   action: React.ReactNode;
   body: React.ReactNode;
   icon: LucideIcon;
@@ -42,12 +56,13 @@ export function BillingCalloutCard({
    */
   layout?: "inline" | "stacked";
   title: React.ReactNode;
+  tone?: BillingCalloutTone;
 }) {
   const inline = layout === "inline";
   return (
     <Alert
       className={cn(
-        "border-destructive/30 bg-destructive/10 text-destructive",
+        CALLOUT_TONES[tone],
         inline && "has-[>svg]:grid-cols-[auto_1fr_auto]",
         className
       )}
@@ -74,9 +89,48 @@ export function BillingCalloutCard({
 
 /**
  * The callout CTA as a full-page navigation into the Billing Area, recording
- * the route to return to once the fix is made.
+ * the route to return to once the fix is made — or, when the CTA names a
+ * Desktop app and its deep link resolves, an external hop to the one place
+ * the fix actually exists (a top-up is not a Brain capability). Rendered as
+ * the shared CTA chip (ADR-0071), which reads its tint from the card's tone
+ * through currentColor.
  */
-export function BillingCalloutLink({
+export function BillingCalloutLink({ cta }: { cta: BillingCta }) {
+  const resolved = useResolvedBillingCta(cta);
+  if (resolved.external) {
+    return (
+      <AppButton
+        nativeButton={false}
+        render={
+          <a href={resolved.href} rel="noreferrer" target="_blank">
+            <ExternalLink aria-hidden data-icon="inline-start" />
+            {resolved.label}
+          </a>
+        }
+        size="sm"
+        variant="chip"
+      />
+    );
+  }
+  return (
+    <AppButton
+      nativeButton={false}
+      render={
+        <Link href={resolved.href} onClick={recordBillingReturnRoute}>
+          {resolved.label}
+        </Link>
+      }
+      size="sm"
+      variant="chip"
+    />
+  );
+}
+
+/**
+ * The quiet second way out beside a primary CTA — the quota callouts' "View
+ * usage" next to the plan CTA. Always in-app.
+ */
+export function BillingCalloutSecondaryLink({
   cta,
 }: {
   cta: { href: string; label: string };
@@ -90,6 +144,7 @@ export function BillingCalloutLink({
         </Link>
       }
       size="sm"
+      variant="chip-quiet"
     />
   );
 }

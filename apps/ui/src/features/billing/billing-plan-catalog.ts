@@ -181,3 +181,26 @@ export function normalizeBillingPlan(
     upgradePlanNames: plan.UpgradePlanList ?? undefined,
   };
 }
+
+/**
+ * Whether `currentPlanName` tops the catalog — no plan the picker would
+ * still offer as a step up. Mirrors the picker's decision tree
+ * (billing-plan-data): plans in the current plan's downgrade list are
+ * downgrades, everything else (listed upgrades, Enterprise contact, and
+ * unlisted plans) stays selectable as an upgrade, so the ceiling holds only
+ * when every other plan is a downgrade target. Null while the current plan
+ * is not in the catalog — unknown, never guessed.
+ */
+export function planUpgradeCeiling(
+  plans: readonly Pick<NormalizedBillingPlan, "downgradePlanNames" | "name">[],
+  currentPlanName: string
+): boolean | null {
+  const current = plans.find((plan) => plan.name === currentPlanName);
+  if (current == null) {
+    return null;
+  }
+  const downgrades = new Set(current.downgradePlanNames ?? []);
+  return plans.every(
+    (plan) => plan.name === current.name || downgrades.has(plan.name)
+  );
+}

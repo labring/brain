@@ -77,8 +77,8 @@ describe("copy forks by Chat Billing Mode", () => {
   it("speaks the balance and a top-up for PAYG", () => {
     expect(chatBillingWallCopy("balance")).toEqual({
       body: "Chat is paused because your account balance can't cover AI usage. Top up to continue.",
-      cta: { destination: "plans", label: "Top up balance" },
-      title: "Account balance too low",
+      cta: { destination: "top-up", label: "Top up balance" },
+      title: "Account balance in debt",
     });
     expect(chatBillingInterruptionCopy("balance").cta.label).toBe(
       "Top up balance"

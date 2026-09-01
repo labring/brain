@@ -21,9 +21,12 @@ export type AppNotificationSource = "cr" | "db";
 /**
  * The one way out a Notification offers (design spec §10 rule 6): a verb
  * from the CTA table deep-linking to the page that solves the problem.
- * Receipts and hints carry none.
+ * A top-up CTA additionally names its Desktop app — the one place a top-up
+ * exists — and leaves for it when the deep link resolves, `href` staying
+ * the fallback. Receipts carry none.
  */
 export interface NotificationCTA {
+  desktop?: { app: string; label: string };
   href: string;
   label: string;
 }

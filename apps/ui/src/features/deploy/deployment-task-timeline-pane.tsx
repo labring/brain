@@ -79,6 +79,7 @@ import type {
 } from "@/features/deploy/task/types";
 import { useDeploymentTaskActions } from "@/features/deploy/task/use-deployment-task-actions";
 import { useDeploymentTaskTimeline } from "@/features/deploy/task/use-deployment-task-timeline";
+import { useStatusHintInputs } from "@/features/status-hint/use-status-hint-inputs";
 
 interface DeploymentTaskTimelinePaneProps {
   kubeconfig: string;
@@ -1172,10 +1173,16 @@ const TimelineSteps = memo(function TimelineSteps({
   const ordered = useMemo(() => orderedSteps(steps), [steps]);
   const configurationStepId = deploymentConfigurationStepId(ordered);
   // A money or quota wall gets its own callout under the failed step
-  // (design spec §5.4); the error details stay collapsed beneath it.
+  // (design spec §5.4); the error details stay collapsed beneath it. The
+  // quota CTA forks on the same reads the status hint already holds.
+  const hintInputs = useStatusHintInputs();
   const interruption = useMemo(
-    () => deploymentBillingInterruption(failureDetails),
-    [failureDetails]
+    () =>
+      deploymentBillingInterruption(failureDetails, {
+        payg: hintInputs.subscription?.isPayg ?? null,
+        planCeiling: hintInputs.planCeiling ?? null,
+      }),
+    [failureDetails, hintInputs]
   );
   return (
     <div className="flex flex-col gap-4">

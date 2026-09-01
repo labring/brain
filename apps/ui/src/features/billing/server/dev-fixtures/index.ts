@@ -768,10 +768,13 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
           ...(isPaygMode ? {} : { ai_quota: isFreePlan ? 0 : 3_000_000 }),
         },
         used: {
-          "limits.cpu": "1500m",
+          // quota-full: CPU and storage both at 100% (catalog A1/A2). CPU is
+          // a universal deployable quota, so it stages the Deploy Billing
+          // Notice as well as the banner; storage is request-scoped since
+          // ADR-0070 and stages the form-level warnings instead.
+          "limits.cpu": context.scenario === "quota-full" ? "4" : "1500m",
           "limits.memory": "3Gi",
           "limits.nvidia.com/gpu": "0",
-          // quota-full: storage at 100% (catalog A1/A2).
           "requests.storage":
             context.scenario === "quota-full" ? "20Gi" : "12Gi",
           "services.nodeports": "2",

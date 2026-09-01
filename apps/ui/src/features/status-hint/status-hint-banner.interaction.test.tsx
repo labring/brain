@@ -20,7 +20,7 @@ const PAYMENT_DUE: StatusHint = {
 const QUOTA_FULL: StatusHint = {
   cta: { href: "/billing/usage", label: "View usage" },
   description:
-    "New deployments can't start until storage is freed or the plan is upgraded.",
+    "Deployments requesting more storage will fail until it is freed or the plan is upgraded.",
   dismissible: true,
   id: "quota-full",
   title: "Storage quota is full",

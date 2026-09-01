@@ -4,7 +4,7 @@ import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-ico
 import { SidePane, SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { DeployBillingWallCard } from "@/features/deploy/deploy-billing-wall-card";
+import { DeployBillingNoticeCard } from "@/features/deploy/deploy-billing-notice-card";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
@@ -19,7 +19,10 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
-import { useDeployBillingWall } from "@/features/deploy/use-deploy-billing-wall";
+import {
+  useDeployBillingNotice,
+  useQuotaTypeFull,
+} from "@/features/deploy/use-deploy-billing-notice";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -102,9 +105,13 @@ export function DockerDeploymentPane({
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false
   );
-  // The pre-deploy wall (E1/E2): a fact that will certainly fail the deploy
-  // replaces the form instead of letting the run die on it.
-  const billingWall = useDeployBillingWall();
+  // The pre-deploy notice (ADR-0070): a condition that dooms this deploy is
+  // voiced above the form, which stays usable — enforcement lives at the
+  // platform, and a pressed-through failure comes back explained. Storage is
+  // request-scoped, so a full storage quota speaks at the mount rows
+  // instead of the notice.
+  const billingNotice = useDeployBillingNotice();
+  const storageQuotaFull = useQuotaTypeFull("storage");
   const initialSettings = useMemo(
     () => dockerInitialSettings(redeploy),
     [redeploy]
@@ -182,29 +189,28 @@ export function DockerDeploymentPane({
           ? "Deploy Docker Image"
           : "Edit & Redeploy Docker Image"
       }
-      width="wide"
     >
-      {billingWall == null ? (
-        <DockerDeployer.Root
-          busy={deploying || currentProject.isLoading}
-          initialSettings={initialSettings}
-          onDeploy={(settings) => {
-            overwriteGate.gate(() => {
-              deploy(settings).catch(() => undefined);
-            });
-          }}
-        >
-          <DockerDeployer.Fields />
-          <SidePaneFooter>
-            <DockerDeployer.Submit
-              className="w-full"
-              label={redeploy == null ? undefined : "Redeploy"}
-            />
-          </SidePaneFooter>
-        </DockerDeployer.Root>
-      ) : (
-        <DeployBillingWallCard wall={billingWall} />
+      {billingNotice != null && (
+        <DeployBillingNoticeCard notice={billingNotice} />
       )}
+      <DockerDeployer.Root
+        busy={deploying || currentProject.isLoading}
+        initialSettings={initialSettings}
+        onDeploy={(settings) => {
+          overwriteGate.gate(() => {
+            deploy(settings).catch(() => undefined);
+          });
+        }}
+        storageQuotaFull={storageQuotaFull}
+      >
+        <DockerDeployer.Fields />
+        <SidePaneFooter>
+          <DockerDeployer.Submit
+            className="w-full"
+            label={redeploy == null ? undefined : "Redeploy"}
+          />
+        </SidePaneFooter>
+      </DockerDeployer.Root>
       {overwriteGate.dialog}
     </SidePane>
   );

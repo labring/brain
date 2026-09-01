@@ -223,10 +223,10 @@ test("paid wall card speaks the exhausted source loudly and links to its fix", a
         );
       });
       const paygText = rendered?.container.textContent ?? "";
-      assert.ok(paygText.includes("Account balance too low"));
+      assert.ok(paygText.includes("Account balance in debt"));
       const topUp = rendered?.getByRole("button", { name: "Top up balance" });
       fireEvent.click(topUp as HTMLElement);
-      assert.deepEqual(navigations, ["upgrade", "plans"]);
+      assert.deepEqual(navigations, ["upgrade", "top-up"]);
     } finally {
       await act(() => rendered?.unmount());
     }
@@ -254,11 +254,11 @@ test("a billing interruption turns the error card truthful without locking anyth
       );
       assert.ok(card, "the billing-ized error card renders");
       const text = card?.textContent ?? "";
-      assert.ok(text.includes("Message not sent — balance too low"));
+      assert.ok(text.includes("Message not sent — account balance in debt"));
       assert.equal(text.includes("Something went wrong on our side"), false);
       const topUp = rendered?.getByRole("button", { name: "Top up balance" });
       fireEvent.click(topUp as HTMLElement);
-      assert.deepEqual(navigations, ["plans"]);
+      assert.deepEqual(navigations, ["top-up"]);
     } finally {
       await act(() => rendered?.unmount());
     }

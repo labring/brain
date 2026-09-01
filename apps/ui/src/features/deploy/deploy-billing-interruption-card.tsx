@@ -5,6 +5,7 @@ import { TriangleAlert, Wallet } from "lucide-react";
 import {
   BillingCalloutCard,
   BillingCalloutLink,
+  BillingCalloutSecondaryLink,
 } from "@/features/billing/billing-callout-card";
 
 import type { DeploymentBillingInterruption } from "./deploy-billing-interruption";
@@ -23,7 +24,14 @@ export function DeploymentBillingInterruptionCard({
 }) {
   return (
     <BillingCalloutCard
-      action={<BillingCalloutLink cta={interruption.cta} />}
+      action={
+        <span className="flex flex-wrap items-center gap-2">
+          <BillingCalloutLink cta={interruption.cta} />
+          {interruption.secondaryCta == null ? null : (
+            <BillingCalloutSecondaryLink cta={interruption.secondaryCta} />
+          )}
+        </span>
+      }
       body={interruption.body}
       data-slot="deployment-billing-interruption"
       icon={interruption.icon === "wallet" ? Wallet : TriangleAlert}

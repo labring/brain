@@ -14,6 +14,14 @@ const appButtonVariants = cva(
           "bg-input/30 text-brand-primary-foreground hover:bg-input aria-expanded:bg-input",
         quiet:
           "bg-transparent text-brand-primary-foreground hover:bg-input/30 aria-expanded:bg-input/30",
+        // The notification CTA chip (ADR-0071), the one recipe every
+        // notification surface renders its CTA in. It takes currentColor and
+        // never a hue of its own — the host surface sets the tone text color,
+        // so severity stays marked, not shouted. chip-quiet is the optional
+        // second way out beside a chip.
+        chip: "bg-current/15 text-current hover:bg-current/25 aria-expanded:bg-current/25",
+        "chip-quiet":
+          "bg-transparent text-current hover:bg-current/15 aria-expanded:bg-current/15",
         danger:
           "bg-[color-mix(in_oklab,var(--color-red-500)_90%,#09090b_10%)] text-white hover:bg-red-500 focus-visible:border-destructive/40 focus-visible:ring-destructive/25",
         link: "bg-transparent text-primary hover:bg-transparent hover:text-primary hover:underline",

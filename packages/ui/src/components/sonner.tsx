@@ -60,10 +60,18 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "min-w-0 break-words !text-sm !font-normal !leading-5 !text-primary",
           icon: "!m-0 !flex !size-9 shrink-0 !items-center !justify-center rounded-lg bg-input/30 text-primary/80 [&>svg]:!m-0 [&>svg]:size-4",
           content: "min-w-0 flex-1 !gap-0",
+          // The shared notification CTA chip (app-button's chip variant,
+          // ADR-0071) restated per property with !important — sonner's own
+          // stylesheet is unlayered and beats layered utilities otherwise.
+          // The per-type rows below hand the chip its tone via currentColor.
+          actionButton:
+            "!h-7 !shrink-0 !rounded-lg !border !border-transparent !bg-current/15 !px-2 !font-medium !text-current !text-xs !transition-colors hover:!bg-current/25",
           success: "[&_[data-icon]]:text-blue-400",
           info: "[&_[data-icon]]:text-primary/80",
-          warning: "[&_[data-icon]]:text-yellow-400",
-          error: "[&_[data-icon]]:!text-red-400",
+          warning:
+            "[&_[data-button]]:!text-amber-400 [&_[data-icon]]:text-amber-400",
+          error:
+            "[&_[data-button]]:!text-red-400 [&_[data-icon]]:!text-red-400",
           loading: "[&_[data-icon]]:text-blue-400",
         },
       }}

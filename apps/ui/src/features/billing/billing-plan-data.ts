@@ -17,6 +17,7 @@ import {
 import {
   type BillingPlanResourceType,
   billingPlansResponseSchema,
+  type NormalizedBillingPlan,
   normalizeBillingPlan,
 } from "./billing-plan-catalog";
 
@@ -710,6 +711,28 @@ export async function loadBillingPlanSnapshot(
       };
     }),
   };
+}
+
+/**
+ * The plan catalog alone — the light read the quota reminders judge the
+ * plan ceiling from, without the Plan view's full snapshot.
+ */
+export async function loadBillingPlans(
+  credentials: BillingCredentials,
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<NormalizedBillingPlan[]> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: {
+      appToken: credentials.appToken,
+      kubeconfig: credentials.kubeconfig,
+    },
+    fallbackErrorMessage: "Could not load the plan catalog.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  return billingPlansResponseSchema
+    .parse(await requestBillingJson("/api/billing/plans"))
+    .plans.map(normalizeBillingPlan)
+    .sort((left, right) => left.order - right.order);
 }
 
 /** The caller's membership role in the workspace as the subscription record names it. */

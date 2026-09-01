@@ -43,6 +43,7 @@ import {
   formatAiCredits,
 } from "@/features/billing/billing-ai-credits";
 import { formatBillingAmount } from "@/features/billing/billing-amount";
+import { TOP_UP_DESKTOP } from "@/features/billing/billing-cta";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
 import {
   type BillingPlanSnapshot,
@@ -847,12 +848,32 @@ export function BillingBalanceValue({
           </Badge>
         ) : null}
       </div>
-      {inDebt ? (
-        <p className="text-red-400 text-xs">
-          Top up from the Sealos Desktop to restore your services.
-        </p>
-      ) : null}
+      {inDebt ? <BalanceDebtCaption /> : null}
     </>
+  );
+}
+
+/** The debt caption links to the one place a top-up exists when it can. */
+function BalanceDebtCaption() {
+  const topUpUrl = useSealosDesktopUrl(TOP_UP_DESKTOP.app);
+  return (
+    <p className="text-red-400 text-xs">
+      {topUpUrl == null ? (
+        "Top up from the Sealos Desktop to restore your services."
+      ) : (
+        <>
+          <a
+            className="underline underline-offset-2"
+            href={topUpUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Top up in Sealos Desktop
+          </a>{" "}
+          to restore your services.
+        </>
+      )}
+    </p>
   );
 }
 

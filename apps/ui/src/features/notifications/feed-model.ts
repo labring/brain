@@ -139,14 +139,25 @@ const RENDERERS: {
         date === ""
           ? "It covers your first deployments and expires a month after it was granted."
           : `It covers your first deployments and expires on ${date}.`,
+      // The newcomer's first billing touchpoint: a quiet pointer at the
+      // plans, not a sell — the gift itself needs no action.
+      cta: { href: "/billing", label: "View plans" },
       severity: "info",
       title: `You have a ${wholeDollars(payload.giftMicroUnits)} welcome gift`,
     };
   },
   "quota-exhausted": (payload) => {
     const label = QUOTA_RESOURCE_LABELS[payload.resource];
+    // Storage and nodeport doom only workloads that request them, so their
+    // message must not claim every deployment fails (ADR-0070).
+    const universal =
+      payload.resource === "cpu" ||
+      payload.resource === "memory" ||
+      payload.resource === "pod";
     return {
-      body: `${label} is at 100%. New deployments can't start.`,
+      body: universal
+        ? `${label} is at 100%. New deployments will fail.`
+        : `${label} is at 100%. Deployments requesting more will fail.`,
       cta: { href: "/billing/usage", label: "View usage" },
       severity: "warning",
       title: `${label} quota is full`,

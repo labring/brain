@@ -40,10 +40,12 @@ import {
   claimBrainAiEngagementFromSession,
   trackBrainGtmEvent,
 } from "@/features/analytics/brain-gtm";
+import { TOP_UP_DESKTOP } from "@/features/billing/billing-cta";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { readCachedWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
+import { useChatBillingCardFreeTierOverride } from "@/features/chat/chat-billing-card-tweaks";
 import {
   ChatBillingCardSlot,
   type ChatBillingDestination,
@@ -130,6 +132,7 @@ import {
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
 
@@ -757,15 +760,22 @@ function ProjectAssistantChatSession({
   }, [stop]);
 
   // Recording the return route lets the Billing Area close button land back
-  // on this project instead of the sidebar's last entry point.
+  // on this project instead of the sidebar's last entry point. A top-up
+  // leaves for the Desktop cost center in a new tab — the one place a
+  // top-up exists — with the Plan view as the unresolved-link fallback.
+  const desktopTopUpUrl = useSealosDesktopUrl(TOP_UP_DESKTOP.app);
   const navigateToBilling = useCallback(
     (destination: ChatBillingDestination) => {
+      if (destination === "top-up" && desktopTopUpUrl != null) {
+        window.open(desktopTopUpUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
       recordBillingReturnRoute();
       router.push(
         destination === "upgrade" ? "/billing?mode=upgrade" : "/billing"
       );
     },
-    [router]
+    [desktopTopUpUrl, router]
   );
 
   return (
@@ -824,6 +834,7 @@ function ProjectAssistantChatPane() {
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
   const [sessionError, setSessionError] = useState(false);
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
+  const freeTierOverride = useChatBillingCardFreeTierOverride();
   const assistantStateRefreshSequenceRef = useRef(0);
 
   const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}`;
@@ -1000,7 +1011,7 @@ function ProjectAssistantChatPane() {
     <ProjectAssistantChatSession
       assistantNamespaceRaw={namespaceRaw}
       bootstrap={session}
-      freeTier={freeTier}
+      freeTier={freeTierOverride ?? freeTier}
       key={session.chatId}
       onAssistantStreamFinished={refreshAssistantState}
       onBillingHeaders={handleBillingHeaders}

@@ -40,6 +40,8 @@ const FAILURE_MESSAGES = {
     "The namespace does not have enough quota for this deployment. Free resources or increase quota, then redeploy.",
   "balance-exhausted":
     "Deployment stopped — the account balance is exhausted and the workspace is suspended. Top up, then redeploy.",
+  "subscription-expired":
+    "Deployment stopped — the workspace is suspended under an expired subscription. Restore a plan in Billing, then redeploy.",
   "readiness-timeout":
     "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them.",
   interrupted:
@@ -113,8 +115,8 @@ export function deploymentFailureMessage(
 
 /**
  * The short reason a Deployment Task Dock chip carries beside its red dot
- * (design spec rows E1/E2): only the money and quota walls earn one; every
- * other failure keeps the plain dot.
+ * (design spec rows E1/E2): only the billing-proven interruptions earn one;
+ * every other failure keeps the plain dot.
  */
 export function deploymentFailureChipPhrase(
   reason: DeployTaskFailureReason | null | undefined
@@ -124,6 +126,8 @@ export function deploymentFailureChipPhrase(
       return "out of balance";
     case "quota-exceeded":
       return "quota full";
+    case "subscription-expired":
+      return "subscription expired";
     default:
       return null;
   }
