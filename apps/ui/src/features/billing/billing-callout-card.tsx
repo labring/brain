@@ -13,6 +13,7 @@ import type * as React from "react";
 
 import type { BillingCta } from "./billing-cta";
 import { recordBillingReturnRoute } from "./billing-return-route";
+import { BILLING_SURFACE_TONES } from "./billing-surface-tones";
 import { useResolvedBillingCta } from "./use-billing-cta";
 
 /**
@@ -29,8 +30,7 @@ import { useResolvedBillingCta } from "./use-billing-cta";
  */
 const CALLOUT_TONES = {
   destructive: "border-destructive/30 bg-destructive/10 text-destructive",
-  warning:
-    "border-amber-400/30 bg-amber-400/10 text-amber-600 dark:text-amber-400",
+  warning: `border-amber-400/30 ${BILLING_SURFACE_TONES.warning}`,
 } as const;
 
 export type BillingCalloutTone = keyof typeof CALLOUT_TONES;
