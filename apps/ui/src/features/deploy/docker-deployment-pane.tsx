@@ -189,7 +189,6 @@ export function DockerDeploymentPane({
           ? "Deploy Docker Image"
           : "Edit & Redeploy Docker Image"
       }
-      width="wide"
     >
       {billingNotice != null && (
         <DeployBillingNoticeCard notice={billingNotice} />
