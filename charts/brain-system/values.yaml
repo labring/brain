@@ -137,6 +137,13 @@ ui:
     # CODEX_GATEWAY_OPENAI_* then SYSTEM_OPENAI_* when that pair is complete.
     GITHUB_DEPLOY_OPENAI_API_KEY: ""
     GITHUB_DEPLOY_OPENAI_BASE_URL: ""
+    # Optional. When both keys are set, GitHub Deploy Devboxes export Codex
+    # traces to Langfuse. Leave empty to disable tracing.
+    LANGFUSE_PUBLIC_KEY: ""
+    LANGFUSE_SECRET_KEY: ""
+    # Optional. Langfuse base URL. Blank uses the gateway default
+    # (https://cloud.langfuse.com). Do not append /api/public/otel.
+    LANGFUSE_HOST: ""
     GITHUB_OAUTH_CLIENT_ID: ""
     GITHUB_OAUTH_CLIENT_SECRET: ""
     GITHUB_USER_TOKEN_ENCRYPTION_KEY: ""
