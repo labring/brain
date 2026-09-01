@@ -44,6 +44,7 @@ import { recordBillingReturnRoute } from "@/features/billing/billing-return-rout
 import { readCachedWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
+import { useChatBillingCardFreeTierOverride } from "@/features/chat/chat-billing-card-tweaks";
 import {
   ChatBillingCardSlot,
   type ChatBillingDestination,
@@ -833,6 +834,7 @@ function ProjectAssistantChatPane() {
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
   const [sessionError, setSessionError] = useState(false);
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
+  const freeTierOverride = useChatBillingCardFreeTierOverride();
   const assistantStateRefreshSequenceRef = useRef(0);
 
   const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}`;
@@ -1014,7 +1016,7 @@ function ProjectAssistantChatPane() {
     <ProjectAssistantChatSession
       assistantNamespaceRaw={namespaceRaw}
       bootstrap={session}
-      freeTier={freeTier}
+      freeTier={freeTierOverride ?? freeTier}
       key={session.chatId}
       onAssistantStreamFinished={refreshAssistantState}
       onBillingHeaders={handleBillingHeaders}
