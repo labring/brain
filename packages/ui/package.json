@@ -18,7 +18,7 @@
     "@streamdown/math": "^1.0.2",
     "@xyflow/react": "12.10.2",
     "@xyflow/system": "0.0.76",
-    "ai": "^6.0.169",
+    "ai": "^7.0.87",
     "boring-avatars": "^1.11.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

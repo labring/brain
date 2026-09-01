@@ -143,7 +143,7 @@ export async function deriveThreadTitle(input: {
     const generated = await generateText({
       abortSignal: input.abortSignal,
       model: input.languageModel,
-      system: SYSTEM_PROMPT,
+      instructions: SYSTEM_PROMPT,
       prompt:
         projectName === ""
           ? userPart
