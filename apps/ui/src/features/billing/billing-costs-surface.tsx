@@ -624,7 +624,7 @@ export function BillingCostsSurface({
                   >
                     <div className="font-semibold">
                       <span>{bannerTitle}: </span>
-                      <span className="text-blue-400 tabular-nums">
+                      <span className="text-blue-600 tabular-nums dark:text-blue-400">
                         {isLoading
                           ? "…"
                           : formatBillingAmount(bannerCostMicroUnits, currency)}

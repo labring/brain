@@ -842,11 +842,12 @@ html[data-sealai-theme-vt="active"]::view-transition-new(root) {
   }
 
   /* Canvas Glow material (see CONTEXT.md): same canvas base + glow as
-     .main-action-surface-background, but the glow renders above the surface's
-     content: content layers must stay below z-20. */
+     .main-action-surface-background, but the glow renders above the
+     surface's content: content layers must stay below z-20. Shares the
+     theme-paired surface/glow tokens (light sheet, dark canvas navy). */
   .canvas-glow-overlay {
     overflow: hidden;
-    background-color: var(--color-canvas-surface);
+    background-color: var(--main-action-surface-bg);
     isolation: isolate;
   }
 
@@ -861,7 +862,7 @@ html[data-sealai-theme-vt="active"]::view-transition-new(root) {
     content: "";
     background: radial-gradient(
       ellipse closest-side at center,
-      var(--color-canvas-glow) 0%,
+      var(--main-action-surface-glow-color) 0%,
       transparent 100%
     );
     mix-blend-mode: screen;

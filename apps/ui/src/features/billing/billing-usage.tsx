@@ -67,7 +67,7 @@ function UsageProgress({ value }: { value: number }) {
       aria-valuemax={100}
       aria-valuemin={0}
       aria-valuenow={value}
-      className="h-1 w-full max-w-40 overflow-hidden rounded-full bg-white/8"
+      className="h-1 w-full max-w-40 overflow-hidden rounded-full bg-muted dark:bg-white/8"
       role="progressbar"
     >
       <div
@@ -129,7 +129,7 @@ export function BillingUsageSurface({
                         aria-label={
                           index === 0 ? "Loading workspace usage" : undefined
                         }
-                        className="h-4 w-full bg-white/8"
+                        className="h-4 w-full bg-muted dark:bg-white/8"
                       />
                     </TableCell>
                   </TableRow>

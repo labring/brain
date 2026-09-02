@@ -203,7 +203,7 @@ function CostScopeCard({
         <span
           className={cn(
             "font-bold tabular-nums",
-            selected ? "text-blue-400" : "text-foreground"
+            selected ? "text-blue-600 dark:text-blue-400" : "text-foreground"
           )}
         >
           {formatBillingAmount(cost, currency)}

@@ -841,7 +841,7 @@ export function BillingBalanceValue({
         </p>
         {giftMicroUnits > 0 ? (
           <Badge
-            className="self-center bg-blue-400/10 text-blue-400 tabular-nums"
+            className="self-center bg-blue-600/10 text-blue-600 tabular-nums dark:bg-blue-400/10 dark:text-blue-400"
             variant="secondary"
           >
             Gift {formatBillingAmount(giftMicroUnits, currency)}
@@ -1221,7 +1221,7 @@ export function BillingPlanSurface({
               <div className="flex items-center gap-2" key={resource.label}>
                 <CircleCheck
                   aria-hidden
-                  className="size-4 shrink-0 text-blue-400"
+                  className="size-4 shrink-0 text-blue-600 dark:text-blue-400"
                   strokeWidth={1.75}
                 />
                 <span className="text-muted-foreground text-sm">

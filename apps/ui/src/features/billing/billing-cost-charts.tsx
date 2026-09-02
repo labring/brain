@@ -178,7 +178,7 @@ function LineLegendContent({
               <circle
                 cx="8"
                 cy="5"
-                fill="var(--color-canvas-surface)"
+                fill="var(--main-action-surface-bg)"
                 r="3"
                 stroke={item.color}
                 strokeWidth="2"
@@ -257,7 +257,7 @@ function ChartBody({
   isLoading: boolean;
 }) {
   if (isLoading) {
-    return <Skeleton className="h-72 w-full bg-white/8" />;
+    return <Skeleton className="h-72 w-full bg-muted dark:bg-white/8" />;
   }
   if (error != null) {
     return (
@@ -349,7 +349,7 @@ export function BillingCostCharts({
               {daily.series.map((series) => (
                 <Line
                   activeDot={{
-                    fill: "var(--color-canvas-surface)",
+                    fill: "var(--main-action-surface-bg)",
                     r: 3,
                     stroke: `var(--color-${series.dataKey})`,
                     strokeWidth: 2,
