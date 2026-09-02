@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, TriangleAlert, Wallet } from "lucide-react";
+import { CalendarClock, CreditCard, TriangleAlert, Wallet } from "lucide-react";
 
 import {
   BillingCalloutCard,
@@ -13,15 +13,17 @@ import type { DeployBillingNotice } from "./deploy-billing-notice";
 
 const NOTICE_ICONS = {
   balance: Wallet,
+  paused: CreditCard,
   "payment-due": CalendarClock,
   quota: TriangleAlert,
 } as const;
 
 // The same state never wears two colors: tones mirror the status hint
-// banner's — a suspension (debt, payment-due) is destructive, a full quota
+// banner's — a suspension (debt, payment-due, paused) is destructive, a full quota
 // a caution (ADR-0070: the notice advises, it does not refuse).
 const NOTICE_TONES: Record<DeployBillingNotice["kind"], BillingCalloutTone> = {
   balance: "destructive",
+  paused: "destructive",
   "payment-due": "destructive",
   quota: "warning",
 };

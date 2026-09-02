@@ -23,7 +23,8 @@ import {
  * The Deploy Billing Notice (ADR-0070, formerly the Deploy Billing Wall):
  * an advisory callout above a still-usable deployment form while a
  * condition dooms every deployment the pane could start — Account Debt on a
- * Pay-As-You-Go workspace, a payment-due Workspace Subscription, or a full
+ * Pay-As-You-Go workspace, a payment-due or paused Workspace Subscription
+ * (ADR-0070, ADR-0074), or a full
  * quota among those every workload consumes (cpu/memory/pod, plus any the
  * pane's every request includes). It informs and never blocks: enforcement
  * lives at the platform, and a pressed-through run fails there and comes
@@ -35,7 +36,7 @@ import {
 export interface DeployBillingNotice {
   body: string;
   cta: BillingCta;
-  kind: "balance" | "payment-due" | "quota";
+  kind: "balance" | "paused" | "payment-due" | "quota";
   /** The quiet second way out beside a plan-first quota CTA. */
   secondaryCta?: { href: string; label: string };
   title: string;
@@ -49,6 +50,8 @@ export interface DeployBillingNoticeFacts {
   paymentDue: RecoveryVoice | false | null;
   /** Whether the current plan has no upgrade target; null while unknown. */
   planCeiling: boolean | null;
+  /** Whether a paused (born with no trial) Workspace Subscription holds; null unknown. */
+  subscriptionPaused: boolean | null;
 }
 
 // Exported for the pane's dev tweak, which forges facts rather than copy so
@@ -56,8 +59,8 @@ export interface DeployBillingNoticeFacts {
 export function noticeFor(
   facts: DeployBillingNoticeFacts
 ): DeployBillingNotice | null {
-  // Severity mirrors the status hint banner (payment-due > debt > quota),
-  // so the banner and the notice can never voice different states.
+  // Severity mirrors the status hint banner (payment-due > paused > debt >
+  // quota), so the banner and the notice can never voice different states.
   if (facts.paymentDue === "renew" || facts.paymentDue === "resubscribe") {
     const resubscribe = facts.paymentDue === "resubscribe";
     return {
@@ -69,6 +72,16 @@ export function noticeFor(
         : { href: "/billing", label: "Renew plan" },
       kind: "payment-due",
       title: "Workspace suspended — payment due",
+    };
+  }
+  // A paused subscription never expired and runs no Deletion Countdown, so
+  // it must not borrow the payment-due words; its way out is the first plan.
+  if (facts.subscriptionPaused === true) {
+    return {
+      body: "This workspace was created without a free trial, so it is suspended and deployments will fail. Subscribe to a plan to restore it.",
+      cta: { href: "/billing?mode=upgrade", label: "Choose a plan" },
+      kind: "paused",
+      title: "Workspace suspended — no active plan",
     };
   }
   if (facts.debtSuspended === true) {
@@ -126,6 +139,7 @@ export function resolveDeployBillingNotice(
     paymentDue: paymentDueVoice(inputs.subscription),
     payg: inputs.subscription?.isPayg ?? null,
     planCeiling: inputs.planCeiling ?? null,
+    subscriptionPaused: inputs.subscription?.isPaused ?? null,
   });
 }
 
@@ -156,5 +170,6 @@ export function deployBillingNoticeFromStanding(
     // The standing carries no plan catalog; the tool relays title and body
     // only, so the ceiling never matters here.
     planCeiling: null,
+    subscriptionPaused: standing.subscriptionPaused,
   });
 }

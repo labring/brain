@@ -140,6 +140,22 @@ export function resolveBillingFailureOverride(input: {
       supersedesRunnerError: reason !== "subscription-expired",
     };
   }
+  // A Workspace Subscription born paused with no trial suspends its
+  // workspace from birth — zero quota, every apply denied — so it outranks
+  // the same reasons an expiry does (ADR-0074). The debt webhook calls
+  // every non-NORMAL status "expired": the standing refines that reason to
+  // the truthful one while the platform's own denial text stays.
+  if (standing.subscriptionPaused === true) {
+    return {
+      billingEvidence: {
+        checkedAt: input.now.toISOString(),
+        kind: "subscription-paused",
+      },
+      reason: "subscription-paused",
+      supersedesRunnerError:
+        reason !== "subscription-expired" && reason !== "subscription-paused",
+    };
+  }
   const full = standing.fullQuota;
   if (
     full == null ||

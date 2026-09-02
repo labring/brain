@@ -50,7 +50,13 @@ async function hintFor(scenario: BillingDevScenario) {
   });
   assert.deepEqual(
     evaluation.settled,
-    ["payment-due", "account-debt", "quota-full", "trial-expiry"],
+    [
+      "payment-due",
+      "subscription-paused",
+      "account-debt",
+      "quota-full",
+      "trial-expiry",
+    ],
     `${scenario}: every input answers`
   );
   return { evaluation, hint: selectStatusHint(evaluation.hints, []) };
@@ -66,7 +72,9 @@ const EXPECTED: Record<BillingDevScenario, StatusHintId | null> = {
   "free-expired": "payment-due",
   "free-expiring": "trial-expiry",
   "mixed-workspaces": null,
-  paused: null,
+  // Born with no trial: suspended from birth, so the banner names the
+  // first plan as the way out (ADR-0074).
+  paused: "subscription-paused",
   payg: null,
   "payg-debt": "account-debt",
   "payg-debt-deletion": "account-debt",

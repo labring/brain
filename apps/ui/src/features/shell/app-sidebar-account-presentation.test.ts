@@ -12,6 +12,7 @@ function summary(
   return {
     currentPeriodEndAt: "2026-09-12T12:00:00Z",
     isActiveFreeTrial: false,
+    isPaused: false,
     isPayg: false,
     lifecycle: "active",
     planName: "PRO",
@@ -109,4 +110,16 @@ test("a blank plan name drops the badge but keeps the hint", () => {
   );
   assert.equal(presentation.badge, null);
   assert.equal(presentation.hint?.tone, "danger");
+});
+
+test("a paused subscription warns that the workspace has no active plan (ADR-0074)", () => {
+  const presentation = deriveAppSidebarAccountPresentation(
+    summary({ isPaused: true, planName: "Free" }),
+    NOW
+  );
+  assert.deepEqual(presentation.hint, {
+    text: "No active plan · service limited",
+    tone: "danger",
+  });
+  assert.deepEqual(presentation.badge, { kind: "plan", planName: "Free" });
 });

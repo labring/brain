@@ -42,6 +42,8 @@ const FAILURE_MESSAGES = {
     "Deployment stopped — the account balance is exhausted and the workspace is suspended. Top up, then redeploy.",
   "subscription-expired":
     "Deployment stopped — the workspace is suspended under an expired subscription. Restore a plan in Billing, then redeploy.",
+  "subscription-paused":
+    "Deployment stopped — the workspace has no active plan and is suspended. Subscribe to a plan in Billing, then redeploy.",
   "readiness-timeout":
     "Deployment resources didn't become ready in time. Created resources were preserved — Redeploy reuses them.",
   interrupted:
@@ -128,6 +130,8 @@ export function deploymentFailureChipPhrase(
       return "quota full";
     case "subscription-expired":
       return "subscription expired";
+    case "subscription-paused":
+      return "no active plan";
     default:
       return null;
   }

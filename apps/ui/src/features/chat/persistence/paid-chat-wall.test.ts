@@ -20,6 +20,7 @@ function standing(
     paymentDue: false,
     paymentDueRecovery: null,
     quotaKnown: true,
+    subscriptionPaused: false,
     ...overrides,
   };
 }

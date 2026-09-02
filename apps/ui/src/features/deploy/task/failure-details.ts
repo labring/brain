@@ -114,6 +114,12 @@ export function deployBillingEvidence(
         : {}),
     };
   }
+  if (
+    record.kind === "subscription-paused" &&
+    typeof record.checkedAt === "string"
+  ) {
+    return { checkedAt: record.checkedAt, kind: "subscription-paused" };
+  }
   return null;
 }
 
@@ -134,6 +140,12 @@ function billingEvidenceLines(evidence: DeployBillingEvidence): string[] {
   if (evidence.kind === "subscription-expired") {
     return [
       "Billing check: the workspace subscription is expired (payment-due), so the workspace is suspended",
+      `Checked at: ${evidence.checkedAt}`,
+    ];
+  }
+  if (evidence.kind === "subscription-paused") {
+    return [
+      "Billing check: the workspace subscription is paused (created with no trial), so the workspace is suspended",
       `Checked at: ${evidence.checkedAt}`,
     ];
   }
@@ -220,6 +232,7 @@ export function deploymentFailureTechnicalDetail(input: {
     evidence != null &&
     (billingReason === "balance-exhausted" ||
       billingReason === "subscription-expired" ||
+      billingReason === "subscription-paused" ||
       (billingReason === "quota-exceeded" && input.details?.stage !== "apply"));
   if (billingSupersedesError) {
     return [

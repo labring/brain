@@ -746,6 +746,13 @@ export type WorkspaceSubscriptionRole = "DEVELOPER" | "MANAGER" | "OWNER";
 export interface WorkspaceSubscriptionSummary {
   currentPeriodEndAt: string;
   isActiveFreeTrial: boolean;
+  /**
+   * A paused Workspace Subscription (ADR-0074): a Free plan the platform
+   * created with no trial, suspending the workspace from birth. Distinct
+   * from `lifecycle`, which the Billing Area reads as a plan-change-ready
+   * "active" — the plan picker is exactly its way out.
+   */
+  isPaused: boolean;
   isPayg: boolean;
   lifecycle: SubscriptionLifecycle;
   planName: string;
@@ -805,6 +812,9 @@ export async function loadWorkspaceSubscriptionSummary(
       status: subscription.Status,
       type: subscription.type ?? "",
     }),
+    isPaused:
+      subscription.type !== "PAYG" &&
+      subscription.Status.trim().toUpperCase() === "PAUSED",
     isPayg: subscription.type === "PAYG",
     lifecycle,
     planName: subscription.PlanName,

@@ -1171,6 +1171,7 @@ test("loads the sidebar subscription summary with only region-addressed reads", 
   assert.deepEqual(await summary, {
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
     isActiveFreeTrial: false,
+    isPaused: false,
     isPayg: false,
     lifecycle: "active",
     planName: "Pro",
@@ -1198,6 +1199,7 @@ test("the sidebar summary reports an Active Free Trial and its period end", asyn
   assert.deepEqual(await summary, {
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
     isActiveFreeTrial: true,
+    isPaused: false,
     isPayg: false,
     lifecycle: "active",
     planName: "Free",
@@ -1225,6 +1227,7 @@ test("the sidebar summary presents a deleted subscription as PAYG", async () => 
   assert.deepEqual(await summary, {
     currentPeriodEndAt: "",
     isActiveFreeTrial: false,
+    isPaused: false,
     isPayg: true,
     lifecycle: "active",
     planName: "PAYG",
@@ -1247,4 +1250,17 @@ test("the sidebar summary carries the Deletion Countdown's stage and derived dea
   assert.equal(result.warningStage, "expired");
   assert.equal(result.warningDeadlineAt, "2026-09-03T00:00:00.000Z");
   assert.equal(result.recoveryVoice, "renew");
+});
+
+test("flags a paused Free subscription on the summary while its lifecycle stays plan-change ready (ADR-0074)", async () => {
+  const { summary } = loadSummaryWithSubscription({
+    CancelAtPeriodEnd: true,
+    CurrentPeriodEndAt: "",
+    PlanName: "Free",
+    Status: "PAUSED",
+  });
+  const loaded = await summary;
+  assert.equal(loaded.isPaused, true);
+  assert.equal(loaded.isActiveFreeTrial, false);
+  assert.equal(loaded.lifecycle, "active");
 });

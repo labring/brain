@@ -8,7 +8,7 @@ import {
   noticeFor,
 } from "./deploy-billing-notice";
 
-// The four forced forms, indexed the way a styling pass wants them — by
+// The five forced forms, indexed the way a styling pass wants them — by
 // card, not by billing scenario. Facts are forged and fed to the real
 // judgment, so the forced card can never drift from shipped copy.
 const FORCED_FACTS = {
@@ -18,6 +18,7 @@ const FORCED_FACTS = {
     paymentDue: false,
     payg: true,
     planCeiling: null,
+    subscriptionPaused: false,
   },
   "payment-due-renew": {
     debtSuspended: false,
@@ -25,6 +26,7 @@ const FORCED_FACTS = {
     paymentDue: "renew",
     payg: false,
     planCeiling: null,
+    subscriptionPaused: false,
   },
   "payment-due-resubscribe": {
     debtSuspended: false,
@@ -32,6 +34,15 @@ const FORCED_FACTS = {
     paymentDue: "resubscribe",
     payg: false,
     planCeiling: null,
+    subscriptionPaused: false,
+  },
+  paused: {
+    debtSuspended: false,
+    full: null,
+    paymentDue: false,
+    payg: false,
+    planCeiling: null,
+    subscriptionPaused: true,
   },
   // Subscribed below the ceiling: the quota card's fullest form — the
   // plan-first primary CTA beside the quiet View usage.
@@ -41,6 +52,7 @@ const FORCED_FACTS = {
     paymentDue: false,
     payg: false,
     planCeiling: false,
+    subscriptionPaused: false,
   },
 } satisfies Record<string, DeployBillingNoticeFacts>;
 
