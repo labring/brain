@@ -18,6 +18,7 @@ import {
   BILLING_DEV_SCENARIOS,
   formatBillingDevMockCookie,
 } from "../../dev-mock-cookie";
+import { judgeWorkspaceBillingStanding } from "../billing-standing-core";
 import { billingDevMockResponse, freeChatTurnsFixture } from "./index";
 import { scenarioTestFetch } from "./scenario-test-fetch";
 
@@ -111,6 +112,46 @@ test("the free-turns fixture spends the trial's allowance with the scenario (ADR
     remaining: 0,
     used: 5,
   });
+});
+
+test("the free scenarios' standing grants no AI allowance — the fact the allowance wall judges (ADR-0073)", async () => {
+  // Mirrors production: account-service writes `ai_quota` for every
+  // subscribed namespace, `0` when the plan created no quota package.
+  const standingFor = async (scenario: string) => {
+    const read = async (pathname: string) => {
+      const response = await billingDevMockResponse(
+        pathname,
+        mockRequest(pathname, scenario)
+      );
+      assert.ok(response, `${scenario} answers ${pathname}`);
+      return response.json();
+    };
+    return judgeWorkspaceBillingStanding({
+      account: await read("/account/v1alpha1/account"),
+      credits: await read("/payment/v1alpha1/credits/info"),
+      quota: await read("/account/v1alpha1/workspace/get-resource-quota"),
+      subscription: await read("/account/v1alpha1/workspace-subscription/info"),
+    });
+  };
+  for (const scenario of ["free", "free-expiring", "free-expired"]) {
+    const standing = await standingFor(scenario);
+    assert.equal(
+      standing.paidSource,
+      "ai-credits",
+      `${scenario} pays from AI Credits`
+    );
+    assert.equal(
+      standing.aiCredits?.totalMicroUnits,
+      0,
+      `${scenario} grants no AI allowance`
+    );
+  }
+  const hobby = await standingFor("active");
+  assert.equal(hobby.paidSource, "ai-credits");
+  assert.equal(hobby.aiCredits?.totalMicroUnits, 3_000_000);
+  const payg = await standingFor("payg");
+  assert.equal(payg.paidSource, "balance");
+  assert.equal(payg.aiCredits, null);
 });
 
 test("every scenario passes every loader's schemas", async () => {

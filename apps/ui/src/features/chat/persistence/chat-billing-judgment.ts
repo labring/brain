@@ -18,11 +18,12 @@ import type { FreeTierState } from "./types";
 /**
  * The live billing facts one chat request is judged on (ADR-0065, ADR-0068,
  * ADR-0069): the local free-turn snapshot, the Active Free Trial judgment,
- * and — for the `user` posture only — the Paid Chat Wall. The trial
- * judgment and the four standing reads leave together under ONE budget, so
- * an unanswering account service costs the request at most that budget
- * before every read fails open; a `free` turn simply never consults the
- * standing it read.
+ * and — for a `user` posture only, whether this turn's or the post-turn one
+ * the last free turn reports — the Paid Chat Wall. The trial judgment and
+ * the four standing reads leave together under ONE budget, so an
+ * unanswering account service costs the request at most that budget before
+ * every read fails open; a `free` turn with turns to spare simply never
+ * consults the standing it read.
  */
 
 export interface ChatBillingActor {

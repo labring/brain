@@ -192,6 +192,19 @@ function subscriptionFacts(subscription: unknown): {
   };
 }
 
+/**
+ * The subscription's AI Credits, read from `get-resource-quota`. For every
+ * namespace carrying the `subscription.sealos.io/status` annotation,
+ * account-service writes `hard.ai_quota` and `used.ai_quota` unconditionally
+ * (`service/account/api/workspace.go`), summing the workspace's active quota
+ * packages — a plan that granted none reads `0`, never an absent key
+ * (ADR-0073). An absent key on a workspace whose subscription record says
+ * "subscription" therefore means upstream's annotation disagrees with that
+ * record, and aiproxy would charge the balance rather than the quota: the
+ * read stays null so the wall fails open (ADR-0068) instead of claiming a
+ * missing allowance. The display-side reader (`loadAiCredits`) shows the
+ * same absence as 0 — a rendering choice, not a judgment.
+ */
 function aiCreditsFromQuota(quota: unknown): WorkspaceAiCredits | null {
   const parsed = aiQuotaSchema.safeParse(quota);
   if (!parsed.success) {

@@ -5,7 +5,9 @@
 Exhaustion consequence revised by ADR-0073: the handoff stands, but a plan
 that grants no AI allowance (the production Free plan's `ai_quota` is 0)
 meets the Paid Chat Wall's allowance cause instead of a spendable Paid
-Source.
+Source. The turn that spends the last Free Chat Turn already reports that
+wall in its `X-Chat-*` headers, so the composer locks with the fifth reply;
+the sixth send is refused, never silently handed off.
 
 Chat Agent and GitHub Deployment Tasks are different workloads with different
 platform funding. Their environment variables must select only their own

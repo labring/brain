@@ -90,7 +90,7 @@ export function chatBillingWallCopy(cause: ChatWallCause): ChatBillingCopy {
   }
   if (cause === "ai-credits") {
     return {
-      body: "This workspace's AI Credits are exhausted. Upgrade the plan to keep chatting.",
+      body: "This workspace's AI Credits have dropped below the minimum a reply needs. Upgrade the plan to keep chatting.",
       cta: { destination: "upgrade", label: "Upgrade plan" },
       title: "AI Credits used up",
     };
