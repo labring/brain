@@ -52,6 +52,13 @@ export function deriveAppSidebarAccountPresentation(
       hint: { text: "Payment due · service limited", tone: "danger" },
     };
   }
+  // Born paused with no trial (ADR-0074): suspended, but nothing expired.
+  if (summary.isPaused) {
+    return {
+      badge,
+      hint: { text: "No active plan · service limited", tone: "danger" },
+    };
+  }
   if (summary.lifecycle === "cancelling") {
     const endsAt = parsedDate(summary.currentPeriodEndAt);
     return {

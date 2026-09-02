@@ -64,6 +64,12 @@ export interface WorkspaceBillingStanding {
   paymentDueRecovery: RecoveryVoice | null;
   /** Whether the quota read answered, so a null fullQuota is a fact. */
   quotaKnown: boolean;
+  /**
+   * Whether a paused Workspace Subscription — one the platform created with
+   * no trial, suspending the workspace from birth (ADR-0074) — holds this
+   * workspace; null while the subscription read is unknown.
+   */
+  subscriptionPaused: boolean | null;
 }
 
 export const UNKNOWN_BILLING_STANDING: WorkspaceBillingStanding = {
@@ -76,6 +82,7 @@ export const UNKNOWN_BILLING_STANDING: WorkspaceBillingStanding = {
   paymentDue: null,
   paymentDueRecovery: null,
   quotaKnown: false,
+  subscriptionPaused: null,
 };
 
 export interface WorkspaceBillingPayloads {
@@ -152,12 +159,14 @@ function subscriptionFacts(subscription: unknown): {
   paidSource: WorkspaceAiPaidSource | null;
   paymentDue: boolean | null;
   paymentDueRecovery: RecoveryVoice | null;
+  subscriptionPaused: boolean | null;
 } {
   const unknown = {
     inDebt: false,
     paidSource: null,
     paymentDue: null,
     paymentDueRecovery: null,
+    subscriptionPaused: null,
   };
   const parsed = subscriptionSchema.safeParse(subscription);
   if (!parsed.success) {
@@ -189,6 +198,11 @@ function subscriptionFacts(subscription: unknown): {
     paidSource: payg ? "balance" : "ai-credits",
     paymentDue,
     paymentDueRecovery,
+    // A Free subscription the platform created paused (a user's second and
+    // later workspaces, or a region without free trials) suspends its
+    // workspace from birth: zero quota, every apply denied. Nothing expired,
+    // so it is not payment-due (CONTEXT.md, Paused Workspace Subscription).
+    subscriptionPaused: !payg && status === "PAUSED",
   };
 }
 
@@ -267,6 +281,7 @@ export function judgeWorkspaceBillingStanding(
     paymentDue: facts.paymentDue,
     paymentDueRecovery: facts.paymentDueRecovery,
     quotaKnown: rows != null,
+    subscriptionPaused: facts.subscriptionPaused,
   };
 }
 

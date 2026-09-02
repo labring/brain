@@ -85,6 +85,16 @@ export function deploymentBillingInterruption(
   if (details.reason === "subscription-expired") {
     return subscriptionExpiredInterruption(details.billingEvidence);
   }
+  // Born paused with no trial (ADR-0074): nothing expired, so the card
+  // must not speak of expiry or renewal — the way out is the first plan.
+  if (details.reason === "subscription-paused") {
+    return {
+      body: "This workspace was created without a free trial, so it is suspended and this deployment stopped. Subscribe to a plan, then redeploy.",
+      cta: { href: "/billing?mode=upgrade", label: "Choose a plan" },
+      icon: "alert",
+      title: "Workspace suspended — no active plan",
+    };
+  }
   if (details.reason === "quota-exceeded") {
     const evidence = deployBillingEvidence(details.billingEvidence);
     const label = evidence?.kind === "quota-full" ? evidence.label : null;

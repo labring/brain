@@ -17,6 +17,7 @@ const OPEN_PAYG: WorkspaceBillingStanding = {
   paymentDue: false,
   paymentDueRecovery: null,
   quotaKnown: true,
+  subscriptionPaused: false,
 };
 
 /** The production Free plan's standing: subscribed, no AI allowance at all. */

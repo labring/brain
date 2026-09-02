@@ -41,10 +41,11 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0067 — Store Notifications Hybrid: Read Platform CRs Live, Keep Brain's Own in App Postgres](0067-store-notifications-hybrid-cr-read-proxy-and-brain-postgres.md)
 - [0068 — Judge Billing Interruptions from billing standing, after a deployment fails and before a paid chat turn starts](0068-judge-billing-interruptions-from-billing-standing.md) *(extends ADR-0042 and ADR-0065; paid handoff extended by ADR-0069; pre-deploy seam softened by ADR-0070; "no platform signal" premise narrowed and the no-actor chokepoint closed by ADR-0072; Paid Chat Wall cause extended by ADR-0073)*
 - [0069 — Separate platform AI credentials and hand off exhausted Free Chat Turns](0069-separate-platform-ai-credentials-and-hand-off-free-chat.md) *(revises ADR-0065 and extends ADR-0068; exhaustion consequence revised by ADR-0073)*
-- [0070 — Soften the Deploy Billing Wall into the Deploy Billing Notice](0070-soften-the-deploy-billing-wall-into-the-deploy-billing-notice.md) *(revises ADR-0068's pre-deploy seam)*
+- [0070 — Soften the Deploy Billing Wall into the Deploy Billing Notice](0070-soften-the-deploy-billing-wall-into-the-deploy-billing-notice.md) *(revises ADR-0068's pre-deploy seam; notice kinds extended by ADR-0074)*
 - [0071 — Unify notification CTA styling into the CTA Chip](0071-unify-notification-cta-styling-into-the-cta-chip.md)
-- [0072 — Classify the platform's billing denial at the apply boundary, and send the App Token on every deployment source](0072-classify-the-platform-billing-denial-at-the-apply-boundary.md) *(extends ADR-0042's apply-boundary classifier; narrows ADR-0068's "no signal" premise and closes its no-actor chokepoint)*
+- [0072 — Classify the platform's billing denial at the apply boundary, and send the App Token on every deployment source](0072-classify-the-platform-billing-denial-at-the-apply-boundary.md) *(extends ADR-0042's apply-boundary classifier; narrows ADR-0068's "no signal" premise and closes its no-actor chokepoint; residual PAUSED gap closed by ADR-0074)*
 - [0073 — Wall zero-allowance plans with a truthful cause](0073-wall-zero-allowance-plans-with-a-truthful-cause.md) *(revises ADR-0069's exhaustion consequence; extends ADR-0068's Paid Chat Wall)*
+- [0074 — Name the Paused Workspace Subscription as its own Billing Interruption](0074-name-the-paused-workspace-subscription-as-its-own-billing-interruption.md) *(extends ADR-0070's notice kinds and ADR-0068's reverse-check; closes ADR-0072's residual gap)*
 
 ## Conventions
 

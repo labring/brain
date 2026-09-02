@@ -1,5 +1,9 @@
 # Soften the Deploy Billing Wall into the Deploy Billing Notice
 
+## Status
+
+Accepted; ADR-0074 adds a fourth notice kind beside the three named below — the Paused Workspace Subscription, ranked right under payment-due — and the same state to the Status Hint, keeping the mirror this record requires.
+
 ADR-0068 placed one billing-standing judgment at three seams and made the pre-deploy seam a refusal: the Deploy Billing Wall replaced the deployment form whenever a Pay-As-You-Go workspace sat in Account Debt or any deployable quota was full. The judgment's formulas are the platform's own, but its inputs are not certainties: a mispinned Current Region silently renders subscribed workspaces as Pay-As-You-Go (ADR-0064), a standing read may predate a top-up or a freed quota, and a full storage or nodeport quota dooms only workloads that request those resources — yet the wall blocked every deployment, including an Edit & Redeploy that would shrink usage, and a first deployment had no misjudgment escape at all: Redeploy exists only on an existing task's timeline, and the assistant's deploy tool refused too. We decided the pre-deploy seam advises instead of refusing — the wall becomes the **Deploy Billing Notice** — and enforcement stays where it already lives: the platform's suspension and the terminal failure write's Billing Interruption judgment.
 
 ## Decision

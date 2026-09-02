@@ -112,6 +112,23 @@ describe("deploymentBillingInterruption", () => {
     });
   });
 
+  it("presents a born-paused workspace with the first-plan fix, never expiry words (ADR-0074)", () => {
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "subscription-paused",
+        },
+        reason: "subscription-paused",
+      })
+    ).toEqual({
+      body: "This workspace was created without a free trial, so it is suspended and this deployment stopped. Subscribe to a plan, then redeploy.",
+      cta: { href: "/billing?mode=upgrade", label: "Choose a plan" },
+      icon: "alert",
+      title: "Workspace suspended — no active plan",
+    });
+  });
+
   it("stays plan-neutral when the evidence carries no recovery voice", () => {
     expect(
       deploymentBillingInterruption({

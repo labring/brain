@@ -196,6 +196,7 @@ export type DeployTaskFailureReason =
   | "quota-exceeded"
   | "balance-exhausted"
   | "subscription-expired"
+  | "subscription-paused"
   | "readiness-timeout"
   | "interrupted"
   | "timeout"
@@ -209,7 +210,8 @@ export type DeployTaskFailureStage = "apply" | "readiness";
 /**
  * What the billing reverse-check found at failure time (design spec rows
  * E1/E2): the structured, allowlisted evidence behind a `balance-exhausted`,
- * `subscription-expired` (ADR-0070), or resource-attributed `quota-exceeded`
+ * `subscription-expired` (ADR-0070), `subscription-paused` (ADR-0074), or
+ * resource-attributed `quota-exceeded`
  * classification — never raw upstream text, so every runner may persist and
  * display it (ADR 0042).
  */
@@ -235,6 +237,15 @@ export type DeployBillingEvidence =
        * Absent on records from before the field existed.
        */
       recovery?: RecoveryVoice;
+    }
+  | {
+      checkedAt: string;
+      /**
+       * A Workspace Subscription born paused with no trial (ADR-0074): the
+       * workspace was suspended from birth, so recovery is subscribing to a
+       * plan — never renewing one.
+       */
+      kind: "subscription-paused";
     };
 
 export interface DeployTaskFailureDetails extends Record<string, unknown> {

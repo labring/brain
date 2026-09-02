@@ -154,6 +154,7 @@ describe("deploymentFailureReason", () => {
       "repository-clone-failed": "could not be cloned",
       "runner-error": "internal error",
       "subscription-expired": "expired subscription",
+      "subscription-paused": "no active plan",
       timeout: "maximum run time",
       unknown: "unknown reason",
     } satisfies Record<DeployTaskFailureReason, string>;

@@ -27,6 +27,7 @@ import { DAY_MS } from "@/lib/time";
 
 export type StatusHintId =
   | "payment-due"
+  | "subscription-paused"
   | "account-debt"
   | "quota-full"
   | "trial-expiry";
@@ -74,9 +75,10 @@ export interface StatusHintEvaluation {
   settled: StatusHintId[];
 }
 
-/** Severity order: dunning > global suspension > hard stop > heads-up. */
+/** Severity order: dunning > born-suspended > global suspension > hard stop > heads-up. */
 const SEVERITY: readonly StatusHintId[] = [
   "payment-due",
+  "subscription-paused",
   "account-debt",
   "quota-full",
   "trial-expiry",
@@ -142,6 +144,31 @@ function paymentDueHint(
     title: "Workspace suspended — payment due",
     tone: "destructive",
   };
+}
+
+/**
+ * A paused Workspace Subscription (ADR-0074): the platform created this
+ * Free plan with no trial, so the workspace has been suspended since birth
+ * — nothing expired, no Deletion Countdown runs, and the way out is the
+ * first plan, never a renewal. Shared with the Deploy Billing Notice.
+ */
+const SUBSCRIPTION_PAUSED_HINT: StatusHint = {
+  cta: { href: "/billing?mode=upgrade", label: "Choose a plan" },
+  description:
+    "This workspace was created without a free trial, so it is suspended. Subscribe to a plan to restore it.",
+  dismissible: false,
+  id: "subscription-paused",
+  title: "Workspace suspended — no active plan",
+  tone: "destructive",
+};
+
+function subscriptionPausedHint(
+  subscription: WorkspaceSubscriptionSummary
+): StatusHint | null {
+  // Only a subscribed workspace can be born paused; PAYG has no record.
+  return subscription.isPaused && !subscription.isPayg
+    ? SUBSCRIPTION_PAUSED_HINT
+    : null;
 }
 
 const ACCOUNT_DEBT_HINT: StatusHint = {
@@ -277,6 +304,8 @@ export function evaluateStatusHints(
     "account-debt": accountDebt,
     "payment-due":
       subscription == null ? undefined : paymentDueHint(subscription),
+    "subscription-paused":
+      subscription == null ? undefined : subscriptionPausedHint(subscription),
     "quota-full":
       inputs.quota == null
         ? undefined

@@ -459,6 +459,7 @@ test("chat createDeployTask refuses behind the pre-deploy wall and never creates
           paymentDue: false,
           paymentDueRecovery: null,
           quotaKnown: true,
+          subscriptionPaused: false,
         });
       },
     }

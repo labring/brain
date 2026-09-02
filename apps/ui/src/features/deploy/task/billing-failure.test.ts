@@ -22,6 +22,7 @@ function standing(
     paymentDue: false,
     paymentDueRecovery: null,
     quotaKnown: true,
+    subscriptionPaused: false,
     ...overrides,
   };
 }
@@ -154,6 +155,68 @@ describe("resolveBillingFailureOverride", () => {
         standing: paymentDue,
       })
     ).toBeNull();
+  });
+
+  it("reclassifies a born-paused workspace's failure as subscription-paused, keeping the webhook's text (ADR-0074)", () => {
+    const paused = standing({
+      aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
+      paidSource: "ai-credits",
+      subscriptionPaused: true,
+    });
+    const evidence = {
+      checkedAt: "2026-08-28T10:00:00.000Z",
+      kind: "subscription-paused" as const,
+    };
+    // A stall gives way to the headline.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "readiness-timeout",
+        standing: paused,
+      })
+    ).toEqual({
+      billingEvidence: evidence,
+      reason: "subscription-paused",
+      supersedesRunnerError: true,
+    });
+    // The debt webhook calls every non-NORMAL status "expired": the standing
+    // refines the reason to the truthful one and the platform's text stays.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "subscription-expired",
+        standing: paused,
+      })
+    ).toEqual({
+      billingEvidence: evidence,
+      reason: "subscription-paused",
+      supersedesRunnerError: false,
+    });
+    // The platform pins a paused workspace under a zero quota, so an
+    // apply-time quota error is the suspension speaking.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "quota-exceeded",
+        standing: {
+          ...paused,
+          fullQuota: { label: "CPU", percentUsed: 0, type: "cpu" },
+        },
+      })?.reason
+    ).toBe("subscription-paused");
+    // Payment-due is judged first; a paused record is never payment-due, but
+    // the order is the banner's.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "readiness-timeout",
+        standing: {
+          ...paused,
+          paymentDue: true,
+          paymentDueRecovery: "resubscribe",
+        },
+      })?.reason
+    ).toBe("subscription-expired");
   });
 
   it("names the full quota behind a readiness timeout the runner could not attribute", () => {

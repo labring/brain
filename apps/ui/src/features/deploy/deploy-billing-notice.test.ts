@@ -35,6 +35,7 @@ const CREDENTIALS = {
 const PAYG: WorkspaceSubscriptionSummary = {
   currentPeriodEndAt: "",
   isActiveFreeTrial: false,
+  isPaused: false,
   isPayg: true,
   lifecycle: "active",
   planName: "PAYG",
@@ -72,6 +73,7 @@ const QUIET_STANDING: WorkspaceBillingStanding = {
   paymentDue: false,
   paymentDueRecovery: null,
   quotaKnown: true,
+  subscriptionPaused: false,
 };
 
 async function inputsFor(
@@ -379,4 +381,55 @@ test("the dev tweak's forced options each render a real card, and anything else 
   assert.equal(forcedDeployBillingNotice("quota")?.title, "CPU quota is full");
   assert.equal(forcedDeployBillingNotice("off"), null);
   assert.equal(forcedDeployBillingNotice("toString"), null);
+});
+
+test("a paused subscription is noticed with the first-plan way out (ADR-0074)", () => {
+  const paused = deployBillingNoticeFromStanding({
+    ...QUIET_STANDING,
+    paidSource: "ai-credits",
+    subscriptionPaused: true,
+  });
+  assert.equal(paused?.kind, "paused");
+  assert.equal(paused?.title, "Workspace suspended — no active plan");
+  assert.deepEqual(paused?.cta, {
+    href: "/billing?mode=upgrade",
+    label: "Choose a plan",
+  });
+  // Nothing expired: the notice must never borrow the payment-due words.
+  assert.ok(!paused?.body.includes("expired"));
+  assert.ok(!paused?.body.includes("Renew"));
+  // Paused outranks a full quota (the platform pins it at zero anyway) and
+  // yields to payment-due, mirroring the banner's severity.
+  assert.equal(
+    deployBillingNoticeFromStanding({
+      ...QUIET_STANDING,
+      fullUniversalQuota: { label: "CPU", percentUsed: 100, type: "cpu" },
+      paidSource: "ai-credits",
+      subscriptionPaused: true,
+    })?.kind,
+    "paused"
+  );
+  assert.equal(
+    deployBillingNoticeFromStanding({
+      ...QUIET_STANDING,
+      paidSource: "ai-credits",
+      paymentDue: true,
+      paymentDueRecovery: "resubscribe",
+      subscriptionPaused: true,
+    })?.kind,
+    "payment-due"
+  );
+  // The panes judge the same state from the summary's flag.
+  assert.equal(
+    resolveDeployBillingNotice({
+      ...QUIET,
+      subscription: { ...HOBBY, isPaused: true, planName: "Free" },
+    })?.kind,
+    "paused"
+  );
+  assert.equal(
+    resolveDeployBillingNotice({ ...QUIET, subscription: null })?.kind,
+    undefined
+  );
+  assert.equal(forcedDeployBillingNotice("paused")?.kind, "paused");
 });

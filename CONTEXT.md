@@ -350,19 +350,19 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Failure Reason
 
-The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Three reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt on a Pay-As-You-Go workspace — the only kind the platform suspends for it), `subscription-expired` (a subscribed workspace suspended under a payment-due Workspace Subscription), and a resource-attributed `quota-exceeded` (a full Deployable Quota); the first two are also proven by the platform's own billing denial at the apply boundary — the one Billing Interruption the platform does signal — and then carry no Billing Evidence. When the judgment proves the reason it carries Billing Evidence; either way the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
+The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Four reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt on a Pay-As-You-Go workspace — the only kind the platform suspends for it), `subscription-expired` (a subscribed workspace suspended under a payment-due Workspace Subscription), `subscription-paused` (a Paused Workspace Subscription — the platform's denial calls that "expired" too, so only the judgment tells the two apart), and a resource-attributed `quota-exceeded` (a full Deployable Quota); `balance-exhausted` and `subscription-expired` are also proven by the platform's own billing denial at the apply boundary — the one Billing Interruption the platform does signal — and then carry no Billing Evidence. When the judgment proves the reason it carries Billing Evidence; either way the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
 
 _Avoid_: workspace not ready (for a suspended workspace), timed out (as the reason for a billing stop).
 
 ### Billing Evidence
 
-The structured record of what the Billing Interruption judgment found behind a `balance-exhausted`, `subscription-expired`, or resource-attributed `quota-exceeded` Deployment Failure Reason — the available-balance formula's result, the expired subscription, or the quota that was full — safe for every runner to persist and show. It stands in for the runner's own error whenever that error was only a stall; the provider's own apply-time quota error keeps its numbers, and so does the platform's own billing denial. A billing reason proven only by that denial carries no Billing Evidence, and its callout speaks plan-neutrally.
+The structured record of what the Billing Interruption judgment found behind a `balance-exhausted`, `subscription-expired`, `subscription-paused`, or resource-attributed `quota-exceeded` Deployment Failure Reason — the available-balance formula's result, the expired or paused subscription, or the quota that was full — safe for every runner to persist and show. It stands in for the runner's own error whenever that error was only a stall; the provider's own apply-time quota error keeps its numbers, and so does the platform's own billing denial. A billing reason proven only by that denial carries no Billing Evidence, and its callout speaks plan-neutrally.
 
 _Avoid_: raw timeout text, stack trace, billing dump.
 
 ### Deploy Billing Notice
 
-The advisory billing callout a deployment pane shows above a still-usable form while a condition dooms every deployment the workspace could start — Account Debt on a Pay-As-You-Go workspace, a full cpu/memory/pod Deployable Quota, or a payment-due Workspace Subscription — wearing the Billing Interruption's callout and CTA. It informs and never blocks: the deploy action stays enabled, and a run pressed through a correct notice fails at the platform and comes back explained as a Billing Interruption; the assistant's deploy tool alone still refuses, pointing the user at the pane. A low but positive balance never shows it, and a full storage or nodeport quota speaks through form validation instead — unless the pane's every deployment requests it, where the notice speaks (the database presets all carry storage).
+The advisory billing callout a deployment pane shows above a still-usable form while a condition dooms every deployment the workspace could start — Account Debt on a Pay-As-You-Go workspace, a full cpu/memory/pod Deployable Quota, a payment-due Workspace Subscription, or a Paused Workspace Subscription — wearing the Billing Interruption's callout and CTA. It informs and never blocks: the deploy action stays enabled, and a run pressed through a correct notice fails at the platform and comes back explained as a Billing Interruption; the assistant's deploy tool alone still refuses, pointing the user at the pane. A low but positive balance never shows it, and a full storage or nodeport quota speaks through form validation instead — unless the pane's every deployment requests it, where the notice speaks (the database presets all carry storage).
 
 _Avoid_: Deploy Billing Wall, billing wall, low balance warning, pre-flight check, deploy disabled.
 
@@ -648,7 +648,7 @@ _Avoid_: plan catalog, plan list, plan cards section, Subscription plans tab (as
 
 ### Workspace Subscription
 
-The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade, payment-due) and its most recent transaction. Cancelling means the user has cancelled but the paid period still runs; payment-due means the subscription has expired — a failed renewal charge and a cancelled period reaching its end both land here — and the workspace sits suspended under the Deletion Countdown. Payment-due outranks cancelling when both hold. A workspace has at most one; a workspace without one is Pay-As-You-Go. An upstream subscription record in DELETED status is not a Workspace Subscription — the workspace is Pay-As-You-Go and may subscribe anew. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
+The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade, payment-due, or paused — a Paused Workspace Subscription) and its most recent transaction. Cancelling means the user has cancelled but the paid period still runs; payment-due means the subscription has expired — a failed renewal charge and a cancelled period reaching its end both land here — and the workspace sits suspended under the Deletion Countdown. Payment-due outranks cancelling when both hold. A workspace has at most one; a workspace without one is Pay-As-You-Go. An upstream subscription record in DELETED status is not a Workspace Subscription — the workspace is Pay-As-You-Go and may subscribe anew. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
 
 _Avoid_: account subscription, user subscription, namespace plan, workspace plan record, in debt (as a user-facing label), cancelled (as a lifecycle distinct from cancelling), deleted (as a client lifecycle).
 
@@ -670,6 +670,12 @@ Recovery for a payment-due Workspace Subscription that exits the Deletion Countd
 
 _Avoid_: Free renewal, direct renewal charge.
 
+### Paused Workspace Subscription
+
+A Free Workspace Subscription the platform created already paused, with no trial to run — a user's second and later workspaces, or every workspace in a region that offers no free trial. The workspace is suspended from birth (zero quota, every deployment denied, no Free Chat Turns) until it subscribes to a priced Subscription Plan; nothing expired, so it is not payment-due and no Deletion Countdown runs, and its recovery is choosing a first paid plan — spoken as subscribing, never as renewal.
+
+_Avoid_: subscription expired / payment due (for it), no-trial workspace (as its name), paused workspace (the subscription is paused, the workspace suspended), dormant, inactive plan.
+
 ### Renewal Time
 
 The scheduled moment a Workspace Subscription's current paid period ends and the next automatic charge occurs — always the current period's end, wherever the label appears. It only exists while a renewal is actually coming: a cancelling subscription has none (its period end is a suspension date, voiced by the Deletion Countdown), and a payment-due subscription's Renewal Time lies in the past — the renewal that never happened. Distinct from Workspace Subscription Renewal, which names the recovery flow for a payment-due subscription, not this scheduled moment.
@@ -684,7 +690,7 @@ _Avoid_: quota reset (for a Free period end), renewal time (for a Free subscript
 
 ### Active Free Trial
 
-The state of a workspace whose Free Subscription Plan is currently running its trial: a Free subscription in normal standing, as opposed to one born paused with no trial (a user's second and later workspaces) or one expired into the same payment-due pipeline as any paid plan. The sole eligibility gate for spending Free Chat Turns and for rendering the Plan view's free-allowance usage block; when the allowance is exhausted, Chat Billing Mode becomes `user` rather than extending trial eligibility.
+The state of a workspace whose Free Subscription Plan is currently running its trial: a Free subscription in normal standing, as opposed to a Paused Workspace Subscription (born with no trial) or one expired into the same payment-due pipeline as any paid plan. The sole eligibility gate for spending Free Chat Turns and for rendering the Plan view's free-allowance usage block; when the allowance is exhausted, Chat Billing Mode becomes `user` rather than extending trial eligibility.
 
 _Avoid_: free workspace, trial period (for the state), Free plan (bare, for this state).
 
@@ -708,7 +714,7 @@ _Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due
 
 ### Billing Interruption
 
-A deployment or a paid assistant turn the platform stopped because the workspace hit its money or quota wall — Account Debt, a payment-due Workspace Subscription, a full Deployable Quota, or an exhausted Paid Source. The platform signals it at one seam only — its billing denial of a deployment's apply — and otherwise it is judged after the fact from the workspace's billing standing; either way it is told as a billing callout: the truthful cause and the CTA to the fix (top up, renew, or upgrade — a quota callout leads with the plan and keeps View usage beside it). The same judgment made before the action is the advisory Deploy Billing Notice before a deployment and the refusing Paid Chat Wall before a paid turn — deploy advises because its failure comes back explained, chat walls because a spent turn has no after-the-fact scene.
+A deployment or a paid assistant turn the platform stopped because the workspace hit its money or quota wall — Account Debt, a payment-due or Paused Workspace Subscription, a full Deployable Quota, or an exhausted Paid Source. The platform signals it at one seam only — its billing denial of a deployment's apply — and otherwise it is judged after the fact from the workspace's billing standing; either way it is told as a billing callout: the truthful cause and the CTA to the fix (top up, renew, subscribe, or upgrade — a quota callout leads with the plan and keeps View usage beside it). The same judgment made before the action is the advisory Deploy Billing Notice before a deployment and the refusing Paid Chat Wall before a paid turn — deploy advises because its failure comes back explained, chat walls because a spent turn has no after-the-fact scene.
 
 _Avoid_: outage, something went wrong on our side, timed out (as its name), billing error (as the concept's name).
 
@@ -770,7 +776,7 @@ _Avoid_: priority, importance (the platform CR field), level, tone.
 
 ### Status Hint
 
-The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt (on a Pay-As-You-Go workspace only — the same judgment as the Deploy Billing Notice, so the banner and the notice can never disagree), a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
+The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), a Paused Workspace Subscription, Account Debt (on a Pay-As-You-Go workspace only — the same judgment as the Deploy Billing Notice, so the banner and the notice can never disagree), a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
 
 _Avoid_: alert bar, global notification, sticky toast, warning strip (as the concept's name).
 

@@ -61,6 +61,7 @@ describe("judgeWorkspaceBillingStanding", () => {
       paymentDue: false,
       paymentDueRecovery: null,
       quotaKnown: true,
+      subscriptionPaused: false,
     });
   });
 
@@ -164,6 +165,44 @@ describe("judgeWorkspaceBillingStanding", () => {
     expect(standing.paidSource).toBe("ai-credits");
     expect(standing.quotaKnown).toBe(true);
     expect(standing.aiCredits).toBeNull();
+  });
+
+  it("reads a paused Free subscription as born-suspended, never payment-due (ADR-0074)", () => {
+    // The platform creates a user's second and later workspaces with a
+    // Free plan already PAUSED: suspended from birth, nothing expired.
+    const standing = judgeWorkspaceBillingStanding({
+      account: HEALTHY_ACCOUNT,
+      credits: NO_CREDITS,
+      quota: quota({ aiHard: 0, aiUsed: 0 }),
+      subscription: {
+        subscription: {
+          PlanName: "Free",
+          Status: "paused",
+          type: "SUBSCRIPTION",
+        },
+      },
+    });
+    expect(standing.subscriptionPaused).toBe(true);
+    expect(standing.paymentDue).toBe(false);
+    expect(standing.paymentDueRecovery).toBeNull();
+    expect(standing.paidSource).toBe("ai-credits");
+    // A healthy subscription is a settled "not paused"; an unread one stays unknown.
+    expect(
+      judgeWorkspaceBillingStanding({
+        account: HEALTHY_ACCOUNT,
+        credits: NO_CREDITS,
+        quota: quota({}),
+        subscription: HOBBY,
+      }).subscriptionPaused
+    ).toBe(false);
+    expect(
+      judgeWorkspaceBillingStanding({
+        account: HEALTHY_ACCOUNT,
+        credits: NO_CREDITS,
+        quota: quota({}),
+        subscription: null,
+      }).subscriptionPaused
+    ).toBeNull();
   });
 
   it("reads a DELETED subscription record as Pay-As-You-Go", () => {

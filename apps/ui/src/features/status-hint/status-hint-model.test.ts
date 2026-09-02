@@ -18,6 +18,7 @@ function subscription(
   return {
     currentPeriodEndAt: "2026-09-12T12:00:00Z",
     isActiveFreeTrial: false,
+    isPaused: false,
     isPayg: false,
     lifecycle: "active",
     planName: "Hobby",
@@ -59,6 +60,7 @@ test("a quiet workspace holds no state and settles every input", () => {
   assert.deepEqual(evaluation.hints, []);
   assert.deepEqual(evaluation.settled, [
     "payment-due",
+    "subscription-paused",
     "account-debt",
     "quota-full",
     "trial-expiry",
@@ -387,7 +389,7 @@ test("unknown inputs neither light a state nor settle it", () => {
       quota: null,
       subscription: subscription({}),
     }).settled,
-    ["payment-due", "account-debt", "trial-expiry"]
+    ["payment-due", "subscription-paused", "account-debt", "trial-expiry"]
   );
   // On a PAYG workspace the money reads must answer first.
   assert.deepEqual(
@@ -398,7 +400,7 @@ test("unknown inputs neither light a state nor settle it", () => {
       quota: null,
       subscription: subscription(PAYG),
     }).settled,
-    ["payment-due", "trial-expiry"]
+    ["payment-due", "subscription-paused", "trial-expiry"]
   );
 });
 
@@ -458,4 +460,35 @@ test("dismissals survive while the state holds and revive on re-entry", () => {
   // Reconciling is identity-stable when nothing changes.
   const stable = ["quota-full"] as const;
   assert.equal(reconcileDismissed(stable, full), stable);
+});
+
+test("a paused subscription holds the born-suspended state above debt and quota (ADR-0074)", () => {
+  const inputs: StatusHintInputs = {
+    ...QUIET,
+    availableBalanceMicroUnits: -6_320_000,
+    quota: [{ label: "CPU", percentUsed: 100, type: "cpu" }],
+    subscription: subscription({ isPaused: true, planName: "Free" }),
+  };
+  const [hint] = evaluateStatusHints(inputs).hints;
+  assert.deepEqual(hint, {
+    cta: { href: "/billing?mode=upgrade", label: "Choose a plan" },
+    description:
+      "This workspace was created without a free trial, so it is suspended. Subscribe to a plan to restore it.",
+    dismissible: false,
+    id: "subscription-paused",
+    title: "Workspace suspended — no active plan",
+    tone: "destructive",
+  });
+  assert.deepEqual(ids(inputs), ["subscription-paused", "quota-full"]);
+  // Payment-due still leads; a healthy subscription settles the state absent.
+  assert.deepEqual(
+    ids({
+      ...inputs,
+      subscription: subscription({ ...PAYMENT_DUE, isPaused: true }),
+    })[0],
+    "payment-due"
+  );
+  const quiet = evaluateStatusHints(QUIET);
+  assert.ok(quiet.settled.includes("subscription-paused"));
+  assert.ok(!quiet.hints.some((h) => h.id === "subscription-paused"));
 });
