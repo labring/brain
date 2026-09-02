@@ -72,6 +72,20 @@ export const assistantThreadDTOSchema = z.object({
  */
 export type ChatPaidSource = "ai-credits" | "balance";
 
+/**
+ * Why the next `user` turn is refused (ADR-0073): an exhausted Paid Source
+ * (`ai-credits` | `balance`), or a subscription whose plan grants no AI
+ * allowance at all — upstream refuses those turns unconditionally, and the
+ * account balance is never consulted for a subscribed workspace. The
+ * allowance causes fork on whether the workspace's Free Chat Turns story
+ * explains the stop (`allowance-trial`: "free trial messages used up") or
+ * the plan itself does (`allowance-plan`: "AI usage not included").
+ */
+export type ChatWallCause =
+  | ChatPaidSource
+  | "allowance-trial"
+  | "allowance-plan";
+
 export interface FreeTierState {
   billing: "free" | "user";
   limit: number;
@@ -79,10 +93,11 @@ export interface FreeTierState {
   paidSource?: ChatPaidSource | null;
   remaining: number;
   /**
-   * The exhausted paid source that blocks the next `user` turn (design spec
-   * row E3); absent/null while open.
+   * The billing cause that refuses the next `user` turn (design spec row
+   * E3, ADR-0073); absent/null while open. Every cause locks the composer
+   * at once.
    */
-  wall?: ChatPaidSource | null;
+  wall?: ChatWallCause | null;
 }
 
 /** Bootstrap payload returned by `GET /api/chat/session`. */

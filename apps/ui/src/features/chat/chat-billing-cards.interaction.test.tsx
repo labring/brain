@@ -233,6 +233,66 @@ test("paid wall card speaks the exhausted source loudly and links to its fix", a
   });
 });
 
+test("allowance wall card names the missing allowance, not a Paid Source, and links to upgrade (ADR-0073)", async () => {
+  await withTestDom(async (act) => {
+    const { ChatBillingCardSlot } = await cardModules();
+    const navigations: string[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(
+          <ChatBillingCardSlot
+            errored={false}
+            freeTier={{
+              ...USER,
+              paidSource: "ai-credits",
+              wall: "allowance-trial",
+            }}
+            onNavigateToBilling={(destination) => navigations.push(destination)}
+          />
+        );
+      });
+      const wall = rendered?.container.querySelector(
+        '[data-slot="chat-paid-wall-card"]'
+      );
+      assert.ok(wall, "the wall card renders for the trial voice");
+      const trialText = wall?.textContent ?? "";
+      assert.ok(trialText.includes("Free trial messages used up"));
+      assert.ok(
+        !trialText.includes("AI Credits"),
+        "a workspace that never held AI Credits is not told they ran out"
+      );
+      fireEvent.click(
+        rendered?.getByRole("button", { name: "Upgrade plan" }) as HTMLElement
+      );
+      assert.deepEqual(navigations, ["upgrade"]);
+
+      await act(() => {
+        rendered?.rerender(
+          <ChatBillingCardSlot
+            errored={false}
+            freeTier={{
+              ...USER,
+              paidSource: "ai-credits",
+              wall: "allowance-plan",
+            }}
+            onNavigateToBilling={(destination) => navigations.push(destination)}
+          />
+        );
+      });
+      const planText = rendered?.container.textContent ?? "";
+      assert.ok(planText.includes("AI usage not included"));
+      assert.ok(!planText.includes("Free trial"));
+      fireEvent.click(
+        rendered?.getByRole("button", { name: "Upgrade plan" }) as HTMLElement
+      );
+      assert.deepEqual(navigations, ["upgrade", "upgrade"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("a billing interruption turns the error card truthful without locking anything", async () => {
   await withTestDom(async (act) => {
     const { ChatBillingCardSlot } = await cardModules();

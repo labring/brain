@@ -99,20 +99,28 @@ function chatBillingHeaders(state: FreeTierState): Record<string, string> {
   };
 }
 
-/** The paid wall's refusal (design spec row E3). */
+/** The paid wall's refusal (design spec row E3; allowance causes ADR-0073). */
 function paidWallResponse(state: FreeTierState): Response {
-  const body: ChatApiErrorBody =
-    state.wall === "ai-credits"
-      ? {
-          code: "ai_credits_exhausted",
-          error:
-            "This workspace's AI Credits are used up. Upgrade the plan to keep chatting with the assistant.",
-        }
-      : {
-          code: "account_balance_exhausted",
-          error:
-            "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
-        };
+  let body: ChatApiErrorBody;
+  if (state.wall === "allowance-trial" || state.wall === "allowance-plan") {
+    body = {
+      code: "ai_allowance_missing",
+      error:
+        "This workspace's plan doesn't include AI usage. Upgrade the plan to keep chatting with the assistant.",
+    };
+  } else if (state.wall === "ai-credits") {
+    body = {
+      code: "ai_credits_exhausted",
+      error:
+        "This workspace's AI Credits are used up. Upgrade the plan to keep chatting with the assistant.",
+    };
+  } else {
+    body = {
+      code: "account_balance_exhausted",
+      error:
+        "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
+    };
+  }
   return Response.json(body, {
     headers: chatBillingHeaders(state),
     status: 402,

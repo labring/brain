@@ -12,7 +12,7 @@ import {
   chatBillingInterruptionCopy,
   chatBillingWallCopy,
 } from "./chat-billing-interruption";
-import type { ChatPaidSource, FreeTierState } from "./persistence/types";
+import type { ChatWallCause, FreeTierState } from "./persistence/types";
 
 export type ChatBillingCard = "billing-error" | "counter" | "error" | "wall";
 
@@ -31,13 +31,14 @@ export type ChatBillingDestination = "plans" | "top-up" | "upgrade";
  * error > counter. The paid wall outranks every error card because "try
  * again" is a lie once the server refuses chat; a billing interruption
  * outranks the generic error because it knows why. On open `user` billing
- * only an error card can ever show.
+ * only an error card can ever show. Every wall cause locks alike — an
+ * allowance cause (ADR-0073) as immediately as an exhausted Paid Source.
  */
 export function resolveChatBillingCard(input: {
   billing: FreeTierState["billing"] | null;
   errored: boolean;
   interruption?: ChatBillingInterruption | null;
-  wall?: ChatPaidSource | null;
+  wall?: ChatWallCause | null;
 }): ChatBillingCard | null {
   if (input.wall != null) {
     return "wall";

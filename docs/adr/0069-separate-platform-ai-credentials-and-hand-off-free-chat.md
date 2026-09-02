@@ -1,5 +1,12 @@
 # Separate platform AI credentials and hand off exhausted Free Chat Turns
 
+## Status
+
+Exhaustion consequence revised by ADR-0073: the handoff stands, but a plan
+that grants no AI allowance (the production Free plan's `ai_quota` is 0)
+meets the Paid Chat Wall's allowance cause instead of a spendable Paid
+Source.
+
 Chat Agent and GitHub Deployment Tasks are different workloads with different
 platform funding. Their environment variables must select only their own
 platform connection, then fall back directly to the caller's AI Proxy. This
@@ -18,9 +25,11 @@ system connection use `user` billing from their first turn.
 **Exhaustion hands off to the caller's AI Proxy.** After an eligible workspace
 spends its last Free Chat Turn, Chat Billing Mode becomes `user`. The next turn
 uses the caller's AI Proxy and is gated by ADR-0068's Paid Chat Wall before any
-conversation state changes. The former `blocked` mode,
-`free_chat_turns_exhausted` response, locked composer, and upgrade card are
-removed. A platform-funded turn that fails does not retry against the user's
+conversation state changes. The former `blocked` mode and its
+`free_chat_turns_exhausted` response are removed; a locked composer and an
+upgrade card return only as the Paid Chat Wall's allowance cause, which is
+what a plan without an AI allowance meets on that next turn (ADR-0073). A
+platform-funded turn that fails does not retry against the user's
 AI Proxy in the same request; silent provider failover would unexpectedly bill
 the user.
 
@@ -50,7 +59,9 @@ variable and is not a Brain configuration input.
 
 - **Keep blocking an Active Free Trial after five turns.** Rejected: the
   product now intentionally continues through the caller's metered AI Proxy,
-  subject to the Paid Chat Wall.
+  subject to the Paid Chat Wall. (Where the plan grants no AI allowance, that
+  wall is what the trial meets — ADR-0073 — so the stop is a truthful wall,
+  not the former blanket block.)
 - **Let GitHub Deployment Tasks reuse Chat Agent or host Codex credentials.**
   Rejected: it hides which platform budget funds a task and makes an unrelated
   Chat configuration change deployment billing.
@@ -59,10 +70,10 @@ variable and is not a Brain configuration input.
 
 ## Consequences
 
-- The sixth successful Chat Agent turn in an eligible Active Free Trial
-  workspace can consume the caller's AI Credits or Account Balance. The Paid
-  Chat Wall remains the server-authoritative refusal when that source is
-  exhausted.
+- The sixth Chat Agent turn in an eligible Active Free Trial workspace spends
+  the caller's AI Credits where the plan grants any (a subscribed workspace
+  never spends the Account Balance on AI — ADR-0073). The Paid Chat Wall
+  remains the server-authoritative refusal when nothing is spendable.
 - Operators can disable platform-funded GitHub Deployment Tasks by leaving the
   dedicated pair blank without affecting platform-funded Chat turns.
 - No database migration is required. Existing Deploy Devboxes retain the

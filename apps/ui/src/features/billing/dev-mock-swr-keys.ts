@@ -2,8 +2,9 @@
  * Which SWR keys the billing Dev Mock owns. Switching a Mock Scenario
  * revalidates exactly these — every surface whose answers the fixtures
  * shape (Billing Area, the sidebar subscription badge, the Notification
- * Center's Brain feed and account facts, the Status Hint, the chat
- * free-turn count) — and nothing else. A blanket `mutate(() => true)` used
+ * Center's Brain feed and account facts, the Status Hint, and the chat
+ * free-turn count via the `/api/chat/free-turns` fixture) — and nothing
+ * else. A blanket `mutate(() => true)` used
  * to refire every key on the page; with the cluster unreachable those
  * requests hang, saturate the browser's per-host connection pool, and
  * queue the mock's own refetches behind them.

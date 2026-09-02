@@ -4,6 +4,7 @@ import {
   chatBillingInterruptionCopy,
   chatBillingInterruptionFromError,
   chatBillingWallCopy,
+  chatWallPlaceholder,
 } from "./chat-billing-interruption";
 
 describe("chatBillingInterruptionFromError", () => {
@@ -49,6 +50,15 @@ describe("chatBillingInterruptionFromError", () => {
     ).toEqual({ paidSource: "ai-credits" });
   });
 
+  it("reads the allowance refusal as a billing refusal with no Paid Source (ADR-0073)", () => {
+    expect(
+      chatBillingInterruptionFromError(
+        new Error(JSON.stringify({ code: "ai_allowance_missing", error: "x" })),
+        "ai-credits"
+      )
+    ).toEqual({ paidSource: null });
+  });
+
   it("is null for every non-billing error, including non-JSON messages", () => {
     expect(
       chatBillingInterruptionFromError(new Error("An error occurred."), null)
@@ -85,9 +95,44 @@ describe("copy forks by Chat Billing Mode", () => {
     );
   });
 
+  it("speaks the allowance causes truthfully, both pointing at the plan (ADR-0073)", () => {
+    const body =
+      "This workspace's plan doesn't include AI usage. Upgrade the plan to keep chatting.";
+    const cta = { destination: "upgrade" as const, label: "Upgrade plan" };
+    expect(chatBillingWallCopy("allowance-trial")).toEqual({
+      body,
+      cta,
+      title: "Free trial messages used up",
+    });
+    expect(chatBillingWallCopy("allowance-plan")).toEqual({
+      body,
+      cta,
+      title: "AI usage not included",
+    });
+  });
+
   it("never claims a source it does not know", () => {
     const copy = chatBillingInterruptionCopy(null);
     expect(copy.title).toBe("Message not sent — billing refused the request");
     expect(copy.cta).toEqual({ destination: "plans", label: "View billing" });
+  });
+});
+
+describe("chatWallPlaceholder", () => {
+  it("names the allowance cause in the locked composer (ADR-0073)", () => {
+    expect(chatWallPlaceholder("allowance-trial")).toBe(
+      "Free trial messages used up — upgrade to continue"
+    );
+    expect(chatWallPlaceholder("allowance-plan")).toBe(
+      "AI usage not included — upgrade to continue"
+    );
+  });
+
+  it("keeps the generic billing placeholder for the Paid Source walls and an unknown wall", () => {
+    const generic = "Chat is paused — resolve billing to continue";
+    expect(chatWallPlaceholder("ai-credits")).toBe(generic);
+    expect(chatWallPlaceholder("balance")).toBe(generic);
+    expect(chatWallPlaceholder(null)).toBe(generic);
+    expect(chatWallPlaceholder(undefined)).toBe(generic);
   });
 });

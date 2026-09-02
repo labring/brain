@@ -1,5 +1,5 @@
 import type { ChatBillingDestination } from "./chat-billing-cards";
-import type { ChatPaidSource } from "./persistence/types";
+import type { ChatPaidSource, ChatWallCause } from "./persistence/types";
 
 /**
  * A paid turn the AI proxy refused for billing reasons (design spec row
@@ -20,6 +20,7 @@ export interface ChatBillingCopy {
 
 const BILLING_REFUSAL_CODES = new Set([
   "account_balance_exhausted",
+  "ai_allowance_missing",
   "ai_credits_exhausted",
   "ai_proxy_billing_refused",
 ]);
@@ -57,6 +58,12 @@ export function chatBillingInterruptionFromError(
   if (code === "ai_credits_exhausted") {
     return { paidSource: "ai-credits" };
   }
+  if (code === "ai_allowance_missing") {
+    // A plan without an AI allowance names no Paid Source to spend
+    // (ADR-0073); the `X-Chat-Wall` header on the same response carries
+    // the cause and locks the composer.
+    return { paidSource: null };
+  }
   const named =
     typeof detail === "object" && detail != null
       ? paidSourceFrom((detail as { paidSource?: unknown }).paidSource)
@@ -64,11 +71,24 @@ export function chatBillingInterruptionFromError(
   return { paidSource: named ?? knownPaidSource };
 }
 
-/** The pre-send wall card's copy, forked by what the turn would spend. */
-export function chatBillingWallCopy(
-  paidSource: ChatPaidSource
-): ChatBillingCopy {
-  if (paidSource === "ai-credits") {
+/**
+ * Both allowance causes name the same fix — the plan grants no AI usage, so
+ * upgrade it (ADR-0073); only the title says why the stop arrived now.
+ */
+const ALLOWANCE_WALL_COPY: Omit<ChatBillingCopy, "title"> = {
+  body: "This workspace's plan doesn't include AI usage. Upgrade the plan to keep chatting.",
+  cta: { destination: "upgrade", label: "Upgrade plan" },
+};
+
+/** The pre-send wall card's copy, forked by the refusing cause. */
+export function chatBillingWallCopy(cause: ChatWallCause): ChatBillingCopy {
+  if (cause === "allowance-trial") {
+    return { ...ALLOWANCE_WALL_COPY, title: "Free trial messages used up" };
+  }
+  if (cause === "allowance-plan") {
+    return { ...ALLOWANCE_WALL_COPY, title: "AI usage not included" };
+  }
+  if (cause === "ai-credits") {
     return {
       body: "This workspace's AI Credits are exhausted. Upgrade the plan to keep chatting.",
       cta: { destination: "upgrade", label: "Upgrade plan" },
@@ -108,5 +128,17 @@ export function chatBillingInterruptionCopy(
 }
 
 /** The locked composer's placeholder while the wall holds. */
-export const CHAT_WALL_PLACEHOLDER =
-  "Chat is paused — resolve billing to continue";
+const CHAT_WALL_PLACEHOLDER = "Chat is paused — resolve billing to continue";
+
+/** The locked placeholder, naming the allowance cause when it is the lock. */
+export function chatWallPlaceholder(
+  wall: ChatWallCause | null | undefined
+): string {
+  if (wall === "allowance-trial") {
+    return "Free trial messages used up — upgrade to continue";
+  }
+  if (wall === "allowance-plan") {
+    return "AI usage not included — upgrade to continue";
+  }
+  return CHAT_WALL_PLACEHOLDER;
+}

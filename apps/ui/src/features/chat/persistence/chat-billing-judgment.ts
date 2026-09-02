@@ -84,7 +84,7 @@ export async function judgeChatBilling(
       ? await judgeTrial(reads)
       : "not-trial";
   return {
-    paidWall: async () => paidChatWall(await standing),
+    paidWall: async () => paidChatWall(await standing, trial),
     snapshot,
     systemModelConfigured,
     trial,
