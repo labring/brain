@@ -2,12 +2,12 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@workspace/ui/components/toggle-group";
-import { Check, CircleCheck } from "lucide-react";
+  AppLengthHint,
+  AppOptionCard,
+} from "@workspace/ui/components/app-option-card";
+import { AppTextarea } from "@workspace/ui/components/app-textarea";
+import { CircleCheck } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
 import { trackBrainGtmEvent } from "@/features/analytics/brain-gtm";
@@ -20,8 +20,8 @@ import type { SubscriptionLifecycleHandler } from "@/features/billing/billing-pl
 import {
   CANCELLATION_FEEDBACK_MAX_LENGTH,
   CANCELLATION_REASONS,
+  type CancellationReasonKey,
   type CancellationSurveyAnswers,
-  cancellationReasonKeySchema,
   cancellationSurveyHasAnswers,
   EMPTY_CANCELLATION_SURVEY_ANSWERS,
 } from "@/features/billing/cancellation-survey/reasons";
@@ -52,7 +52,7 @@ interface CancelPlanDialogProps {
 /**
  * The Plan view's cancel dialog, grown into the Cancellation Survey
  * (CONTEXT.md, ADR-0072). Two stages in one dialog: the survey — the
- * period-end warning, optional reason chips, optional feedback — and, after
+ * period-end warning, optional reason cards, optional feedback — and, after
  * account-service confirmed the cancel, an in-place confirmation. The survey
  * never gates the cancel: an empty submission cancels the same, and every
  * way out of the survey stage is Keep Plan.
@@ -75,7 +75,6 @@ export function CancelPlanDialog({
   // Cancel Plan settles locally, and no dismissal reports a keep.
   const [previewing, setPreviewing] = useState(false);
   const feedbackRef = useRef<HTMLTextAreaElement>(null);
-  const questionId = useId();
   const feedbackId = useId();
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -112,12 +111,13 @@ export function CancelPlanDialog({
     setOpen(true);
   });
 
-  const handleReasonsChange = (value: unknown[]) => {
-    const reasons = cancellationReasonKeySchema.array().parse(value);
-    const otherJustSelected =
-      reasons.includes("other") && !answers.reasons.includes("other");
+  const toggleReason = (key: CancellationReasonKey) => {
+    const selected = answers.reasons.includes(key);
+    const reasons = selected
+      ? answers.reasons.filter((reason) => reason !== key)
+      : [...answers.reasons, key];
     setAnswers((current) => ({ ...current, reasons }));
-    if (otherJustSelected) {
+    if (key === "other" && !selected) {
       feedbackRef.current?.focus();
     }
   };
@@ -159,7 +159,13 @@ export function CancelPlanDialog({
           Cancel Plan
         </AppDialog.Trigger>
       ) : null}
-      <AppDialog.Content>
+      {/* Carries the survey-surface material, like the Onboarding survey.
+          The survey needs the width for its two-column reason grid; the
+          confirmation is a short notice and drops back to the default. */}
+      <AppDialog.Content
+        className="survey-surface"
+        size={stage === "confirmation" ? "default" : "lg"}
+      >
         {stage === "confirmation" ? (
           <>
             <AppDialog.Header>
@@ -218,40 +224,27 @@ export function CancelPlanDialog({
                 </span>
                 . Please backup your work in advance to avoid data loss.
               </p>
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <p className="font-medium text-foreground" id={questionId}>
-                    Before you go, what made you cancel?
-                  </p>
-                  <p className="text-muted-foreground">
-                    Select all that apply.
-                  </p>
+              {/* min-w-0: a fieldset's default min-content width would let
+                  the longest reason label force the dialog wider. */}
+              <fieldset className="min-w-0">
+                <legend className="mb-2 font-medium text-foreground">
+                  Before you go, what made you cancel? Select all that apply.
+                </legend>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {CANCELLATION_REASONS.map((reason) => (
+                    <AppOptionCard
+                      disabled={submitting}
+                      key={reason.key}
+                      onToggle={() => toggleReason(reason.key)}
+                      selected={answers.reasons.includes(reason.key)}
+                      semantics="checkbox"
+                      shape="checkbox"
+                    >
+                      {reason.label}
+                    </AppOptionCard>
+                  ))}
                 </div>
-                <ToggleGroup
-                  aria-labelledby={questionId}
-                  className="w-full flex-wrap justify-start"
-                  disabled={submitting}
-                  multiple
-                  onValueChange={handleReasonsChange}
-                  spacing={2}
-                  value={answers.reasons}
-                >
-                  {CANCELLATION_REASONS.map((reason) => {
-                    const selected = answers.reasons.includes(reason.key);
-                    return (
-                      <ToggleGroupItem
-                        className="h-8 rounded-full border border-input px-3 text-muted-foreground data-pressed:border-primary data-pressed:bg-primary/10 data-pressed:text-foreground"
-                        key={reason.key}
-                        value={reason.key}
-                        variant="outline"
-                      >
-                        {selected ? <Check aria-hidden /> : null}
-                        {reason.label}
-                      </ToggleGroupItem>
-                    );
-                  })}
-                </ToggleGroup>
-              </div>
+              </fieldset>
               <AppDialog.Field>
                 <AppDialog.Label htmlFor={feedbackId}>
                   Additional feedback (optional)
@@ -270,12 +263,12 @@ export function CancelPlanDialog({
                   rows={3}
                   value={answers.feedback}
                 />
-                <p
+                <AppLengthHint
                   aria-live="polite"
-                  className="text-right text-muted-foreground text-xs"
-                >
-                  {answers.feedback.length}/{CANCELLATION_FEEDBACK_MAX_LENGTH}
-                </p>
+                  className="self-end"
+                  max={CANCELLATION_FEEDBACK_MAX_LENGTH}
+                  value={answers.feedback}
+                />
               </AppDialog.Field>
               {error == null ? null : (
                 <p className="text-destructive" role="alert">

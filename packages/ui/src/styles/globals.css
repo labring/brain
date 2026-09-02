@@ -175,8 +175,9 @@
     color-mix(in oklab, var(--input) 30%, transparent),
     color-mix(in oklab, var(--input) 30%, transparent)
   );
-  /** Onboarding survey dialog tokens (Figma Brain V2.0 onboarding). */
-  --onboarding-survey-surface-overlay: linear-gradient(
+  /** Survey dialog tokens (Figma Brain V2.0 onboarding), shared by the
+      Onboarding survey and the Cancellation Survey dialogs. */
+  --survey-surface-overlay: linear-gradient(
     -30deg,
     rgb(10 163 249 / 12%) 8.73%,
     rgb(181 180 255 / 12%) 78.53%
@@ -752,6 +753,13 @@
 @utility project-chrome-surface {
   background-color: var(--project-chrome-surface-base);
   background-image: var(--project-chrome-surface-overlay);
+}
+
+/* The survey dialogs' material: the chrome surface base under a diagonal
+   blue-to-lavender wash. */
+@utility survey-surface {
+  background-color: var(--project-chrome-surface-base);
+  background-image: var(--survey-surface-overlay);
 }
 
 @layer utilities {

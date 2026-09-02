@@ -1068,11 +1068,13 @@ test("Cancel Plan runs the survey: cancel first, survey second, confirmation in 
 
       await act(() => {
         fireEvent.click(
-          within(dialog).getByRole("button", { name: "The cost is too high" })
+          within(dialog).getByRole("checkbox", { name: "The cost is too high" })
         );
       });
       await act(() => {
-        fireEvent.click(within(dialog).getByRole("button", { name: "Other" }));
+        fireEvent.click(
+          within(dialog).getByRole("checkbox", { name: "Other" })
+        );
       });
       const feedback = within(dialog).getByLabelText(
         "Additional feedback (optional)"
@@ -1083,9 +1085,9 @@ test("Cancel Plan runs the survey: cancel first, survey second, confirmation in 
         "selecting Other hands focus to the text box"
       );
       assert.ok(
-        within(dialog).getByRole("button", {
+        within(dialog).getByRole("checkbox", {
           name: "The cost is too high",
-          pressed: true,
+          checked: true,
         })
       );
       await act(() => {
@@ -1167,7 +1169,7 @@ test("Keep Plan and dismissal send nothing, report kept, and reset the survey", 
       let dialog = await openCancelSurvey(act, rendered);
       await act(() => {
         fireEvent.click(
-          within(dialog).getByRole("button", {
+          within(dialog).getByRole("checkbox", {
             name: "It's too complicated to use",
           })
         );
@@ -1193,9 +1195,9 @@ test("Keep Plan and dismissal send nothing, report kept, and reset the survey", 
 
       dialog = await openCancelSurvey(act, rendered);
       assert.ok(
-        within(dialog).getByRole("button", {
+        within(dialog).getByRole("checkbox", {
           name: "It's too complicated to use",
-          pressed: false,
+          checked: false,
         }),
         "a reopened survey starts empty"
       );
@@ -1235,7 +1237,7 @@ test("a failing cancel shows the error inline and keeps the answers", async () =
       const dialog = await openCancelSurvey(act, rendered);
       await act(() => {
         fireEvent.click(
-          within(dialog).getByRole("button", {
+          within(dialog).getByRole("checkbox", {
             name: "I found a better alternative",
           })
         );
@@ -1255,9 +1257,9 @@ test("a failing cancel shows the error inline and keeps the answers", async () =
         "Upstream refused the cancel."
       );
       assert.ok(
-        within(dialog).getByRole("button", {
+        within(dialog).getByRole("checkbox", {
           name: "I found a better alternative",
-          pressed: true,
+          checked: true,
         })
       );
       assert.equal(
