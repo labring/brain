@@ -74,7 +74,10 @@ import {
   resolveSelectedContextAvailability,
   selectedContextResourceIdentitiesFromFacts,
 } from "@/features/chat/selected-context";
-import { buildSelectedResourceSnapshot } from "@/features/chat/selected-context-snapshot";
+import {
+  buildSelectedResourceSnapshot,
+  observedUidForSelectedResource,
+} from "@/features/chat/selected-context-snapshot";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -783,23 +786,11 @@ function ProjectAssistantChatSession({
       }
       setBillingInterruption(null);
       const selectedTarget = projectCanvasSelectionTarget(selected);
-      let selectedName: string | null = null;
-      if (selectedTarget != null) {
-        selectedName =
-          selectedTarget.kind === "PublicAccess"
-            ? selectedTarget.apName
-            : selectedTarget.name;
-      }
-      const observedUid =
-        selectedTarget?.observedUid ??
-        (selectedTarget == null || selectedName == null
-          ? undefined
-          : selectedContextResources.find(
-              (resource) =>
-                resource.kind === selectedTarget.kind &&
-                resource.name === selectedName &&
-                resource.namespace === selectedTarget.namespace
-            )?.observedUid);
+      const observedUid = observedUidForSelectedResource({
+        fallback: selectedTarget?.observedUid,
+        resources: selectedContextResources,
+        selected,
+      });
       const snapshot = buildSelectedResourceSnapshot({
         observedUid,
         projectId,
@@ -909,8 +900,17 @@ function ProjectAssistantChatPane() {
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
   const freeTierOverride = useChatBillingCardFreeTierOverride();
   const assistantStateRefreshSequenceRef = useRef(0);
+  const threadSelectionSequenceRef = useRef(0);
 
   const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}\u0000${projectId}`;
+  const assistantScopeKeyRef = useRef(sessionResetKey);
+  useLayoutEffect(() => {
+    if (assistantScopeKeyRef.current === sessionResetKey) {
+      return;
+    }
+    assistantScopeKeyRef.current = sessionResetKey;
+    threadSelectionSequenceRef.current += 1;
+  }, [sessionResetKey]);
   const [prevSessionResetKey, setPrevSessionResetKey] =
     useState(sessionResetKey);
   if (prevSessionResetKey !== sessionResetKey) {
@@ -981,23 +981,37 @@ function ProjectAssistantChatPane() {
 
   const selectThread = useCallback(
     async (threadId: string) => {
+      const selectionSequence = threadSelectionSequenceRef.current + 1;
+      threadSelectionSequenceRef.current = selectionSequence;
       if (threadId === session?.chatId) {
         return;
       }
+      const requestScopeKey = sessionResetKey;
       const messages = await fetchAssistantThreadMessages(threadId, {
         appToken,
         kubeconfig,
         namespace: namespaceRaw,
         projectId,
       });
-      if (messages == null) {
+      if (
+        messages == null ||
+        selectionSequence !== threadSelectionSequenceRef.current ||
+        requestScopeKey !== assistantScopeKeyRef.current
+      ) {
         return;
       }
       setSession((prev) =>
         prev == null ? prev : { ...prev, chatId: threadId, messages }
       );
     },
-    [appToken, kubeconfig, namespaceRaw, projectId, session?.chatId]
+    [
+      appToken,
+      kubeconfig,
+      namespaceRaw,
+      projectId,
+      session?.chatId,
+      sessionResetKey,
+    ]
   );
 
   // The verified actor is bound when the first message materializes this draft.

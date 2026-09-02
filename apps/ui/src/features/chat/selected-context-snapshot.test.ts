@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
 
 import { publishResourceDisplayNames } from "@/features/resource-display-name/resource-display-name-bridge";
-import { buildSelectedResourceSnapshot } from "./selected-context-snapshot";
+import {
+  buildSelectedResourceSnapshot,
+  observedUidForSelectedResource,
+} from "./selected-context-snapshot";
 
 afterEach(() => publishResourceDisplayNames([]));
 
@@ -90,4 +93,47 @@ describe("buildSelectedResourceSnapshot", () => {
       })
     ).toBeNull();
   });
+});
+
+it("prefers the current UID after same-name resource recreation", () => {
+  expect(
+    observedUidForSelectedResource({
+      fallback: "old-uid",
+      resources: [
+        {
+          kind: "AP",
+          name: "api",
+          namespace: "default",
+          observedUid: "new-uid",
+        },
+      ],
+      selected: {
+        kind: "resource",
+        target: {
+          kind: "AP",
+          name: "api",
+          namespace: "default",
+          observedUid: "old-uid",
+        },
+      },
+    })
+  ).toBe("new-uid");
+});
+
+it("keeps the URL UID when the selected resource has been deleted", () => {
+  expect(
+    observedUidForSelectedResource({
+      fallback: "old-uid",
+      resources: [],
+      selected: {
+        kind: "resource",
+        target: {
+          kind: "DB",
+          name: "db",
+          namespace: "default",
+          observedUid: "old-uid",
+        },
+      },
+    })
+  ).toBe("old-uid");
 });
