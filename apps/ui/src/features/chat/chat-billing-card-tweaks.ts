@@ -8,20 +8,30 @@ import type { FreeTierState } from "./persistence/types";
 // card draws `limit` pips, so the slider range tracks the real allowance.
 const FREE_CHAT_TURNS_LIMIT = 5;
 
+/**
+ * Every posture but the counter fabricates one fixed state; the counter
+ * follows the slider. Declared apart so `FIXED_POSTURES` is keyed by these
+ * values and a typo in either place is a type error, not a silent fall
+ * through to the counter.
+ */
+const FIXED_POSTURE_OPTIONS = [
+  { label: "0 turns — handoff (renders nothing)", value: "handoff" },
+  { label: "Allowance wall — after trial", value: "allowance-wall-trial" },
+  { label: "Allowance wall — plan without AI", value: "allowance-wall-plan" },
+  { label: "Paid wall — AI Credits", value: "wall-ai-credits" },
+  { label: "Paid wall — balance", value: "wall-balance" },
+] as const satisfies readonly { label: string; value: string }[];
+
+type FixedChatBillingCardPosture =
+  (typeof FIXED_POSTURE_OPTIONS)[number]["value"];
+
 const CHAT_BILLING_CARD_TWEAKS = {
   override: false,
   posture: {
     default: "counter",
     options: [
       { label: "Counter (free turns)", value: "counter" },
-      { label: "0 turns — handoff (renders nothing)", value: "handoff" },
-      { label: "Allowance wall — after trial", value: "allowance-wall-trial" },
-      {
-        label: "Allowance wall — plan without AI",
-        value: "allowance-wall-plan",
-      },
-      { label: "Paid wall — AI Credits", value: "wall-ai-credits" },
-      { label: "Paid wall — balance", value: "wall-balance" },
+      ...FIXED_POSTURE_OPTIONS,
     ],
     type: "select",
   },
@@ -50,7 +60,7 @@ const TWEAKABLE_BUILD =
  * fixture covers those), so ADR-0065's server-computed posture is only ever
  * overridden where the dev tweaks panel exists.
  */
-const FIXED_POSTURES: Record<string, FreeTierState> = {
+const FIXED_POSTURES: Record<FixedChatBillingCardPosture, FreeTierState> = {
   "allowance-wall-plan": {
     billing: "user",
     limit: FREE_CHAT_TURNS_LIMIT,
@@ -88,6 +98,15 @@ const FIXED_POSTURES: Record<string, FreeTierState> = {
   },
 };
 
+/**
+ * The select's value is a plain string, and a session may still carry a
+ * posture an earlier build offered; anything not in the table is the
+ * counter.
+ */
+function isFixedPosture(value: string): value is FixedChatBillingCardPosture {
+  return Object.hasOwn(FIXED_POSTURES, value);
+}
+
 export function useChatBillingCardFreeTierOverride(): FreeTierState | null {
   const values = useDevTweaks("Chat · billing card", CHAT_BILLING_CARD_TWEAKS, {
     id: "chat-billing-card",
@@ -96,9 +115,8 @@ export function useChatBillingCardFreeTierOverride(): FreeTierState | null {
   if (!(TWEAKABLE_BUILD && values.override)) {
     return null;
   }
-  const fixed = FIXED_POSTURES[values.posture];
-  if (fixed != null) {
-    return fixed;
+  if (isFixedPosture(values.posture)) {
+    return FIXED_POSTURES[values.posture];
   }
   const remaining = Math.min(
     FREE_CHAT_TURNS_LIMIT,

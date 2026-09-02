@@ -71,21 +71,22 @@ export function chatBillingInterruptionFromError(
   return { paidSource: named ?? knownPaidSource };
 }
 
+/**
+ * Both allowance causes name the same fix — the plan grants no AI usage, so
+ * upgrade it (ADR-0073); only the title says why the stop arrived now.
+ */
+const ALLOWANCE_WALL_COPY: Omit<ChatBillingCopy, "title"> = {
+  body: "This workspace's plan doesn't include AI usage. Upgrade the plan to keep chatting.",
+  cta: { destination: "upgrade", label: "Upgrade plan" },
+};
+
 /** The pre-send wall card's copy, forked by the refusing cause. */
 export function chatBillingWallCopy(cause: ChatWallCause): ChatBillingCopy {
   if (cause === "allowance-trial") {
-    return {
-      body: "This workspace's plan doesn't include AI usage. Upgrade the plan to keep chatting.",
-      cta: { destination: "upgrade", label: "Upgrade plan" },
-      title: "Free trial messages used up",
-    };
+    return { ...ALLOWANCE_WALL_COPY, title: "Free trial messages used up" };
   }
   if (cause === "allowance-plan") {
-    return {
-      body: "This workspace's plan doesn't include AI usage. Upgrade the plan to keep chatting.",
-      cta: { destination: "upgrade", label: "Upgrade plan" },
-      title: "AI usage not included",
-    };
+    return { ...ALLOWANCE_WALL_COPY, title: "AI usage not included" };
   }
   if (cause === "ai-credits") {
     return {
