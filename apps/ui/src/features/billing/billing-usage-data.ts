@@ -12,6 +12,7 @@ export type BillingQuotaType =
   | "gpu"
   | "memory"
   | "nodeport"
+  | "pod"
   | "storage"
   | "traffic";
 
@@ -56,6 +57,7 @@ const QUOTA_RESOURCES: ReadonlyArray<{
   { keys: ["limits.cpu"], label: "CPU", type: "cpu" },
   { keys: ["limits.memory"], label: "Memory", type: "memory" },
   { keys: ["requests.storage"], label: "Storage", type: "storage" },
+  { keys: ["pods", "count/pods"], label: "Pods", type: "pod" },
   { keys: ["services.nodeports"], label: "Ports", type: "nodeport" },
   { keys: ["traffic"], label: "Traffic", type: "traffic" },
   {
@@ -122,6 +124,103 @@ function quotaRows(
   });
 }
 
+/**
+ * The quota rows a deployment can actually run into (design spec catalog
+ * A1/A2): the resources a new workload asks for. Traffic and GPU stay out.
+ */
+export const DEPLOYABLE_QUOTA_TYPES: ReadonlySet<BillingQuotaType> = new Set([
+  "cpu",
+  "memory",
+  "storage",
+  "pod",
+  "nodeport",
+]);
+
+export type QuotaFullnessRow = Pick<
+  BillingUsageRow,
+  "label" | "percentUsed" | "type"
+>;
+
+/** "CPU" keeps its initialism mid-sentence; the rest read as common nouns. */
+export function quotaResourceNoun(label: string): string {
+  return label === label.toUpperCase() ? label : label.toLowerCase();
+}
+
+/** The first deployable quota row at or past its ceiling, if any. */
+export function firstFullQuotaRow<Row extends QuotaFullnessRow>(
+  rows: readonly Row[]
+): Row | null {
+  return (
+    rows.find(
+      (row) => DEPLOYABLE_QUOTA_TYPES.has(row.type) && row.percentUsed >= 100
+    ) ?? null
+  );
+}
+
+/**
+ * The deployable quotas every new workload consumes whatever its shape — a
+ * full one dooms all deployment work, so only these speak through the
+ * Deploy Billing Notice (ADR-0070). Storage and nodeport doom only
+ * workloads that request them; they speak through form validation instead.
+ */
+export const UNIVERSAL_DEPLOYABLE_QUOTA_TYPES: ReadonlySet<BillingQuotaType> =
+  new Set(["cpu", "memory", "pod"]);
+
+/**
+ * The first full quota row that dooms every deployment a pane could start:
+ * the universal set plus any types the pane's every deploy request consumes
+ * (ADR-0070) — the database pane's presets all include storage.
+ */
+export function firstDoomingQuotaRow<Row extends QuotaFullnessRow>(
+  rows: readonly Row[],
+  paneConsumes: readonly BillingQuotaType[] = []
+): Row | null {
+  return (
+    rows.find(
+      (row) =>
+        (UNIVERSAL_DEPLOYABLE_QUOTA_TYPES.has(row.type) ||
+          paneConsumes.includes(row.type)) &&
+        row.percentUsed >= 100
+    ) ?? null
+  );
+}
+
+/**
+ * The quota rows of a raw account-service resource-quota payload, or null
+ * when the payload is not one — for server-side judgments that hold the
+ * upstream response rather than a fetcher.
+ */
+export function workspaceQuotaRowsFromPayload(
+  payload: unknown
+): BillingUsageRow[] | null {
+  const parsed = quotaResponseSchema.safeParse(payload);
+  return parsed.success ? quotaRows(parsed.data) : null;
+}
+
+/**
+ * One workspace's quota rows from the proxied resource-quota read — the
+ * Usage view's table without its workspace picker, for surfaces that only
+ * judge fullness (the status hint's quota-full evaluation).
+ */
+export async function loadWorkspaceQuotaUsage(
+  credentials: BillingCredentials & { workspace: string },
+  fetch: BillingFetch = globalThis.fetch
+): Promise<BillingUsageRow[]> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: {
+      appToken: credentials.appToken,
+      kubeconfig: credentials.kubeconfig,
+    },
+    fallbackErrorMessage: "Could not load workspace usage.",
+    fetch,
+  });
+  const quotaPayload = await requestBillingJson(
+    "/api/billing/workspace-quota",
+    { workspace: credentials.workspace }
+  );
+  return quotaRows(quotaResponseSchema.parse(quotaPayload));
+}
+
 export async function loadBillingUsage(
   input: BillingCredentials & { workspace: string },
   dependencies: BillingUsageDependencies = {}
@@ -163,14 +262,11 @@ export async function loadBillingUsage(
     return { rows: [], selectedWorkspace, workspaces };
   }
 
-  const quotaPayload = await requestBillingJson(
-    "/api/billing/workspace-quota",
-    {
-      workspace: selectedWorkspace,
-    }
-  );
   return {
-    rows: quotaRows(quotaResponseSchema.parse(quotaPayload)),
+    rows: await loadWorkspaceQuotaUsage(
+      { ...credentials, workspace: selectedWorkspace },
+      fetch
+    ),
     selectedWorkspace,
     workspaces,
   };

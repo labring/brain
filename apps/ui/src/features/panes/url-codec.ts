@@ -1,3 +1,4 @@
+import { normalizeGithubRepoUrl } from "@/features/deploy/github-repo-url";
 import { normalizeTemplateName } from "@/features/deploy/template-deployment-intent";
 import type {
   ProjectDrawerSurfaceEntry,
@@ -139,6 +140,12 @@ export function serializeProjectSideSurfaceEntry(
     case "githubDeployment":
       return `github-deployment:${encodePart(entry.projectId)}`;
     case "projectCreation": {
+      if (entry.entryMode === "githubDirect") {
+        const githubRepo = normalizeGithubRepoUrl(entry.githubRepo);
+        return `project-creation:githubDirect${
+          githubRepo == null ? "" : `:${encodePart(githubRepo)}`
+        }${entry.autoDeploy === true && githubRepo != null ? ":auto" : ""}`;
+      }
       const templateName =
         entry.entryMode === "templateDirect"
           ? normalizeTemplateName(entry.templateName)
@@ -202,10 +209,48 @@ function parseResourceSideSurfaceEntry(
   }
 }
 
+function parseGithubProjectCreationSideEntry(
+  parts: readonly string[]
+): ProjectSideSurfaceEntry | null {
+  if (parts.length !== 3 && parts.length !== 4) {
+    return null;
+  }
+  const githubRepo = normalizeGithubRepoUrl(decodePart(parts[2]));
+  const autoDeploy = parts.length === 4 ? decodePart(parts[3]) : null;
+  if (githubRepo == null || (parts.length === 4 && autoDeploy !== "auto")) {
+    return null;
+  }
+  return {
+    entryMode: "githubDirect",
+    githubRepo,
+    kind: "projectCreation",
+    ...(parts.length === 4 ? { autoDeploy: true } : {}),
+  };
+}
+
+function parseTemplateProjectCreationSideEntry(
+  parts: readonly string[]
+): ProjectSideSurfaceEntry | null {
+  if (parts.length !== 3 && parts.length !== 4) {
+    return null;
+  }
+  const templateName = normalizeTemplateName(decodePart(parts[2]));
+  const templateForm = decodePart(parts[3]);
+  if (templateName == null || (parts.length === 4 && templateForm == null)) {
+    return null;
+  }
+  return {
+    entryMode: "templateDirect",
+    kind: "projectCreation",
+    templateName,
+    ...(templateForm == null ? {} : { templateForm }),
+  };
+}
+
 function parseProjectCreationSideEntry(
   parts: readonly string[]
 ): ProjectSideSurfaceEntry | null {
-  if (parts.length !== 2 && parts.length !== 3 && parts.length !== 4) {
+  if (parts.length < 2 || parts.length > 4) {
     return null;
   }
   const entryMode = decodePart(parts[1]);
@@ -218,23 +263,15 @@ function parseProjectCreationSideEntry(
   ) {
     return null;
   }
-  if (parts.length >= 3) {
-    if (entryMode !== "templateDirect") {
-      return null;
-    }
-    const templateName = normalizeTemplateName(decodePart(parts[2]));
-    const templateForm = decodePart(parts[3]);
-    if (templateName == null || (parts.length === 4 && templateForm == null)) {
-      return null;
-    }
-    return {
-      entryMode,
-      kind: "projectCreation",
-      templateName,
-      ...(templateForm == null ? {} : { templateForm }),
-    };
+  if (parts.length === 2) {
+    return { entryMode, kind: "projectCreation" };
   }
-  return { entryMode, kind: "projectCreation" };
+  if (entryMode === "githubDirect") {
+    return parseGithubProjectCreationSideEntry(parts);
+  }
+  return entryMode === "templateDirect"
+    ? parseTemplateProjectCreationSideEntry(parts)
+    : null;
 }
 
 export function parseProjectSideSurfaceEntry(

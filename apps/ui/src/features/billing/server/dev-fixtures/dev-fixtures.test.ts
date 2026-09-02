@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadAccountBalance } from "../../account-balance";
+import { loadAccountCredits } from "../../account-credits";
+import { loadHasToppedUp } from "../../account-top-up";
 import { loadAiCredits } from "../../billing-ai-credits";
 import { loadBillingCosts } from "../../billing-costs-data";
 import type { BillingFetch } from "../../billing-data-client";
 import {
+  checkSubscriptionDowngrade,
   loadBillingPlanSnapshot,
   loadSubscriptionUpgradeQuote,
 } from "../../billing-plan-data";
@@ -69,7 +72,16 @@ const DATE_RANGE = {
   startTime: new Date(Date.now() - 31 * DAY_IN_MILLISECONDS).toISOString(),
 };
 
-const CREDITLESS_SCENARIOS = new Set(["free", "paused", "payg", "payg-debt"]);
+const CREDITLESS_SCENARIOS = new Set([
+  "free",
+  "free-expiring",
+  "free-expired",
+  "paused",
+  "payg",
+  "payg-debt",
+  "payg-debt-deletion",
+  "payg-debt-final",
+]);
 
 function loadPlanForScenario(scenario: string) {
   return loadBillingPlanSnapshot(CREDENTIALS, {
@@ -80,31 +92,39 @@ function loadPlanForScenario(scenario: string) {
 test("every scenario passes every loader's schemas", async () => {
   for (const scenario of BILLING_DEV_SCENARIOS) {
     const mockFetch = mockFetchFor(scenario);
-    const [plan, usage, pricing, costs, balance, credits] = await Promise.all([
-      loadBillingPlanSnapshot(CREDENTIALS, { fetch: mockFetch }),
-      loadBillingUsage(CREDENTIALS, { fetch: mockFetch }),
-      loadBillingPricing(CREDENTIALS, { fetch: mockFetch }),
-      loadBillingCosts(
-        {
-          appToken: CREDENTIALS.appToken,
-          dateRange: DATE_RANGE,
-          kubeconfig: CREDENTIALS.kubeconfig,
-          page: 1,
-          pageSize: 10,
-          workspace: null,
-        },
-        mockFetch
-      ),
-      loadAccountBalance(
-        {
-          appToken: CREDENTIALS.appToken,
-          currency: "usd",
-          kubeconfig: CREDENTIALS.kubeconfig,
-        },
-        mockFetch
-      ),
-      loadAiCredits(CREDENTIALS, mockFetch),
-    ]);
+    const [plan, usage, pricing, costs, balance, credits, giftCredits] =
+      await Promise.all([
+        loadBillingPlanSnapshot(CREDENTIALS, { fetch: mockFetch }),
+        loadBillingUsage(CREDENTIALS, { fetch: mockFetch }),
+        loadBillingPricing(CREDENTIALS, { fetch: mockFetch }),
+        loadBillingCosts(
+          {
+            appToken: CREDENTIALS.appToken,
+            dateRange: DATE_RANGE,
+            kubeconfig: CREDENTIALS.kubeconfig,
+            page: 1,
+            pageSize: 10,
+            workspace: null,
+          },
+          mockFetch
+        ),
+        loadAccountBalance(
+          {
+            appToken: CREDENTIALS.appToken,
+            currency: "usd",
+            kubeconfig: CREDENTIALS.kubeconfig,
+          },
+          mockFetch
+        ),
+        loadAiCredits(CREDENTIALS, mockFetch),
+        loadAccountCredits(
+          {
+            appToken: CREDENTIALS.appToken,
+            kubeconfig: CREDENTIALS.kubeconfig,
+          },
+          mockFetch
+        ),
+      ]);
     assert.equal(plan.plans.length, 9, `${scenario}: plan catalog loads`);
     assert.ok(usage.rows.length >= 5, `${scenario}: usage rows load`);
     assert.ok(pricing.prices.length >= 6, `${scenario}: metered prices load`);
@@ -118,6 +138,16 @@ test("every scenario passes every loader's schemas", async () => {
       Number.isFinite(credits.usedMicroUnits) &&
         Number.isFinite(credits.totalMicroUnits),
       `${scenario}: AI Credits load`
+    );
+    assert.equal(
+      giftCredits.giftMicroUnits,
+      scenario === "free" ? 720_000 : 0,
+      `${scenario}: only the Free trial carries an active gift credit`
+    );
+    assert.equal(
+      giftCredits.usableMicroUnits,
+      { active: 1_800_000, free: 720_000 }[scenario as string] ?? 0,
+      `${scenario}: the aggregate covers the gift or the plan grant alone`
     );
     if (CREDITLESS_SCENARIOS.has(scenario)) {
       assert.equal(
@@ -206,6 +236,40 @@ test("payg-debt derives a PAYG workspace inside the debt pipeline", async () => 
   assert.ok(balance.microUnits < 0, "the account balance sits in debt");
 });
 
+test("payg-debt-deletion and payg-debt-final walk the account debt ladder's later rungs", async () => {
+  for (const scenario of ["payg-debt-deletion", "payg-debt-final"]) {
+    const plan = await loadPlanForScenario(scenario);
+    assert.equal(plan.current.isPayg, true, scenario);
+    assert.equal(plan.current.lifecycle, "payment-due", scenario);
+    assert.equal(plan.current.warningStage, "deletion-imminent", scenario);
+    assert.equal(plan.current.warningDeadlineAt, null, scenario);
+  }
+});
+
+test("quota-full is an active subscription whose storage sits at 100%", async () => {
+  const plan = await loadPlanForScenario("quota-full");
+  assert.equal(plan.current.lifecycle, "active");
+  const check = await checkSubscriptionDowngrade(
+    {
+      ...CREDENTIALS,
+      limits: { storage: "20Gi" },
+      regionDomain: "mock.sealos.run",
+    },
+    { fetch: mockFetchFor("quota-full") }
+  );
+  assert.equal(check.allowed, true, "at the limit, not past it");
+});
+
+test("only the gift newcomer has never topped up", async () => {
+  for (const scenario of BILLING_DEV_SCENARIOS) {
+    assert.equal(
+      await loadHasToppedUp(CREDENTIALS, mockFetchFor(scenario)),
+      scenario !== "free",
+      `${scenario}: top-up history`
+    );
+  }
+});
+
 test("free derives an active trial that never reads as cancelling", async () => {
   const plan = await loadPlanForScenario("free");
   assert.equal(plan.current.planName, "Free");
@@ -216,6 +280,20 @@ test("free derives an active trial that never reads as cancelling", async () => 
   // AIM-254: the trial's period end is the plan's expiry, not a reset or a
   // renewal — and never blanked by the constructed CancelAtPeriodEnd flag.
   assert.equal(plan.current.periodEndVoice, "expiry");
+});
+
+test("free-expired derives the resubscribe voice inside the debt pipeline", async () => {
+  // ADR-0065: a lapsed trial joins the same DEBT pipeline as a paid plan;
+  // the recovery voice is what keeps its surfaces from asking for a renewal
+  // or a payment.
+  const plan = await loadPlanForScenario("free-expired");
+  assert.equal(plan.current.planName, "Free");
+  assert.equal(plan.current.lifecycle, "payment-due");
+  assert.equal(plan.current.warningStage, "expired");
+  assert.equal(plan.current.recoveryVoice, "resubscribe");
+  assert.equal(plan.current.isActiveFreeTrial, false);
+  assert.equal(plan.current.invoiceId, null, "nothing was ever charged");
+  assert.ok(plan.current.warningDeadlineAt, "deletion date is derived");
 });
 
 test("paused derives a plan-change-ready Free subscription", async () => {
@@ -356,6 +434,7 @@ test("pay transitions move the scenario cookie", async () => {
     ["payg", "created", "active"],
     ["payg-debt", "created", "active"],
     ["deleted", "created", "active"],
+    ["free-expired", "created", "active"],
     ["payment-due", "created", "active"],
     ["payment-due-deletion", "created", "active"],
     ["payment-due-final", "created", "active"],

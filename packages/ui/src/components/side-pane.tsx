@@ -60,6 +60,8 @@ export interface SidePaneProps {
   open?: boolean;
   subtitle?: string;
   title: string;
+  /** Replaces the default title heading (e.g. an inline rename editor); `title` still labels the pane. */
+  titleContent?: ReactNode;
   width?: SidePaneWidth;
 }
 
@@ -76,6 +78,7 @@ export function SidePane({
   busy,
   subtitle,
   title,
+  titleContent,
   width = "default",
 }: SidePaneProps) {
   const motionOpen = useSidePaneMotionOpen(open);
@@ -160,35 +163,37 @@ export function SidePane({
         <div className="relative flex min-h-0 flex-1 flex-col gap-2.5">
           <header
             className={cn(
-              "flex shrink-0 items-start gap-3 px-5 pt-5 pr-18",
+              "flex shrink-0 items-center gap-3 px-4 pt-4",
               headerClassName
             )}
           >
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <div className="flex min-w-0 items-center gap-2">
-                {icon == null ? null : (
-                  <span className="flex size-4 shrink-0 items-center justify-center">
-                    {icon}
-                  </span>
+            {icon == null ? null : (
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-input/30">
+                {icon}
+              </span>
+            )}
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <div className="flex min-h-7 min-w-0 items-center gap-2">
+                {titleContent ?? (
+                  <h2
+                    className="truncate font-semibold text-base text-foreground leading-none"
+                    title={title}
+                  >
+                    {title}
+                  </h2>
                 )}
-                <h2
-                  className="truncate font-semibold text-foreground text-lg leading-none"
-                  title={title}
-                >
-                  {title}
-                </h2>
               </div>
               {subtitle == null || subtitle.trim() === "" ? null : (
-                <p className="truncate text-muted-foreground text-sm leading-5">
+                <p className="truncate text-muted-foreground text-xs leading-4">
                   {subtitle}
                 </p>
               )}
             </div>
             <AppIconButton
               aria-label={closeAriaLabel}
-              className="absolute top-3 right-5 shrink-0"
+              className="shrink-0 self-start"
               onClick={onClose}
-              size="lg"
+              size="md"
               type="button"
               variant="quiet"
             >
@@ -201,7 +206,7 @@ export function SidePane({
           >
             <div
               className={cn(
-                "flex min-h-full min-w-0 flex-col gap-5 px-5 pt-2.5 pb-5",
+                "flex min-h-full min-w-0 flex-col gap-5 px-4 pt-1.5 pb-4",
                 bodyClassName
               )}
             >
@@ -213,7 +218,7 @@ export function SidePane({
         </div>
         {footerContributors > 0 ? (
           <div
-            className="side-pane-footer-lift flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2.5 px-5 py-3"
+            className="side-pane-footer-lift flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2.5 px-4 py-3"
             data-slot="side-pane-footer"
             ref={attachFooterHost}
           />

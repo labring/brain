@@ -22,6 +22,8 @@ export default defineConfig({
     "./src/features/chat/persistence/schema.ts",
     "./src/features/deploy/task/schema.ts",
     "./src/features/onboarding/schema.ts",
+    "./src/features/marketing/schema.ts",
+    "./src/features/notifications/schema.ts",
     "./src/lib/project-persistence/schema.ts",
   ],
   dbCredentials: { url: process.env.DATABASE_URL ?? "" },

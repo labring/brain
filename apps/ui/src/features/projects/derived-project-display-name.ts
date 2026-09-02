@@ -66,11 +66,16 @@ function usableDisplayName(candidate: string): string | null {
 }
 
 /** `ghcr.io/org/my-api@sha256:…` and `localhost:5000/app:1` both name the app. */
-function dockerImageDisplayName(settings: Record<string, unknown>): string {
-  const image = typeof settings.image === "string" ? settings.image : "";
+export function dockerImageNameSegment(image: string): string {
   const withoutDigest = image.trim().split("@", 1)[0] ?? "";
   const pathSegment = withoutDigest.split("/").at(-1) ?? "";
   return pathSegment.split(":", 1)[0] ?? "";
+}
+
+function dockerImageDisplayName(settings: Record<string, unknown>): string {
+  return dockerImageNameSegment(
+    typeof settings.image === "string" ? settings.image : ""
+  );
 }
 
 function databaseEngineDisplayName(settings: Record<string, unknown>): string {

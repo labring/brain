@@ -39,7 +39,12 @@ then edit `$private_values_file`, especially:
 - `api.env.VLSELECT_*` or `api.env.VMAUTH_SECRET_*` if VictoriaLogs requires authentication
 - GitHub App and OAuth values (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`)
 - `GITHUB_USER_TOKEN_ENCRYPTION_KEY`: keep stable; changing it prevents decrypting previously stored GitHub user tokens
-- assistant model values (`SYSTEM_OPENAI_*`, `FREE_CHAT_TURNS`, `AI_PROXY_TOKEN_NAME`)
+- Assistant chat values: `SYSTEM_OPENAI_*` funds `FREE_CHAT_TURNS` successful turns for eligible Active Free Trial workspaces; later turns use the caller's AI Proxy (`AI_PROXY_TOKEN_NAME`). `ASSISTANT_GATEWAY_MODEL` optionally selects the Chat Agent model
+- optional GitHub Deploy model (`GITHUB_DEPLOY_MODEL`); blank uses `gpt-5.5`. Independent of `ASSISTANT_GATEWAY_MODEL`, which selects the Chat Agent model
+- optional Langfuse tracing for GitHub Deploy (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`); when both keys are set, new GitHub Deploy Devboxes export Codex traces. Leave empty to disable. `LANGFUSE_HOST` is the instance root URL (default `https://cloud.langfuse.com`); do not append `/api/public/otel`
+- optional platform-funded GitHub Deploy connection (`GITHUB_DEPLOY_OPENAI_API_KEY`, `GITHUB_DEPLOY_OPENAI_BASE_URL`); when both are set, GitHub Deploy uses them. When both are blank, it uses the caller's AI Proxy. A partial pair is an error; it never reuses Chat Agent or host Codex credentials
+- `MARKETING_EVENTS_INGEST_SECRET`: shared bearer secret for trusted lifecycle event producers
+- `MARKETING_CONSENT_SIGNING_KEY`: shared HS256 secret used to verify Desktop-issued consent tokens
 - `JWT_INTERNAL`: the cluster-shared secret used for app-token verification and account-service request signing
 - Devbox runtime values (`DEVBOX_TOKEN` or `DEVBOX_JWT_SIGNING_KEY`)
 - `imagePullSecret.create`: keep `true` when the chart should create and reference `ghcr-cred`

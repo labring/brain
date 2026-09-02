@@ -53,6 +53,10 @@ ui:
     # (sealos-system desktop-frontend config). Production boots fail fast
     # when it is unset.
     JWT_INTERNAL: "REPLACE_ME_CLUSTER_JWT_INTERNAL"
+    # Shared bearer secret for trusted lifecycle, health, and billing producers.
+    MARKETING_EVENTS_INGEST_SECRET: "REPLACE_ME_MARKETING_EVENTS_INGEST_SECRET"
+    # Must match the Desktop jwt.marketingConsent signing secret.
+    MARKETING_CONSENT_SIGNING_KEY: "REPLACE_ME_MARKETING_CONSENT_SIGNING_KEY"
     GITHUB_APP_ID: "REPLACE_ME"
     GITHUB_APP_PRIVATE_KEY: "REPLACE_ME_PRIVATE_KEY"
     GITHUB_OAUTH_CLIENT_ID: "REPLACE_ME_OAUTH_CLIENT_ID"
@@ -63,8 +67,20 @@ ui:
     SYSTEM_OPENAI_API_KEY: "REPLACE_ME_OPENAI_COMPATIBLE_KEY"
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
     FREE_CHAT_TURNS: "5"
+    # Optional. When both keys are set, GitHub Deploy Devboxes export Codex
+    # traces to Langfuse. Leave empty to disable tracing.
+    LANGFUSE_PUBLIC_KEY: ""
+    LANGFUSE_SECRET_KEY: ""
+    # Optional. Langfuse base URL. Blank uses the gateway default
+    # (https://cloud.langfuse.com). Do not append /api/public/otel.
+    LANGFUSE_HOST: ""
     # User-billed turns use the Sealos AI proxy.
+    # Later Chat Agent turns use the caller's Sealos AI Proxy.
     AI_PROXY_TOKEN_NAME: "sealos-brain"
+    # Optional platform-funded GitHub Deployment Tasks. Leave both blank to
+    # use the caller's AI Proxy; setting only one is a configuration error.
+    GITHUB_DEPLOY_OPENAI_API_KEY: ""
+    GITHUB_DEPLOY_OPENAI_BASE_URL: ""
     # Leave empty to use https://devbox-server.<cloudDomain>.
     DEVBOX_API_BASE_URL: ""
     DEVBOX_TOKEN: ""
@@ -73,8 +89,9 @@ ui:
     DEVBOX_JWT_TTL_SECONDS: "14400"
     # Storage ceiling for newly created deployment runtimes; existing Devboxes are unchanged.
     DEPLOY_DEVBOX_STORAGE_LIMIT: "10Gi"
-    # Optional. Leave empty for brain-deploy. Staging may use:
-    # https://github.com/labring/sealos-skills/tree/brain-deploy-preview
+    # Optional. Leave empty to use the unified Brain-compatible sealos-skills branch:
+    # https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy
+    # Set explicitly to another tested branch, tag, or commit when needed.
     DEPLOY_SKILL_SOURCE: ""
 
 imagePullSecret:

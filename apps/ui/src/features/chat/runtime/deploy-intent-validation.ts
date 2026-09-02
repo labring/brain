@@ -39,7 +39,7 @@ import {
  * undeclared/type-invalid arg, duplicate parts — drops the *entire* intent
  * part (or all of them) without blocking ordinary conversation. The validated
  * payload replaces the original part data so the persisted audit trail matches
- * exactly what the model consumes (ADR-0065).
+ * exactly what the model consumes (ADR-0072).
  */
 export interface DeployIntentValidationDependencies {
   listTemplateCatalog?: typeof listTemplateCatalog;
@@ -130,7 +130,7 @@ async function validateTemplateIntent(
     catalog = await (dependencies.listTemplateCatalog ?? listTemplateCatalog)();
   } catch {
     // Catalog unavailable: there is no way to prove the templateName is
-    // canonical, so fail closed and drop the intent (ADR-0065).
+    // canonical, so fail closed and drop the intent (ADR-0072).
     return null;
   }
   const item = catalog.find(

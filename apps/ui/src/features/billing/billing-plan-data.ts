@@ -1,6 +1,8 @@
 import { Quantity } from "@workspace/shared";
 import { z } from "zod";
 
+import { isActiveFreeTrialSubscription } from "@/lib/account-service/free-trial-core";
+
 import {
   type BillingCredentials,
   type BillingFetch,
@@ -15,6 +17,7 @@ import {
 import {
   type BillingPlanResourceType,
   billingPlansResponseSchema,
+  type NormalizedBillingPlan,
   normalizeBillingPlan,
 } from "./billing-plan-catalog";
 
@@ -38,6 +41,17 @@ export type BillingDataAvailability = "available" | "unavailable";
  *   destructive warning banner; the date fields stay blank.
  */
 export type PeriodEndVoice = "expiry" | "renewal" | "silent";
+
+/**
+ * How recovery from the payment-due lifecycle speaks:
+ * - "renew": a paid plan whose renewal lapsed — recovery is a Renew action
+ *   and the copy may speak of renewing and paying.
+ * - "resubscribe": a Free plan expired into the same DEBT pipeline — nothing
+ *   was ever charged and an unpriced Free Subscription Plan is not a renewal
+ *   target, so recovery means choosing a paid plan and no surface may ask
+ *   for a renewal or a payment.
+ */
+export type RecoveryVoice = "renew" | "resubscribe";
 
 export function subscriptionLifecycleAllowsBillingActions(
   lifecycle: SubscriptionLifecycle
@@ -81,12 +95,19 @@ export interface BillingPlanSnapshot {
     currentPeriodEndAt: string;
     invoiceId: string | null;
     invoicePaymentUrl: string | null;
+    /**
+     * Active Free Trial (ADR-0065): Free plan in normal standing. The Plan
+     * view's free-allowance card renders under exactly this predicate —
+     * paid, PAYG, PAUSED, and DEBT Free never render it.
+     */
+    isActiveFreeTrial: boolean;
     isPayg: boolean;
     lifecycle: SubscriptionLifecycle;
     payMethod: "balance" | "stripe";
     periodEndVoice: PeriodEndVoice;
     planName: string;
     priceMicroUnits: number;
+    recoveryVoice: RecoveryVoice;
     regionDomain: string;
     resources: BillingPlanResource[];
     /**
@@ -274,6 +295,27 @@ export function isDeletedSubscriptionRecord(status: string): boolean {
   return status.trim().toLowerCase() === "deleted";
 }
 
+// Present a deleted subscription as the no-subscription PAYG shape: stale
+// plan, period, and invoice facts must not leak into a workspace that can
+// simply subscribe again. The record's role survives for `canManage`.
+function normalizeDeletedSubscriptionRecord(
+  subscription: z.infer<typeof subscriptionSchema>
+): z.infer<typeof subscriptionSchema> {
+  if (!isDeletedSubscriptionRecord(subscription.Status)) {
+    return subscription;
+  }
+  return {
+    ...subscription,
+    CancelAtPeriodEnd: false,
+    CurrentPeriodEndAt: "",
+    ExpireAt: null,
+    InvoiceInfo: undefined,
+    PlanName: "PAYG",
+    Status: "",
+    type: "PAYG" as const,
+  };
+}
+
 function subscriptionLifecycle(input: {
   cancelAtPeriodEnd: boolean;
   hasPendingUpgrade?: boolean;
@@ -326,6 +368,14 @@ function periodEndVoice(input: {
     return "silent";
   }
   return input.planName.trim().toLowerCase() === "free" ? "expiry" : "renewal";
+}
+
+// Derived from the plan alone, not the lifecycle: Free is the one unpriced
+// plan, and whenever its expiry lands in the shared DEBT pipeline the
+// recovery surfaces must switch voice together — the badge, banner, CTA, and
+// invoice ask all consume this single field instead of re-testing the name.
+function recoveryVoice(planName: string): RecoveryVoice {
+  return planName.trim().toLowerCase() === "free" ? "resubscribe" : "renew";
 }
 
 function subscriptionWarningStage(input: {
@@ -491,22 +541,9 @@ export async function loadBillingPlanSnapshot(
   const plans = plansResponse.plans
     .map(normalizeBillingPlan)
     .sort((left, right) => left.order - right.order);
-  const rawSubscription = subscriptionResponse.subscription;
-  // Present a deleted subscription as the no-subscription PAYG shape: stale
-  // plan, period, and invoice facts must not leak into a workspace that can
-  // simply subscribe again. The record's role survives for `canManage`.
-  const subscription = isDeletedSubscriptionRecord(rawSubscription.Status)
-    ? {
-        ...rawSubscription,
-        CancelAtPeriodEnd: false,
-        CurrentPeriodEndAt: "",
-        ExpireAt: null,
-        InvoiceInfo: undefined,
-        PlanName: "PAYG",
-        Status: "",
-        type: "PAYG" as const,
-      }
-    : rawSubscription;
+  const subscription = normalizeDeletedSubscriptionRecord(
+    subscriptionResponse.subscription
+  );
   const transaction = transactionResponse.value?.transaction;
   const subscriptions = subscriptionsResponse.value?.subscriptions ?? [];
   const workspaceData = availableWorkspaceData(
@@ -570,6 +607,11 @@ export async function loadBillingPlanSnapshot(
       currentPeriodEndAt: subscription.CurrentPeriodEndAt,
       invoiceId: subscription.InvoiceInfo?.ID ?? null,
       invoicePaymentUrl: subscription.InvoiceInfo?.PaymentUrl ?? null,
+      isActiveFreeTrial: isActiveFreeTrialSubscription({
+        planName: subscription.PlanName,
+        status: subscription.Status,
+        type: subscription.type ?? "",
+      }),
       isPayg: subscription.type === "PAYG",
       lifecycle,
       payMethod: normalizedPayMethod(subscription.PayMethod),
@@ -579,6 +621,7 @@ export async function loadBillingPlanSnapshot(
       }),
       planName: subscription.PlanName,
       priceMicroUnits: currentPlan?.monthlyPriceMicroUnits ?? 0,
+      recoveryVoice: recoveryVoice(subscription.PlanName),
       regionDomain: subscription.RegionDomain || region.domain,
       resources:
         currentPlan?.resources.map(({ label, value }) => ({ label, value })) ??
@@ -658,9 +701,121 @@ export async function loadBillingPlanSnapshot(
         planName,
         priceMicroUnits:
           item == null ? null : (planPriceByName.get(planName) ?? 0),
-        renewalAt: item?.CurrentPeriodEndAt.trim() || null,
+        // A Free subscription has no Renewal Time — its period end is the
+        // plan's expiry, which the table's Renewal Time column must not
+        // claim as a renewal.
+        renewalAt:
+          recoveryVoice(planName) === "resubscribe"
+            ? null
+            : item?.CurrentPeriodEndAt.trim() || null,
       };
     }),
+  };
+}
+
+/**
+ * The plan catalog alone — the light read the quota reminders judge the
+ * plan ceiling from, without the Plan view's full snapshot.
+ */
+export async function loadBillingPlans(
+  credentials: BillingCredentials,
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<NormalizedBillingPlan[]> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: {
+      appToken: credentials.appToken,
+      kubeconfig: credentials.kubeconfig,
+    },
+    fallbackErrorMessage: "Could not load the plan catalog.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+  return billingPlansResponseSchema
+    .parse(await requestBillingJson("/api/billing/plans"))
+    .plans.map(normalizeBillingPlan)
+    .sort((left, right) => left.order - right.order);
+}
+
+/** The caller's membership role in the workspace as the subscription record names it. */
+export type WorkspaceSubscriptionRole = "DEVELOPER" | "MANAGER" | "OWNER";
+
+/**
+ * The Workspace Subscription facts the App Sidebar account section needs —
+ * a two-request read (region, then the region-addressed subscription route)
+ * instead of the Plan view's full snapshot.
+ */
+export interface WorkspaceSubscriptionSummary {
+  currentPeriodEndAt: string;
+  isActiveFreeTrial: boolean;
+  isPayg: boolean;
+  lifecycle: SubscriptionLifecycle;
+  planName: string;
+  recoveryVoice: RecoveryVoice;
+  /** Null when the record names no role (PAYG workspaces). */
+  role: WorkspaceSubscriptionRole | null;
+  /**
+   * The Deletion Countdown's next deadline, derived client-side exactly as
+   * the Plan view derives it (ADR-0063). Set only while `warningStage` is.
+   */
+  warningDeadlineAt: string | null;
+  warningStage: SubscriptionWarningStage | null;
+}
+
+export async function loadWorkspaceSubscriptionSummary(
+  credentials: BillingCredentials & { workspace: string },
+  dependencies: Pick<BillingPlanLoaderDependencies, "fetch"> = {}
+): Promise<WorkspaceSubscriptionSummary> {
+  const requestBillingJson = createBillingJsonRequester({
+    credentials: {
+      appToken: credentials.appToken,
+      kubeconfig: credentials.kubeconfig,
+    },
+    fallbackErrorMessage: "Could not load the workspace subscription.",
+    fetch: dependencies.fetch ?? globalThis.fetch,
+  });
+
+  const region = regionsResponseSchema.parse(
+    await requestBillingJson("/api/billing/regions")
+  ).current;
+  const subscription = normalizeDeletedSubscriptionRecord(
+    subscriptionResponseSchema.parse(
+      await requestBillingJson("/api/billing/subscription", {
+        regionDomain: region.domain,
+        workspace: credentials.workspace,
+      })
+    ).subscription
+  );
+
+  // Pending upgrades are invisible to this read (no transaction request);
+  // they surface as the quiet "active" state, which is what the account
+  // row's second line wants anyway.
+  const lifecycle = subscriptionLifecycle({
+    cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
+    isPayg: subscription.type === "PAYG",
+    planName: subscription.PlanName,
+    status: subscription.Status,
+  });
+  const warningStage = subscriptionWarningStage({
+    lifecycle,
+    status: subscription.Status,
+  });
+  return {
+    currentPeriodEndAt: subscription.CurrentPeriodEndAt,
+    isActiveFreeTrial: isActiveFreeTrialSubscription({
+      planName: subscription.PlanName,
+      status: subscription.Status,
+      type: subscription.type ?? "",
+    }),
+    isPayg: subscription.type === "PAYG",
+    lifecycle,
+    planName: subscription.PlanName,
+    recoveryVoice: recoveryVoice(subscription.PlanName),
+    role: subscription.role ?? null,
+    warningDeadlineAt: subscriptionWarningDeadline({
+      currentPeriodEndAt: subscription.CurrentPeriodEndAt,
+      expireAt: subscription.ExpireAt ?? null,
+      stage: warningStage,
+    }),
+    warningStage,
   };
 }
 
@@ -831,8 +986,12 @@ export async function cancelSubscriptionInvoice(
 
 export interface SubscriptionTransactionStatus {
   id: string;
+  /** Lowercased upstream operator: created, upgraded, downgraded, renewed, canceled, … */
+  operator: string;
   payId: string;
   planName: string;
+  /** When a scheduled change lands (a downgrade at period end); null otherwise. */
+  startAt: string | null;
   status: string;
 }
 
@@ -859,8 +1018,10 @@ export async function loadSubscriptionTransactionStatus(
   }
   return {
     id: transaction.ID ?? "",
+    operator: transaction.Operator?.trim().toLowerCase() ?? "",
     payId: transaction.PayID ?? "",
     planName: transaction.NewPlanName ?? "",
+    startAt: transaction.StartAt?.trim() || null,
     status: transaction.Status?.trim().toLowerCase() ?? "",
   };
 }

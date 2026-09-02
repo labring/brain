@@ -15,12 +15,11 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0027 — Use Sealos Native Product Labels for Template Instances](0027-use-sealos-native-product-labels-for-template-instances.md) *(replaces the earlier deployment-scoped Brain label model)*
 - [0028 — Model Deployment Progress as Task-Owned Timelines](0028-model-deployment-progress-as-task-owned-timelines.md)
 - [0030 — Store Pending Settings Updates Browser-Locally](0030-store-pending-settings-updates-browser-locally.md)
-- [0033 — Surface assistant billing as a free-allowance counter plus a one-time crossing notice](0033-surface-assistant-billing-as-free-allowance-only.md)
 - [0035 — Render Project Canvas from Canvas Runtime Stores and Stable Commands](0035-render-project-canvas-from-canvas-runtime-stores.md)
 - [0036 — Bind GitHub Integrations as User OAuth Connections](0036-bind-github-integrations-as-user-oauth-connections.md) *(owner identity and task credential binding revised by ADR-0056; owner key revised by ADR-0059)*
 - [0037 — Execute Deployment Tasks Under Leases and Guarded Transitions](0037-execute-deployment-tasks-under-leases-and-guarded-transitions.md)
 - [0038 — Model Deployment Task Lifecycle Actions as Cancel, Redeploy, and Retention](0038-model-deployment-lifecycle-actions-as-cancel-redeploy-retention.md) *(redeploy credential resolution supplemented by ADR-0056)*
-- [0042 — Surface Deployment Failure Reasons Behind a Per-Runner Scrub Gate](0042-surface-scrubbed-deployment-failure-reasons.md)
+- [0042 — Surface Deployment Failure Reasons Behind a Per-Runner Scrub Gate](0042-surface-scrubbed-deployment-failure-reasons.md) *(billing reverse-check and its raw-display exception added by ADR-0068)*
 - [0044 — Pin Chat Context to Each User Message](0044-pin-chat-context-to-each-user-message.md)
 - [0047 — Enforce Assistant Conversation Ownership per Workspace Actor](0047-partition-assistant-conversations-per-user-as-a-view.md) *(authorization boundary revised by ADR-0056; owner key revised by ADR-0059)*
 - [0050 — Snapshot Glass: Replace the Live Backdrop-Filter Sheet with a Pre-Blurred Texture](0050-snapshot-glass-pre-blurred-backdrop-texture.md)
@@ -37,7 +36,14 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0062 — Submit Image Updates Inline from the AP Image Versions Surface](0062-submit-image-updates-inline-from-the-image-versions-surface.md) *(supplements ADR-0019 and ADR-0030)*
 - [0063 — Derive Resource-Deletion Dates Client-Side from Subscription Expiry](0063-derive-resource-deletion-dates-client-side.md)
 - [0064 — Pin the Current Billing Region by Deployment-Declared Domain](0064-pin-the-current-billing-region-by-deployment-declared-domain.md)
-- [0065 — Treat Shared Deploy Intents as Untrusted Message-Level Context](0065-treat-shared-deploy-intents-as-untrusted-message-context.md)
+- [0065 — Gate Free Chat Turns on the Active Free Trial](0065-gate-free-chat-turns-on-the-active-free-trial-and-block-on-exhaustion.md) *(replaces the deleted ADR-0033; exhaustion behavior revised by ADR-0069)*
+- [0066 — Give Canvas Resources Editable Display Names Stored on the Resource](0066-store-resource-display-names-in-annotations.md)
+- [0067 — Store Notifications Hybrid: Read Platform CRs Live, Keep Brain's Own in App Postgres](0067-store-notifications-hybrid-cr-read-proxy-and-brain-postgres.md)
+- [0068 — Judge Billing Interruptions from billing standing, after a deployment fails and before a paid chat turn starts](0068-judge-billing-interruptions-from-billing-standing.md) *(extends ADR-0042 and ADR-0065; paid handoff extended by ADR-0069; pre-deploy seam softened by ADR-0070)*
+- [0069 — Separate platform AI credentials and hand off exhausted Free Chat Turns](0069-separate-platform-ai-credentials-and-hand-off-free-chat.md) *(revises ADR-0065 and extends ADR-0068)*
+- [0070 — Soften the Deploy Billing Wall into the Deploy Billing Notice](0070-soften-the-deploy-billing-wall-into-the-deploy-billing-notice.md) *(revises ADR-0068's pre-deploy seam)*
+- [0071 — Unify notification CTA styling into the CTA Chip](0071-unify-notification-cta-styling-into-the-cta-chip.md)
+- [0072 — Treat Shared Deploy Intents as Untrusted Message-Level Context](0072-treat-shared-deploy-intents-as-untrusted-message-context.md)
 
 ## Conventions
 

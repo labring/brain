@@ -24,6 +24,14 @@ export interface PersonalResourceOwner {
 export interface VerifiedPersonalResourceActor<
   Owner extends PersonalResourceOwner = PersonalResourceOwner,
 > {
+  /**
+   * Platform account id from the verified token binding, needed by
+   * account-service calls made on the actor's behalf (ADR-0060/0065).
+   * Optional because it is not part of the actor's identity: absent or null
+   * (bindings minted before the claim existed), account-service callers fail
+   * open. Never part of the owner key.
+   */
+  accountUserId?: string | null;
   legacyWorkspaceActor: string;
   owner: Owner;
 }
@@ -33,6 +41,7 @@ export function verifiedPersonalResourceActor(
   authorization: VerifiedWorkspaceActorAuthorization
 ): VerifiedPersonalResourceActor {
   return {
+    accountUserId: authorization.actorBinding.userId,
     legacyWorkspaceActor: authorization.workspaceActor,
     owner: {
       namespace: authorization.namespace,

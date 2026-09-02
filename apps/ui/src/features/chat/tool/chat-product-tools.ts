@@ -309,6 +309,7 @@ export function createChatProductTools(options: {
       "Use this before answering resource-specific AP/DB questions or before proposing a mutation.",
       "This is preferred over kubectl for normal Brain product inspection.",
       "For a single AP/DB, pass kind + name. For lists, omit name and optionally pass labelSelector. Public address and domain state is read from AP network state.",
+      '`name` is always the Kubernetes metadata.name; a Resource Display Name (metadata.annotations["brain.io/display-name"]) is never a valid name argument. To resolve a display name, list resources and match the annotation first; a resource without the annotation displays its Kubernetes name.',
     ].join(" "),
     inputSchema: productReadInputSchema,
     execute: async (input) => {
@@ -333,6 +334,7 @@ export function createChatProductTools(options: {
       "Draft a Brain AP/DB product change without applying it.",
       "Use this to show the user the exact create manifest or merge patch that would be sent to the product API.",
       "For public-address/domain changes, draft the AP network change.",
+      "`name` must be the Kubernetes metadata.name — never a Resource Display Name; resolve display names via readProductResource first.",
     ].join(" "),
     inputSchema: draftProductResourceChangeInput,
     execute: (input) => {
@@ -363,6 +365,7 @@ export function createChatProductTools(options: {
       "This tool always requests browser UI approval before execution; call it only when the user has asked to apply the exact intended change.",
       "If approval is missing, call draftProductResourceChange or ask for confirmation instead.",
       "Public address/domain changes belong in the AP network intent.",
+      "`name` must be the Kubernetes metadata.name — never a Resource Display Name; resolve display names via readProductResource first.",
     ].join(" "),
     inputSchema: productWriteInputSchema,
     needsApproval: true,

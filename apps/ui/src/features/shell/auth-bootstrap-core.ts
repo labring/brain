@@ -5,11 +5,13 @@ export function applySealosSdkHydration(input: {
   session: {
     kubeconfig: string;
     token?: string;
-    user?: { id?: string };
+    user?: { avatar?: string; id?: string; name?: string };
   } | null;
   setAppToken?: (appToken: string) => void;
   setDesktopLanguage: (language: string) => void;
+  setDesktopUserAvatar: (avatarUrl: string) => void;
   setDesktopUserId: (userId: string) => void;
+  setDesktopUserName: (userName: string) => void;
   setKubeconfig: (kubeconfig: string) => void;
   setNamespace: (namespace: string) => void;
 }) {
@@ -26,6 +28,8 @@ export function applySealosSdkHydration(input: {
 
   const kubeconfig = input.session?.kubeconfig.trim() ?? "";
   input.setDesktopUserId(input.session?.user?.id?.trim() ?? "");
+  input.setDesktopUserName(input.session?.user?.name?.trim() ?? "");
+  input.setDesktopUserAvatar(input.session?.user?.avatar?.trim() ?? "");
   if (kubeconfig === "") {
     return;
   }

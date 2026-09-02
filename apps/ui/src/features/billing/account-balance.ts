@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { formatBillingAmount } from "@/features/billing/billing-amount";
 import {
   type BillingFetch,
   createBillingJsonRequester,
@@ -16,17 +15,28 @@ const accountBalanceResponseSchema = z.object({
 
 export interface AccountBalance {
   currency: BillingCurrency;
+  /** Lifetime deductions — zero means the account has never been billed. */
+  lifetimeDeductionMicroUnits: number;
   microUnits: number;
 }
 
-export async function loadAccountBalance(
-  credentials: {
-    appToken: string;
-    currency: BillingCurrency;
-    kubeconfig: string;
-  },
+export interface AccountBalanceTerms {
+  /** Balance − DeductionBalance: the cash term of the available amount, before credits. */
+  cashMicroUnits: number;
+  /** Lifetime deductions — zero means the account has never been billed. */
+  lifetimeDeductionMicroUnits: number;
+}
+
+/**
+ * The account read behind every debt judgment: the cash term of the
+ * available Account Balance plus the lifetime-deduction fact the platform's
+ * state machine gates on. Currency-free, for surfaces that judge the amount
+ * rather than display it (the status hint's Account Debt evaluation).
+ */
+export async function loadAccountBalanceTerms(
+  credentials: { appToken: string; kubeconfig: string },
   fetch: BillingFetch = globalThis.fetch
-): Promise<AccountBalance> {
+): Promise<AccountBalanceTerms> {
   const requestBillingJson = createBillingJsonRequester({
     credentials,
     fallbackErrorMessage: "Could not load Account Balance.",
@@ -38,12 +48,27 @@ export async function loadAccountBalance(
     throw new Error("Account Balance response is invalid.");
   }
   return {
-    currency: credentials.currency,
-    microUnits:
+    cashMicroUnits:
       parsed.data.account.Balance - parsed.data.account.DeductionBalance,
+    lifetimeDeductionMicroUnits: parsed.data.account.DeductionBalance,
   };
 }
 
-export function formatAccountBalance(balance: AccountBalance): string {
-  return formatBillingAmount(balance.microUnits, balance.currency);
+export async function loadAccountBalance(
+  credentials: {
+    appToken: string;
+    currency: BillingCurrency;
+    kubeconfig: string;
+  },
+  fetch: BillingFetch = globalThis.fetch
+): Promise<AccountBalance> {
+  const terms = await loadAccountBalanceTerms(
+    { appToken: credentials.appToken, kubeconfig: credentials.kubeconfig },
+    fetch
+  );
+  return {
+    currency: credentials.currency,
+    lifetimeDeductionMicroUnits: terms.lifetimeDeductionMicroUnits,
+    microUnits: terms.cashMicroUnits,
+  };
 }

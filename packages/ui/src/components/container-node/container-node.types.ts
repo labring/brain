@@ -47,9 +47,12 @@ export interface ContainerNodeStatus {
 }
 
 export interface ContainerNodeStates {
+  /** Human-facing Resource Display Name; falls back to `name` when absent. */
+  displayName?: string;
   image: string;
   kind?: string;
   metrics?: Partial<Record<ContainerNodeMetricKey, ContainerNodeMetricValue>>;
+  /** Workload identity (Kubernetes `metadata.name`), never the display name. */
   name: string;
   namespace?: string;
   /** Ready pods currently serving; leads the replicas metric when present. */

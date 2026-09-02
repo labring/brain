@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { formatAccountBalance, loadAccountBalance } from "./account-balance";
+import { loadAccountBalance } from "./account-balance";
 
-test("loads and formats the verified account's net Account Balance", async () => {
+test("loads the verified account's net Account Balance", async () => {
   let requestInput: RequestInfo | URL | undefined;
   let requestInit: RequestInit | undefined;
   const balance = await loadAccountBalance(
@@ -31,6 +31,9 @@ test("loads and formats the verified account's net Account Balance", async () =>
   assert.equal(headers.get("Authorization"), "Bearer apiVersion%3A%20v1");
   assert.equal(headers.get("X-Sealos-App-Token"), "desktop-app-token");
   assert.equal(requestInit?.cache, "no-store");
-  assert.deepEqual(balance, { currency: "usd", microUnits: 3_000_000 });
-  assert.equal(formatAccountBalance(balance), "$3.00");
+  assert.deepEqual(balance, {
+    currency: "usd",
+    lifetimeDeductionMicroUnits: 1_200_000,
+    microUnits: 3_000_000,
+  });
 });

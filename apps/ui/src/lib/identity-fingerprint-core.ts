@@ -1,4 +1,4 @@
-import { and, eq, notExists } from "drizzle-orm";
+import { and, eq, isNull, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import type {
@@ -12,7 +12,17 @@ import {
   identityFingerprints,
 } from "@/features/chat/persistence/schema";
 import { CURRENT_GITHUB_OWNER_IDENTITY_VERSION } from "@/features/deploy/github/owner-identity";
+import { deployTasks } from "@/features/deploy/task/schema";
+import {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
+import {
+  notificationMessages,
+  notificationReadReceipts,
+} from "@/features/notifications/schema";
 import { onboardingProfiles } from "@/features/onboarding/schema";
+import { rekeyCanonicalIdentityUids } from "@/lib/identity-uid-canonicalization";
 
 /**
  * Identity Fingerprints (ADR-0059): the authorization layer's region-local
@@ -70,7 +80,7 @@ export class IdentityBindingSupersededError extends Error {
  * binding is refused here.
  */
 export async function requireCurrentIdentityBinding(
-  tx: AssistantPgTransaction,
+  tx: Pick<AssistantPgTransaction, "select">,
   binding: { crName: string; userUid: string }
 ): Promise<void> {
   const crName = binding.crName.trim();
@@ -213,13 +223,27 @@ async function rekeyPersonalResources(
   tx: AssistantPgTransaction,
   input: { survivorUserUid: string; tombstoneUserUid: string }
 ): Promise<{
+  attributionSubjectsRekeyed: number;
+  attributionSubjectsReleased: number;
   connectionsReleased: number;
   connectionsRekeyed: number;
   conversations: number;
+  deployAttributionProvenanceRekeyed: number;
+  identityUidCanonicalizationsRekeyed: number;
   installSessionsRekeyed: number;
+  lifecycleEventsRekeyed: number;
+  messagesReleased: number;
+  messagesRekeyed: number;
   profilesReleased: number;
   profilesRekeyed: number;
+  receiptsReleased: number;
+  receiptsRekeyed: number;
 }> {
+  const identityUidCanonicalizationsRekeyed = await rekeyCanonicalIdentityUids(
+    tx,
+    input
+  );
+
   // Pending authorization sessions are swept BEFORE connections: the OAuth
   // callback consumes its session row under a row lock and writes the
   // connection in that same transaction, with no crName left to re-check.
@@ -245,6 +269,85 @@ async function rekeyPersonalResources(
     .set({ workspaceActor: input.survivorUserUid })
     .where(eq(assistantChats.workspaceActor, input.tombstoneUserUid))
     .returning({ id: assistantChats.id });
+
+  const rekeyedDeployAttributionProvenance = await tx
+    .update(deployTasks)
+    .set({
+      marketingAttribution: sql`jsonb_set(
+        ${deployTasks.marketingAttribution},
+        '{consent_provenance,subject_id}',
+        to_jsonb(${input.survivorUserUid}::text),
+        false
+      )`,
+    })
+    .where(
+      sql`${deployTasks.marketingAttribution} -> 'consent_provenance' ->> 'subject_id' = ${input.tombstoneUserUid}`
+    )
+    .returning({ id: deployTasks.id });
+
+  // All local lifecycle rows follow the survivor.
+  const rekeyedLifecycleEvents = await tx
+    .update(marketingLifecycleEvents)
+    .set({
+      consentProvenance: sql`CASE
+        WHEN ${marketingLifecycleEvents.consentProvenance} ->> 'subject_id' = ${input.tombstoneUserUid}
+          THEN jsonb_set(
+            ${marketingLifecycleEvents.consentProvenance},
+            '{subject_id}',
+            to_jsonb(${input.survivorUserUid}::text),
+            false
+          )
+        ELSE ${marketingLifecycleEvents.consentProvenance}
+      END`,
+      userId: input.survivorUserUid,
+    })
+    .where(eq(marketingLifecycleEvents.userId, input.tombstoneUserUid))
+    .returning({ eventId: marketingLifecycleEvents.eventId });
+
+  const survivorAttributionSubjects = alias(
+    marketingAttributionSubjects,
+    "survivor_attribution_subjects"
+  );
+  const tombstoneAttributionSubjectWhere = and(
+    eq(marketingAttributionSubjects.subjectType, "user"),
+    eq(marketingAttributionSubjects.subjectId, input.tombstoneUserUid)
+  );
+  const rekeyedAttributionSubjects = await tx
+    .update(marketingAttributionSubjects)
+    .set({
+      consentProvenance: sql`CASE
+        WHEN ${marketingAttributionSubjects.consentProvenance} ->> 'subject_id' = ${input.tombstoneUserUid}
+          THEN jsonb_set(
+            ${marketingAttributionSubjects.consentProvenance},
+            '{subject_id}',
+            to_jsonb(${input.survivorUserUid}::text),
+            false
+          )
+        ELSE ${marketingAttributionSubjects.consentProvenance}
+      END`,
+      subjectId: input.survivorUserUid,
+    })
+    .where(
+      and(
+        tombstoneAttributionSubjectWhere,
+        notExists(
+          tx
+            .select({ subjectId: survivorAttributionSubjects.subjectId })
+            .from(survivorAttributionSubjects)
+            .where(
+              and(
+                eq(survivorAttributionSubjects.subjectType, "user"),
+                eq(survivorAttributionSubjects.subjectId, input.survivorUserUid)
+              )
+            )
+        )
+      )
+    )
+    .returning({ subjectId: marketingAttributionSubjects.subjectId });
+  const releasedAttributionSubjects = await tx
+    .delete(marketingAttributionSubjects)
+    .where(tombstoneAttributionSubjectWhere)
+    .returning({ subjectId: marketingAttributionSubjects.subjectId });
 
   // Where the surviving uid already holds a connection in a namespace, that
   // authorization wins (the adoption precedent); the tombstone's row there
@@ -318,12 +421,89 @@ async function rekeyPersonalResources(
     .where(eq(onboardingProfiles.userUid, input.tombstoneUserUid))
     .returning({ userUid: onboardingProfiles.userUid });
 
+  // Notification read receipts are keyed by (uid, message key): the
+  // tombstone's receipts follow the survivor except where the survivor
+  // already read the same message, and the rest are deleted — a receipt is
+  // a fact about one person, so two rows for one message collapse to one.
+  const survivorReceipts = alias(notificationReadReceipts, "survivor_receipts");
+  const rekeyedReceipts = await tx
+    .update(notificationReadReceipts)
+    .set({ userUid: input.survivorUserUid })
+    .where(
+      and(
+        eq(notificationReadReceipts.userUid, input.tombstoneUserUid),
+        notExists(
+          tx
+            .select({ userUid: survivorReceipts.userUid })
+            .from(survivorReceipts)
+            .where(
+              and(
+                eq(survivorReceipts.userUid, input.survivorUserUid),
+                eq(
+                  survivorReceipts.messageKey,
+                  notificationReadReceipts.messageKey
+                )
+              )
+            )
+        )
+      )
+    )
+    .returning({ messageKey: notificationReadReceipts.messageKey });
+  const releasedReceipts = await tx
+    .delete(notificationReadReceipts)
+    .where(eq(notificationReadReceipts.userUid, input.tombstoneUserUid))
+    .returning({ messageKey: notificationReadReceipts.messageKey });
+
+  // Account-scoped notification messages (ADR-0067: the gift hint) are
+  // uid-keyed rows whose dedupe key names the uid too, so the key moves with
+  // the row — a later observation then finds the survivor's row instead of
+  // writing a second welcome. Where the survivor already holds a live row
+  // under the re-keyed name, the tombstone's is a duplicate of the same
+  // one-per-person fact and is deleted (its receipts cascade).
+  const survivorDedupeKey = sql<string>`replace(${notificationMessages.dedupeKey}, ${input.tombstoneUserUid}, ${input.survivorUserUid})`;
+  const survivorMessages = alias(notificationMessages, "survivor_messages");
+  const rekeyedMessages = await tx
+    .update(notificationMessages)
+    .set({ dedupeKey: survivorDedupeKey, userUid: input.survivorUserUid })
+    .where(
+      and(
+        eq(notificationMessages.userUid, input.tombstoneUserUid),
+        notExists(
+          tx
+            .select({ id: survivorMessages.id })
+            .from(survivorMessages)
+            .where(
+              and(
+                eq(survivorMessages.userUid, input.survivorUserUid),
+                isNull(survivorMessages.releasedAt),
+                eq(survivorMessages.dedupeKey, survivorDedupeKey)
+              )
+            )
+        )
+      )
+    )
+    .returning({ id: notificationMessages.id });
+  const releasedMessages = await tx
+    .delete(notificationMessages)
+    .where(eq(notificationMessages.userUid, input.tombstoneUserUid))
+    .returning({ id: notificationMessages.id });
+
   return {
+    attributionSubjectsRekeyed: rekeyedAttributionSubjects.length,
+    attributionSubjectsReleased: releasedAttributionSubjects.length,
     connectionsReleased: releasedConnections.length,
     connectionsRekeyed: rekeyedConnections.length,
     conversations: conversations.length,
+    deployAttributionProvenanceRekeyed:
+      rekeyedDeployAttributionProvenance.length,
+    identityUidCanonicalizationsRekeyed,
     installSessionsRekeyed: rekeyedInstallSessions.length,
+    lifecycleEventsRekeyed: rekeyedLifecycleEvents.length,
+    messagesReleased: releasedMessages.length,
+    messagesRekeyed: rekeyedMessages.length,
     profilesReleased: releasedProfiles.length,
     profilesRekeyed: rekeyedProfiles.length,
+    receiptsReleased: releasedReceipts.length,
+    receiptsRekeyed: rekeyedReceipts.length,
   };
 }

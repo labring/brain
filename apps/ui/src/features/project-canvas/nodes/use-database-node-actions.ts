@@ -10,6 +10,7 @@ import type {
   DatabaseNodeTogglePublicConnectionHandler,
 } from "@workspace/ui/components/database-node/database-node";
 import { getDatabaseNodeConnectionKey } from "@workspace/ui/components/database-node/database-node";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { useMemo } from "react";
 import { dbLifecycleWorkloadRefFromTarget } from "@/features/project-canvas/actions/resource-actions";
 import { resolveDatabasePublicConnections } from "@/features/project-canvas/flow/database-public-connection";
@@ -112,6 +113,7 @@ export function useCanvasDatabaseNodeActions({
     });
     const mutableWorkload =
       mutationDisabledReason === undefined ? workload : null;
+    const displayName = nodeTitle(model.states) || name;
     const connections = resolveDatabasePublicConnections(
       model.connections,
       activity.publicAccessPendingTarget
@@ -131,11 +133,11 @@ export function useCanvasDatabaseNodeActions({
                 }),
               {
                 loading: nextEnabled
-                  ? `Enabling public access for "${name}"...`
-                  : `Disabling public access for "${name}"...`,
+                  ? `Enabling public access for "${displayName}"...`
+                  : `Disabling public access for "${displayName}"...`,
                 success: nextEnabled
-                  ? `Enabled public access for "${name}"`
-                  : `Disabled public access for "${name}"`,
+                  ? `Enabled public access for "${displayName}"`
+                  : `Disabled public access for "${displayName}"`,
               },
               {
                 onSettled: () =>
@@ -151,7 +153,6 @@ export function useCanvasDatabaseNodeActions({
       loading,
       onClick: () => commands.runResourceAction(mutation, copy),
     });
-    const displayName = model.states.name || name;
     const lifecycleActions =
       mutableWorkload == null
         ? unavailableDatabaseLifecycleActions(mutationDisabledReason)

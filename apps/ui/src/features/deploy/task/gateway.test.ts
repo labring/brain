@@ -37,8 +37,13 @@ mock.module("./runner-writes", () => ({
 const {
   CodexGatewayApiError,
   CodexGatewayTimeoutError,
+  CodexGatewayTurnError,
+  DEPLOY_GATEWAY_MODEL,
+  resolveDeployGatewayModel,
   runDeployTaskGateway: runDeployTaskGatewayRaw,
 } = requireModule("./gateway") as typeof import("./gateway");
+const originalGithubDeployModel = process.env.GITHUB_DEPLOY_MODEL;
+const originalAssistantGatewayModel = process.env.ASSISTANT_GATEWAY_MODEL;
 
 function runDeployTaskGateway(
   input: Omit<Parameters<typeof runDeployTaskGatewayRaw>[0], "resumeMode"> & {
@@ -51,10 +56,14 @@ function runDeployTaskGateway(
   });
 }
 
-function gatewayState(activeTurn: boolean) {
+function gatewayState(
+  activeTurn: boolean,
+  lastTurnStatus: string | null = activeTurn ? "inProgress" : "completed"
+) {
   return {
     activeTurn,
     cwd: "/home/devbox/project",
+    lastTurnStatus,
     ready: true,
     recentEvents: [],
     transcript: [],
@@ -63,12 +72,13 @@ function gatewayState(activeTurn: boolean) {
 
 function sessionResponse(
   activeTurn: boolean,
-  sessionId = "session-test-1"
+  sessionId = "session-test-1",
+  lastTurnStatus: string | null = activeTurn ? "inProgress" : "completed"
 ): Response {
   return Response.json({
     ok: true,
     sessionId,
-    state: gatewayState(activeTurn),
+    state: gatewayState(activeTurn, lastTurnStatus),
   });
 }
 
@@ -98,13 +108,17 @@ function installGatewayFetch(input: {
   sessionHeaders?: Record<string, string>[];
   stateActiveSequence?: boolean[];
   stateActive: boolean;
+  stateOmitLastTurnStatus?: boolean;
+  stateResponseDelayMs?: number[];
   stateStatuses?: number[];
+  stateTurnStatus?: string | null;
+  stateTurnStatusSequence?: Array<string | null>;
   turnError?: Error;
 }): string[] {
   const paths: string[] = [];
   let interruptAttempt = 0;
   let stateRead = 0;
-  globalThis.fetch = ((
+  globalThis.fetch = (async (
     requestInput: Parameters<typeof fetch>[0],
     init?: Parameters<typeof fetch>[1]
   ) => {
@@ -149,12 +163,31 @@ function installGatewayFetch(input: {
     if (url.pathname.endsWith("/state")) {
       input.onState?.();
       const readIndex = stateRead++;
+      const delayMs = input.stateResponseDelayMs?.[readIndex] ?? 0;
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
       const status = input.stateStatuses?.[readIndex] ?? 200;
       if (status !== 200) {
         return Response.json({ error: "state unavailable" }, { status });
       }
+      const activeTurn =
+        input.stateActiveSequence?.[readIndex] ?? input.stateActive;
+      if (input.stateOmitLastTurnStatus) {
+        const { lastTurnStatus: _lastTurnStatus, ...state } =
+          gatewayState(activeTurn);
+        return Response.json({
+          ok: true,
+          sessionId: "session-test-1",
+          state,
+        });
+      }
       return sessionResponse(
-        input.stateActiveSequence?.[readIndex] ?? input.stateActive
+        activeTurn,
+        "session-test-1",
+        input.stateTurnStatusSequence?.[readIndex] ??
+          input.stateTurnStatus ??
+          (activeTurn ? "inProgress" : "completed")
       );
     }
     if (url.pathname.endsWith("/turn/interrupt")) {
@@ -177,16 +210,30 @@ describe("deployment Codex gateway interruption", () => {
     recordedEvents.length = 0;
     updateDeployTaskStateImpl = () => Promise.resolve();
     console.warn = () => undefined;
+    delete process.env.GITHUB_DEPLOY_MODEL;
+    delete process.env.ASSISTANT_GATEWAY_MODEL;
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
+    delete process.env.GITHUB_DEPLOY_MODEL;
+    delete process.env.ASSISTANT_GATEWAY_MODEL;
   });
 
   afterAll(() => {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
+    if (originalGithubDeployModel === undefined) {
+      delete process.env.GITHUB_DEPLOY_MODEL;
+    } else {
+      process.env.GITHUB_DEPLOY_MODEL = originalGithubDeployModel;
+    }
+    if (originalAssistantGatewayModel === undefined) {
+      delete process.env.ASSISTANT_GATEWAY_MODEL;
+    } else {
+      process.env.ASSISTANT_GATEWAY_MODEL = originalAssistantGatewayModel;
+    }
     mock.module("./runner-writes", () => ({ ...realRunnerWrites }));
   });
 
@@ -202,6 +249,48 @@ describe("deployment Codex gateway interruption", () => {
     expect(paths.some((path) => path.endsWith("/turn/interrupt"))).toBe(false);
     expect(
       recordedEvents.some((event) => event.kind.includes("interrupted"))
+    ).toBe(false);
+  });
+
+  it("accepts a settled turn when an older gateway omits lastTurnStatus", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateOmitLastTurnStatus: true,
+    });
+
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: task(),
+    });
+
+    expect(paths.some((path) => path.endsWith("/turn/interrupt"))).toBe(false);
+    expect(
+      recordedEvents.some(
+        (event) => event.kind === "deploy_task.gateway_turn_completed"
+      )
+    ).toBe(true);
+  });
+
+  it("rejects a failed terminal turn without opening a completion-required turn", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateTurnStatus: "failed",
+    });
+
+    await expect(
+      runDeployTaskGateway({
+        context: { authToken: "gateway-token", url: "https://gateway.test" },
+        deadlineAtMs: Date.now() + 1000,
+        task: task(),
+      })
+    ).rejects.toBeInstanceOf(CodexGatewayTurnError);
+
+    expect(paths.some((path) => path.endsWith("/turn/interrupt"))).toBe(false);
+    expect(
+      recordedEvents.some(
+        (event) => event.kind === "deploy_task.gateway_turn_completed"
+      )
     ).toBe(false);
   });
 
@@ -354,6 +443,26 @@ describe("deployment Codex gateway interruption", () => {
     ).toBe(true);
   });
 
+  it("preserves timeout when the deadline interrupt settles during a state poll", async () => {
+    const paths = installGatewayFetch({
+      stateActive: false,
+      stateResponseDelayMs: [50],
+      stateTurnStatus: "interrupted",
+    });
+
+    await expect(
+      runDeployTaskGateway({
+        context: { authToken: "gateway-token", url: "https://gateway.test" },
+        deadlineAtMs: Date.now() + 25,
+        task: task(),
+      })
+    ).rejects.toBeInstanceOf(CodexGatewayTimeoutError);
+
+    expect(
+      paths.filter((path) => path.endsWith("/turn/interrupt"))
+    ).toHaveLength(1);
+  });
+
   it("retries a 409 while the turn is still active", async () => {
     const paths = installGatewayFetch({
       interruptStatuses: [409, 200],
@@ -499,9 +608,39 @@ describe("deployment Codex gateway interruption", () => {
     });
 
     expect(sessionBodies).toHaveLength(1);
+    expect(sessionBodies[0]?.model).toBe(DEPLOY_GATEWAY_MODEL);
     expect(sessionBodies[0]?.toolProfile).toBeUndefined();
     expect(sessionBodies[0]?.threadId).toBeUndefined();
     expect(sessionHeaders[0]?.["x-sealai-control-token"]).toBeUndefined();
+  });
+
+  it("uses GITHUB_DEPLOY_MODEL for a new session when it is set", async () => {
+    process.env.GITHUB_DEPLOY_MODEL = "  gpt-custom-deploy  ";
+    const sessionBodies: Record<string, unknown>[] = [];
+    installGatewayFetch({
+      sessionBodies,
+      stateActive: false,
+    });
+
+    await runDeployTaskGateway({
+      context: { authToken: "gateway-token", url: "https://gateway.test" },
+      deadlineAtMs: Date.now() + 1000,
+      task: task(),
+    });
+
+    expect(sessionBodies[0]?.model).toBe("gpt-custom-deploy");
+  });
+
+  it("treats a blank GITHUB_DEPLOY_MODEL as unset", () => {
+    process.env.GITHUB_DEPLOY_MODEL = "   ";
+    expect(resolveDeployGatewayModel()).toBe(DEPLOY_GATEWAY_MODEL);
+  });
+
+  it("ignores ASSISTANT_GATEWAY_MODEL when resolving the deploy session model", () => {
+    process.env.ASSISTANT_GATEWAY_MODEL = "gpt-chat-only";
+    expect(resolveDeployGatewayModel()).toBe(DEPLOY_GATEWAY_MODEL);
+    process.env.GITHUB_DEPLOY_MODEL = "gpt-custom-deploy";
+    expect(resolveDeployGatewayModel()).toBe("gpt-custom-deploy");
   });
 
   it("resumes the recorded Codex Thread when a session is lost", async () => {

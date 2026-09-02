@@ -1,7 +1,7 @@
 "use server";
 
 import { after } from "next/server";
-import { bootstrapChatDevboxIfNeeded } from "@/features/chat/devbox/chat-runtime";
+import { warmChatDevboxSkills } from "@/features/chat/devbox/chat-runtime";
 import { isDevboxConfigured } from "@/lib/devbox/config";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 
@@ -10,8 +10,9 @@ export type ChatDevboxWarmupResult =
   | { ok: false; reason: "credentials" | "unconfigured" };
 
 /**
- * Schedules Devbox create/reuse + kubectl permission bootstrap after the action
- * returns, so the client is not blocked on runtime startup.
+ * Schedules Devbox create/reuse, kubectl permission bootstrap, and Skill
+ * metadata discovery after the action returns, so the client is not blocked
+ * on runtime startup.
  *
  * Fires on every project page load, so a deployment without Devbox env skips
  * silently rather than logging a failed bootstrap each time.
@@ -35,7 +36,7 @@ export async function scheduleChatDevboxWarmup(
   }
 
   after(() => {
-    bootstrapChatDevboxIfNeeded({
+    warmChatDevboxSkills({
       kubeconfig,
       namespace: trimmedNamespace,
     }).catch((err: unknown) => {

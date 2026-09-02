@@ -7,7 +7,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
 export const SEALOS_SKILLS_INSTALL_COMMAND =
-  "npx skills add labring/sealos-skills";
+  "npx --yes skills@1.5.20 add https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy -y";
 
 export const SEALOS_SKILLS_FLOW_STEPS = [
   {

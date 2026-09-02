@@ -4,6 +4,7 @@ import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-ico
 import { SidePane, SidePaneFooter } from "@workspace/ui/components/side-pane";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DeployBillingNoticeCard } from "@/features/deploy/deploy-billing-notice-card";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
@@ -18,6 +19,10 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import {
+  useDeployBillingNotice,
+  useQuotaTypeFull,
+} from "@/features/deploy/use-deploy-billing-notice";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -100,6 +105,13 @@ export function DockerDeploymentPane({
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false
   );
+  // The pre-deploy notice (ADR-0070): a condition that dooms this deploy is
+  // voiced above the form, which stays usable — enforcement lives at the
+  // platform, and a pressed-through failure comes back explained. Storage is
+  // request-scoped, so a full storage quota speaks at the mount rows
+  // instead of the notice.
+  const billingNotice = useDeployBillingNotice();
+  const storageQuotaFull = useQuotaTypeFull("storage");
   const initialSettings = useMemo(
     () => dockerInitialSettings(redeploy),
     [redeploy]
@@ -177,8 +189,10 @@ export function DockerDeploymentPane({
           ? "Deploy Docker Image"
           : "Edit & Redeploy Docker Image"
       }
-      width="wide"
     >
+      {billingNotice != null && (
+        <DeployBillingNoticeCard notice={billingNotice} />
+      )}
       <DockerDeployer.Root
         busy={deploying || currentProject.isLoading}
         initialSettings={initialSettings}
@@ -187,6 +201,7 @@ export function DockerDeploymentPane({
             deploy(settings).catch(() => undefined);
           });
         }}
+        storageQuotaFull={storageQuotaFull}
       >
         <DockerDeployer.Fields />
         <SidePaneFooter>

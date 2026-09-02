@@ -4,6 +4,7 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
 import {
+  type ComponentProps,
   type ReactNode,
   useCallback,
   useEffect,
@@ -14,12 +15,16 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import {
   type AccountBalance,
-  formatAccountBalance,
   loadAccountBalance,
 } from "@/features/billing/account-balance";
+import {
+  type AccountCredits,
+  loadAccountCredits,
+} from "@/features/billing/account-credits";
 import { loadAiCredits } from "@/features/billing/billing-ai-credits";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
+import { BillingFreeTurnsSection } from "@/features/billing/billing-free-turns-section";
 import {
   BillingPlanChangeDialog,
   type BillingPlanChangeServices,
@@ -40,14 +45,21 @@ import {
 } from "@/features/billing/billing-plan-data";
 import {
   BillingAiCreditsSection,
+  BillingBalanceValue,
   BillingPlanSurface,
 } from "@/features/billing/billing-plan-surface";
 import {
   accountBalanceSwrKey,
+  accountCreditsSwrKey,
   aiCreditsSwrKey,
   settleSubscriptionChange,
 } from "@/features/billing/billing-subscription-settlement";
 import type { BillingCurrency } from "@/features/billing/config-core";
+import {
+  type FreeChatTurnsUsage,
+  fetchFreeChatTurnsUsage,
+} from "@/features/chat/persistence/client";
+import { observeSubscriptionChangeQuietly } from "@/features/notifications/subscription-change-observer";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -262,7 +274,13 @@ function accountBalanceContent(input: {
   balance: AccountBalance | undefined;
   credentialsReady: boolean;
   error: unknown;
+  /** Undefined while loading or after a failed fetch — either renders the
+   *  cash figure alone (no chip) with the debt voice withheld, since unseen
+   *  credits could still cover the account. */
+  giftCredits: AccountCredits | undefined;
   isLoading: boolean;
+  /** Whether this workspace is Pay-As-You-Go — the only mode debt suspends. */
+  payg: boolean;
 }): ReactNode {
   if (!input.credentialsReady || input.isLoading) {
     return (
@@ -280,9 +298,68 @@ function accountBalanceContent(input: {
     return null;
   }
   return (
-    <p className="font-semibold text-2xl text-foreground tabular-nums">
-      {formatAccountBalance(input.balance)}
-    </p>
+    <BillingBalanceValue
+      availableMicroUnits={
+        input.balance.microUnits + (input.giftCredits?.usableMicroUnits ?? 0)
+      }
+      creditsResolved={input.giftCredits != null}
+      currency={input.balance.currency}
+      giftMicroUnits={input.giftCredits?.giftMicroUnits ?? 0}
+      lifetimeDeductionMicroUnits={input.balance.lifetimeDeductionMicroUnits}
+      payg={input.payg}
+    />
+  );
+}
+
+/**
+ * The credits slot: the trial's "Free trial messages" allowance card and
+ * the paid plans' AI Credits section share it, so upgrading naturally swaps
+ * one for the other (ADR-0065). PAYG renders neither.
+ */
+function BillingCreditsSlot({
+  credits,
+  creditsError,
+  creditsLoading,
+  freeTurnsLoading,
+  freeTurnsUsage,
+  snapshot,
+}: {
+  credits: ComponentProps<typeof BillingAiCreditsSection>["credits"];
+  creditsError: unknown;
+  creditsLoading: boolean;
+  freeTurnsLoading: boolean;
+  freeTurnsUsage: FreeChatTurnsUsage | null;
+  snapshot: BillingPlanSnapshot;
+}) {
+  if (snapshot.current.isActiveFreeTrial) {
+    return (
+      <BillingFreeTurnsSection
+        expiresAt={snapshot.current.currentPeriodEndAt}
+        usage={freeTurnsUsage}
+        usageUnavailable={!freeTurnsLoading && freeTurnsUsage == null}
+      />
+    );
+  }
+  if (snapshot.current.isPayg) {
+    return null;
+  }
+  return (
+    <BillingAiCreditsSection
+      credits={credits}
+      error={creditsError}
+      isLoading={creditsLoading}
+      planIncludesCredits={snapshot.current.resources.some(
+        (resource) => resource.label === "AI Credits"
+      )}
+      resetAt={
+        snapshot.current.periodEndVoice === "silent"
+          ? "-"
+          : formatBillingDateTime(snapshot.current.currentPeriodEndAt)
+      }
+      resetLabel={
+        snapshot.current.periodEndVoice === "expiry" ? "Ends:" : "Resets:"
+      }
+    />
   );
 }
 
@@ -320,6 +397,11 @@ export function BillingPlan({
     () => loadAccountBalance({ appToken, currency, kubeconfig }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
+  const { data: giftCredits } = useSWR(
+    credentialsReady ? accountCreditsSwrKey({ appToken, kubeconfig }) : null,
+    () => loadAccountCredits({ appToken, kubeconfig }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
   const {
     data: snapshot,
     error: snapshotError,
@@ -343,6 +425,17 @@ export function BillingPlan({
   } = useSWR(
     creditsKey,
     () => loadAiCredits({ appToken, kubeconfig, workspace }),
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  // The Free-allowance card reads Brain's own chat usage — the Billing
+  // Area's only non-account-service data source (ADR-0065). The fetcher
+  // resolves `null` on failure, which the card renders as quiet degradation.
+  const { data: freeTurnsUsage, isLoading: freeTurnsLoading } = useSWR(
+    credentialsReady && snapshot?.current.isActiveFreeTrial
+      ? (["chat-free-turns", workspace, kubeconfig, appToken] as const)
+      : null,
+    () =>
+      fetchFreeChatTurnsUsage({ appToken, kubeconfig, namespace: workspace }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
   // Read through refs so refreshPlanSnapshot's identity stays stable across
@@ -383,6 +476,19 @@ export function BillingPlan({
         workspace: current.workspace,
       });
       await refreshSnapshot();
+      if (operator === "canceled") {
+        // The receipt's observation point for cancellations (catalog B5).
+        observeSubscriptionChangeQuietly({
+          appToken,
+          cancelled: {
+            currentPeriodEndAt: current.currentPeriodEndAt,
+            planName: current.planName,
+          },
+          kubeconfig,
+          regionDomain: current.regionDomain,
+          workspace: current.workspace,
+        }).catch(() => undefined);
+      }
       toast.success(
         operator === "canceled"
           ? "Subscription cancellation scheduled."
@@ -504,6 +610,18 @@ export function BillingPlan({
         kubeconfig,
         workspace: settleWorkspace,
       });
+      // …and for the subscription-change receipt (catalog B5): the settled
+      // transaction names what happened. Only the current workspace's inbox
+      // is verifiable from here, so another workspace's change goes
+      // unreceipted rather than landing in the wrong inbox.
+      if (settleWorkspace === workspace) {
+        observeSubscriptionChangeQuietly({
+          appToken,
+          kubeconfig,
+          regionDomain: nextSnapshot.current.regionDomain,
+          workspace,
+        }).catch(() => undefined);
+      }
       return nextSnapshot;
     },
     [appToken, currency, kubeconfig, refreshSnapshot, workspace]
@@ -547,31 +665,23 @@ export function BillingPlan({
             balance,
             credentialsReady,
             error: balanceError,
+            giftCredits,
             isLoading: balanceLoading,
+            payg: snapshot.current.isPayg,
           })}
         </div>
       }
       cardManagementPending={cardManagementPending}
       credentials={{ appToken, kubeconfig }}
       credits={
-        snapshot.current.isPayg ? null : (
-          <BillingAiCreditsSection
-            credits={credits}
-            error={creditsError}
-            isLoading={creditsLoading}
-            planIncludesCredits={snapshot.current.resources.some(
-              (resource) => resource.label === "AI Credits"
-            )}
-            resetAt={
-              snapshot.current.periodEndVoice === "silent"
-                ? "-"
-                : formatBillingDateTime(snapshot.current.currentPeriodEndAt)
-            }
-            resetLabel={
-              snapshot.current.periodEndVoice === "expiry" ? "Ends:" : "Resets:"
-            }
-          />
-        )
+        <BillingCreditsSlot
+          credits={credits}
+          creditsError={creditsError}
+          creditsLoading={creditsLoading}
+          freeTurnsLoading={freeTurnsLoading}
+          freeTurnsUsage={freeTurnsUsage ?? null}
+          snapshot={snapshot}
+        />
       }
       currency={currency}
       gpuEnabled={gpuEnabled}

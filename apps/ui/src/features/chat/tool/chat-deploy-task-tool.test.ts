@@ -8,14 +8,13 @@ import type {
   DeploymentTaskTimelineSnapshotDTO,
   DeployTaskSnapshotDTO,
 } from "@/features/deploy/task/types";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 
 import { createDeployTaskToolInputSchema } from "./chat-deploy-task-input";
 
-type CreateDeployTaskActionFn =
-  typeof import("@/features/deploy/task/engine/actions")["createDeployTaskAction"];
-
 const timelineSnapshotReads: { namespace?: string; taskId: string }[] = [];
 let timelineSnapshot: DeploymentTaskTimelineSnapshotDTO | null = null;
+const CONNECTION_DATABASE_UNAVAILABLE_RE = /connection database unavailable/;
 
 // `server-only` has no runtime API and throws outside a React server runtime,
 // so this process-wide shim cannot change another test's observable behavior.
@@ -148,6 +147,22 @@ test("chat createDeployTask ignores model-provided raw runner fields", () => {
   );
 });
 
+test("chat createDeployTask rejects inconsistent GitHub repository identity", () => {
+  const parsed = createDeployTaskToolInputSchema.safeParse({
+    intention: "deploy the requested GitHub repository",
+    source: {
+      kind: "github",
+      repo: {
+        fullName: "public/example",
+        name: "example",
+        url: "https://github.com/private/other",
+      },
+    },
+  });
+
+  assert.equal(parsed.success, false);
+});
+
 test("chat getDeployTaskStatus returns the safe task timeline snapshot", async () => {
   timelineSnapshotReads.length = 0;
   timelineSnapshot = failedTimelineSnapshot();
@@ -278,13 +293,29 @@ function githubToolOptions() {
   };
 }
 
-test("chat createDeployTask rejects a private repo when the actor has no connection", async () => {
+function githubConnection() {
+  return {
+    accountLogin: "alice",
+    accountType: "User",
+    id: "connection-alice",
+    installationId: "",
+    isAuthorized: true,
+    namespace: "ns-test",
+    repositorySelection: "oauth",
+    updatedAt: new Date(0).toISOString(),
+  };
+}
+
+test("chat createDeployTask requires a GitHub connection before task creation", async () => {
+  let createCalls = 0;
   const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
   const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
     adoptLegacyGithubConnectionForOwner: () =>
       Promise.resolve(undefined as never),
-    checkGithubRepoPublicAccess: () =>
-      Promise.resolve({ accessible: false, checked: true }),
+    createDeployTaskAction: () => {
+      createCalls += 1;
+      return Promise.resolve({ kind: "invalid", message: "unexpected" });
+    },
     getGithubConnectionStatusForOwner: () => Promise.resolve(null),
   });
   assert.ok(deployTaskTools.createDeployTask.execute);
@@ -295,80 +326,34 @@ test("chat createDeployTask rejects a private repo when the actor has no connect
       source: githubSource,
       target: { kind: "newProject", displayName: "glpi" },
     },
-    { messages: [], toolCallId: "tool-call-github-1" }
+    { messages: [], toolCallId: "tool-call-3" }
   );
 
   assert.deepEqual(result, {
     ok: false,
-    error:
-      "This repository is not publicly accessible. Connect GitHub in Settings to deploy it.",
+    error: "Connect GitHub in Settings before deploying from a repository.",
   });
+  assert.equal(createCalls, 0);
 });
 
-test("chat createDeployTask creates an unbound task for an accessible public repo", async () => {
+test("chat createDeployTask binds the initiator's GitHub connection", async () => {
   const createInputs: { credentialBinding?: unknown }[] = [];
-
   const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
   const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
     adoptLegacyGithubConnectionForOwner: () =>
       Promise.resolve(undefined as never),
-    checkGithubRepoPublicAccess: () =>
-      Promise.resolve({ accessible: true, checked: true }),
-    createDeployTaskAction: ((
-      _context: unknown,
-      input: { create: { credentialBinding?: unknown } }
-    ) => {
+    createDeployTaskAction: (_context, input) => {
       createInputs.push(input.create);
       return Promise.resolve({
         kind: "created",
-        task: { id: "task-github-2" },
+        launched: null,
+        task: { id: "task-9" } as never,
       });
-    }) as unknown as CreateDeployTaskActionFn,
-    getDeployTaskEngineContext: () => null as never,
-    getDeployTaskSnapshot: () => Promise.resolve(null),
-    getGithubConnectionStatusForOwner: () => Promise.resolve(null),
-    runDeployTask: () => Promise.resolve(),
-    toDeployTaskDTO: (task: unknown) => task as never,
-  });
-  assert.ok(deployTaskTools.createDeployTask.execute);
-
-  const result = await deployTaskTools.createDeployTask.execute(
-    {
-      intention: "deploy the glpi repository",
-      source: githubSource,
-      target: { kind: "newProject", displayName: "glpi" },
     },
-    { messages: [], toolCallId: "tool-call-github-2" }
-  );
-
-  assert.ok(result != null && "ok" in result && result.ok);
-  assert.equal(createInputs.length, 1);
-  assert.equal("credentialBinding" in (createInputs[0] ?? {}), false);
-});
-
-test("chat createDeployTask binds a connected GitHub account", async () => {
-  const createInputs: { credentialBinding?: unknown }[] = [];
-
-  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
-  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
-    adoptLegacyGithubConnectionForOwner: () =>
-      Promise.resolve(undefined as never),
-    checkGithubRepoPublicAccess: () =>
-      Promise.resolve({ accessible: true, checked: true }),
-    createDeployTaskAction: ((
-      _context: unknown,
-      input: { create: { credentialBinding?: unknown } }
-    ) => {
-      createInputs.push(input.create);
-      return Promise.resolve({
-        kind: "created",
-        task: { id: "task-github-3" },
-      });
-    }) as unknown as CreateDeployTaskActionFn,
     getDeployTaskEngineContext: () => null as never,
     getDeployTaskSnapshot: () => Promise.resolve(null),
     getGithubConnectionStatusForOwner: () =>
-      Promise.resolve({ id: "connection-1" } as never),
+      Promise.resolve(githubConnection()),
     runDeployTask: () => Promise.resolve(),
     toDeployTaskDTO: (task: unknown) => task as never,
   });
@@ -380,14 +365,120 @@ test("chat createDeployTask binds a connected GitHub account", async () => {
       source: githubSource,
       target: { kind: "newProject", displayName: "glpi" },
     },
-    { messages: [], toolCallId: "tool-call-github-3" }
+    { messages: [], toolCallId: "tool-call-4" }
   );
 
   assert.ok(result != null && "ok" in result && result.ok);
   assert.equal(createInputs.length, 1);
   assert.deepEqual(createInputs[0]?.credentialBinding, {
-    connectionRef: "connection-1",
+    connectionRef: "connection-alice",
     credentialOwner: "uid-alice",
     version: 1,
   });
+});
+
+test("chat createDeployTask surfaces a superseded identity without creating a task", async () => {
+  let createCalls = 0;
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    adoptLegacyGithubConnectionForOwner: () =>
+      Promise.reject(new IdentityBindingSupersededError()),
+    createDeployTaskAction: () => {
+      createCalls += 1;
+      return Promise.resolve({ kind: "invalid", message: "unexpected" });
+    },
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the glpi repository",
+      source: githubSource,
+      target: { kind: "newProject", displayName: "glpi" },
+    },
+    { messages: [], toolCallId: "tool-call-5" }
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    error:
+      "Authentication is required. Sign in again before deploying from GitHub.",
+  });
+  assert.equal(createCalls, 0);
+});
+
+test("chat createDeployTask propagates GitHub connection lookup failures", async () => {
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    adoptLegacyGithubConnectionForOwner: () =>
+      Promise.resolve(undefined as never),
+    getGithubConnectionStatusForOwner: () =>
+      Promise.reject(new Error("connection database unavailable")),
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  await assert.rejects(async () => {
+    await deployTaskTools.createDeployTask.execute?.(
+      {
+        intention: "deploy the glpi repository",
+        source: githubSource,
+        target: { kind: "newProject", displayName: "glpi" },
+      },
+      { messages: [], toolCallId: "tool-call-6" }
+    );
+  }, CONNECTION_DATABASE_UNAVAILABLE_RE);
+});
+
+test("chat createDeployTask refuses behind the pre-deploy wall and never creates the task", async () => {
+  let createCalls = 0;
+  const standingReads: string[] = [];
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(
+    {
+      ...githubToolOptions(),
+      billingActor: { userId: "user-alice", userUid: "uid-alice" },
+    },
+    {
+      adoptLegacyGithubConnectionForOwner: () =>
+        Promise.resolve(undefined as never),
+      createDeployTaskAction: () => {
+        createCalls += 1;
+        return Promise.resolve({ kind: "invalid", message: "unexpected" });
+      },
+      getGithubConnectionStatusForOwner: () =>
+        Promise.resolve(githubConnection()),
+      judgeWorkspaceBillingStandingForActor: (input) => {
+        standingReads.push(input.workspace);
+        return Promise.resolve({
+          accountDebt: true,
+          aiCredits: null,
+          availableBalanceMicroUnits: -6_320_000,
+          fullQuota: null,
+          fullUniversalQuota: null,
+          paidSource: "balance",
+          paymentDue: false,
+          paymentDueRecovery: null,
+          quotaKnown: true,
+        });
+      },
+    }
+  );
+  assert.ok(deployTaskTools.createDeployTask.execute);
+
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the glpi repository",
+      source: githubSource,
+      target: { kind: "newProject", displayName: "glpi" },
+    },
+    { messages: [], toolCallId: "tool-call-wall" }
+  );
+
+  assert.deepEqual(standingReads, ["ns-test"]);
+  assert.deepEqual(result, {
+    ok: false,
+    error:
+      "Account balance in debt. Pay-as-you-go workspaces are suspended, so deployments will fail. Top up your balance to restore them. The deployment was not started. If the user wants to try anyway, the deployment pane shows this same notice but does not block.",
+  });
+  assert.equal(createCalls, 0);
 });

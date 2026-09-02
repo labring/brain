@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { judgeWorkspaceBillingStandingForActor } from "@/features/billing/server/billing-standing";
 import {
   createDeployTaskToolInputSchema,
   defaultRunnerForSource,
@@ -8,6 +9,7 @@ import {
   chatToolIntentionField,
   logChatToolIntention,
 } from "@/features/chat/tool/chat-tool-intention";
+import { deployBillingNoticeFromStanding } from "@/features/deploy/deploy-billing-notice";
 import {
   adoptLegacyGithubConnectionForOwner,
   getGithubConnectionStatusForOwner,
@@ -16,10 +18,7 @@ import {
   CURRENT_GITHUB_OWNER_IDENTITY_VERSION,
   type VerifiedGithubConnectionActor,
 } from "@/features/deploy/github/owner-identity";
-import {
-  checkGithubRepoPublicAccess,
-  GITHUB_REPO_NOT_PUBLIC_ERROR,
-} from "@/features/deploy/github/repo-public-access";
+import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 import {
   cancelDeployTaskAction,
   createDeployTaskAction,
@@ -43,6 +42,12 @@ import {
   type DeploymentTaskTarget,
   submitDeployTaskInputSchema,
 } from "@/features/deploy/task/types";
+import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
+
+const GITHUB_CONNECTION_REQUIRED_ERROR =
+  "Connect GitHub in Settings before deploying from a repository.";
+const GITHUB_AUTHENTICATION_REQUIRED_ERROR =
+  "Authentication is required. Sign in again before deploying from GitHub.";
 
 const getDeployTaskStatusToolInputSchema = z.object({
   intention: chatToolIntentionField,
@@ -89,6 +94,8 @@ export function createDeployTaskTools(
       projectName?: string;
       projectId?: string;
     };
+    /** Request-memory identity for a run's billing reverse-check (E1/E2). */
+    billingActor?: DeployBillingActor;
     kubeconfig: string;
     kubernetesNamespace: string;
     workspaceActor: string;
@@ -96,12 +103,12 @@ export function createDeployTaskTools(
   },
   dependencies: {
     adoptLegacyGithubConnectionForOwner?: typeof adoptLegacyGithubConnectionForOwner;
-    checkGithubRepoPublicAccess?: typeof checkGithubRepoPublicAccess;
     createDeployTaskAction?: typeof createDeployTaskAction;
-    getDeployTaskEngineContext?: typeof getDeployTaskEngineContext;
     getGithubConnectionStatusForOwner?: typeof getGithubConnectionStatusForOwner;
+    getDeployTaskEngineContext?: typeof getDeployTaskEngineContext;
     getDeployTaskSnapshot?: typeof getDeployTaskSnapshot;
     getDeployTaskTimelineSnapshot?: typeof getDeployTaskTimelineSnapshot;
+    judgeWorkspaceBillingStandingForActor?: typeof judgeWorkspaceBillingStandingForActor;
     runDeployTask?: typeof runDeployTask;
     submitDeployTaskInputAction?: typeof submitDeployTaskInputAction;
     toDeployTaskDTO?: typeof toDeployTaskDTO;
@@ -112,8 +119,6 @@ export function createDeployTaskTools(
   const encodedKubeconfig = encodeURIComponent(options.kubeconfig);
   const engineContext =
     dependencies.getDeployTaskEngineContext ?? getDeployTaskEngineContext;
-  const createTask =
-    dependencies.createDeployTaskAction ?? createDeployTaskAction;
   const readTaskSnapshot =
     dependencies.getDeployTaskSnapshot ?? getDeployTaskSnapshot;
   const readTimelineSnapshot =
@@ -121,15 +126,37 @@ export function createDeployTaskTools(
   const runTask = dependencies.runDeployTask ?? runDeployTask;
   const submitTaskInput =
     dependencies.submitDeployTaskInputAction ?? submitDeployTaskInputAction;
+  const createTask =
+    dependencies.createDeployTaskAction ?? createDeployTaskAction;
   const projectTask = dependencies.toDeployTaskDTO ?? toDeployTaskDTO;
   const readGithubConnection =
     dependencies.getGithubConnectionStatusForOwner ??
     getGithubConnectionStatusForOwner;
-  const readRepoPublicAccess =
-    dependencies.checkGithubRepoPublicAccess ?? checkGithubRepoPublicAccess;
   const adoptLegacyGithubConnection =
     dependencies.adoptLegacyGithubConnectionForOwner ??
     adoptLegacyGithubConnectionForOwner;
+
+  const judgeStanding =
+    dependencies.judgeWorkspaceBillingStandingForActor ??
+    judgeWorkspaceBillingStandingForActor;
+  /** Unknown standing never notices; a failing read never fails the tool. */
+  async function deployNotice() {
+    const actor = options.billingActor;
+    if (actor == null || actor.userUid.trim() === "") {
+      return null;
+    }
+    try {
+      const standing = await judgeStanding({
+        cookieHeader: actor.cookieHeader,
+        userId: actor.userId,
+        userUid: actor.userUid,
+        workspace: namespace,
+      });
+      return deployBillingNoticeFromStanding(standing);
+    } catch {
+      return null;
+    }
+  }
 
   const githubActor: VerifiedGithubConnectionActor = {
     legacyWorkspaceActor: options.workspaceActor,
@@ -142,29 +169,33 @@ export function createDeployTaskTools(
 
   /**
    * Resolve the initiator's binding the same way the deploy-task route does
-   * (ADR-0036/0056/0059). A missing connection is not an error: the task is
-   * created unbound and deploys a public repository anonymously. An existing
-   * but stale binding still fails closed.
+   * (ADR-0036/0056/0059). Missing or superseded credentials fail before task
+   * creation; infrastructure errors propagate instead of degrading to an
+   * anonymous deployment.
    */
   async function resolveChatGithubBinding(): Promise<
-    DeploymentCredentialBinding | undefined
+    | { credentialBinding: DeploymentCredentialBinding; ok: true }
+    | { error: string; ok: false }
   > {
     try {
       await adoptLegacyGithubConnection(githubActor);
       const connection = await readGithubConnection(githubActor.owner);
       if (connection == null) {
-        return;
+        return { error: GITHUB_CONNECTION_REQUIRED_ERROR, ok: false };
       }
       return {
-        connectionRef: connection.id,
-        credentialOwner: githubActor.owner.userUid,
-        version: CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
+        credentialBinding: {
+          connectionRef: connection.id,
+          credentialOwner: githubActor.owner.userUid,
+          version: CURRENT_DEPLOYMENT_CREDENTIAL_BINDING_VERSION,
+        },
+        ok: true,
       };
-    } catch {
-      // A superseded identity binding races an already-authorized turn. Fall
-      // back to the unbound path rather than failing the tool call; the
-      // public-access check below still guards correctness.
-      return;
+    } catch (error) {
+      if (error instanceof IdentityBindingSupersededError) {
+        return { error: GITHUB_AUTHENTICATION_REQUIRED_ERROR, ok: false };
+      }
+      throw error;
     }
   }
 
@@ -172,7 +203,7 @@ export function createDeployTaskTools(
     description: [
       "Create a long-running Deployment Task in SealAI.",
       "Use this when the user asks to deploy a Docker image, a database, a template, a GitHub repository, or a prompt.",
-      "Deploying a GitHub repository without a connected GitHub account works only for public repositories that already publish a container image; anything needing a source build requires the user to connect GitHub in Settings.",
+      "GitHub repository deployments require the user to connect GitHub in Settings. If no connection is available, report that requirement instead of retrying the repository as a prompt or Docker source.",
       "The task resolves or creates its target Project, runs the server-selected Deployment Runner, applies artifacts, and reports progress separately.",
       "Do not provide a runner; Docker and database sources use the Direct Runner, template sources use the Template Runner, and GitHub or prompt sources use the AI Runner.",
       "If the user is already inside a Project, omit target to deploy into the current Project; otherwise provide a newProject target.",
@@ -190,17 +221,25 @@ export function createDeployTaskTools(
             "No deployment target was provided. Use target.kind newProject with a displayName, or open a Project first.",
         };
       }
+      // The assistant is a deploy entry too, but the only one that refuses:
+      // the panes voice the same Deploy Billing Notice above a usable form,
+      // while the tool must not silently spend the user's doomed run
+      // (ADR-0070). The refusal names the pane as the deliberate way through.
+      const notice = await deployNotice();
+      if (notice != null) {
+        return {
+          ok: false,
+          error: `${notice.title}. ${notice.body} The deployment was not started. If the user wants to try anyway, the deployment pane shows this same notice but does not block.`,
+        };
+      }
+
       let credentialBinding: DeploymentCredentialBinding | undefined;
       if (input.source.kind === "github") {
-        credentialBinding = await resolveChatGithubBinding();
-        if (credentialBinding == null) {
-          const access = await readRepoPublicAccess({
-            fullName: input.source.repo.fullName,
-          });
-          if (access.checked && !access.accessible) {
-            return { ok: false, error: GITHUB_REPO_NOT_PUBLIC_ERROR };
-          }
+        const bindingResolution = await resolveChatGithubBinding();
+        if (!bindingResolution.ok) {
+          return bindingResolution;
         }
+        credentialBinding = bindingResolution.credentialBinding;
       }
 
       const result = await createTask(engineContext(), {
@@ -217,6 +256,9 @@ export function createDeployTaskTools(
         resolveTarget: resolveDeployTaskTargetForCreate,
         run: (handle, task) =>
           runTask(handle, {
+            ...(options.billingActor == null
+              ? {}
+              : { billingActor: options.billingActor }),
             encodedKubeconfig,
             // Full template args from the chat request: the engine
             // persists a stripped copy, so sensitive values reach the
@@ -275,6 +317,9 @@ export function createDeployTaskTools(
         namespace,
         run: (handle, task, currentBlockingInputs, values) =>
           runTask(handle, {
+            ...(options.billingActor == null
+              ? {}
+              : { billingActor: options.billingActor }),
             currentBlockingInputs,
             encodedKubeconfig,
             submittedInputValues: values,

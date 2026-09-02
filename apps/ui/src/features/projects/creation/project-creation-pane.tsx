@@ -66,6 +66,8 @@ export function ProjectCreationPane({
   busy = false,
   creatorRootProps,
   entryMode = "general",
+  githubAutoDeploy = false,
+  initialGithubRepoUrl,
   onActiveSourceChange,
   onClose,
   resetKey,
@@ -85,6 +87,8 @@ export function ProjectCreationPane({
     | "templateOptionsLoading"
   >;
   entryMode?: ProjectCreationPaneEntryMode;
+  githubAutoDeploy?: boolean;
+  initialGithubRepoUrl?: string;
   onActiveSourceChange?: (source: ProjectCreatorSourceKind | null) => void;
   onClose: () => void;
   resetKey: string | number;
@@ -148,6 +152,9 @@ export function ProjectCreationPane({
       >
         <GithubDeployer.Root
           actions={githubDeployer?.actions}
+          autoDeploy={githubAutoDeploy}
+          initialRepoUrl={initialGithubRepoUrl}
+          key={`${resetKey}:${initialGithubRepoUrl ?? ""}:${githubAutoDeploy ? "auto" : "manual"}`}
           states={githubDeployer?.states ?? EMPTY_GITHUB_DEPLOYER_STATES}
         >
           <GithubDeployer.Shell />

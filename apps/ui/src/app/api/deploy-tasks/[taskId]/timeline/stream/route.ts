@@ -2,6 +2,7 @@ import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/features/deploy/task/api-auth";
+import { withDeployTaskDevMock } from "@/features/deploy/task/dev-mock-route";
 import { getDeployTaskTimelineSnapshot } from "@/features/deploy/task/service";
 import {
   type DeploymentTaskTimelineSubscription,
@@ -26,7 +27,7 @@ function encodeSse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-export async function GET(request: Request, context: RouteContext) {
+async function handleGet(request: Request, context: RouteContext) {
   const { taskId } = await context.params;
   const params = deployTaskRequestParams(request);
   const namespaceResolved = await resolveDeployTaskRequestNamespace({
@@ -163,3 +164,9 @@ export async function GET(request: Request, context: RouteContext) {
     },
   });
 }
+
+export const GET = withDeployTaskDevMock(
+  "timeline-stream",
+  handleGet,
+  (context) => context.params.then((params) => params.taskId)
+);

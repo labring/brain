@@ -12,10 +12,12 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+import type { RecoveryVoice } from "@/features/billing/billing-plan-data";
 import type {
   TemplateDefaultValue,
   TemplateSourceInput,
 } from "@/features/deploy/template-provider-core";
+import type { MarketingAttributionSnapshot } from "@/features/marketing/types";
 import type { DeploymentTaskTimelineSnapshot } from "./timeline";
 
 export const DEPLOYMENT_TASK_DB_SCHEMA = "sealai_deployment";
@@ -177,6 +179,7 @@ export interface DeployTaskEventPayload {
 export type DeployTaskFailureReason =
   | "github-authentication"
   | "repository-clone-failed"
+  | "deploy-configuration-invalid"
   | "ai-proxy-unavailable"
   | "deploy-runtime-unavailable"
   | "build-runtime-unavailable"
@@ -191,6 +194,8 @@ export type DeployTaskFailureReason =
   | "template-output-invalid"
   | "apply-failed"
   | "quota-exceeded"
+  | "balance-exhausted"
+  | "subscription-expired"
   | "readiness-timeout"
   | "interrupted"
   | "timeout"
@@ -201,7 +206,39 @@ export type DeployTaskFailureReason =
 
 export type DeployTaskFailureStage = "apply" | "readiness";
 
+/**
+ * What the billing reverse-check found at failure time (design spec rows
+ * E1/E2): the structured, allowlisted evidence behind a `balance-exhausted`,
+ * `subscription-expired` (ADR-0070), or resource-attributed `quota-exceeded`
+ * classification — never raw upstream text, so every runner may persist and
+ * display it (ADR 0042).
+ */
+export type DeployBillingEvidence =
+  | {
+      /** Balance − DeductionBalance + usable credits; null when only the platform's DEBT status was readable. */
+      availableBalanceMicroUnits: number | null;
+      checkedAt: string;
+      kind: "account-debt";
+    }
+  | {
+      kind: "quota-full";
+      label: string;
+      percentUsed: number;
+      type: string;
+    }
+  | {
+      checkedAt: string;
+      kind: "subscription-expired";
+      /**
+       * How recovery speaks (renew vs resubscribe), persisted so the
+       * Billing Interruption card keeps the Deploy Billing Notice's voice.
+       * Absent on records from before the field existed.
+       */
+      recovery?: RecoveryVoice;
+    };
+
 export interface DeployTaskFailureDetails extends Record<string, unknown> {
+  billingEvidence?: DeployBillingEvidence;
   failureMessage?: string;
   httpStatus?: number;
   reason?: DeployTaskFailureReason;
@@ -294,6 +331,9 @@ export const deployTasks = ns.table(
     projectId: text("project_uid"),
     projectName: text("project_name"),
     creatingActor: text("creating_actor"),
+    marketingAttribution: jsonb(
+      "marketing_attribution"
+    ).$type<MarketingAttributionSnapshot | null>(),
     credentialBinding: jsonb(
       "credential_binding"
     ).$type<DeploymentCredentialBinding | null>(),

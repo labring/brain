@@ -22,12 +22,14 @@ const PLAN_SNAPSHOT: BillingPlanSnapshot = {
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
+    isActiveFreeTrial: false,
     isPayg: false,
     lifecycle: "active",
     payMethod: "stripe",
     periodEndVoice: "renewal",
     planName: "Pro",
     priceMicroUnits: 20_000_000,
+    recoveryVoice: "renew",
     regionDomain: "us.example.test",
     resources: [{ label: "CPU", value: "4" }],
     warningDeadlineAt: null,
@@ -208,9 +210,11 @@ test("a payment started from Pricing ends in the shared congratulations", async 
             loadTransaction: () =>
               Promise.resolve({
                 id: "transaction-1",
+                operator: "upgraded",
                 payId: "payment-1",
                 planName: "Team",
                 status: "completed",
+                startAt: null,
               }),
             loadUpgradeQuote: () =>
               Promise.resolve({

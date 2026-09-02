@@ -1,10 +1,13 @@
 import YAML from "yaml";
 import type { DatabaseInstancePreset } from "@/features/deploy/database-deployer";
+import { BRAIN_DISPLAY_NAME_ANNOTATION } from "@/lib/brain-labels";
 import { renderYamlTemplate } from "./render-yaml-template";
 
 const DIRECT_PRODUCT_API_VERSION = "brain.io/direct";
 
 interface RenderDbDeploymentYamlOptions {
+  /** Resource Display Name written into the annotation at deploy time (ADR 0066). */
+  displayName?: string;
   engine: string;
   name: string;
   namespace: string;
@@ -78,8 +81,17 @@ export function renderDbDeploymentYaml(
     doc.metadata && typeof doc.metadata === "object"
       ? { ...(doc.metadata as Record<string, unknown>) }
       : {};
+  const displayName = options.displayName?.trim();
+  const annotations =
+    metadata.annotations && typeof metadata.annotations === "object"
+      ? { ...(metadata.annotations as Record<string, unknown>) }
+      : {};
+  if (displayName) {
+    annotations[BRAIN_DISPLAY_NAME_ANNOTATION] = displayName;
+  }
   doc.metadata = {
     ...metadata,
+    ...(Object.keys(annotations).length === 0 ? {} : { annotations }),
     name: options.name,
     namespace: options.namespace,
   };
@@ -97,6 +109,8 @@ export function renderDbDeploymentYaml(
       )
     ),
     engine: options.engine,
+    // Always false today. The first field that exposes one owes the nodeport
+    // quota validation ADR-0070 places on requesting fields.
     exposeNodePort: false,
     projectId: options.projectName,
     quota: options.quota,

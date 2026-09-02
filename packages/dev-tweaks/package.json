@@ -3,13 +3,16 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
-  "description": "Standalone-ready dev tweaks panel: declarative control registry, own store, pluggable persistence, frame/float presentation, mock indicator.",
+  "description": "Dev tweaks panel (dev/demo only): live parameter panel plus a CSS-var override bridge.",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "scripts": {
     "lint": "eslint --max-warnings 0",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@base-ui/react": "^1.4.0"
+    "motion": "^12.23.0"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -31,6 +34,6 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/panel/styles/theme.css"
   }
 }

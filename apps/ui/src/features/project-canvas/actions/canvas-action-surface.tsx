@@ -1,6 +1,7 @@
 "use client";
 
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { cn } from "@workspace/ui/lib/utils";
 import { useAtomValue } from "jotai";
 import { Database, X } from "lucide-react";
@@ -148,7 +149,7 @@ export function MainActionSurface({
       icon={<Database aria-hidden className="size-4" strokeWidth={2} />}
       onClose={onClose}
       open={open}
-      subtitle={states?.name}
+      subtitle={nodeTitle(states)}
       title="DB Access"
     >
       {model == null ? null : (

@@ -8,6 +8,7 @@ import {
   DatabaseDeployer,
   type DatabaseDeploymentSettings,
 } from "@/features/deploy/database-deployer";
+import { DeployBillingNoticeCard } from "@/features/deploy/deploy-billing-notice-card";
 import {
   type DeploymentTaskEditRedeploy,
   useRedeployOverwriteGate,
@@ -19,6 +20,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeployBillingNotice } from "@/features/deploy/use-deploy-billing-notice";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -44,6 +46,10 @@ function databaseInitialSettings(
       : {}),
   };
 }
+
+// Every database preset carries a storage request, so a full storage quota
+// dooms this pane's every deploy (ADR-0070).
+const DATABASE_PANE_CONSUMES = ["storage"] as const;
 
 export function DatabaseDeploymentPane({
   kubeconfig,
@@ -75,6 +81,14 @@ export function DatabaseDeploymentPane({
   const overwriteGate = useRedeployOverwriteGate(
     redeploy?.overwriteWarning ?? false
   );
+  // The pre-deploy notice (ADR-0070): a condition that dooms this deploy is
+  // voiced above the form, which stays usable — enforcement lives at the
+  // platform, and a pressed-through failure comes back explained. Every
+  // database preset includes storage, so a full storage quota dooms this
+  // pane like the universal quotas do.
+  const billingNotice = useDeployBillingNotice({
+    paneConsumes: DATABASE_PANE_CONSUMES,
+  });
   const initialSettings = useMemo(
     () => databaseInitialSettings(redeploy),
     [redeploy]
@@ -147,6 +161,9 @@ export function DatabaseDeploymentPane({
       }
       title={redeploy == null ? "Deploy Database" : "Edit & Redeploy Database"}
     >
+      {billingNotice != null && (
+        <DeployBillingNoticeCard notice={billingNotice} />
+      )}
       <DatabaseDeployer.Root
         busy={deploying || currentProject.isLoading}
         databaseOptions={databaseOptions}

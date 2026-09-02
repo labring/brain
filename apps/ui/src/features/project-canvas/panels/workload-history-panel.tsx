@@ -7,6 +7,7 @@ import {
 } from "@workspace/api/hooks";
 import { ProjectSourceDockerIcon } from "@workspace/ui/assets/project-source-icons";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
+import { nodeTitle } from "@workspace/ui/lib/node-title";
 import type { Node } from "@xyflow/react";
 import { useAtomValue } from "jotai";
 import { memo, useCallback, useState } from "react";
@@ -62,6 +63,13 @@ export function formatImageVersionsSubtitle({
   return `${IMAGE_VERSIONS_DESCRIPTION} ${status}`;
 }
 
+function imageVersionsTitle(states: Parameters<typeof nodeTitle>[0]): string {
+  const displayTitleName = nodeTitle(states) ?? "";
+  return displayTitleName === ""
+    ? "Image versions"
+    : `${displayTitleName} Image versions`;
+}
+
 function WorkloadHistoryShell({
   children,
   onClose,
@@ -103,7 +111,7 @@ export const WorkloadHistoryPane = memo(function WorkloadHistoryPane({
   const name = states?.name ?? "";
   const ns = states?.namespace?.trim() || namespaceFallback;
   const workloadKind = workloadClaimKindFromStates(states);
-  const title = name === "" ? "Image versions" : `${name} Image versions`;
+  const title = imageVersionsTitle(states);
 
   const versions = useAPImageVersions({
     kubeconfig,

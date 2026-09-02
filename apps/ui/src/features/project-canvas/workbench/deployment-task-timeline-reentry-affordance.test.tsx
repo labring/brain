@@ -25,6 +25,8 @@ const MORE_ALL_FOLDED_RE = /\+4/;
 const MORE_LABEL_RE = /Show 1 more deployment tasks/;
 const LIST_SLOT_RE = /data-slot="deployment-task-dock-list"/;
 const LIST_HEADING_RE = />Deployment tasks</;
+const REASON_PHRASE_RE = /out of balance/;
+const REASON_TITLE_RE = /failed · apply · out of balance/;
 
 function task(overrides: Partial<DeploymentTaskProjection>) {
   return {
@@ -191,4 +193,27 @@ test("deployment task dock renders only the measuring host before layout", () =>
   // just the host so hydration never paints an unfitted row.
   assert.match(html, DOCK_SLOT_RE);
   assert.doesNotMatch(html, ROW_SLOT_RE);
+});
+
+test("a failed chip carries its billing reason phrase beside the red dot", () => {
+  const html = renderToStaticMarkup(
+    <DeploymentTaskDockRow
+      items={[
+        {
+          active: false,
+          task: task({
+            completedAt: "2026-06-11T10:00:00.000Z",
+            failureReason: "balance-exhausted",
+            phase: "apply",
+            status: "failed",
+          }),
+        } as DeploymentTaskDockItem,
+      ]}
+      onDismiss={() => undefined}
+      onOpen={() => undefined}
+      visibleCount={1}
+    />
+  );
+  assert.match(html, REASON_PHRASE_RE);
+  assert.match(html, REASON_TITLE_RE);
 });

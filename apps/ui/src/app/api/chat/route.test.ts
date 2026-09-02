@@ -3,6 +3,8 @@ import { isDeepStrictEqual } from "node:util";
 import { simulateReadableStream, tool, type UIMessage } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
+import { BILLING_JUDGMENT_TIMEOUT_MS } from "@/features/billing/server/judgment-budget";
+import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
 const actualKubeconfig = { ...(await import("@/lib/kubeconfig")) };
 const actualRequestKubeconfigAuth = {
@@ -53,7 +55,40 @@ let activeLease: TestLease | null = null;
 let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
 let appendCalls: UIMessage[] = [];
 let connectionAvailable = true;
-let consumeCalls = 0;
+let connectionBillingCalls: ("free" | "user")[] = [];
+let denyReservation: (() => void) | null = null;
+let releaseCalls = 0;
+let reserveCalls = 0;
+let freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
+let trialJudgment: "not-trial" | "trial" | "unknown" = "trial";
+let billingStanding = {
+  accountDebt: null as boolean | null,
+  aiCredits: null as { totalMicroUnits: number; usedMicroUnits: number } | null,
+  availableBalanceMicroUnits: null as number | null,
+  fullQuota: null,
+  paidSource: null as "ai-credits" | "balance" | null,
+  quotaKnown: false,
+};
+let standingCalls: {
+  userId: string | null;
+  userUid: string;
+  workspace: string;
+}[] = [];
+let connectionRefusal: { message: string; status: number } | null = null;
+let workspaceResourceQuota: WorkspaceResourceQuotaSnapshot | undefined = {
+  items: [
+    { limit: 36_000, type: "cpu", used: 19_200 },
+    { limit: 167_936, type: "memory", used: 26_880 },
+    { limit: 204_800, type: "storage", used: 12_288 },
+    { limit: 20, type: "pod", used: 3 },
+    { limit: 10, type: "nodeport", used: 0 },
+  ],
+};
+let judgmentCalls: {
+  userId: string | null;
+  userUid: string;
+  workspace: string;
+}[] = [];
 let forceReplaceConflict = false;
 let history: UIMessage[] = [];
 let heartbeatTick: (() => void) | null = null;
@@ -204,7 +239,11 @@ function persistToHistory(message: UIMessage): void {
 
 mock.module("server-only", () => ({}));
 mock.module("@/features/chat/ai-proxy/resolve-chat-open-ai-connection", () => ({
-  resolveChatOpenAiConnection: () => {
+  resolveChatOpenAiConnection: (options: { billing: "free" | "user" }) => {
+    connectionBillingCalls.push(options.billing);
+    if (connectionRefusal != null) {
+      return Promise.resolve({ ...connectionRefusal, ok: false as const });
+    }
     if (!connectionAvailable) {
       return Promise.resolve({
         message: "AI connection unavailable",
@@ -215,14 +254,62 @@ mock.module("@/features/chat/ai-proxy/resolve-chat-open-ai-connection", () => ({
     return Promise.resolve({ connection: {}, ok: true as const });
   },
 }));
+mock.module("@/features/billing/server/free-trial-judgment", () => ({
+  judgeActiveFreeTrialForWorkspace: (input: {
+    userId: string | null;
+    userUid: string;
+    workspace: string;
+  }) => {
+    judgmentCalls.push({
+      userId: input.userId,
+      userUid: input.userUid,
+      workspace: input.workspace,
+    });
+    return Promise.resolve(trialJudgment);
+  },
+}));
+mock.module("@/features/billing/server/billing-standing", () => ({
+  judgeWorkspaceBillingStandingForActor: (input: {
+    userId: string | null;
+    userUid: string;
+    workspace: string;
+  }) => {
+    standingCalls.push({
+      userId: input.userId,
+      userUid: input.userUid,
+      workspace: input.workspace,
+    });
+    return Promise.resolve({ ...billingStanding });
+  },
+}));
 mock.module("@/features/chat/persistence/free-tier", () => ({
-  consumeFreeTurnIfAvailable: () => {
-    consumeCalls += 1;
+  getFreeTierSnapshot: () => Promise.resolve({ ...freeTierSnapshot }),
+  isSystemOpenAiConfigured: () => true,
+  releaseReservedFreeTurn: () => {
+    releaseCalls += 1;
+    freeTierSnapshot = {
+      ...freeTierSnapshot,
+      remaining: freeTierSnapshot.remaining + 1,
+      used: freeTierSnapshot.used - 1,
+    };
+    return Promise.resolve();
+  },
+  reserveFreeTurnIfAvailable: () => {
+    reserveCalls += 1;
+    if (denyReservation != null) {
+      denyReservation();
+      return Promise.resolve(false);
+    }
+    if (freeTierSnapshot.remaining <= 0) {
+      return Promise.resolve(false);
+    }
+    freeTierSnapshot = {
+      ...freeTierSnapshot,
+      remaining: freeTierSnapshot.remaining - 1,
+      used: freeTierSnapshot.used + 1,
+    };
     return Promise.resolve(true);
   },
-  getFreeTierSnapshot: () =>
-    Promise.resolve({ limit: 5, remaining: 5, used: 0 }),
-  isSystemOpenAiConfigured: () => true,
 }));
 mock.module("@/features/chat/persistence/service", () => ({
   adoptLegacyAssistantConversationsForActor: (actor: {
@@ -554,7 +641,10 @@ function userMessage(id: string, text: string): UIMessage {
 function chatRequest(
   message: UIMessage,
   signal?: AbortSignal,
-  options?: { appToken?: string | null }
+  options?: {
+    appToken?: string | null;
+    workspaceResourceQuota?: unknown;
+  }
 ): Request {
   const appToken =
     options?.appToken === undefined ? "valid-app-token" : options.appToken;
@@ -564,6 +654,9 @@ function chatRequest(
       encodedKubeconfig: "encoded-kubeconfig",
       message,
       namespace: NAMESPACE,
+      ...(options?.workspaceResourceQuota === undefined
+        ? { workspaceResourceQuota }
+        : { workspaceResourceQuota: options.workspaceResourceQuota }),
     }),
     headers: {
       "content-type": "application/json",
@@ -583,6 +676,7 @@ test("chat POST fails closed with 401 when the app token header is missing", asy
 
   expect(response.status).toBe(401);
   expect(await response.json()).toEqual({
+    code: "app_token_required",
     error: "Authentication is required.",
   });
 });
@@ -606,9 +700,34 @@ beforeEach(() => {
   adoptionCalls = [];
   appendCalls = [];
   connectionAvailable = true;
-  consumeCalls = 0;
+  connectionBillingCalls = [];
+  connectionRefusal = null;
+  billingStanding = {
+    accountDebt: null,
+    aiCredits: null,
+    availableBalanceMicroUnits: null,
+    fullQuota: null,
+    paidSource: null,
+    quotaKnown: false,
+  };
+  standingCalls = [];
+  denyReservation = null;
+  releaseCalls = 0;
+  reserveCalls = 0;
   forceReplaceConflict = false;
+  freeTierSnapshot = { limit: 5, remaining: 5, used: 0 };
+  workspaceResourceQuota = {
+    items: [
+      { limit: 36_000, type: "cpu", used: 19_200 },
+      { limit: 167_936, type: "memory", used: 26_880 },
+      { limit: 204_800, type: "storage", used: 12_288 },
+      { limit: 20, type: "pod", used: 3 },
+      { limit: 10, type: "nodeport", used: 0 },
+    ],
+  };
   history = [];
+  judgmentCalls = [];
+  trialJudgment = "trial";
   heartbeatTick = null;
   leaseAcquireCalls = 0;
   leaseAcquireMutation = null;
@@ -718,7 +837,8 @@ test("accepts and streams a canonical client-tool continuation", async () => {
 
   expect(replaceCalls).toBe(1);
   expect(modelCalls).toBe(1);
-  expect(consumeCalls).toBe(1);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
   expect(titleCalls).toBe(1);
   expect(modelProviderOptions[0]).toEqual({
     openai: { reasoningEffort: "high" },
@@ -757,6 +877,63 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   ]);
 });
 
+test("injects only the current workspace resources into the model prompt", async () => {
+  const response = await POST(
+    chatRequest(userMessage("user-usage-context", "how much usage is left?"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).toContain("<workspace_resource_context");
+  expect(prompt).toContain("CPU: 19.2C/36C");
+  expect(prompt).toContain("Memory: 26.25Gi/164Gi");
+  expect(prompt).toContain("Storage: 12Gi/200Gi");
+  expect(prompt).toContain("Pods: 3/20");
+  expect(prompt).toContain("CPU: 19.2C/36C");
+  expect(prompt).toContain("Memory: 26.25Gi/164Gi");
+  expect(prompt).toContain("Storage: 12Gi/200Gi");
+  expect(prompt).toContain("Ports: 0/10");
+  expect(prompt).toContain("Ports: 0/10");
+  expect(prompt).not.toContain("assistant_usage_context");
+  expect(prompt).not.toContain("Free assistant messages");
+  expect(prompt).not.toContain("Billing mode for this turn");
+  expect(prompt).not.toContain("AI Credits");
+  expect(prompt).not.toContain("ai_quota");
+});
+
+test("keeps chat available when workspace resources are unavailable", async () => {
+  workspaceResourceQuota = undefined;
+
+  const response = await POST(
+    chatRequest(userMessage("user-resource-unavailable", "show resources"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).not.toContain("<workspace_resource_context");
+});
+
+test("keeps chat available when workspace resources are malformed", async () => {
+  const response = await POST(
+    chatRequest(
+      userMessage("user-malformed-resource-context", "show resources"),
+      undefined,
+      {
+        workspaceResourceQuota: {
+          items: [{ limit: "36C", type: "cpu", used: 19_200 }],
+        },
+      }
+    )
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  const prompt = JSON.stringify(modelPrompts[0]);
+  expect(prompt).not.toContain("<workspace_resource_context");
+});
+
 test("accepts a client-tool continuation without server-injected metadata", async () => {
   history = [pendingNavigationAfterMeasuredServerTool()];
 
@@ -792,9 +969,13 @@ test("never binds the model stream to a wall-clock deadline", async () => {
     expect(response.status).toBe(200);
     await drain(response);
 
-    // The auto-title deadline is the only timer left; the turn itself ends on
-    // client disconnect or lease loss, never on elapsed time.
-    expect(timeoutSpy.mock.calls.flat()).toEqual([5000]);
+    // The billing judgment's one budget (ADR-0068) and the auto-title
+    // deadline are the only timers left; the turn itself ends on client
+    // disconnect or lease loss, never on elapsed time.
+    expect(timeoutSpy.mock.calls.flat()).toEqual([
+      BILLING_JUDGMENT_TIMEOUT_MS,
+      5000,
+    ]);
     const modelSignal = modelAbortSignals[0];
     expect(modelSignal).toBeDefined();
     timeoutController.abort();
@@ -830,7 +1011,8 @@ test("request abort stops the model and releases the lease", async () => {
     expect(timeoutController.signal.aborted).toBe(false);
     expect(modelAbortSignals[0]?.aborted).toBe(true);
     expect(leaseReleaseCalls).toBe(1);
-    expect(consumeCalls).toBe(0);
+    expect(reserveCalls).toBe(1);
+    expect(releaseCalls).toBe(1);
     expect(titleCalls).toBe(0);
     expect(history.filter((message) => message.role === "assistant")).toEqual(
       []
@@ -864,7 +1046,8 @@ test("request abort persists partial text without billing", async () => {
 
     expect(timeoutController.signal.aborted).toBe(false);
     expect(leaseReleaseCalls).toBe(1);
-    expect(consumeCalls).toBe(0);
+    expect(reserveCalls).toBe(1);
+    expect(releaseCalls).toBe(1);
     expect(titleCalls).toBe(0);
     expect(history.at(-1)?.parts).toContainEqual(
       expect.objectContaining({ text: "Recovered response", type: "text" })
@@ -920,7 +1103,8 @@ test("keeps an approval retryable when connection preflight fails", async () => 
   expect(response.status).toBe(503);
   expect(replaceCalls).toBe(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([pendingApprovalMessage()]);
 
   connectionAvailable = true;
@@ -940,7 +1124,8 @@ test("keeps an approval retryable when toolset preflight fails", async () => {
   expect(response.status).toBe(503);
   expect(replaceCalls).toBe(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([pendingApprovalMessage()]);
 
   toolsetAvailable = true;
@@ -992,7 +1177,8 @@ test("rejects forged client-tool input before CAS or model execution", async () 
   expect(response.status).toBe(400);
   expect(replaceCalls).toBe(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([pendingNavigationMessage()]);
 });
 
@@ -1003,7 +1189,8 @@ test("rejects a stale or replayed client-tool continuation", async () => {
 
   expect(response.status).toBe(409);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
 });
 
 test("stops before the model when a concurrent continuation wins the CAS", async () => {
@@ -1015,7 +1202,8 @@ test("stops before the model when a concurrent continuation wins the CAS", async
   expect(response.status).toBe(409);
   expect(replaceCalls).toBe(1);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([pendingNavigationMessage()]);
   expect(activeLease).toBeNull();
 });
@@ -1092,13 +1280,15 @@ test("holds the chat lease after continuation CAS until the stream finishes", as
   const competing = await POST(chatRequest(competingUser));
   expect(competing.status).toBe(409);
   expect(history).not.toContainEqual(competingUser);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(2);
+  expect(releaseCalls).toBe(1);
 
   await drain(continuation);
   expect(activeLease).toBeNull();
   expect(leaseReleaseCalls).toBe(1);
   expect(modelCalls).toBe(1);
-  expect(consumeCalls).toBe(1);
+  expect(reserveCalls).toBe(2);
+  expect(releaseCalls).toBe(1);
 });
 
 test("rejects a request when history changes during runtime preflight", async () => {
@@ -1118,7 +1308,8 @@ test("rejects a request when history changes during runtime preflight", async ()
   expect(activeLease).toBeNull();
   expect(leaseReleaseCalls).toBe(1);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
 });
 
 test("recovers an old incomplete client tool before processing a new user turn", async () => {
@@ -1179,6 +1370,7 @@ test("rejects a new user turn with actionable guidance while approval is pending
 
   expect(response.status).toBe(409);
   expect(await response.json()).toEqual({
+    code: "tool_approval_pending",
     error:
       "A tool approval is pending. Approve or deny it before sending a new message.",
   });
@@ -1195,6 +1387,7 @@ test("rejects unrecoverable incomplete tool history with actionable guidance", a
 
   expect(response.status).toBe(409);
   expect(await response.json()).toEqual({
+    code: "incomplete_tool_history",
     error:
       "This conversation contains an incomplete tool call that cannot be recovered. Start a new chat to continue.",
   });
@@ -1237,7 +1430,8 @@ test("rejects a new user turn when continuation recovery loses the CAS", async (
   expect(replaceCalls).toBe(1);
   expect(appendCalls).toHaveLength(0);
   expect(modelCalls).toBe(0);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(history).toEqual([
     userMessage("user-original", "open the project"),
     pendingNavigationMessage(),
@@ -1256,7 +1450,8 @@ test("does not persist or bill an empty assistant response on stream error", asy
 
   expect(history).toEqual([userMessage("user-error", "inspect the cluster")]);
   expect(appendCalls).toHaveLength(1);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
   expect(activeLease).toBeNull();
 });
@@ -1276,7 +1471,8 @@ test("closes an interrupted approval with a durable tool error", async () => {
     })
   );
   expect(activeLease).toBeNull();
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
 
   streamMode = "success";
@@ -1286,7 +1482,8 @@ test("closes an interrupted approval with a durable tool error", async () => {
   expect(followUp.status).toBe(200);
   await drain(followUp);
   expect(modelCalls).toBe(2);
-  expect(consumeCalls).toBe(1);
+  expect(reserveCalls).toBe(2);
+  expect(releaseCalls).toBe(1);
 });
 
 test("rejects the reserved stream lease message id", async () => {
@@ -1319,7 +1516,8 @@ test("discards a late response after its lease is stolen", async () => {
   await drain(response);
 
   expect(history).toEqual([user]);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
   expect(activeLease?.token).toBe("replacement-owner");
   expect(leaseReleaseCalls).toBe(0);
@@ -1339,7 +1537,8 @@ test("keeps partial assistant text but does not bill an errored stream", async (
   expect(history[1]?.parts).toContainEqual(
     expect.objectContaining({ text: "Recovered response", type: "text" })
   );
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
 });
 
@@ -1361,7 +1560,8 @@ test("drops partial tool input when an errored stream has durable text", async (
       (part) => "state" in part && part.state === "input-streaming"
     )
   ).toBe(false);
-  expect(consumeCalls).toBe(0);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
 });
 
@@ -1494,4 +1694,347 @@ test("chat drops a template intent when the catalog is unavailable, keeping the 
       process.env.TEMPLATE_PROVIDER_URL = originalProviderUrl;
     }
   }
+});
+
+test("hands an exhausted active trial off to the user's AI Proxy", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  trialJudgment = "trial";
+
+  const response = await POST(
+    chatRequest(userMessage("user-paid-after-free", "one more message"))
+  );
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
+  await drain(response);
+
+  expect(connectionBillingCalls).toEqual(["user"]);
+  expect(modelCalls).toBe(1);
+  expect(reserveCalls).toBe(0);
+});
+
+test.each([
+  {
+    code: "account_balance_exhausted",
+    paidSource: "balance" as const,
+    standing: {
+      accountDebt: true,
+      availableBalanceMicroUnits: -6_320_000,
+      paidSource: "balance" as const,
+    },
+    wall: "balance",
+  },
+  {
+    code: "ai_credits_exhausted",
+    paidSource: "ai-credits" as const,
+    standing: {
+      accountDebt: false,
+      aiCredits: {
+        totalMicroUnits: 3_000_000,
+        usedMicroUnits: 3_000_000,
+      },
+      paidSource: "ai-credits" as const,
+    },
+    wall: "ai-credits",
+  },
+])("walls an exhausted active trial before handing off to an exhausted $paidSource source", async ({
+  code,
+  paidSource,
+  standing,
+  wall,
+}) => {
+  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  trialJudgment = "trial";
+  billingStanding = { ...billingStanding, ...standing };
+
+  const response = await POST(
+    chatRequest(userMessage(`user-exhausted-${paidSource}`, "one more message"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(((await response.json()) as { code: string }).code).toBe(code);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe(paidSource);
+  expect(response.headers.get("X-Chat-Wall")).toBe(wall);
+  expect(history).toEqual([]);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
+});
+
+test("judges the trial per turn with the verified workspace identity", async () => {
+  const response = await POST(
+    chatRequest(userMessage("user-judged", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  await drain(response);
+
+  expect(judgmentCalls).toEqual([
+    {
+      userId: null,
+      userUid: `${WORKSPACE_ACTOR}-uid`,
+      workspace: NAMESPACE,
+    },
+  ]);
+});
+
+test("a failed judgment with turns remaining serves the turn free (fail-open)", async () => {
+  trialJudgment = "unknown";
+
+  const response = await POST(
+    chatRequest(userMessage("user-fail-open", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("free");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("4");
+  await drain(response);
+
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
+});
+
+test("a failed judgment with the allowance exhausted degrades to user, never 402", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  trialJudgment = "unknown";
+
+  const response = await POST(
+    chatRequest(userMessage("user-degraded", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  await drain(response);
+
+  expect(reserveCalls).toBe(0);
+});
+
+test("a non-trial workspace bills user from its first message, allowance untouched", async () => {
+  trialJudgment = "not-trial";
+
+  const response = await POST(
+    chatRequest(userMessage("user-paid", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("5");
+  await drain(response);
+
+  expect(reserveCalls).toBe(0);
+});
+
+test("the turn spending the last free message reports the next user-billed posture", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "trial";
+
+  const response = await POST(
+    chatRequest(userMessage("user-last-free", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
+  await drain(response);
+
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
+  expect(connectionBillingCalls).toEqual(["free"]);
+});
+
+test("FREE_CHAT_TURNS=0 keeps silent user billing and never judges the trial", async () => {
+  freeTierSnapshot = { limit: 0, remaining: 0, used: 0 };
+
+  const response = await POST(
+    chatRequest(userMessage("user-disabled", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  await drain(response);
+
+  expect(judgmentCalls).toEqual([]);
+  expect(reserveCalls).toBe(0);
+});
+
+test("a lost reservation race on a confirmed trial continues with user billing", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "trial";
+  denyReservation = () => {
+    // The concurrent winner spent the last turn between snapshot and reserve.
+    freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-race-loser", "one more message"))
+  );
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  await drain(response);
+
+  expect(connectionBillingCalls).toEqual(["user"]);
+  expect(modelCalls).toBe(1);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
+});
+
+test("a lost reservation race with an unknown judgment degrades to user billing", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "unknown";
+  denyReservation = () => {
+    freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-race-degraded", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  await drain(response);
+
+  expect(modelCalls).toBe(1);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
+});
+
+test("a stream error on the last free turn rolls the reservation back", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "trial";
+  streamMode = "error";
+
+  const response = await POST(
+    chatRequest(userMessage("user-last-free-error", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  // The optimistic post-turn header is truthful at send time: the turn is
+  // already reserved when the response starts streaming…
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  await drain(response);
+
+  // …and the failed stream rolls it back, so the turn stays spendable.
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
+  expect(freeTierSnapshot).toEqual({ limit: 5, remaining: 1, used: 4 });
+});
+
+test("a PAYG workspace in Account Debt is walled with 402 before the model, headers naming the wall", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: true,
+    availableBalanceMicroUnits: -6_320_000,
+    paidSource: "balance",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-walled", "deploy something"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(await response.json()).toEqual({
+    code: "account_balance_exhausted",
+    error:
+      "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
+  });
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+  expect(response.headers.get("X-Chat-Wall")).toBe("balance");
+  expect(standingCalls).toEqual([
+    { userId: null, userUid: `${WORKSPACE_ACTOR}-uid`, workspace: NAMESPACE },
+  ]);
+  // Refused before any conversation state mutates.
+  expect(history).toEqual([]);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+});
+
+test("a subscribed workspace with its AI Credits spent is walled on credits", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 3_000_000 },
+    paidSource: "ai-credits",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-credits", "deploy something"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(((await response.json()) as { code: string }).code).toBe(
+    "ai_credits_exhausted"
+  );
+  expect(response.headers.get("X-Chat-Wall")).toBe("ai-credits");
+  expect(modelCalls).toBe(0);
+});
+
+test("an open paid workspace streams with its paid source in the headers; unknown standing fails open", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 1_200_000 },
+    paidSource: "ai-credits",
+  };
+
+  const open = await POST(chatRequest(userMessage("user-open", "hi")));
+  expect(open.status).toBe(200);
+  expect(open.headers.get("X-Chat-Paid-Source")).toBe("ai-credits");
+  expect(open.headers.get("X-Chat-Wall")).toBe("");
+  await drain(open);
+
+  billingStanding = { ...billingStanding, paidSource: null, aiCredits: null };
+  const unknown = await POST(chatRequest(userMessage("user-unknown", "hi")));
+  expect(unknown.status).toBe(200);
+  expect(unknown.headers.get("X-Chat-Paid-Source")).toBe("");
+  await drain(unknown);
+});
+
+test("a free turn never consults the paid wall — the standing read beside the trial judgment is ignored", async () => {
+  // ADR-0068: the standing reads leave with the trial judgment under one
+  // budget, so they happen; only a `user` posture looks at the answer.
+  trialJudgment = "trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: true,
+    paidSource: "balance",
+  };
+
+  const response = await POST(chatRequest(userMessage("user-free", "hi")));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("free");
+  expect(response.headers.get("X-Chat-Wall")).toBe("");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("");
+  expect(standingCalls).toHaveLength(1);
+  await drain(response);
+});
+
+test("aiproxy refusing the token request for balance reads as a billing refusal, not a connection outage", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    paidSource: "balance",
+  };
+  connectionRefusal = {
+    message:
+      '{"type":"group_balance_not_enough","message":"group `ns` balance not enough"}',
+    status: 403,
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-refused", "deploy something"))
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({
+    code: "ai_proxy_billing_refused",
+    detail: { paidSource: "balance" },
+    error: "The AI proxy refused this turn for billing reasons.",
+  });
 });

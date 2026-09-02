@@ -1,5 +1,5 @@
 import type { CanvasNodeVisualStatusTone } from "@workspace/ui/components/canvas-node/canvas-node.types";
-import type { ProjectShortcutIconKeyMap } from "@/features/projects/project-shortcut-icons";
+import type { ProjectIconKeyMap } from "@/features/projects/project-icons";
 
 export interface ProjectExplorerProject {
   createdAt: Date | string;
@@ -44,8 +44,8 @@ export interface ProjectExplorerStates {
   pinnedProjectIds?: readonly string[];
   /** Maximum number of Pinned Projects allowed in product navigation. */
   pinnedProjectLimit?: number;
-  /** Presentation-only Project Shortcut Icon keys, prepared from Project workloads. */
-  projectShortcutIconKeys?: ProjectShortcutIconKeyMap;
+  /** Presentation-only Project Icon keys, prepared from Project workloads. */
+  projectIconKeys?: ProjectIconKeyMap;
   projects: ProjectExplorerProject[];
 }
 

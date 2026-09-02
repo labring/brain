@@ -197,6 +197,7 @@ func apRenderInputFromObject(obj unstructured.Unstructured, namespace string) or
 		Args:             stringSliceFromValue(input["args"]),
 		Command:          stringSliceFromValue(input["command"]),
 		ConfigMaps:       apConfigMapsFromInput(input),
+		DisplayName:      orchestration.DisplayNameAnnotationCreateValue(obj.GetAnnotations()[orchestration.BrainDisplayNameAnnotation]),
 		Env:              envVarsFromValue(input["env"]),
 		EnvRawSource:     stringFromMap(input, "envRawSource"),
 		Image:            stringFromMap(input, "image"),

@@ -23,27 +23,29 @@ function randomLowercaseLetters(length = RANDOM_LETTER_COUNT): string {
   return out;
 }
 
-/** Child resource name: `{kind}-{6 random lowercase letters}` (DNS-1035 label). */
+/**
+ * Child resource name: slugified source prefix plus 6 random lowercase
+ * letters (DNS-1035 label), e.g. `nginx-xkqjzw` (ADR 0066). The source is
+ * what named the deployment — Docker image segment, DB engine, or template
+ * name; an unusable source falls back to the kind itself (`ap-xkqjzw`).
+ * The random suffix keeps names collision-safe without a uniqueness check.
+ */
 export function childResourceName(
-  projectName: string,
+  sourceName: string,
   kind: ChildResourceKind = "ap"
 ): string {
-  if (kind === "template") {
-    const maxPrefixLength = DNS_1035_MAX_LENGTH - RANDOM_SUFFIX_LENGTH;
-    let prefix = projectName
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, maxPrefixLength)
-      .replace(/-+$/g, "");
-    if (prefix === "") {
-      prefix = "template";
-    } else if (!DNS_1035_START_RE.test(prefix)) {
-      prefix = `app-${prefix}`.slice(0, maxPrefixLength).replace(/-+$/g, "");
-    }
-
-    return `${prefix}-${randomLowercaseLetters()}`;
+  const maxPrefixLength = DNS_1035_MAX_LENGTH - RANDOM_SUFFIX_LENGTH;
+  let prefix = sourceName
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxPrefixLength)
+    .replace(/-+$/g, "");
+  if (prefix === "") {
+    prefix = kind;
+  } else if (!DNS_1035_START_RE.test(prefix)) {
+    prefix = `app-${prefix}`.slice(0, maxPrefixLength).replace(/-+$/g, "");
   }
 
-  return `${kind}-${randomLowercaseLetters()}`;
+  return `${prefix}-${randomLowercaseLetters()}`;
 }

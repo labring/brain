@@ -1,18 +1,18 @@
-// Public surface of @workspace/dev-tweaks.
-// biome-ignore lint/performance/noBarrelFile: package entry point re-exporting the panel API.
-export {
-  DevTweaksIndicator,
-  type DevTweaksIndicatorProps,
-} from "./indicator";
-export { DevTweaksPanel, type DevTweaksPanelProps } from "./panel/panel";
-export { DevTweaksProvider, type DevTweaksProviderProps } from "./provider";
+"use client";
+
+// Public surface of @workspace/dev-tweaks. Implementation origin: ./panel/ORIGIN.md
+// biome-ignore lint/performance/noBarrelFile: package entry point.
+export { type CssVarBinding, cssVarOverrides } from "./css-vars";
+export { DevTweaksRoot } from "./panel/components/dev-tweaks-root";
+export { useDevTweaks } from "./panel/hooks/use-dev-tweaks";
+export { useDevTweaksMock } from "./panel/hooks/use-dev-tweaks-mock";
+export { preserveDevTweaksPanelAcrossReload } from "./panel/panel-visibility";
 export type {
-  DevTweaksActiveEntry,
-  DevTweaksControlDef,
-  DevTweaksControlValue,
-  DevTweaksDriver,
-  DevTweaksGroupDef,
-  DevTweaksValue,
-  DevTweaksValues,
-} from "./types";
-export { useDevTweaks } from "./use-dev-tweaks";
+  DevTweaksConfig,
+  ResolvedValues,
+} from "./panel/store/dev-tweaks-store";
+export type {
+  DevTweaksMockDef,
+  DevTweaksMockSource,
+  DevTweaksMockState,
+} from "./panel/store/mock-store";

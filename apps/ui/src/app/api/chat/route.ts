@@ -9,14 +9,20 @@ import {
   type UIMessage,
   type UIMessageStreamOnFinishCallback,
 } from "ai";
+import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
   type ChatBillingMode,
   resolveChatOpenAiConnection,
 } from "@/features/chat/ai-proxy/resolve-chat-open-ai-connection";
 import {
-  consumeFreeTurnIfAvailable,
+  type ChatBillingActor,
+  judgeChatBilling,
+  withPaidChatWall,
+} from "@/features/chat/persistence/chat-billing-judgment";
+import {
   getFreeTierSnapshot,
-  isSystemOpenAiConfigured,
+  releaseReservedFreeTurn,
+  reserveFreeTurnIfAvailable,
 } from "@/features/chat/persistence/free-tier";
 import {
   freeTierPosture,
@@ -35,6 +41,7 @@ import {
   releaseOwnedChatStreamLease,
   renewOwnedChatStreamLease,
 } from "@/features/chat/persistence/service";
+import type { FreeTierState } from "@/features/chat/persistence/types";
 import {
   type AssistantConversationOwner,
   buildAssistantContinuationFromPending,
@@ -47,6 +54,10 @@ import {
   normalizeAssistantNamespace,
   type VerifiedAssistantConversationActor,
 } from "@/features/chat/persistence/types";
+import {
+  chatStreamErrorText,
+  isAiProxyBillingRefusal,
+} from "@/features/chat/runtime/ai-proxy-billing-refusal";
 import { attachToolDurationMetrics } from "@/features/chat/runtime/attach-tool-duration-metrics";
 import {
   type ChatStreamLeaseHeartbeat,
@@ -54,7 +65,10 @@ import {
 } from "@/features/chat/runtime/chat-stream-lease-heartbeat";
 import { withDeployIntentContext } from "@/features/chat/runtime/deploy-intent-context-bridge";
 import { sanitizeDeployIntentParts } from "@/features/chat/runtime/deploy-intent-validation";
-import { jsonError } from "@/features/chat/runtime/errors";
+import {
+  type ChatApiErrorBody,
+  jsonError,
+} from "@/features/chat/runtime/errors";
 import { createInjectToolDurationStreamTransform } from "@/features/chat/runtime/inject-tool-duration-stream";
 import {
   CHAT_MAX_STEPS,
@@ -63,6 +77,8 @@ import {
 } from "@/features/chat/runtime/model";
 import { withSelectedResourceContext } from "@/features/chat/runtime/selected-resource-context";
 import { buildChatToolset } from "@/features/chat/runtime/tools";
+import { withWorkspaceResourceContext } from "@/features/chat/runtime/workspace-resource-context";
+import { observeWorkspaceQuotaQuietly } from "@/features/notifications/producers";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
@@ -73,6 +89,47 @@ const CHAT_TITLE_TIMEOUT_MS = 5000;
 
 const INTERRUPTED_TOOL_ERROR =
   "Tool execution was interrupted before a result was available.";
+
+/** The `X-Chat-*` set every chat response carries — paid-wall refusals included. */
+function chatBillingHeaders(state: FreeTierState): Record<string, string> {
+  return {
+    "X-Chat-Billing": state.billing,
+    "X-Chat-Free-Remaining": String(state.remaining),
+    "X-Chat-Free-Limit": String(state.limit),
+    "X-Chat-Paid-Source": state.paidSource ?? "",
+    "X-Chat-Wall": state.wall ?? "",
+  };
+}
+
+/** The paid wall's refusal (design spec row E3). */
+function paidWallResponse(state: FreeTierState): Response {
+  const body: ChatApiErrorBody =
+    state.wall === "ai-credits"
+      ? {
+          code: "ai_credits_exhausted",
+          error:
+            "This workspace's AI Credits are used up. Upgrade the plan to keep chatting with the assistant.",
+        }
+      : {
+          code: "account_balance_exhausted",
+          error:
+            "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
+        };
+  return Response.json(body, {
+    headers: chatBillingHeaders(state),
+    status: 402,
+  });
+}
+
+async function releaseReservedFreeTurnQuietly(
+  namespace: string
+): Promise<void> {
+  try {
+    await releaseReservedFreeTurn(namespace);
+  } catch (error) {
+    console.error("[api/chat] release reserved free turn:", error);
+  }
+}
 
 function persistableAssistantResponse(
   responseMessage: UIMessage,
@@ -181,11 +238,13 @@ function incompleteToolHistoryResponse(
       }
       if (part.state === "approval-requested") {
         return jsonError(
+          "tool_approval_pending",
           "A tool approval is pending. Approve or deny it before sending a new message.",
           409
         );
       }
       return jsonError(
+        "incomplete_tool_history",
         "This conversation contains an incomplete tool call that cannot be recovered. Start a new chat to continue.",
         409
       );
@@ -246,10 +305,18 @@ function prepareIncomingChatMessage(
   | { prepared: PreparedIncomingChatMessage; response?: never }
   | { prepared?: never; response: Response } {
   if (!isPersistedUIMessage(message)) {
-    return { response: jsonError("Malformed UI message payload", 400) };
+    return {
+      response: jsonError(
+        "invalid_request",
+        "Malformed UI message payload",
+        400
+      ),
+    };
   }
   if (isReservedChatMessageId(message.id)) {
-    return { response: jsonError("Reserved chat message id", 400) };
+    return {
+      response: jsonError("invalid_request", "Reserved chat message id", 400),
+    };
   }
 
   if (message.role === "user") {
@@ -266,6 +333,7 @@ function prepareIncomingChatMessage(
   if (!isAssistantContinuationMessage(message)) {
     return {
       response: jsonError(
+        "invalid_request",
         "Only user messages or valid assistant continuations accepted.",
         400
       ),
@@ -276,6 +344,7 @@ function prepareIncomingChatMessage(
   if (pending == null) {
     return {
       response: jsonError(
+        "stale_assistant_continuation",
         "Stale assistant continuation for this thread. Reload and retry.",
         409
       ),
@@ -289,6 +358,7 @@ function prepareIncomingChatMessage(
     if (isDeepStrictEqual(pending.parts, candidate.parts)) {
       return {
         response: jsonError(
+          "stale_assistant_continuation",
           "Stale assistant continuation for this thread. Reload and retry.",
           409
         ),
@@ -296,6 +366,7 @@ function prepareIncomingChatMessage(
     }
     return {
       response: jsonError(
+        "invalid_request",
         "Invalid assistant continuation for this thread.",
         400
       ),
@@ -320,6 +391,19 @@ function prepareIncomingChatMessage(
   };
 }
 
+async function sanitizeIncomingDeployIntent(
+  prepared: PreparedIncomingChatMessage
+): Promise<void> {
+  if (prepared.type !== "user") {
+    return;
+  }
+  // Fail-closed inbound scrub for data-deployIntent parts: at most one
+  // validated intent survives; invalid or forged parts are dropped without
+  // blocking ordinary chat (ADR-0072). The sanitized message is what gets
+  // projected into history, persisted, and shown to the model.
+  prepared.message = await sanitizeDeployIntentParts(prepared.message);
+}
+
 async function commitIncomingChatMessage(
   chatId: string,
   lease: ChatStreamLease,
@@ -342,12 +426,18 @@ async function commitIncomingChatMessage(
   });
   if (renewedLease == null) {
     return {
-      response: jsonError(
+      response:
         prepared.type === "assistant"
-          ? "Stale assistant continuation for this thread. Reload and retry."
-          : "Assistant thread changed concurrently. Reload and retry.",
-        409
-      ),
+          ? jsonError(
+              "stale_assistant_continuation",
+              "Stale assistant continuation for this thread. Reload and retry.",
+              409
+            )
+          : jsonError(
+              "assistant_thread_conflict",
+              "Assistant thread changed concurrently. Reload and retry.",
+              409
+            ),
     };
   }
 
@@ -403,6 +493,7 @@ async function acquireLeaseForHistory(
   if (lease == null) {
     return {
       response: jsonError(
+        "assistant_turn_in_progress",
         "Another assistant turn is already running. Reload and retry.",
         409
       ),
@@ -416,6 +507,7 @@ async function acquireLeaseForHistory(
   await releaseLeaseQuietly(lease);
   return {
     response: jsonError(
+      "assistant_thread_conflict",
       "Assistant thread changed concurrently. Reload and retry.",
       409
     ),
@@ -434,11 +526,12 @@ function createChatStreamFinishHandler(input: {
 }): UIMessageStreamOnFinishCallback<UIMessage> {
   return async ({ finishReason, isAborted, responseMessage }) => {
     const lease = await input.heartbeat.stop();
-    if (lease == null) {
-      return;
-    }
+    let freeTurnSpent = false;
     let leaseReleased = false;
     try {
+      if (lease == null) {
+        return;
+      }
       const interrupted =
         isAborted || finishReason == null || finishReason === "error";
       const persistable = persistableAssistantResponse(
@@ -466,17 +559,7 @@ function createChatStreamFinishHandler(input: {
       if (interrupted) {
         return;
       }
-      if (input.billing === "free") {
-        const consumed = await consumeFreeTurnIfAvailable(
-          input.owner.namespace
-        );
-        if (!consumed) {
-          console.warn(
-            "[api/chat] free turn not recorded (limit reached concurrently):",
-            input.owner.namespace
-          );
-        }
-      }
+      freeTurnSpent = true;
       await releaseLeaseQuietly(lease);
       leaseReleased = true;
       await maybeAutoTitleThread({
@@ -489,7 +572,13 @@ function createChatStreamFinishHandler(input: {
     } catch (error) {
       console.error("[api/chat] persist assistant turn:", error);
     } finally {
-      if (!leaseReleased) {
+      // A `free` turn arrives here holding its pre-stream reservation; only
+      // a persisted, uninterrupted turn keeps it — an empty or errored
+      // stream, an abort, or a lost lease rolls it back.
+      if (input.billing === "free" && !freeTurnSpent) {
+        await releaseReservedFreeTurnQuietly(input.owner.namespace);
+      }
+      if (lease != null && !leaseReleased) {
         await releaseLeaseQuietly(lease);
       }
     }
@@ -530,8 +619,81 @@ async function cleanUpFailedChatPipeline(input: {
   }
 }
 
+/**
+ * Chat Billing Posture for this turn (ADR-0069), with the free turn already
+ * reserved on the counter when it returns `billing: "free"`. Reserving before
+ * any model execution makes concurrent turns race on the counter itself, so
+ * the allowance can never be overspent; the caller owns rolling the
+ * reservation back on every unsuccessful path. The trial judgment and the
+ * paid wall's standing reads run in parallel under one budget (ADR-0068).
+ */
+async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
+  | { response: Response; billing?: never }
+  | {
+      billing: ChatBillingMode;
+      /** Post-turn posture for the `X-Chat-*` response headers. */
+      clientFreeTier: FreeTierState;
+      reserved: boolean;
+      response?: never;
+    }
+> {
+  const judgment = await judgeChatBilling(actor);
+  const { snapshot: freeTier, systemModelConfigured, trial } = judgment;
+  const posture = freeTierPosture(freeTier, systemModelConfigured, trial);
+  if (posture.billing !== "free") {
+    const walled = await withPaidChatWall(posture, judgment);
+    if (walled.wall != null) {
+      return { response: paidWallResponse(walled) };
+    }
+    return {
+      billing: "user",
+      clientFreeTier: walled,
+      reserved: false,
+    };
+  }
+
+  if (await reserveFreeTurnIfAvailable(actor.namespace)) {
+    // Headers carry the POST-turn posture: the turn spending the last free
+    // turn already reports `user`, so the next request uses the caller's AI
+    // Proxy without one-message-late client inference.
+    return {
+      billing: "free",
+      clientFreeTier: freeTierPostureAfterTurn(
+        freeTier,
+        systemModelConfigured,
+        trial
+      ),
+      reserved: true,
+    };
+  }
+
+  // Lost the counter race to a concurrent turn: re-judge on a fresh snapshot
+  // and continue as a user-billed turn, walled on the standing already read
+  // for this request.
+  const contested = await getFreeTierSnapshot(actor.namespace);
+  const contestedPosture = freeTierPosture(
+    contested,
+    systemModelConfigured,
+    trial
+  );
+  const walled = await withPaidChatWall(
+    { ...contestedPosture, billing: "user" },
+    judgment
+  );
+  if (walled.wall != null) {
+    return { response: paidWallResponse(walled) };
+  }
+  return {
+    billing: "user",
+    clientFreeTier: walled,
+    reserved: false,
+  };
+}
+
 async function runChatPipeline(input: {
   actor: VerifiedAssistantConversationActor;
+  /** Forwards the billing dev-mock scenario cookie in dev/demo builds. */
+  cookieHeader: string | null;
   kubeconfig: string;
   request: ChatStreamRequest;
   requestAbortSignal: AbortSignal;
@@ -543,40 +705,49 @@ async function runChatPipeline(input: {
   let ownedLease: ChatStreamLease | null = null;
   let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
+  let ownedFreeTurnReservation = false;
   try {
+    // The Active Free Trial is judged live on every turn (ADR-0069). Once its
+    // allowance is exhausted, the same request continues through the paid
+    // wall and the caller's AI Proxy.
+    const settled = await settleTurnBillingPosture({
+      accountUserId: actor.accountUserId ?? null,
+      cookieHeader: input.cookieHeader,
+      namespace: owner.namespace,
+      userUid: owner.userUid,
+    });
+    if (settled.response != null) {
+      return settled.response;
+    }
+    const { billing, clientFreeTier } = settled;
+    ownedFreeTurnReservation = settled.reserved;
+
     // Adopt before the thread ensure: continuing a legacy crName-keyed
     // conversation must find the re-keyed row instead of refusing its id.
     await adoptLegacyAssistantConversationsForActor(actor);
 
     const threadReady = await ensureAssistantThreadForOwner(chatId, actor);
     if (!threadReady) {
-      return jsonError("Assistant conversation not found.", 404);
+      return jsonError(
+        "assistant_conversation_not_found",
+        "Assistant conversation not found.",
+        404
+      );
     }
 
     const storedHistory = await loadMessagesForOwner(chatId, owner);
     if (storedHistory == null) {
-      return jsonError("Assistant conversation not found.", 404);
+      return jsonError(
+        "assistant_conversation_not_found",
+        "Assistant conversation not found.",
+        404
+      );
     }
     const incoming = prepareIncomingChatMessage(storedHistory, message);
     if (incoming.response != null) {
       return incoming.response;
     }
-    if (incoming.prepared.type === "user") {
-      // Fail-closed inbound scrub for data-deployIntent parts: at most one
-      // validated intent survives; invalid or forged parts are dropped without
-      // blocking ordinary chat (ADR-0065). The sanitized message is what gets
-      // projected into history, persisted, and shown to the model.
-      incoming.prepared.message = await sanitizeDeployIntentParts(
-        incoming.prepared.message
-      );
-    }
-
-    const freeTier = await getFreeTierSnapshot(owner.namespace);
-    const systemModelConfigured = isSystemOpenAiConfigured();
-    const billing: ChatBillingMode = freeTierPosture(
-      freeTier,
-      systemModelConfigured
-    ).billing;
+    await sanitizeIncomingDeployIntent(incoming.prepared);
 
     // Complete every fallible runtime preflight before committing an approval
     // or browser-tool continuation. A failed preflight must remain retryable.
@@ -585,6 +756,11 @@ async function runChatPipeline(input: {
     // kubeconfig-verified identity (AIM-154 keeps them token-free).
     const { tools, systemPrompt } = await buildChatToolset({
       assistantContext,
+      billingActor: {
+        cookieHeader: input.cookieHeader,
+        userId: actor.accountUserId ?? null,
+        userUid: owner.userUid,
+      },
       chatId,
       kubeconfig,
       kubernetesNamespace: owner.namespace,
@@ -598,7 +774,26 @@ async function runChatPipeline(input: {
       billing,
     });
     if (!openAi.ok) {
-      return jsonError(openAi.message, openAi.status);
+      // aiproxy refuses an exhausted group at the token request too; the
+      // pane must hear "billing", not "connection unavailable".
+      if (
+        isAiProxyBillingRefusal({
+          bodyText: openAi.message,
+          status: openAi.status,
+        })
+      ) {
+        return jsonError(
+          "ai_proxy_billing_refused",
+          "The AI proxy refused this turn for billing reasons.",
+          openAi.status,
+          { paidSource: clientFreeTier.paidSource ?? null }
+        );
+      }
+      return jsonError(
+        "ai_connection_unavailable",
+        openAi.message,
+        openAi.status
+      );
     }
     const model = chatLanguageModel(openAi.connection);
     const titleModel = threadTitleLanguageModel(openAi.connection);
@@ -608,7 +803,12 @@ async function runChatPipeline(input: {
     );
     assertCompleteToolHistory(history);
     const modelMessages = await convertToModelMessages(
-      withDeployIntentContext(withSelectedResourceContext(history)),
+      withDeployIntentContext(
+        withWorkspaceResourceContext(
+          withSelectedResourceContext(history),
+          input.request.workspaceResourceQuota
+        )
+      ),
       { tools }
     );
 
@@ -669,18 +869,7 @@ async function runChatPipeline(input: {
       },
     });
 
-    // Headers carry the POST-turn posture: the turn spending the last free
-    // turn already reports `user`, so the pane retires the counter at
-    // exhaustion instead of pinning "Free 0/n" until the next message.
-    const clientFreeTier = freeTierPostureAfterTurn(
-      freeTier,
-      systemModelConfigured
-    );
-    const responseHeaders: Record<string, string> = {
-      "X-Chat-Billing": clientFreeTier.billing,
-      "X-Chat-Free-Remaining": String(clientFreeTier.remaining),
-      "X-Chat-Free-Limit": String(clientFreeTier.limit),
-    };
+    const responseHeaders = chatBillingHeaders(clientFreeTier);
 
     const streamHeartbeat = leaseHeartbeat;
     const response = result.toUIMessageStreamResponse({
@@ -688,6 +877,10 @@ async function runChatPipeline(input: {
       originalMessages: history,
       generateMessageId: generateId,
       headers: responseHeaders,
+      // A mid-stream aiproxy billing refusal reaches the pane classified;
+      // every other error stays masked.
+      onError: (error) =>
+        chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
       onFinish: createChatStreamFinishHandler({
         billing,
         chatId,
@@ -702,6 +895,9 @@ async function runChatPipeline(input: {
     ownedLease = null;
     leaseHeartbeat = null;
     rollbackAssistant = null;
+    // The finish handler owns the reservation from here: it keeps it on a
+    // billable turn and rolls it back on an unsuccessful one.
+    ownedFreeTurnReservation = false;
     return response;
   } catch (error) {
     if (leaseHeartbeat != null) {
@@ -716,46 +912,120 @@ async function runChatPipeline(input: {
     if (error instanceof IdentityBindingSupersededError) {
       // The binding was superseded by an account merge mid-request; the
       // desktop re-login loop re-mints a current token (ADR-0059).
-      return jsonError("Authentication is required.", 401);
+      return jsonError(
+        "app_token_superseded",
+        "Authentication is required.",
+        401
+      );
     }
     console.error("[api/chat] pipeline:", error);
     return jsonError(
+      "assistant_chat_unavailable",
       "Could not handle chat request (DATABASE_URL, schema migrations, or upstream).",
       503
     );
+  } finally {
+    // Covers every exit between reservation and the streaming response —
+    // early refusals (404/409), preflight failures, and thrown errors.
+    if (ownedFreeTurnReservation) {
+      await releaseReservedFreeTurnQuietly(owner.namespace);
+    }
   }
 }
 
+/**
+ * Lets the Conversation Dev Mock stage an aiproxy billing refusal mid-stream
+ * in dev and demo builds (`NEXT_PUBLIC_DEV_TWEAKS=1` marks a demo image); a
+ * production build statically drops the dynamic import — the same gate as
+ * the persistence routes.
+ */
+async function devMockStreamResponse(req: Request): Promise<Response | null> {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PUBLIC_DEV_TWEAKS !== "1"
+  ) {
+    return null;
+  }
+  const { chatDevMockStreamResponse } = await import(
+    "@/features/chat/dev-fixtures"
+  );
+  return chatDevMockStreamResponse(req);
+}
+
 export async function POST(req: Request) {
+  const staged = await devMockStreamResponse(req);
+  if (staged != null) {
+    return staged;
+  }
   const body = await req.json().catch(() => null);
   if (body == null) {
-    return jsonError("Invalid JSON body", 400);
+    return jsonError("invalid_request", "Invalid JSON body", 400);
   }
 
-  const parsed = chatStreamRequestSchema.safeParse(body);
+  const isObjectBody =
+    typeof body === "object" && body !== null && !Array.isArray(body);
+  const rawWorkspaceResourceQuota = isObjectBody
+    ? (body as Record<string, unknown>).workspaceResourceQuota
+    : undefined;
+  const chatBody = isObjectBody
+    ? Object.fromEntries(
+        Object.entries(body as Record<string, unknown>).filter(
+          ([key]) => key !== "workspaceResourceQuota"
+        )
+      )
+    : body;
+  const parsed = chatStreamRequestSchema.safeParse(chatBody);
   if (!parsed.success) {
-    return jsonError("Invalid chat request", 400, parsed.error.flatten());
+    return jsonError(
+      "invalid_request",
+      "Invalid chat request",
+      400,
+      parsed.error.flatten()
+    );
   }
+  const workspaceResourceQuota = workspaceResourceQuotaSnapshotSchema.safeParse(
+    rawWorkspaceResourceQuota
+  );
+  const request: ChatStreamRequest = workspaceResourceQuota.success
+    ? { ...parsed.data, workspaceResourceQuota: workspaceResourceQuota.data }
+    : parsed.data;
 
   const authorization = await authorizeWorkspaceActor({
     appToken: appTokenFromRequest(req),
-    encodedKubeconfig: parsed.data.encodedKubeconfig,
-    expectedNamespace: parsed.data.namespace.trim() || undefined,
+    encodedKubeconfig: request.encodedKubeconfig,
+    expectedNamespace: request.namespace.trim() || undefined,
     normalizeNamespace: normalizeAssistantNamespace,
   });
   if (!authorization.ok) {
-    return jsonError(authorization.message, authorization.status);
+    return jsonError(
+      authorization.code,
+      authorization.message,
+      authorization.status
+    );
   }
   const actor: VerifiedAssistantConversationActor =
     verifiedPersonalResourceActor(authorization);
+  // The chat turn is a natural observation point for the quota-exhausted
+  // producer: the snapshot already crossed the server boundary here.
+  if (workspaceResourceQuota.success) {
+    observeWorkspaceQuotaQuietly({
+      namespace: authorization.namespace,
+      snapshot: workspaceResourceQuota.data,
+    });
+  }
   const kubeconfig = decodeKubeconfig(parsed.data.encodedKubeconfig);
   if (kubeconfig == null) {
-    return jsonError("Authentication is required.", 401);
+    return jsonError(
+      "authentication_required",
+      "Authentication is required.",
+      401
+    );
   }
   return runChatPipeline({
     actor,
+    cookieHeader: req.headers.get("cookie"),
     kubeconfig,
-    request: parsed.data,
+    request,
     requestAbortSignal: req.signal,
   });
 }

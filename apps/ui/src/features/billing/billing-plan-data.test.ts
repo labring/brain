@@ -10,6 +10,7 @@ import {
   loadBillingPlanSnapshot,
   loadSubscriptionTransactionStatus,
   loadSubscriptionUpgradeQuote,
+  loadWorkspaceSubscriptionSummary,
   SubscriptionPromotionCodeError,
   updateSubscriptionLifecycle,
 } from "./billing-plan-data";
@@ -1036,8 +1037,10 @@ test("loads the latest subscription transaction status for payment waiting", asy
 
   assert.deepEqual(transaction, {
     id: "transaction-1",
+    operator: "upgraded",
     payId: "payment-1",
     planName: "Team",
+    startAt: null,
     status: "completed",
   });
   assert.equal(request?.url, "/api/billing/subscription/last-transaction");
@@ -1121,4 +1124,127 @@ test("creates a hosted card management session with verified credentials", async
     regionDomain: "us.example.test",
     workspace: "workspace-a",
   });
+});
+
+function loadSummaryWithSubscription(overrides: Record<string, unknown>) {
+  const responses: Record<string, unknown> = {
+    "/api/billing/regions": RESPONSES["/api/billing/regions"],
+    "/api/billing/subscription": {
+      subscription: {
+        ...(
+          RESPONSES["/api/billing/subscription"] as {
+            subscription: Record<string, unknown>;
+          }
+        ).subscription,
+        CancelAtPeriodEnd: false,
+        ...overrides,
+      },
+    },
+  };
+  const requests: Array<{ init: RequestInit | undefined; url: string }> = [];
+  const summary = loadWorkspaceSubscriptionSummary(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    {
+      fetch: (input, init) => {
+        const url = input.toString();
+        requests.push({ init, url });
+        const response = responses[url];
+        assert.notEqual(
+          response,
+          undefined,
+          `response fixture exists for ${url}`
+        );
+        return Promise.resolve(Response.json(response));
+      },
+    }
+  );
+  return { requests, summary };
+}
+
+test("loads the sidebar subscription summary with only region-addressed reads", async () => {
+  const { requests, summary } = loadSummaryWithSubscription({});
+
+  assert.deepEqual(await summary, {
+    currentPeriodEndAt: "2026-08-31T00:00:00Z",
+    isActiveFreeTrial: false,
+    isPayg: false,
+    lifecycle: "active",
+    planName: "Pro",
+    recoveryVoice: "renew",
+    role: "OWNER",
+    warningDeadlineAt: null,
+    warningStage: null,
+  });
+  assert.deepEqual(
+    requests.map((request) => request.url),
+    ["/api/billing/regions", "/api/billing/subscription"]
+  );
+  assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), {
+    regionDomain: "us.example.test",
+    workspace: "workspace-a",
+  });
+});
+
+test("the sidebar summary reports an Active Free Trial and its period end", async () => {
+  const { summary } = loadSummaryWithSubscription({
+    PlanName: "Free",
+    Status: "NORMAL",
+  });
+
+  assert.deepEqual(await summary, {
+    currentPeriodEndAt: "2026-08-31T00:00:00Z",
+    isActiveFreeTrial: true,
+    isPayg: false,
+    lifecycle: "active",
+    planName: "Free",
+    recoveryVoice: "resubscribe",
+    role: "OWNER",
+    warningDeadlineAt: null,
+    warningStage: null,
+  });
+});
+
+test("the sidebar summary derives cancelling and payment-due lifecycles", async () => {
+  const cancelling = await loadSummaryWithSubscription({
+    CancelAtPeriodEnd: true,
+  }).summary;
+  assert.equal(cancelling.lifecycle, "cancelling");
+
+  const paymentDue = await loadSummaryWithSubscription({ Status: "debt" })
+    .summary;
+  assert.equal(paymentDue.lifecycle, "payment-due");
+});
+
+test("the sidebar summary presents a deleted subscription as PAYG", async () => {
+  const { summary } = loadSummaryWithSubscription({ Status: "DELETED" });
+
+  assert.deepEqual(await summary, {
+    currentPeriodEndAt: "",
+    isActiveFreeTrial: false,
+    isPayg: true,
+    lifecycle: "active",
+    planName: "PAYG",
+    recoveryVoice: "renew",
+    role: "OWNER",
+    warningDeadlineAt: null,
+    warningStage: null,
+  });
+});
+
+test("the sidebar summary carries the Deletion Countdown's stage and derived deadline", async () => {
+  // ADR-0063: the status hint states the deletion date exactly as the Plan
+  // view does — expiry plus the fixed grace, derived client-side.
+  const { summary } = loadSummaryWithSubscription({
+    CurrentPeriodEndAt: "2026-08-20T00:00:00Z",
+    Status: "DEBT",
+  });
+  const result = await summary;
+  assert.equal(result.lifecycle, "payment-due");
+  assert.equal(result.warningStage, "expired");
+  assert.equal(result.warningDeadlineAt, "2026-09-03T00:00:00.000Z");
+  assert.equal(result.recoveryVoice, "renew");
 });

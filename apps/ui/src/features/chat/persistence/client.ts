@@ -17,10 +17,13 @@ const uiMessageSchema = z
   })
   .passthrough() as unknown as z.ZodType<UIMessage>;
 
+const paidSourceSchema = z.enum(["ai-credits", "balance"]).nullable();
 const freeTierSchema = z.object({
   billing: z.enum(["free", "user"]),
   remaining: z.number(),
   limit: z.number(),
+  paidSource: paidSourceSchema.optional(),
+  wall: paidSourceSchema.optional(),
 });
 
 const sessionResponseSchema = z.object({
@@ -37,6 +40,14 @@ const threadsResponseSchema = z.object({
 const messagesResponseSchema = z.object({
   messages: z.array(uiMessageSchema),
 });
+
+const freeTurnsUsageSchema = z.object({
+  limit: z.number(),
+  remaining: z.number(),
+  used: z.number(),
+});
+
+export type FreeChatTurnsUsage = z.infer<typeof freeTurnsUsageSchema>;
 
 /** Credentials every personal conversation fetcher sends (ADR-0059). */
 export interface AssistantFetcherCredentials {
@@ -82,6 +93,20 @@ export async function fetchAssistantThreads(
     personalResourceAuthHeaders(credentials)
   );
   return data === null ? null : data.threads;
+}
+
+/**
+ * Usage-only Free Chat Turns snapshot for the Billing Area's allowance card
+ * (ADR-0065). `null` when the lookup failed — the card degrades quietly.
+ */
+export function fetchFreeChatTurnsUsage(
+  credentials: AssistantFetcherCredentials
+): Promise<FreeChatTurnsUsage | null> {
+  return safeJsonGet(
+    `/api/chat/free-turns?namespace=${encodeURIComponent(credentials.namespace)}`,
+    freeTurnsUsageSchema,
+    personalResourceAuthHeaders(credentials)
+  );
 }
 
 export async function fetchAssistantThreadMessages(

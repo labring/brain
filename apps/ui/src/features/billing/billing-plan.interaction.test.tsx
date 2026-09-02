@@ -29,12 +29,14 @@ const SNAPSHOT: BillingPlanSnapshot = {
     currentPeriodEndAt: "2026-08-31T00:00:00Z",
     invoiceId: null,
     invoicePaymentUrl: null,
+    isActiveFreeTrial: false,
     isPayg: false,
     lifecycle: "active",
     payMethod: "stripe",
     periodEndVoice: "renewal",
     planName: "Pro",
     priceMicroUnits: 20_000_000,
+    recoveryVoice: "renew",
     regionDomain: "us.example.test",
     resources: [{ label: "CPU", value: "4" }],
     warningDeadlineAt: null,
@@ -345,9 +347,11 @@ test("a settled poll closes the checkout and picker into congratulations", async
               loadTransaction: () =>
                 Promise.resolve({
                   id: "transaction-1",
+                  operator: "upgraded",
                   payId: "payment-1",
                   planName: "Team",
                   status: "completed",
+                  startAt: null,
                 }),
               loadUpgradeQuote: () =>
                 Promise.resolve({
@@ -442,6 +446,18 @@ test("a settled poll closes the checkout and picker into congratulations", async
 const PLAN_PAGE_RESPONSES: Record<string, unknown> = {
   "/api/billing/account": {
     account: { Balance: 4_200_000, DeductionBalance: 1_200_000 },
+  },
+  // A paid plan's own grant: the aggregate feeds the available total while
+  // the zero KYC pair keeps the Gift chip away.
+  "/api/billing/credits": {
+    credits: {
+      credits: 3_000_000,
+      currentPlanCreditsBalance: 3_000_000,
+      currentPlanCreditsDeductionBalance: 1_200_000,
+      deductionCredits: 1_200_000,
+      kycDeductionCreditsBalance: 0,
+      kycDeductionCreditsDeductionBalance: 0,
+    },
   },
   "/api/billing/card": {
     payment_method: {
@@ -758,6 +774,163 @@ test("Plan renders without waiting for the AI Credits request", async () => {
       assert.ok(text.includes("Account Balance"));
       assert.ok(rendered?.getByLabelText("Loading AI Credits"));
       assert.equal(text.includes("1,200 / 2,000"), false);
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("Account Balance composes cash and usable credits without a Gift chip", async () => {
+  // AIM-323 review: a paid plan's grant feeds the available total ($3.00
+  // cash + $1.80 plan credits) but must never be labeled Gift.
+  await withTestDom(async (act) => {
+    const { rendered, restore } = await renderPlanPage(act, (pathname) =>
+      jsonFixtureResponse(PLAN_PAGE_RESPONSES, pathname)
+    );
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("Account Balance"));
+      assert.ok(text.includes("$4.80"), "cash + usable credits renders");
+      assert.equal(text.includes("Gift"), false, "plan credits are not Gift");
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a failed credits request never voices Account Debt on cash alone", async () => {
+  // Cash-only ≤ 0 while credits are unknown: unseen credits could still
+  // cover the account, so the figure stays unvoiced instead of going red.
+  await withTestDom(async (act) => {
+    const responses = planPageResponses({
+      "/api/billing/account": {
+        account: { Balance: 0, DeductionBalance: 500_000 },
+      },
+    });
+    const { rendered, restore } = await renderPlanPage(act, (pathname) => {
+      if (pathname === "/api/billing/credits") {
+        return new Response(JSON.stringify({ error: "credits unavailable" }), {
+          headers: { "content-type": "application/json" },
+          status: 500,
+        });
+      }
+      return jsonFixtureResponse(responses, pathname);
+    });
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("-$0.50"), "the cash figure still renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "no debt caption without the credits term"
+      );
+    } finally {
+      await restore();
+    }
+  });
+});
+
+const FREE_TRIAL_SUBSCRIPTION = {
+  subscription: {
+    CancelAtPeriodEnd: true,
+    CurrentPeriodEndAt: "2026-09-01T00:00:00Z",
+    ExpireAt: "2026-09-01T00:00:00Z",
+    PayMethod: "stripe",
+    PlanName: "Free",
+    RegionDomain: "us.example.test",
+    Status: "NORMAL",
+    Workspace: "workspace-a",
+    role: "OWNER" as const,
+    type: "SUBSCRIPTION" as const,
+  },
+};
+
+test("an Active Free Trial renders the allowance card in the credits slot, not AI Credits", async () => {
+  await withTestDom(async (act) => {
+    const responses = planPageResponses({
+      "/api/billing/subscription": FREE_TRIAL_SUBSCRIPTION,
+      "/api/chat/free-turns": { limit: 5, remaining: 3, used: 2 },
+    });
+    const { rendered, restore } = await renderPlanPage(act, (pathname) =>
+      jsonFixtureResponse(responses, pathname)
+    );
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("Free trial messages"));
+      assert.ok(text.includes("Included with the Free plan"));
+      assert.ok(text.includes("3 of 5 left"));
+      // Same slot and hierarchy as the paid plans' AI Credits section.
+      assertTextOrder(text, [
+        "Current Workspace Plan",
+        "Free trial messages",
+        "Account Balance",
+      ]);
+      assert.equal(text.includes("AI Credits:"), false);
+      assert.ok(
+        rendered?.getByRole("progressbar", {
+          name: "Free trial messages used",
+        })
+      );
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a PAUSED Free workspace renders no allowance card and never asks Brain for usage", async () => {
+  await withTestDom(async (act) => {
+    const requestedPaths: string[] = [];
+    const responses = planPageResponses({
+      "/api/billing/subscription": {
+        subscription: {
+          ...FREE_TRIAL_SUBSCRIPTION.subscription,
+          CurrentPeriodEndAt: "",
+          ExpireAt: null,
+          Status: "PAUSED",
+        },
+      },
+      "/api/billing/workspace-quota": {
+        quota: { hard: { ai_quota: 0 }, used: { ai_quota: 0 } },
+      },
+    });
+    const { rendered, restore } = await renderPlanPage(act, (pathname) => {
+      requestedPaths.push(pathname);
+      return jsonFixtureResponse(responses, pathname);
+    });
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.equal(text.includes("Free trial messages"), false);
+      assert.equal(requestedPaths.includes("/api/chat/free-turns"), false);
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a failed usage lookup degrades the allowance card quietly", async () => {
+  await withTestDom(async (act) => {
+    const responses = planPageResponses({
+      "/api/billing/subscription": FREE_TRIAL_SUBSCRIPTION,
+    });
+    const { rendered, restore } = await renderPlanPage(act, (pathname) =>
+      pathname === "/api/chat/free-turns"
+        ? new Response("brain unavailable", { status: 503 })
+        : jsonFixtureResponse(responses, pathname)
+    );
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("Free trial messages"));
+      assert.ok(
+        text.includes(
+          "Usage is unavailable right now — your free trial messages still work."
+        )
+      );
+      assert.equal(text.includes("of 5 left"), false);
     } finally {
       await restore();
     }

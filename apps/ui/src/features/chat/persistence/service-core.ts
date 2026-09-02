@@ -1,6 +1,5 @@
 import type { generateText, UIMessage } from "ai";
 
-import { freeTierPosture } from "./free-tier-core";
 import type {
   AssistantConversationRepository,
   ThreadRow,
@@ -25,11 +24,6 @@ type AssistantConversationServiceRepository = Pick<
 
 export interface AssistantConversationServiceDependencies {
   generateChatId: () => string;
-  getFreeChatTurns: (namespace: string) => Promise<{
-    limit: number;
-    remaining: number;
-  }>;
-  isSystemModelConfigured: () => boolean;
   placeholderTitle: () => string;
   repository: AssistantConversationServiceRepository;
   titleThread: (input: {
@@ -67,24 +61,20 @@ export function createAssistantConversationService(
 ) {
   const repository = dependencies.repository;
   return {
+    // Chat Billing Posture deliberately stays out of conversation
+    // persistence: the session handler resolves it separately (ADR-0065's
+    // live trial judgment) and merges it into the wire payload.
     bootstrap: async (
       ownerRaw: AssistantConversationOwner
-    ): Promise<AssistantSessionPayload> => {
+    ): Promise<Omit<AssistantSessionPayload, "freeTier">> => {
       const owner = normalizedOwner(ownerRaw);
       const rows = await repository.selectThreadsByOwner(owner);
-      // Free Chat Turns deliberately remain keyed only by namespace (ADR 0056).
-      const snapshot = await dependencies.getFreeChatTurns(owner.namespace);
-      const freeChatTurns = freeTierPosture(
-        snapshot,
-        dependencies.isSystemModelConfigured()
-      );
       const latest = rows[0];
       if (latest === undefined) {
         return {
           chatId: dependencies.generateChatId(),
           messages: [],
           threads: [],
-          freeTier: freeChatTurns,
         };
       }
       return {
@@ -92,7 +82,6 @@ export function createAssistantConversationService(
         messages:
           (await repository.selectMessagesByOwner(owner, latest.id)) ?? [],
         threads: toThreadDTOs(rows),
-        freeTier: freeChatTurns,
       };
     },
 

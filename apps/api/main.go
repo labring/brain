@@ -22,6 +22,7 @@ import (
 	"sealos/api/route/db"
 	"sealos/api/route/health"
 	"sealos/api/route/k8s"
+	"sealos/api/route/notification"
 	"sealos/api/route/telemetry"
 )
 
@@ -70,6 +71,7 @@ func main() {
 	k8s.RegisterExecWebSocket(router)
 	ap.Register(api)
 	db.Register(api)
+	notification.Register(api)
 	telemetry.Register(api)
 
 	fmt.Printf("Server listening on :%s\n", port)
@@ -346,9 +348,10 @@ func addLogsQueryExamples(_ *huma.OpenAPI, op *huma.Operation) {
 // those paths and internally appends the slash so chi can match.
 func appendSlashForGroupRoots(next http.Handler) http.Handler {
 	roots := map[string]bool{
-		"/api/ap/v1alpha1":  true,
-		"/api/db/v1alpha1":  true,
-		"/api/k8s/v1alpha1": true,
+		"/api/ap/v1alpha1":    true,
+		"/api/db/v1alpha1":    true,
+		"/api/k8s/v1alpha1":   true,
+		notification.BasePath: true,
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if roots[r.URL.Path] {

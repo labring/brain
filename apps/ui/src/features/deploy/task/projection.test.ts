@@ -41,6 +41,7 @@ test("deployment task projection includes active project tasks", () => {
     cancelRequestedAt: null,
     canvasProjection: {},
     completedAt: null,
+    failureReason: null,
     display: {
       resultSummary: "Result pending",
       sourceKind: "docker",
@@ -719,4 +720,34 @@ test("deployment task projection visibility schedules only real expiry ticks", (
     ),
     undefined
   );
+});
+
+test("a failed task's projection carries its Deployment Failure Reason for the dock chip", () => {
+  const failed = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      completedAt: NOW,
+      failureDetails: { reason: "balance-exhausted" },
+      phase: "apply",
+      status: "failed",
+    }),
+    NOW
+  );
+  assert.equal(failed?.failureReason, "balance-exhausted");
+
+  const unclassified = toDeploymentTaskProjection(
+    deploymentTaskSource({
+      completedAt: NOW,
+      failureDetails: { reason: "not-a-reason" as never },
+      phase: "apply",
+      status: "failed",
+    }),
+    NOW
+  );
+  assert.equal(unclassified?.failureReason, null);
+
+  const running = toDeploymentTaskProjection(
+    deploymentTaskSource({ phase: "apply", status: "applying" }),
+    NOW
+  );
+  assert.equal(running?.failureReason, null);
 });

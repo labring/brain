@@ -17,7 +17,17 @@ import {
   githubConnections,
   githubOauthConnections,
   identityFingerprints,
+  identityUidCanonicalizations,
 } from "@/features/chat/persistence/schema";
+import { deployTasks } from "@/features/deploy/task/schema";
+import {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
+import {
+  notificationMessages,
+  notificationReadReceipts,
+} from "@/features/notifications/schema";
 import { onboardingProfiles } from "@/features/onboarding/schema";
 
 import {
@@ -218,15 +228,50 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
     ownerIdentityVersion: 1,
     workspaceActor: "merge-cr",
   });
-
-  assert.deepEqual(
-    await observe({
-      crName: "merge-cr",
-      mintedAt: 4000,
-      userUid: "survivor-uid",
-    }),
-    { outcome: "merge" }
+  const consentProvenance = {
+    issuer: "sealos-desktop",
+    issued_at: "2026-08-13T00:00:00.000Z",
+    jti: "merge-marketing-jti",
+    region: "region-a",
+    source: "desktop_oauth",
+    subject_id: "tombstone-uid",
+  } as const;
+  await db.insert(deployTasks).values({
+    id: "merge-marketing-task",
+    marketingAttribution: {
+      ad_personalization: "granted",
+      ad_user_data_consent: "granted",
+      click_id_candidates: [],
+      consent_provenance: consentProvenance,
+      first_touch: null,
+      gbraid: null,
+      gclid: "tombstone-gclid",
+      last_touch: null,
+      version: 3,
+      wbraid: null,
+    },
+    namespace: "merge-marketing",
+    phase: "completed",
+    runner: { kind: "template" },
+    source: { kind: "template", templateName: "merge-marketing" },
+    status: "completed",
+    target: { kind: "existingProject", projectId: "merge-marketing" },
+  });
+  await db.insert(marketingLifecycleEvents).values(
+    (["one", "two", "three"] as const).map((suffix) => ({
+      eventId: `merge-marketing-${suffix}`,
+      eventName: "build_started" as const,
+      consentProvenance,
+      occurredAt: new Date("2026-08-13T00:00:00.000Z"),
+      userId: "tombstone-uid",
+    }))
   );
+
+  const telemetry = await observeCapturingTelemetry({
+    crName: "merge-cr",
+    mintedAt: 4000,
+    userUid: "survivor-uid",
+  });
 
   assert.deepEqual(await selectFingerprint("merge-cr"), {
     mintedAt: 4000,
@@ -266,6 +311,102 @@ test("a newer-minted contradiction re-keys both resource types and is idempotent
       workspaceActor: "merge-cr",
     },
   ]);
+  const [marketingTask] = await db
+    .select({ marketingAttribution: deployTasks.marketingAttribution })
+    .from(deployTasks)
+    .where(eq(deployTasks.id, "merge-marketing-task"));
+  assert.equal(
+    marketingTask?.marketingAttribution?.consent_provenance?.subject_id,
+    "survivor-uid"
+  );
+  assert.deepEqual(
+    (
+      await db
+        .select({
+          userId: marketingLifecycleEvents.userId,
+        })
+        .from(marketingLifecycleEvents)
+        .where(
+          inArray(marketingLifecycleEvents.eventId, [
+            "merge-marketing-one",
+            "merge-marketing-two",
+            "merge-marketing-three",
+          ])
+        )
+    ).map((event) => event.userId),
+    ["survivor-uid", "survivor-uid", "survivor-uid"]
+  );
+  assert.deepEqual(
+    (
+      await db
+        .select({
+          consentProvenance: marketingLifecycleEvents.consentProvenance,
+        })
+        .from(marketingLifecycleEvents)
+        .where(
+          inArray(marketingLifecycleEvents.eventId, [
+            "merge-marketing-one",
+            "merge-marketing-two",
+            "merge-marketing-three",
+          ])
+        )
+    ).map((event) => event.consentProvenance?.subject_id),
+    ["survivor-uid", "survivor-uid", "survivor-uid"]
+  );
+  assert.deepEqual(
+    await db
+      .select({
+        consentProvenance: marketingAttributionSubjects.consentProvenance,
+        gclid: marketingAttributionSubjects.gclid,
+        subjectId: marketingAttributionSubjects.subjectId,
+        subjectType: marketingAttributionSubjects.subjectType,
+      })
+      .from(marketingAttributionSubjects)
+      .where(
+        inArray(marketingAttributionSubjects.subjectId, [
+          "tombstone-uid",
+          "survivor-uid",
+        ])
+      ),
+    [
+      {
+        consentProvenance: {
+          ...consentProvenance,
+          subject_id: "survivor-uid",
+        },
+        gclid: "tombstone-gclid",
+        subjectId: "survivor-uid",
+        subjectType: "user",
+      },
+    ]
+  );
+  assert.equal(telemetry?.attributionSubjectsRekeyed, 1);
+  assert.equal(telemetry?.attributionSubjectsReleased, 0);
+  assert.equal(telemetry?.deployAttributionProvenanceRekeyed, 1);
+  assert.equal(telemetry?.identityUidCanonicalizationsRekeyed, 1);
+  assert.equal(telemetry?.lifecycleEventsRekeyed, 3);
+  assert.deepEqual(
+    await db
+      .select()
+      .from(identityUidCanonicalizations)
+      .where(
+        inArray(identityUidCanonicalizations.userUid, [
+          "tombstone-uid",
+          "survivor-uid",
+        ])
+      )
+      .orderBy(identityUidCanonicalizations.userUid),
+    [
+      {
+        canonicalUserUid: "survivor-uid",
+        userUid: "survivor-uid",
+      },
+      {
+        canonicalUserUid: "survivor-uid",
+        userUid: "tombstone-uid",
+      },
+    ]
+  );
 
   // Replaying the same newer token is a plain match and changes nothing.
   assert.deepEqual(
@@ -302,15 +443,24 @@ test("where the survivor already reauthorized, that connection wins and the tomb
     namespace: "winner-b",
     workspaceActor: "loser-uid",
   });
+  await db.insert(marketingAttributionSubjects).values([
+    {
+      gclid: "survivor-gclid",
+      subjectId: "winner-uid",
+      subjectType: "user",
+    },
+    {
+      gclid: "tombstone-gclid",
+      subjectId: "loser-uid",
+      subjectType: "user",
+    },
+  ]);
 
-  assert.deepEqual(
-    await observe({
-      crName: "winner-cr",
-      mintedAt: 6000,
-      userUid: "winner-uid",
-    }),
-    { outcome: "merge" }
-  );
+  const telemetry = await observeCapturingTelemetry({
+    crName: "winner-cr",
+    mintedAt: 6000,
+    userUid: "winner-uid",
+  });
 
   assert.deepEqual(await selectConnections("winner-a"), [
     {
@@ -328,6 +478,23 @@ test("where the survivor already reauthorized, that connection wins and the tomb
       workspaceActor: "winner-uid",
     },
   ]);
+  assert.deepEqual(
+    await db
+      .select({
+        gclid: marketingAttributionSubjects.gclid,
+        subjectId: marketingAttributionSubjects.subjectId,
+      })
+      .from(marketingAttributionSubjects)
+      .where(
+        inArray(marketingAttributionSubjects.subjectId, [
+          "loser-uid",
+          "winner-uid",
+        ])
+      ),
+    [{ gclid: "survivor-gclid", subjectId: "winner-uid" }]
+  );
+  assert.equal(telemetry?.attributionSubjectsRekeyed, 0);
+  assert.equal(telemetry?.attributionSubjectsReleased, 1);
 });
 
 test("a merge re-keys pending current-generation authorization sessions and leaves legacy ones", async () => {
@@ -517,6 +684,185 @@ test("where both merged accounts hold a profile, the survivor's row wins and the
   );
   assert.equal(telemetry?.profilesRekeyed, 0);
   assert.equal(telemetry?.profilesReleased, 1);
+});
+
+function selectReceipts(userUids: string[]) {
+  return db
+    .select({
+      messageId: notificationReadReceipts.messageId,
+      messageKey: notificationReadReceipts.messageKey,
+      userUid: notificationReadReceipts.userUid,
+    })
+    .from(notificationReadReceipts)
+    .where(inArray(notificationReadReceipts.userUid, userUids))
+    .orderBy(
+      notificationReadReceipts.userUid,
+      notificationReadReceipts.messageKey
+    );
+}
+
+function selectMessages(userUids: string[]) {
+  return db
+    .select({
+      dedupeKey: notificationMessages.dedupeKey,
+      id: notificationMessages.id,
+      namespace: notificationMessages.namespace,
+      releasedAt: notificationMessages.releasedAt,
+      userUid: notificationMessages.userUid,
+    })
+    .from(notificationMessages)
+    .where(inArray(notificationMessages.userUid, userUids))
+    .orderBy(notificationMessages.userUid, notificationMessages.id);
+}
+
+test("a merge re-keys the tombstone's read receipts and drops those the survivor already holds", async () => {
+  await observe({
+    crName: "receipt-cr",
+    mintedAt: 10_000,
+    userUid: "receipt-tombstone-uid",
+  });
+  await db.insert(notificationMessages).values({
+    dedupeKey: "quota-exhausted:receipt-ns:cpu",
+    id: "receipt-msg",
+    kind: "quota-exhausted",
+    namespace: "receipt-ns",
+    payload: { kind: "quota-exhausted", limit: 1, resource: "cpu", used: 1 },
+  });
+  await db.insert(notificationReadReceipts).values([
+    // Only the tombstone read these: they follow the survivor, the db one
+    // still attached to its row.
+    {
+      messageKey: "cr:debt-choice-debtperiod:1",
+      userUid: "receipt-tombstone-uid",
+    },
+    {
+      messageId: "receipt-msg",
+      messageKey: "db:receipt-msg",
+      userUid: "receipt-tombstone-uid",
+    },
+    // Both read this one: the survivor's stands, the tombstone's is dropped.
+    {
+      messageKey: "cr:workspace-debt-debt:1",
+      userUid: "receipt-tombstone-uid",
+    },
+    { messageKey: "cr:workspace-debt-debt:1", userUid: "receipt-survivor-uid" },
+  ]);
+
+  const telemetry = await observeCapturingTelemetry({
+    crName: "receipt-cr",
+    mintedAt: 11_000,
+    userUid: "receipt-survivor-uid",
+  });
+
+  assert.deepEqual(
+    await selectReceipts(["receipt-tombstone-uid", "receipt-survivor-uid"]),
+    [
+      {
+        messageId: null,
+        messageKey: "cr:debt-choice-debtperiod:1",
+        userUid: "receipt-survivor-uid",
+      },
+      {
+        messageId: null,
+        messageKey: "cr:workspace-debt-debt:1",
+        userUid: "receipt-survivor-uid",
+      },
+      {
+        messageId: "receipt-msg",
+        messageKey: "db:receipt-msg",
+        userUid: "receipt-survivor-uid",
+      },
+    ]
+  );
+  assert.equal(telemetry?.receiptsRekeyed, 2);
+  assert.equal(telemetry?.receiptsReleased, 1);
+});
+
+test("a merge re-keys the tombstone's account-scoped messages, key included, and collapses onto the survivor's live row", async () => {
+  await observe({
+    crName: "message-cr",
+    mintedAt: 12_000,
+    userUid: "message-tombstone-uid",
+  });
+  const giftPayload = {
+    giftMicroUnits: 1_000_000,
+    kind: "credit-hint",
+  } as const;
+  await db.insert(notificationMessages).values([
+    // The tombstone's welcome, observed in its own workspace.
+    {
+      dedupeKey: "credit-hint:message-tombstone-uid",
+      id: "message-tombstone-gift",
+      kind: "credit-hint",
+      namespace: "tombstone-ns",
+      payload: giftPayload,
+      userUid: "message-tombstone-uid",
+    },
+  ]);
+
+  const first = await observeCapturingTelemetry({
+    crName: "message-cr",
+    mintedAt: 13_000,
+    userUid: "message-survivor-uid",
+  });
+
+  // The row and its dedupe key follow the survivor: a later gift observation
+  // for the survivor finds this row and writes no second welcome.
+  assert.deepEqual(
+    await selectMessages(["message-tombstone-uid", "message-survivor-uid"]),
+    [
+      {
+        dedupeKey: "credit-hint:message-survivor-uid",
+        id: "message-tombstone-gift",
+        namespace: "tombstone-ns",
+        releasedAt: null,
+        userUid: "message-survivor-uid",
+      },
+    ]
+  );
+  assert.equal(first?.messagesRekeyed, 1);
+  assert.equal(first?.messagesReleased, 0);
+
+  // A second merge into the same survivor, from an account that also holds
+  // a live welcome: one row per person, so the newcomer's is deleted and
+  // its receipt cascades.
+  await observe({
+    crName: "message-cr-2",
+    mintedAt: 14_000,
+    userUid: "message-tombstone-2-uid",
+  });
+  await db.insert(notificationMessages).values({
+    dedupeKey: "credit-hint:message-tombstone-2-uid",
+    id: "message-tombstone-2-gift",
+    kind: "credit-hint",
+    namespace: "tombstone-2-ns",
+    payload: giftPayload,
+    userUid: "message-tombstone-2-uid",
+  });
+  await db.insert(notificationReadReceipts).values({
+    messageId: "message-tombstone-2-gift",
+    messageKey: "db:message-tombstone-2-gift",
+    userUid: "message-tombstone-2-uid",
+  });
+
+  const second = await observeCapturingTelemetry({
+    crName: "message-cr-2",
+    mintedAt: 15_000,
+    userUid: "message-survivor-uid",
+  });
+
+  assert.deepEqual(
+    (
+      await selectMessages(["message-tombstone-2-uid", "message-survivor-uid"])
+    ).map((row) => row.id),
+    ["message-tombstone-gift"]
+  );
+  assert.deepEqual(
+    await selectReceipts(["message-tombstone-2-uid", "message-survivor-uid"]),
+    []
+  );
+  assert.equal(second?.messagesRekeyed, 0);
+  assert.equal(second?.messagesReleased, 1);
 });
 
 test("a write-transaction re-check passes only while the binding is current", async () => {

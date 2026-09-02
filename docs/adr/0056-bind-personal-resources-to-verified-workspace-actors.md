@@ -87,6 +87,13 @@ Connection. It never copies the predecessor's actor, credential owner, or
 connection reference. Without the initiator's active connection, no new task is
 created.
 
+User-scoped marketing attribution follows the same initiator boundary. A
+redeploy by the same verified global uid may retain the predecessor's consent
+provenance. A different member keeps only attribution that the unsigned
+normalizer permits at workspace scope: campaign/touch context remains, while
+user provenance, consent state, and click identifiers are redacted unless the
+new initiator supplies a receipt bound to their uid.
+
 ### Invalidate legacy personal identity
 
 The authorization migration clears legacy GitHub Connections, Assistant

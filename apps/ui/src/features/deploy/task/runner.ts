@@ -23,7 +23,14 @@ import {
   getTemplateSource,
 } from "@/features/deploy/template-provider-core";
 import { normalizeTemplateProviderDbResources } from "@/features/deploy/template-provider-db-labels";
-import { deriveProjectDisplayName } from "@/features/projects/derived-project-display-name";
+import { stampTemplateProviderDisplayNames } from "@/features/deploy/template-provider-display-names";
+import {
+  derivedProjectDisplayNameBase,
+  deriveProjectDisplayName,
+} from "@/features/projects/derived-project-display-name";
+import { projectResourceDisplayNames } from "@/features/resource-display-name/project-resource-display-names";
+import { uniqueResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
+import { buildSealosSkillsInstallCommand } from "@/features/sealos-skills/install";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -70,6 +77,10 @@ import {
   prepareBrainManifestArtifact,
   sealosTemplateArtifactSummary,
 } from "./artifacts";
+import {
+  type DeployBillingActor,
+  judgeDeployBillingFailure,
+} from "./billing-failure-judgment";
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
 import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
@@ -89,9 +100,9 @@ import {
 } from "./failure-summary";
 import {
   codexGatewayFailureDetails,
-  DEPLOY_GATEWAY_MODEL,
   type GatewayContext,
   getCodexGatewayContextFromDevboxInfo,
+  resolveDeployGatewayModel,
   runDeployTaskGateway,
 } from "./gateway";
 import type { ManagedDeployResumeMode } from "./gateway-prompt";
@@ -208,9 +219,6 @@ const MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT = "/run/sealai/deployment";
 const MANAGED_DEPLOYMENT_FIXED_INPUT_PATH = `${MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT}/inputs.json`;
 const MANAGED_DEPLOYMENT_KUBECONFIG_PATH = "/home/devbox/.kube/config";
 const MANAGED_VERIFICATION_QUERY_BATCH_MS = 60_000;
-const SKILL_INSTALL_COMMAND_TIMEOUT_SECONDS =
-  DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000;
-const DEPLOY_SKILLS_CLI_VERSION = "1.5.20";
 const READ_OUTPUT_TIMEOUT_SECONDS = DEPLOY_TIMEOUT_POLICY.outputReadMs / 1000;
 const DEPLOY_OUTPUT_PROGRESS_POLL_MS = DEPLOY_TIMEOUT_POLICY.outputPollMs;
 const DIRECT_AP_READINESS_POLL_MS = 5000;
@@ -230,6 +238,12 @@ const TEMPLATE_CLEANUP_KINDS = [
 ] as const;
 
 export interface StartDeployTaskRunnerInput {
+  /**
+   * The launching request's verified account identity, request memory only
+   * (like the kubeconfig), so a terminal failure can re-read the workspace's
+   * billing standing and name a money or quota wall (design spec E1/E2).
+   */
+  billingActor?: DeployBillingActor;
   /** Authoritative blockers captured immediately before the resume claim. */
   currentBlockingInputs?: readonly DeployTaskBlockingInput[];
   encodedKubeconfig?: string;
@@ -602,13 +616,21 @@ async function applyDeploymentArtifact(input: {
       signal: input.signal,
       templateName: input.artifact.templateName,
     });
-    await normalizeTemplateProviderDbResources({
+    const normalizedDbResources = await normalizeTemplateProviderDbResources({
       encodedKubeconfig: input.kubeconfig,
       instanceName: deployed.instanceName,
       namespace: input.task.namespace,
       projectId: input.task.projectId ?? deployed.instanceName,
       resources: deployed.resources,
       signal: input.signal,
+      templateName: input.artifact.templateName,
+    });
+    await stampTemplateProviderDisplayNames({
+      dbResources: normalizedDbResources,
+      kubeconfig: input.kubeconfig,
+      namespace: input.task.namespace,
+      projectId: input.task.projectId ?? deployed.instanceName,
+      resources: deployed.resources,
       templateName: input.artifact.templateName,
     });
     const created: DeploymentTemplateInstanceArtifact = {
@@ -1043,31 +1065,44 @@ export interface CodexGatewayOpenAiCredentials {
 }
 
 export function buildCodexGatewayEnv(
-  credentials?: CodexGatewayOpenAiCredentials
+  credentials: CodexGatewayOpenAiCredentials
 ): Record<string, string> {
-  const env: Record<string, string> = {};
-  const apiKey = credentials
-    ? credentials.apiKey
-    : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_API_KEY) ??
-      compactEnvValue(process.env.SYSTEM_OPENAI_API_KEY));
-  const baseUrl = credentials
-    ? credentials.baseUrl
-    : (compactEnvValue(process.env.CODEX_GATEWAY_OPENAI_BASE_URL) ??
-      compactEnvValue(process.env.SYSTEM_OPENAI_API_BASE_URL));
-  const model =
-    compactEnvValue(process.env.CODEX_GATEWAY_MODEL) ?? DEPLOY_GATEWAY_MODEL;
+  const env: Record<string, string> = {
+    // Codex inside the Devbox still reads this name. The Brain UI process
+    // chooses the value from GITHUB_DEPLOY_MODEL.
+    CODEX_GATEWAY_MODEL: resolveDeployGatewayModel(),
+  };
+  env.CODEX_GATEWAY_OPENAI_API_KEY = credentials.apiKey;
+  env.CODEX_GATEWAY_OPENAI_BASE_URL = credentials.baseUrl;
 
-  if (apiKey != null) {
-    env.CODEX_GATEWAY_OPENAI_API_KEY = apiKey;
+  const langfusePublicKey = compactEnvValue(process.env.LANGFUSE_PUBLIC_KEY);
+  const langfuseSecretKey = compactEnvValue(process.env.LANGFUSE_SECRET_KEY);
+  const langfuseHost = compactEnvValue(process.env.LANGFUSE_HOST);
+  if (langfusePublicKey != null) {
+    env.LANGFUSE_PUBLIC_KEY = langfusePublicKey;
   }
-  if (baseUrl != null) {
-    env.CODEX_GATEWAY_OPENAI_BASE_URL = baseUrl;
+  if (langfuseSecretKey != null) {
+    env.LANGFUSE_SECRET_KEY = langfuseSecretKey;
   }
-  if (model != null) {
-    env.CODEX_GATEWAY_MODEL = model;
+  if (langfuseHost != null) {
+    env.LANGFUSE_HOST = langfuseHost;
   }
 
   return env;
+}
+
+export function githubDeployOpenAiOverride(): CodexGatewayOpenAiCredentials | null {
+  const apiKey = compactEnvValue(process.env.GITHUB_DEPLOY_OPENAI_API_KEY);
+  const baseUrl = compactEnvValue(process.env.GITHUB_DEPLOY_OPENAI_BASE_URL);
+  if (apiKey != null && baseUrl != null) {
+    return { apiKey, baseUrl };
+  }
+  if (apiKey != null || baseUrl != null) {
+    throw new Error(
+      "GitHub deploy OpenAI override requires both GITHUB_DEPLOY_OPENAI_API_KEY and GITHUB_DEPLOY_OPENAI_BASE_URL."
+    );
+  }
+  return null;
 }
 
 export async function resolveCodexGatewayCredentials(input: {
@@ -1321,18 +1356,58 @@ function databaseSettings(
   return settings;
 }
 
-function generateDirectArtifact(input: {
+/**
+ * Deploy-time Resource Display Name (ADR 0066): derived from the Deployment
+ * Source and numbered against the display names already taken in the
+ * Project. Naming must never fail a deploy — an unreadable project listing
+ * skips naming entirely (the resource shows its Kubernetes name) rather
+ * than risk a duplicate the rename surface would itself reject.
+ */
+async function directResourceNaming(input: {
   kubeconfig: string;
   projectName: string;
   task: DeployTaskRow;
+}): Promise<{ displayName?: string; sourceName: string }> {
+  const base = derivedProjectDisplayNameBase(input.task.source);
+  if (base == null) {
+    return { sourceName: "" };
+  }
+  let takenNames: string[];
+  try {
+    takenNames = await projectResourceDisplayNames({
+      kubeconfig: input.kubeconfig,
+      namespace: input.task.namespace,
+      projectId: input.projectName,
+    });
+  } catch {
+    // An unreadable listing blinds the numbering — deploy unnamed rather
+    // than risk a duplicate; the resource shows its Kubernetes name.
+    return { sourceName: base };
+  }
+  return {
+    displayName: uniqueResourceDisplayName(base, takenNames),
+    sourceName: base,
+  };
+}
+
+function generateDirectArtifact(input: {
+  displayName?: string;
+  kubeconfig: string;
+  projectName: string;
+  // The Kubernetes name shares the display name's source prefix so kubectl
+  // and the canvas roughly agree (`nginx-xkqjzw` next to `nginx`).
+  sourceName: string;
+  task: DeployTaskRow;
 }): DeploymentArtifact {
+  const { sourceName } = input;
   switch (input.task.source.kind) {
     case "docker": {
       const settings = dockerSettings(input.task.source.settings);
       return {
         kind: "brain-manifest",
         yaml: renderDockerDeploymentYaml({
-          name: childResourceName(input.projectName, "ap"),
+          displayName: input.displayName,
+          name: childResourceName(sourceName, "ap"),
           namespace: input.task.namespace,
           projectName: input.projectName,
           routingDomain: apUserDomain(input.kubeconfig),
@@ -1346,8 +1421,9 @@ function generateDirectArtifact(input: {
       return {
         kind: "brain-manifest",
         yaml: renderDbDeploymentYaml({
+          displayName: input.displayName,
           engine: choice.engine,
-          name: childResourceName(input.projectName, "db"),
+          name: childResourceName(sourceName, "db"),
           namespace: input.task.namespace,
           projectName: input.projectName,
           quota: settings.instancePreset,
@@ -1698,33 +1774,11 @@ export function buildManagedWorkspacePurgeCommand(): string {
 
 /** Branch/tree URL for `skills add`; override via DEPLOY_SKILL_SOURCE. */
 export function buildDeploySkillInstallCommand(skillSource: string): string {
-  return [
-    "set -euo pipefail",
-    `workspace_dir=${shellQuote(DEPLOY_WORKSPACE_DIR)}`,
-    `skill_source=${shellQuote(skillSource)}`,
-    'agent_skill_marker="$workspace_dir/.agents/skills/sealos-deploy/SKILL.md"',
-    'agent_build_skill_marker="$workspace_dir/.agents/skills/k8s-kaniko-job/SKILL.md"',
-    'codex_skill_marker="$workspace_dir/.codex/skills/sealos-deploy/SKILL.md"',
-    'codex_build_skill_marker="$workspace_dir/.codex/skills/k8s-kaniko-job/SKILL.md"',
-    "if ! command -v npx >/dev/null 2>&1; then",
-    "  printf 'ERROR: npx is required to install sealos-deploy skill\\n' >&2",
-    "  exit 1",
-    "fi",
-    "for skill_name in sealos-deploy dockerfile-skill k8s-kaniko-job cloud-native-readiness docker-to-sealos; do",
-    '  rm -rf "$workspace_dir/.agents/skills/$skill_name"',
-    '  rm -rf "$workspace_dir/.codex/skills/$skill_name"',
-    "done",
-    'cd "$workspace_dir"',
-    `timeout ${SKILL_INSTALL_COMMAND_TIMEOUT_SECONDS} npx --yes skills@${DEPLOY_SKILLS_CLI_VERSION} add "$skill_source" -y`,
-    'if [ ! -f "$agent_skill_marker" ] && [ ! -f "$codex_skill_marker" ]; then',
-    "  printf 'ERROR: sealos-deploy skill not found after install\\n' >&2",
-    "  exit 1",
-    "fi",
-    'if [ ! -f "$agent_build_skill_marker" ] && [ ! -f "$codex_build_skill_marker" ]; then',
-    "  printf 'ERROR: k8s-kaniko-job skill not found after install\\n' >&2",
-    "  exit 1",
-    "fi",
-  ].join("\n");
+  return buildSealosSkillsInstallCommand({
+    skipIfInstallMarkerMatches: false,
+    skillSource,
+    timeoutSeconds: DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000,
+  });
 }
 
 function deployOutputReadScript(): string {
@@ -1771,7 +1825,7 @@ async function ensureDeployDevbox(input: {
   githubToken?: string;
   namespace: string;
   repoUrl: string;
-  resolveGatewayCredentials?: (
+  resolveGatewayCredentials: (
     signal?: AbortSignal
   ) => Promise<CodexGatewayOpenAiCredentials>;
   signal?: AbortSignal;
@@ -1827,7 +1881,7 @@ async function ensureDeployDevbox(input: {
     return { info, name: existing.name };
   }
 
-  const gatewayCredentials = await input.resolveGatewayCredentials?.(
+  const gatewayCredentials = await input.resolveGatewayCredentials(
     input.signal
   );
   try {
@@ -2699,7 +2753,8 @@ async function runDirectDeploymentTask(input: {
     phase: "plan",
   });
 
-  const artifact = generateDirectArtifact(input);
+  const naming = await directResourceNaming(input);
+  const artifact = generateDirectArtifact({ ...input, ...naming });
   await updateDeployTaskState(input.task.id, {
     artifactSummary: { artifacts: [artifact] },
     phase: "generate-artifacts",
@@ -3148,6 +3203,18 @@ export async function ensureAiDeploymentDevbox(input: {
       namespace: input.task.namespace,
       repoUrl: aiSourceKey(input.task),
       resolveGatewayCredentials: async (signal) => {
+        if (input.task.source.kind === "github") {
+          try {
+            const override = githubDeployOpenAiOverride();
+            if (override != null) {
+              return override;
+            }
+          } catch (error) {
+            throw withDeployFailureDetails(error, {
+              reason: "deploy-configuration-invalid",
+            });
+          }
+        }
         try {
           return await resolveCodexGatewayCredentials({
             encodedKubeconfig: input.encodedKubeconfig,
@@ -3503,17 +3570,12 @@ export function enterManagedDeploymentCompletionRequired(
   return { ...state, resumeMode: "completion-required" };
 }
 
-const MAX_COMPLETION_REQUIRED_TURNS = 2;
-
 async function continueManagedDeploymentAfterMissingControlNotification(input: {
   attempt: number;
   applying: boolean;
   lifecycleState: ManagedDeploymentLifecycleState;
   taskId: string;
 }): Promise<ManagedDeploymentLifecycleState> {
-  if (input.attempt > MAX_COMPLETION_REQUIRED_TURNS) {
-    throw deployFailureError("runner-error");
-  }
   await recordDeployTaskEvent(input.taskId, {
     kind: "deployment_task.gateway_completion_required",
     message:
@@ -3588,6 +3650,7 @@ async function runManagedDeploymentLifecycleCore(input: {
   let completionRequiredTurns = 0;
 
   while (true) {
+    throwIfDeploymentDeadlineElapsed(input.executionDeadlineAtMs);
     // No per-turn limit: every turn shares the same Agent execution window,
     // which is itself clamped to the 70-minute task deadline.
     const deadlineAtMs = input.executionDeadlineAtMs;
@@ -4281,8 +4344,65 @@ export async function runDeployTask(
     if (isDeployTaskAbortError(error) || handle.outcome() != null) {
       throw error;
     }
-    await resolveDeployTaskRunFailure({ error, handle, task });
+    await resolveDeployTaskRunFailure({
+      billingActor: input.billingActor,
+      error,
+      handle,
+      task,
+    });
   }
+}
+
+/**
+ * The failure details the terminal write persists: the scrubbed provider
+ * record for raw-surfacing runners, the allowlisted structured set for the
+ * AI runner (ADR 0042); billing evidence rides both.
+ */
+function terminalFailureDetails(input: {
+  attachedDetails: DeployTaskFailureDetails;
+  billingDetails: Pick<DeployTaskFailureDetails, "billingEvidence">;
+  /** The billing reverse-check named a cause the runner never saw (ADR 0068). */
+  billingSupersedesError: boolean;
+  error: unknown;
+  reasonCode: DeployTaskFailureReason | null;
+  reasonMessage: string;
+  sensitiveValues: readonly string[];
+  surfacesRaw: boolean;
+  task: DeployTaskRow;
+}): DeployTaskFailureDetails {
+  const { attachedDetails, reasonCode, reasonMessage } = input;
+  if (input.surfacesRaw) {
+    return scrubSensitiveJsonValue(
+      {
+        ...deployFailureDetails({
+          error: input.error,
+          phase: input.task.phase,
+          source: "runDeployTask",
+          task: input.task,
+        }),
+        ...attachedDetails,
+        ...(input.billingSupersedesError
+          ? { errorMessage: reasonMessage }
+          : {}),
+        ...input.billingDetails,
+        failureMessage: reasonMessage,
+        ...(reasonCode == null ? {} : { reason: reasonCode }),
+      },
+      input.sensitiveValues
+    );
+  }
+  return {
+    ...input.billingDetails,
+    failureMessage: reasonMessage,
+    ...(typeof attachedDetails.httpStatus === "number"
+      ? { httpStatus: attachedDetails.httpStatus }
+      : {}),
+    reason: reasonCode ?? "unknown",
+    ...(attachedDetails.stage === "apply" ||
+    attachedDetails.stage === "readiness"
+      ? { stage: attachedDetails.stage }
+      : {}),
+  };
 }
 
 /**
@@ -4290,6 +4410,7 @@ export async function runDeployTask(
  * fenced `failed` transition carrying the aggregated failure details.
  */
 async function resolveDeployTaskRunFailure(input: {
+  billingActor?: DeployBillingActor;
   error: unknown;
   handle: DeployTaskHandle;
   task: DeployTaskRow;
@@ -4307,42 +4428,44 @@ async function resolveDeployTaskRunFailure(input: {
   const surfacesRaw = deployRunnerSurfacesRawFailure(latestTask.runner);
   const attachedDetails = attachedDeployFailureDetails(error);
   const attachedReason = attachedDeployFailureReason(error);
-  const reasonCode =
+  const runnerReasonCode =
     attachedReason ??
     (latestTask.runner.kind === "ai"
       ? (aiFailureReason(rawMessage) ?? "unknown")
       : null);
+  // A suspended workspace or an unschedulable pod only ever looks like a
+  // stall from here; the billing reverse-check names the wall (E1/E2).
+  const billing = await judgeDeployBillingFailure({
+    actor: input.billingActor,
+    namespace: latestTask.namespace,
+    reason: runnerReasonCode,
+  });
+  const reasonCode = billing?.reason ?? runnerReasonCode;
+  const billingDetails =
+    billing == null ? {} : { billingEvidence: billing.billingEvidence };
   const reasonMessage = deploymentFailureReason({
     rawMessage: message,
     reasonCode,
     surfacesRaw,
   });
-  const persistedMessage = surfacesRaw ? message : reasonMessage;
-  const failureDetails: DeployTaskFailureDetails = surfacesRaw
-    ? scrubSensitiveJsonValue(
-        {
-          ...deployFailureDetails({
-            error,
-            phase: latestTask.phase,
-            source: "runDeployTask",
-            task: latestTask,
-          }),
-          ...attachedDetails,
-          failureMessage: reasonMessage,
-        },
-        sensitiveValues
-      )
-    : {
-        failureMessage: reasonMessage,
-        ...(typeof attachedDetails.httpStatus === "number"
-          ? { httpStatus: attachedDetails.httpStatus }
-          : {}),
-        reason: reasonCode ?? "unknown",
-        ...(attachedDetails.stage === "apply" ||
-        attachedDetails.stage === "readiness"
-          ? { stage: attachedDetails.stage }
-          : {}),
-      };
+  // A billing cause the runner never saw (an exhausted balance, a full quota
+  // behind a pod that never came up) contradicts the stall text it arrived
+  // as, so the curated reason replaces the raw error on every runner; an
+  // apply-time quota error keeps the provider's own numbers (ADR 0068).
+  const billingSupersedesError = billing?.supersedesRunnerError === true;
+  const persistedMessage =
+    surfacesRaw && !billingSupersedesError ? message : reasonMessage;
+  const failureDetails = terminalFailureDetails({
+    attachedDetails,
+    billingDetails,
+    billingSupersedesError,
+    error,
+    reasonCode,
+    reasonMessage,
+    sensitiveValues,
+    surfacesRaw,
+    task: latestTask,
+  });
 
   await markDeployTaskFailureTimeline({
     detailMessage: persistedMessage,
@@ -4356,7 +4479,9 @@ async function resolveDeployTaskRunFailure(input: {
       kind: "deployment_task.failed",
       message: reasonMessage,
       payload: {
-        ...(surfacesRaw ? { error: persistedMessage } : {}),
+        ...(surfacesRaw && !billingSupersedesError
+          ? { error: persistedMessage }
+          : {}),
         ...(reasonCode == null ? {} : { reason: reasonCode }),
       },
       phase: latestTask.phase,

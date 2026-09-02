@@ -256,11 +256,6 @@ test("AP env settings patch compiles raw DB references into runtime env helpers"
       value: [
         { name: "PGUSER", value: "manual" },
         {
-          name: "DATABASE_URL",
-          value:
-            "postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)",
-        },
-        {
           name: "POSTGRES_USERNAME",
           valueFrom: { secretKeyRef: secretRefs.username },
         },
@@ -275,6 +270,11 @@ test("AP env settings patch compiles raw DB references into runtime env helpers"
         {
           name: "POSTGRES_PORT",
           valueFrom: { secretKeyRef: secretRefs.port },
+        },
+        {
+          name: "DATABASE_URL",
+          value:
+            "postgresql://$(POSTGRES_USERNAME):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)",
         },
       ],
     },

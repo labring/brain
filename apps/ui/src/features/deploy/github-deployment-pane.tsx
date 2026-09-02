@@ -3,6 +3,7 @@
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { DeployBillingNoticeCard } from "@/features/deploy/deploy-billing-notice-card";
 import {
   type DeploymentTaskEditRedeploy,
   REDEPLOY_OVERWRITE_WARNING,
@@ -25,6 +26,7 @@ import {
 } from "@/features/deploy/pipeline";
 import { dispatchDeployTaskCreatedEvent } from "@/features/deploy/task/browser-events";
 import { useCurrentProjectDisplayName } from "@/features/deploy/use-current-project-display-name";
+import { useDeployBillingNotice } from "@/features/deploy/use-deploy-billing-notice";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
@@ -98,6 +100,10 @@ export function GitHubDeploymentPane({
     kubeconfig,
     namespace,
   });
+  // The pre-deploy notice (ADR-0070): a condition that dooms this deploy is
+  // voiced above the deployer, which stays usable — enforcement lives at the
+  // platform, and a pressed-through failure comes back explained.
+  const billingNotice = useDeployBillingNotice();
 
   const states: GithubDeployerStates = useMemo(
     () => ({
@@ -299,7 +305,13 @@ export function GitHubDeploymentPane({
         redeploying: redeploy != null,
       })}
     >
-      <div className="min-w-0" data-slot="github-deployment-pane">
+      <div
+        className="flex min-w-0 flex-col gap-5"
+        data-slot="github-deployment-pane"
+      >
+        {billingNotice != null && (
+          <DeployBillingNoticeCard notice={billingNotice} />
+        )}
         <GithubDeployer.Root actions={actions} states={states}>
           <GithubDeployer.Shell />
         </GithubDeployer.Root>

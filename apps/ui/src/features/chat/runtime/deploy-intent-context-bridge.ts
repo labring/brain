@@ -20,7 +20,7 @@ import {
  * - keeps the payload inside a clearly-marked *data* block: everything comes
  *   from an external URL, is attribute-escaped, and is labeled as untrusted
  *   context to verify with tools — never as a direct deployment command
- *   (ADR-0065; the trust boundary differs from `data-selectedResource`, which
+ *   (ADR-0072; the trust boundary differs from `data-selectedResource`, which
  *   originates from the user's own canvas selection per ADR-0044).
  *
  * Unlike the selected-resource bridge there is no delta de-dup: an intent is

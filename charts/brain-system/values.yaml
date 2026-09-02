@@ -125,15 +125,39 @@ ui:
     # skips its boot-time schema migrations instead of applying DDL there.
     APP_POSTGRES_SKIP_MIGRATIONS: ""
     JWT_INTERNAL: ""
+    MARKETING_EVENTS_INGEST_SECRET: ""
+    MARKETING_CONSENT_SIGNING_KEY: ""
     GITHUB_APP_ID: ""
     GITHUB_APP_PRIVATE_KEY: ""
+    # Optional. Model id for GitHub Deploy Codex gateway sessions. Blank uses
+    # gpt-5.5. Independent of ASSISTANT_GATEWAY_MODEL (Chat Agent).
+    GITHUB_DEPLOY_MODEL: ""
+    # Optional platform-funded GitHub Deployment Task connection. When both
+    # are set, GitHub Deploy uses them; when both are blank, it uses the
+    # caller's AI Proxy. A partial pair is a configuration error. Independent
+    # of SYSTEM_OPENAI_* and host CODEX_GATEWAY_OPENAI_* values.
+    GITHUB_DEPLOY_OPENAI_API_KEY: ""
+    GITHUB_DEPLOY_OPENAI_BASE_URL: ""
+    # Optional. When both keys are set, GitHub Deploy Devboxes export Codex
+    # traces to Langfuse. Leave empty to disable tracing.
+    LANGFUSE_PUBLIC_KEY: ""
+    LANGFUSE_SECRET_KEY: ""
+    # Optional. Langfuse base URL. Blank uses the gateway default
+    # (https://cloud.langfuse.com). Do not append /api/public/otel.
+    LANGFUSE_HOST: ""
     GITHUB_OAUTH_CLIENT_ID: ""
     GITHUB_OAUTH_CLIENT_SECRET: ""
     GITHUB_USER_TOKEN_ENCRYPTION_KEY: ""
     TEMPLATE_PROVIDER_URL: ""
+    # Platform-funded Chat Agent connection. Eligible Active Free Trial
+    # workspaces use it for FREE_CHAT_TURNS successful turns, then use the
+    # caller's AI Proxy.
     SYSTEM_OPENAI_API_KEY: ""
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
     FREE_CHAT_TURNS: "5"
+    # Optional. Assistant chat model id. Blank uses gpt-5.5.
+    # Independent of GITHUB_DEPLOY_MODEL.
+    ASSISTANT_GATEWAY_MODEL: ""
     AI_PROXY_TOKEN_NAME: "sealos-brain"
     DEVBOX_API_BASE_URL: ""
     DEVBOX_TOKEN: ""
@@ -145,7 +169,7 @@ ui:
     # public URL + /api/deploy-agent/mcp/v1; set explicitly when the UI is
     # not publicly reachable from deployment Devboxes.
     DEPLOY_AGENT_MCP_URL: ""
-    # Optional. Leave empty to use sealos-skills.git#main. Set this to a
+    # Optional. Leave empty to use the unified Brain sealos-skills branch. Set this to a
     # branch, tag, or commit ref when selecting another tested Skill source.
     DEPLOY_SKILL_SOURCE: ""
   resources:

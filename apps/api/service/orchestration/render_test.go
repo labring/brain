@@ -930,6 +930,79 @@ func TestRenderDBResourcesLabelsAndNames(t *testing.T) {
 	}
 }
 
+func TestRenderAPResourcesWritesDisplayNameAnnotation(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		DisplayName: "My Service",
+		Image:       "nginx:1.27",
+		Name:        "nginx-xkqjzw",
+		Namespace:   "ns-a",
+		PrivatePort: 8080,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if got := resources.Deployment.Annotations[BrainDisplayNameAnnotation]; got != "My Service" {
+		t.Fatalf("%s = %q, want My Service", BrainDisplayNameAnnotation, got)
+	}
+
+	unnamed, err := RenderAPResources(APResourcesInput{
+		Image:       "nginx:1.27",
+		Name:        "nginx-xkqjzw",
+		Namespace:   "ns-a",
+		PrivatePort: 8080,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if _, ok := unnamed.Deployment.Annotations[BrainDisplayNameAnnotation]; ok {
+		t.Fatal("expected no display-name annotation without a display name")
+	}
+}
+
+func TestRenderDBResourcesWritesDisplayNameAnnotation(t *testing.T) {
+	resources, err := RenderDBResources(DBResourcesInput{
+		DisplayName: "订单库",
+		Engine:      "postgresql",
+		Name:        "postgresql-mzpqrt",
+		Namespace:   "ns-a",
+		ProjectID:   "project-a",
+		Replicas:    1,
+	})
+	if err != nil {
+		t.Fatalf("RenderDBResources returned error: %v", err)
+	}
+	if got := resources.Cluster.GetAnnotations()[BrainDisplayNameAnnotation]; got != "订单库" {
+		t.Fatalf("%s = %q, want 订单库", BrainDisplayNameAnnotation, got)
+	}
+}
+
+func TestDBObjectFromClusterSurfacesAnnotations(t *testing.T) {
+	cluster := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "apps.kubeblocks.io/v1alpha1",
+		"kind":       "Cluster",
+		"metadata": map[string]interface{}{
+			"annotations": map[string]interface{}{
+				BrainDisplayNameAnnotation: "订单库",
+			},
+			"labels": map[string]interface{}{
+				BrainDBEngineLabel: "postgresql",
+			},
+			"name":      "pg",
+			"namespace": "ns-a",
+		},
+	}}
+
+	db := DBObjectFromCluster(cluster)
+
+	metadata := db["metadata"].(map[string]interface{})
+	annotations := metadata["annotations"].(map[string]interface{})
+	if got := annotations[BrainDisplayNameAnnotation]; got != "订单库" {
+		t.Fatalf("%s = %v, want 订单库", BrainDisplayNameAnnotation, got)
+	}
+}
+
 func TestRenderDBResourcesRendersAccountRBAC(t *testing.T) {
 	resources, err := RenderDBResources(DBResourcesInput{
 		Engine:    "postgresql",

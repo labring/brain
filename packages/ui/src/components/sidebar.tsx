@@ -20,6 +20,11 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { useIsMobile } from "@workspace/ui/hooks/use-mobile";
+import { isEditableKeyboardTarget } from "@workspace/ui/lib/is-editable-keyboard-target";
+import {
+  SIDEBAR_COOKIE_MAX_AGE,
+  SIDEBAR_COOKIE_NAME,
+} from "@workspace/ui/lib/sidebar-cookie";
 import { cn } from "@workspace/ui/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
@@ -37,14 +42,13 @@ import {
   useState,
 } from "react";
 
-const SIDEBAR_COOKIE_NAME = "sidebar_state";
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 interface SidebarContextProps {
+  enableMobile: boolean;
   isMobile: boolean;
   open: boolean;
   openMobile: boolean;
@@ -67,6 +71,8 @@ function useSidebar() {
 
 function SidebarProvider({
   defaultOpen = true,
+  enableKeyboardShortcut = true,
+  enableMobile = true,
   open: openProp,
   onOpenChange: setOpenProp,
   className,
@@ -75,10 +81,13 @@ function SidebarProvider({
   ...props
 }: ComponentProps<"div"> & {
   defaultOpen?: boolean;
+  enableKeyboardShortcut?: boolean;
+  enableMobile?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const isMobile = useIsMobile();
+  const isMobileViewport = useIsMobile();
+  const isMobile = enableMobile && isMobileViewport;
   const [openMobile, setOpenMobile] = useState(false);
 
   // This is the internal state of the sidebar.
@@ -108,19 +117,26 @@ function SidebarProvider({
 
   // Adds a keyboard shortcut to toggle the sidebar.
   useEffect(() => {
+    if (!enableKeyboardShortcut) {
+      return;
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
-        event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
+        event.key !== SIDEBAR_KEYBOARD_SHORTCUT ||
+        !(event.metaKey || event.ctrlKey) ||
+        isEditableKeyboardTarget(event.target)
       ) {
-        event.preventDefault();
-        toggleSidebar();
+        return;
       }
+
+      event.preventDefault();
+      toggleSidebar();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleSidebar]);
+  }, [enableKeyboardShortcut, toggleSidebar]);
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
@@ -128,6 +144,7 @@ function SidebarProvider({
 
   const contextValue = useMemo<SidebarContextProps>(
     () => ({
+      enableMobile,
       state,
       open,
       setOpen,
@@ -136,7 +153,7 @@ function SidebarProvider({
       setOpenMobile,
       toggleSidebar,
     }),
-    [state, open, setOpen, isMobile, openMobile, toggleSidebar]
+    [enableMobile, state, open, setOpen, isMobile, openMobile, toggleSidebar]
   );
 
   return (
@@ -167,6 +184,7 @@ function Sidebar({
   variant = "sidebar",
   collapsible = "offcanvas",
   className,
+  innerClassName,
   children,
   dir,
   ...props
@@ -174,8 +192,11 @@ function Sidebar({
   side?: "left" | "right";
   variant?: "sidebar" | "floating" | "inset";
   collapsible?: "offcanvas" | "icon" | "none";
+  /** Extra classes for the inner surface element (data-slot="sidebar-inner"). */
+  innerClassName?: string;
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { enableMobile, isMobile, state, openMobile, setOpenMobile } =
+    useSidebar();
 
   if (collapsible === "none") {
     return (
@@ -192,7 +213,7 @@ function Sidebar({
     );
   }
 
-  if (isMobile) {
+  if (enableMobile && isMobile) {
     return (
       <Sheet onOpenChange={setOpenMobile} open={openMobile} {...props}>
         <SheetContent
@@ -212,7 +233,9 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          <div className={cn("flex h-full w-full flex-col", innerClassName)}>
+            {children}
+          </div>
         </SheetContent>
       </Sheet>
     );
@@ -220,7 +243,10 @@ function Sidebar({
 
   return (
     <div
-      className="group peer hidden text-sidebar-foreground md:block"
+      className={cn(
+        "group peer text-sidebar-foreground",
+        enableMobile && "hidden md:block"
+      )}
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-side={side}
       data-slot="sidebar"
@@ -241,7 +267,8 @@ function Sidebar({
       />
       <div
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-out data-[side=right]:right-0 data-[side=left]:left-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] md:flex",
+          "fixed inset-y-0 z-10 h-full w-(--sidebar-width) transition-[left,right,width] duration-200 ease-out data-[side=right]:right-0 data-[side=left]:left-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]",
+          enableMobile ? "hidden md:flex" : "flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
@@ -253,7 +280,10 @@ function Sidebar({
         {...props}
       >
         <div
-          className="flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          className={cn(
+            "flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border",
+            innerClassName
+          )}
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
         >

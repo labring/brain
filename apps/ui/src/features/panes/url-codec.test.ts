@@ -155,6 +155,32 @@ test("project surface URL codec preserves template direct project creation", () 
   });
 });
 
+test("project surface URL codec preserves GitHub direct repo intent", () => {
+  const state = parseProjectSurfaceUrlState({
+    side: "project-creation:githubDirect:https%3A%2F%2Fgithub.com%2Facme%2Fapi:auto",
+  });
+
+  assert.deepEqual(state.side, {
+    autoDeploy: true,
+    entryMode: "githubDirect",
+    githubRepo: "https://github.com/acme/api",
+    kind: "projectCreation",
+  });
+  assert.deepEqual(serializeProjectSurfaceUrlState(state), {
+    side: "project-creation:githubDirect:https%3A%2F%2Fgithub.com%2Facme%2Fapi:auto",
+  });
+});
+
+test("project surface URL codec rejects unsafe GitHub direct intents", () => {
+  for (const side of [
+    "project-creation:githubDirect:https%3A%2F%2Fgithub.com%2Facme%2Fapi%2Ftree%2Fmain",
+    "project-creation:githubDirect:https%3A%2F%2Ftoken%3Asecret%40github.com%2Facme%2Fapi",
+    "project-creation:githubDirect:https%3A%2F%2Fgithub.com%2Facme%2Fapi:unexpected",
+  ]) {
+    assert.equal(parseProjectSurfaceUrlState({ side }).side, null);
+  }
+});
+
 test("project surface URL codec preserves a template name on direct creation", () => {
   const parsed = parseProjectSurfaceUrlState({
     side: "project-creation:templateDirect:team%3Aflow%20v1",

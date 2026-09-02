@@ -4,6 +4,7 @@ import {
   deployTaskRequestParams,
   resolveDeployTaskRequestNamespace,
 } from "@/features/deploy/task/api-auth";
+import { withDeployTaskDevMock } from "@/features/deploy/task/dev-mock-route";
 import { getDeployTaskTimelineSnapshot } from "@/features/deploy/task/service";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-export async function GET(request: Request, context: RouteContext) {
+async function handleGet(request: Request, context: RouteContext) {
   const { taskId } = await context.params;
   const params = deployTaskRequestParams(request);
   const namespaceResolved = await resolveDeployTaskRequestNamespace({
@@ -42,3 +43,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
   return NextResponse.json(snapshot);
 }
+
+export const GET = withDeployTaskDevMock("timeline", handleGet, (context) =>
+  context.params.then((params) => params.taskId)
+);

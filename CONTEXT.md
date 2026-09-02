@@ -22,15 +22,21 @@ _Avoid_: Favorite Project, starred Project, recent Project.
 
 ### App Sidebar
 
-The persistent left-edge product navigation surface containing product-level navigation, Project Shortcuts, and app-level actions. It is outside the Project Canvas and is not a Side Pane or a Project list.
+The persistent left-edge product navigation surface containing product-level navigation, Project navigation (Pinned Projects and all other Projects), and app-level actions. It is outside the Project Canvas and is not a Side Pane or a Project list. It has exactly two user-controlled states, and these are their canonical names: **Expanded** (icons with text labels) and **Collapsed** (an icon rail with tooltips). Before the user has ever changed it, the App Sidebar is Collapsed; thereafter the user's last chosen state is remembered per browser. State changes only by explicit user action and is independent of viewport width.
 
-_Avoid_: Project list, left Side Pane.
+_Avoid_: Project list, left Side Pane, Project Shortcut (retired term), open/closed sidebar, full/mini sidebar, rail mode.
 
-### Project Shortcut
+### Sealos Desktop Entry
 
-A Project navigation entry in the App Sidebar: the current user's Pinned Projects plus at most one last-viewed unpinned Project. Not the complete Project list.
+The app-level link out to the platform's Sealos Desktop (user-visible label: Sealos Desktop), a menu row inside the App Sidebar's account popover. It opens the Desktop alongside Brain rather than replacing it — an exit to the platform layer, not in-app navigation, which is why the label names the destination instead of claiming a return.
 
-_Avoid_: Sidebar Project.
+_Avoid_: Back to Desktop (retired label), desktop return, home.
+
+### Project Icon
+
+The small glyph identifying a Project in navigation surfaces such as the App Sidebar's Project rows. Presentation-only and derived from the Project's workloads — the brand of a recognized AP container image, or the DB engine when the Project has no AP — falling back to a generic container mark when nothing is recognized. Not a persisted Project property and not user-chosen.
+
+_Avoid_: Project Shortcut Icon (retired term), project logo, project avatar.
 
 ## AP & Application Workloads
 
@@ -344,7 +350,27 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Failure Reason
 
-The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error.
+The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Three reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt on a Pay-As-You-Go workspace — the only kind the platform suspends for it), `subscription-expired` (a subscribed workspace suspended under a payment-due Workspace Subscription), and a resource-attributed `quota-exceeded` (a full Deployable Quota); each carries Billing Evidence, the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
+
+_Avoid_: workspace not ready (for a suspended workspace), timed out (as the reason for a billing stop).
+
+### Billing Evidence
+
+The structured record of what the Billing Interruption judgment found behind a `balance-exhausted`, `subscription-expired`, or resource-attributed `quota-exceeded` Deployment Failure Reason — the available-balance formula's result, the expired subscription, or the quota that was full — safe for every runner to persist and show. It stands in for the runner's own error whenever that error was only a stall; the provider's own apply-time quota error keeps its numbers.
+
+_Avoid_: raw timeout text, stack trace, billing dump.
+
+### Deploy Billing Notice
+
+The advisory billing callout a deployment pane shows above a still-usable form while a condition dooms every deployment the workspace could start — Account Debt on a Pay-As-You-Go workspace, a full cpu/memory/pod Deployable Quota, or a payment-due Workspace Subscription — wearing the Billing Interruption's callout and CTA. It informs and never blocks: the deploy action stays enabled, and a run pressed through a correct notice fails at the platform and comes back explained as a Billing Interruption; the assistant's deploy tool alone still refuses, pointing the user at the pane. A low but positive balance never shows it, and a full storage or nodeport quota speaks through form validation instead — unless the pane's every deployment requests it, where the notice speaks (the database presets all carry storage).
+
+_Avoid_: Deploy Billing Wall, billing wall, low balance warning, pre-flight check, deploy disabled.
+
+### Deployable Quota
+
+The workspace quota types a new workload consumes and the Billing Interruption judgment therefore inspects: cpu, memory, storage, pod, and nodeport — traffic and GPU stay out. Cpu, memory, and pod are spent by every deployment, so any of them being full dooms all deployment work and is voiced by the Deploy Billing Notice; storage and nodeport doom only workloads that request them and are voiced by form validation on the requesting fields — or by the Deploy Billing Notice in a pane whose every deployment requests them.
+
+_Avoid_: resource quota (for this set), workspace limits, all quotas.
 
 ### Deployment Task Dock
 
@@ -379,6 +405,12 @@ A canvas node that represents an AP workload. The name is retained as a product/
 ### Canvas Resource Identity
 
 The product identity of a canvas node's backing AP, DB, or AP Public Access Node surface, keyed by `kind`, `namespace`, and `name` so Canvas Layout stays stable across short reconciliation gaps. Kubernetes UID is retained only as last-seen entity identity to detect when a same-named workload is meaningfully new; AP Public Access Nodes use AP-bound identity rather than their own UID.
+
+### Resource Display Name
+
+The human-facing name of one AP or DB, shown on its canvas node, its settings pane title, and in assistant conversation. A Template Instance owns none — the APs and DBs it spawns each carry their own, sharing the template's name as a common base. It is not chosen at creation: the platform derives a default from the resource's Deployment Source (Docker image, DB engine, or template name) at deploy time and resolves collisions itself; users can rename it afterwards. A resource carrying no stored name shows its Kubernetes name; a name, once stored, cannot be cleared back to it. Unique within a Project (trimmed); an AP Public Access Node shows its AP's Resource Display Name rather than owning one. Never a selector or identity — stable identity is Canvas Resource Identity, and destructive confirmations additionally show the Kubernetes name.
+
+_Avoid_: node name, resource name (that is the Kubernetes `metadata.name`), custom name.
 
 ### Canvas Layout
 
@@ -484,15 +516,27 @@ _Avoid_: shared namespace chat, per-namespace chat history.
 
 ### Chat Billing Mode
 
-Who pays for one assistant model call: `free` spends a Free Chat Turn while turns remain and a platform model is configured, otherwise `user` bills the caller's AI Proxy — decided per turn, with the handoff automatic. The mode, not the remaining count, is the reliable signal of being charged: a namespace with no platform model bills `user` from its first turn with turns unspent.
+Who pays for one assistant model call: `free` spends a Free Chat Turn through the platform Chat Agent connection, while `user` bills the caller's AI Proxy. The server decides per turn and client surfaces render the mode without deriving it. Only an Active Free Trial workspace can enter `free`; after its allowance is exhausted it hands off to `user`. Paid plans, Pay-As-You-Go workspaces, PAUSED Free workspaces, expired trials, and a deployment with no complete platform Chat Agent connection use `user` from their first turn with any allowance unspent. A `user` turn spends a Paid Source; an exhausted one is refused by the Paid Chat Wall before the turn, or told as a Billing Interruption when the AI Proxy refuses a turn already under way.
 
 _Avoid_: subscription tier, plan.
 
+### Paid Source
+
+What a `user` Chat Billing Mode turn spends: a subscribed workspace's AI Credits, or a Pay-As-You-Go workspace's Account Balance. The server names it with every turn so a refusal can say which one ran out and which fix applies (upgrade the plan, or top up).
+
+_Avoid_: wallet, credits (for a PAYG workspace), balance (for a subscribed workspace).
+
+### Paid Chat Wall
+
+The pre-send refusal of a `user` turn whose Paid Source is exhausted: a billing callout in the card slot naming the fix, and a locked composer stating why. The only Chat Billing state that locks the composer — a Billing Interruption behind an error card locks nothing, because the next send re-gates.
+
+_Avoid_: paywall, quota exceeded (for chat), chat disabled.
+
 ### Free Chat Turns
 
-A platform-funded allowance of assistant turns per namespace, consumed only after a turn completes successfully. An entitlement counter, not a rate limit — and a shared workspace grant, not a per-user entitlement.
+A platform-funded allowance of Chat Agent turns per namespace (user-visible label: Free trial messages), spendable only during the workspace's Active Free Trial through `SYSTEM_OPENAI_API_KEY` and `SYSTEM_OPENAI_API_BASE_URL`; a turn is reserved when it starts and returned if it fails, so only successfully completed turns stay spent. A lifetime entitlement counter — namespace-shared, never per-user, never reset — not a rate limit; exhausting it hands subsequent turns to `user` billing through the caller's AI Proxy.
 
-_Avoid_: free tier, trial credits.
+_Avoid_: free tier, trial credits, free assistant messages, free messages.
 
 ### AI Proxy
 
@@ -558,11 +602,11 @@ _Avoid_: raw answer text, display label, derived segment column, business intent
 
 ## Account & Subscription
 
-Account-level money and workspace subscriptions, owned by the platform's account-service and presented read-mostly in the Billing Area. This is a different concept space from Assistant & Billing above: Free Chat Turns are a platform-funded assistant allowance and Chat Billing Mode decides who pays for one assistant turn, while the terms here describe real money and plan commitments. Brain reads and operates on these facts through account-service; it stores no billing state of its own.
+Account-level money and workspace subscriptions, owned by the platform's account-service and presented read-mostly in the Billing Area. This is a different concept space from Assistant & Billing above — the terms here describe real money and plan commitments, while Free Chat Turns are counted turns, not money — with exactly one one-way dependency: the assistant's free allowance takes its eligibility from subscription state (the Active Free Trial), never the reverse. Brain reads and operates on these facts through account-service; it stores no billing state of its own.
 
 ### Billing Area
 
-The product area under the `/billing` URL prefix where users manage the current workspace's Workspace Subscription and inspect costs, usage quota, and pricing. It is entered from a single App Sidebar entry and presented as one surface with Plan, Costs, Usage, and Pricing tabs; the Plan view is the area's index and the landing point of a Stripe Checkout Round-Trip.
+The product area under the `/billing` URL prefix where users manage the current workspace's Workspace Subscription and inspect costs, usage quota, and pricing. It is entered from a single entry — the Billing row in the App Sidebar's account popover — and presented as one surface with Plan, Costs, Usage, and Pricing tabs; the Plan view is the area's index and the landing point of a Stripe Checkout Round-Trip.
 
 _Avoid_: cost center, billing app, separate billing pages.
 
@@ -580,13 +624,19 @@ _Avoid_: first region, default region, regions[0].
 
 ### Account Balance
 
-The user's account-level prepaid funds held by account-service, presented as the net of balance minus accumulated deductions. Account Balance is real money that can offset subscription charges; it is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. It is not a Free Chat Turns count, a quota, or an entitlement counter.
+The user's account-level funds held by account-service, presented as the available amount: balance minus accumulated deductions, plus every usable credit — Gift Credit and any plan-granted credit alike — the same formula the platform's own debt pipeline judges an account by, so the number a user sees and the number that suspends them never disagree. Account Balance is a composite: prepaid cash (the rechargeable part, able to offset subscription charges) plus promotional credit that is not cash. It is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. It is not a Free Chat Turns count, a quota, or an entitlement counter.
 
 _Avoid_: credits, wallet, free balance, top-up balance.
 
+### Gift Credit
+
+Promotional money the platform grants to an account — the new-user gift is the canonical case — consumed by metered usage before paid funds and expiring on a platform-set date. Gift Credit is account-scoped and counts toward the available Account Balance; while any remains, the Balance display names it so its silent burn-down is visible. It is not AI Credits (a workspace allowance for AI usage) and not cash: it cannot be topped up, transferred, or refunded.
+
+_Avoid_: bonus, voucher, trial balance, free balance.
+
 ### Subscription Plan
 
-A platform-defined subscription offering — name, price, cycle, and included resource quotas — served by account-service's plan catalog. Subscription Plans are shared catalog facts; a workspace's committed choice of one is its Workspace Subscription. Chat Billing Mode deliberately avoids the word "plan": Free Chat Turns are not a Subscription Plan benefit.
+A platform-defined subscription offering — name, price, cycle, and included resource quotas — served by account-service's plan catalog. Subscription Plans are shared catalog facts; a workspace's committed choice of one is its Workspace Subscription. Free Chat Turns ride the Active Free Trial rather than the plan catalog: no Subscription Plan lists them as a quota, and Chat Billing Mode still avoids the word "plan".
 
 _Avoid_: tier, package, chat plan, pricing row.
 
@@ -632,11 +682,17 @@ What a Free Subscription Plan's current period end means: the moment the plan an
 
 _Avoid_: quota reset (for a Free period end), renewal time (for a Free subscription), cancelled/cancelling (for the constructed flag on Free).
 
+### Active Free Trial
+
+The state of a workspace whose Free Subscription Plan is currently running its trial: a Free subscription in normal standing, as opposed to one born paused with no trial (a user's second and later workspaces) or one expired into the same payment-due pipeline as any paid plan. The sole eligibility gate for spending Free Chat Turns and for rendering the Plan view's free-allowance usage block; when the allowance is exhausted, Chat Billing Mode becomes `user` rather than extending trial eligibility.
+
+_Avoid_: free workspace, trial period (for the state), Free plan (bare, for this state).
+
 ### Deletion Countdown
 
 The platform's fixed grace timeline that starts the moment a Workspace Subscription expires: the workspace is suspended immediately, the warning escalates as the countdown runs, and the workspace's resources are permanently deleted when it ends. Both roads into expiry — failed renewal payment and cancelled-then-lapsed — join the same countdown. The Billing Area surfaces it as a destructive warning carrying the stage's next deadline — the suspension date while a cancelled subscription's paid period still runs, the deletion date once expiry has passed; renewing (or resuming, before expiry) exits the countdown.
 
-_Avoid_: grace period (as the user-facing name), debt period, deletion schedule.
+_Avoid_: grace period (as the user-facing name), debt period, deletion schedule, paused (for the suspended workspace).
 
 ### Pay-As-You-Go (PAYG)
 
@@ -646,9 +702,15 @@ _Avoid_: PAYG plan, pay-as-you-go plan, free mode, plan named "PAYG".
 
 ### Account Debt
 
-The state of an Account Balance that has fallen below zero: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing.
+The state of an Account Balance that has fallen to or below zero — the platform's debt pipeline treats only a strictly positive available amount as in good standing: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. An account that has never been billed is exempt: with zero lifetime deductions the platform's debt pipeline skips it, so a fresh zero-balance account stays in good standing and is never in Account Debt. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing, and because the platform suspends only PAYG workspaces for it, the warning is voiced only on a Pay-As-You-Go workspace — a subscribed workspace's zero balance is not spoken of as debt.
 
 _Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due (user-facing), negative balance (as the state's name), arrears.
+
+### Billing Interruption
+
+A deployment or a paid assistant turn the platform stopped because the workspace hit its money or quota wall — Account Debt, a payment-due Workspace Subscription, a full Deployable Quota, or an exhausted Paid Source. The platform sends no signal, so it is judged after the fact from the workspace's billing standing and told as a billing callout: the truthful cause and the CTA to the fix (top up, renew, or upgrade — a quota callout leads with the plan and keeps View usage beside it). The same judgment made before the action is the advisory Deploy Billing Notice before a deployment and the refusing Paid Chat Wall before a paid turn — deploy advises because its failure comes back explained, chat walls because a spent turn has no after-the-fact scene.
+
+_Avoid_: outage, something went wrong on our side, timed out (as its name), billing error (as the concept's name).
 
 ### Subscription Payment
 
@@ -686,6 +748,32 @@ The cluster-level display currency for the Billing Area, delivered server-side p
 
 _Avoid_: user currency preference, build-time currency.
 
+## Notifications
+
+### Notification Center
+
+The user's single inbox for Notifications, opened from the App Sidebar's Notifications entry (below the Projects row). Global across every Project in the current workspace rather than belonging to one: every Workspace Actor sees the same messages, and only read state is personal. It is not the Deployment Task Dock and does not manage running tasks; it holds messages, not work.
+
+_Avoid_: task center, activity feed, message center, alerts panel.
+
+### Notification
+
+One message addressed to the current user in the Notification Center: a billing, subscription, or quota event, or a platform announcement, each carrying a Notification Severity. Persistent and individually read/unread — read state is per message and per user, never a workspace-shared fact — which distinguishes it from a toast (ephemeral feedback that vanishes on its own); a Notification names its source Project when it has one. A Notification originates from the platform or from Brain itself; the two read identically in the Notification Center, though a platform-origin message may be withdrawn or revived by the platform when its underlying condition changes.
+
+_Avoid_: alert, toast (for persistent items), event (for the user-facing message).
+
+### Notification Severity
+
+How much a Notification's message matters to the reader, on three levels — **critical** (something is already suspended or faces deletion), **warning** (a threshold was crossed or a deadline approaches; action prevents the next stage), **info** (a receipt, a hint, or an announcement; nothing to fix). Derived from what the message is about, never chosen per message, and shown without visual escalation: a critical item is marked, not shouted.
+
+_Avoid_: priority, importance (the platform CR field), level, tone.
+
+### Status Hint
+
+The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt (on a Pay-As-You-Go workspace only — the same judgment as the Deploy Billing Notice, so the banner and the notice can never disagree), a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
+
+_Avoid_: alert bar, global notification, sticky toast, warning strip (as the concept's name).
+
 ## Design System
 
 ### Component Registry
@@ -699,3 +787,41 @@ _Avoid_: Pane Registry, Flow Registry.
 The dark material shared by immersive product surfaces: a near-black canvas base with a soft blue luminous wash floating above the surface's content. A surface or overlay adopts Canvas Glow as its material — "surface" itself always names a place, never a look. Carried by the Billing Area, its app cost drawer, and its plan-change dialog, and by the canvas action surface.
 
 _Avoid_: surface style (when meaning the material), canvas material, glow overlay.
+
+### CTA Chip
+
+The one visual recipe for a call-to-action on a notification surface — Notification Center cards, the Status Hint, the billing callout family, toast actions: a small chip washed in the surface's own tone color, defined once in the design system's shared button and only tinted by its host. The chip never picks a hue of its own, so severity stays marked, not shouted; a notification renders at most one chip, an optional quiet sibling beside it, and a dismiss.
+
+_Avoid_: CTA button (for the recipe), pill, tag, badge.
+
+## Dev Tweaks
+
+### Panel Posture
+
+How the open dev tweaks panel occupies the viewport: **float** (a draggable corner card) or **frame** (the page docks as an inset card and the panel fills the freed strip). A user preference remembered across sessions. Not the same axis as Panel Mode.
+
+_Avoid_: panel mode (for float/frame), docked mode.
+
+### Panel Mode
+
+How the dev tweaks panel is mounted by the host: **popover** (a top-layer overlay toggled with a hotkey) or **inline** (rendered in place as ordinary page content, always open, with no posture). A mount-time choice, not a user preference.
+
+_Avoid_: posture (for popover/inline).
+
+### Launcher
+
+The collapsed bubble that stands in for the closed dev tweaks panel in popover mode. It can be pinned always-visible or shown only while some tweak deviates from its default (dirty indicator). An enabled Dev Mock counts as dirty and puts the Launcher in its mock form: instead of the neutral bubble, a capsule naming the mode and counting the enabled Dev Mocks.
+
+_Avoid_: indicator capsule, FAB (for the Launcher itself).
+
+### Dev Mock
+
+A dev/demo-only mode in which a feature's API answers are served from fixtures according to the selected Mock Scenario. One Dev Mock answers for every surface that derives from the same facts — the billing mock also serves the billing-born Notifications and, through them, the Status Hint — so those surfaces can never disagree; surfaces with unrelated facts (platform-origin Notifications, a Deployment Task Timeline, a Conversation) get Dev Mocks of their own, and independent Dev Mocks compose. Its state lives outside the dev tweaks panel — the panel is only its remote control, never the source of truth — which separates it from a tweak, an override value the panel owns. While a Dev Mock is enabled, the pages it covers show fixture data, not real state.
+
+_Avoid_: mock group, mock tweak, mock override.
+
+### Mock Scenario
+
+The named state one Dev Mock session is in (e.g. a subscription state). Selecting a scenario shapes every answer the mock serves; the serving side may advance the scenario after a successful write so whole flows can be walked through.
+
+_Avoid_: mock preset, mock case.

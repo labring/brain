@@ -31,6 +31,32 @@ function dockerSettings(overrides: {
   };
 }
 
+test("renderDockerDeploymentYaml writes the display name annotation when provided", () => {
+  const out = YAML.parse(
+    renderDockerDeploymentYaml({
+      displayName: "nginx-2",
+      name: "nginx-xkqjzw",
+      namespace: "ns-admin",
+      projectName: "project-a",
+      routingDomain: "apps.example.com",
+      settings: dockerSettings({}),
+    })
+  );
+
+  assert.equal(out.metadata.annotations["brain.io/display-name"], "nginx-2");
+
+  const unnamed = YAML.parse(
+    renderDockerDeploymentYaml({
+      name: "ap-xkqjzw",
+      namespace: "ns-admin",
+      projectName: "project-a",
+      routingDomain: "apps.example.com",
+      settings: dockerSettings({}),
+    })
+  );
+  assert.equal(unnamed.metadata.annotations, undefined);
+});
+
 test("renderDockerDeploymentYaml writes Docker settings into a direct AP manifest", () => {
   const out = YAML.parse(
     renderDockerDeploymentYaml({

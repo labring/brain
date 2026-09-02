@@ -40,9 +40,21 @@ import {
   claimBrainAiEngagementFromSession,
   trackBrainGtmEvent,
 } from "@/features/analytics/brain-gtm";
+import { TOP_UP_DESKTOP } from "@/features/billing/billing-cta";
+import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
+import { readCachedWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { Chat } from "@/features/chat/chat";
 import type { ChatHeaderThreadHistory } from "@/features/chat/chat.types";
-import { FreeTurnsIndicator } from "@/features/chat/free-turns-indicator";
+import { useChatBillingCardFreeTierOverride } from "@/features/chat/chat-billing-card-tweaks";
+import {
+  ChatBillingCardSlot,
+  type ChatBillingDestination,
+} from "@/features/chat/chat-billing-cards";
+import {
+  CHAT_WALL_PLACEHOLDER,
+  type ChatBillingInterruption,
+  chatBillingInterruptionFromError,
+} from "@/features/chat/chat-billing-interruption";
 import {
   fetchAssistantSession,
   fetchAssistantThreadMessages,
@@ -51,6 +63,7 @@ import {
   type AssistantContextPayload,
   type AssistantSessionPayload,
   type AssistantThreadDTO,
+  type ChatPaidSource,
   type FreeTierState,
   SELECTED_RESOURCE_CONTEXT_PART_TYPE,
   type SelectedResourceContext,
@@ -111,6 +124,7 @@ import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
+import { resourceDisplayNameForTarget } from "@/features/resource-display-name/resource-display-name-bridge";
 import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
 import {
   ProjectTopBarSlotHost,
@@ -119,6 +133,7 @@ import {
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
+import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import { useEnterMotionFrames } from "@/lib/use-enter-motion-frames";
 
@@ -231,9 +246,16 @@ function buildSelectedResourceSnapshot(
   if (target == null) {
     return null;
   }
-  return target.kind === "PublicAccess"
-    ? { kind: target.kind, name: target.apName, namespace: target.namespace }
-    : { kind: target.kind, name: target.name, namespace: target.namespace };
+  const name = target.kind === "PublicAccess" ? target.apName : target.name;
+  // Display-only hint (ADR 0066): the model addresses the resource by its
+  // Resource Display Name but must still target tools by `name`.
+  const displayName = resourceDisplayNameForTarget(target);
+  return {
+    ...(displayName == null || displayName === name ? {} : { displayName }),
+    kind: target.kind,
+    name,
+    namespace: target.namespace,
+  };
 }
 
 /**
@@ -295,6 +317,8 @@ function ComposerContextIndicator({
 
 function ProjectAssistantComposer({
   busy,
+  messagingLocked,
+  lockedPlaceholder,
   projectId,
   onDatabaseIntent,
   onDockerIntent,
@@ -304,6 +328,14 @@ function ProjectAssistantComposer({
   onSubmit,
 }: {
   busy: boolean;
+  /**
+   * The Paid Chat Wall locks only the message path (ADR-0068): textarea and
+   * send go dark while the deploy/skills intent buttons keep working — they
+   * open side-pane surfaces and never touch the chat API.
+   */
+  messagingLocked: boolean;
+  /** What the locked textarea says — the lock always names its reason. */
+  lockedPlaceholder: string;
   projectId: string;
   onDatabaseIntent: () => void;
   onDockerIntent: () => void;
@@ -322,6 +354,9 @@ function ProjectAssistantComposer({
   const selectedRef = useRef<ProjectCanvasSelection | null>(null);
 
   const onPrimaryAction = useCallback(() => {
+    if (messagingLocked) {
+      return;
+    }
     if (busy) {
       onStop();
       return;
@@ -332,7 +367,7 @@ function ProjectAssistantComposer({
     }
     onSubmit(text, selectedRef.current);
     setInput("");
-  }, [busy, input, onStop, onSubmit]);
+  }, [busy, input, messagingLocked, onStop, onSubmit]);
 
   return (
     <div className="group flex w-full shrink-0 flex-col p-[10px]">
@@ -342,9 +377,14 @@ function ProjectAssistantComposer({
       />
       <Chat.ComposerShell>
         <Chat.ComposerTextarea
+          disabled={messagingLocked}
           onPrimaryAction={onPrimaryAction}
           onValueChange={setInput}
-          placeholder="Ask Sealos Agent to inspect, deploy, or explain this project..."
+          placeholder={
+            messagingLocked
+              ? lockedPlaceholder
+              : "Ask Sealos Agent to inspect, deploy, or explain this project..."
+          }
           responding={busy}
           value={input}
         />
@@ -360,6 +400,7 @@ function ProjectAssistantComposer({
             <Chat.DatabaseDeployButton onComposerAction={onDatabaseIntent} />
           </div>
           <Chat.ComposerSend
+            disabled={messagingLocked}
             onPrimaryAction={onPrimaryAction}
             responding={busy}
             value={input}
@@ -428,6 +469,16 @@ function ProjectAssistantChatSession({
   // still read the latest values. The volatile canvas selection is pinned
   // per-message (see submitComposerText), so only thread-stable fields go here.
   const [transportToken] = useState<object>(() => ({}));
+  // The billing refusal behind the current error, if the server named one
+  // (design spec row E3). Cleared on the next send: the error card locks
+  // nothing, the pre-send gate owns the lock.
+  const [billingInterruption, setBillingInterruption] =
+    useState<ChatBillingInterruption | null>(null);
+  const paidSourceRef = useRef<ChatPaidSource | null>(null);
+  const knownPaidSource = freeTier?.paidSource ?? null;
+  useEffect(() => {
+    paidSourceRef.current = knownPaidSource;
+  }, [knownPaidSource]);
   useInsertionEffect(() => {
     transportLatestStore.set(transportToken, {
       namespace: assistantNamespaceRaw,
@@ -470,6 +521,9 @@ function ProjectAssistantChatSession({
             currentProject.displayName,
             wire.projectId
           );
+          const workspaceResourceQuota = readCachedWorkspaceQuotaSnapshot(
+            wire.namespace
+          );
 
           const headersWithAppToken = new Headers(headers);
           for (const [name, value] of Object.entries(
@@ -484,6 +538,9 @@ function ProjectAssistantChatSession({
             body: {
               ...(body && typeof body === "object" ? body : {}),
               ...(assistantContext == null ? {} : { assistantContext }),
+              ...(workspaceResourceQuota == null
+                ? {}
+                : { workspaceResourceQuota }),
               chatId: id,
               encodedKubeconfig: encodeURIComponent(kubeconfig),
               message: last,
@@ -517,6 +574,16 @@ function ProjectAssistantChatSession({
         messages: nextMessages,
       }),
     async onFinish() {
+      await onAssistantStreamFinished?.();
+    },
+    // A failed stream can leave the header-derived posture stale — most
+    // acutely when the last free turn errors: the server rolls its reservation
+    // back after this pane applied the post-turn `user` header. Refetching the
+    // session restores the authoritative free-turn posture.
+    async onError(error) {
+      setBillingInterruption(
+        chatBillingInterruptionFromError(error, paidSourceRef.current)
+      );
       await onAssistantStreamFinished?.();
     },
     async onToolCall({ toolCall }) {
@@ -601,7 +668,7 @@ function ProjectAssistantChatSession({
 
   // Entry-URL deployment intent: convert `?intent=` once into a synthetic
   // first user message carrying `data-deployIntent`, then drop the param so a
-  // refresh never re-sends it (ADR-0065). The server re-validates fail-closed.
+  // refresh never re-sends it (ADR-0072). The server re-validates fail-closed.
   useDeployIntentConsumer({
     chatId,
     sendMessage: (message) => sendMessage(message),
@@ -680,6 +747,7 @@ function ProjectAssistantChatSession({
           view_name: "ai_chat_engaged",
         });
       }
+      setBillingInterruption(null);
       const snapshot = buildSelectedResourceSnapshot(selected);
       if (snapshot == null) {
         sendMessage({ text }).catch(() => undefined);
@@ -699,6 +767,25 @@ function ProjectAssistantChatSession({
   const stopComposerResponse = useCallback(() => {
     stop();
   }, [stop]);
+
+  // Recording the return route lets the Billing Area close button land back
+  // on this project instead of the sidebar's last entry point. A top-up
+  // leaves for the Desktop cost center in a new tab — the one place a
+  // top-up exists — with the Plan view as the unresolved-link fallback.
+  const desktopTopUpUrl = useSealosDesktopUrl(TOP_UP_DESKTOP.app);
+  const navigateToBilling = useCallback(
+    (destination: ChatBillingDestination) => {
+      if (destination === "top-up" && desktopTopUpUrl != null) {
+        window.open(desktopTopUpUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+      recordBillingReturnRoute();
+      router.push(
+        destination === "upgrade" ? "/billing?mode=upgrade" : "/billing"
+      );
+    },
+    [desktopTopUpUrl, router]
+  );
 
   return (
     <Chat.Root>
@@ -720,16 +807,16 @@ function ProjectAssistantChatSession({
           messages={messages}
           status={status}
         />
-        {freeTier?.billing === "free" ? (
-          <div className="shrink-0 px-[10px] pt-1">
-            <FreeTurnsIndicator
-              limit={freeTier.limit}
-              remaining={freeTier.remaining}
-            />
-          </div>
-        ) : null}
+        <ChatBillingCardSlot
+          errored={status === "error"}
+          freeTier={freeTier}
+          interruption={billingInterruption}
+          onNavigateToBilling={navigateToBilling}
+        />
         <ProjectAssistantComposerMemo
           busy={busy}
+          lockedPlaceholder={CHAT_WALL_PLACEHOLDER}
+          messagingLocked={freeTier?.wall != null}
           onDatabaseIntent={onDatabaseIntent}
           onDockerIntent={onDockerIntent}
           onGithubIntent={onGithubIntent}
@@ -743,6 +830,10 @@ function ProjectAssistantChatSession({
   );
 }
 
+function chatPaidSourceHeader(value: string | null): ChatPaidSource | null {
+  return value === "ai-credits" || value === "balance" ? value : null;
+}
+
 function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
   const appToken = useAtomValue(appTokenAtom);
@@ -752,8 +843,8 @@ function ProjectAssistantChatPane() {
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
   const [sessionError, setSessionError] = useState(false);
   const [freeTier, setFreeTier] = useState<FreeTierState | null>(null);
+  const freeTierOverride = useChatBillingCardFreeTierOverride();
   const assistantStateRefreshSequenceRef = useRef(0);
-  const prevBillingRef = useRef<"free" | "user" | null>(null);
 
   const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}`;
   const [prevSessionResetKey, setPrevSessionResetKey] =
@@ -768,7 +859,6 @@ function ProjectAssistantChatPane() {
   useEffect(() => {
     let cancelled = false;
     assistantStateRefreshSequenceRef.current += 1;
-    prevBillingRef.current = null;
 
     if (!namespaceReady) {
       return;
@@ -788,7 +878,6 @@ function ProjectAssistantChatPane() {
       }
       setSession(payload);
       setFreeTier(payload.freeTier);
-      prevBillingRef.current = payload.freeTier.billing;
     });
 
     return () => {
@@ -797,6 +886,10 @@ function ProjectAssistantChatPane() {
     };
   }, [appToken, kubeconfig, namespaceRaw, namespaceReady]);
 
+  // Every chat response — paid-wall refusals included — carries the server's
+  // Chat Billing Posture in the `X-Chat-*` headers; the pane renders it and
+  // never derives its own (ADR-0069). The last free message reports `user`,
+  // and a 402 that slips past the panel's pre-check carries the paid wall.
   const handleBillingHeaders = useCallback((headers: Headers) => {
     const billingHeader = headers.get("X-Chat-Billing");
     if (billingHeader !== "free" && billingHeader !== "user") {
@@ -807,20 +900,18 @@ function ProjectAssistantChatPane() {
       10
     );
     const limit = Number.parseInt(headers.get("X-Chat-Free-Limit") ?? "", 10);
+    // The paid wall rides the same header set (row E3): a 402 that slipped
+    // past the panel's pre-check locks the composer here.
+    const paidSource = chatPaidSourceHeader(headers.get("X-Chat-Paid-Source"));
+    const wall = chatPaidSourceHeader(headers.get("X-Chat-Wall"));
     setFreeTier((prev) => {
       if (Number.isFinite(remaining) && Number.isFinite(limit)) {
-        return { billing: billingHeader, remaining, limit };
+        return { billing: billingHeader, limit, paidSource, remaining, wall };
       }
       return prev == null
-        ? { billing: billingHeader, remaining: 0, limit: 0 }
-        : { ...prev, billing: billingHeader };
+        ? { billing: billingHeader, limit: 0, paidSource, remaining: 0, wall }
+        : { ...prev, billing: billingHeader, paidSource, wall };
     });
-    if (prevBillingRef.current === "free" && billingHeader === "user") {
-      toast.info("Free assistant allowance used up", {
-        description: "Further messages now use your own AI Proxy balance.",
-      });
-    }
-    prevBillingRef.current = billingHeader;
   }, []);
 
   const selectThread = useCallback(
@@ -880,15 +971,6 @@ function ProjectAssistantChatPane() {
       prev == null ? prev : { ...prev, threads: refreshed.threads }
     );
     setFreeTier(refreshed.freeTier);
-    if (
-      prevBillingRef.current === "free" &&
-      refreshed.freeTier.billing === "user"
-    ) {
-      toast.info("Free assistant allowance used up", {
-        description: "Further messages now use your own AI Proxy balance.",
-      });
-    }
-    prevBillingRef.current = refreshed.freeTier.billing;
   }, [appToken, kubeconfig, namespaceRaw]);
 
   const openGithubIntent = useCallback(() => {
@@ -938,7 +1020,7 @@ function ProjectAssistantChatPane() {
     <ProjectAssistantChatSession
       assistantNamespaceRaw={namespaceRaw}
       bootstrap={session}
-      freeTier={freeTier}
+      freeTier={freeTierOverride ?? freeTier}
       key={session.chatId}
       onAssistantStreamFinished={refreshAssistantState}
       onBillingHeaders={handleBillingHeaders}

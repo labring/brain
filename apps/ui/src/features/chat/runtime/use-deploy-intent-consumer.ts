@@ -30,7 +30,7 @@ import {
  *
  * The value is decoded and structurally validated on the client purely so we
  * never send garbage; the server re-validates it fail-closed before the model
- * sees it (see `deploy-intent-validation` and ADR-0065).
+ * sees it (see `deploy-intent-validation` and ADR-0072).
  */
 
 const consumedDeployIntentKeys = new Set<string>();

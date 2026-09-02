@@ -1,5 +1,9 @@
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-
+import type { identityFingerprints } from "@/features/chat/persistence/schema";
+import type {
+  marketingAttributionSubjects,
+  marketingLifecycleEvents,
+} from "@/features/marketing/schema";
 import type {
   deployTaskAgentCalls,
   deployTaskEvents,
@@ -13,6 +17,9 @@ export type DeploymentTaskDbSchema = {
   deployTaskEvents: typeof deployTaskEvents;
   deployTaskMessages: typeof deployTaskMessages;
   deployTasks: typeof deployTasks;
+  identityFingerprints: typeof identityFingerprints;
+  marketingAttributionSubjects: typeof marketingAttributionSubjects;
+  marketingLifecycleEvents: typeof marketingLifecycleEvents;
 };
 
 /**

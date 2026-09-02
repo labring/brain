@@ -1,6 +1,7 @@
 import { generateId } from "ai";
 import { and, eq, inArray } from "drizzle-orm";
-
+import { normalizeMarketingAttribution } from "@/features/marketing/consent";
+import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
 import { isCurrentDeploymentCredentialBinding } from "../credential-binding";
 import { getDeployTaskRowInNamespace } from "../lookup";
 import { publicDeployTaskBlockingInputs } from "../public-artifact-summary";
@@ -241,10 +242,30 @@ async function resolveCreateInputs(
       message: "Deploy task creation requires source, runner, and target.",
     };
   }
+  const inheritedAttribution = predecessor?.marketingAttribution ?? undefined;
+  let marketingAttribution: DeployTaskRow["marketingAttribution"] | undefined;
+  if (input.create.marketingAttribution != null) {
+    marketingAttribution = await normalizeMarketingAttribution(
+      input.create.marketingAttribution,
+      input.create.marketingConsentSubject
+    );
+  } else if (
+    inheritedAttribution?.consent_provenance == null ||
+    inheritedAttribution.consent_provenance.subject_id ===
+      input.create.marketingConsentSubject
+  ) {
+    marketingAttribution = inheritedAttribution;
+  } else {
+    marketingAttribution = await normalizeMarketingAttribution(
+      inheritedAttribution,
+      undefined
+    );
+  }
   const create: CreateDeployTaskInput = {
     createdFrom: input.create.createdFrom,
     creatingActor: input.create.creatingActor,
     credentialBinding: input.create.credentialBinding,
+    marketingAttribution,
     namespace: input.create.namespace,
     prompt: input.create.prompt,
     runner,
@@ -363,41 +384,51 @@ async function insertCreatedDeployTask(
   const persistedSource = persistableDeploymentSource(create.source);
   const inheritedIdentities = cloneInheritedIdentities(create, predecessor);
   try {
-    const [inserted] = await ctx.db
-      .insert(deployTasks)
-      .values({
-        id,
-        actorUserId: null,
-        agentProtocol: "mcp-v1",
-        artifactSummary:
-          inheritedIdentities == null
-            ? {}
-            : { resultIdentities: inheritedIdentities },
-        createdAt: now,
-        createdFrom: create.createdFrom ?? "api",
-        creatingActor: create.creatingActor?.trim() || null,
-        credentialBinding: create.credentialBinding ?? null,
-        githubConnectionId: null,
-        namespace: create.namespace.trim(),
-        phase: "queued",
-        projectId: resolvedProject?.projectId ?? null,
-        projectName: resolvedProject?.projectName ?? null,
-        prompt: compactOptional(create.prompt) ?? taskTitle(create),
-        retriedFromTaskId: predecessor?.id ?? null,
-        runner: create.runner,
-        source: persistedSource,
-        status: "queued",
-        target: create.target,
-        timelineSnapshot: createDeploymentTaskTimelineForRunner({
+    const [inserted] = await ctx.db.transaction(async (tx) => {
+      const provenance = create.marketingAttribution?.consent_provenance;
+      if (provenance != null) {
+        await requireCurrentIdentityBinding(tx, {
+          crName: create.creatingActor ?? "",
+          userUid: provenance.subject_id,
+        });
+      }
+      return tx
+        .insert(deployTasks)
+        .values({
+          id,
+          actorUserId: null,
+          agentProtocol: "mcp-v1",
+          artifactSummary:
+            inheritedIdentities == null
+              ? {}
+              : { resultIdentities: inheritedIdentities },
+          createdAt: now,
+          createdFrom: create.createdFrom ?? "api",
+          creatingActor: create.creatingActor?.trim() || null,
+          credentialBinding: create.credentialBinding ?? null,
+          marketingAttribution: create.marketingAttribution ?? null,
+          githubConnectionId: null,
+          namespace: create.namespace.trim(),
+          phase: "queued",
+          projectId: resolvedProject?.projectId ?? null,
+          projectName: resolvedProject?.projectName ?? null,
+          prompt: compactOptional(create.prompt) ?? taskTitle(create),
+          retriedFromTaskId: predecessor?.id ?? null,
           runner: create.runner,
           source: persistedSource,
           status: "queued",
-          taskId: id,
-          updatedAt: now.toISOString(),
-        }),
-        updatedAt: now,
-      })
-      .returning();
+          target: create.target,
+          timelineSnapshot: createDeploymentTaskTimelineForRunner({
+            runner: create.runner,
+            source: persistedSource,
+            status: "queued",
+            taskId: id,
+            updatedAt: now.toISOString(),
+          }),
+          updatedAt: now,
+        })
+        .returning();
+    });
     if (inserted == null) {
       throw new Error("Failed to create deploy task.");
     }

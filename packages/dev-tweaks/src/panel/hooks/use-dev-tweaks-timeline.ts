@@ -1,0 +1,161 @@
+/* eslint-disable react-hooks/refs -- ported panel render-update patterns kept structurally intact */
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
+import { TimelineStore } from "../store/timeline-store";
+import {
+  buildTimelineMeta,
+  buildTimelineValues,
+  type DevTweaksTimelineOptions,
+  resolveTimelineLoop,
+} from "../timeline/adapter";
+import type { DevTweaksTimelineValues, TimelineConfig } from "../timeline-core";
+import { computeStaticTimeline, parseTimelineConfig } from "../timeline-core";
+import {
+  useDevTweaksStorePanel,
+  useSerialized,
+} from "./use-dev-tweaks-store-panel";
+
+export type {
+  DevTweaksTimelineValues,
+  TimelineClipConfig,
+  TimelineClipCss,
+  TimelineClipLoop,
+  TimelineClipValues,
+  TimelineConfig,
+  TimelineGroupConfig,
+  TimelineGroupValues,
+  TimelinePropConfig,
+  TimelinePropStepConfig,
+  TimelineStepConfig,
+  TimelineStepValues,
+} from "../timeline-core";
+
+export type UseDevTweaksTimelineOptions = DevTweaksTimelineOptions;
+
+export function useDevTweaksTimeline<T extends TimelineConfig>(
+  name: string,
+  config: T,
+  options?: UseDevTweaksTimelineOptions
+): DevTweaksTimelineValues<T> {
+  const _serializedConfig = useSerialized(config);
+
+  const parsed = useMemo(() => parseTimelineConfig(config), [config]);
+
+  // Clip values live in DevTweaksStore under the timeline's panel id, so presets,
+  // persistence, reset, and copy all work on timing data for free.
+  const { panelId, flatValues } = useDevTweaksStorePanel(
+    name,
+    parsed.dialConfig,
+    {
+      id: options?.id,
+      persist: options?.persist,
+      kind: "timeline",
+    }
+  );
+
+  // Edit-time pass: resolve all stored values and let live, emergent durations
+  // (notably physics springs) extend the authored timeline window. This only
+  // re-runs when a value is edited — never merely because the clock ticks.
+  const staticTimeline = useMemo(
+    () => computeStaticTimeline(parsed, flatValues),
+    [parsed, flatValues]
+  );
+  const timelineDuration = staticTimeline.duration;
+  const staticClips = staticTimeline.clips;
+
+  const parsedRef = useRef(parsed);
+  parsedRef.current = parsed;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  const { start: loopStart } = resolveTimelineLoop(options?.loop);
+
+  const buildMeta = useCallback(
+    () =>
+      buildTimelineMeta(
+        panelId,
+        name,
+        timelineDuration,
+        parsedRef.current,
+        options?.loop
+      ),
+    [panelId, name, timelineDuration, options?.loop]
+  );
+
+  // Transport registration mirrors the panel lifecycle: register on mount,
+  // push structure changes without resetting the playhead. The register
+  // effect reads buildMeta through a ref so meta changes (loop, structure)
+  // flow through update() below instead of re-registering — a re-register
+  // would reset the playhead.
+  const buildMetaRef = useRef(buildMeta);
+  buildMetaRef.current = buildMeta;
+  useEffect(() => {
+    TimelineStore.register(buildMetaRef.current(), {
+      autoplay: optionsRef.current?.autoplay ?? true,
+    });
+    return () => TimelineStore.unregister(panelId);
+  }, [panelId]);
+
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    TimelineStore.update(buildMeta());
+  }, [buildMeta]);
+
+  const subscribeTransport = useCallback(
+    (callback: () => void) => TimelineStore.subscribe(panelId, callback),
+    [panelId]
+  );
+  const getTransport = useCallback(
+    () => TimelineStore.getTransport(panelId),
+    [panelId]
+  );
+  const transport = useSyncExternalStore(
+    subscribeTransport,
+    getTransport,
+    getTransport
+  );
+
+  const play = useCallback(() => TimelineStore.play(panelId), [panelId]);
+  const pause = useCallback(() => TimelineStore.pause(panelId), [panelId]);
+  const replay = useCallback(() => TimelineStore.replay(panelId), [panelId]);
+  const seek = useCallback(
+    (time: number) => TimelineStore.seek(panelId, time),
+    [panelId]
+  );
+
+  // Frame pass: only the time-dependent fields, sampling cached curve params.
+  return useMemo(
+    () =>
+      buildTimelineValues<T>(
+        staticClips,
+        transport,
+        timelineDuration,
+        loopStart,
+        {
+          play,
+          pause,
+          replay,
+          seek,
+        }
+      ),
+    [
+      staticClips,
+      transport,
+      timelineDuration,
+      loopStart,
+      play,
+      pause,
+      replay,
+      seek,
+    ]
+  );
+}

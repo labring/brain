@@ -6,10 +6,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@workspace/ui/components/alert";
-import {
-  AppButton,
-  appButtonVariants,
-} from "@workspace/ui/components/app-button";
+import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { PlanBadge } from "@workspace/ui/components/plan-badge";
@@ -39,12 +36,14 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
+import { accountDebtFromMoney } from "@/features/billing/account-debt";
 import {
   type AiCredits,
   aiCreditsPercentUsed,
   formatAiCredits,
 } from "@/features/billing/billing-ai-credits";
 import { formatBillingAmount } from "@/features/billing/billing-amount";
+import { TOP_UP_DESKTOP } from "@/features/billing/billing-cta";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
 import {
   type BillingPlanSnapshot,
@@ -54,6 +53,7 @@ import {
   type SubscriptionWarningStage,
   subscriptionLifecycleAllowsBillingActions,
 } from "@/features/billing/billing-plan-data";
+import { BILLING_SURFACE_TONES } from "@/features/billing/billing-surface-tones";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
@@ -232,6 +232,31 @@ const SUBSCRIPTION_WARNING_COPY: Record<
   },
 };
 
+// An expired Free plan rides the same Deletion Countdown as a paid plan, but
+// its recovery voice is "resubscribe": nothing was ever charged, so the copy
+// asks for an upgrade, never a renewal. Free cannot reach "cancelling" (the
+// lifecycle exempts the constructed cancel-at-period-end flag), hence the
+// partial record.
+const RESUBSCRIBE_WARNING_COPY: Partial<
+  Record<
+    SubscriptionWarningStage,
+    { after: string; before: string; fallback: string; title: string }
+  >
+> = {
+  "deletion-imminent": {
+    after: ". Upgrade now to avoid data loss.",
+    before: "All resources will be permanently deleted after ",
+    fallback: "the grace period ends",
+    title: "Workspace scheduled for deletion",
+  },
+  expired: {
+    after: ". Upgrade to a paid plan to avoid loss.",
+    before: "Your workspace is suspended and resources will be deleted after ",
+    fallback: "the grace period ends",
+    title: "Your Free plan has expired",
+  },
+};
+
 // Account Debt (a PAYG workspace whose Account Balance is in debt) is the
 // balance pipeline, not the subscription Deletion Countdown: there is no
 // subscription to expire and no timestamps to derive a deadline from, so the
@@ -258,9 +283,9 @@ const ACCOUNT_DEBT_WARNING_COPY: Partial<
 // destructive (red). The semantic color stays on the icon and title only —
 // the description keeps its muted default.
 const SUBSCRIPTION_WARNING_TONES: Record<SubscriptionWarningStage, string> = {
-  cancelling: "bg-amber-400/10 text-amber-600 dark:text-amber-400",
-  "deletion-imminent": "bg-red-500/10 text-destructive",
-  expired: "bg-red-500/10 text-destructive",
+  cancelling: BILLING_SURFACE_TONES.warning,
+  "deletion-imminent": BILLING_SURFACE_TONES.destructive,
+  expired: BILLING_SURFACE_TONES.destructive,
 };
 
 function SubscriptionWarningBanner({
@@ -291,22 +316,27 @@ function SubscriptionWarningBanner({
         <AlertDescription>{accountDebtCopy.description}</AlertDescription>
         {topUpUrl == null ? null : (
           <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
-            <a
-              className={appButtonVariants({ size: "sm", variant: "danger" })}
-              href={topUpUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <ExternalLink aria-hidden data-icon="inline-start" />
-              Top up in Sealos Desktop
-            </a>
+            <AppButton
+              nativeButton={false}
+              render={
+                <a href={topUpUrl} rel="noreferrer" target="_blank">
+                  <ExternalLink aria-hidden data-icon="inline-start" />
+                  Top up in Sealos Desktop
+                </a>
+              }
+              size="sm"
+              variant="danger"
+            />
           </AlertAction>
         )}
       </Alert>
     );
   }
 
-  const copy = SUBSCRIPTION_WARNING_COPY[stage];
+  const copy =
+    (current.recoveryVoice === "resubscribe"
+      ? RESUBSCRIBE_WARNING_COPY[stage]
+      : undefined) ?? SUBSCRIPTION_WARNING_COPY[stage];
 
   return (
     <Alert
@@ -345,6 +375,12 @@ function BillingInvoiceNotice({
   const billingActionsAllowed = subscriptionLifecycleAllowsBillingActions(
     current.lifecycle
   );
+  // A Free plan is never a payment target: without a Pending Subscription
+  // Upgrade to recover or cancel, an InvoiceInfo on a Free record is stale
+  // upstream data and the payment ask must not render.
+  if (current.recoveryVoice === "resubscribe" && pendingUpgrade == null) {
+    return null;
+  }
   const pendingUpgradeUnavailable =
     pendingUpgrade != null && !pendingUpgradePlanAvailable;
   // Deliberately independent of warningStage: payment-due and cancelling are
@@ -366,8 +402,10 @@ function BillingInvoiceNotice({
 
   return (
     <Alert
-      className="has-data-[slot=alert-action]:pr-4 sm:has-data-[slot=alert-action]:pr-18"
-      variant="destructive"
+      className={cn(
+        "border-none has-data-[slot=alert-action]:pr-4",
+        SUBSCRIPTION_WARNING_TONES["deletion-imminent"]
+      )}
     >
       <AlertCircle aria-hidden />
       <AlertTitle>
@@ -382,15 +420,21 @@ function BillingInvoiceNotice({
       </AlertDescription>
       <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
         {canPayInvoice && current.invoicePaymentUrl != null ? (
-          <a
-            className={appButtonVariants({ size: "sm", variant: "danger" })}
-            href={current.invoicePaymentUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            <ExternalLink aria-hidden data-icon="inline-start" />
-            Pay invoice
-          </a>
+          <AppButton
+            nativeButton={false}
+            render={
+              <a
+                href={current.invoicePaymentUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <ExternalLink aria-hidden data-icon="inline-start" />
+                Pay invoice
+              </a>
+            }
+            size="sm"
+            variant="danger"
+          />
         ) : null}
         {canCancelInvoice && invoiceId != null && onCancelInvoice != null ? (
           <AppButton
@@ -738,6 +782,101 @@ export function BillingAiCreditsSection({
   );
 }
 
+/**
+ * The Account Balance figure (prototype D of AIM-313): the available total —
+ * Balance − DeductionBalance + usable credits across every active row, the
+ * upstream debt formula — with any remaining new-user gift (and only the
+ * gift: plan grants feed the total unlabeled) pinned beside it as a
+ * borderless chip. A negative amount tints the figure; the Account Debt
+ * caption (recovery is a top-up, never a plan) appears only when the
+ * platform's actual debt predicate holds — a PAYG workspace, ever billed,
+ * available ≤ 0 — the same judgment the status hint and the walls make.
+ * The $5 low-balance threshold deliberately does not tint this persistent
+ * display — that voice belongs to notifications.
+ */
+export function BillingBalanceValue({
+  availableMicroUnits,
+  creditsResolved,
+  currency,
+  giftMicroUnits,
+  lifetimeDeductionMicroUnits,
+  payg,
+}: {
+  availableMicroUnits: number;
+  /**
+   * Whether the credits fetch has succeeded. While false the available
+   * figure is cash-only, so debt must not be voiced — unseen credits could
+   * still cover the account.
+   */
+  creditsResolved: boolean;
+  currency: BillingCurrency;
+  giftMicroUnits: number;
+  /** Lifetime deductions — zero means the account has never been billed. */
+  lifetimeDeductionMicroUnits: number;
+  /** Whether this workspace is Pay-As-You-Go — the only mode debt suspends. */
+  payg: boolean;
+}) {
+  // Account Debt holds only where the platform would actually suspend: a
+  // PAYG workspace on an ever-billed account with nothing available. A
+  // subscribed workspace's negative balance still reddens, but carries no
+  // service-restoration claim — its resources ride the plan.
+  const inDebt =
+    creditsResolved &&
+    payg &&
+    accountDebtFromMoney({
+      availableBalanceMicroUnits: availableMicroUnits,
+      lifetimeDeductionMicroUnits,
+    });
+  const tinted = inDebt || (creditsResolved && availableMicroUnits < 0);
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline gap-2.5">
+        <p
+          className={cn(
+            "font-semibold text-2xl tabular-nums",
+            tinted ? "text-red-400" : "text-foreground"
+          )}
+        >
+          {formatBillingAmount(availableMicroUnits, currency)}
+        </p>
+        {giftMicroUnits > 0 ? (
+          <Badge
+            className="self-center bg-blue-400/10 text-blue-400 tabular-nums"
+            variant="secondary"
+          >
+            Gift {formatBillingAmount(giftMicroUnits, currency)}
+          </Badge>
+        ) : null}
+      </div>
+      {inDebt ? <BalanceDebtCaption /> : null}
+    </>
+  );
+}
+
+/** The debt caption links to the one place a top-up exists when it can. */
+function BalanceDebtCaption() {
+  const topUpUrl = useSealosDesktopUrl(TOP_UP_DESKTOP.app);
+  return (
+    <p className="text-red-400 text-xs">
+      {topUpUrl == null ? (
+        "Top up from the Sealos Desktop to restore your services."
+      ) : (
+        <>
+          <a
+            className="underline underline-offset-2"
+            href={topUpUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Top up in Sealos Desktop
+          </a>{" "}
+          to restore your services.
+        </>
+      )}
+    </p>
+  );
+}
+
 function BillingBalanceSection({
   balance,
   variant = "panel",
@@ -892,9 +1031,11 @@ function BillingPlanActions({
   }
 
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
-  // One "Renew" button covers both warning roads: before expiry it revokes
-  // the cancellation; after expiry it opens the plan picker so the user can
+  // One button covers both warning roads: before expiry it revokes the
+  // cancellation; after expiry it opens the plan picker so the user can
   // create a replacement subscription, matching the legacy costcenter flow.
+  // The post-expiry label follows the recovery voice — an expired Free plan
+  // asks for an upgrade, never a renewal.
   const canResume = current.lifecycle === "cancelling";
   const canRenew = current.lifecycle === "payment-due";
   const canCancel =
@@ -926,7 +1067,7 @@ function BillingPlanActions({
           onClick={() => onPlanChange?.(null)}
         >
           <Sparkles aria-hidden data-icon="inline-start" />
-          Renew
+          {current.recoveryVoice === "resubscribe" ? "Upgrade Plan" : "Renew"}
         </AppButton>
       ) : null}
       {canResume || canRenew ? null : (

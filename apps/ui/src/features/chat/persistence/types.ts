@@ -1,6 +1,7 @@
 import { isToolUIPart, type UIMessage } from "ai";
 import { z } from "zod";
 
+import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 import {
   NAVIGATE_APP_TOOL_NAME,
   navigateAppOutputSchema,
@@ -60,11 +61,28 @@ export const assistantThreadDTOSchema = z.object({
   updatedAt: z.string(),
 }) satisfies z.ZodType<AssistantThreadDTO>;
 
-/** Read-side snapshot of a namespace's chat billing posture, seeded into the pane on load. */
+/**
+ * Read-side snapshot of a workspace's Chat Billing Posture, seeded into the
+ * pane on load. Computed server-side only (ADR-0065/0069): bootstrap payload
+ * and `X-Chat-*` headers agree; clients render, never derive.
+ */
+/**
+ * What a `user` turn spends (CONTEXT.md): a subscribed workspace's AI
+ * Credits, a Pay-As-You-Go workspace's Account Balance.
+ */
+export type ChatPaidSource = "ai-credits" | "balance";
+
 export interface FreeTierState {
   billing: "free" | "user";
   limit: number;
+  /** The paid source the next `user` turn spends; absent/null while unknown. */
+  paidSource?: ChatPaidSource | null;
   remaining: number;
+  /**
+   * The exhausted paid source that blocks the next `user` turn (design spec
+   * row E3); absent/null while open.
+   */
+  wall?: ChatPaidSource | null;
 }
 
 /** Bootstrap payload returned by `GET /api/chat/session`. */
@@ -100,6 +118,8 @@ export type AssistantContextPayload = z.infer<
  * "nothing was selected"; we never backfill a stale target.
  */
 export const selectedResourceContextSchema = z.object({
+  /** Resource Display Name (ADR 0066) — display-only, never a `name` argument. */
+  displayName: z.string().max(512).optional(),
   kind: z.string().max(128).optional(),
   name: z.string().max(512).optional(),
   namespace: z.string().max(256).optional(),
@@ -145,7 +165,9 @@ export const chatStreamRequestSchema = z.object({
   encodedKubeconfig: z.string().optional(),
   assistantContext: assistantContextPayloadSchema.optional(),
 });
-export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema>;
+export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema> & {
+  workspaceResourceQuota?: WorkspaceResourceQuotaSnapshot;
+};
 
 /** Body of `POST /api/chat/messages`. Used by UI event adapters. */
 export const appendMessageBodySchema = z.object({

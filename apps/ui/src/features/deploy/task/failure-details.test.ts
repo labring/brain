@@ -184,3 +184,109 @@ describe("template cleanup eligibility (ADR 0037/0038)", () => {
     ).toBe(false);
   });
 });
+
+describe("billing evidence in failure details (catalog E1/E2)", () => {
+  const DEBT_EVIDENCE = {
+    availableBalanceMicroUnits: -6_320_000,
+    checkedAt: "2026-08-28T10:00:00.000Z",
+    kind: "account-debt" as const,
+  };
+
+  it("keeps the allowlisted billing evidence on the AI runner's public details", () => {
+    expect(
+      publicDeployTaskFailureDetails({
+        details: {
+          billingEvidence: DEBT_EVIDENCE,
+          errorMessage: "raw gateway text",
+          reason: "balance-exhausted",
+        },
+        runner: { kind: "ai", runtimeProvider: "devbox" },
+        status: "failed",
+      })
+    ).toEqual({
+      billingEvidence: DEBT_EVIDENCE,
+      failureMessage:
+        "Deployment stopped — the account balance is exhausted and the workspace is suspended. Top up, then redeploy.",
+      reason: "balance-exhausted",
+    });
+  });
+
+  it("drops malformed billing evidence instead of trusting it", () => {
+    expect(
+      publicDeployTaskFailureDetails({
+        details: {
+          billingEvidence: { kind: "account-debt" } as never,
+          reason: "timeout",
+        },
+        runner: { kind: "ai", runtimeProvider: "devbox" },
+        status: "failed",
+      })?.billingEvidence
+    ).toBeUndefined();
+  });
+
+  it("shows the billing check instead of the raw timeout for an exhausted balance, on every runner", () => {
+    const detail = deploymentFailureTechnicalDetail({
+      details: { billingEvidence: DEBT_EVIDENCE, reason: "balance-exhausted" },
+      error:
+        "Timed out waiting for deploy Devbox runtime: pod pending for 300s",
+      id: "task-1",
+      phase: "apply",
+      runner: { kind: "template" },
+      status: "failed",
+    });
+    expect(detail).toContain("Reason: balance-exhausted");
+    expect(detail).toContain(
+      "Billing check: available = balance - deductions + credits = -6.32 <= 0"
+    );
+    expect(detail).toContain("Checked at: 2026-08-28T10:00:00.000Z");
+    expect(detail).toContain("Task ID: task-1");
+    expect(detail).not.toContain("Timed out");
+  });
+
+  const STORAGE_FULL_EVIDENCE = {
+    kind: "quota-full" as const,
+    label: "Storage",
+    percentUsed: 100,
+    type: "storage",
+  };
+
+  it("appends the quota evidence to the apply error a raw runner's provider explained", () => {
+    const detail = deploymentFailureTechnicalDetail({
+      details: {
+        billingEvidence: STORAGE_FULL_EVIDENCE,
+        reason: "quota-exceeded",
+        stage: "apply",
+      },
+      error: "exceeded quota: requested: requests.storage=2Gi",
+      id: "task-1",
+      phase: "apply",
+      runner: { kind: "template" },
+      status: "failed",
+    });
+    expect(detail).toContain("exceeded quota: requested: requests.storage=2Gi");
+    expect(detail).toContain("Quota: Storage at 100%");
+  });
+
+  it("shows the billing check instead of the raw stall for a quota the runner could not see", () => {
+    // A pod that never scheduled reached the runner as a readiness timeout;
+    // that text contradicts "quota full" exactly as it contradicts "balance
+    // exhausted" (design spec row E2).
+    const detail = deploymentFailureTechnicalDetail({
+      details: {
+        billingEvidence: STORAGE_FULL_EVIDENCE,
+        reason: "quota-exceeded",
+        stage: "readiness",
+      },
+      error: "Timed out waiting for the workload to become ready after 600s",
+      id: "task-1",
+      phase: "verify",
+      runner: { kind: "template" },
+      status: "failed",
+    });
+    expect(detail).toContain("Reason: quota-exceeded");
+    expect(detail).toContain("Phase: verify");
+    expect(detail).toContain("Quota: Storage at 100%");
+    expect(detail).toContain("Task ID: task-1");
+    expect(detail).not.toContain("Timed out");
+  });
+});

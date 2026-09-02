@@ -6,6 +6,7 @@ import {
   executeEmitGenUISpec,
   genUISpecInputSchema,
 } from "@/features/chat/agui/gen-ui-tool";
+import { getChatDevboxSkillsSnapshot } from "@/features/chat/devbox/chat-runtime";
 import type { AssistantContextPayload } from "@/features/chat/persistence/types";
 import { createChatBashTool } from "@/features/chat/tool/chat-bash-tool";
 import { createSearchDeployCatalogTool } from "@/features/chat/tool/chat-deploy-catalog-tool";
@@ -17,8 +18,8 @@ import { createChatProjectTools } from "@/features/chat/tool/chat-project-tools"
 import { refreshFrontendSwrCachesTool } from "@/features/chat/tool/chat-refresh-frontend-swr-tool";
 import {
   buildChatSkillsDiscoveryPrompt,
+  createLoadSkillResourceTool,
   createLoadSkillTool,
-  discoverPublicSkills,
 } from "@/features/chat/tool/chat-skill-tool";
 import {
   chatToolIntentionField,
@@ -26,6 +27,7 @@ import {
 } from "@/features/chat/tool/chat-tool-intention";
 import { sliceOpenApiDocsTool } from "@/features/chat/tool/openapi-doc-slice-tool";
 import { readApiOpenApiDocsTool } from "@/features/chat/tool/read-api-openapi-docs-tool";
+import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 
 import { CHAT_BASE_SYSTEM_PROMPT } from "./model";
 import { buildAssistantWorkspaceContextPrompt } from "./workspace-context-prompt";
@@ -52,10 +54,11 @@ export interface ChatToolset {
  * Assemble the per-request tool registry + system prompt.
  *
  * - Skill index drives both the `loadSkill` tool and the discovery prompt addendum.
- * - Bash tool Devbox is created lazily; it does not start a runtime until the
- *   model actually invokes a bash subtool.
+ * - The shared Chat Devbox remains lazy; Skill metadata comes from the
+ *   background warmup cache and never blocks the chat stream preflight.
  */
 export async function buildChatToolset({
+  billingActor,
   kubeconfig,
   kubernetesNamespace,
   chatId,
@@ -63,6 +66,8 @@ export async function buildChatToolset({
   workspaceUserUid,
   assistantContext,
 }: {
+  /** Request-memory identity for a chat-created run's billing reverse-check. */
+  billingActor?: DeployBillingActor;
   chatId: string;
   kubeconfig: string;
   kubernetesNamespace: string;
@@ -70,12 +75,17 @@ export async function buildChatToolset({
   workspaceUserUid: string;
   assistantContext?: AssistantContextPayload;
 }): Promise<ChatToolset> {
-  const [skillIndex, { tools: bashTools }] = await Promise.all([
-    discoverPublicSkills(),
-    createChatBashTool({ kubeconfig, namespace: kubernetesNamespace }),
-  ]);
+  const { tools: bashTools, lazySandbox } = await createChatBashTool({
+    kubeconfig,
+    namespace: kubernetesNamespace,
+  });
+  const skillIndex = getChatDevboxSkillsSnapshot({
+    kubeconfig,
+    namespace: kubernetesNamespace,
+  });
   const deployTaskTools = createDeployTaskTools({
     assistantContext,
+    ...(billingActor == null ? {} : { billingActor }),
     kubeconfig,
     kubernetesNamespace,
     workspaceActor,
@@ -103,7 +113,8 @@ export async function buildChatToolset({
     refreshFrontendSwrCaches: refreshFrontendSwrCachesTool,
     readApiOpenApiDocs: readApiOpenApiDocsTool,
     sliceOpenApiDocs: sliceOpenApiDocsTool,
-    loadSkill: createLoadSkillTool(skillIndex),
+    loadSkill: createLoadSkillTool(skillIndex, lazySandbox),
+    loadSkillResource: createLoadSkillResourceTool(skillIndex, lazySandbox),
     ...bashTools,
   } as unknown as ToolSet;
 

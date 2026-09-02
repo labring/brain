@@ -29,6 +29,10 @@ const EXPIRED_WARNING_TITLE_PATTERN = /Your subscription has expired/;
 const UNDATED_GRACE_FALLBACK_PATTERN = /the grace period ends/;
 const ACCOUNT_DEBT_TITLE_PATTERN = /Your account balance is in debt/;
 const ACCOUNT_DEBT_TOP_UP_PATTERN = /Top up your balance/;
+const PLAN_EXPIRED_BADGE_PATTERN = /Plan Expired/;
+const FREE_EXPIRED_TITLE_PATTERN = /Your Free plan has expired/;
+const FREE_EXPIRED_UPGRADE_PATTERN = /Upgrade to a paid plan to avoid loss/;
+const UNPAID_INVOICE_PATTERN = /unpaid invoice/;
 
 const CREDENTIALS = {
   appToken: "test-token",
@@ -107,6 +111,22 @@ test("payment-due-final keeps the deletion warning and the Renew action", async 
     // deletion date is already in the past in the final stage.
     assert.match(text, DELETION_WARNING_FUTURE_TENSE_PATTERN);
     assert.ok(rendered.queryByRole("button", { name: "Renew" }));
+  });
+});
+
+test("free-expired asks for an upgrade, never a renewal or a payment", async () => {
+  // The resubscribe recovery voice: an expired trial keeps the shared
+  // deletion countdown and the Plan Expired badge, but nothing was ever
+  // charged — so no Renew action, no renewal copy, and no invoice ask.
+  await renderScenario("free-expired", (rendered) => {
+    const text = rendered.container.textContent ?? "";
+    assert.match(text, PLAN_EXPIRED_BADGE_PATTERN);
+    assert.match(text, FREE_EXPIRED_TITLE_PATTERN);
+    assert.match(text, FREE_EXPIRED_UPGRADE_PATTERN);
+    assert.doesNotMatch(text, EXPIRED_WARNING_TITLE_PATTERN);
+    assert.doesNotMatch(text, UNPAID_INVOICE_PATTERN);
+    assert.ok(rendered.queryByRole("button", { name: "Upgrade Plan" }));
+    assert.equal(rendered.queryByRole("button", { name: "Renew" }), null);
   });
 });
 
@@ -197,4 +217,180 @@ test("payment-due blanks both header dates regardless of cancellation", async ()
     assert.equal(headerField(rendered, "Quota Resets On"), "-");
     assert.equal(headerRenewalTime(rendered), "-");
   });
+});
+
+test("Free workspaces rows carry no Renewal Time", async () => {
+  // A Free subscription has no Renewal Time — the All Plans table's Renewal
+  // Time column blanks its date instead of claiming the expiry as a renewal.
+  for (const scenario of ["free", "free-expired"]) {
+    const snapshot = await loadSnapshotForScenario(scenario);
+    const row = snapshot.workspaces.find(
+      (workspace) => workspace.planName === "Free"
+    );
+    assert.ok(row != null, `${scenario}: a Free row is present`);
+    assert.equal(row?.renewalAt, null, `${scenario}: no Renewal Time`);
+  }
+});
+
+async function renderBalanceValue(
+  props: {
+    availableMicroUnits: number;
+    creditsResolved?: boolean;
+    giftMicroUnits: number;
+    lifetimeDeductionMicroUnits?: number;
+    payg?: boolean;
+  },
+  run: (rendered: ReturnType<typeof render>) => void | Promise<void>
+) {
+  await withTestDom(async (act) => {
+    const { BillingBalanceValue } = await import("./billing-plan-surface");
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        // Default: an ever-billed PAYG workspace — the mode where Account
+        // Debt actually suspends.
+        rendered = render(
+          <BillingBalanceValue
+            creditsResolved
+            currency="usd"
+            lifetimeDeductionMicroUnits={1_000_000}
+            payg
+            {...props}
+          />
+        );
+      });
+      if (rendered != null) {
+        await run(rendered);
+      }
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+}
+
+test("an active gift renders as a chip beside the available total", async () => {
+  // AIM-323: the newbie state — no cash, only the $1 gift partly consumed.
+  await renderBalanceValue(
+    { availableMicroUnits: 720_000, giftMicroUnits: 720_000 },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("$0.72"), "the available total renders");
+      assert.ok(text.includes("Gift $0.72"), "the gift chip renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "a positive total carries no debt caption"
+      );
+    }
+  );
+});
+
+test("a spent gift leaves the bare number", async () => {
+  await renderBalanceValue(
+    { availableMicroUnits: 104_550_000, giftMicroUnits: 0 },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("$104.55"));
+      assert.equal(text.includes("Gift"), false);
+    }
+  );
+});
+
+test("a negative available total voices Account Debt", async () => {
+  // Recovery is a top-up, never a plan (CONTEXT.md's Account Debt voice).
+  await renderBalanceValue(
+    { availableMicroUnits: -6_320_000, giftMicroUnits: 0 },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("-$6.32"), "the negative total renders");
+      assert.ok(
+        text.includes(
+          "Top up from the Sealos Desktop to restore your services."
+        ),
+        "the debt caption renders"
+      );
+    }
+  );
+});
+
+test("a never-billed account's zero total stays plain — good standing, not debt", async () => {
+  // The platform's state machine skips never-billed accounts: a fresh
+  // zero-balance account must not go red or ask for a top-up.
+  await renderBalanceValue(
+    {
+      availableMicroUnits: 0,
+      giftMicroUnits: 0,
+      lifetimeDeductionMicroUnits: 0,
+    },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("$0.00"), "the zero total renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "no debt caption at zero"
+      );
+    }
+  );
+});
+
+test("an ever-billed account at exactly zero voices Account Debt", async () => {
+  // Only a strictly positive available amount is good standing upstream:
+  // a billed-down-to-zero PAYG account is real debt, not a resting state.
+  await renderBalanceValue(
+    { availableMicroUnits: 0, giftMicroUnits: 0 },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("$0.00"), "the zero total renders");
+      assert.ok(
+        text.includes(
+          "Top up from the Sealos Desktop to restore your services."
+        ),
+        "the debt caption renders"
+      );
+    }
+  );
+});
+
+test("a subscribed workspace's negative total carries no restoration claim", async () => {
+  // The platform suspends only PAYG workspaces for Account Debt — a
+  // subscribed workspace's resources ride its plan, so promising a top-up
+  // would "restore your services" is false. The figure still reddens.
+  await renderBalanceValue(
+    { availableMicroUnits: -6_320_000, giftMicroUnits: 0, payg: false },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("-$6.32"), "the negative total renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "no service-restoration caption off PAYG"
+      );
+      assert.ok(
+        rendered.container.querySelector(".text-red-400") != null,
+        "the negative figure still tints"
+      );
+    }
+  );
+});
+
+test("unresolved credits withhold the debt voice", async () => {
+  // A failed or pending credits fetch leaves the figure cash-only; unseen
+  // credits could still cover the account, so no red tint and no caption.
+  await renderBalanceValue(
+    {
+      availableMicroUnits: -6_320_000,
+      creditsResolved: false,
+      giftMicroUnits: 0,
+    },
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.ok(text.includes("-$6.32"), "the cash figure still renders");
+      assert.equal(
+        text.includes("Top up from the Sealos Desktop"),
+        false,
+        "no debt caption without the full formula"
+      );
+    }
+  );
 });
