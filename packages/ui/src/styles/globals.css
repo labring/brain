@@ -163,8 +163,9 @@
   /** Shared glass-sheet blur radius; mirrors CANVAS_GLASS_BLUR_RADIUS in JS. */
   --canvas-glass-blur-radius: 40px;
 
-  /** Project chrome surface tokens. */
-  --project-chrome-surface-base: #080a11;
+  /** Project chrome surface tokens. The dark base (#080a11) moved into
+      `.dark` so light mode follows the theme; dark resolves identically. */
+  --project-chrome-surface-base: oklch(0.985 0 0);
   --project-chrome-surface: color-mix(
     in oklab,
     var(--input) 30%,
@@ -255,6 +256,10 @@
   );
   --sealai-brand-primary-hover: var(--color-blue-500);
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
+
+  /** Project chrome surface base (was :root-only dark; paired here so dark
+      resolves exactly as before while light follows the theme). */
+  --project-chrome-surface-base: #080a11;
 }
 
 @layer base {
@@ -744,6 +749,26 @@
     > .slider {
     background-color: var(--scrollbar-thumb);
   }
+}
+
+/* AnimatedThemeToggler View Transitions (ported from magicui): disable the
+   browser's default crossfade so the JS clip-path animation owns the reveal.
+   Scoped via the data-attribute the toggler sets only while a toggle is in
+   flight, so other view transitions in the app (e.g. Next.js navigation)
+   keep default behavior. The clip-from pin keeps Firefox from painting the
+   new theme unclipped between snapshot and the JS animation. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation: none;
+}
+
+html[data-sealai-theme-vt="active"]::view-transition-group(root) {
+  animation-duration: var(--sealai-theme-toggle-vt-duration);
+}
+
+html[data-sealai-theme-vt="active"]::view-transition-new(root) {
+  clip-path: var(--sealai-theme-vt-clip-from);
 }
 
 /* Registered via @utility (not a plain class in @layer utilities) so it can

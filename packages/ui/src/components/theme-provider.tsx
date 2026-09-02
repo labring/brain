@@ -13,8 +13,7 @@ function ThemeProvider({
       defaultTheme="dark"
       disableTransitionOnChange
       enableSystem={false}
-      forcedTheme="dark"
-      themes={["dark"]}
+      themes={["light", "dark"]}
       {...props}
     >
       {children}

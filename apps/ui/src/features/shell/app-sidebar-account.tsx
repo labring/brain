@@ -141,7 +141,7 @@ function AppSidebarQuotaBar({ percent }: { percent: number | null }) {
       <span
         className={cn(
           "block h-full rounded-full",
-          tone == null ? "bg-blue-400" : USAGE_BAR_CLASS[tone]
+          tone == null ? "bg-blue-600 dark:bg-blue-400" : USAGE_BAR_CLASS[tone]
         )}
         style={{ width: `${percent ?? 0}%` }}
       />
@@ -469,7 +469,7 @@ function AppSidebarAccountMenuRow({
       rel={rel}
       target={target}
     >
-      <span className="flex w-6 shrink-0 items-center justify-center text-neutral-50 transition-colors group-hover/menurow:text-blue-400">
+      <span className="flex w-6 shrink-0 items-center justify-center text-foreground transition-colors group-hover/menurow:text-blue-600 dark:group-hover/menurow:text-blue-400">
         {icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -554,8 +554,8 @@ function AppSidebarUsageAccordion({
         >
           <span
             className={cn(
-              "flex w-6 shrink-0 items-center justify-center transition-colors group-hover/menurow:text-blue-400",
-              open ? "text-blue-400" : "text-neutral-50"
+              "flex w-6 shrink-0 items-center justify-center transition-colors group-hover/menurow:text-blue-600 dark:group-hover/menurow:text-blue-400",
+              open ? "text-blue-600 dark:text-blue-400" : "text-foreground"
             )}
           >
             <Gauge aria-hidden className="size-4" strokeWidth={1.8} />
@@ -694,7 +694,7 @@ function AppSidebarAccountMenuView({
       {userId === "" ? null : (
         <button
           aria-label="Copy user ID"
-          className="flex cursor-pointer items-center gap-1 text-muted-foreground text-xs tabular-nums transition-colors hover:text-neutral-50"
+          className="flex cursor-pointer items-center gap-1 text-muted-foreground text-xs tabular-nums transition-colors hover:text-foreground"
           onClick={onCopyId}
           type="button"
         >
@@ -720,7 +720,7 @@ function AppSidebarAccountMenuView({
         usageSection={usageSection}
       />
       <Link
-        className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-input/40 font-medium text-neutral-50 text-sm transition-colors hover:bg-input/60"
+        className="flex h-9 items-center justify-center gap-1.5 rounded-md bg-input/40 font-medium text-foreground text-sm transition-colors hover:bg-input/60"
         href="/billing?mode=upgrade"
         onClick={recordBillingReturnRoute}
       >
@@ -899,7 +899,7 @@ export function AppSidebarAccount() {
               : "opacity-0 duration-200 ease-out"
           )}
         >
-          <span className="block truncate font-medium text-neutral-50 text-sm/4">
+          <span className="block truncate font-medium text-foreground text-sm/4">
             {displayName}
           </span>
           {secondLine == null ? null : (
@@ -931,7 +931,7 @@ export function AppSidebarAccount() {
       <PopoverContent
         align={expanded ? "start" : "end"}
         anchor={expanded ? undefined : iconSlotRef}
-        className="w-58 gap-0 rounded-lg border border-border bg-input/30 p-3 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
+        className="w-58 gap-0 rounded-lg border border-border bg-input/30 p-3 text-foreground shadow-none ring-0 backdrop-blur-xl dark:text-brand-primary-foreground"
         side={expanded ? "top" : "right"}
         sideOffset={6}
       >

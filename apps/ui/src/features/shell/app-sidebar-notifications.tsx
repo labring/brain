@@ -173,7 +173,9 @@ function NotificationCard({
             <span
               className={cn(
                 "min-w-0 truncate text-sm",
-                unread ? "font-medium text-neutral-50" : "text-neutral-300"
+                unread
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground dark:text-neutral-300"
               )}
             >
               {item.title}
@@ -200,7 +202,7 @@ function NotificationCard({
       <span
         aria-hidden
         className={cn(
-          "absolute top-2.5 right-2.5 size-1.5 rounded-full bg-blue-400 transition-opacity",
+          "absolute top-2.5 right-2.5 size-1.5 rounded-full bg-blue-600 transition-opacity dark:bg-blue-400",
           unread ? "opacity-100" : "opacity-0"
         )}
       />
@@ -219,7 +221,7 @@ function NotificationsEmptyState({ tab }: { tab: NotificationTab }) {
           strokeWidth={1.8}
         />
       </span>
-      <span className="font-medium text-neutral-50 text-sm">
+      <span className="font-medium text-foreground text-sm">
         {nothingYet ? "No notifications yet" : "You're all caught up"}
       </span>
       <span className="text-muted-foreground text-xs">
@@ -258,7 +260,7 @@ export function NotificationsPanel({ feed }: { feed: NotificationFeed }) {
       <div className="flex h-10 shrink-0 items-center justify-between pr-2 pl-3">
         <span className="font-medium text-sm">Notifications</span>
         <AppButton
-          className="text-muted-foreground hover:text-neutral-50"
+          className="text-muted-foreground hover:text-foreground"
           disabled={unreadCount === 0}
           onClick={markAllRead}
           size="sm"
@@ -280,7 +282,7 @@ export function NotificationsPanel({ feed }: { feed: NotificationFeed }) {
                   Unread
                   {unreadCount > 0 ? (
                     <span
-                      className="rounded-full bg-blue-400/15 px-1.5 text-[10px] text-blue-400 tabular-nums"
+                      className="rounded-full bg-blue-600/15 px-1.5 text-[10px] text-blue-600 tabular-nums dark:bg-blue-400/15 dark:text-blue-400"
                       data-slot="app-sidebar-notifications-unread-count"
                     >
                       {unreadCount}
@@ -346,7 +348,7 @@ export function AppSidebarNotifications() {
           ? `Notifications, ${unreadCount} unread`
           : "Notifications"
       }
-      className="group/nbell relative flex h-9 w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left text-neutral-50 text-sm"
+      className="group/nbell relative flex h-9 w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left text-foreground text-sm"
       data-slot="app-sidebar-notifications"
       type="button"
     />
@@ -365,14 +367,14 @@ export function AppSidebarNotifications() {
           )}
         />
         <span
-          className="relative flex w-9 shrink-0 items-center justify-center transition-colors group-hover/nbell:text-blue-400"
+          className="relative flex w-9 shrink-0 items-center justify-center transition-colors group-hover/nbell:text-blue-600 dark:group-hover/nbell:text-blue-400"
           ref={iconSlotRef}
         >
           <Bell aria-hidden className="size-4" strokeWidth={1.8} />
           <span
             aria-hidden
             className={cn(
-              "absolute top-2 right-2 size-1.5 rounded-full bg-blue-400 transition-opacity motion-reduce:transition-none",
+              "absolute top-2 right-2 size-1.5 rounded-full bg-blue-600 transition-opacity motion-reduce:transition-none dark:bg-blue-400",
               !expanded && unreadCount > 0
                 ? "opacity-100 duration-200 ease-out"
                 : "opacity-0 duration-300 ease-sidebar"
@@ -399,7 +401,7 @@ export function AppSidebarNotifications() {
         >
           {badgeLabel == null ? null : (
             <span
-              className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-400/15 px-1 font-medium text-[10px] text-blue-400 tabular-nums"
+              className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600/15 px-1 font-medium text-[10px] text-blue-600 tabular-nums dark:bg-blue-400/15 dark:text-blue-400"
               data-slot="app-sidebar-notifications-badge"
             >
               {badgeLabel}
@@ -415,7 +417,7 @@ export function AppSidebarNotifications() {
       <PopoverContent
         align="start"
         anchor={expanded ? undefined : iconSlotRef}
-        className="flex min-h-80 w-96 flex-col gap-0 rounded-lg border border-border bg-input/30 p-0 text-brand-primary-foreground shadow-none ring-0 backdrop-blur-xl"
+        className="flex min-h-80 w-96 flex-col gap-0 rounded-lg border border-border bg-input/30 p-0 text-foreground shadow-none ring-0 backdrop-blur-xl dark:text-brand-primary-foreground"
         side="right"
         sideOffset={expanded ? 10 : 6}
       >
