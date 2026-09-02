@@ -13,6 +13,7 @@ import {
   withTestDom,
 } from "@/features/project-canvas/react-test-harness";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { CANCEL_PLAN_PREVIEW_PENDING_MS } from "./billing-cancel-plan-dialog-tweaks";
 import { formatBillingDate, formatBillingDateTime } from "./billing-datetime";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 
@@ -1324,6 +1325,136 @@ test("an unanswered survey still cancels, and a failed survey write still confir
         }),
       ]);
     } finally {
+      await restore();
+    }
+  });
+});
+
+const PREVIEW_FAILURE_RE = /Preview: the cancel was refused\./;
+
+/** The panel toggle carrying `label`, addressed by its segmented options. */
+function panelToggle(label: string): HTMLElement {
+  const control = Array.from(
+    document.body.querySelectorAll<HTMLElement>(".dev-tweaks-labeled-control")
+  ).find(
+    (candidate) =>
+      candidate.querySelector(".dev-tweaks-labeled-control-label")
+        ?.textContent === label
+  );
+  assert.ok(control, `panel toggle ${label}`);
+  return control;
+}
+
+test("the dev tweaks preview opens both stages and never leaves the page", async () => {
+  await withTestDom(async (act) => {
+    const dataLayer = installDataLayer();
+    const flow = cancelFlowResponder();
+    const previousFlag = process.env.NEXT_PUBLIC_DEV_TWEAKS;
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    const { DevTweaksRoot } = await import("@workspace/dev-tweaks");
+    let panel: ReturnType<typeof render> | undefined;
+    await act(() => {
+      panel = render(<DevTweaksRoot mode="inline" />);
+    });
+    const body = within(document.body);
+    const clickPanelButton = (name: string) =>
+      act(() => {
+        fireEvent.click(body.getByRole("button", { name }));
+      });
+    const flipPanelToggle = (label: string, on: boolean) =>
+      act(() => {
+        const option = panelToggle(label).querySelector(
+          `[data-value="${on ? "on" : "off"}"]`
+        );
+        assert.ok(option);
+        fireEvent.click(option);
+      });
+    const settlePreview = () =>
+      act(
+        () =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, CANCEL_PLAN_PREVIEW_PENDING_MS + 50);
+          })
+      );
+    const closeDialog = async (dialog: HTMLElement, name: string) => {
+      await act(() => {
+        fireEvent.click(within(dialog).getByRole("button", { name }));
+      });
+      assert.equal(rendered?.queryByRole("dialog"), null);
+    };
+    try {
+      // Outside a dev/demo build the panel buttons are inert.
+      delete process.env.NEXT_PUBLIC_DEV_TWEAKS;
+      await clickPanelButton("Open survey");
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      process.env.NEXT_PUBLIC_DEV_TWEAKS = "1";
+
+      // Survey preview: Cancel Plan pends, then settles into the confirmation
+      // with the thank-you line the toggle defaults to.
+      await clickPanelButton("Open survey");
+      let dialog = rendered?.getByRole("dialog", { name: CANCEL_DIALOG_NAME });
+      assert.ok(dialog);
+      assert.match(dialog.textContent ?? "", SURVEY_QUESTION_RE);
+      await act(() => {
+        fireEvent.click(
+          within(dialog as HTMLElement).getByRole("button", {
+            name: "Cancel Plan",
+          })
+        );
+      });
+      assert.ok(within(dialog).getByRole("button", { name: "Cancelling..." }));
+      await settlePreview();
+      dialog = rendered?.getByRole("dialog", {
+        name: CONFIRMATION_DIALOG_NAME,
+      });
+      assert.ok(dialog);
+      assert.match(dialog.textContent ?? "", THANK_YOU_RE);
+      await closeDialog(dialog, "Close");
+
+      // Simulated failure: the same click settles into the inline error and
+      // Keep Plan leaves without reporting a keep.
+      await flipPanelToggle("Simulate Failure", true);
+      await clickPanelButton("Open survey");
+      dialog = rendered?.getByRole("dialog", { name: CANCEL_DIALOG_NAME });
+      assert.ok(dialog);
+      await act(() => {
+        fireEvent.click(
+          within(dialog as HTMLElement).getByRole("button", {
+            name: "Cancel Plan",
+          })
+        );
+      });
+      await settlePreview();
+      assert.match(
+        within(dialog).getByRole("alert").textContent ?? "",
+        PREVIEW_FAILURE_RE
+      );
+      await closeDialog(dialog, "Keep Plan");
+
+      // The confirmation opens directly, and the feedback toggle decides the
+      // thank-you line.
+      await flipPanelToggle("With Feedback", false);
+      await clickPanelButton("Open confirmation");
+      dialog = rendered?.getByRole("dialog", {
+        name: CONFIRMATION_DIALOG_NAME,
+      });
+      assert.ok(dialog);
+      assert.doesNotMatch(dialog.textContent ?? "", THANK_YOU_RE);
+      await closeDialog(dialog, "Close");
+
+      assert.deepEqual(flow.requests, [], "a preview sends no request");
+      assert.deepEqual(dataLayer, [], "a preview reports nothing");
+      assert.ok(
+        rendered?.getByRole("button", { name: "Cancel Plan" }),
+        "the real trigger is untouched"
+      );
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.NEXT_PUBLIC_DEV_TWEAKS;
+      } else {
+        process.env.NEXT_PUBLIC_DEV_TWEAKS = previousFlag;
+      }
+      await act(() => panel?.unmount());
       await restore();
     }
   });

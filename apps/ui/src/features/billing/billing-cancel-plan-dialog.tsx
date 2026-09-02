@@ -11,6 +11,11 @@ import { Check, CircleCheck } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
 import { trackBrainGtmEvent } from "@/features/analytics/brain-gtm";
+import {
+  CANCEL_PLAN_PREVIEW_PENDING_MS,
+  type CancelPlanDialogPreviewStage,
+  useCancelPlanDialogPreview,
+} from "@/features/billing/billing-cancel-plan-dialog-tweaks";
 import type { SubscriptionLifecycleHandler } from "@/features/billing/billing-plan-data";
 import {
   CANCELLATION_FEEDBACK_MAX_LENGTH,
@@ -21,7 +26,13 @@ import {
   EMPTY_CANCELLATION_SURVEY_ANSWERS,
 } from "@/features/billing/cancellation-survey/reasons";
 
-type CancelPlanDialogStage = "confirmation" | "survey";
+type CancelPlanDialogStage = CancelPlanDialogPreviewStage;
+
+const PREVIEW_FAILURE_MESSAGE = "Preview: the cancel was refused.";
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 interface CancelPlanDialogProps {
   disabled: boolean;
@@ -60,6 +71,9 @@ export function CancelPlanDialog({
   );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // A preview is opened from the dev tweaks panel and never leaves the page:
+  // Cancel Plan settles locally, and no dismissal reports a keep.
+  const [previewing, setPreviewing] = useState(false);
   const feedbackRef = useRef<HTMLTextAreaElement>(null);
   const questionId = useId();
   const feedbackId = useId();
@@ -74,6 +88,8 @@ export function CancelPlanDialog({
       setStage("survey");
       setAnswers(EMPTY_CANCELLATION_SURVEY_ANSWERS);
       setError(null);
+    } else if (previewing) {
+      setPreviewing(false);
     } else if (stage === "survey") {
       // Keep Plan and every dismissal path (Escape, overlay) mean the same
       // thing; leaving the confirmation stage is not a keep.
@@ -84,6 +100,17 @@ export function CancelPlanDialog({
     }
     setOpen(nextOpen);
   };
+
+  const preview = useCancelPlanDialogPreview((previewStage) => {
+    if (submitting) {
+      return;
+    }
+    setPreviewing(true);
+    setStage(previewStage);
+    setAnswers(EMPTY_CANCELLATION_SURVEY_ANSWERS);
+    setError(null);
+    setOpen(true);
+  });
 
   const handleReasonsChange = (value: unknown[]) => {
     const reasons = cancellationReasonKeySchema.array().parse(value);
@@ -99,6 +126,15 @@ export function CancelPlanDialog({
     setError(null);
     setSubmitting(true);
     try {
+      if (previewing) {
+        await wait(CANCEL_PLAN_PREVIEW_PENDING_MS);
+        if (preview.simulateFailure) {
+          setError(PREVIEW_FAILURE_MESSAGE);
+          return;
+        }
+        setStage("confirmation");
+        return;
+      }
       const outcome = await onConfirm?.("canceled", {
         survey: { feedback: answers.feedback.trim(), reasons: answers.reasons },
       });
@@ -146,7 +182,8 @@ export function CancelPlanDialog({
                 </span>
                 . You can resume it anytime before then from the Plan view.
               </p>
-              {cancellationSurveyHasAnswers(answers) ? (
+              {cancellationSurveyHasAnswers(answers) ||
+              (previewing && preview.withFeedback) ? (
                 <p className="text-muted-foreground">
                   Thank you for your feedback — it helps us improve.
                 </p>
