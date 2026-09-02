@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   jsonb,
@@ -197,11 +198,52 @@ export const projectManagementAuditEvents = ns.table(
   ]
 );
 
+/**
+ * Maps an already-applied Sealos Template Instance (by UID) onto a Brain
+ * Project. Internal bookkeeping only — not a user-visible Project status.
+ */
+export const templateInstanceAdoptions = ns.table(
+  "template_instance_adoptions",
+  {
+    namespace: text("namespace").notNull(),
+    instanceUid: text("instance_uid").notNull(),
+    instanceName: text("instance_name").notNull(),
+    projectId: text("project_id").notNull(),
+    templateName: text("template_name").notNull().default(""),
+    status: text("status").notNull(),
+    discoveredCount: integer("discovered_count").notNull().default(0),
+    labeledCount: integer("labeled_count").notNull().default(0),
+    lastError: text("last_error"),
+    updatedAt: timestamp("updated_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.namespace, table.instanceUid],
+      name: "template_instance_adoptions_pk",
+    }),
+    check(
+      "template_instance_adoptions_status_valid",
+      sql`${table.status} IN ('adopting', 'adopted', 'failed')`
+    ),
+    index("template_instance_adoptions_namespace_project_id_idx").on(
+      table.namespace,
+      table.projectId
+    ),
+  ]
+);
+
 // `sealai_project.ap_image_versions` is intentionally NOT declared here: the Go
 // API owns that table end-to-end (DDL + retention pruning) in
 // `apps/api/service/apversion/store.go`; the UI only reads it over HTTP.
 
 export type ProjectRow = typeof projects.$inferSelect;
+export type TemplateInstanceAdoptionRow =
+  typeof templateInstanceAdoptions.$inferSelect;
 export type ProjectCanvasLayoutRow = typeof projectCanvasLayouts.$inferSelect;
 export type ProjectNavigationPreferencesRow =
   typeof projectNavigationPreferences.$inferSelect;
