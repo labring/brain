@@ -20,8 +20,10 @@ export interface BillingFailureOverride {
    * Whether the override names a cause the runner never saw. The runner's
    * own text was then only a stall (a timeout, a pod that never came up)
    * that contradicts the headline, so the curated reason replaces it on
-   * every runner. False only for an apply-time quota error the provider
-   * explained itself, which keeps the requested/used/limited numbers.
+   * every runner. False only for an apply-time error the platform explained
+   * itself: the provider's quota error, which keeps the requested/used/limited
+   * numbers, and the debt webhook's billing denial (ADR-0072), which keeps
+   * the platform's own text.
    */
   supersedesRunnerError: boolean;
 }
