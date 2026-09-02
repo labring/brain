@@ -91,7 +91,7 @@ test("resume refreshes the Plan lifecycle state", async () => {
 
       await act(() => {
         const resume = rendered?.getByRole("button", {
-          name: "Renew",
+          name: "Resume Plan",
         });
         if (resume != null) {
           fireEvent.click(resume);

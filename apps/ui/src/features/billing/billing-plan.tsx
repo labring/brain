@@ -13,6 +13,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { trackBrainGtmEventAfterSuccess } from "@/features/analytics/brain-gtm";
 import {
   type AccountBalance,
   loadAccountBalance,
@@ -39,7 +40,7 @@ import {
   createBillingCardManagementSession,
   loadBillingPlanSnapshot,
   type SubscriptionLifecycleAction,
-  type SubscriptionLifecycleOutcome,
+  type SubscriptionLifecycleHandler,
   subscriptionLifecycleAllowsBillingActions,
   updateSubscriptionLifecycle,
 } from "@/features/billing/billing-plan-data";
@@ -54,6 +55,8 @@ import {
   aiCreditsSwrKey,
   settleSubscriptionChange,
 } from "@/features/billing/billing-subscription-settlement";
+import { submitCancellationSurvey } from "@/features/billing/cancellation-survey/client";
+import { EMPTY_CANCELLATION_SURVEY_ANSWERS } from "@/features/billing/cancellation-survey/reasons";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import {
   type FreeChatTurnsUsage,
@@ -81,9 +84,7 @@ interface BillingPlanWorkflowProps {
   initialMode?: "upgrade" | null;
   invoiceCancellationPending?: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
-  onLifecycleAction?: (
-    operator: SubscriptionLifecycleAction
-  ) => Promise<SubscriptionLifecycleOutcome> | undefined;
+  onLifecycleAction?: SubscriptionLifecycleHandler;
   onManageCard?: () => void;
   onRefreshSnapshot: (workspaceId?: string) => Promise<BillingPlanSnapshot>;
   replaceUrl: (url: string) => void;
@@ -452,9 +453,10 @@ export function BillingPlan({
     []
   );
 
-  const updateLifecycle = async (
-    operator: SubscriptionLifecycleAction
-  ): Promise<SubscriptionLifecycleOutcome> => {
+  const updateLifecycle: SubscriptionLifecycleHandler = async (
+    operator,
+    options
+  ) => {
     if (
       snapshot == null ||
       actionPending != null ||
@@ -464,20 +466,39 @@ export function BillingPlan({
     }
 
     const { current } = snapshot;
+    const survey = options?.survey ?? EMPTY_CANCELLATION_SURVEY_ANSWERS;
     setActionPending(operator);
     try {
-      await updateSubscriptionLifecycle({
-        appToken,
-        kubeconfig,
-        operator,
-        payMethod: current.payMethod,
-        planName: current.planName,
-        regionDomain: current.regionDomain,
-        workspace: current.workspace,
-      });
+      // account-service receives exactly the request it always has; the
+      // survey never rides along (ADR-0072).
+      const lifecycleRequest = () =>
+        updateSubscriptionLifecycle({
+          appToken,
+          kubeconfig,
+          operator,
+          payMethod: current.payMethod,
+          planName: current.planName,
+          regionDomain: current.regionDomain,
+          workspace: current.workspace,
+        });
+      if (operator === "canceled") {
+        // The funnel event carries reason keys, never the free text.
+        await trackBrainGtmEventAfterSuccess(lifecycleRequest, {
+          event: "subscription_cancel",
+          has_feedback: survey.feedback.trim() !== "",
+          plan_name: current.planName,
+          reasons: survey.reasons,
+        });
+      } else {
+        await lifecycleRequest();
+      }
       await refreshSnapshot();
       if (operator === "canceled") {
-        // The receipt's observation point for cancellations (catalog B5).
+        // Both side effects follow the confirmed cancel and never block or
+        // alter the UI: the receipt's observation point for cancellations
+        // (catalog B5) and the survey row (ADR-0072). A rejected survey
+        // write is swallowed here — the person is never told a cancellation
+        // failed because a questionnaire did.
         observeSubscriptionChangeQuietly({
           appToken,
           cancelled: {
@@ -488,12 +509,20 @@ export function BillingPlan({
           regionDomain: current.regionDomain,
           workspace: current.workspace,
         }).catch(() => undefined);
+        submitCancellationSurvey({
+          appToken,
+          currentPeriodEndAt: current.currentPeriodEndAt,
+          feedback: survey.feedback,
+          kubeconfig,
+          planName: current.planName,
+          reasons: survey.reasons,
+          regionDomain: current.regionDomain,
+          workspace: current.workspace,
+        }).catch(() => undefined);
+      } else {
+        // The cancel path confirms inside its own dialog instead of a toast.
+        toast.success("Subscription resumed.");
       }
-      toast.success(
-        operator === "canceled"
-          ? "Subscription cancellation scheduled."
-          : "Subscription resumed."
-      );
       return { ok: true };
     } catch (error) {
       const message = errorDescription(

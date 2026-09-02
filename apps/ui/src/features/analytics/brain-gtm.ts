@@ -1,6 +1,7 @@
 "use client";
 
 import { sendGTMEvent } from "@next/third-parties/google";
+import type { CancellationReasonKey } from "@/features/billing/cancellation-survey/reasons";
 import type {
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
@@ -79,6 +80,25 @@ export interface BrainGtmOnboardingCompleteEvent {
   event: "onboarding_complete";
 }
 
+// The Cancellation Survey funnel (ADR-0072): reason keys travel, the free
+// text never does — there is no field for it, so an email address or a
+// company name typed into the survey cannot reach third-party analytics.
+
+/** After account-service confirmed a cancel that went through the survey. */
+export interface BrainGtmSubscriptionCancelEvent {
+  event: "subscription_cancel";
+  /** Whether trimmed free text was given; the text itself stays in Postgres. */
+  has_feedback: boolean;
+  plan_name: string;
+  reasons: CancellationReasonKey[];
+}
+
+/** The person left the survey stage without cancelling (Keep Plan or any dismissal). */
+export interface BrainGtmSubscriptionCancelKeptEvent {
+  event: "subscription_cancel_kept";
+  plan_name: string;
+}
+
 export type BrainGtmEvent =
   | BrainGtmCardActionEvent
   | BrainGtmDeploymentCreateEvent
@@ -87,7 +107,9 @@ export type BrainGtmEvent =
   | BrainGtmModuleViewEvent
   | BrainGtmOnboardingCompleteEvent
   | BrainGtmOnboardingSkipEvent
-  | BrainGtmOnboardingStepViewEvent;
+  | BrainGtmOnboardingStepViewEvent
+  | BrainGtmSubscriptionCancelEvent
+  | BrainGtmSubscriptionCancelKeptEvent;
 
 export interface BrainGtmSessionStorage {
   getItem: (key: string) => string | null;

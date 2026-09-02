@@ -2,6 +2,7 @@ import {
   type BillingDevScenario,
   billingDevMockCookie,
 } from "@/features/billing/dev-mock-cookie";
+import { BILLING_ROUTES } from "@/features/billing/server/billing-route-table";
 import {
   type DevMockResolution,
   resolveDevMock,
@@ -866,6 +867,15 @@ const WRITE_FIXTURES: Record<
       success: true,
     },
   }),
+  // Brain's own survey write (ADR-0072): answers success in every scenario
+  // without a transition, so the mocked cancel's confirmation stage and the
+  // survey submit both run offline. Nothing is stored.
+  [BILLING_ROUTES.subscriptionCancellationSurvey.upstreamPathname]: (
+    context
+  ) => ({
+    nextScenario: context.scenario,
+    payload: { id: "mock-cancellation-survey", ok: true },
+  }),
   "/account/v1alpha1/workspace-subscription/pay": (context) => {
     const operator =
       typeof context.body.operator === "string" ? context.body.operator : "";
@@ -906,6 +916,8 @@ const PAY_TRANSITIONS: Record<
     active: "cancelling",
     "active-balance": "cancelling",
     "mixed-workspaces": "cancelling",
+    // The queued upgrade is dropped with the subscription it was for.
+    "pending-upgrade": "cancelling",
   },
   // DELETED means subscribable-again PAYG (AIM-252), so `created` succeeds
   // from `deleted` exactly as it does from the PAYG scenarios. The debt

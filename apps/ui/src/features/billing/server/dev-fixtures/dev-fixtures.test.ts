@@ -18,6 +18,7 @@ import {
   BILLING_DEV_SCENARIOS,
   formatBillingDevMockCookie,
 } from "../../dev-mock-cookie";
+import { BILLING_ROUTES } from "../billing-route-table";
 import { judgeWorkspaceBillingStanding } from "../billing-standing-core";
 import { billingDevMockResponse, freeChatTurnsFixture } from "./index";
 import { scenarioTestFetch } from "./scenario-test-fetch";
@@ -504,6 +505,7 @@ test("pay transitions move the scenario cookie", async () => {
     ["payment-due-deletion", "created", "active"],
     ["payment-due-final", "created", "active"],
     ["active", "canceled", "cancelling"],
+    ["pending-upgrade", "canceled", "cancelling"],
     ["cancelling", "resumed", "active"],
     ["active-balance", "upgraded", "active"],
     ["free", "upgraded", "active"],
@@ -559,6 +561,29 @@ test("lifecycle operators answer plain success without a checkout", async () => 
     payRequest("active", "canceled")
   );
   assert.deepEqual(await response?.json(), { success: true });
+});
+
+test("the cancellation survey write succeeds in place in every scenario", async () => {
+  for (const scenario of ["active", "pending-upgrade", "cancelling"]) {
+    const response = await billingDevMockResponse(
+      BILLING_ROUTES.subscriptionCancellationSurvey.upstreamPathname,
+      mockRequest("/api/billing/subscription/cancellation-survey", scenario, {
+        body: JSON.stringify({
+          currentPeriodEndAt: null,
+          feedback: "",
+          planName: "Pro",
+          reasons: ["too_expensive"],
+          regionDomain: "mock.sealos.run",
+          workspace: "ns-test",
+        }),
+        method: "POST",
+      })
+    );
+    assert.equal(response?.status, 200, `${scenario}: survey write succeeds`);
+    assert.equal(scenarioFromSetCookie(response), null, "no transition");
+    const payload = (await response?.json()) as Record<string, unknown>;
+    assert.equal(payload.ok, true);
+  }
 });
 
 test("invoice-cancel drops a queued upgrade back to active", async () => {

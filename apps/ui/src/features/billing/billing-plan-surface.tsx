@@ -7,7 +7,6 @@ import {
   AlertTitle,
 } from "@workspace/ui/components/alert";
 import { AppButton } from "@workspace/ui/components/app-button";
-import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { Badge } from "@workspace/ui/components/badge";
 import { PlanBadge } from "@workspace/ui/components/plan-badge";
 import { Separator } from "@workspace/ui/components/separator";
@@ -34,7 +33,7 @@ import {
   Sparkles,
   TriangleAlert,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 
 import { accountDebtFromMoney } from "@/features/billing/account-debt";
 import {
@@ -43,13 +42,14 @@ import {
   formatAiCredits,
 } from "@/features/billing/billing-ai-credits";
 import { formatBillingAmount } from "@/features/billing/billing-amount";
+import { CancelPlanDialog } from "@/features/billing/billing-cancel-plan-dialog";
 import { TOP_UP_DESKTOP } from "@/features/billing/billing-cta";
 import { formatBillingDateTime } from "@/features/billing/billing-datetime";
 import {
   type BillingPlanSnapshot,
   type SubscriptionLifecycle,
   type SubscriptionLifecycleAction,
-  type SubscriptionLifecycleOutcome,
+  type SubscriptionLifecycleHandler,
   type SubscriptionWarningStage,
   subscriptionLifecycleAllowsBillingActions,
 } from "@/features/billing/billing-plan-data";
@@ -914,102 +914,6 @@ function BillingBalanceSection({
   );
 }
 
-type LifecycleActionHandler = (
-  operator: SubscriptionLifecycleAction
-) => Promise<SubscriptionLifecycleOutcome> | undefined;
-
-function CancelPlanDialog({
-  currentPeriodEndAt,
-  disabled,
-  onConfirm,
-}: {
-  currentPeriodEndAt: string | null;
-  disabled: boolean;
-  onConfirm?: LifecycleActionHandler;
-}) {
-  const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const confirmCancellation = async () => {
-    setError(null);
-    setSubmitting(true);
-    try {
-      const outcome = await onConfirm?.("canceled");
-      if (outcome != null && !outcome.ok) {
-        setError(outcome.message);
-        return;
-      }
-      setOpen(false);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <AppDialog.Root
-      onOpenChange={(nextOpen) => {
-        if (submitting) {
-          return;
-        }
-        setOpen(nextOpen);
-        if (nextOpen) {
-          setError(null);
-        }
-      }}
-      open={open}
-    >
-      <AppDialog.Trigger
-        disabled={disabled}
-        id="billing-cancel-subscription-trigger"
-        render={<AppButton variant="secondary" />}
-      >
-        Cancel Plan
-      </AppDialog.Trigger>
-      <AppDialog.Content>
-        <AppDialog.Header>
-          <AppDialog.WarningIcon className="text-destructive" />
-          <AppDialog.Title>We are sorry to see you go</AppDialog.Title>
-          <AppDialog.Description className="sr-only">
-            Cancelling keeps the plan until the current period ends, after which
-            the workspace is suspended and its resources deleted soon after.
-          </AppDialog.Description>
-        </AppDialog.Header>
-        <AppDialog.Body>
-          <p className="text-muted-foreground">
-            Your resources will be kept until the current subscription period
-            ends (
-            <span className="font-medium text-destructive">
-              {formatDate(currentPeriodEndAt)}
-            </span>
-            ).{" "}
-            <span className="font-medium text-destructive">
-              After that, your workspace will be suspended and its resources
-              deleted soon after
-            </span>
-            . Please backup your work in advance to avoid data loss.
-          </p>
-          {error == null ? null : (
-            <p className="text-destructive" role="alert">
-              {error}
-            </p>
-          )}
-        </AppDialog.Body>
-        <AppDialog.Footer>
-          <AppDialog.Cancel disabled={submitting}>Keep Plan</AppDialog.Cancel>
-          <AppDialog.DestructiveAction
-            loading={submitting}
-            loadingLabel="Cancelling..."
-            onClick={confirmCancellation}
-          >
-            Cancel Plan
-          </AppDialog.DestructiveAction>
-        </AppDialog.Footer>
-      </AppDialog.Content>
-    </AppDialog.Root>
-  );
-}
-
 function BillingPlanActions({
   actionPending,
   current,
@@ -1018,7 +922,7 @@ function BillingPlanActions({
 }: {
   actionPending: SubscriptionLifecycleAction | null;
   current: BillingPlanSnapshot["current"];
-  onLifecycleAction?: LifecycleActionHandler;
+  onLifecycleAction?: SubscriptionLifecycleHandler;
   onPlanChange?: (planId: string | null) => void;
 }) {
   if (
@@ -1045,20 +949,20 @@ function BillingPlanActions({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {canCancel ? (
-        <CancelPlanDialog
-          currentPeriodEndAt={current.currentPeriodEndAt}
-          disabled={actionPending != null}
-          onConfirm={onLifecycleAction}
-        />
-      ) : null}
+      <CancelPlanDialog
+        disabled={actionPending != null}
+        offerTrigger={canCancel}
+        onConfirm={onLifecycleAction}
+        periodEndLabel={formatDate(current.currentPeriodEndAt)}
+        planName={current.planName}
+      />
       {canResume ? (
         <AppButton
           disabled={actionPending != null}
           onClick={() => onLifecycleAction?.("resumed")}
         >
           <Sparkles aria-hidden data-icon="inline-start" />
-          {actionPending === "resumed" ? "Renewing..." : "Renew"}
+          {actionPending === "resumed" ? "Resuming..." : "Resume Plan"}
         </AppButton>
       ) : null}
       {canRenew ? (
@@ -1091,7 +995,7 @@ interface BillingPlanSurfaceProps {
   currency: BillingCurrency;
   invoiceCancellationPending?: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
-  onLifecycleAction?: LifecycleActionHandler;
+  onLifecycleAction?: SubscriptionLifecycleHandler;
   onManageCard?: () => void;
   onPlanChange?: (planId: string | null) => void;
   snapshot: BillingPlanSnapshot;
