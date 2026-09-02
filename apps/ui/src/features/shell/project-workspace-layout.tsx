@@ -2,6 +2,7 @@
 
 import { useChat as useAIChat } from "@ai-sdk/react";
 import { fetcher } from "@workspace/api/fetch";
+import { useApsK8sList, useDbsK8sList } from "@workspace/api/hooks";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { cn } from "@workspace/ui/lib/utils";
@@ -66,9 +67,13 @@ import {
   type ChatPaidSource,
   type ChatWallCause,
   type FreeTierState,
-  SELECTED_RESOURCE_CONTEXT_PART_TYPE,
-  type SelectedResourceContext,
+  SELECTED_CONTEXT_PART_TYPE,
+  type SelectedContextReference,
 } from "@/features/chat/persistence/types";
+import {
+  resolveSelectedContextAvailability,
+  selectedContextResourceIdentitiesFromFacts,
+} from "@/features/chat/selected-context";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -119,6 +124,7 @@ import {
   PROJECT_SELECTED_QUERY_KEY,
   parseProjectCanvasSelection,
 } from "@/features/panes/workbench-url-codec";
+import { projectRuntimeFactsFromResources } from "@/features/project-canvas/runtime/resource-facts";
 import type { BrainProjectResponse } from "@/features/projects/brain-projects";
 import {
   ProjectEditDialog,
@@ -132,6 +138,7 @@ import {
 } from "@/features/shell/project-top-bar-slot";
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { BRAIN_PROJECT_ID_LABEL } from "@/lib/brain-labels";
 import { kubeconfigBearerHeader } from "@/lib/kubeconfig-header";
 import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
@@ -240,8 +247,9 @@ function buildAssistantContextPayload(
  * whatever is selected on a later turn. `null` = nothing selected (no backfill).
  */
 function buildSelectedResourceSnapshot(
-  selected: ProjectCanvasSelection | null
-): SelectedResourceContext | null {
+  selected: ProjectCanvasSelection | null,
+  observedUid?: string
+): SelectedContextReference | null {
   const target = projectCanvasSelectionTarget(selected);
   if (target == null) {
     return null;
@@ -252,9 +260,11 @@ function buildSelectedResourceSnapshot(
   const displayName = resourceDisplayNameForTarget(target);
   return {
     ...(displayName == null || displayName === name ? {} : { displayName }),
+    type: "resource",
     kind: target.kind,
     name,
     namespace: target.namespace,
+    ...(observedUid == null ? {} : { observedUid }),
   };
 }
 
@@ -459,6 +469,66 @@ function ProjectAssistantChatSession({
   }>({ projectId: "", scannedParts: new Map() });
 
   const projectId = useProjectId();
+  const selectedContextLabelSelector = useMemo(
+    () => `${BRAIN_PROJECT_ID_LABEL}=${projectId}`,
+    [projectId]
+  );
+  const {
+    data: selectedContextApsData,
+    error: selectedContextApsError,
+    isLoading: selectedContextApsLoading,
+  } = useApsK8sList({
+    kubeconfig,
+    labelSelector: selectedContextLabelSelector,
+    namespace,
+    revalidateIfStale: false,
+    revalidateOnFocus: false,
+    revalidateOnMount: false,
+    revalidateOnReconnect: false,
+    refreshInterval: 0,
+  });
+  const {
+    data: selectedContextDbsData,
+    error: selectedContextDbsError,
+    isLoading: selectedContextDbsLoading,
+  } = useDbsK8sList({
+    kubeconfig,
+    labelSelector: selectedContextLabelSelector,
+    namespace,
+    revalidateIfStale: false,
+    revalidateOnFocus: false,
+    revalidateOnMount: false,
+    revalidateOnReconnect: false,
+    refreshInterval: 0,
+  });
+  const selectedContextFacts = useMemo(
+    () =>
+      projectRuntimeFactsFromResources({
+        apsData: selectedContextApsData,
+        dbsData: selectedContextDbsData,
+        namespace,
+      }),
+    [selectedContextApsData, selectedContextDbsData, namespace]
+  );
+  const selectedContextResources = useMemo(
+    () => selectedContextResourceIdentitiesFromFacts(selectedContextFacts),
+    [selectedContextFacts]
+  );
+  const selectedContextSnapshotReady =
+    selectedContextApsData != null &&
+    selectedContextDbsData != null &&
+    selectedContextApsError == null &&
+    selectedContextDbsError == null &&
+    !selectedContextApsLoading &&
+    !selectedContextDbsLoading;
+  const selectedContextAvailability = useCallback(
+    (reference: SelectedContextReference) =>
+      resolveSelectedContextAvailability(reference, {
+        ready: selectedContextSnapshotReady,
+        resources: selectedContextResources,
+      }),
+    [selectedContextResources, selectedContextSnapshotReady]
+  );
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
     namespace,
@@ -740,7 +810,25 @@ function ProjectAssistantChatSession({
         });
       }
       setBillingInterruption(null);
-      const snapshot = buildSelectedResourceSnapshot(selected);
+      const selectedTarget = projectCanvasSelectionTarget(selected);
+      let selectedName: string | null = null;
+      if (selectedTarget != null) {
+        selectedName =
+          selectedTarget.kind === "PublicAccess"
+            ? selectedTarget.apName
+            : selectedTarget.name;
+      }
+      const observedUid =
+        selectedTarget?.observedUid ??
+        (selectedTarget == null || selectedName == null
+          ? undefined
+          : selectedContextResources.find(
+              (resource) =>
+                resource.kind === selectedTarget.kind &&
+                resource.name === selectedName &&
+                resource.namespace === selectedTarget.namespace
+            )?.observedUid);
+      const snapshot = buildSelectedResourceSnapshot(selected, observedUid);
       if (snapshot == null) {
         sendMessage({ text }).catch(() => undefined);
         return;
@@ -748,12 +836,12 @@ function ProjectAssistantChatSession({
       sendMessage({
         role: "user",
         parts: [
-          { type: SELECTED_RESOURCE_CONTEXT_PART_TYPE, data: snapshot },
+          { type: SELECTED_CONTEXT_PART_TYPE, data: snapshot },
           { type: "text", text },
         ],
       }).catch(() => undefined);
     },
-    [projectId, sendMessage]
+    [projectId, selectedContextResources, sendMessage]
   );
 
   const stopComposerResponse = useCallback(() => {
@@ -797,6 +885,7 @@ function ProjectAssistantChatSession({
           addToolApprovalResponse={addToolApprovalResponse}
           className="min-h-0 flex-1"
           messages={messages}
+          selectedContextAvailability={selectedContextAvailability}
           status={status}
         />
         <ChatBillingCardSlot
