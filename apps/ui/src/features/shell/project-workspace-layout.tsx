@@ -267,10 +267,12 @@ function ComposerContextIndicator({
     () => parseProjectCanvasSelection(selectedQuery),
     [selectedQuery]
   );
-  // The composer may submit immediately after a URL-driven selection render.
-  // Publish during that render so the send-time snapshot cannot lag one effect
-  // behind the context chip the user is looking at.
-  selectedRef.current = selected;
+  // Publish after the URL-driven selection commits and before the browser can
+  // handle another user event. This keeps submit aligned with the visible chip
+  // without reading or writing a ref during render.
+  useLayoutEffect(() => {
+    selectedRef.current = selected;
+  }, [selected, selectedRef]);
 
   const contextToggles = useMemo(() => {
     const toggles: string[] = [];
