@@ -516,9 +516,9 @@ _Avoid_: namespace access check, metrics permission.
 
 ### Assistant Conversation
 
-A private assistant chat thread scoped to a namespace and owned by the Workspace Actor who started it. Ownership is an enforced authorization boundary fixed at creation; a foreign conversation is indistinguishable from a missing one. Personal, unlike namespace-shared Canvas Layouts and Deployment Tasks.
+A private assistant chat thread scoped to one Brain Project inside a namespace and owned by the Workspace Actor who started it: `(namespace, userUid, projectId)`. Ownership and Project identity are enforced boundaries fixed at creation; a foreign-actor or foreign-Project conversation is indistinguishable from a missing one. A Project switch therefore starts from that Project's own thread list rather than reusing another Project's history. Legacy rows without a Project identity remain stored but belong to no Project and are not guessed into one. Personal and Project-local, unlike namespace-shared Canvas Layouts, Deployment Tasks, and Free Chat Turns.
 
-_Avoid_: shared namespace chat, per-namespace chat history.
+_Avoid_: shared namespace chat, per-namespace chat history, cross-Project chat history.
 
 ### Chat Billing Mode
 

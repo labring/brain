@@ -12,6 +12,7 @@ import {
 const LEGACY_API_LABEL_RE = /Legacy API/;
 const AP_KIND_RE = /AP/;
 const UNAVAILABLE_LABEL_RE = /Unavailable/;
+const UNVERIFIED_LABEL_RE = /Unverified/;
 
 function userMessage(parts: UIMessage["parts"]): UIMessage {
   return { id: "user-1", role: "user", parts } as UIMessage;
@@ -35,6 +36,7 @@ test("transcript shows a message-scoped selected context chip with its snapshot 
                     name: "redis-x7k2",
                     namespace: "project-ns",
                     observedUid: "redis-uid",
+                    projectId: "project-a",
                   },
                 },
                 { type: "text", text: "show the status" },
@@ -79,6 +81,7 @@ test("transcript marks a deleted selected resource unavailable without changing 
                     name: "api-x7k2",
                     namespace: "project-ns",
                     observedUid: "old-uid",
+                    projectId: "project-a",
                   },
                 },
                 { type: "text", text: "restart this" },
@@ -138,6 +141,11 @@ test("transcript renders a legacy selected-resource part for compatibility", asy
       assert.match(chip?.textContent ?? "", LEGACY_API_LABEL_RE);
       assert.match(chip?.textContent ?? "", AP_KIND_RE);
       assert.doesNotMatch(chip?.textContent ?? "", UNAVAILABLE_LABEL_RE);
+      assert.match(chip?.textContent ?? "", UNVERIFIED_LABEL_RE);
+      assert.equal(
+        chip?.getAttribute("aria-label"),
+        "Referenced: Legacy API · AP · Unverified"
+      );
     } finally {
       await act(() => rendered?.unmount());
     }

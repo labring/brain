@@ -5,7 +5,7 @@ import type {
   ThreadRow,
 } from "./repository-core";
 import {
-  type AssistantConversationOwner,
+  type AssistantConversationScope,
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   normalizeAssistantNamespace,
@@ -34,12 +34,17 @@ export interface AssistantConversationServiceDependencies {
   }) => Promise<string>;
 }
 
-function normalizedOwner(
-  owner: AssistantConversationOwner
-): AssistantConversationOwner {
+function normalizedScope(
+  scope: AssistantConversationScope
+): AssistantConversationScope {
+  const projectId = scope.projectId.trim();
+  if (projectId === "") {
+    throw new Error("assistant project id is required");
+  }
   return {
-    namespace: normalizeAssistantNamespace(owner.namespace),
-    userUid: owner.userUid,
+    namespace: normalizeAssistantNamespace(scope.namespace),
+    projectId,
+    userUid: scope.userUid,
   };
 }
 
@@ -65,10 +70,10 @@ export function createAssistantConversationService(
     // persistence: the session handler resolves it separately (ADR-0065's
     // live trial judgment) and merges it into the wire payload.
     bootstrap: async (
-      ownerRaw: AssistantConversationOwner
+      scopeRaw: AssistantConversationScope
     ): Promise<Omit<AssistantSessionPayload, "freeTier">> => {
-      const owner = normalizedOwner(ownerRaw);
-      const rows = await repository.selectThreadsByOwner(owner);
+      const scope = normalizedScope(scopeRaw);
+      const rows = await repository.selectThreadsByOwner(scope);
       const latest = rows[0];
       if (latest === undefined) {
         return {
@@ -80,51 +85,61 @@ export function createAssistantConversationService(
       return {
         chatId: latest.id,
         messages:
-          (await repository.selectMessagesByOwner(owner, latest.id)) ?? [],
+          (await repository.selectMessagesByOwner(scope, latest.id)) ?? [],
         threads: toThreadDTOs(rows),
       };
     },
 
     ensureThread: (
       chatId: string,
-      actor: VerifiedAssistantConversationActor
-    ): Promise<boolean> =>
-      repository.ensureThreadForOwner({
+      actor: VerifiedAssistantConversationActor,
+      projectId: string
+    ): Promise<boolean> => {
+      const normalizedProjectId = projectId.trim();
+      if (normalizedProjectId === "") {
+        throw new Error("assistant project id is required");
+      }
+      return repository.ensureThreadForOwner({
         actor: {
           legacyWorkspaceActor: actor.legacyWorkspaceActor,
-          owner: normalizedOwner(actor.owner),
+          owner: {
+            namespace: normalizeAssistantNamespace(actor.owner.namespace),
+            userUid: actor.owner.userUid,
+          },
         },
         id: chatId,
+        projectId: normalizedProjectId,
         title: dependencies.placeholderTitle(),
-      }),
+      });
+    },
 
     listThreads: async (
-      owner: AssistantConversationOwner
+      scope: AssistantConversationScope
     ): Promise<AssistantThreadDTO[]> =>
       toThreadDTOs(
-        await repository.selectThreadsByOwner(normalizedOwner(owner))
+        await repository.selectThreadsByOwner(normalizedScope(scope))
       ),
 
     loadMessages: (
       chatId: string,
-      owner: AssistantConversationOwner
+      scope: AssistantConversationScope
     ): Promise<UIMessage[] | null> =>
-      repository.selectMessagesByOwner(normalizedOwner(owner), chatId),
+      repository.selectMessagesByOwner(normalizedScope(scope), chatId),
 
     maybeAutoTitle: async (input: {
       abortSignal?: AbortSignal;
       chatId: string;
       languageModel: ChatTitleModel;
-      owner: AssistantConversationOwner;
+      scope: AssistantConversationScope;
       projectName?: string;
     }): Promise<void> => {
-      const owner = normalizedOwner(input.owner);
-      const thread = await repository.selectThreadByOwner(input.chatId, owner);
+      const scope = normalizedScope(input.scope);
+      const thread = await repository.selectThreadByOwner(input.chatId, scope);
       if (thread == null || thread.titleAiGenerated) {
         return;
       }
       const messages = await repository.selectMessagesByOwner(
-        owner,
+        scope,
         input.chatId
       );
       if (messages == null) {
@@ -137,7 +152,7 @@ export function createAssistantConversationService(
         projectName: input.projectName,
       });
       await repository.updateThreadAiTitleOnceForOwner(
-        owner,
+        scope,
         input.chatId,
         title
       );

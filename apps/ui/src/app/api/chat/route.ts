@@ -43,7 +43,7 @@ import {
 } from "@/features/chat/persistence/service";
 import type { FreeTierState } from "@/features/chat/persistence/types";
 import {
-  type AssistantConversationOwner,
+  type AssistantConversationScope,
   buildAssistantContinuationFromPending,
   buildRecoveredAssistantMessageForInterruptedTools,
   type ChatStreamRequest,
@@ -477,12 +477,12 @@ async function releaseLeaseQuietly(lease: ChatStreamLease): Promise<void> {
 
 async function acquireLeaseForHistory(
   chatId: string,
-  owner: AssistantConversationOwner,
+  scope: AssistantConversationScope,
   expectedHistory: UIMessage[]
 ): Promise<
   { lease: ChatStreamLease; response?: never } | { response: Response }
 > {
-  const lease = await acquireChatStreamLease(chatId, owner);
+  const lease = await acquireChatStreamLease(chatId, scope);
   if (lease == null) {
     return {
       response: jsonError(
@@ -493,7 +493,7 @@ async function acquireLeaseForHistory(
     };
   }
 
-  const claimedHistory = await loadMessagesForOwner(chatId, owner);
+  const claimedHistory = await loadMessagesForOwner(chatId, scope);
   if (isDeepStrictEqual(claimedHistory, expectedHistory)) {
     return { lease };
   }
@@ -512,7 +512,7 @@ function createChatStreamFinishHandler(input: {
   chatId: string;
   history: UIMessage[];
   heartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease>;
-  owner: AssistantConversationOwner;
+  scope: AssistantConversationScope;
   projectName?: string;
   titleModel: Parameters<typeof maybeAutoTitleThread>[0]["languageModel"];
   toolDurationMsByCallId: Map<string, number>;
@@ -559,7 +559,7 @@ function createChatStreamFinishHandler(input: {
         abortSignal: AbortSignal.timeout(CHAT_TITLE_TIMEOUT_MS),
         chatId: input.chatId,
         languageModel: input.titleModel,
-        owner: input.owner,
+        scope: input.scope,
         projectName: input.projectName,
       });
     } catch (error) {
@@ -569,7 +569,7 @@ function createChatStreamFinishHandler(input: {
       // a persisted, uninterrupted turn keeps it — an empty or errored
       // stream, an abort, or a lost lease rolls it back.
       if (input.billing === "free" && !freeTurnSpent) {
-        await releaseReservedFreeTurnQuietly(input.owner.namespace);
+        await releaseReservedFreeTurnQuietly(input.scope.namespace);
       }
       if (lease != null && !leaseReleased) {
         await releaseLeaseQuietly(lease);
@@ -697,6 +697,10 @@ async function runChatPipeline(input: {
     input.request;
   const { actor, kubeconfig, requestAbortSignal } = input;
   const owner = actor.owner;
+  const scope: AssistantConversationScope = {
+    ...owner,
+    projectId: assistantContext.projectId,
+  };
   let ownedLease: ChatStreamLease | null = null;
   let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
@@ -721,7 +725,11 @@ async function runChatPipeline(input: {
     // conversation must find the re-keyed row instead of refusing its id.
     await adoptLegacyAssistantConversationsForActor(actor);
 
-    const threadReady = await ensureAssistantThreadForOwner(chatId, actor);
+    const threadReady = await ensureAssistantThreadForOwner(
+      chatId,
+      actor,
+      scope.projectId
+    );
     if (!threadReady) {
       return jsonError(
         "assistant_conversation_not_found",
@@ -730,7 +738,7 @@ async function runChatPipeline(input: {
       );
     }
 
-    const storedHistory = await loadMessagesForOwner(chatId, owner);
+    const storedHistory = await loadMessagesForOwner(chatId, scope);
     if (storedHistory == null) {
       return jsonError(
         "assistant_conversation_not_found",
@@ -804,7 +812,7 @@ async function runChatPipeline(input: {
       { tools }
     );
 
-    const claimed = await acquireLeaseForHistory(chatId, owner, storedHistory);
+    const claimed = await acquireLeaseForHistory(chatId, scope, storedHistory);
     if (claimed.response != null) {
       return claimed.response;
     }
@@ -878,7 +886,7 @@ async function runChatPipeline(input: {
         chatId,
         history,
         heartbeat: streamHeartbeat,
-        owner,
+        scope,
         projectName: assistantContext?.projectName,
         titleModel,
         toolDurationMsByCallId,

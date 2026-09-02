@@ -47,6 +47,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0073 — Wall zero-allowance plans with a truthful cause](0073-wall-zero-allowance-plans-with-a-truthful-cause.md) *(revises ADR-0069's exhaustion consequence; extends ADR-0068's Paid Chat Wall)*
 - [0074 — Store Cancellation Survey Responses in Brain Postgres as Feedback, Not Billing State](0074-store-cancellation-survey-responses-in-brain-postgres-as-feedback.md) *(supplements ADR-0067)*
 - [0075 — Adopt External Template Instances as Brain Projects](0075-adopt-external-template-instances-as-brain-projects.md)
+- [0076 — Scope Assistant Conversations to Brain Projects](0076-scope-assistant-conversations-to-brain-projects.md) *(extends ADR-0047; message-level Context remains governed by ADR-0044)*
 
 ## Conventions
 

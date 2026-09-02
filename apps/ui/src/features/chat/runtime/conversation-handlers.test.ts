@@ -96,7 +96,7 @@ test("conversation handlers expose message reads without an unfenced write handl
 test("conversation listing keys the owner by the token-proven userUid, ignoring a spoofed user id", async () => {
   const threads = new Map<string, AssistantThreadDTO[]>([
     [
-      "shared:alice-cr-uid",
+      "shared:alice-cr-uid:project-a",
       [
         {
           id: "alice-chat",
@@ -107,7 +107,7 @@ test("conversation listing keys the owner by the token-proven userUid, ignoring 
       ],
     ],
     [
-      "shared:bob-cr-uid",
+      "shared:bob-cr-uid:project-a",
       [
         {
           id: "bob-chat",
@@ -120,24 +120,107 @@ test("conversation listing keys the owner by the token-proven userUid, ignoring 
   ]);
   const handlers = createAssistantConversationHandlers(
     handlerDependencies({
-      list: (owner) =>
+      list: (scope) =>
         Promise.resolve(
-          threads.get(`${owner.namespace}:${owner.userUid}`) ?? []
+          threads.get(
+            `${scope.namespace}:${scope.userUid}:${scope.projectId}`
+          ) ?? []
         ),
     })
   );
 
   const response = await handlers.threads(
     await authorizedRequest(
-      "/api/chat/threads?namespace=shared&userId=bob-cr",
+      "/api/chat/threads?namespace=shared&projectId=project-a&userId=bob-cr",
       "alice-cr"
     )
   );
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    threads: threads.get("shared:alice-cr-uid"),
+    threads: threads.get("shared:alice-cr-uid:project-a"),
   });
+});
+
+test("conversation handlers pass the requested project into every scoped read", async () => {
+  const scopes: string[] = [];
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      bootstrap: (scope) => {
+        scopes.push(`bootstrap:${scope.projectId}`);
+        return Promise.resolve({ chatId: "draft", messages: [], threads: [] });
+      },
+      list: (scope) => {
+        scopes.push(`list:${scope.projectId}`);
+        return Promise.resolve([]);
+      },
+      read: (scope) => {
+        scopes.push(`read:${scope.projectId}`);
+        return Promise.resolve([]);
+      },
+    })
+  );
+
+  const requests: [string, (request: Request) => Promise<Response>][] = [
+    [
+      "/api/chat/session?namespace=shared&projectId=project-a",
+      handlers.session,
+    ],
+    [
+      "/api/chat/threads?namespace=shared&projectId=project-b",
+      handlers.threads,
+    ],
+    [
+      "/api/chat/messages?namespace=shared&projectId=project-c&chatId=chat-c",
+      handlers.messagesGet,
+    ],
+  ];
+
+  for (const [path, handler] of requests) {
+    const response = await handler(await authorizedRequest(path, "alice-cr"));
+    assert.equal(response.status, 200);
+  }
+
+  assert.deepEqual(scopes, [
+    "bootstrap:project-a",
+    "list:project-b",
+    "read:project-c",
+  ]);
+});
+
+test("project-scoped conversation routes reject a missing or empty project id", async () => {
+  let storageRead = false;
+  const handlers = createAssistantConversationHandlers(
+    handlerDependencies({
+      bootstrap: () => {
+        storageRead = true;
+        return Promise.reject(new Error("must not run"));
+      },
+      list: () => {
+        storageRead = true;
+        return Promise.resolve([]);
+      },
+      read: () => {
+        storageRead = true;
+        return Promise.resolve([]);
+      },
+    })
+  );
+  const requests: [string, (request: Request) => Promise<Response>][] = [
+    ["/api/chat/session?namespace=shared", handlers.session],
+    ["/api/chat/threads?namespace=shared&projectId=%20", handlers.threads],
+    ["/api/chat/messages?namespace=shared&chatId=chat-a", handlers.messagesGet],
+  ];
+
+  for (const [path, handler] of requests) {
+    const response = await handler(await authorizedRequest(path, "alice-cr"));
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      code: "invalid_request",
+      error: "projectId query parameter required",
+    });
+  }
+  assert.equal(storageRead, false);
 });
 
 test("every verified entry request adopts the actor's legacy conversations before reading them", async () => {
@@ -151,30 +234,42 @@ test("every verified entry request adopts the actor's legacy conversations befor
         );
         return Promise.resolve();
       },
-      bootstrap: (owner) => {
-        calls.push(`bootstrap:${owner.namespace}:${owner.userUid}`);
+      bootstrap: (scope) => {
+        calls.push(
+          `bootstrap:${scope.namespace}:${scope.userUid}:${scope.projectId}`
+        );
         return Promise.resolve({
           chatId: "bootstrap-chat",
           messages: [],
           threads: [],
         });
       },
-      list: (owner) => {
-        calls.push(`list:${owner.namespace}:${owner.userUid}`);
+      list: (scope) => {
+        calls.push(
+          `list:${scope.namespace}:${scope.userUid}:${scope.projectId}`
+        );
         return Promise.resolve([]);
       },
-      read: (owner) => {
-        calls.push(`read:${owner.namespace}:${owner.userUid}`);
+      read: (scope) => {
+        calls.push(
+          `read:${scope.namespace}:${scope.userUid}:${scope.projectId}`
+        );
         return Promise.resolve([]);
       },
     })
   );
 
   const entries: [string, (request: Request) => Promise<Response>][] = [
-    ["/api/chat/threads?namespace=shared", handlers.threads],
-    ["/api/chat/session?namespace=shared", handlers.session],
     [
-      "/api/chat/messages?namespace=shared&chatId=any-chat",
+      "/api/chat/threads?namespace=shared&projectId=project-a",
+      handlers.threads,
+    ],
+    [
+      "/api/chat/session?namespace=shared&projectId=project-a",
+      handlers.session,
+    ],
+    [
+      "/api/chat/messages?namespace=shared&projectId=project-a&chatId=any-chat",
       handlers.messagesGet,
     ],
   ];
@@ -185,11 +280,11 @@ test("every verified entry request adopts the actor's legacy conversations befor
 
   assert.deepEqual(calls, [
     "adopt:alice-cr->shared:alice-cr-uid",
-    "list:shared:alice-cr-uid",
+    "list:shared:alice-cr-uid:project-a",
     "adopt:alice-cr->shared:alice-cr-uid",
-    "bootstrap:shared:alice-cr-uid",
+    "bootstrap:shared:alice-cr-uid:project-a",
     "adopt:alice-cr->shared:alice-cr-uid",
-    "read:shared:alice-cr-uid",
+    "read:shared:alice-cr-uid:project-a",
   ]);
 });
 
@@ -207,7 +302,10 @@ test("an adoption failure surfaces as unavailable persistence without a partial 
   );
 
   const response = await handlers.threads(
-    await authorizedRequest("/api/chat/threads?namespace=shared", "alice-cr")
+    await authorizedRequest(
+      "/api/chat/threads?namespace=shared&projectId=project-a",
+      "alice-cr"
+    )
   );
 
   assert.equal(response.status, 503);
@@ -243,7 +341,7 @@ test("conversation bootstrap is scoped to the verified actor and carries the res
 
   const response = await handlers.session(
     await authorizedRequest(
-      "/api/chat/session?namespace=shared&userId=bob-cr",
+      "/api/chat/session?namespace=shared&projectId=project-a&userId=bob-cr",
       "alice-cr"
     )
   );
@@ -311,13 +409,13 @@ test("reading another member's conversation is indistinguishable from a missing 
 
   const foreign = await handlers.messagesGet(
     await authorizedRequest(
-      "/api/chat/messages?namespace=shared&chatId=bob-chat",
+      "/api/chat/messages?namespace=shared&projectId=project-a&chatId=bob-chat",
       "alice-cr"
     )
   );
   const missing = await handlers.messagesGet(
     await authorizedRequest(
-      "/api/chat/messages?namespace=shared&chatId=missing-chat",
+      "/api/chat/messages?namespace=shared&projectId=project-a&chatId=missing-chat",
       "alice-cr"
     )
   );
@@ -346,7 +444,7 @@ test("a cross-namespace conversation request is forbidden before storage access"
 
   const response = await handlers.threads(
     await authorizedRequest(
-      "/api/chat/threads?namespace=another-workspace",
+      "/api/chat/threads?namespace=another-workspace&projectId=project-a",
       "alice-cr"
     )
   );
@@ -367,11 +465,14 @@ test("personal conversation routes return 401 without the app token header", asy
   );
 
   const response = await handlers.threads(
-    new Request("https://brain.test/api/chat/threads?namespace=shared", {
-      headers: {
-        Authorization: `Bearer ${encodedKubeconfig("shared", "alice-cr")}`,
-      },
-    })
+    new Request(
+      "https://brain.test/api/chat/threads?namespace=shared&projectId=project-a",
+      {
+        headers: {
+          Authorization: `Bearer ${encodedKubeconfig("shared", "alice-cr")}`,
+        },
+      }
+    )
   );
 
   assert.equal(response.status, 401);
@@ -383,7 +484,7 @@ test("an app token signed with the wrong secret is refused with 401", async () =
 
   const response = await handlers.session(
     await authorizedRequest(
-      "/api/chat/session?namespace=shared",
+      "/api/chat/session?namespace=shared&projectId=project-a",
       "alice-cr",
       await mintAppToken("alice-cr", "attacker-secret")
     )
@@ -397,7 +498,7 @@ test("an app token bound to another actor is refused with 403", async () => {
 
   const response = await handlers.session(
     await authorizedRequest(
-      "/api/chat/session?namespace=shared",
+      "/api/chat/session?namespace=shared&projectId=project-a",
       "alice-cr",
       await mintAppToken("bob-cr")
     )
@@ -424,7 +525,10 @@ test("a binding superseded by an account merge is refused with 401 before any re
   );
 
   const response = await handlers.threads(
-    await authorizedRequest("/api/chat/threads?namespace=shared", "alice-cr")
+    await authorizedRequest(
+      "/api/chat/threads?namespace=shared&projectId=project-a",
+      "alice-cr"
+    )
   );
 
   assert.equal(response.status, 401);

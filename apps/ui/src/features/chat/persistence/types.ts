@@ -39,6 +39,15 @@ export function normalizeAssistantNamespace(namespace: string): string {
 export type AssistantConversationOwner = PersonalResourceOwner;
 
 /**
+ * Stable scope of one Project Assistant conversation. Ownership remains the
+ * verified Workspace Actor; `projectId` prevents two Projects in the same
+ * namespace from sharing thread history or a system-prompt identity.
+ */
+export interface AssistantConversationScope extends AssistantConversationOwner {
+  projectId: string;
+}
+
+/**
  * A verified actor entering a conversation route. Conversation persistence
  * consults the crName only to find the actor's legacy rows; surfaces still
  * keyed by crName (the chat toolset's deploy-task actor) also read it from
@@ -118,7 +127,7 @@ export interface AssistantSessionPayload {
  */
 export const assistantContextPayloadSchema = z.object({
   projectName: z.string().max(512).optional(),
-  projectId: z.string().max(256).optional(),
+  projectId: z.string().trim().min(1).max(256),
 });
 export type AssistantContextPayload = z.infer<
   typeof assistantContextPayloadSchema
@@ -159,6 +168,8 @@ export const selectedContextReferenceSchema = z
     name: z.string().min(1).max(512),
     namespace: z.string().min(1).max(256),
     observedUid: z.string().min(1).max(512).optional(),
+    /** Project identity captured with the message; absent only on legacy rows. */
+    projectId: z.string().min(1).max(256).optional(),
   })
   .strict();
 export type SelectedContextReference = z.infer<
@@ -245,7 +256,7 @@ export const chatStreamRequestSchema = z.object({
   namespace: z.string(),
   message: z.unknown(),
   encodedKubeconfig: z.string().optional(),
-  assistantContext: assistantContextPayloadSchema.optional(),
+  assistantContext: assistantContextPayloadSchema,
 });
 export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema> & {
   workspaceResourceQuota?: WorkspaceResourceQuotaSnapshot;

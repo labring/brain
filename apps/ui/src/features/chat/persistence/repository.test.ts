@@ -58,8 +58,16 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   );
   await migrate(db, { migrationsFolder });
   const repository = createAssistantConversationRepository(() => db);
-  const alice = { namespace: "shared", userUid: "alice-uid" };
-  const bob = { namespace: "shared", userUid: "bob-uid" };
+  const alice = {
+    namespace: "shared",
+    projectId: "project-alice",
+    userUid: "alice-uid",
+  };
+  const bob = {
+    namespace: "shared",
+    projectId: "project-bob",
+    userUid: "bob-uid",
+  };
   const aliceActor = { legacyWorkspaceActor: "alicecr1", owner: alice };
   const bobActor = { legacyWorkspaceActor: "bobcrnm1", owner: bob };
   // Thread creation re-checks the fingerprint in-transaction (ADR-0059).
@@ -72,6 +80,7 @@ test("repository never exposes or mutates a foreign conversation", async () => {
     await repository.ensureThreadForOwner({
       actor: bobActor,
       id: "bob-chat",
+      projectId: bob.projectId,
       title: "Bob title",
     }),
     true
@@ -86,7 +95,22 @@ test("repository never exposes or mutates a foreign conversation", async () => {
     await repository.ensureThreadForOwner({
       actor: aliceActor,
       id: "alice-chat",
+      projectId: alice.projectId,
       title: "Alice title",
+    }),
+    true
+  );
+  const aliceOtherProject = {
+    namespace: alice.namespace,
+    projectId: "project-alice-other",
+    userUid: alice.userUid,
+  };
+  assert.equal(
+    await repository.ensureThreadForOwner({
+      actor: aliceActor,
+      id: "alice-other-chat",
+      projectId: aliceOtherProject.projectId,
+      title: "Alice other Project",
     }),
     true
   );
@@ -94,6 +118,7 @@ test("repository never exposes or mutates a foreign conversation", async () => {
     await repository.ensureThreadForOwner({
       actor: aliceActor,
       id: "bob-chat",
+      projectId: alice.projectId,
       title: "Re-keyed title",
     }),
     false
@@ -102,12 +127,36 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   assert.equal(await repository.selectThreadByOwner("bob-chat", alice), null);
   assert.equal(await repository.selectMessagesByOwner(alice, "bob-chat"), null);
   assert.equal(
+    await repository.selectThreadByOwner("alice-chat", aliceOtherProject),
+    null
+  );
+  assert.equal(
+    await repository.selectMessagesByOwner(aliceOtherProject, "alice-chat"),
+    null
+  );
+  assert.equal(
     await repository.updateThreadAiTitleOnceForOwner(
       alice,
       "bob-chat",
       "Stolen title"
     ),
     false
+  );
+  assert.equal(
+    await repository.updateThreadAiTitleOnceForOwner(
+      aliceOtherProject,
+      "alice-chat",
+      "Cross-project title"
+    ),
+    false
+  );
+  assert.equal(
+    await repository.tryAcquireChatStreamLease({
+      chatId: "alice-chat",
+      scope: aliceOtherProject,
+      token: "cross-project-lease",
+    }),
+    null
   );
 
   assert.deepEqual(await repository.selectMessagesByOwner(bob, "bob-chat"), [
@@ -125,6 +174,16 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   assert.deepEqual(
     await repository.selectMessagesByOwner(alice, "alice-chat"),
     []
+  );
+  assert.deepEqual(
+    (await repository.selectThreadsByOwner(alice)).map((thread) => thread.id),
+    ["alice-chat"]
+  );
+  assert.deepEqual(
+    (await repository.selectThreadsByOwner(aliceOtherProject)).map(
+      (thread) => thread.id
+    ),
+    ["alice-other-chat"]
   );
 });
 
@@ -206,10 +265,12 @@ const TEST_CHAT_ID = "chat-cas";
 const TEST_MESSAGE_ID = "message-cas";
 const TEST_OWNER = {
   namespace: "ns-test",
+  projectId: "project-test",
   userUid: "user-test",
 } as const;
 const OTHER_OWNER = {
   namespace: "ns-test",
+  projectId: "project-test",
   userUid: "other-user",
 } as const;
 const INITIAL_UPDATED_AT = new Date("2026-01-01T00:00:00.000Z");
@@ -260,25 +321,26 @@ const {
 function replaceAssistantMessagePartsIfUnchanged(
   input: Omit<
     Parameters<typeof replaceAssistantMessagePartsIfUnchangedForOwner>[0],
-    "owner"
+    "scope"
   >
 ) {
   return replaceAssistantMessagePartsIfUnchangedForOwner({
     ...input,
-    owner: TEST_OWNER,
+    scope: TEST_OWNER,
   });
 }
 
 function tryAcquireChatStreamLease(
-  input: Omit<Parameters<typeof tryAcquireChatStreamLeaseForOwner>[0], "owner">
+  input: Omit<Parameters<typeof tryAcquireChatStreamLeaseForOwner>[0], "scope">
 ) {
-  return tryAcquireChatStreamLeaseForOwner({ ...input, owner: TEST_OWNER });
+  return tryAcquireChatStreamLeaseForOwner({ ...input, scope: TEST_OWNER });
 }
 
 async function seedThread() {
   await testDb.insert(assistantChats).values({
     id: TEST_CHAT_ID,
     namespace: "ns-test",
+    projectId: TEST_OWNER.projectId,
     title: "CAS test",
     updatedAt: INITIAL_UPDATED_AT,
     workspaceActor: TEST_OWNER.userUid,
@@ -463,7 +525,7 @@ describe("chat stream lease", () => {
     expect(winners).toHaveLength(1);
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", userUid: "user-test" },
+        TEST_OWNER,
         TEST_CHAT_ID
       )
     ).toEqual([]);
@@ -525,7 +587,7 @@ describe("chat stream lease", () => {
     ).toBe(true);
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", userUid: "user-test" },
+        TEST_OWNER,
         TEST_CHAT_ID
       )
     ).toEqual([
@@ -588,7 +650,7 @@ describe("chat stream lease", () => {
         chatId: TEST_CHAT_ID,
         expectedParts: [...expectedParts],
         messageId: TEST_MESSAGE_ID,
-        owner: OTHER_OWNER,
+        scope: OTHER_OWNER,
         replacementParts: [...replacementParts],
       })
     ).toBe(false);
@@ -596,7 +658,7 @@ describe("chat stream lease", () => {
     expect(
       await tryAcquireChatStreamLeaseForOwner({
         chatId: TEST_CHAT_ID,
-        owner: OTHER_OWNER,
+        scope: OTHER_OWNER,
         token: "foreign-acquire",
       })
     ).toBeNull();
@@ -608,7 +670,7 @@ describe("chat stream lease", () => {
     if (lease == null) {
       throw new Error("expected the owned lease");
     }
-    const foreignLease = { ...lease, owner: OTHER_OWNER };
+    const foreignLease = { ...lease, scope: OTHER_OWNER };
 
     expect(
       await commitChatMessagesIfLeaseOwned({
@@ -667,7 +729,7 @@ describe("chat stream lease", () => {
     expect(committed).toBeNull();
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
-        { namespace: "ns-test", userUid: "user-test" },
+        TEST_OWNER,
         TEST_CHAT_ID
       )
     ).toEqual([
@@ -932,7 +994,11 @@ describe("adoptLegacyThreadsForActor", () => {
   const LEGACY_CR_NAME = "hendrwa1";
   const USER_UID = "31b8a2f4-0f9f-4a3e-9c56-0d9f6f9e2b41";
   const SURVIVOR_UID = "5c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f";
-  const UID_OWNER = { namespace: "ns-test", userUid: USER_UID };
+  const UID_OWNER = {
+    namespace: "ns-test",
+    projectId: "project-test",
+    userUid: USER_UID,
+  };
   const VERIFIED_ACTOR = {
     legacyWorkspaceActor: LEGACY_CR_NAME,
     owner: UID_OWNER,
@@ -968,7 +1034,7 @@ describe("adoptLegacyThreadsForActor", () => {
     return rows.sort((a, b) => a.id.localeCompare(b.id));
   }
 
-  it("keeps unadopted legacy rows invisible to uid reads, then adopts them on a verified entry", async () => {
+  it("keeps project-less legacy rows invisible after actor adoption", async () => {
     await seedThreadRow({
       id: "legacy-chat",
       updatedAt: new Date("2026-02-01T00:00:00.000Z"),
@@ -1003,19 +1069,13 @@ describe("adoptLegacyThreadsForActor", () => {
 
     const threads =
       await assistantConversationRepository.selectThreadsByOwner(UID_OWNER);
-    expect(threads.map((thread) => thread.id)).toEqual(["legacy-chat"]);
+    expect(threads).toEqual([]);
     expect(
       await assistantConversationRepository.selectMessagesByOwner(
         UID_OWNER,
         "legacy-chat"
       )
-    ).toEqual([
-      {
-        id: "legacy-message",
-        parts: [{ text: "beta-era content", type: "text" }],
-        role: "assistant",
-      },
-    ]);
+    ).toBeNull();
   });
 
   it("is idempotent and preserves updatedAt so adoption never reorders the thread picker", async () => {
@@ -1139,6 +1199,7 @@ describe("adoptLegacyThreadsForActor", () => {
       assistantConversationRepository.ensureThreadForOwner({
         actor: VERIFIED_ACTOR,
         id: "tombstone-thread",
+        projectId: UID_OWNER.projectId,
         title: "Never created",
       })
     ).rejects.toThrow(IdentityBindingSupersededError);

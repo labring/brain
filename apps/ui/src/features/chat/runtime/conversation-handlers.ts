@@ -9,7 +9,7 @@ import type { VerifyKubeconfigNamespace } from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 import type { FreeTierState } from "../persistence/types";
 import {
-  type AssistantConversationOwner,
+  type AssistantConversationScope,
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   normalizeAssistantNamespace,
@@ -28,17 +28,17 @@ export interface AssistantConversationHandlerDependencies {
   /** Test seam; defaults to `JWT_INTERNAL` from the env. */
   appTokenConfig?: AppTokenVerificationConfig | null;
   bootstrap: (
-    owner: AssistantConversationOwner
+    scope: AssistantConversationScope
   ) => Promise<Omit<AssistantSessionPayload, "freeTier">>;
   /** Usage-only Free Chat Turns snapshot for the Billing Area (no judgment). */
   freeTurnsUsage: (
     namespace: string
   ) => Promise<{ limit: number; remaining: number; used: number }>;
-  list: (owner: AssistantConversationOwner) => Promise<AssistantThreadDTO[]>;
+  list: (scope: AssistantConversationScope) => Promise<AssistantThreadDTO[]>;
   /** Test seam; defaults to the region-local Identity Fingerprint store. */
   observeFingerprint?: ObserveIdentityFingerprint;
   read: (
-    owner: AssistantConversationOwner,
+    scope: AssistantConversationScope,
     chatId: string
   ) => Promise<UIMessage[] | null>;
   /**
@@ -58,6 +58,19 @@ function conversationNotFound(): Response {
     "assistant_conversation_not_found",
     "Assistant conversation not found.",
     404
+  );
+}
+
+function projectIdFromRequest(request: Request): string | null {
+  const projectId = new URL(request.url).searchParams.get("projectId")?.trim();
+  return projectId ? projectId : null;
+}
+
+function projectIdRequired(): Response {
+  return jsonError(
+    "invalid_request",
+    "projectId query parameter required",
+    400
   );
 }
 
@@ -91,6 +104,10 @@ export function createAssistantConversationHandlers(
           400
         );
       }
+      const projectId = projectIdFromRequest(request);
+      if (projectId == null) {
+        return projectIdRequired();
+      }
       const authorization = await authorize(request);
       if (!authorization.ok) {
         return authorization.response;
@@ -98,7 +115,7 @@ export function createAssistantConversationHandlers(
       try {
         await dependencies.adoptLegacyConversations(authorization.actor);
         const messages = await dependencies.read(
-          authorization.actor.owner,
+          { ...authorization.actor.owner, projectId },
           chatId
         );
         return messages == null
@@ -140,6 +157,10 @@ export function createAssistantConversationHandlers(
       }
     },
     session: async (request: Request): Promise<Response> => {
+      const projectId = projectIdFromRequest(request);
+      if (projectId == null) {
+        return projectIdRequired();
+      }
       const authorization = await authorize(request);
       if (!authorization.ok) {
         return authorization.response;
@@ -148,7 +169,10 @@ export function createAssistantConversationHandlers(
         const [payload, freeTier] = await Promise.all([
           (async () => {
             await dependencies.adoptLegacyConversations(authorization.actor);
-            return await dependencies.bootstrap(authorization.actor.owner);
+            return await dependencies.bootstrap({
+              ...authorization.actor.owner,
+              projectId,
+            });
           })(),
           dependencies.resolveFreeTier({
             actor: authorization.actor,
@@ -170,6 +194,10 @@ export function createAssistantConversationHandlers(
       }
     },
     threads: async (request: Request): Promise<Response> => {
+      const projectId = projectIdFromRequest(request);
+      if (projectId == null) {
+        return projectIdRequired();
+      }
       const authorization = await authorize(request);
       if (!authorization.ok) {
         return authorization.response;
@@ -177,7 +205,10 @@ export function createAssistantConversationHandlers(
 
       try {
         await dependencies.adoptLegacyConversations(authorization.actor);
-        const threads = await dependencies.list(authorization.actor.owner);
+        const threads = await dependencies.list({
+          ...authorization.actor.owner,
+          projectId,
+        });
         return Response.json({ threads });
       } catch (error) {
         const superseded = supersededBindingResponse(error);

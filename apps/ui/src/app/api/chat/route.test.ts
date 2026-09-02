@@ -13,7 +13,13 @@ const actualRequestKubeconfigAuth = {
 
 const CHAT_ID = "chat-route-test";
 const NAMESPACE = "ns-route-test";
+const PROJECT_ID = "project-route-test";
 const WORKSPACE_ACTOR = "workspace-actor-route-test";
+const TEST_SCOPE = {
+  namespace: NAMESPACE,
+  projectId: PROJECT_ID,
+  userUid: `${WORKSPACE_ACTOR}-uid`,
+} as const;
 
 const MOCK_USAGE = {
   inputTokens: {
@@ -43,12 +49,17 @@ interface TestLease {
   chatId: string;
   messageId: string;
   parts: UIMessage["parts"];
+  scope: TestScope;
   token: string;
 }
 
 interface TestOwner {
   namespace: string;
   userUid: string;
+}
+
+interface TestScope extends TestOwner {
+  projectId: string;
 }
 
 let activeLease: TestLease | null = null;
@@ -104,7 +115,7 @@ let modelProviderOptions: unknown[] = [];
 let persistedLease: TestLease | null = null;
 let replaceCalls = 0;
 let streamMode: StreamMode = "success";
-let serviceOwners: TestOwner[] = [];
+let serviceOwners: TestScope[] = [];
 let titleCalls = 0;
 let titleWait: Promise<void> | null = null;
 let toolsetAvailable = true;
@@ -319,8 +330,8 @@ mock.module("@/features/chat/persistence/service", () => ({
     adoptionCalls.push(structuredClone(actor));
     return Promise.resolve();
   },
-  acquireChatStreamLease: (chatId: string, owner: TestOwner) => {
-    serviceOwners.push(owner);
+  acquireChatStreamLease: (chatId: string, scope: TestScope) => {
+    serviceOwners.push(scope);
     leaseAcquireCalls += 1;
     if (activeLease != null) {
       return Promise.resolve(null);
@@ -329,6 +340,7 @@ mock.module("@/features/chat/persistence/service", () => ({
       chatId,
       messageId: `lease-${chatId}`,
       parts: [],
+      scope,
       token: `lease-token-${leaseAcquireCalls}`,
     };
     activeLease = acquired;
@@ -381,19 +393,20 @@ mock.module("@/features/chat/persistence/service", () => ({
   },
   ensureAssistantThreadForOwner: (
     _chatId: string,
-    actor: { legacyWorkspaceActor: string; owner: TestOwner }
+    actor: { legacyWorkspaceActor: string; owner: TestOwner },
+    projectId: string
   ) => {
-    serviceOwners.push(actor.owner);
+    serviceOwners.push({ ...actor.owner, projectId });
     return Promise.resolve(true);
   },
   isReservedChatMessageId: (messageId: string) =>
     messageId.startsWith("__chat_stream_lease__:"),
-  loadMessagesForOwner: (_chatId: string, owner: TestOwner) => {
-    serviceOwners.push(owner);
+  loadMessagesForOwner: (_chatId: string, scope: TestScope) => {
+    serviceOwners.push(scope);
     return Promise.resolve(structuredClone(history));
   },
-  maybeAutoTitleThread: (input: { owner: TestOwner }) => {
-    serviceOwners.push(input.owner);
+  maybeAutoTitleThread: (input: { scope: TestScope }) => {
+    serviceOwners.push(input.scope);
     titleCalls += 1;
     return titleWait ?? Promise.resolve();
   },
@@ -650,6 +663,7 @@ function chatRequest(
     options?.appToken === undefined ? "valid-app-token" : options.appToken;
   return new Request("https://brain.test/api/chat", {
     body: JSON.stringify({
+      assistantContext: { projectId: PROJECT_ID },
       chatId: CHAT_ID,
       encodedKubeconfig: "encoded-kubeconfig",
       message,
@@ -782,6 +796,7 @@ test("lease heartbeat loss aborts the stream without releasing a replacement lea
       chatId: CHAT_ID,
       messageId: `lease-${CHAT_ID}`,
       parts: [],
+      scope: TEST_SCOPE,
       token: "replacement-after-heartbeat-loss",
     };
     heartbeatTick?.();
@@ -859,6 +874,7 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   expect(serviceOwners).toEqual(
     serviceOwners.map(() => ({
       namespace: NAMESPACE,
+      projectId: PROJECT_ID,
       userUid: `${WORKSPACE_ACTOR}-uid`,
     }))
   );
@@ -1215,6 +1231,7 @@ test("does not commit after the acquired lease is stolen", async () => {
       chatId: CHAT_ID,
       messageId: `lease-${CHAT_ID}`,
       parts: [],
+      scope: TEST_SCOPE,
       token: "replacement-owner-before-commit",
     };
   };
@@ -1251,6 +1268,7 @@ test("does not roll a continuation back after its lease is stolen", async () => 
       chatId: CHAT_ID,
       messageId: `lease-${CHAT_ID}`,
       parts: [],
+      scope: TEST_SCOPE,
       token: "replacement-owner-before-rollback",
     };
     throw new Error("stream setup failed after takeover");
@@ -1510,6 +1528,7 @@ test("discards a late response after its lease is stolen", async () => {
     chatId: CHAT_ID,
     messageId: `lease-${CHAT_ID}`,
     parts: [],
+    scope: TEST_SCOPE,
     token: "replacement-owner",
   };
 

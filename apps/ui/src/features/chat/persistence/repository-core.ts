@@ -11,7 +11,7 @@ import {
   assistantChats,
 } from "./schema";
 import type {
-  AssistantConversationOwner,
+  AssistantConversationScope,
   VerifiedAssistantConversationActor,
 } from "./types";
 
@@ -21,12 +21,13 @@ const CHAT_STREAM_LEASE_MESSAGE_PREFIX = "__chat_stream_lease__:";
 const CHAT_STREAM_LEASE_PART_TYPE = "data-chatStreamLease";
 const CHAT_STREAM_LEASE_TTL_MS = 180_000;
 const MAX_TITLE_LEN = 200;
+const PROJECT_ID_REQUIRED_MESSAGE = "assistant project id is required";
 
 export interface ChatStreamLease {
   chatId: string;
   messageId: string;
-  owner: AssistantConversationOwner;
   parts: UIMessage["parts"];
+  scope: AssistantConversationScope;
   token: string;
 }
 
@@ -50,6 +51,7 @@ export interface AssistantConversationRepository {
   ensureThreadForOwner: (input: {
     actor: VerifiedAssistantConversationActor;
     id: string;
+    projectId: string;
     title: string;
   }) => Promise<boolean>;
   persistAssistantMessageIfLeaseOwned: (input: {
@@ -64,29 +66,29 @@ export interface AssistantConversationRepository {
     chatId: string;
     expectedParts: UIMessage["parts"];
     messageId: string;
-    owner: AssistantConversationOwner;
+    scope: AssistantConversationScope;
     replacementParts: UIMessage["parts"];
   }) => Promise<boolean>;
   selectMessagesByOwner: (
-    owner: AssistantConversationOwner,
+    scope: AssistantConversationScope,
     chatId: string
   ) => Promise<UIMessage[] | null>;
   selectThreadByOwner: (
     chatId: string,
-    owner: AssistantConversationOwner
+    scope: AssistantConversationScope
   ) => Promise<ThreadRow | null>;
   selectThreadsByOwner: (
-    owner: AssistantConversationOwner
+    scope: AssistantConversationScope
   ) => Promise<ThreadRow[]>;
   tryAcquireChatStreamLease: (input: {
     chatId: string;
     now?: Date;
-    owner: AssistantConversationOwner;
+    scope: AssistantConversationScope;
     token?: string;
     ttlMs?: number;
   }) => Promise<ChatStreamLease | null>;
   updateThreadAiTitleOnceForOwner: (
-    owner: AssistantConversationOwner,
+    scope: AssistantConversationScope,
     chatId: string,
     title: string
   ) => Promise<boolean>;
@@ -178,23 +180,32 @@ async function readDatabaseNow(db: AssistantPgDatabase): Promise<Date> {
   return now;
 }
 
-function ownedThreadWhere(chatId: string, owner: AssistantConversationOwner) {
+function requiredProjectId(projectId: string): string {
+  const normalized = projectId.trim();
+  if (normalized === "") {
+    throw new Error(PROJECT_ID_REQUIRED_MESSAGE);
+  }
+  return normalized;
+}
+
+function scopedThreadWhere(chatId: string, scope: AssistantConversationScope) {
   return and(
     eq(assistantChats.id, chatId),
-    eq(assistantChats.namespace, owner.namespace),
-    eq(assistantChats.workspaceActor, owner.userUid)
+    eq(assistantChats.namespace, scope.namespace),
+    eq(assistantChats.workspaceActor, scope.userUid),
+    eq(assistantChats.projectId, requiredProjectId(scope.projectId))
   );
 }
 
 async function transactionOwnsThread(
   tx: AssistantPgTransaction,
   chatId: string,
-  owner: AssistantConversationOwner
+  scope: AssistantConversationScope
 ): Promise<boolean> {
   const [thread] = await tx
     .select({ id: assistantChats.id })
     .from(assistantChats)
-    .where(ownedThreadWhere(chatId, owner))
+    .where(scopedThreadWhere(chatId, scope))
     .limit(1);
   return thread != null;
 }
@@ -286,26 +297,27 @@ export function createAssistantConversationRepository(
 ): AssistantConversationRepository {
   const selectThreadByOwner = async (
     chatId: string,
-    owner: AssistantConversationOwner
+    scope: AssistantConversationScope
   ): Promise<ThreadRow | null> => {
     const [row] = await getDb()
       .select()
       .from(assistantChats)
-      .where(ownedThreadWhere(chatId, owner))
+      .where(scopedThreadWhere(chatId, scope))
       .limit(1);
     return row ?? null;
   };
 
   const selectThreadsByOwner = (
-    owner: AssistantConversationOwner
+    scope: AssistantConversationScope
   ): Promise<ThreadRow[]> =>
     getDb()
       .select()
       .from(assistantChats)
       .where(
         and(
-          eq(assistantChats.namespace, owner.namespace),
-          eq(assistantChats.workspaceActor, owner.userUid)
+          eq(assistantChats.namespace, scope.namespace),
+          eq(assistantChats.workspaceActor, scope.userUid),
+          eq(assistantChats.projectId, requiredProjectId(scope.projectId))
         )
       )
       .orderBy(desc(assistantChats.updatedAt));
@@ -350,9 +362,12 @@ export function createAssistantConversationRepository(
   const ensureThreadForOwner = async (input: {
     actor: VerifiedAssistantConversationActor;
     id: string;
+    projectId: string;
     title: string;
   }): Promise<boolean> => {
     const owner = input.actor.owner;
+    const projectId = requiredProjectId(input.projectId);
+    const scope = { ...owner, projectId };
     await getDb().transaction(async (tx) => {
       // A new thread row is keyed by this uid; re-check the fingerprint in
       // the same transaction so a concurrent merge either sweeps this row or
@@ -366,17 +381,18 @@ export function createAssistantConversationRepository(
         .values({
           id: input.id,
           namespace: owner.namespace,
+          projectId,
           workspaceActor: owner.userUid,
           title: input.title,
           titleAiGenerated: false,
         })
         .onConflictDoNothing({ target: assistantChats.id });
     });
-    return (await selectThreadByOwner(input.id, owner)) != null;
+    return (await selectThreadByOwner(input.id, scope)) != null;
   };
 
   const updateThreadAiTitleOnceForOwner = async (
-    owner: AssistantConversationOwner,
+    scope: AssistantConversationScope,
     chatId: string,
     title: string
   ): Promise<boolean> => {
@@ -393,7 +409,7 @@ export function createAssistantConversationRepository(
       })
       .where(
         and(
-          ownedThreadWhere(chatId, owner),
+          scopedThreadWhere(chatId, scope),
           eq(assistantChats.titleAiGenerated, false)
         )
       )
@@ -402,10 +418,10 @@ export function createAssistantConversationRepository(
   };
 
   const selectMessagesByOwner = async (
-    owner: AssistantConversationOwner,
+    scope: AssistantConversationScope,
     chatId: string
   ): Promise<UIMessage[] | null> => {
-    if ((await selectThreadByOwner(chatId, owner)) == null) {
+    if ((await selectThreadByOwner(chatId, scope)) == null) {
       return null;
     }
     const rows = await getDb()
@@ -432,12 +448,12 @@ export function createAssistantConversationRepository(
     chatId: string;
     expectedParts: UIMessage["parts"];
     messageId: string;
-    owner: AssistantConversationOwner;
+    scope: AssistantConversationScope;
     replacementParts: UIMessage["parts"];
   }): Promise<boolean> => {
     const now = new Date();
     return getDb().transaction(async (tx) => {
-      if (!(await transactionOwnsThread(tx, input.chatId, input.owner))) {
+      if (!(await transactionOwnsThread(tx, input.chatId, input.scope))) {
         return false;
       }
 
@@ -460,7 +476,7 @@ export function createAssistantConversationRepository(
       await tx
         .update(assistantChats)
         .set({ updatedAt: now })
-        .where(ownedThreadWhere(input.chatId, input.owner));
+        .where(scopedThreadWhere(input.chatId, input.scope));
       return true;
     });
   };
@@ -468,7 +484,7 @@ export function createAssistantConversationRepository(
   const tryAcquireChatStreamLease = async (input: {
     chatId: string;
     now?: Date;
-    owner: AssistantConversationOwner;
+    scope: AssistantConversationScope;
     token?: string;
     ttlMs?: number;
   }): Promise<ChatStreamLease | null> => {
@@ -484,13 +500,13 @@ export function createAssistantConversationRepository(
     const lease: ChatStreamLease = {
       chatId: input.chatId,
       messageId,
-      owner: { ...input.owner },
+      scope: { ...input.scope },
       parts,
       token,
     };
 
     return getDb().transaction(async (tx) => {
-      if (!(await transactionOwnsThread(tx, input.chatId, input.owner))) {
+      if (!(await transactionOwnsThread(tx, input.chatId, input.scope))) {
         return null;
       }
       return (await acquireChatStreamLeaseRow(tx, lease, now)) ? lease : null;
@@ -513,7 +529,7 @@ export function createAssistantConversationRepository(
           !(await transactionOwnsThread(
             tx,
             input.lease.chatId,
-            input.lease.owner
+            input.lease.scope
           ))
         ) {
           throw new ChatStreamCommitConflict();
@@ -578,7 +594,7 @@ export function createAssistantConversationRepository(
           await tx
             .update(assistantChats)
             .set({ updatedAt: sql`clock_timestamp()` })
-            .where(ownedThreadWhere(input.lease.chatId, input.lease.owner));
+            .where(scopedThreadWhere(input.lease.chatId, input.lease.scope));
         }
         return renewedLease;
       })
@@ -592,7 +608,7 @@ export function createAssistantConversationRepository(
 
   const releaseChatStreamLease = (lease: ChatStreamLease): Promise<boolean> =>
     getDb().transaction(async (tx) => {
-      if (!(await transactionOwnsThread(tx, lease.chatId, lease.owner))) {
+      if (!(await transactionOwnsThread(tx, lease.chatId, lease.scope))) {
         return false;
       }
 
@@ -613,7 +629,7 @@ export function createAssistantConversationRepository(
     lease: ChatStreamLease
   ): Promise<ChatStreamLease | null> =>
     getDb().transaction(async (tx) => {
-      if (!(await transactionOwnsThread(tx, lease.chatId, lease.owner))) {
+      if (!(await transactionOwnsThread(tx, lease.chatId, lease.scope))) {
         return null;
       }
 
@@ -647,7 +663,7 @@ export function createAssistantConversationRepository(
         !(await transactionOwnsThread(
           tx,
           input.lease.chatId,
-          input.lease.owner
+          input.lease.scope
         ))
       ) {
         return false;
@@ -694,7 +710,7 @@ export function createAssistantConversationRepository(
       await tx
         .update(assistantChats)
         .set({ updatedAt: now })
-        .where(ownedThreadWhere(input.lease.chatId, input.lease.owner));
+        .where(scopedThreadWhere(input.lease.chatId, input.lease.scope));
       return true;
     });
   };

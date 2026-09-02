@@ -74,6 +74,7 @@ import {
   resolveSelectedContextAvailability,
   selectedContextResourceIdentitiesFromFacts,
 } from "@/features/chat/selected-context";
+import { buildSelectedResourceSnapshot } from "@/features/chat/selected-context-snapshot";
 import {
   NAVIGATE_APP_TOOL_NAME,
   type NavigateAppToolOutput,
@@ -130,7 +131,6 @@ import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
-import { resourceDisplayNameForTarget } from "@/features/resource-display-name/resource-display-name-bridge";
 import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
 import {
   ProjectTopBarSlotHost,
@@ -229,15 +229,12 @@ function submitAssistantClientToolResult(
 function buildAssistantContextPayload(
   projectName: string | undefined,
   projectId: string
-): AssistantContextPayload | undefined {
+): AssistantContextPayload {
   const pn = projectName?.trim() ?? "";
   const pu = projectId.trim();
-  if (pn === "" && pu === "") {
-    return undefined;
-  }
   return {
     ...(pn === "" ? {} : { projectName: pn }),
-    ...(pu === "" ? {} : { projectId: pu }),
+    projectId: pu,
   };
 }
 
@@ -246,28 +243,6 @@ function buildAssistantContextPayload(
  * message so the model resolves "this"/"it" against what was selected then, not
  * whatever is selected on a later turn. `null` = nothing selected (no backfill).
  */
-function buildSelectedResourceSnapshot(
-  selected: ProjectCanvasSelection | null,
-  observedUid?: string
-): SelectedContextReference | null {
-  const target = projectCanvasSelectionTarget(selected);
-  if (target == null) {
-    return null;
-  }
-  const name = target.kind === "PublicAccess" ? target.apName : target.name;
-  // Display-only hint (ADR 0066): the model addresses the resource by its
-  // Resource Display Name but must still target tools by `name`.
-  const displayName = resourceDisplayNameForTarget(target);
-  return {
-    ...(displayName == null || displayName === name ? {} : { displayName }),
-    type: "resource",
-    kind: target.kind,
-    name,
-    namespace: target.namespace,
-    ...(observedUid == null ? {} : { observedUid }),
-  };
-}
-
 /**
  * The one part of the composer that depends on the canvas selection: the
  * "Current Project" / "Current Service" context chips. Isolating the `selected`
@@ -292,11 +267,10 @@ function ComposerContextIndicator({
     () => parseProjectCanvasSelection(selectedQuery),
     [selectedQuery]
   );
-  // The composer reads `selectedRef.current` at submit time; keep it current
-  // without forcing the composer to re-render on every select/deselect.
-  useEffect(() => {
-    selectedRef.current = selected;
-  }, [selected, selectedRef]);
+  // The composer may submit immediately after a URL-driven selection render.
+  // Publish during that render so the send-time snapshot cannot lag one effect
+  // behind the context chip the user is looking at.
+  selectedRef.current = selected;
 
   const contextToggles = useMemo(() => {
     const toggles: string[] = [];
@@ -524,10 +498,11 @@ function ProjectAssistantChatSession({
   const selectedContextAvailability = useCallback(
     (reference: SelectedContextReference) =>
       resolveSelectedContextAvailability(reference, {
+        projectId,
         ready: selectedContextSnapshotReady,
         resources: selectedContextResources,
       }),
-    [selectedContextResources, selectedContextSnapshotReady]
+    [projectId, selectedContextResources, selectedContextSnapshotReady]
   );
   const currentProject = useCurrentProjectDisplayName({
     kubeconfig,
@@ -607,7 +582,7 @@ function ProjectAssistantChatSession({
             headers: headersWithAppToken,
             body: {
               ...(body && typeof body === "object" ? body : {}),
-              ...(assistantContext == null ? {} : { assistantContext }),
+              assistantContext,
               ...(workspaceResourceQuota == null
                 ? {}
                 : { workspaceResourceQuota }),
@@ -828,7 +803,11 @@ function ProjectAssistantChatSession({
                 resource.name === selectedName &&
                 resource.namespace === selectedTarget.namespace
             )?.observedUid);
-      const snapshot = buildSelectedResourceSnapshot(selected, observedUid);
+      const snapshot = buildSelectedResourceSnapshot({
+        observedUid,
+        projectId,
+        selected,
+      });
       if (snapshot == null) {
         sendMessage({ text }).catch(() => undefined);
         return;
@@ -922,6 +901,7 @@ function chatWallCauseHeader(value: string | null): ChatWallCause | null {
 }
 
 function ProjectAssistantChatPane() {
+  const projectId = useProjectId();
   const namespaceRaw = useAtomValue(namespaceAtom);
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
@@ -933,7 +913,7 @@ function ProjectAssistantChatPane() {
   const freeTierOverride = useChatBillingCardFreeTierOverride();
   const assistantStateRefreshSequenceRef = useRef(0);
 
-  const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}`;
+  const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}\u0000${projectId}`;
   const [prevSessionResetKey, setPrevSessionResetKey] =
     useState(sessionResetKey);
   if (prevSessionResetKey !== sessionResetKey) {
@@ -947,7 +927,7 @@ function ProjectAssistantChatPane() {
     let cancelled = false;
     assistantStateRefreshSequenceRef.current += 1;
 
-    if (!namespaceReady) {
+    if (!namespaceReady || projectId.trim() === "") {
       return;
     }
 
@@ -955,6 +935,7 @@ function ProjectAssistantChatPane() {
       appToken,
       kubeconfig,
       namespace: namespaceRaw,
+      projectId,
     }).then((payload) => {
       if (cancelled) {
         return;
@@ -971,7 +952,7 @@ function ProjectAssistantChatPane() {
       cancelled = true;
       assistantStateRefreshSequenceRef.current += 1;
     };
-  }, [appToken, kubeconfig, namespaceRaw, namespaceReady]);
+  }, [appToken, kubeconfig, namespaceRaw, namespaceReady, projectId]);
 
   // Every chat response — paid-wall refusals included — carries the server's
   // Chat Billing Posture in the `X-Chat-*` headers; the pane renders it and
@@ -1010,6 +991,7 @@ function ProjectAssistantChatPane() {
         appToken,
         kubeconfig,
         namespace: namespaceRaw,
+        projectId,
       });
       if (messages == null) {
         return;
@@ -1018,7 +1000,7 @@ function ProjectAssistantChatPane() {
         prev == null ? prev : { ...prev, chatId: threadId, messages }
       );
     },
-    [appToken, kubeconfig, namespaceRaw, session?.chatId]
+    [appToken, kubeconfig, namespaceRaw, projectId, session?.chatId]
   );
 
   // The verified actor is bound when the first message materializes this draft.
@@ -1047,6 +1029,7 @@ function ProjectAssistantChatPane() {
       appToken,
       kubeconfig,
       namespace: namespaceRaw,
+      projectId,
     });
     if (
       refreshed == null ||
@@ -1058,7 +1041,7 @@ function ProjectAssistantChatPane() {
       prev == null ? prev : { ...prev, threads: refreshed.threads }
     );
     setFreeTier(refreshed.freeTier);
-  }, [appToken, kubeconfig, namespaceRaw]);
+  }, [appToken, kubeconfig, namespaceRaw, projectId]);
 
   const openGithubIntent = useCallback(() => {
     sidePaneRouter

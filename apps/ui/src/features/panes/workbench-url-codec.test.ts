@@ -64,6 +64,119 @@ test("project workbench route codec handles edge selection independently", () =>
   });
 });
 
+test("selected resource codec round-trips AP, DB, and PublicAccess observed UIDs", () => {
+  const selections = [
+    {
+      kind: "resource" as const,
+      target: {
+        kind: "AP" as const,
+        name: "api:name",
+        namespace: "default",
+        observedUid: "ap/uid:1",
+      },
+    },
+    {
+      kind: "resource" as const,
+      target: {
+        kind: "DB" as const,
+        name: "postgres",
+        namespace: "data",
+        observedUid: "db-uid",
+      },
+    },
+    {
+      kind: "publicAddresses" as const,
+      target: {
+        apName: "web",
+        kind: "PublicAccess" as const,
+        namespace: "default",
+        observedUid: "ap-public-uid",
+      },
+    },
+  ];
+
+  for (const selection of selections) {
+    const serialized = serializeProjectCanvasSelection(selection);
+    assert.deepEqual(parseProjectCanvasSelection(serialized), selection);
+  }
+});
+
+test("selected resource codec keeps legacy three-part selections compatible", () => {
+  assert.deepEqual(parseProjectCanvasSelection("ap:default:api"), {
+    kind: "resource",
+    target: { kind: "AP", name: "api", namespace: "default" },
+  });
+  assert.deepEqual(parseProjectCanvasSelection("db:data:pg"), {
+    kind: "resource",
+    target: { kind: "DB", name: "pg", namespace: "data" },
+  });
+  assert.deepEqual(parseProjectCanvasSelection("public-access:default:web"), {
+    kind: "publicAddresses",
+    target: {
+      apName: "web",
+      kind: "PublicAccess",
+      namespace: "default",
+    },
+  });
+});
+
+test("selected resource codec rejects empty or malformed observed UIDs", () => {
+  assert.equal(parseProjectCanvasSelection("ap:default:api:"), null);
+  assert.equal(parseProjectCanvasSelection("ap:default:api:%20"), null);
+  assert.equal(parseProjectCanvasSelection("ap:default:api:%E0%A4%A"), null);
+  assert.equal(parseProjectCanvasSelection("ap:default:api:uid:extra"), null);
+});
+
+test("observed UID is limited to selected and does not change surface codecs", () => {
+  const withObservedUids = {
+    canvasSelection: {
+      kind: "resource" as const,
+      target: {
+        kind: "AP" as const,
+        name: "api",
+        namespace: "default",
+        observedUid: "selected-uid",
+      },
+    },
+    surfaces: {
+      drawer: {
+        kind: "apTerminal" as const,
+        target: {
+          kind: "AP" as const,
+          name: "api",
+          namespace: "default",
+          observedUid: "drawer-uid",
+        },
+      },
+      main: {
+        kind: "dbAccess" as const,
+        target: {
+          kind: "DB" as const,
+          name: "pg",
+          namespace: "data",
+          observedUid: "main-uid",
+        },
+      },
+      side: {
+        kind: "settings" as const,
+        target: {
+          kind: "AP" as const,
+          name: "api",
+          namespace: "default",
+          observedUid: "side-uid",
+        },
+      },
+    },
+  } satisfies ProjectWorkbenchRouteState;
+
+  assert.deepEqual(serializeProjectWorkbenchRouteState(withObservedUids), {
+    drawer: "ap-terminal:ap:default:api",
+    main: "db-access:db:data:pg",
+    selected: "ap:default:api:selected-uid",
+    side: "settings:ap:default:api",
+  });
+});
+
 test("project workbench route codec omits empty entries as null values", () => {
   assert.deepEqual(
     serializeProjectWorkbenchRouteState({

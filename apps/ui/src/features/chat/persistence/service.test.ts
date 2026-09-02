@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import type { AssistantConversationRepository } from "./repository-core";
 import { createAssistantConversationService } from "./service-core";
+import type { AssistantConversationScope } from "./types";
 
 type ServiceRepository = Pick<
   AssistantConversationRepository,
@@ -13,30 +14,36 @@ type ServiceRepository = Pick<
   | "updateThreadAiTitleOnceForOwner"
 >;
 
-test("first-message creation uses the verified owner and continuing cannot re-key it", async () => {
-  const owners = new Map<string, { namespace: string; userUid: string }>();
+const PROJECT_ID_REQUIRED_PATTERN = /assistant project id is required/;
+
+test("first-message creation pins the verified owner and project scope", async () => {
+  const scopes = new Map<string, AssistantConversationScope>();
   const repository = {
     ensureThreadForOwner: (input) => {
-      if (!owners.has(input.id)) {
-        owners.set(input.id, input.actor.owner);
+      const requested = { ...input.actor.owner, projectId: input.projectId };
+      if (!scopes.has(input.id)) {
+        scopes.set(input.id, requested);
       }
       return Promise.resolve(
-        owners.get(input.id)?.namespace === input.actor.owner.namespace &&
-          owners.get(input.id)?.userUid === input.actor.owner.userUid
+        scopes.get(input.id)?.namespace === requested.namespace &&
+          scopes.get(input.id)?.projectId === requested.projectId &&
+          scopes.get(input.id)?.userUid === requested.userUid
       );
     },
-    selectThreadByOwner: (chatId, owner) =>
+    selectThreadByOwner: (chatId, scope) =>
       Promise.resolve(
-        owners.get(chatId)?.namespace === owner.namespace &&
-          owners.get(chatId)?.userUid === owner.userUid
+        scopes.get(chatId)?.namespace === scope.namespace &&
+          scopes.get(chatId)?.projectId === scope.projectId &&
+          scopes.get(chatId)?.userUid === scope.userUid
           ? {
               createdAt: new Date("2026-07-21T00:00:00.000Z"),
               id: chatId,
-              namespace: owner.namespace,
+              namespace: scope.namespace,
+              projectId: scope.projectId,
               title: "Chat",
               titleAiGenerated: false,
               updatedAt: new Date("2026-07-21T00:00:00.000Z"),
-              workspaceActor: owner.userUid,
+              workspaceActor: scope.userUid,
             }
           : null
       ),
@@ -50,8 +57,17 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
     repository,
     titleThread: () => Promise.resolve("Generated title"),
   });
-  const alice = { namespace: "shared", userUid: "alice-cr" };
-  const bob = { namespace: "shared", userUid: "bob-cr" };
+  const alice = {
+    namespace: "shared",
+    projectId: "project-a",
+    userUid: "alice-cr",
+  };
+  const aliceOtherProject = { ...alice, projectId: "project-b" };
+  const bob = {
+    namespace: "shared",
+    projectId: "project-a",
+    userUid: "bob-cr",
+  };
   const aliceActor = { legacyWorkspaceActor: "alicecr1", owner: alice };
   const bobActor = { legacyWorkspaceActor: "bobcrnm1", owner: bob };
 
@@ -59,30 +75,50 @@ test("first-message creation uses the verified owner and continuing cannot re-ke
 
   assert.equal(draft.chatId, "generated-chat");
   assert.deepEqual(draft.threads, []);
-  assert.equal(owners.size, 0);
-  assert.equal(await service.ensureThread(draft.chatId, aliceActor), true);
-  assert.equal(await service.ensureThread(draft.chatId, bobActor), false);
-  assert.deepEqual(owners.get(draft.chatId), alice);
+  assert.equal(scopes.size, 0);
+  assert.equal(
+    await service.ensureThread(draft.chatId, aliceActor, alice.projectId),
+    true
+  );
+  assert.equal(
+    await service.ensureThread(draft.chatId, bobActor, bob.projectId),
+    false
+  );
+  assert.equal(
+    await service.loadMessages(draft.chatId, aliceOtherProject),
+    null
+  );
+  assert.deepEqual(scopes.get(draft.chatId), alice);
 });
 
-test("automatic titling cannot read or rename another actor's conversation", async () => {
-  const titledOwners: string[] = [];
+test("automatic titling cannot cross actor or project scope", async () => {
+  const titledScopes: AssistantConversationScope[] = [];
   let generatedTitles = 0;
   let titleAbortSignal: AbortSignal | undefined;
+  const bobScope = {
+    namespace: "shared",
+    projectId: "project-b",
+    userUid: "bob-cr",
+  };
   const bobThread = {
     createdAt: new Date("2026-07-21T00:00:00.000Z"),
     id: "bob-chat",
-    namespace: "shared",
+    namespace: bobScope.namespace,
+    projectId: bobScope.projectId,
     title: "Chat",
     titleAiGenerated: false,
     updatedAt: new Date("2026-07-21T00:00:00.000Z"),
-    workspaceActor: "bob-cr",
+    workspaceActor: bobScope.userUid,
   };
+  const isBobScope = (scope: AssistantConversationScope) =>
+    scope.namespace === bobScope.namespace &&
+    scope.projectId === bobScope.projectId &&
+    scope.userUid === bobScope.userUid;
   const repository = {
     ensureThreadForOwner: () => Promise.resolve(true),
-    selectMessagesByOwner: (owner, chatId) =>
+    selectMessagesByOwner: (scope, chatId) =>
       Promise.resolve(
-        owner.userUid === "bob-cr" && chatId === "bob-chat"
+        isBobScope(scope) && chatId === "bob-chat"
           ? [
               {
                 id: "bob-message",
@@ -92,13 +128,13 @@ test("automatic titling cannot read or rename another actor's conversation", asy
             ]
           : null
       ),
-    selectThreadByOwner: (chatId, owner) =>
+    selectThreadByOwner: (chatId, scope) =>
       Promise.resolve(
-        owner.userUid === "bob-cr" && chatId === "bob-chat" ? bobThread : null
+        isBobScope(scope) && chatId === "bob-chat" ? bobThread : null
       ),
     selectThreadsByOwner: () => Promise.resolve([]),
-    updateThreadAiTitleOnceForOwner: (owner) => {
-      titledOwners.push(owner.userUid);
+    updateThreadAiTitleOnceForOwner: (scope) => {
+      titledScopes.push(scope);
       return Promise.resolve(true);
     },
   } satisfies ServiceRepository;
@@ -117,16 +153,68 @@ test("automatic titling cannot read or rename another actor's conversation", asy
   await service.maybeAutoTitle({
     chatId: "bob-chat",
     languageModel: {} as never,
-    owner: { namespace: "shared", userUid: "alice-cr" },
+    scope: { ...bobScope, projectId: "project-a" },
   });
   await service.maybeAutoTitle({
     abortSignal: titleAbortController.signal,
     chatId: "bob-chat",
     languageModel: {} as never,
-    owner: { namespace: "shared", userUid: "bob-cr" },
+    scope: bobScope,
   });
 
   assert.equal(generatedTitles, 1);
   assert.equal(titleAbortSignal, titleAbortController.signal);
-  assert.deepEqual(titledOwners, ["bob-cr"]);
+  assert.deepEqual(titledScopes, [bobScope]);
+});
+
+test("conversation service fails closed on an empty project scope", async () => {
+  let repositoryRead = false;
+  const repository = {
+    ensureThreadForOwner: () => {
+      repositoryRead = true;
+      return Promise.resolve(true);
+    },
+    selectMessagesByOwner: () => {
+      repositoryRead = true;
+      return Promise.resolve(null);
+    },
+    selectThreadByOwner: () => {
+      repositoryRead = true;
+      return Promise.resolve(null);
+    },
+    selectThreadsByOwner: () => {
+      repositoryRead = true;
+      return Promise.resolve([]);
+    },
+    updateThreadAiTitleOnceForOwner: () => {
+      repositoryRead = true;
+      return Promise.resolve(false);
+    },
+  } satisfies ServiceRepository;
+  const service = createAssistantConversationService({
+    generateChatId: () => "generated-chat",
+    placeholderTitle: () => "Chat",
+    repository,
+    titleThread: () => Promise.resolve("Generated title"),
+  });
+  const emptyProjectScope = {
+    namespace: "shared",
+    projectId: "   ",
+    userUid: "alice-cr",
+  };
+
+  await assert.rejects(
+    service.bootstrap(emptyProjectScope),
+    PROJECT_ID_REQUIRED_PATTERN
+  );
+  await assert.rejects(
+    async () =>
+      service.ensureThread(
+        "chat-a",
+        { legacyWorkspaceActor: "alicecr1", owner: emptyProjectScope },
+        emptyProjectScope.projectId
+      ),
+    PROJECT_ID_REQUIRED_PATTERN
+  );
+  assert.equal(repositoryRead, false);
 });

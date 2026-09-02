@@ -57,6 +57,16 @@ export interface AssistantFetcherCredentials {
   appToken: string;
   kubeconfig: string;
   namespace: string;
+  projectId: string;
+}
+
+type AssistantNamespaceCredentials = Omit<
+  AssistantFetcherCredentials,
+  "projectId"
+>;
+
+function assistantScopeQuery(credentials: AssistantFetcherCredentials): string {
+  return `namespace=${encodeURIComponent(credentials.namespace)}&projectId=${encodeURIComponent(credentials.projectId)}`;
 }
 
 async function safeJsonGet<T>(
@@ -80,7 +90,7 @@ export function fetchAssistantSession(
   credentials: AssistantFetcherCredentials
 ): Promise<AssistantSessionPayload | null> {
   return safeJsonGet(
-    `/api/chat/session?namespace=${encodeURIComponent(credentials.namespace)}`,
+    `/api/chat/session?${assistantScopeQuery(credentials)}`,
     sessionResponseSchema,
     personalResourceAuthHeaders(credentials)
   );
@@ -91,7 +101,7 @@ export async function fetchAssistantThreads(
   credentials: AssistantFetcherCredentials
 ): Promise<AssistantThreadDTO[] | null> {
   const data = await safeJsonGet(
-    `/api/chat/threads?namespace=${encodeURIComponent(credentials.namespace)}`,
+    `/api/chat/threads?${assistantScopeQuery(credentials)}`,
     threadsResponseSchema,
     personalResourceAuthHeaders(credentials)
   );
@@ -103,7 +113,7 @@ export async function fetchAssistantThreads(
  * (ADR-0065). `null` when the lookup failed — the card degrades quietly.
  */
 export function fetchFreeChatTurnsUsage(
-  credentials: AssistantFetcherCredentials
+  credentials: AssistantNamespaceCredentials
 ): Promise<FreeChatTurnsUsage | null> {
   return safeJsonGet(
     `/api/chat/free-turns?namespace=${encodeURIComponent(credentials.namespace)}`,
@@ -117,7 +127,7 @@ export async function fetchAssistantThreadMessages(
   credentials: AssistantFetcherCredentials
 ): Promise<UIMessage[] | null> {
   const data = await safeJsonGet(
-    `/api/chat/messages?chatId=${encodeURIComponent(chatId)}&namespace=${encodeURIComponent(credentials.namespace)}`,
+    `/api/chat/messages?chatId=${encodeURIComponent(chatId)}&${assistantScopeQuery(credentials)}`,
     messagesResponseSchema,
     personalResourceAuthHeaders(credentials)
   );

@@ -18,7 +18,7 @@ import {
 import { createAssistantConversationService } from "./service-core";
 import { deriveThreadTitle, placeholderThreadTitle } from "./title";
 import {
-  type AssistantConversationOwner,
+  type AssistantConversationScope,
   normalizeAssistantNamespace,
   type VerifiedAssistantConversationActor,
 } from "./types";
@@ -32,12 +32,17 @@ const service = createAssistantConversationService({
 
 export type { ChatStreamLease } from "./repository";
 
-function normalizedOwner(
-  owner: AssistantConversationOwner
-): AssistantConversationOwner {
+function normalizedScope(
+  scope: AssistantConversationScope
+): AssistantConversationScope {
+  const projectId = scope.projectId.trim();
+  if (projectId === "") {
+    throw new Error("assistant project id is required");
+  }
   return {
-    namespace: normalizeAssistantNamespace(owner.namespace),
-    userUid: owner.userUid,
+    namespace: normalizeAssistantNamespace(scope.namespace),
+    projectId,
+    userUid: scope.userUid,
   };
 }
 
@@ -61,16 +66,19 @@ export function adoptLegacyAssistantConversationsForActor(
 ): Promise<void> {
   return adoptLegacyThreadsForActor({
     legacyWorkspaceActor: actor.legacyWorkspaceActor,
-    owner: normalizedOwner(actor.owner),
+    owner: {
+      namespace: normalizeAssistantNamespace(actor.owner.namespace),
+      userUid: actor.owner.userUid,
+    },
   });
 }
 
 export function acquireChatStreamLease(
   chatId: string,
-  ownerRaw: AssistantConversationOwner
+  scopeRaw: AssistantConversationScope
 ): Promise<RepositoryChatStreamLease | null> {
-  const owner = normalizedOwner(ownerRaw);
-  return tryAcquireChatStreamLease({ chatId, owner });
+  const scope = normalizedScope(scopeRaw);
+  return tryAcquireChatStreamLease({ chatId, scope });
 }
 
 export function releaseOwnedChatStreamLease(
@@ -105,11 +113,11 @@ export function replacePendingAssistantMessage(input: {
   chatId: string;
   expectedParts: UIMessage["parts"];
   messageId: string;
-  owner: AssistantConversationOwner;
+  scope: AssistantConversationScope;
   replacementParts: UIMessage["parts"];
 }): Promise<boolean> {
   return replaceAssistantMessagePartsIfUnchanged({
     ...input,
-    owner: normalizedOwner(input.owner),
+    scope: normalizedScope(input.scope),
   });
 }

@@ -34,11 +34,17 @@ export function selectedContextResourceIdentitiesFromFacts(
 export function resolveSelectedContextAvailability(
   reference: SelectedContextReference,
   input: {
+    projectId: string;
     ready: boolean;
     resources: readonly SelectedContextResourceIdentity[];
   }
 ): SelectedContextAvailability {
-  if (!input.ready || reference.observedUid == null) {
+  if (
+    !input.ready ||
+    reference.projectId == null ||
+    reference.projectId !== input.projectId ||
+    reference.observedUid == null
+  ) {
     return "unknown";
   }
 

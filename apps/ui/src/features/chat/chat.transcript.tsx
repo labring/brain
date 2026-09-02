@@ -30,7 +30,7 @@ import {
 import type { SelectedContextAvailability } from "./selected-context";
 
 /**
- * Threads are (namespace,owner)-global and unbounded, so off-screen history
+ * Threads are (namespace, owner, project)-scoped and unbounded, so off-screen history
  * must leave layout/paint scope while the tail streams. `auto` in
  * `contain-intrinsic-size` makes the browser remember each row's rendered
  * height — the 120px estimate only sizes rows that have never been on screen,
@@ -105,15 +105,23 @@ function SelectedContextChip({
 }) {
   const label = selectedContextLabel(reference);
   const unavailable = availability === "unavailable";
+  const unknown = availability === "unknown";
+  let statusLabel = "";
+  if (unavailable) {
+    statusLabel = " · Unavailable";
+  } else if (unknown) {
+    statusLabel = " · Unverified";
+  }
   return (
     <span
-      aria-label={`Referenced: ${label}${unavailable ? " · Unavailable" : ""}`}
+      aria-label={`Referenced: ${label}${statusLabel}`}
       className="mb-2 flex max-w-full flex-wrap items-center gap-1"
       data-slot="chat-selected-context"
       role="img"
     >
       <Badge variant="outline">{label}</Badge>
       {unavailable && <Badge variant="destructive">Unavailable</Badge>}
+      {unknown && <Badge variant="secondary">Unverified</Badge>}
     </span>
   );
 }
@@ -184,19 +192,15 @@ const TranscriptMessage = memo(function TranscriptMessage({
   addToolApprovalResponse,
   copyDisabled,
   message,
-  selectedContextAvailability,
+  selectedContextAvailability = "unknown",
 }: {
   addToolApprovalResponse?: ChatTranscriptProps["addToolApprovalResponse"];
   copyDisabled: boolean;
   message: UIMessage;
-  selectedContextAvailability?: ChatTranscriptProps["selectedContextAvailability"];
+  selectedContextAvailability?: SelectedContextAvailability;
 }) {
   const reference =
     message.role === "user" ? readSelectedContextReference(message) : null;
-  const availability =
-    reference == null || selectedContextAvailability == null
-      ? "unknown"
-      : selectedContextAvailability(reference);
   return (
     <Message
       className={
@@ -209,7 +213,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
       <MessageContent className={messageContentClassName}>
         {reference != null && (
           <SelectedContextChip
-            availability={availability}
+            availability={selectedContextAvailability}
             reference={reference}
           />
         )}
@@ -243,15 +247,25 @@ export function ChatTranscript({
     >
       <Conversation className="min-h-0 w-full flex-1">
         <ConversationContent className="gap-5 px-4 py-5">
-          {messages.map((message) => (
-            <TranscriptMessage
-              addToolApprovalResponse={addToolApprovalResponse}
-              copyDisabled={status === "streaming" && message === lastMessage}
-              key={message.id}
-              message={message}
-              selectedContextAvailability={selectedContextAvailability}
-            />
-          ))}
+          {messages.map((message) => {
+            const reference =
+              message.role === "user"
+                ? readSelectedContextReference(message)
+                : null;
+            const availability =
+              reference == null || selectedContextAvailability == null
+                ? "unknown"
+                : selectedContextAvailability(reference);
+            return (
+              <TranscriptMessage
+                addToolApprovalResponse={addToolApprovalResponse}
+                copyDisabled={status === "streaming" && message === lastMessage}
+                key={message.id}
+                message={message}
+                selectedContextAvailability={availability}
+              />
+            );
+          })}
           {showLoadingRow && (
             <Message className={assistantMessageClassName} from="assistant">
               <MessageContent className={messageContentClassName}>
