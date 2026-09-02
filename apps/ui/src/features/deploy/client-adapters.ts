@@ -81,9 +81,6 @@ export async function createDeploymentTaskFromApi({
   const marketingAttribution = attributionParse?.success
     ? attributionParse.data
     : undefined;
-  const requiresIdentityToken =
-    input.source.kind === "github" ||
-    marketingAttribution?.consent_token != null;
   const response = await fetch("/api/deploy-tasks", {
     body: JSON.stringify({
       ...input,
@@ -92,7 +89,11 @@ export async function createDeploymentTaskFromApi({
     }),
     headers: {
       "Content-Type": "application/json",
-      ...(requiresIdentityToken ? appTokenRequestHeaders(appToken) : {}),
+      // Every source sends the App Token when one is hydrated: the run's
+      // terminal failure needs a Workspace Actor to reverse-check billing
+      // (ADR-0068's chokepoint). Only GitHub and consented attribution fail
+      // closed on it server-side; everyone else degrades as before.
+      ...appTokenRequestHeaders(appToken),
     },
     method: "POST",
   });

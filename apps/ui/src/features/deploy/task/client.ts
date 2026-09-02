@@ -356,8 +356,9 @@ export async function cancelDeploymentTask(input: {
  * predecessor); callers reconcile from that snapshot.
  *
  * Redeploy of a GitHub predecessor proves the initiator for its personal
- * credential binding. Namespace-shared predecessors keep the token-free
- * redeploy contract and redact inherited personal attribution server-side.
+ * credential binding. Namespace-shared predecessors send the token too (for
+ * the billing reverse-check and consent provenance) but never fail closed on
+ * it: an unverifiable actor still redeploys, unattributed.
  */
 export async function redeployDeploymentTask(input: {
   appToken: string;
@@ -377,9 +378,12 @@ export async function redeployDeploymentTask(input: {
       headers: {
         Authorization: kubeconfigBearerHeader(input.kubeconfig),
         "Content-Type": "application/json",
-        ...(input.predecessorSourceKind === "github"
-          ? appTokenRequestHeaders(input.appToken)
-          : {}),
+        // Every predecessor kind sends the token when one is hydrated: the
+        // rerun's terminal failure needs a Workspace Actor to reverse-check
+        // billing (ADR-0068's chokepoint), and a proven same-person actor is
+        // also what lets the engine keep consent provenance. Only a GitHub
+        // predecessor fails closed on it server-side.
+        ...appTokenRequestHeaders(input.appToken),
       },
       method: "POST",
     }),

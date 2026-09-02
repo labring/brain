@@ -33,8 +33,10 @@ export function useDeploymentTaskActions(input: {
   namespace: string;
 }): DeploymentTaskActions {
   const { kubeconfig, namespace } = input;
-  // GitHub redeploy proves the initiator; namespace-shared redeploy stays
-  // token-free and the server redacts inherited personal attribution.
+  // Every redeploy sends the hydrated App Token so the server can bind a
+  // Workspace Actor for the billing reverse-check (ADR-0072). GitHub still
+  // fails closed on an unverifiable token; other sources degrade to an
+  // unattributed run, and cross-person attribution stays redacted.
   const appToken = useAtomValue(appTokenAtom);
   const [cancelPendingTaskIds, setCancelPendingTaskIds] = useState<
     ReadonlySet<string>

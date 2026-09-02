@@ -2,7 +2,10 @@ import { describe, expect, it } from "bun:test";
 
 import type { WorkspaceBillingStanding } from "@/features/billing/server/billing-standing-core";
 
-import { resolveBillingFailureOverride } from "./billing-failure";
+import {
+  billingDenialReason,
+  resolveBillingFailureOverride,
+} from "./billing-failure";
 
 const CHECKED_AT = new Date("2026-08-28T10:00:00.000Z");
 
@@ -261,5 +264,88 @@ describe("resolveBillingFailureOverride", () => {
         standing: standing({ accountDebt: null, quotaKnown: false }),
       })
     ).toBeNull();
+  });
+});
+
+describe("billingDenialReason", () => {
+  // The persisted runner error wraps the platform's JSON verbatim, so the
+  // webhook name arrives with escaped quotes (production sample, 2026-09-01).
+  const PRODUCTION_DENIAL =
+    'API 500: {"title":"Internal Server Error","status":500,"detail":"failed to create AP","errors":[{"message":"admission webhook \\"debt.sealos.io\\" denied the request: the subscription status of workspace ns-rzijrad7 is expired, please contact the administrator"}]}';
+
+  it("classifies the platform's subscription denial from the apply error", () => {
+    expect(billingDenialReason(PRODUCTION_DENIAL)).toBe("subscription-expired");
+  });
+
+  it("matches the webhook name with plain quotes too", () => {
+    expect(
+      billingDenialReason(
+        'admission webhook "debt.sealos.io" denied the request: the subscription status of workspace ns-x is expired'
+      )
+    ).toBe("subscription-expired");
+  });
+
+  it("classifies the balance denial as balance-exhausted", () => {
+    expect(
+      billingDenialReason(
+        'admission webhook "debt.sealos.io" denied the request: account balance less than 0, please recharge'
+      )
+    ).toBe("balance-exhausted");
+  });
+
+  it("leaves the ambiguous namespace-suspension denial unclassified", () => {
+    // The platform's suspension wording covers both causes; the standing
+    // reverse-check owns it — a wrong billing CTA is worse than none.
+    expect(
+      billingDenialReason(
+        'admission webhook "debt.sealos.io" denied the request: namespace ns-x is suspended with status Suspend'
+      )
+    ).toBeNull();
+  });
+
+  it("never fires on other webhooks or plain apply errors", () => {
+    expect(
+      billingDenialReason(
+        'admission webhook "kubeblocks.io" denied the request: subscription of cluster invalid'
+      )
+    ).toBeNull();
+    expect(billingDenialReason("exceeded quota: default-quota")).toBeNull();
+    expect(billingDenialReason("")).toBeNull();
+  });
+});
+
+describe("apply-boundary billing denials meeting the standing reverse-check", () => {
+  it("enriches a webhook-proven subscription expiry with evidence but keeps its text", () => {
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "subscription-expired",
+        standing: standing({
+          paymentDue: true,
+          paymentDueRecovery: "resubscribe",
+        }),
+      })
+    ).toEqual({
+      billingEvidence: {
+        checkedAt: "2026-08-28T10:00:00.000Z",
+        kind: "subscription-expired",
+        recovery: "resubscribe",
+      },
+      reason: "subscription-expired",
+      supersedesRunnerError: false,
+    });
+  });
+
+  it("enriches a webhook-proven balance denial the same way", () => {
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "balance-exhausted",
+        standing: DEBT,
+      })
+    ).toMatchObject({
+      reason: "balance-exhausted",
+      supersedesRunnerError: false,
+    });
   });
 });

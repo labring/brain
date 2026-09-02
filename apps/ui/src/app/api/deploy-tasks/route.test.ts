@@ -953,7 +953,16 @@ test("client collaboratively redeploys an attributed Template with workspace-saf
 
     assert.equal(result.conflict, false);
     assert.equal(result.task?.retriedFromTaskId, predecessor.id);
-    assert.deepEqual(authorizeCalls, []);
+    // The shared-source redeploy now proves its actor too (billing
+    // reverse-check); Bob is not the consent subject, so the inherited
+    // attribution is still redacted.
+    assert.deepEqual(authorizeCalls, [
+      {
+        appToken: "app-token-bob",
+        encodedKubeconfig: AUTHORIZED_ENCODED_KUBECONFIG,
+        expectedNamespace: "namespace-b",
+      },
+    ]);
     const [stored] = await harness.db
       .select()
       .from(deployTasks)
