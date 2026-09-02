@@ -2,7 +2,6 @@ import { Quantity } from "@workspace/shared";
 import { z } from "zod";
 
 import { isActiveFreeTrialSubscription } from "@/lib/account-service/free-trial-core";
-
 import {
   type BillingCredentials,
   type BillingFetch,
@@ -20,6 +19,7 @@ import {
   type NormalizedBillingPlan,
   normalizeBillingPlan,
 } from "./billing-plan-catalog";
+import type { CancellationSurveyAnswers } from "./cancellation-survey/reasons";
 
 export type SubscriptionLifecycle =
   | "active"
@@ -151,6 +151,17 @@ export type SubscriptionLifecycleAction = "canceled" | "resumed";
 export type SubscriptionLifecycleOutcome =
   | { ok: true }
   | { ok: false; message: string };
+
+/** What a lifecycle action carries besides the operator: a cancel's survey answers. */
+export interface SubscriptionLifecycleOptions {
+  /** The Cancellation Survey's answers; only meaningful for `canceled`. */
+  survey?: CancellationSurveyAnswers;
+}
+
+export type SubscriptionLifecycleHandler = (
+  operator: SubscriptionLifecycleAction,
+  options?: SubscriptionLifecycleOptions
+) => Promise<SubscriptionLifecycleOutcome> | undefined;
 
 interface BillingPlanLoaderDependencies {
   fetch?: BillingFetch;

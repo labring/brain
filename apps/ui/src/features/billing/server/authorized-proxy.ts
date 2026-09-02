@@ -60,6 +60,7 @@ function mapBillingRequestBody(
   }
 }
 
+/** The 401 every billing write answers when the actor binding cannot be proven. */
 function authenticationRequired(): Response {
   return Response.json(
     { error: "Authentication is required." },
@@ -67,6 +68,7 @@ function authenticationRequired(): Response {
   );
 }
 
+/** Whether an authorization failure is a missing/invalid binding (→ 401) rather than a verdict. */
 function isBindingFailure(
   authorization: Extract<WorkspaceActorAuthorization, { ok: false }>
 ): boolean {
@@ -76,29 +78,70 @@ function isBindingFailure(
   );
 }
 
+export type BillingActorAuthorization =
+  | {
+      ok: true;
+      encodedKubeconfig: string;
+      /** The workspace the actor was verified in — the only one a write may name. */
+      namespace: string;
+      /** Legacy platform user id; empty when the binding carries none. */
+      userId: string;
+      /** Bare global user UID (ADR-0059). */
+      userUid: string;
+    }
+  | { ok: false; response: Response };
+
+/**
+ * The preamble every billing write shares: prove the workspace-actor binding
+ * from the request's app token and kubeconfig, answer a missing binding with
+ * 401 and a verdict with its own status, and require a global uid. Callers
+ * decide whether they also need the legacy `userId`.
+ */
+export async function authorizeBillingActor(
+  request: Request,
+  authorizeWorkspaceActor: AuthorizeWorkspaceActor
+): Promise<BillingActorAuthorization> {
+  const encodedKubeconfig = encodedKubeconfigFromRequest(request);
+  const authorization = await authorizeWorkspaceActor({
+    appToken: appTokenFromRequest(request),
+    encodedKubeconfig,
+  });
+  if (!authorization.ok) {
+    return {
+      ok: false,
+      response: isBindingFailure(authorization)
+        ? authenticationRequired()
+        : Response.json(
+            { error: authorization.message },
+            { status: authorization.status }
+          ),
+    };
+  }
+  const userUid = authorization.actorBinding.userUid.trim();
+  if (userUid === "") {
+    return { ok: false, response: authenticationRequired() };
+  }
+  return {
+    encodedKubeconfig,
+    namespace: authorization.namespace,
+    ok: true,
+    userId: authorization.actorBinding.userId?.trim() ?? "",
+    userUid,
+  };
+}
+
 export function createAuthorizedBillingProxy(
   { authorizeWorkspaceActor, requestAccountService }: BillingProxyDependencies,
   config: BillingProxyConfig
 ) {
   return async function handler(request: Request): Promise<Response> {
-    const encodedKubeconfig = encodedKubeconfigFromRequest(request);
-    const authorization = await authorizeWorkspaceActor({
-      appToken: appTokenFromRequest(request),
-      encodedKubeconfig,
-    });
-    if (!authorization.ok) {
-      if (isBindingFailure(authorization)) {
-        return authenticationRequired();
-      }
-      return Response.json(
-        { error: authorization.message },
-        { status: authorization.status }
-      );
+    const actor = await authorizeBillingActor(request, authorizeWorkspaceActor);
+    if (!actor.ok) {
+      return actor.response;
     }
-
-    const userId = authorization.actorBinding.userId?.trim() ?? "";
-    const userUid = authorization.actorBinding.userUid.trim();
-    if (userId === "" || userUid === "") {
+    // account-service still addresses the actor by the legacy id as well.
+    const { encodedKubeconfig, userId, userUid } = actor;
+    if (userId === "") {
       return authenticationRequired();
     }
 
@@ -116,7 +159,7 @@ export function createAuthorizedBillingProxy(
       }
       const mapped = mapBillingRequestBody(config, parsed.data, {
         encodedKubeconfig,
-        verifiedWorkspace: authorization.namespace,
+        verifiedWorkspace: actor.namespace,
       });
       if (mapped.response != null) {
         return mapped.response;

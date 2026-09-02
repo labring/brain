@@ -2,9 +2,14 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
+import {
+  AppLengthHint,
+  AppOptionCard,
+  AppSelectionIndicator,
+} from "@workspace/ui/components/app-option-card";
 import { AppTextarea } from "@workspace/ui/components/app-textarea";
 import { cn } from "@workspace/ui/lib/utils";
-import { ArrowRight, Check, Send } from "lucide-react";
+import { ArrowRight, Send } from "lucide-react";
 import {
   type ReactNode,
   type RefObject,
@@ -103,88 +108,6 @@ const PRIORITY_OPTIONS: Record<
 };
 
 /**
- * The selection glyph pairs shape with the step's semantics — a deliberate
- * correction over the design file, which draws squares everywhere: the
- * single-select steps show a ring radio (blue inner dot, unfilled), the
- * multi-select step a filled square check — the conventional pairing, and
- * the one the shared checkbox already uses. The blue border on the
- * unselected glyph is the design's accent.
- */
-function SelectionIndicator({
-  selected,
-  shape,
-}: {
-  selected: boolean;
-  shape: "checkbox" | "radio";
-}) {
-  let glyph: ReactNode = null;
-  if (selected) {
-    glyph =
-      shape === "radio" ? (
-        <span className="size-2 rounded-full bg-blue-500" />
-      ) : (
-        <Check className="size-3" />
-      );
-  }
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "flex size-4 shrink-0 items-center justify-center border border-blue-500",
-        shape === "radio" ? "rounded-full" : "rounded-xs",
-        selected && shape === "checkbox" && "bg-blue-500 text-white"
-      )}
-    >
-      {glyph}
-    </span>
-  );
-}
-
-function OptionCard({
-  children,
-  disabled = false,
-  onToggle,
-  selected,
-  shape,
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  onToggle: () => void;
-  selected: boolean;
-  shape: "checkbox" | "radio";
-}) {
-  return (
-    <button
-      aria-pressed={selected}
-      className={cn(
-        // min-h, not h: the Step 3 descriptions must stay readable, so a
-        // card grows and wraps rather than truncating its one-liner.
-        "flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border border-transparent px-4 py-2 text-left text-foreground text-sm transition-colors",
-        // The deepened wash carries the selected state so it never rides on
-        // the 16px glyph alone.
-        selected ? "bg-input" : "bg-input/30 hover:border-border",
-        disabled && "cursor-not-allowed opacity-50 hover:border-transparent"
-      )}
-      disabled={disabled}
-      onClick={onToggle}
-      type="button"
-    >
-      <span className="min-w-0">{children}</span>
-      <SelectionIndicator selected={selected} shape={shape} />
-    </button>
-  );
-}
-
-/** The length allowance at a free-text field's tail: current/max, muted. */
-function LengthHint({ max, value }: { max: number; value: string }) {
-  return (
-    <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-      {value.length}/{max}
-    </span>
-  );
-}
-
-/**
  * Passed steps keep their Other fields mounted in their inert panels, but
  * only the active step's field ever receives `error`, so the error message
  * can hold a fixed id for the input's `aria-describedby`.
@@ -261,14 +184,14 @@ function OtherOptionField({
           ref={inputRef}
           value={text}
         />
-        <LengthHint max={ONBOARDING_OTHER_TEXT_MAX_LENGTH} value={text} />
+        <AppLengthHint max={ONBOARDING_OTHER_TEXT_MAX_LENGTH} value={text} />
         <button
           aria-label="Unselect Other"
           className="cursor-pointer"
           onClick={onUnselect}
           type="button"
         >
-          <SelectionIndicator selected shape={shape} />
+          <AppSelectionIndicator selected shape={shape} />
         </button>
       </div>
       {error ? (
@@ -534,7 +457,7 @@ export function OnboardingSurveyCard({
                   text={state.roleOtherText}
                 />
               ) : (
-                <OptionCard
+                <AppOptionCard
                   key={option.value}
                   onToggle={() =>
                     dispatch({ role: option.value, type: "toggle-role" })
@@ -543,7 +466,7 @@ export function OnboardingSurveyCard({
                   shape="radio"
                 >
                   {option.label}
-                </OptionCard>
+                </AppOptionCard>
               )
             )}
           </fieldset>
@@ -572,7 +495,7 @@ export function OnboardingSurveyCard({
                   text={state.usageOtherText}
                 />
               ) : (
-                <OptionCard
+                <AppOptionCard
                   key={option.value}
                   onToggle={() =>
                     dispatch({ type: "toggle-usage", usage: option.value })
@@ -581,7 +504,7 @@ export function OnboardingSurveyCard({
                   shape="radio"
                 >
                   {option.label}
-                </OptionCard>
+                </AppOptionCard>
               )
             )}
           </fieldset>
@@ -615,7 +538,7 @@ export function OnboardingSurveyCard({
               const option = PRIORITY_OPTIONS[tag];
               const selected = state.priorityTags.includes(tag);
               return (
-                <OptionCard
+                <AppOptionCard
                   // Multi-select capped at 3: at the cap, unpicked options
                   // lock until a slot reopens (the reducer refuses anyway).
                   disabled={
@@ -638,7 +561,7 @@ export function OnboardingSurveyCard({
                       </span>
                     )}
                   </span>
-                </OptionCard>
+                </AppOptionCard>
               );
             })}
           </fieldset>
@@ -667,7 +590,7 @@ export function OnboardingSurveyCard({
               value={state.openGoalText}
             />
             <div className="flex justify-end">
-              <LengthHint
+              <AppLengthHint
                 max={ONBOARDING_OPEN_GOAL_TEXT_MAX_LENGTH}
                 value={state.openGoalText}
               />
@@ -730,7 +653,7 @@ export function OnboardingDialog({
     <AppDialog.Root onOpenChange={refuseOnboardingDialogClose} open={open}>
       <AppDialog.Content
         aria-label="Onboarding survey"
-        className="rounded-xl bg-[color:var(--project-chrome-surface-base)] bg-[image:var(--onboarding-survey-surface-overlay)]"
+        className="survey-surface rounded-xl"
         overlayClassName="bg-black/60"
         size="xl"
       >

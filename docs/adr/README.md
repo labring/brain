@@ -45,6 +45,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0071 — Unify notification CTA styling into the CTA Chip](0071-unify-notification-cta-styling-into-the-cta-chip.md)
 - [0072 — Classify the platform's billing denial at the apply boundary, and send the App Token on every deployment source](0072-classify-the-platform-billing-denial-at-the-apply-boundary.md) *(extends ADR-0042's apply-boundary classifier; narrows ADR-0068's "no signal" premise and closes its no-actor chokepoint)*
 - [0073 — Wall zero-allowance plans with a truthful cause](0073-wall-zero-allowance-plans-with-a-truthful-cause.md) *(revises ADR-0069's exhaustion consequence; extends ADR-0068's Paid Chat Wall)*
+- [0074 — Store Cancellation Survey Responses in Brain Postgres as Feedback, Not Billing State](0074-store-cancellation-survey-responses-in-brain-postgres-as-feedback.md) *(supplements ADR-0067)*
 
 ## Conventions
 

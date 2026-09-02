@@ -2,6 +2,7 @@ import {
   type BillingDevScenario,
   billingDevMockCookie,
 } from "@/features/billing/dev-mock-cookie";
+import { BILLING_ROUTES } from "@/features/billing/server/billing-route-table";
 import {
   type DevMockResolution,
   resolveDevMock,
@@ -865,6 +866,15 @@ const WRITE_FIXTURES: Record<
       message: "Mock unpaid invoice cancelled.",
       success: true,
     },
+  }),
+  // Brain's own survey write (ADR-0074): answers success in every scenario
+  // without a transition, so the mocked cancel's confirmation stage and the
+  // survey submit both run offline. Nothing is stored.
+  [BILLING_ROUTES.subscriptionCancellationSurvey.upstreamPathname]: (
+    context
+  ) => ({
+    nextScenario: context.scenario,
+    payload: { id: "mock-cancellation-survey", ok: true },
   }),
   "/account/v1alpha1/workspace-subscription/pay": (context) => {
     const operator =

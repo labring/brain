@@ -602,7 +602,7 @@ _Avoid_: raw answer text, display label, derived segment column, business intent
 
 ## Account & Subscription
 
-Account-level money and workspace subscriptions, owned by the platform's account-service and presented read-mostly in the Billing Area. This is a different concept space from Assistant & Billing above — the terms here describe real money and plan commitments, while Free Chat Turns are counted turns, not money — with exactly one one-way dependency: the assistant's free allowance takes its eligibility from subscription state (the Active Free Trial), never the reverse. Brain reads and operates on these facts through account-service; it stores no billing state of its own.
+Account-level money and workspace subscriptions, owned by the platform's account-service and presented read-mostly in the Billing Area. This is a different concept space from Assistant & Billing above — the terms here describe real money and plan commitments, while Free Chat Turns are counted turns, not money — with exactly one one-way dependency: the assistant's free allowance takes its eligibility from subscription state (the Active Free Trial), never the reverse. Brain reads and operates on these facts through account-service; it stores no billing state of its own. What a user says about a billing action — a Cancellation Survey response, like a Notification receipt of a subscription change — is feedback about the fact, not the fact, and may live in Brain's own store.
 
 ### Billing Area
 
@@ -651,6 +651,18 @@ _Avoid_: plan catalog, plan list, plan cards section, Subscription plans tab (as
 The account-service-owned binding of one workspace to its current Subscription Plan, including lifecycle state (active, cancelling, pending upgrade, payment-due) and its most recent transaction. Cancelling means the user has cancelled but the paid period still runs; payment-due means the subscription has expired — a failed renewal charge and a cancelled period reaching its end both land here — and the workspace sits suspended under the Deletion Countdown. Payment-due outranks cancelling when both hold. A workspace has at most one; a workspace without one is Pay-As-You-Go. An upstream subscription record in DELETED status is not a Workspace Subscription — the workspace is Pay-As-You-Go and may subscribe anew. Users upgrade, downgrade, cancel, or resume it in the Billing Area; paid changes settle through a Stripe Checkout Round-Trip.
 
 _Avoid_: account subscription, user subscription, namespace plan, workspace plan record, in debt (as a user-facing label), cancelled (as a lifecycle distinct from cancelling), deleted (as a client lifecycle).
+
+### Cancellation Survey
+
+The exit questionnaire inside the Plan view's cancel dialog, asking a user who cancels a paid Workspace Subscription which Cancellation Reasons apply and for optional free-text feedback. It collects; it does not bargain — no downgrade, pause, or discount is offered in it, and a retention offer, if one ever exists, is a separate concept. Every answer is optional and the survey never gates the cancel action: an empty submission cancels just the same, and dismissing the dialog is keeping the plan.
+
+_Avoid_: retention flow, 挽留流程, win-back, exit offer, questionnaire (bare), unsubscribe survey.
+
+### Cancellation Reason
+
+One entry in the fixed, platform-defined list of why a user cancels, identified by a stable key that outlives its display wording; a user may select several per Cancellation Survey. It is a reason the user states, never one the platform infers.
+
+_Avoid_: churn reason, cancel cause, feedback (for a selected reason).
 
 ### Pending Subscription Upgrade
 

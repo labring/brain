@@ -27,6 +27,7 @@ try {
   await client.query(`
     DROP SCHEMA IF EXISTS
       sealai_assistant,
+      sealai_cancellation_survey,
       sealai_deployment,
       sealai_marketing,
       sealai_notification,

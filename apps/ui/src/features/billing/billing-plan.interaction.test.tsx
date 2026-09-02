@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { fireEvent, render } from "@testing-library/react/pure";
+import { fireEvent, render, within } from "@testing-library/react/pure";
 import { createStore, Provider } from "jotai";
 import { SWRConfig } from "swr";
 
@@ -13,6 +13,7 @@ import {
   withTestDom,
 } from "@/features/project-canvas/react-test-harness";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { CANCEL_PLAN_PREVIEW_PENDING_MS } from "./billing-cancel-plan-dialog-tweaks";
 import { formatBillingDate, formatBillingDateTime } from "./billing-datetime";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 
@@ -532,13 +533,19 @@ function planPageResponses(
 
 async function renderPlanPage(
   act: Parameters<Parameters<typeof withTestDom>[0]>[0],
-  respond: (pathname: string) => Response | Promise<Response>
+  respond: (
+    pathname: string,
+    init?: RequestInit
+  ) => Response | Promise<Response>
 ) {
-  const override = defineGlobal("fetch", (input: unknown) => {
-    const pathname = new URL(requestUrl(input), "https://brain.example.test")
-      .pathname;
-    return Promise.resolve(respond(pathname));
-  });
+  const override = defineGlobal(
+    "fetch",
+    (input: unknown, init?: RequestInit) => {
+      const pathname = new URL(requestUrl(input), "https://brain.example.test")
+        .pathname;
+      return Promise.resolve(respond(pathname, init));
+    }
+  );
   const { BillingPlan } = await import("./billing-plan");
   const store = createStore();
   store.set(appTokenAtom, "desktop-app-token");
@@ -932,6 +939,619 @@ test("a failed usage lookup degrades the allowance card quietly", async () => {
       );
       assert.equal(text.includes("of 5 left"), false);
     } finally {
+      await restore();
+    }
+  });
+});
+
+// --- Cancellation Survey (AIM-345, ADR-0074) ---------------------------------
+// The cancel dialog's survey stage, the in-place confirmation, and the two
+// funnel events, observed as the requests that leave the browser, what the
+// person sees, and what lands in the GTM data layer.
+
+const PAY_PATH = "/api/billing/subscription/pay";
+const CANCELLATION_SURVEY_PATH =
+  "/api/billing/subscription/cancellation-survey";
+const SURVEY_PERIOD_END = "2099-08-31T00:00:00Z";
+const CANCEL_DIALOG_NAME = "We are sorry to see you go";
+const CONFIRMATION_DIALOG_NAME = "Cancellation scheduled";
+const SURVEY_QUESTION_RE = /Before you go, what made you cancel\?/;
+const THANK_YOU_RE = /Thank you for your feedback/;
+const SELECT_ALL_RE = /Select all that apply\./;
+const EMPTY_COUNTER_RE = /0\/500/;
+const TYPED_COUNTER_RE = /34\/500/;
+const CONFIRMATION_BODY_RE =
+  /Your Pro plan stays active until Aug 31, 2099\. You can resume it anytime before then from the Plan view\./;
+
+function errorResponse(status: number, error: string): Response {
+  return new Response(JSON.stringify({ error }), {
+    headers: { "content-type": "application/json" },
+    status,
+  });
+}
+
+/**
+ * Answers the Plan page like account-service would across a cancel: the
+ * subscription reads as active until the pay route confirms the cancel, then
+ * as cancelling. Records the bodies of the two writes under test.
+ */
+function cancelFlowResponder(
+  options: {
+    payStatus?: number;
+    /** What the subscription reads as its period end; blank is a real value. */
+    periodEnd?: string;
+    /** Fails the snapshot refresh that follows a confirmed cancel. */
+    refreshStatus?: number;
+    surveyStatus?: number;
+  } = {}
+) {
+  const requests: { body: unknown; pathname: string }[] = [];
+  const periodEnd = options.periodEnd ?? SURVEY_PERIOD_END;
+  let cancelled = false;
+  const subscription = (
+    PLAN_PAGE_RESPONSES["/api/billing/subscription"] as {
+      subscription: Record<string, unknown>;
+    }
+  ).subscription;
+  const respond = (pathname: string, init?: RequestInit): Response => {
+    if (pathname === PAY_PATH || pathname === CANCELLATION_SURVEY_PATH) {
+      requests.push({ body: JSON.parse(String(init?.body)), pathname });
+    }
+    if (pathname === PAY_PATH) {
+      if (options.payStatus != null) {
+        return errorResponse(options.payStatus, "Upstream refused the cancel.");
+      }
+      cancelled = true;
+      return jsonResponse({ success: true });
+    }
+    if (pathname === CANCELLATION_SURVEY_PATH) {
+      return options.surveyStatus == null
+        ? jsonResponse({ id: "survey-1", ok: true })
+        : errorResponse(options.surveyStatus, "Survey store unavailable.");
+    }
+    if (pathname === "/api/billing/subscription") {
+      if (cancelled && options.refreshStatus != null) {
+        return errorResponse(options.refreshStatus, "Snapshot unavailable.");
+      }
+      return jsonResponse({
+        subscription: {
+          ...subscription,
+          CancelAtPeriodEnd: cancelled,
+          CurrentPeriodEndAt: periodEnd,
+          ExpireAt: periodEnd,
+        },
+      });
+    }
+    if (pathname in PLAN_PAGE_RESPONSES) {
+      return jsonResponse(PLAN_PAGE_RESPONSES[pathname]);
+    }
+    return errorResponse(404, `not mocked: ${pathname}`);
+  };
+  return { requests, respond };
+}
+
+/**
+ * A real focus plus a keyUp flush after the input: React falls back to
+ * keystroke polling for change detection when react-dom was first loaded
+ * without a DOM, as happens mid-suite, and drops a bare input event.
+ */
+function typeInto(field: HTMLElement, value: string) {
+  field.focus();
+  fireEvent.input(field, { target: { value } });
+  fireEvent.keyUp(field, { key: "d" });
+}
+
+function installDataLayer(): unknown[] {
+  const dataLayer: unknown[] = [];
+  Object.assign(window, { dataLayer });
+  return dataLayer;
+}
+
+function gtmEntry(event: Record<string, unknown>) {
+  return { context: "app", module: "brain", ...event };
+}
+
+async function openCancelSurvey(
+  act: Parameters<Parameters<typeof withTestDom>[0]>[0],
+  rendered: ReturnType<typeof render> | undefined
+): Promise<HTMLElement> {
+  await act(() => {
+    const trigger = rendered?.getByRole("button", { name: "Cancel Plan" });
+    if (trigger != null) {
+      fireEvent.click(trigger);
+    }
+  });
+  const dialog = rendered?.getByRole("dialog", { name: CANCEL_DIALOG_NAME });
+  assert.ok(dialog);
+  return dialog;
+}
+
+test("Cancel Plan runs the survey: cancel first, survey second, confirmation in place", async () => {
+  await withTestDom(async (act) => {
+    const dataLayer = installDataLayer();
+    const flow = cancelFlowResponder();
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    try {
+      const dialog = await openCancelSurvey(act, rendered);
+      assert.match(dialog.textContent ?? "", SURVEY_QUESTION_RE);
+      assert.match(dialog.textContent ?? "", SELECT_ALL_RE);
+      assert.match(dialog.textContent ?? "", EMPTY_COUNTER_RE);
+
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("checkbox", { name: "The cost is too high" })
+        );
+      });
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("checkbox", { name: "Other" })
+        );
+      });
+      const feedback = within(dialog).getByLabelText(
+        "Additional feedback (optional)"
+      );
+      assert.equal(
+        document.activeElement,
+        feedback,
+        "selecting Other hands focus to the text box"
+      );
+      assert.ok(
+        within(dialog).getByRole("checkbox", {
+          name: "The cost is too high",
+          checked: true,
+        })
+      );
+      await act(() => {
+        typeInto(feedback, "  Too pricey for a side project.  ");
+      });
+      assert.match(dialog.textContent ?? "", TYPED_COUNTER_RE);
+
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: "Cancel Plan" })
+        );
+      });
+
+      assert.deepEqual(
+        flow.requests.map((request) => request.pathname),
+        [PAY_PATH, CANCELLATION_SURVEY_PATH],
+        "account-service confirms the cancel before the survey is written"
+      );
+      assert.deepEqual(flow.requests[0]?.body, {
+        operator: "canceled",
+        payMethod: "stripe",
+        planName: "Pro",
+        regionDomain: "us.example.test",
+        workspace: "workspace-a",
+      });
+      assert.deepEqual(flow.requests[1]?.body, {
+        currentPeriodEndAt: SURVEY_PERIOD_END,
+        feedback: "Too pricey for a side project.",
+        planName: "Pro",
+        reasons: ["too_expensive", "other"],
+        regionDomain: "us.example.test",
+        workspace: "workspace-a",
+      });
+
+      const confirmation = rendered?.getByRole("dialog", {
+        name: CONFIRMATION_DIALOG_NAME,
+      });
+      assert.ok(confirmation);
+      assert.match(confirmation.textContent ?? "", CONFIRMATION_BODY_RE);
+      assert.match(confirmation.textContent ?? "", THANK_YOU_RE);
+      // The Plan view behind it has already refreshed into cancelling (the
+      // open modal keeps it inert, hence the hidden query) and the
+      // confirmation survived that refresh.
+      assert.ok(
+        rendered?.getByRole("button", { hidden: true, name: "Resume Plan" })
+      );
+      assert.deepEqual(dataLayer, [
+        gtmEntry({
+          event: "subscription_cancel",
+          has_feedback: true,
+          plan_name: "Pro",
+          reasons: ["too_expensive", "other"],
+        }),
+      ]);
+
+      await act(() => {
+        fireEvent.click(
+          within(confirmation).getByRole("button", { name: "Close" })
+        );
+      });
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      assert.equal(
+        dataLayer.length,
+        1,
+        "leaving the confirmation is not a keep"
+      );
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("Keep Plan and dismissal send nothing, report kept, and reset the survey", async () => {
+  await withTestDom(async (act) => {
+    const dataLayer = installDataLayer();
+    const flow = cancelFlowResponder();
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    try {
+      let dialog = await openCancelSurvey(act, rendered);
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("checkbox", {
+            name: "It's too complicated to use",
+          })
+        );
+        typeInto(
+          within(dialog).getByLabelText("Additional feedback (optional)"),
+          "draft"
+        );
+      });
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: "Keep Plan" })
+        );
+      });
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      assert.deepEqual(
+        flow.requests,
+        [],
+        "looking at the survey has no side effect"
+      );
+      assert.deepEqual(dataLayer, [
+        gtmEntry({ event: "subscription_cancel_kept", plan_name: "Pro" }),
+      ]);
+
+      dialog = await openCancelSurvey(act, rendered);
+      assert.ok(
+        within(dialog).getByRole("checkbox", {
+          name: "It's too complicated to use",
+          checked: false,
+        }),
+        "a reopened survey starts empty"
+      );
+      assert.match(dialog.textContent ?? "", EMPTY_COUNTER_RE);
+      await act(() => {
+        fireEvent.keyDown(dialog, { key: "Escape" });
+      });
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      assert.deepEqual(flow.requests, []);
+      assert.equal(dataLayer.length, 2, "Escape is a keep too");
+
+      await openCancelSurvey(act, rendered);
+      const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+      assert.ok(overlay, "the survey is modal");
+      await act(() => {
+        fireEvent.pointerDown(overlay);
+        fireEvent.mouseDown(overlay);
+        fireEvent.pointerUp(overlay);
+        fireEvent.mouseUp(overlay);
+        fireEvent.click(overlay);
+      });
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      assert.deepEqual(flow.requests, []);
+      assert.equal(dataLayer.length, 3, "the overlay is a keep too");
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a failing cancel shows the error inline and keeps the answers", async () => {
+  await withTestDom(async (act) => {
+    const dataLayer = installDataLayer();
+    const flow = cancelFlowResponder({ payStatus: 500 });
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    try {
+      const dialog = await openCancelSurvey(act, rendered);
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("checkbox", {
+            name: "I found a better alternative",
+          })
+        );
+        typeInto(
+          within(dialog).getByLabelText("Additional feedback (optional)"),
+          "Moving to a competitor."
+        );
+      });
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: "Cancel Plan" })
+        );
+      });
+
+      assert.equal(
+        within(dialog).getByRole("alert").textContent,
+        "Upstream refused the cancel."
+      );
+      assert.ok(
+        within(dialog).getByRole("checkbox", {
+          name: "I found a better alternative",
+          checked: true,
+        })
+      );
+      assert.equal(
+        (
+          within(dialog).getByLabelText(
+            "Additional feedback (optional)"
+          ) as HTMLTextAreaElement
+        ).value,
+        "Moving to a competitor."
+      );
+      assert.deepEqual(
+        flow.requests.map((request) => request.pathname),
+        [PAY_PATH],
+        "no survey row without a confirmed cancel"
+      );
+      assert.deepEqual(dataLayer, []);
+      assert.equal(
+        rendered?.queryByRole("dialog", { name: CONFIRMATION_DIALOG_NAME }),
+        null
+      );
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("an unanswered survey still cancels, and a failed survey write still confirms", async () => {
+  await withTestDom(async (act) => {
+    const dataLayer = installDataLayer();
+    const flow = cancelFlowResponder({ surveyStatus: 503 });
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    try {
+      const dialog = await openCancelSurvey(act, rendered);
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: "Cancel Plan" })
+        );
+      });
+
+      const confirmation = rendered?.getByRole("dialog", {
+        name: CONFIRMATION_DIALOG_NAME,
+      });
+      assert.ok(confirmation);
+      assert.match(confirmation.textContent ?? "", CONFIRMATION_BODY_RE);
+      assert.doesNotMatch(
+        confirmation.textContent ?? "",
+        THANK_YOU_RE,
+        "no thanks for feedback that was not given"
+      );
+      assert.equal(within(confirmation).queryByRole("alert"), null);
+      assert.deepEqual(flow.requests[1]?.body, {
+        currentPeriodEndAt: SURVEY_PERIOD_END,
+        feedback: "",
+        planName: "Pro",
+        reasons: [],
+        regionDomain: "us.example.test",
+        workspace: "workspace-a",
+      });
+      assert.deepEqual(dataLayer, [
+        gtmEntry({
+          event: "subscription_cancel",
+          has_feedback: false,
+          plan_name: "Pro",
+          reasons: [],
+        }),
+      ]);
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a failed refresh after a confirmed cancel still records the survey and confirms", async () => {
+  await withTestDom(async (act) => {
+    const dataLayer = installDataLayer();
+    const flow = cancelFlowResponder({ refreshStatus: 502 });
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    try {
+      const dialog = await openCancelSurvey(act, rendered);
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("checkbox", { name: "The cost is too high" })
+        );
+      });
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: "Cancel Plan" })
+        );
+      });
+
+      // account-service accepted the cancel, so the row and the event both
+      // exist (ADR-0074) even though the Plan view could not refresh.
+      assert.deepEqual(
+        flow.requests.map((request) => request.pathname),
+        [PAY_PATH, CANCELLATION_SURVEY_PATH],
+        "the survey follows the cancel, not the refresh"
+      );
+      assert.deepEqual(dataLayer, [
+        gtmEntry({
+          event: "subscription_cancel",
+          has_feedback: false,
+          plan_name: "Pro",
+          reasons: ["too_expensive"],
+        }),
+      ]);
+      const confirmation = rendered?.getByRole("dialog", {
+        name: CONFIRMATION_DIALOG_NAME,
+      });
+      assert.ok(confirmation, "a refresh miss never reads as a failed cancel");
+      assert.match(confirmation.textContent ?? "", CONFIRMATION_BODY_RE);
+      assert.equal(within(confirmation).queryByRole("alert"), null);
+      // The view behind is stale — still offering Cancel Plan — and will
+      // catch up on its next load; nothing pretends otherwise.
+      assert.ok(
+        rendered?.getByRole("button", { hidden: true, name: "Cancel Plan" })
+      );
+      assert.equal(
+        rendered?.queryByRole("button", { hidden: true, name: "Resume Plan" }),
+        null
+      );
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a blank period end reaches the survey as null, not as an invalid date", async () => {
+  await withTestDom(async (act) => {
+    installDataLayer();
+    const flow = cancelFlowResponder({ periodEnd: "" });
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    try {
+      const dialog = await openCancelSurvey(act, rendered);
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: "Cancel Plan" })
+        );
+      });
+      assert.deepEqual(
+        flow.requests.map((request) => request.pathname),
+        [PAY_PATH, CANCELLATION_SURVEY_PATH]
+      );
+      assert.equal(
+        (flow.requests[1]?.body as { currentPeriodEndAt: unknown })
+          .currentPeriodEndAt,
+        null
+      );
+      assert.ok(
+        rendered?.getByRole("dialog", { name: CONFIRMATION_DIALOG_NAME })
+      );
+    } finally {
+      await restore();
+    }
+  });
+});
+
+const PREVIEW_FAILURE_RE = /Preview: the cancel was refused\./;
+
+/** The panel toggle carrying `label`, addressed by its segmented options. */
+function panelToggle(label: string): HTMLElement {
+  const control = Array.from(
+    document.body.querySelectorAll<HTMLElement>(".dev-tweaks-labeled-control")
+  ).find(
+    (candidate) =>
+      candidate.querySelector(".dev-tweaks-labeled-control-label")
+        ?.textContent === label
+  );
+  assert.ok(control, `panel toggle ${label}`);
+  return control;
+}
+
+test("the dev tweaks preview opens both stages and never leaves the page", async () => {
+  await withTestDom(async (act) => {
+    const dataLayer = installDataLayer();
+    const flow = cancelFlowResponder();
+    const previousFlag = process.env.NEXT_PUBLIC_DEV_TWEAKS;
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    const { DevTweaksRoot } = await import("@workspace/dev-tweaks");
+    let panel: ReturnType<typeof render> | undefined;
+    await act(() => {
+      panel = render(<DevTweaksRoot mode="inline" />);
+    });
+    const body = within(document.body);
+    const clickPanelButton = (name: string) =>
+      act(() => {
+        fireEvent.click(body.getByRole("button", { name }));
+      });
+    const flipPanelToggle = (label: string, on: boolean) =>
+      act(() => {
+        const option = panelToggle(label).querySelector(
+          `[data-value="${on ? "on" : "off"}"]`
+        );
+        assert.ok(option);
+        fireEvent.click(option);
+      });
+    const settlePreview = () =>
+      act(
+        () =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, CANCEL_PLAN_PREVIEW_PENDING_MS + 50);
+          })
+      );
+    const closeDialog = async (dialog: HTMLElement, name: string) => {
+      await act(() => {
+        fireEvent.click(within(dialog).getByRole("button", { name }));
+      });
+      assert.equal(rendered?.queryByRole("dialog"), null);
+    };
+    try {
+      // Outside a dev/demo build the panel buttons are inert.
+      delete process.env.NEXT_PUBLIC_DEV_TWEAKS;
+      await clickPanelButton("Open survey");
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      process.env.NEXT_PUBLIC_DEV_TWEAKS = "1";
+
+      // Survey preview: Cancel Plan pends, then settles into the confirmation
+      // with the thank-you line the toggle defaults to.
+      await clickPanelButton("Open survey");
+      let dialog = rendered?.getByRole("dialog", { name: CANCEL_DIALOG_NAME });
+      assert.ok(dialog);
+      assert.match(dialog.textContent ?? "", SURVEY_QUESTION_RE);
+      await act(() => {
+        fireEvent.click(
+          within(dialog as HTMLElement).getByRole("button", {
+            name: "Cancel Plan",
+          })
+        );
+      });
+      assert.ok(within(dialog).getByRole("button", { name: "Cancelling..." }));
+      await settlePreview();
+      dialog = rendered?.getByRole("dialog", {
+        name: CONFIRMATION_DIALOG_NAME,
+      });
+      assert.ok(dialog);
+      assert.match(dialog.textContent ?? "", THANK_YOU_RE);
+      await closeDialog(dialog, "Close");
+
+      // Simulated failure: the same click settles into the inline error and
+      // Keep Plan leaves without reporting a keep.
+      await flipPanelToggle("Simulate Failure", true);
+      await clickPanelButton("Open survey");
+      dialog = rendered?.getByRole("dialog", { name: CANCEL_DIALOG_NAME });
+      assert.ok(dialog);
+      await act(() => {
+        fireEvent.click(
+          within(dialog as HTMLElement).getByRole("button", {
+            name: "Cancel Plan",
+          })
+        );
+      });
+      await settlePreview();
+      assert.match(
+        within(dialog).getByRole("alert").textContent ?? "",
+        PREVIEW_FAILURE_RE
+      );
+      await closeDialog(dialog, "Keep Plan");
+
+      // The confirmation opens directly, and the feedback toggle decides the
+      // thank-you line.
+      await flipPanelToggle("With Feedback", false);
+      await clickPanelButton("Open confirmation");
+      dialog = rendered?.getByRole("dialog", {
+        name: CONFIRMATION_DIALOG_NAME,
+      });
+      assert.ok(dialog);
+      assert.doesNotMatch(dialog.textContent ?? "", THANK_YOU_RE);
+      await closeDialog(dialog, "Close");
+
+      assert.deepEqual(flow.requests, [], "a preview sends no request");
+      assert.deepEqual(dataLayer, [], "a preview reports nothing");
+      assert.ok(
+        rendered?.getByRole("button", { name: "Cancel Plan" }),
+        "the real trigger is untouched"
+      );
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.NEXT_PUBLIC_DEV_TWEAKS;
+      } else {
+        process.env.NEXT_PUBLIC_DEV_TWEAKS = previousFlag;
+      }
+      await act(() => panel?.unmount());
       await restore();
     }
   });
