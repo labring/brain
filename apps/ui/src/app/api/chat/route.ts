@@ -99,20 +99,28 @@ function chatBillingHeaders(state: FreeTierState): Record<string, string> {
   };
 }
 
-/** The paid wall's refusal (design spec row E3). */
+/** The paid wall's refusal (design spec row E3; allowance causes ADR-0073). */
 function paidWallResponse(state: FreeTierState): Response {
-  const body: ChatApiErrorBody =
-    state.wall === "ai-credits"
-      ? {
-          code: "ai_credits_exhausted",
-          error:
-            "This workspace's AI Credits are used up. Upgrade the plan to keep chatting with the assistant.",
-        }
-      : {
-          code: "account_balance_exhausted",
-          error:
-            "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
-        };
+  let body: ChatApiErrorBody;
+  if (state.wall === "allowance-trial" || state.wall === "allowance-plan") {
+    body = {
+      code: "ai_allowance_missing",
+      error:
+        "This workspace's plan doesn't include AI usage. Upgrade the plan to keep chatting with the assistant.",
+    };
+  } else if (state.wall === "ai-credits") {
+    body = {
+      code: "ai_credits_exhausted",
+      error:
+        "This workspace's AI Credits are used up. Upgrade the plan to keep chatting with the assistant.",
+    };
+  } else {
+    body = {
+      code: "account_balance_exhausted",
+      error:
+        "Your account balance can't cover AI usage. Top up in Sealos Desktop to keep chatting with the assistant.",
+    };
+  }
   return Response.json(body, {
     headers: chatBillingHeaders(state),
     status: 402,
@@ -639,14 +647,16 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
 
   if (await reserveFreeTurnIfAvailable(actor.namespace)) {
     // Headers carry the POST-turn posture: the turn spending the last free
-    // turn already reports `user`, so the next request uses the caller's AI
-    // Proxy without one-message-late client inference.
+    // turn already reports `user`, walled the way session bootstrap would
+    // wall it, so headers and bootstrap agree and the pane locks the moment
+    // the allowance is spent (ADR-0073) — not one refused send later. Any
+    // earlier free turn keeps its `free` posture and never awaits the
+    // standing.
     return {
       billing: "free",
-      clientFreeTier: freeTierPostureAfterTurn(
-        freeTier,
-        systemModelConfigured,
-        trial
+      clientFreeTier: await withPaidChatWall(
+        freeTierPostureAfterTurn(freeTier, systemModelConfigured, trial),
+        judgment
       ),
       reserved: true,
     };

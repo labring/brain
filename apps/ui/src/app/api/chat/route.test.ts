@@ -1635,6 +1635,49 @@ test.each([
   expect(reserveCalls).toBe(0);
 });
 
+test.each([
+  {
+    freeTier: { limit: 5, remaining: 0, used: 5 },
+    trial: "trial" as const,
+    wall: "allowance-trial",
+  },
+  {
+    freeTier: { limit: 5, remaining: 5, used: 0 },
+    trial: "not-trial" as const,
+    wall: "allowance-plan",
+  },
+])("walls a zero-allowance plan before any state mutates, voiced as $wall (ADR-0073)", async ({
+  freeTier,
+  trial,
+  wall,
+}) => {
+  // The production Free plan grants no AI Credits (total 0): an exhausted
+  // Active Free Trial meets the trial voice, every other plan the plan voice.
+  freeTierSnapshot = freeTier;
+  trialJudgment = trial;
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
+    paidSource: "ai-credits",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage(`user-no-allowance-${trial}`, "one more message"))
+  );
+
+  expect(response.status).toBe(402);
+  const body = (await response.json()) as { code: string };
+  expect(body.code).toBe("ai_allowance_missing");
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("ai-credits");
+  expect(response.headers.get("X-Chat-Wall")).toBe(wall);
+  expect(history).toEqual([]);
+  expect(leaseAcquireCalls).toBe(0);
+  expect(modelCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
+});
+
 test("judges the trial per turn with the verified workspace identity", async () => {
   const response = await POST(
     chatRequest(userMessage("user-judged", "inspect the cluster"))
@@ -1698,6 +1741,12 @@ test("a non-trial workspace bills user from its first message, allowance untouch
 test("the turn spending the last free message reports the next user-billed posture", async () => {
   freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
   trialJudgment = "trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 1_200_000 },
+    paidSource: "ai-credits",
+  };
 
   const response = await POST(
     chatRequest(userMessage("user-last-free", "inspect the cluster"))
@@ -1706,10 +1755,64 @@ test("the turn spending the last free message reports the next user-billed postu
   expect(response.headers.get("X-Chat-Billing")).toBe("user");
   expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
   expect(response.headers.get("X-Chat-Free-Limit")).toBe("5");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("ai-credits");
+  expect(response.headers.get("X-Chat-Wall")).toBe("");
   await drain(response);
 
   expect(reserveCalls).toBe(1);
   expect(releaseCalls).toBe(0);
+  expect(connectionBillingCalls).toEqual(["free"]);
+});
+
+test("the turn spending the last free message on a zero-allowance plan already reports the allowance wall", async () => {
+  // ADR-0073: headers and session bootstrap must agree, so the pane locks the
+  // moment the allowance is spent — while this reply still runs on the
+  // platform model.
+  freeTierSnapshot = { limit: 5, remaining: 1, used: 4 };
+  trialJudgment = "trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
+    paidSource: "ai-credits",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-last-free-walled", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("0");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("ai-credits");
+  expect(response.headers.get("X-Chat-Wall")).toBe("allowance-trial");
+  await drain(response);
+
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(0);
+  expect(connectionBillingCalls).toEqual(["free"]);
+});
+
+test("a free turn with turns to spare never reports the wall its standing would earn", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 2, used: 3 };
+  trialJudgment = "trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
+    paidSource: "ai-credits",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-free-open", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("free");
+  expect(response.headers.get("X-Chat-Free-Remaining")).toBe("1");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("");
+  expect(response.headers.get("X-Chat-Wall")).toBe("");
+  await drain(response);
+
+  expect(reserveCalls).toBe(1);
   expect(connectionBillingCalls).toEqual(["free"]);
 });
 

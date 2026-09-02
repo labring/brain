@@ -131,6 +131,41 @@ describe("judgeWorkspaceBillingStanding", () => {
     });
   });
 
+  it("reads a zero AI allowance as a fact — the production Free plan's quota shape (ADR-0073)", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: HEALTHY_ACCOUNT,
+      credits: NO_CREDITS,
+      quota: quota({ aiHard: 0, aiUsed: 0 }),
+      subscription: {
+        subscription: {
+          PlanName: "Free",
+          Status: "NORMAL",
+          type: "SUBSCRIPTION",
+        },
+      },
+    });
+    expect(standing.paidSource).toBe("ai-credits");
+    expect(standing.aiCredits).toEqual({
+      totalMicroUnits: 0,
+      usedMicroUnits: 0,
+    });
+  });
+
+  it("leaves AI Credits unknown when a subscribed workspace's quota omits ai_quota — fail open, never a missing allowance", () => {
+    // account-service writes the key for every annotated subscription
+    // namespace; its absence means the annotation and the subscription record
+    // disagree, and aiproxy would charge the balance instead.
+    const standing = judgeWorkspaceBillingStanding({
+      account: HEALTHY_ACCOUNT,
+      credits: NO_CREDITS,
+      quota: quota({}),
+      subscription: HOBBY,
+    });
+    expect(standing.paidSource).toBe("ai-credits");
+    expect(standing.quotaKnown).toBe(true);
+    expect(standing.aiCredits).toBeNull();
+  });
+
   it("reads a DELETED subscription record as Pay-As-You-Go", () => {
     const standing = judgeWorkspaceBillingStanding({
       account: DEBT_ACCOUNT,
