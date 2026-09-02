@@ -13,7 +13,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { trackBrainGtmEventAfterSuccess } from "@/features/analytics/brain-gtm";
+import { trackBrainGtmEvent } from "@/features/analytics/brain-gtm";
 import {
   type AccountBalance,
   loadAccountBalance,
@@ -482,27 +482,15 @@ export function BillingPlan({
           workspace: current.workspace,
         });
       if (operator === "canceled") {
-        // The confirmed cancel and the refreshed snapshot come first; only
-        // then does the funnel event fire, so it never counts a cancel the
-        // Plan view failed to settle. It carries reason keys, never the
-        // free text.
-        await trackBrainGtmEventAfterSuccess(
-          async () => {
-            await lifecycleRequest();
-            await refreshSnapshot();
-          },
-          {
-            event: "subscription_cancel",
-            has_feedback: survey.feedback !== "",
-            plan_name: current.planName,
-            reasons: survey.reasons,
-          }
-        );
-        // Both side effects follow the confirmed cancel and never block or
-        // alter the UI: the receipt's observation point for cancellations
-        // (catalog B5) and the survey row (ADR-0072). A rejected survey
-        // write is swallowed here — the person is never told a cancellation
-        // failed because a survey did.
+        await lifecycleRequest();
+        // The cancel is confirmed the moment account-service accepts it, and
+        // everything the funnel owes that cancel follows here, ahead of the
+        // snapshot refresh: the receipt's observation point for cancellations
+        // (catalog B5), the survey row (ADR-0072), and the subscription_cancel
+        // event. None of them block or alter the UI. A rejected observation
+        // or survey write is swallowed — the person is never told a
+        // cancellation failed because a survey did — and the event carries
+        // reason keys, never the free text.
         observeSubscriptionChangeQuietly({
           appToken,
           cancelled: {
@@ -515,7 +503,9 @@ export function BillingPlan({
         }).catch(() => undefined);
         submitCancellationSurvey({
           appToken,
-          currentPeriodEndAt: current.currentPeriodEndAt,
+          // The snapshot carries a plain string here; the survey schema wants
+          // an ISO timestamp or null, and a blank would 400 into the void.
+          currentPeriodEndAt: current.currentPeriodEndAt.trim() || null,
           feedback: survey.feedback,
           kubeconfig,
           planName: current.planName,
@@ -523,6 +513,21 @@ export function BillingPlan({
           regionDomain: current.regionDomain,
           workspace: current.workspace,
         }).catch(() => undefined);
+        trackBrainGtmEvent({
+          event: "subscription_cancel",
+          has_feedback: survey.feedback !== "",
+          plan_name: current.planName,
+          reasons: survey.reasons,
+        });
+        // The refresh moves the Plan view behind the dialog into cancelling.
+        // A miss must not read as a failed cancel: the confirmation takes
+        // its copy from the pre-cancel snapshot, so it stays truthful, and
+        // the view catches up on its next load.
+        try {
+          await refreshSnapshot();
+        } catch {
+          // Deliberately quiet; see above.
+        }
       } else {
         await lifecycleRequest();
         await refreshSnapshot();

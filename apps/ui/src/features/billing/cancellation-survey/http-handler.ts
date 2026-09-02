@@ -18,9 +18,10 @@ export interface CancellationSurveyHandlerDependencies {
  * (ADR-0059). It fails closed: an unauthorized request writes nothing, and
  * a response filed against a workspace other than the one the actor was
  * verified in is refused, since nothing downstream re-checks it. The cancel
- * itself is not re-verified with account-service; the client only submits
- * after a confirmed cancel, and the write is low-stakes feedback, never
- * billing state.
+ * itself is not re-verified with account-service, and neither is the
+ * actor's OWNER role: the client only submits after a confirmed cancel, and
+ * the write is low-stakes feedback, never billing state (ADR-0072). Do not
+ * "harden" this into a billing-state read.
  */
 export function createCancellationSurveyHandler(
   dependencies: CancellationSurveyHandlerDependencies
@@ -63,9 +64,12 @@ export function createCancellationSurveyHandler(
         workspace: parsed.data.workspace,
       });
       return Response.json({ id, ok: true });
-    } catch {
+    } catch (error) {
+      // The client never sees the cause (it swallows the 503); the log is
+      // the only place a persistence failure can be diagnosed.
       console.error(
-        "[api/billing/subscription/cancellation-survey] persistence unavailable"
+        "[api/billing/subscription/cancellation-survey] persistence unavailable",
+        error
       );
       return Response.json(
         { error: "Cancellation survey persistence is unavailable." },

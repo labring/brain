@@ -160,14 +160,27 @@ test("authorization failure fails closed and writes nothing", async () => {
   assert.equal((await db.select().from(cancellationSurveyResponses)).length, 0);
 });
 
-test("a persistence failure answers 503 without leaking details", async () => {
+test("a persistence failure answers 503 without leaking details, and logs the cause", async () => {
+  const cause = new Error("connection refused");
   const failing = createCancellationSurveyHandler({
     authorizeWorkspaceActor: () => Promise.resolve(VERIFIED_ACTOR),
-    record: () => Promise.reject(new Error("connection refused")),
+    record: () => Promise.reject(cause),
   });
-  const response = await failing(surveyRequest(VALID_BODY));
-  assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), {
-    error: "Cancellation survey persistence is unavailable.",
-  });
+  const logged: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    logged.push(args);
+  };
+  try {
+    const response = await failing(surveyRequest(VALID_BODY));
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      error: "Cancellation survey persistence is unavailable.",
+    });
+  } finally {
+    console.error = originalError;
+  }
+  // The client swallows the 503, so the log is the only diagnostic trail.
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0]?.[1], cause);
 });

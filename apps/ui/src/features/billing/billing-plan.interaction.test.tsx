@@ -976,9 +976,17 @@ function errorResponse(status: number, error: string): Response {
  * as cancelling. Records the bodies of the two writes under test.
  */
 function cancelFlowResponder(
-  options: { payStatus?: number; surveyStatus?: number } = {}
+  options: {
+    payStatus?: number;
+    /** What the subscription reads as its period end; blank is a real value. */
+    periodEnd?: string;
+    /** Fails the snapshot refresh that follows a confirmed cancel. */
+    refreshStatus?: number;
+    surveyStatus?: number;
+  } = {}
 ) {
   const requests: { body: unknown; pathname: string }[] = [];
+  const periodEnd = options.periodEnd ?? SURVEY_PERIOD_END;
   let cancelled = false;
   const subscription = (
     PLAN_PAGE_RESPONSES["/api/billing/subscription"] as {
@@ -1002,12 +1010,15 @@ function cancelFlowResponder(
         : errorResponse(options.surveyStatus, "Survey store unavailable.");
     }
     if (pathname === "/api/billing/subscription") {
+      if (cancelled && options.refreshStatus != null) {
+        return errorResponse(options.refreshStatus, "Snapshot unavailable.");
+      }
       return jsonResponse({
         subscription: {
           ...subscription,
           CancelAtPeriodEnd: cancelled,
-          CurrentPeriodEndAt: SURVEY_PERIOD_END,
-          ExpireAt: SURVEY_PERIOD_END,
+          CurrentPeriodEndAt: periodEnd,
+          ExpireAt: periodEnd,
         },
       });
     }
@@ -1326,6 +1337,90 @@ test("an unanswered survey still cancels, and a failed survey write still confir
           reasons: [],
         }),
       ]);
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a failed refresh after a confirmed cancel still records the survey and confirms", async () => {
+  await withTestDom(async (act) => {
+    const dataLayer = installDataLayer();
+    const flow = cancelFlowResponder({ refreshStatus: 502 });
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    try {
+      const dialog = await openCancelSurvey(act, rendered);
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("checkbox", { name: "The cost is too high" })
+        );
+      });
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: "Cancel Plan" })
+        );
+      });
+
+      // account-service accepted the cancel, so the row and the event both
+      // exist (ADR-0072) even though the Plan view could not refresh.
+      assert.deepEqual(
+        flow.requests.map((request) => request.pathname),
+        [PAY_PATH, CANCELLATION_SURVEY_PATH],
+        "the survey follows the cancel, not the refresh"
+      );
+      assert.deepEqual(dataLayer, [
+        gtmEntry({
+          event: "subscription_cancel",
+          has_feedback: false,
+          plan_name: "Pro",
+          reasons: ["too_expensive"],
+        }),
+      ]);
+      const confirmation = rendered?.getByRole("dialog", {
+        name: CONFIRMATION_DIALOG_NAME,
+      });
+      assert.ok(confirmation, "a refresh miss never reads as a failed cancel");
+      assert.match(confirmation.textContent ?? "", CONFIRMATION_BODY_RE);
+      assert.equal(within(confirmation).queryByRole("alert"), null);
+      // The view behind is stale — still offering Cancel Plan — and will
+      // catch up on its next load; nothing pretends otherwise.
+      assert.ok(
+        rendered?.getByRole("button", { hidden: true, name: "Cancel Plan" })
+      );
+      assert.equal(
+        rendered?.queryByRole("button", { hidden: true, name: "Resume Plan" }),
+        null
+      );
+    } finally {
+      await restore();
+    }
+  });
+});
+
+test("a blank period end reaches the survey as null, not as an invalid date", async () => {
+  await withTestDom(async (act) => {
+    installDataLayer();
+    const flow = cancelFlowResponder({ periodEnd: "" });
+    const { rendered, restore } = await renderPlanPage(act, flow.respond);
+    try {
+      const dialog = await openCancelSurvey(act, rendered);
+      await act(() => {
+        fireEvent.click(
+          within(dialog).getByRole("button", { name: "Cancel Plan" })
+        );
+      });
+      assert.deepEqual(
+        flow.requests.map((request) => request.pathname),
+        [PAY_PATH, CANCELLATION_SURVEY_PATH]
+      );
+      assert.equal(
+        (flow.requests[1]?.body as { currentPeriodEndAt: unknown })
+          .currentPeriodEndAt,
+        null
+      );
+      assert.ok(
+        rendered?.getByRole("dialog", { name: CONFIRMATION_DIALOG_NAME })
+      );
     } finally {
       await restore();
     }
