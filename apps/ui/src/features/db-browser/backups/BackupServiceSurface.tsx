@@ -295,7 +295,7 @@ function BackupRowsList({
               const canDelete = backup.deletable && !isDeleting;
               return (
                 <article
-                  className="flex min-h-[74px] flex-row items-center justify-between gap-3 rounded-md bg-white/[0.04] px-4 py-3 transition-colors hover:bg-white/[0.06]"
+                  className="flex min-h-[74px] flex-row items-center justify-between gap-3 rounded-md bg-muted px-4 py-3 transition-colors hover:bg-muted/80 dark:bg-white/[0.04] dark:hover:bg-white/[0.06]"
                   data-qa-module="database"
                   data-qa-object="backup-row"
                   data-qa-resource-id={backup.name}
@@ -748,9 +748,11 @@ function DeleteBackupModal({
             {"and any restored DB Services remain unchanged."}
           </AppDialog.Description>
           <AppDialog.Field>
-            <p className="select-text text-sm/5 text-zinc-400">
+            <p className="select-text text-muted-foreground text-sm/5 dark:text-zinc-400">
               {"Type "}
-              <span className="font-mono text-zinc-100">{backup.name}</span>
+              <span className="font-mono text-foreground dark:text-zinc-100">
+                {backup.name}
+              </span>
               {" to confirm."}
             </p>
             <AppDialog.Input

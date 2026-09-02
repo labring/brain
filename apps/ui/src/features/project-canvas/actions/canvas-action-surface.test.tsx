@@ -20,7 +20,8 @@ const CENTERED_NAME_RE =
   /<p class="[^"]*text-center[^"]*" title="orders-db">orders-db<\/p>/;
 const DB_ACCESS_TITLE_RE =
   /<h2 class="[^"]*" title="DB Access">DB Access<\/h2>/;
-const ACTION_SURFACE_BACKGROUND_RE = /bg-neutral-950/;
+// The surface background is theme-paired (light sheet / dark canvas navy)
+// via --main-action-surface-bg, so no literal bg-neutral-950 remains.
 const MAIN_ACTION_SURFACE_BACKGROUND_RE = /main-action-surface-background/;
 const MAIN_ACTION_BODY_BACKGROUND_RE = /main-action-surface-body-background/;
 const DB_ACCESS_RE = /text-foreground/;
@@ -76,7 +77,6 @@ test("main action surface renders shared chrome and empty body slot", () => {
   assert.match(html, DB_ACCESS_TITLE_RE);
   assert.doesNotMatch(html, ENGINE_SUBTITLE_RE);
   assert.match(html, CLOSE_LABEL_RE);
-  assert.match(html, ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
   assert.match(html, DB_ACCESS_RE);
@@ -101,7 +101,6 @@ test("main action surface frame renders custom surface content", () => {
   assert.match(html, CUSTOM_TITLE_RE);
   assert.match(html, CUSTOM_SUBTITLE_RE);
   assert.match(html, CUSTOM_BODY_RE);
-  assert.match(html, ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_SURFACE_BACKGROUND_RE);
   assert.match(html, MAIN_ACTION_BODY_BACKGROUND_RE);
 });

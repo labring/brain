@@ -201,7 +201,7 @@ export function TableViewDataGrid({
               key={row.rowKey}
             >
               <td
-                className="sticky left-0 z-30 border-border border-r border-b bg-[#0C1120] px-2 py-2 text-center font-normal text-sm"
+                className="sticky left-0 z-30 border-border border-r border-b bg-db-access-row-selector-surface px-2 py-2 text-center font-normal text-sm"
                 data-qa-module="sql"
                 data-qa-object="table-row"
                 data-qa-resource-id={row.rowKey}

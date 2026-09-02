@@ -42,7 +42,7 @@ export function DataBrowserPane({
       refreshProjectCanvas={refreshProjectCanvas}
       selectedDatabaseData={selectedDatabaseData}
     >
-      <div className="dark flex h-full min-h-0 w-full overflow-hidden text-foreground">
+      <div className="flex h-full min-h-0 w-full overflow-hidden text-foreground">
         <DataBrowserPaneBody />
       </div>
     </DataBrowserRuntimeProvider>
