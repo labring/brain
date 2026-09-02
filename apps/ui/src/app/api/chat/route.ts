@@ -9,6 +9,7 @@ import {
   type UIMessage,
   type UIMessageStreamOnFinishCallback,
 } from "ai";
+import { after } from "next/server";
 import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
   type ChatBillingMode,
@@ -84,7 +85,11 @@ import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { getProject } from "@/lib/project-persistence/projects";
-import { withLangfuseChatTrace } from "@/lib/observability/langfuse";
+import {
+  flushLangfuseTelemetry,
+  isLangfuseTelemetryEnabled,
+  withLangfuseChatTrace,
+} from "@/lib/observability/langfuse";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 
@@ -724,7 +729,7 @@ async function runChatPipeline(input: {
   const { assistantContext, chatId, encodedKubeconfig, message } =
     input.request;
   const { actor, kubeconfig, requestAbortSignal } = input;
-  const agentRunId = generateId();
+  const chatTurnId = generateId();
   const owner = actor.owner;
   const scope = assistantConversationScope(owner, assistantContext);
   let ownedLease: ChatStreamLease | null = null;
@@ -875,12 +880,14 @@ async function runChatPipeline(input: {
       leaseAbortController.signal,
     ]);
 
-    const result = withLangfuseChatTrace({
+    const responseHeaders = chatBillingHeaders(clientFreeTier);
+    const streamHeartbeat = leaseHeartbeat;
+    const response = await withLangfuseChatTrace({
       chatId,
-      runId: agentRunId,
+      chatTurnId,
       userId: owner.userUid,
-      callback: () =>
-        streamText({
+      callback: () => {
+        const result = streamText({
           abortSignal: streamAbortSignal,
           model,
           providerOptions: {
@@ -906,31 +913,42 @@ async function runChatPipeline(input: {
               event.toolExecutionMs
             );
           },
-        }),
-    });
+        });
 
-    const responseHeaders = chatBillingHeaders(clientFreeTier);
+        if (isLangfuseTelemetryEnabled()) {
+          try {
+            after(() => flushLangfuseTelemetry());
+          } catch (error) {
+            // `after()` requires a Next.js request scope. Keep direct route
+            // invocations and non-standard runtimes fail-open for telemetry.
+            console.warn(
+              "[observability] Langfuse flush could not be scheduled; continuing without telemetry:",
+              error
+            );
+          }
+        }
 
-    const streamHeartbeat = leaseHeartbeat;
-    const response = result.toUIMessageStreamResponse({
-      consumeSseStream: consumeStream,
-      originalMessages: history,
-      generateMessageId: generateId,
-      headers: responseHeaders,
-      // A mid-stream aiproxy billing refusal reaches the pane classified;
-      // every other error stays masked.
-      onError: (error) =>
-        chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
-      onFinish: createChatStreamFinishHandler({
-        billing,
-        chatId,
-        history,
-        heartbeat: streamHeartbeat,
-        scope,
-        projectName: assistantProjectName(assistantContext),
-        titleModel,
-        toolDurationMsByCallId,
-      }),
+        return result.toUIMessageStreamResponse({
+          consumeSseStream: consumeStream,
+          originalMessages: history,
+          generateMessageId: generateId,
+          headers: responseHeaders,
+          // A mid-stream aiproxy billing refusal reaches the pane classified;
+          // every other error stays masked.
+          onError: (error) =>
+            chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
+          onFinish: createChatStreamFinishHandler({
+            billing,
+            chatId,
+            history,
+            heartbeat: streamHeartbeat,
+            scope,
+            projectName: assistantProjectName(assistantContext),
+            titleModel,
+            toolDurationMsByCallId,
+          }),
+        });
+      },
     });
     ownedLease = null;
     leaseHeartbeat = null;

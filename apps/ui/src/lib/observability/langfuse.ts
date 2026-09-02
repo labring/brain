@@ -12,6 +12,7 @@ import {
 } from "./langfuse-core";
 
 let initialization: Promise<boolean> | undefined;
+let langfuseSpanProcessor: LangfuseSpanProcessor | undefined;
 
 /**
  * Starts the Langfuse OpenTelemetry exporter once per Node.js process.
@@ -40,6 +41,7 @@ export function initializeLangfuseTelemetry(): Promise<boolean> {
       });
       const sdk = new NodeSDK({ spanProcessors: [spanProcessor] });
       sdk.start();
+      langfuseSpanProcessor = spanProcessor;
       registerTelemetry(new LangfuseVercelAiSdkIntegration());
       console.info(
         `[observability] Chat Assistant telemetry enabled (${config.baseUrl}).`
@@ -57,12 +59,37 @@ export function initializeLangfuseTelemetry(): Promise<boolean> {
   return initialization;
 }
 
+/**
+ * Flushes pending Langfuse spans without ever affecting the request path.
+ * This is used from Next.js `after()` for streaming responses, where a
+ * short-lived instance may be frozen before the batch processor flushes.
+ */
+export async function flushLangfuseTelemetry(): Promise<void> {
+  const processor = langfuseSpanProcessor;
+  if (processor == null) {
+    return;
+  }
+
+  try {
+    await processor.forceFlush();
+  } catch (error) {
+    console.warn(
+      "[observability] Langfuse telemetry flush failed; continuing without telemetry:",
+      error
+    );
+  }
+}
+
+export function isLangfuseTelemetryEnabled(): boolean {
+  return langfuseSpanProcessor != null;
+}
+
 export function withLangfuseChatTrace<T>(input: {
   chatId: string;
-  runId: string;
+  chatTurnId: string;
   userId: string;
-  callback: () => T;
-}): T {
+  callback: () => T | Promise<T>;
+}): T | Promise<T> {
   return propagateAttributes(
     {
       traceName: "project-assistant-chat",
@@ -70,7 +97,7 @@ export function withLangfuseChatTrace<T>(input: {
       userId: input.userId,
       metadata: {
         feature: "project-assistant",
-        agentRunId: input.runId,
+        chatTurnId: input.chatTurnId,
       },
     },
     input.callback
