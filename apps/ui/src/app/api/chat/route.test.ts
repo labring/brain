@@ -113,6 +113,7 @@ let modelAbortSignals: (AbortSignal | undefined)[] = [];
 let modelPrompts: unknown[] = [];
 let modelProviderOptions: unknown[] = [];
 let persistedLease: TestLease | null = null;
+let projectExists = true;
 let replaceCalls = 0;
 let streamMode: StreamMode = "success";
 let serviceOwners: TestScope[] = [];
@@ -473,6 +474,21 @@ mock.module("@/lib/kubeconfig", () => ({
       ? "kubeconfig"
       : actualKubeconfig.decodeKubeconfig(encoded),
 }));
+mock.module("@/lib/project-persistence/projects", () => ({
+  getProject: (namespace: string, projectId: string) =>
+    Promise.resolve(
+      projectExists && namespace === NAMESPACE && projectId === PROJECT_ID
+        ? {
+            createdAt: "2026-09-02T00:00:00.000Z",
+            description: "",
+            displayName: "Route test project",
+            id: PROJECT_ID,
+            namespace: NAMESPACE,
+            updatedAt: "2026-09-02T00:00:00.000Z",
+          }
+        : null
+    ),
+}));
 mock.module("@/lib/request-kubeconfig-auth", () => ({
   ...actualRequestKubeconfigAuth,
   authorizeWorkspaceActor: (
@@ -753,6 +769,7 @@ beforeEach(() => {
   modelPrompts = [];
   modelProviderOptions = [];
   persistedLease = null;
+  projectExists = true;
   replaceCalls = 0;
   serviceOwners = [];
   streamMode = "success";
@@ -761,6 +778,24 @@ beforeEach(() => {
   toolsetAvailable = true;
   toolsetOwner = null;
   transformSetup = null;
+});
+
+test("rejects an unknown project before creating or billing a conversation", async () => {
+  projectExists = false;
+
+  const response = await POST(
+    chatRequest(userMessage("user-unknown-project", "hello"))
+  );
+
+  expect(response.status).toBe(404);
+  expect(await response.json()).toEqual({
+    code: "assistant_project_not_found",
+    error: "Assistant project not found.",
+  });
+  expect(adoptionCalls).toHaveLength(0);
+  expect(modelCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
+  expect(serviceOwners).toHaveLength(0);
 });
 
 function interceptHeartbeatTimer() {

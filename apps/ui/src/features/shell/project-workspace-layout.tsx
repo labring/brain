@@ -239,11 +239,6 @@ function buildAssistantContextPayload(
 }
 
 /**
- * Snapshot the resource selected on the canvas at send time. Pinned to the user
- * message so the model resolves "this"/"it" against what was selected then, not
- * whatever is selected on a later turn. `null` = nothing selected (no backfill).
- */
-/**
  * The one part of the composer that depends on the canvas selection: the
  * "Current Project" / "Current Service" context chips. Isolating the `selected`
  * subscription here means selecting or clearing a canvas node re-renders only

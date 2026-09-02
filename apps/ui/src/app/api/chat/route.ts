@@ -80,6 +80,7 @@ import { observeWorkspaceQuotaQuietly } from "@/features/notifications/producers
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
+import { getProject } from "@/lib/project-persistence/projects";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 
@@ -1005,6 +1006,25 @@ export async function POST(req: Request) {
   }
   const actor: VerifiedAssistantConversationActor =
     verifiedPersonalResourceActor(authorization);
+  try {
+    const project = await getProject(
+      authorization.namespace,
+      request.assistantContext.projectId
+    );
+    if (project == null) {
+      return jsonError(
+        "assistant_project_not_found",
+        "Assistant project not found.",
+        404
+      );
+    }
+  } catch {
+    return jsonError(
+      "assistant_project_unavailable",
+      "Could not verify the Assistant project.",
+      503
+    );
+  }
   // The chat turn is a natural observation point for the quota-exhausted
   // producer: the snapshot already crossed the server boundary here.
   if (workspaceResourceQuota.success) {

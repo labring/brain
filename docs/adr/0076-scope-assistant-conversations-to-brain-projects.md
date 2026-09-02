@@ -11,8 +11,10 @@ part of the conversation's durable identity.
 An Assistant Conversation is addressed by the stable scope
 `(namespace, userUid, projectId)`. The namespace and global `userUid` continue
 to come from the verified Workspace Actor boundary established by ADR-0056 and
-ADR-0059. The `projectId` comes from the current Project route, is required on
-every conversation read and write, and is persisted on the thread row.
+ADR-0059. The client supplies `projectId` from the current Project route; the
+server verifies that it resolves to a Brain Project in the actor's authorized
+namespace before a chat turn can create or mutate a conversation. It is required
+on every conversation read and write and is persisted on the thread row.
 
 Bootstrap, list, message reads, first-message materialization, title updates,
 stream leases, compare-and-swap recovery, and assistant-message persistence all
