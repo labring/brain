@@ -1650,12 +1650,8 @@ test("walls an exhausted trial on a zero-allowance plan with the trial voice (AD
   );
 
   expect(response.status).toBe(402);
-  const body = (await response.json()) as {
-    code: string;
-    detail?: { allowance?: string };
-  };
+  const body = (await response.json()) as { code: string };
   expect(body.code).toBe("ai_allowance_missing");
-  expect(body.detail?.allowance).toBe("trial");
   expect(response.headers.get("X-Chat-Wall")).toBe("allowance-trial");
   expect(modelCalls).toBe(0);
   expect(reserveCalls).toBe(0);

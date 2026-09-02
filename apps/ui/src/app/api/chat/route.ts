@@ -105,9 +105,6 @@ function paidWallResponse(state: FreeTierState): Response {
   if (state.wall === "allowance-trial" || state.wall === "allowance-plan") {
     body = {
       code: "ai_allowance_missing",
-      detail: {
-        allowance: state.wall === "allowance-trial" ? "trial" : "plan",
-      },
       error:
         "This workspace's plan doesn't include AI usage. Upgrade the plan to keep chatting with the assistant.",
     };

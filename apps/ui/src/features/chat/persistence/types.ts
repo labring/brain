@@ -94,9 +94,8 @@ export interface FreeTierState {
   remaining: number;
   /**
    * The billing cause that refuses the next `user` turn (design spec row
-   * E3, ADR-0073); absent/null while open. The `allowance-*` causes render
-   * staged: an advisory notice first, the locked wall only once a send was
-   * actually refused.
+   * E3, ADR-0073); absent/null while open. Every cause locks the composer
+   * at once.
    */
   wall?: ChatWallCause | null;
 }

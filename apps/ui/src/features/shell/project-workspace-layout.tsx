@@ -53,7 +53,6 @@ import {
 import {
   type ChatBillingInterruption,
   chatBillingInterruptionFromError,
-  chatMessagingLocked,
   chatWallPlaceholder,
 } from "@/features/chat/chat-billing-interruption";
 import {
@@ -417,7 +416,6 @@ const ProjectAssistantComposerMemo = memo(ProjectAssistantComposer);
 function ProjectAssistantChatSession({
   bootstrap,
   freeTier,
-  interruptionOverride = null,
   threads,
   assistantNamespaceRaw,
   onAssistantStreamFinished,
@@ -431,8 +429,6 @@ function ProjectAssistantChatSession({
 }: {
   bootstrap: Pick<AssistantSessionPayload, "chatId" | "messages">;
   freeTier: FreeTierState | null;
-  /** Dev-tweak staging of a refused allowance send (ADR-0073); null in prod. */
-  interruptionOverride?: ChatBillingInterruption | null;
   threads: AssistantThreadDTO[];
   assistantNamespaceRaw: string;
   onAssistantStreamFinished?: () => Promise<void>;
@@ -478,7 +474,6 @@ function ProjectAssistantChatSession({
   // nothing, the pre-send gate owns the lock.
   const [billingInterruption, setBillingInterruption] =
     useState<ChatBillingInterruption | null>(null);
-  const shownInterruption = interruptionOverride ?? billingInterruption;
   const paidSourceRef = useRef<ChatPaidSource | null>(null);
   const knownPaidSource = freeTier?.paidSource ?? null;
   useEffect(() => {
@@ -807,16 +802,13 @@ function ProjectAssistantChatSession({
         <ChatBillingCardSlot
           errored={status === "error"}
           freeTier={freeTier}
-          interruption={shownInterruption}
+          interruption={billingInterruption}
           onNavigateToBilling={navigateToBilling}
         />
         <ProjectAssistantComposerMemo
           busy={busy}
           lockedPlaceholder={chatWallPlaceholder(freeTier?.wall)}
-          messagingLocked={chatMessagingLocked(
-            freeTier?.wall,
-            shownInterruption
-          )}
+          messagingLocked={freeTier?.wall != null}
           onDatabaseIntent={onDatabaseIntent}
           onDockerIntent={onDockerIntent}
           onGithubIntent={onGithubIntent}
@@ -1026,8 +1018,7 @@ function ProjectAssistantChatPane() {
     <ProjectAssistantChatSession
       assistantNamespaceRaw={namespaceRaw}
       bootstrap={session}
-      freeTier={freeTierOverride?.freeTier ?? freeTier}
-      interruptionOverride={freeTierOverride?.interruption ?? null}
+      freeTier={freeTierOverride ?? freeTier}
       key={session.chatId}
       onAssistantStreamFinished={refreshAssistantState}
       onBillingHeaders={handleBillingHeaders}

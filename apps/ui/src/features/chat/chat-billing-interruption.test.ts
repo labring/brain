@@ -49,25 +49,13 @@ describe("chatBillingInterruptionFromError", () => {
     ).toEqual({ paidSource: "ai-credits" });
   });
 
-  it("reads the allowance refusal with its variant (ADR-0073)", () => {
-    expect(
-      chatBillingInterruptionFromError(
-        new Error(
-          JSON.stringify({
-            code: "ai_allowance_missing",
-            detail: { allowance: "trial" },
-            error: "x",
-          })
-        ),
-        "ai-credits"
-      )
-    ).toEqual({ allowance: "trial", paidSource: null });
+  it("reads the allowance refusal as a billing refusal with no Paid Source (ADR-0073)", () => {
     expect(
       chatBillingInterruptionFromError(
         new Error(JSON.stringify({ code: "ai_allowance_missing", error: "x" })),
-        null
+        "ai-credits"
       )
-    ).toEqual({ allowance: "plan", paidSource: null });
+    ).toEqual({ paidSource: null });
   });
 
   it("is null for every non-billing error, including non-JSON messages", () => {
@@ -90,9 +78,9 @@ describe("copy forks by Chat Billing Mode", () => {
       cta: { destination: "upgrade", label: "Upgrade plan" },
       title: "AI Credits used up",
     });
-    expect(
-      chatBillingInterruptionCopy({ paidSource: "ai-credits" }).title
-    ).toBe("Message not sent — AI Credits used up");
+    expect(chatBillingInterruptionCopy("ai-credits").title).toBe(
+      "Message not sent — AI Credits used up"
+    );
   });
 
   it("speaks the balance and a top-up for PAYG", () => {
@@ -101,9 +89,9 @@ describe("copy forks by Chat Billing Mode", () => {
       cta: { destination: "top-up", label: "Top up balance" },
       title: "Account balance in debt",
     });
-    expect(
-      chatBillingInterruptionCopy({ paidSource: "balance" }).cta.label
-    ).toBe("Top up balance");
+    expect(chatBillingInterruptionCopy("balance").cta.label).toBe(
+      "Top up balance"
+    );
   });
 
   it("speaks the allowance causes truthfully (ADR-0073)", () => {
@@ -113,13 +101,6 @@ describe("copy forks by Chat Billing Mode", () => {
     expect(chatBillingWallCopy("allowance-plan").title).toBe(
       "AI usage not included"
     );
-    expect(
-      chatBillingInterruptionCopy({ allowance: "trial", paidSource: null })
-        .title
-    ).toBe("Message not sent — free trial messages used up");
-    expect(
-      chatBillingInterruptionCopy({ allowance: "plan", paidSource: null }).title
-    ).toBe("Message not sent — AI usage not included");
   });
 
   it("never claims a source it does not know", () => {

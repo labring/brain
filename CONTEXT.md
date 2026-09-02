@@ -528,7 +528,7 @@ _Avoid_: wallet, credits (for a PAYG workspace), balance (for a subscribed works
 
 ### Paid Chat Wall
 
-The pre-send refusal of a `user` turn that has nothing to spend: a billing callout in the card slot naming the fix, and a locked composer stating why. Its cause is an exhausted Paid Source (AI Credits, or the Account Balance in Account Debt) or a plan that grants no AI allowance at all — the platform Free plan carries none, so an Active Free Trial that spends its last Free Chat Turn meets the allowance cause, not a spendable source. Paid Source causes lock at once; an allowance cause stages — an advisory notice with an open composer until a send is actually refused, the locked wall from then on. Still the only Chat Billing state that locks the composer — a Billing Interruption behind an error card locks nothing, because the next send re-gates.
+The pre-send refusal of a `user` turn that has nothing to spend: a billing callout in the card slot naming the fix, and a locked composer stating why. Its cause is an exhausted Paid Source (AI Credits, or the Account Balance in Account Debt) or a plan that grants no AI allowance at all — the platform Free plan carries none, so an Active Free Trial that spends its last Free Chat Turn meets the allowance cause, not a spendable source. Every cause locks at once. Still the only Chat Billing state that locks the composer — a Billing Interruption behind an error card locks nothing, because the next send re-gates.
 
 _Avoid_: paywall, quota exceeded (for chat), chat disabled.
 
