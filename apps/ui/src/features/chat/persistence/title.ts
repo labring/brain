@@ -149,6 +149,11 @@ export async function deriveThreadTitle(input: {
           ? userPart
           : `Current project: ${projectName}\n\n${userPart}`,
       maxOutputTokens: TITLE_MAX_OUTPUT_TOKENS,
+      telemetry: {
+        functionId: "project-assistant-thread-title",
+        recordInputs: false,
+        recordOutputs: false,
+      },
     });
     const raw = rawTitleFromGenerateTextResult(generated);
     const cleaned = raw

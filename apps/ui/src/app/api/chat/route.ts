@@ -84,6 +84,7 @@ import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
 import { getProject } from "@/lib/project-persistence/projects";
+import { withLangfuseChatTrace } from "@/lib/observability/langfuse";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 
@@ -723,6 +724,7 @@ async function runChatPipeline(input: {
   const { assistantContext, chatId, encodedKubeconfig, message } =
     input.request;
   const { actor, kubeconfig, requestAbortSignal } = input;
+  const agentRunId = generateId();
   const owner = actor.owner;
   const scope = assistantConversationScope(owner, assistantContext);
   let ownedLease: ChatStreamLease | null = null;
@@ -873,27 +875,38 @@ async function runChatPipeline(input: {
       leaseAbortController.signal,
     ]);
 
-    const result = streamText({
-      abortSignal: streamAbortSignal,
-      model,
-      providerOptions: {
-        openai: {
-          reasoningEffort: "high",
-        },
-      },
-      instructions: systemPrompt,
-      messages: modelMessages,
-      tools,
-      stopWhen: isStepCount(CHAT_MAX_STEPS),
-      experimental_transform: createInjectToolDurationStreamTransform(
-        toolDurationMsByCallId
-      ),
-      onToolExecutionEnd: (event) => {
-        toolDurationMsByCallId.set(
-          event.toolCall.toolCallId,
-          event.toolExecutionMs
-        );
-      },
+    const result = withLangfuseChatTrace({
+      chatId,
+      runId: agentRunId,
+      userId: owner.userUid,
+      callback: () =>
+        streamText({
+          abortSignal: streamAbortSignal,
+          model,
+          providerOptions: {
+            openai: {
+              reasoningEffort: "high",
+            },
+          },
+          instructions: systemPrompt,
+          messages: modelMessages,
+          tools,
+          telemetry: {
+            functionId: "project-assistant-chat",
+            recordInputs: false,
+            recordOutputs: false,
+          },
+          stopWhen: isStepCount(CHAT_MAX_STEPS),
+          experimental_transform: createInjectToolDurationStreamTransform(
+            toolDurationMsByCallId
+          ),
+          onToolExecutionEnd: (event) => {
+            toolDurationMsByCallId.set(
+              event.toolCall.toolCallId,
+              event.toolExecutionMs
+            );
+          },
+        }),
     });
 
     const responseHeaders = chatBillingHeaders(clientFreeTier);

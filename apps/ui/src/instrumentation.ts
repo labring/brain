@@ -12,6 +12,10 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") {
     return;
   }
+  const { initializeLangfuseTelemetry } = await import(
+    "@/lib/observability/langfuse"
+  );
+  await initializeLangfuseTelemetry();
   const { appTokenVerificationConfigFromEnv, assertProductionAppTokenConfig } =
     await import("@/lib/app-token");
   // ADR-0059: personal-resource authorization must never fall back to a
