@@ -19,9 +19,6 @@ export interface BillingRouteEntry {
   upstreamPathname: string;
 }
 
-/** Prefix of the dispatch keys for routes Brain answers itself. */
-export const BRAIN_ROUTE_KEY_PREFIX = "brain:";
-
 export const BILLING_ROUTES = {
   account: {
     apiPath: "/api/billing/account",
@@ -85,7 +82,7 @@ export const BILLING_ROUTES = {
   // a Brain dispatch key rather than a pathname.
   subscriptionCancellationSurvey: {
     apiPath: "/api/billing/subscription/cancellation-survey",
-    upstreamPathname: `${BRAIN_ROUTE_KEY_PREFIX}subscription/cancellation-survey`,
+    upstreamPathname: "brain:subscription/cancellation-survey",
   },
   subscriptionInvoiceCancel: {
     apiPath: "/api/billing/subscription/invoice-cancel",

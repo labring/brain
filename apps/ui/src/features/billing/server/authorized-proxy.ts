@@ -60,14 +60,16 @@ function mapBillingRequestBody(
   }
 }
 
-function authenticationRequired(): Response {
+/** The 401 every billing write answers when the actor binding cannot be proven. */
+export function authenticationRequired(): Response {
   return Response.json(
     { error: "Authentication is required." },
     { status: 401 }
   );
 }
 
-function isBindingFailure(
+/** Whether an authorization failure is a missing/invalid binding (→ 401) rather than a verdict. */
+export function isBindingFailure(
   authorization: Extract<WorkspaceActorAuthorization, { ok: false }>
 ): boolean {
   return (

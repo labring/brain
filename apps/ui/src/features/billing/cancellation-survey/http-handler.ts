@@ -1,4 +1,8 @@
-import type { AuthorizeWorkspaceActor } from "@/features/billing/server/authorized-proxy";
+import {
+  type AuthorizeWorkspaceActor,
+  authenticationRequired,
+  isBindingFailure,
+} from "@/features/billing/server/authorized-proxy";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { encodedKubeconfigFromRequest } from "@/lib/request-kubeconfig-auth";
 
@@ -8,13 +12,6 @@ import type { CancellationSurveyStore } from "./store";
 export interface CancellationSurveyHandlerDependencies {
   authorizeWorkspaceActor: AuthorizeWorkspaceActor;
   record: CancellationSurveyStore["record"];
-}
-
-function authenticationRequired(): Response {
-  return Response.json(
-    { error: "Authentication is required." },
-    { status: 401 }
-  );
 }
 
 /**
@@ -35,14 +32,15 @@ export function createCancellationSurveyHandler(
       encodedKubeconfig: encodedKubeconfigFromRequest(request),
     });
     if (!authorization.ok) {
-      return authorization.code.startsWith("app_token_") ||
-        authorization.code === "workspace_actor_required"
+      return isBindingFailure(authorization)
         ? authenticationRequired()
         : Response.json(
             { error: authorization.message },
             { status: authorization.status }
           );
     }
+    // Only the global uid is recorded (ADR-0059); unlike the proxy, no
+    // legacy userId is needed because nothing is forwarded to account-service.
     const userUid = authorization.actorBinding.userUid.trim();
     if (userUid === "") {
       return authenticationRequired();

@@ -15,8 +15,8 @@ import type { SubscriptionLifecycleHandler } from "@/features/billing/billing-pl
 import {
   CANCELLATION_FEEDBACK_MAX_LENGTH,
   CANCELLATION_REASONS,
-  type CancellationReasonKey,
   type CancellationSurveyAnswers,
+  cancellationReasonKeySchema,
   cancellationSurveyHasAnswers,
   EMPTY_CANCELLATION_SURVEY_ANSWERS,
 } from "@/features/billing/cancellation-survey/reasons";
@@ -86,7 +86,7 @@ export function CancelPlanDialog({
   };
 
   const handleReasonsChange = (value: unknown[]) => {
-    const reasons = value as CancellationReasonKey[];
+    const reasons = cancellationReasonKeySchema.array().parse(value);
     const otherJustSelected =
       reasons.includes("other") && !answers.reasons.includes("other");
     setAnswers((current) => ({ ...current, reasons }));

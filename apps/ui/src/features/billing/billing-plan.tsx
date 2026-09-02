@@ -498,7 +498,7 @@ export function BillingPlan({
         // alter the UI: the receipt's observation point for cancellations
         // (catalog B5) and the survey row (ADR-0072). A rejected survey
         // write is swallowed here — the person is never told a cancellation
-        // failed because a questionnaire did.
+        // failed because a survey did.
         observeSubscriptionChangeQuietly({
           appToken,
           cancelled: {

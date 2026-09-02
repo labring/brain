@@ -13,7 +13,7 @@ export const CANCELLATION_SURVEY_API_PATH =
  * Submits one Cancellation Survey response to Brain (ADR-0072). Callers run
  * it only after account-service confirmed the cancel and treat it as
  * best-effort: a rejection is swallowed, never shown, so the person is not
- * told a cancellation failed because a questionnaire did.
+ * told a cancellation failed because a survey did.
  */
 export async function submitCancellationSurvey(
   input: BillingCredentials &
@@ -32,7 +32,7 @@ export async function submitCancellationSurvey(
   });
   await requestBillingJson(CANCELLATION_SURVEY_API_PATH, {
     currentPeriodEndAt: input.currentPeriodEndAt,
-    feedback: input.feedback.trim(),
+    feedback: input.feedback,
     planName: input.planName,
     reasons: input.reasons,
     regionDomain: input.regionDomain,
