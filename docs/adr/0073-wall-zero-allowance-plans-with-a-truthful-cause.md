@@ -11,7 +11,7 @@ ADR-0068's Paid Chat Wall with a truthful cause.
 
 - **The production Free plan grants no AI Credits.** Its `ai_quota` is 0,
   and account-service skips creating a quota package entirely when
-  `ai_quota <= 0` — so a Free-trial workspace's `user` turns are refused by
+  `ai_quota <= 0` — so an Active Free Trial workspace's `user` turns are refused by
   aiproxy unconditionally, on every turn.
 - **A subscribed workspace never spends the Account Balance on AI.** For a
   namespace carrying the `subscription.sealos.io/status` annotation, the

@@ -127,8 +127,7 @@ export function chatBillingInterruptionCopy(
 }
 
 /** The locked composer's placeholder while the wall holds. */
-export const CHAT_WALL_PLACEHOLDER =
-  "Chat is paused — resolve billing to continue";
+const CHAT_WALL_PLACEHOLDER = "Chat is paused — resolve billing to continue";
 
 /** The locked placeholder, naming the allowance cause when it is the lock. */
 export function chatWallPlaceholder(

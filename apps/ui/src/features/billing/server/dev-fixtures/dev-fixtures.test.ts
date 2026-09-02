@@ -18,7 +18,7 @@ import {
   BILLING_DEV_SCENARIOS,
   formatBillingDevMockCookie,
 } from "../../dev-mock-cookie";
-import { billingDevMockResponse } from "./index";
+import { billingDevMockResponse, freeChatTurnsFixture } from "./index";
 import { scenarioTestFetch } from "./scenario-test-fetch";
 
 /**
@@ -88,6 +88,30 @@ function loadPlanForScenario(scenario: string) {
     fetch: mockFetchFor(scenario),
   });
 }
+
+test("the free-turns fixture spends the trial's allowance with the scenario (ADR-0073)", () => {
+  // Only `free` is mid-spend; every other scenario reads as a trial long
+  // since used up, because the lifetime counter never resets.
+  for (const scenario of BILLING_DEV_SCENARIOS) {
+    const turns = freeChatTurnsFixture(scenario);
+    assert.equal(turns.limit, 5, `${scenario} keeps the platform's 5 turns`);
+    assert.equal(
+      turns.used + turns.remaining,
+      turns.limit,
+      `${scenario} accounts for every turn`
+    );
+    assert.equal(
+      turns.remaining,
+      scenario === "free" ? 3 : 0,
+      `${scenario} spends the expected number of turns`
+    );
+  }
+  assert.deepEqual(freeChatTurnsFixture("free-expiring"), {
+    limit: 5,
+    remaining: 0,
+    used: 5,
+  });
+});
 
 test("every scenario passes every loader's schemas", async () => {
   for (const scenario of BILLING_DEV_SCENARIOS) {

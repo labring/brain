@@ -2,7 +2,10 @@ import { describe, expect, it } from "bun:test";
 
 import type { WorkspaceBillingStanding } from "@/features/billing/server/billing-standing-core";
 
-import { paidChatWall } from "./paid-chat-wall";
+import {
+  AI_PROXY_MINIMUM_BALANCE_MICRO_UNITS,
+  paidChatWall,
+} from "./paid-chat-wall";
 
 function standing(
   overrides: Partial<WorkspaceBillingStanding>
@@ -57,6 +60,38 @@ describe("paidChatWall", () => {
       paidChatWall(
         standing({
           aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 2_800_000 },
+          paidSource: "ai-credits",
+        }),
+        "not-trial"
+      )
+    ).toEqual({ paidSource: "ai-credits", wall: "ai-credits" });
+  });
+
+  it("mirrors aiproxy's floor exactly: open at 0.3 remaining, walled one unit below (ADR-0073)", () => {
+    // aiproxy's CheckBalance passes at balance >= amount, so a remainder of
+    // exactly GroupMinimumBalance still dispatches; the mirror must agree at
+    // the edge, and the constant must stay the upstream 0.3 at 1e6 precision.
+    expect(AI_PROXY_MINIMUM_BALANCE_MICRO_UNITS).toBe(300_000);
+    const total = 3_000_000;
+    expect(
+      paidChatWall(
+        standing({
+          aiCredits: {
+            totalMicroUnits: total,
+            usedMicroUnits: total - AI_PROXY_MINIMUM_BALANCE_MICRO_UNITS,
+          },
+          paidSource: "ai-credits",
+        }),
+        "not-trial"
+      )
+    ).toEqual({ paidSource: "ai-credits", wall: null });
+    expect(
+      paidChatWall(
+        standing({
+          aiCredits: {
+            totalMicroUnits: total,
+            usedMicroUnits: total - AI_PROXY_MINIMUM_BALANCE_MICRO_UNITS + 1,
+          },
           paidSource: "ai-credits",
         }),
         "not-trial"

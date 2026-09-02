@@ -1635,9 +1635,26 @@ test.each([
   expect(reserveCalls).toBe(0);
 });
 
-test("walls an exhausted trial on a zero-allowance plan with the trial voice (ADR-0073)", async () => {
-  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
-  trialJudgment = "trial";
+test.each([
+  {
+    freeTier: { limit: 5, remaining: 0, used: 5 },
+    trial: "trial" as const,
+    wall: "allowance-trial",
+  },
+  {
+    freeTier: { limit: 5, remaining: 5, used: 0 },
+    trial: "not-trial" as const,
+    wall: "allowance-plan",
+  },
+])("walls a zero-allowance plan before any state mutates, voiced as $wall (ADR-0073)", async ({
+  freeTier,
+  trial,
+  wall,
+}) => {
+  // The production Free plan grants no AI Credits (total 0): an exhausted
+  // Active Free Trial meets the trial voice, every other plan the plan voice.
+  freeTierSnapshot = freeTier;
+  trialJudgment = trial;
   billingStanding = {
     ...billingStanding,
     accountDebt: false,
@@ -1646,13 +1663,17 @@ test("walls an exhausted trial on a zero-allowance plan with the trial voice (AD
   };
 
   const response = await POST(
-    chatRequest(userMessage("user-no-allowance", "one more message"))
+    chatRequest(userMessage(`user-no-allowance-${trial}`, "one more message"))
   );
 
   expect(response.status).toBe(402);
   const body = (await response.json()) as { code: string };
   expect(body.code).toBe("ai_allowance_missing");
-  expect(response.headers.get("X-Chat-Wall")).toBe("allowance-trial");
+  expect(response.headers.get("X-Chat-Billing")).toBe("user");
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("ai-credits");
+  expect(response.headers.get("X-Chat-Wall")).toBe(wall);
+  expect(history).toEqual([]);
+  expect(leaseAcquireCalls).toBe(0);
   expect(modelCalls).toBe(0);
   expect(reserveCalls).toBe(0);
 });

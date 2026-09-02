@@ -25,9 +25,11 @@ system connection use `user` billing from their first turn.
 **Exhaustion hands off to the caller's AI Proxy.** After an eligible workspace
 spends its last Free Chat Turn, Chat Billing Mode becomes `user`. The next turn
 uses the caller's AI Proxy and is gated by ADR-0068's Paid Chat Wall before any
-conversation state changes. The former `blocked` mode,
-`free_chat_turns_exhausted` response, locked composer, and upgrade card are
-removed. A platform-funded turn that fails does not retry against the user's
+conversation state changes. The former `blocked` mode and its
+`free_chat_turns_exhausted` response are removed; a locked composer and an
+upgrade card return only as the Paid Chat Wall's allowance cause, which is
+what a plan without an AI allowance meets on that next turn (ADR-0073). A
+platform-funded turn that fails does not retry against the user's
 AI Proxy in the same request; silent provider failover would unexpectedly bill
 the user.
 
@@ -57,7 +59,9 @@ variable and is not a Brain configuration input.
 
 - **Keep blocking an Active Free Trial after five turns.** Rejected: the
   product now intentionally continues through the caller's metered AI Proxy,
-  subject to the Paid Chat Wall.
+  subject to the Paid Chat Wall. (Where the plan grants no AI allowance, that
+  wall is what the trial meets — ADR-0073 — so the stop is a truthful wall,
+  not the former blanket block.)
 - **Let GitHub Deployment Tasks reuse Chat Agent or host Codex credentials.**
   Rejected: it hides which platform budget funds a task and makes an unrelated
   Chat configuration change deployment billing.
