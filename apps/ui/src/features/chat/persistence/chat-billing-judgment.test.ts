@@ -19,6 +19,13 @@ const OPEN_PAYG: WorkspaceBillingStanding = {
   quotaKnown: true,
 };
 
+/** The production Free plan's standing: subscribed, no AI allowance at all. */
+const ZERO_ALLOWANCE: WorkspaceBillingStanding = {
+  ...OPEN_PAYG,
+  aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
+  paidSource: "ai-credits",
+};
+
 const ACTOR = {
   accountUserId: "user-1",
   cookieHeader: null,
@@ -135,6 +142,44 @@ describe("resolveFreeTierPosture", () => {
       paidSource: "balance",
       remaining: 2,
       wall: "balance",
+    });
+  });
+
+  it("reports the allowance wall at bootstrap, in the trial voice, once an Active Free Trial on a zero-allowance plan has spent its turns", async () => {
+    // ADR-0073: the pane locks on load, before any send is refused.
+    const posture = await resolveFreeTierPosture(ACTOR, {
+      isSystemOpenAiConfigured: () => true,
+      judgeActiveFreeTrialForWorkspace: () => Promise.resolve("trial"),
+      judgeWorkspaceBillingStandingForActor: () =>
+        Promise.resolve(ZERO_ALLOWANCE),
+      readFreeTierSnapshot: () =>
+        Promise.resolve({ limit: 5, remaining: 0, used: 5 }),
+    });
+    expect(posture).toEqual({
+      billing: "user",
+      limit: 5,
+      paidSource: "ai-credits",
+      remaining: 0,
+      wall: "allowance-trial",
+    });
+  });
+
+  it("voices the allowance wall as the plan's when the workspace never had a trial", async () => {
+    // Turns remaining do not matter: without a trial nothing spends them.
+    const posture = await resolveFreeTierPosture(ACTOR, {
+      isSystemOpenAiConfigured: () => true,
+      judgeActiveFreeTrialForWorkspace: () => Promise.resolve("not-trial"),
+      judgeWorkspaceBillingStandingForActor: () =>
+        Promise.resolve(ZERO_ALLOWANCE),
+      readFreeTierSnapshot: () =>
+        Promise.resolve({ limit: 5, remaining: 5, used: 0 }),
+    });
+    expect(posture).toEqual({
+      billing: "user",
+      limit: 5,
+      paidSource: "ai-credits",
+      remaining: 5,
+      wall: "allowance-plan",
     });
   });
 });

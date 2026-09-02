@@ -62,11 +62,6 @@ export const assistantThreadDTOSchema = z.object({
 }) satisfies z.ZodType<AssistantThreadDTO>;
 
 /**
- * Read-side snapshot of a workspace's Chat Billing Posture, seeded into the
- * pane on load. Computed server-side only (ADR-0065/0069): bootstrap payload
- * and `X-Chat-*` headers agree; clients render, never derive.
- */
-/**
  * What a `user` turn spends (CONTEXT.md): a subscribed workspace's AI
  * Credits, a Pay-As-You-Go workspace's Account Balance.
  */
@@ -86,6 +81,11 @@ export type ChatWallCause =
   | "allowance-trial"
   | "allowance-plan";
 
+/**
+ * Read-side snapshot of a workspace's Chat Billing Posture, seeded into the
+ * pane on load. Computed server-side only (ADR-0065/0069): bootstrap payload
+ * and `X-Chat-*` headers agree; clients render, never derive.
+ */
 export interface FreeTierState {
   billing: "free" | "user";
   limit: number;

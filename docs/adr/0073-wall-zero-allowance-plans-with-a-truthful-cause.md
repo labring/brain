@@ -12,7 +12,10 @@ ADR-0068's Paid Chat Wall with a truthful cause.
 - **The production Free plan grants no AI Credits.** Its `ai_quota` is 0,
   and account-service skips creating a quota package entirely when
   `ai_quota <= 0` — so an Active Free Trial workspace's `user` turns are refused by
-  aiproxy unconditionally, on every turn.
+  aiproxy unconditionally, on every turn. `get-resource-quota` still writes
+  `hard.ai_quota` for every namespace carrying the subscription annotation
+  (`service/account/api/workspace.go`, summing the active packages), so that
+  workspace reads `ai_quota: 0` — a fact, not an absent key.
 - **A subscribed workspace never spends the Account Balance on AI.** For a
   namespace carrying the `subscription.sealos.io/status` annotation, the
   aiproxy pre-check reads only `remainAIQuota`; account-service's response
@@ -35,6 +38,13 @@ read shows AI Credits with `total <= 0`, the Paid Chat Wall's cause is
 wall behaves as every Paid Chat Wall does under ADR-0068: the pre-send gate
 refuses with `402 ai_allowance_missing`, the card names the cause and the
 Upgrade CTA, and the composer locks at once with a placeholder stating why.
+
+**The lock arrives with the last Free Chat Turn, not one send later.** The
+turn that spends the last Free Chat Turn already reports the post-turn
+`user` posture in its `X-Chat-*` headers (ADR-0069); that posture is walled
+on the standing read for the same turn, so the headers and the session
+bootstrap payload agree and the pane locks as the fifth reply starts — no
+refused send, no reload. Earlier free turns never consult the standing.
 
 **The exhaustion floor mirrors aiproxy.** AI Credits are exhausted below
 `AI_PROXY_MINIMUM_BALANCE_MICRO_UNITS = 300_000` (0.3 currency units at the
@@ -73,6 +83,15 @@ Plan view's allowance card follow the scenario.
   production Free plan the sixth turn meets the allowance wall instead.
 - The 0.3 floor is a deliberate copy of an upstream constant and can drift;
   it lives in one exported constant beside the wall judgment.
+- The floor is 30 displayed AI Credits (`MICRO_UNITS_PER_AI_CREDIT =
+  10_000`), so the Plan view can still show a small remainder while chat is
+  walled. The wall card's body names the minimum rather than claiming zero,
+  so the two surfaces read together.
+- An absent `ai_quota` on a workspace the subscription record calls
+  subscribed means upstream's namespace annotation disagrees with that
+  record; aiproxy would charge the balance there, so the credits read stays
+  unknown and the wall fails open (ADR-0068) instead of claiming a missing
+  allowance.
 - A refusal that bypasses the gate (a credits read that failed open, then
   aiproxy refusing the turn) is still voiced as a Billing Interruption from
   the Paid Source the pane knows — AI Credits, for a zero-allowance

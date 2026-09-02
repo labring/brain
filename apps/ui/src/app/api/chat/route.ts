@@ -647,14 +647,16 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
 
   if (await reserveFreeTurnIfAvailable(actor.namespace)) {
     // Headers carry the POST-turn posture: the turn spending the last free
-    // turn already reports `user`, so the next request uses the caller's AI
-    // Proxy without one-message-late client inference.
+    // turn already reports `user`, walled the way session bootstrap would
+    // wall it, so headers and bootstrap agree and the pane locks the moment
+    // the allowance is spent (ADR-0073) — not one refused send later. Any
+    // earlier free turn keeps its `free` posture and never awaits the
+    // standing.
     return {
       billing: "free",
-      clientFreeTier: freeTierPostureAfterTurn(
-        freeTier,
-        systemModelConfigured,
-        trial
+      clientFreeTier: await withPaidChatWall(
+        freeTierPostureAfterTurn(freeTier, systemModelConfigured, trial),
+        judgment
       ),
       reserved: true,
     };
