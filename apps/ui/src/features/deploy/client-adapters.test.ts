@@ -43,7 +43,7 @@ test("GitHub-source creation attaches the app token", async () => {
   assert.deepEqual(headers, ["app-token"]);
 });
 
-test("namespace-shared sources keep the app token private without attribution", async () => {
+test("namespace-shared sources attach the app token for the billing reverse-check", async () => {
   const headers = captureAppTokenHeaders();
   await createDeploymentTaskFromApi({
     appToken: "app-token",
@@ -60,5 +60,15 @@ test("namespace-shared sources keep the app token private without attribution", 
     encodedKubeconfig: "encoded-kubeconfig",
     input: createInput({ kind: "template", templateName: "postgres" }),
   });
-  assert.deepEqual(headers, [null, null, null]);
+  assert.deepEqual(headers, ["app-token", "app-token", "app-token"]);
+});
+
+test("an unhydrated app token sends no header", async () => {
+  const headers = captureAppTokenHeaders();
+  await createDeploymentTaskFromApi({
+    appToken: "  ",
+    encodedKubeconfig: "encoded-kubeconfig",
+    input: createInput({ kind: "docker", settings: {} }),
+  });
+  assert.deepEqual(headers, [null]);
 });

@@ -10,7 +10,7 @@ const CANCELLATION_SURVEY_API_PATH =
   "/api/billing/subscription/cancellation-survey";
 
 /**
- * Submits one Cancellation Survey response to Brain (ADR-0072). Callers run
+ * Submits one Cancellation Survey response to Brain (ADR-0074). Callers run
  * it only after account-service confirmed the cancel and treat it as
  * best-effort: a rejection is swallowed, never shown, so the person is not
  * told a cancellation failed because a survey did.

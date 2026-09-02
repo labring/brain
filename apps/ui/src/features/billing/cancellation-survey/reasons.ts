@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * The Cancellation Reason vocabulary (CONTEXT.md "Cancellation Reason",
- * ADR-0072): stable machine keys shared by the survey chips, the server's
+ * ADR-0074): stable machine keys shared by the survey chips, the server's
  * request schema, and the analytics event type. Keys are load-bearing —
  * renaming one after launch means a data migration — while the display text
  * is presentation only and may be reworded freely.

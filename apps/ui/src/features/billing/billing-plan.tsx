@@ -470,7 +470,7 @@ export function BillingPlan({
     setActionPending(operator);
     try {
       // account-service receives exactly the request it always has; the
-      // survey never rides along (ADR-0072).
+      // survey never rides along (ADR-0074).
       const lifecycleRequest = () =>
         updateSubscriptionLifecycle({
           appToken,
@@ -486,7 +486,7 @@ export function BillingPlan({
         // The cancel is confirmed the moment account-service accepts it, and
         // everything the funnel owes that cancel follows here, ahead of the
         // snapshot refresh: the receipt's observation point for cancellations
-        // (catalog B5), the survey row (ADR-0072), and the subscription_cancel
+        // (catalog B5), the survey row (ADR-0074), and the subscription_cancel
         // event. None of them block or alter the UI. A rejected observation
         // or survey write is swallowed — the person is never told a
         // cancellation failed because a survey did — and the event carries

@@ -11,7 +11,7 @@ import { createCancellationSurveyStore } from "./store";
 const store = createCancellationSurveyStore(getCancellationSurveyDb);
 
 /**
- * Production wiring for the Cancellation Survey write (ADR-0072). The
+ * Production wiring for the Cancellation Survey write (ADR-0074). The
  * dev-mock dispatcher answers first in dev and demo builds so the survey
  * succeeds offline alongside the mocked cancel.
  */

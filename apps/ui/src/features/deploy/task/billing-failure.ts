@@ -20,8 +20,10 @@ export interface BillingFailureOverride {
    * Whether the override names a cause the runner never saw. The runner's
    * own text was then only a stall (a timeout, a pod that never came up)
    * that contradicts the headline, so the curated reason replaces it on
-   * every runner. False only for an apply-time quota error the provider
-   * explained itself, which keeps the requested/used/limited numbers.
+   * every runner. False only for an apply-time error the platform explained
+   * itself: the provider's quota error, which keeps the requested/used/limited
+   * numbers, and the debt webhook's billing denial (ADR-0072), which keeps
+   * the platform's own text.
    */
   supersedesRunnerError: boolean;
 }
@@ -59,6 +61,41 @@ const STALL_SHAPED: ReadonlySet<DeployTaskFailureReason | "none"> = new Set([
   "runner-error",
 ]);
 
+/**
+ * The one Billing Interruption the platform DOES signal: its admission
+ * webhook (`debt.sealos.io`) denies the apply and names the cause in the
+ * error text. Matched on the webhook's identity, not its wording — the
+ * message copy has already changed across platform versions. Classified at
+ * the apply boundary so the reason survives every reverse-check breakpoint
+ * (a run without a Workspace Actor, an unreadable standing); the standing
+ * judgment still refines it with Billing Evidence when it can (ADR-0072). A denial
+ * that names neither a subscription nor a balance (the platform's
+ * namespace-suspension wording covers both causes) stays unclassified —
+ * a wrong billing CTA is worse than none.
+ */
+const DEBT_WEBHOOK_DENIAL_RE =
+  /admission webhook \\?"?debt\.sealos\.io\\?"? denied/i;
+const DENIAL_NAMES_SUBSCRIPTION_RE = /subscription/i;
+const DENIAL_NAMES_BALANCE_RE = /balance/i;
+
+export function billingDenialReason(
+  message: string
+): Extract<
+  DeployTaskFailureReason,
+  "balance-exhausted" | "subscription-expired"
+> | null {
+  if (!DEBT_WEBHOOK_DENIAL_RE.test(message)) {
+    return null;
+  }
+  if (DENIAL_NAMES_SUBSCRIPTION_RE.test(message)) {
+    return "subscription-expired";
+  }
+  if (DENIAL_NAMES_BALANCE_RE.test(message)) {
+    return "balance-exhausted";
+  }
+  return null;
+}
+
 export function resolveBillingFailureOverride(input: {
   now: Date;
   reason: DeployTaskFailureReason | null;
@@ -82,7 +119,10 @@ export function resolveBillingFailureOverride(input: {
         kind: "account-debt",
       },
       reason: "balance-exhausted",
-      supersedesRunnerError: true,
+      // An apply-time denial the platform explained itself (the debt
+      // webhook) keeps its text, like the provider's quota error does;
+      // stall text still gives way to the headline.
+      supersedesRunnerError: reason !== "balance-exhausted",
     };
   }
   // A payment-due Workspace Subscription suspends its workspace the same
@@ -97,7 +137,7 @@ export function resolveBillingFailureOverride(input: {
         recovery: standing.paymentDueRecovery ?? "renew",
       },
       reason: "subscription-expired",
-      supersedesRunnerError: true,
+      supersedesRunnerError: reason !== "subscription-expired",
     };
   }
   const full = standing.fullQuota;

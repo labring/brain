@@ -944,7 +944,7 @@ test("a failed usage lookup degrades the allowance card quietly", async () => {
   });
 });
 
-// --- Cancellation Survey (AIM-345, ADR-0072) ---------------------------------
+// --- Cancellation Survey (AIM-345, ADR-0074) ---------------------------------
 // The cancel dialog's survey stage, the in-place confirmation, and the two
 // funnel events, observed as the requests that leave the browser, what the
 // person sees, and what lands in the GTM data layer.
@@ -1362,7 +1362,7 @@ test("a failed refresh after a confirmed cancel still records the survey and con
       });
 
       // account-service accepted the cancel, so the row and the event both
-      // exist (ADR-0072) even though the Plan view could not refresh.
+      // exist (ADR-0074) even though the Plan view could not refresh.
       assert.deepEqual(
         flow.requests.map((request) => request.pathname),
         [PAY_PATH, CANCELLATION_SURVEY_PATH],

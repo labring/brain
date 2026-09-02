@@ -51,7 +51,7 @@ interface CancelPlanDialogProps {
 
 /**
  * The Plan view's cancel dialog, grown into the Cancellation Survey
- * (CONTEXT.md, ADR-0072). Two stages in one dialog: the survey — the
+ * (CONTEXT.md, ADR-0074). Two stages in one dialog: the survey — the
  * period-end warning, optional reason cards, optional feedback — and, after
  * account-service confirmed the cancel, an in-place confirmation. The survey
  * never gates the cancel: an empty submission cancels the same, and every

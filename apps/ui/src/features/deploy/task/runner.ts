@@ -77,6 +77,7 @@ import {
   prepareBrainManifestArtifact,
   sealosTemplateArtifactSummary,
 } from "./artifacts";
+import { billingDenialReason } from "./billing-failure";
 import {
   type DeployBillingActor,
   judgeDeployBillingFailure,
@@ -1213,9 +1214,10 @@ function applyFailureReason(error: unknown): DeployTaskFailureReason {
   const message = error instanceof Error ? error.message : String(error);
   // This classifier runs only on the provider/Kubernetes apply boundary, not
   // arbitrary AI/Gateway output (ADR 0042).
-  return APPLY_QUOTA_EXCEEDED_RE.test(message)
-    ? "quota-exceeded"
-    : "apply-failed";
+  return (
+    billingDenialReason(message) ??
+    (APPLY_QUOTA_EXCEEDED_RE.test(message) ? "quota-exceeded" : "apply-failed")
+  );
 }
 
 /**

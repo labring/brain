@@ -867,7 +867,7 @@ const WRITE_FIXTURES: Record<
       success: true,
     },
   }),
-  // Brain's own survey write (ADR-0072): answers success in every scenario
+  // Brain's own survey write (ADR-0074): answers success in every scenario
   // without a transition, so the mocked cancel's confirmation stage and the
   // survey submit both run offline. Nothing is stored.
   [BILLING_ROUTES.subscriptionCancellationSurvey.upstreamPathname]: (

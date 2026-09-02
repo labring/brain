@@ -12,7 +12,7 @@ export interface CancellationSurveyHandlerDependencies {
 }
 
 /**
- * The Cancellation Survey write (ADR-0072). Authorization travels the same
+ * The Cancellation Survey write (ADR-0074). Authorization travels the same
  * verified workspace-actor path as every other billing write, and the
  * actor's global `userUid` is what the row records — no per-region crName
  * (ADR-0059). It fails closed: an unauthorized request writes nothing, and
@@ -20,7 +20,7 @@ export interface CancellationSurveyHandlerDependencies {
  * verified in is refused, since nothing downstream re-checks it. The cancel
  * itself is not re-verified with account-service, and neither is the
  * actor's OWNER role: the client only submits after a confirmed cancel, and
- * the write is low-stakes feedback, never billing state (ADR-0072). Do not
+ * the write is low-stakes feedback, never billing state (ADR-0074). Do not
  * "harden" this into a billing-state read.
  */
 export function createCancellationSurveyHandler(

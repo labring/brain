@@ -3,7 +3,7 @@ import { jsonb, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
 import type { CancellationReasonKey } from "./reasons";
 
 /**
- * Postgres schema owning Cancellation Survey responses (ADR-0072). A peer of
+ * Postgres schema owning Cancellation Survey responses (ADR-0074). A peer of
  * the onboarding and notification schemas, isolated from `public` like every
  * other app-owned schema. The rows are feedback *about* a billing action,
  * never billing state: no code path reads them to decide anything about a

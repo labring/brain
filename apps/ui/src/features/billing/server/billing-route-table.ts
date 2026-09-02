@@ -12,7 +12,7 @@ export interface BillingRouteEntry {
   apiPath: string;
   /**
    * account-service pathname the route proxies to — or, for the few routes
-   * Brain answers itself (ADR-0072's survey write), the `brain:` dispatch key
+   * Brain answers itself (ADR-0074's survey write), the `brain:` dispatch key
    * the dev-mock fixtures answer under. Either way it is the key both the
    * dev-mock dispatcher and the contract tests resolve the route by.
    */
@@ -78,7 +78,7 @@ export const BILLING_ROUTES = {
     apiPath: "/api/billing/subscription",
     upstreamPathname: "/account/v1alpha1/workspace-subscription/info",
   },
-  // Brain's own write (ADR-0072): no account-service upstream, so the key is
+  // Brain's own write (ADR-0074): no account-service upstream, so the key is
   // a Brain dispatch key rather than a pathname.
   subscriptionCancellationSurvey: {
     apiPath: "/api/billing/subscription/cancellation-survey",

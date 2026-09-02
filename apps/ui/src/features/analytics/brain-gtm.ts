@@ -80,7 +80,7 @@ export interface BrainGtmOnboardingCompleteEvent {
   event: "onboarding_complete";
 }
 
-// The Cancellation Survey funnel (ADR-0072): reason keys travel, the free
+// The Cancellation Survey funnel (ADR-0074): reason keys travel, the free
 // text never does — there is no field for it, so an email address or a
 // company name typed into the survey cannot reach third-party analytics.
 

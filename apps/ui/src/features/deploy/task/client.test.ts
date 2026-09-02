@@ -35,13 +35,25 @@ test("GitHub redeploy attaches the app token", async () => {
   assert.deepEqual(headers, ["app-token"]);
 });
 
-test("namespace-shared redeploy keeps the app token private", async () => {
+test("namespace-shared redeploy attaches the app token for the billing reverse-check", async () => {
   const headers = captureAppTokenHeaders();
   await redeployDeploymentTask({
     appToken: "app-token",
     kubeconfig: "encoded-kubeconfig",
     namespace: "shared",
     predecessorSourceKind: "template",
+    predecessorTaskId: "task-1",
+  });
+  assert.deepEqual(headers, ["app-token"]);
+});
+
+test("an unhydrated app token sends no redeploy header", async () => {
+  const headers = captureAppTokenHeaders();
+  await redeployDeploymentTask({
+    appToken: "",
+    kubeconfig: "encoded-kubeconfig",
+    namespace: "shared",
+    predecessorSourceKind: "docker",
     predecessorTaskId: "task-1",
   });
   assert.deepEqual(headers, [null]);
