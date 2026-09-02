@@ -45,14 +45,14 @@ verified-actor authorization path every Brain write already uses.
 The cancel request goes to account-service first. Only after it succeeds
 does the client submit the survey; a survey write failure is logged
 server-side and never surfaced, so the user is never told a cancellation
-failed because a questionnaire did. The reverse order is rejected: a row
+failed because a survey write did. The reverse order is rejected: a row
 recorded before a cancel that then fails would be a phantom cancellation in
 the data.
 
 ## Considered Options
 
 - Extend account-service's cancel operation with reason fields: rejected
-  for now. It couples a UI questionnaire to the platform's billing API,
+  for now. It couples a UI survey to the platform's billing API,
   needs a cross-team change to ship a survey, and would still leave the
   free text in a service whose job is money. Nothing prevents forwarding
   the keys later if the platform wants them.

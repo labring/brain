@@ -505,7 +505,6 @@ test("pay transitions move the scenario cookie", async () => {
     ["payment-due-deletion", "created", "active"],
     ["payment-due-final", "created", "active"],
     ["active", "canceled", "cancelling"],
-    ["pending-upgrade", "canceled", "cancelling"],
     ["cancelling", "resumed", "active"],
     ["active-balance", "upgraded", "active"],
     ["free", "upgraded", "active"],

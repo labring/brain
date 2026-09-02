@@ -916,8 +916,6 @@ const PAY_TRANSITIONS: Record<
     active: "cancelling",
     "active-balance": "cancelling",
     "mixed-workspaces": "cancelling",
-    // The queued upgrade is dropped with the subscription it was for.
-    "pending-upgrade": "cancelling",
   },
   // DELETED means subscribable-again PAYG (AIM-252), so `created` succeeds
   // from `deleted` exactly as it does from the PAYG scenarios. The debt

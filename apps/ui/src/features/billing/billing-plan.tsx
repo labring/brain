@@ -482,18 +482,22 @@ export function BillingPlan({
           workspace: current.workspace,
         });
       if (operator === "canceled") {
-        // The funnel event carries reason keys, never the free text.
-        await trackBrainGtmEventAfterSuccess(lifecycleRequest, {
-          event: "subscription_cancel",
-          has_feedback: survey.feedback.trim() !== "",
-          plan_name: current.planName,
-          reasons: survey.reasons,
-        });
-      } else {
-        await lifecycleRequest();
-      }
-      await refreshSnapshot();
-      if (operator === "canceled") {
+        // The confirmed cancel and the refreshed snapshot come first; only
+        // then does the funnel event fire, so it never counts a cancel the
+        // Plan view failed to settle. It carries reason keys, never the
+        // free text.
+        await trackBrainGtmEventAfterSuccess(
+          async () => {
+            await lifecycleRequest();
+            await refreshSnapshot();
+          },
+          {
+            event: "subscription_cancel",
+            has_feedback: survey.feedback !== "",
+            plan_name: current.planName,
+            reasons: survey.reasons,
+          }
+        );
         // Both side effects follow the confirmed cancel and never block or
         // alter the UI: the receipt's observation point for cancellations
         // (catalog B5) and the survey row (ADR-0072). A rejected survey
@@ -520,6 +524,8 @@ export function BillingPlan({
           workspace: current.workspace,
         }).catch(() => undefined);
       } else {
+        await lifecycleRequest();
+        await refreshSnapshot();
         // The cancel path confirms inside its own dialog instead of a toast.
         toast.success("Subscription resumed.");
       }

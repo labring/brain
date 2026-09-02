@@ -1205,6 +1205,20 @@ test("Keep Plan and dismissal send nothing, report kept, and reset the survey", 
       assert.equal(rendered?.queryByRole("dialog"), null);
       assert.deepEqual(flow.requests, []);
       assert.equal(dataLayer.length, 2, "Escape is a keep too");
+
+      await openCancelSurvey(act, rendered);
+      const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+      assert.ok(overlay, "the survey is modal");
+      await act(() => {
+        fireEvent.pointerDown(overlay);
+        fireEvent.mouseDown(overlay);
+        fireEvent.pointerUp(overlay);
+        fireEvent.mouseUp(overlay);
+        fireEvent.click(overlay);
+      });
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      assert.deepEqual(flow.requests, []);
+      assert.equal(dataLayer.length, 3, "the overlay is a keep too");
     } finally {
       await restore();
     }

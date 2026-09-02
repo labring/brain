@@ -146,6 +146,14 @@ test("text of exactly the maximum length is accepted after trimming", async () =
   assert.equal(rows[0]?.feedback.length, 500);
 });
 
+test("a response for another workspace than the verified one is refused", async () => {
+  const response = await handler()(
+    surveyRequest({ ...VALID_BODY, workspace: "workspace-b" })
+  );
+  assert.equal(response.status, 403);
+  assert.equal((await db.select().from(cancellationSurveyResponses)).length, 0);
+});
+
 test("authorization failure fails closed and writes nothing", async () => {
   const response = await handler(REJECTED_ACTOR)(surveyRequest(VALID_BODY));
   assert.equal(response.status, 401);

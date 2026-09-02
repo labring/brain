@@ -6,7 +6,7 @@ import {
 
 import type { CancellationSurveyAnswers } from "./reasons";
 
-export const CANCELLATION_SURVEY_API_PATH =
+const CANCELLATION_SURVEY_API_PATH =
   "/api/billing/subscription/cancellation-survey";
 
 /**

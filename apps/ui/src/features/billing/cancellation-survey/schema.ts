@@ -42,6 +42,3 @@ export const cancellationSurveyResponses = ns.table(
       .notNull(),
   }
 );
-
-export type CancellationSurveyResponseRow =
-  typeof cancellationSurveyResponses.$inferSelect;

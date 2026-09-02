@@ -43,7 +43,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0069 — Separate platform AI credentials and hand off exhausted Free Chat Turns](0069-separate-platform-ai-credentials-and-hand-off-free-chat.md) *(revises ADR-0065 and extends ADR-0068; exhaustion consequence revised by ADR-0073)*
 - [0070 — Soften the Deploy Billing Wall into the Deploy Billing Notice](0070-soften-the-deploy-billing-wall-into-the-deploy-billing-notice.md) *(revises ADR-0068's pre-deploy seam)*
 - [0071 — Unify notification CTA styling into the CTA Chip](0071-unify-notification-cta-styling-into-the-cta-chip.md)
-- [0072 — Store Cancellation Survey Responses in Brain Postgres as Feedback, Not Billing State](0072-store-cancellation-survey-responses-in-brain-postgres-as-feedback.md)
+- [0072 — Store Cancellation Survey Responses in Brain Postgres as Feedback, Not Billing State](0072-store-cancellation-survey-responses-in-brain-postgres-as-feedback.md) *(supplements ADR-0067)*
 - [0073 — Wall zero-allowance plans with a truthful cause](0073-wall-zero-allowance-plans-with-a-truthful-cause.md) *(revises ADR-0069's exhaustion consequence; extends ADR-0068's Paid Chat Wall)*
 
 ## Conventions
