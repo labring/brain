@@ -528,13 +528,13 @@ _Avoid_: wallet, credits (for a PAYG workspace), balance (for a subscribed works
 
 ### Paid Chat Wall
 
-The pre-send refusal of a `user` turn whose Paid Source is exhausted: a billing callout in the card slot naming the fix, and a locked composer stating why. The only Chat Billing state that locks the composer — a Billing Interruption behind an error card locks nothing, because the next send re-gates.
+The pre-send refusal of a `user` turn that has nothing to spend: a billing callout in the card slot naming the fix, and a locked composer stating why. Its cause is an exhausted Paid Source (AI Credits, or the Account Balance in Account Debt) or a plan that grants no AI allowance at all — the platform Free plan carries none, so an Active Free Trial that spends its last Free Chat Turn meets the allowance cause, not a spendable source. Paid Source causes lock at once; an allowance cause stages — an advisory notice with an open composer until a send is actually refused, the locked wall from then on. Still the only Chat Billing state that locks the composer — a Billing Interruption behind an error card locks nothing, because the next send re-gates.
 
 _Avoid_: paywall, quota exceeded (for chat), chat disabled.
 
 ### Free Chat Turns
 
-A platform-funded allowance of Chat Agent turns per namespace (user-visible label: Free trial messages), spendable only during the workspace's Active Free Trial through `SYSTEM_OPENAI_API_KEY` and `SYSTEM_OPENAI_API_BASE_URL`; a turn is reserved when it starts and returned if it fails, so only successfully completed turns stay spent. A lifetime entitlement counter — namespace-shared, never per-user, never reset — not a rate limit; exhausting it hands subsequent turns to `user` billing through the caller's AI Proxy.
+A platform-funded allowance of Chat Agent turns per namespace (user-visible label: Free trial messages), spendable only during the workspace's Active Free Trial through `SYSTEM_OPENAI_API_KEY` and `SYSTEM_OPENAI_API_BASE_URL`; a turn is reserved when it starts and returned if it fails, so only successfully completed turns stay spent. A lifetime entitlement counter — namespace-shared, never per-user, never reset — not a rate limit; exhausting it hands subsequent turns to `user` billing through the caller's AI Proxy, where a plan without an AI allowance is refused by the Paid Chat Wall's allowance cause (ADR-0073).
 
 _Avoid_: free tier, trial credits, free assistant messages, free messages.
 

@@ -106,6 +106,25 @@ function aiCreditsUsed(
   return scenario === "ai-credits-exhausted" ? 3_000_000 : 1_200_000;
 }
 
+/**
+ * The `/api/chat/free-turns` fixture (Brain's own route, not an upstream
+ * proxy): what the sidebar's AI-usage row and the Plan view's allowance
+ * card read. The Plan view only shows the card during an Active Free
+ * Trial, so the two trial scenarios stage its two looks — `free`
+ * mid-spend, `free-expiring` fully spent ("All 5 used") — and every other
+ * scenario reads as a trial long since used up, because the lifetime
+ * counter never resets (CONTEXT.md, Free Chat Turns).
+ */
+export function freeChatTurnsFixture(scenario: BillingDevScenario): {
+  limit: number;
+  remaining: number;
+  used: number;
+} {
+  const limit = 5;
+  const remaining = scenario === "free" ? 3 : 0;
+  return { limit, remaining, used: limit - remaining };
+}
+
 function daysFromNow(days: number): string {
   return new Date(Date.now() + days * DAY_IN_MILLISECONDS).toISOString();
 }

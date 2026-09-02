@@ -51,9 +51,10 @@ import {
   type ChatBillingDestination,
 } from "@/features/chat/chat-billing-cards";
 import {
-  CHAT_WALL_PLACEHOLDER,
   type ChatBillingInterruption,
   chatBillingInterruptionFromError,
+  chatMessagingLocked,
+  chatWallPlaceholder,
 } from "@/features/chat/chat-billing-interruption";
 import {
   fetchAssistantSession,
@@ -64,6 +65,7 @@ import {
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   type ChatPaidSource,
+  type ChatWallCause,
   type FreeTierState,
   SELECTED_RESOURCE_CONTEXT_PART_TYPE,
   type SelectedResourceContext,
@@ -415,6 +417,7 @@ const ProjectAssistantComposerMemo = memo(ProjectAssistantComposer);
 function ProjectAssistantChatSession({
   bootstrap,
   freeTier,
+  interruptionOverride = null,
   threads,
   assistantNamespaceRaw,
   onAssistantStreamFinished,
@@ -428,6 +431,8 @@ function ProjectAssistantChatSession({
 }: {
   bootstrap: Pick<AssistantSessionPayload, "chatId" | "messages">;
   freeTier: FreeTierState | null;
+  /** Dev-tweak staging of a refused allowance send (ADR-0073); null in prod. */
+  interruptionOverride?: ChatBillingInterruption | null;
   threads: AssistantThreadDTO[];
   assistantNamespaceRaw: string;
   onAssistantStreamFinished?: () => Promise<void>;
@@ -473,6 +478,7 @@ function ProjectAssistantChatSession({
   // nothing, the pre-send gate owns the lock.
   const [billingInterruption, setBillingInterruption] =
     useState<ChatBillingInterruption | null>(null);
+  const shownInterruption = interruptionOverride ?? billingInterruption;
   const paidSourceRef = useRef<ChatPaidSource | null>(null);
   const knownPaidSource = freeTier?.paidSource ?? null;
   useEffect(() => {
@@ -801,13 +807,16 @@ function ProjectAssistantChatSession({
         <ChatBillingCardSlot
           errored={status === "error"}
           freeTier={freeTier}
-          interruption={billingInterruption}
+          interruption={shownInterruption}
           onNavigateToBilling={navigateToBilling}
         />
         <ProjectAssistantComposerMemo
           busy={busy}
-          lockedPlaceholder={CHAT_WALL_PLACEHOLDER}
-          messagingLocked={freeTier?.wall != null}
+          lockedPlaceholder={chatWallPlaceholder(freeTier?.wall)}
+          messagingLocked={chatMessagingLocked(
+            freeTier?.wall,
+            shownInterruption
+          )}
           onDatabaseIntent={onDatabaseIntent}
           onDockerIntent={onDockerIntent}
           onGithubIntent={onGithubIntent}
@@ -823,6 +832,12 @@ function ProjectAssistantChatSession({
 
 function chatPaidSourceHeader(value: string | null): ChatPaidSource | null {
   return value === "ai-credits" || value === "balance" ? value : null;
+}
+
+function chatWallCauseHeader(value: string | null): ChatWallCause | null {
+  return value === "allowance-plan" || value === "allowance-trial"
+    ? value
+    : chatPaidSourceHeader(value);
 }
 
 function ProjectAssistantChatPane() {
@@ -894,7 +909,7 @@ function ProjectAssistantChatPane() {
     // The paid wall rides the same header set (row E3): a 402 that slipped
     // past the panel's pre-check locks the composer here.
     const paidSource = chatPaidSourceHeader(headers.get("X-Chat-Paid-Source"));
-    const wall = chatPaidSourceHeader(headers.get("X-Chat-Wall"));
+    const wall = chatWallCauseHeader(headers.get("X-Chat-Wall"));
     setFreeTier((prev) => {
       if (Number.isFinite(remaining) && Number.isFinite(limit)) {
         return { billing: billingHeader, limit, paidSource, remaining, wall };
@@ -1011,7 +1026,8 @@ function ProjectAssistantChatPane() {
     <ProjectAssistantChatSession
       assistantNamespaceRaw={namespaceRaw}
       bootstrap={session}
-      freeTier={freeTierOverride ?? freeTier}
+      freeTier={freeTierOverride?.freeTier ?? freeTier}
+      interruptionOverride={freeTierOverride?.interruption ?? null}
       key={session.chatId}
       onAssistantStreamFinished={refreshAssistantState}
       onBillingHeaders={handleBillingHeaders}

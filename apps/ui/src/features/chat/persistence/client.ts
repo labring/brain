@@ -18,12 +18,15 @@ const uiMessageSchema = z
   .passthrough() as unknown as z.ZodType<UIMessage>;
 
 const paidSourceSchema = z.enum(["ai-credits", "balance"]).nullable();
+const wallCauseSchema = z
+  .enum(["ai-credits", "balance", "allowance-trial", "allowance-plan"])
+  .nullable();
 const freeTierSchema = z.object({
   billing: z.enum(["free", "user"]),
   remaining: z.number(),
   limit: z.number(),
   paidSource: paidSourceSchema.optional(),
-  wall: paidSourceSchema.optional(),
+  wall: wallCauseSchema.optional(),
 });
 
 const sessionResponseSchema = z.object({

@@ -1635,6 +1635,32 @@ test.each([
   expect(reserveCalls).toBe(0);
 });
 
+test("walls an exhausted trial on a zero-allowance plan with the trial voice (ADR-0073)", async () => {
+  freeTierSnapshot = { limit: 5, remaining: 0, used: 5 };
+  trialJudgment = "trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
+    paidSource: "ai-credits",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-no-allowance", "one more message"))
+  );
+
+  expect(response.status).toBe(402);
+  const body = (await response.json()) as {
+    code: string;
+    detail?: { allowance?: string };
+  };
+  expect(body.code).toBe("ai_allowance_missing");
+  expect(body.detail?.allowance).toBe("trial");
+  expect(response.headers.get("X-Chat-Wall")).toBe("allowance-trial");
+  expect(modelCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
+});
+
 test("judges the trial per turn with the verified workspace identity", async () => {
   const response = await POST(
     chatRequest(userMessage("user-judged", "inspect the cluster"))

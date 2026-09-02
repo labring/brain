@@ -1,5 +1,12 @@
 # Separate platform AI credentials and hand off exhausted Free Chat Turns
 
+## Status
+
+Exhaustion consequence revised by ADR-0073: the handoff stands, but a plan
+that grants no AI allowance (the production Free plan's `ai_quota` is 0)
+meets the Paid Chat Wall's allowance cause instead of a spendable Paid
+Source, staged as an advisory notice before the locked wall.
+
 Chat Agent and GitHub Deployment Tasks are different workloads with different
 platform funding. Their environment variables must select only their own
 platform connection, then fall back directly to the caller's AI Proxy. This
@@ -59,10 +66,10 @@ variable and is not a Brain configuration input.
 
 ## Consequences
 
-- The sixth successful Chat Agent turn in an eligible Active Free Trial
-  workspace can consume the caller's AI Credits or Account Balance. The Paid
-  Chat Wall remains the server-authoritative refusal when that source is
-  exhausted.
+- The sixth Chat Agent turn in an eligible Active Free Trial workspace spends
+  the caller's AI Credits where the plan grants any (a subscribed workspace
+  never spends the Account Balance on AI — ADR-0073). The Paid Chat Wall
+  remains the server-authoritative refusal when nothing is spendable.
 - Operators can disable platform-funded GitHub Deployment Tasks by leaving the
   dedicated pair blank without affecting platform-funded Chat turns.
 - No database migration is required. Existing Deploy Devboxes retain the

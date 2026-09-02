@@ -9,12 +9,19 @@ import { BillingCalloutCard } from "@/features/billing/billing-callout-card";
 import {
   type ChatBillingCopy,
   type ChatBillingInterruption,
+  chatAllowanceWall,
   chatBillingInterruptionCopy,
+  chatBillingNoticeCopy,
   chatBillingWallCopy,
 } from "./chat-billing-interruption";
-import type { ChatPaidSource, FreeTierState } from "./persistence/types";
+import type { ChatWallCause, FreeTierState } from "./persistence/types";
 
-export type ChatBillingCard = "billing-error" | "counter" | "error" | "wall";
+export type ChatBillingCard =
+  | "billing-error"
+  | "counter"
+  | "error"
+  | "notice"
+  | "wall";
 
 /**
  * Where a chat billing CTA lands: `upgrade` deep-links the Plan Picker open
@@ -31,14 +38,19 @@ export type ChatBillingDestination = "plans" | "top-up" | "upgrade";
  * error > counter. The paid wall outranks every error card because "try
  * again" is a lie once the server refuses chat; a billing interruption
  * outranks the generic error because it knows why. On open `user` billing
- * only an error card can ever show.
+ * only an error card can ever show. An `allowance-*` wall stages
+ * (ADR-0073): the advisory notice until a send was actually refused, the
+ * locked wall from then on.
  */
 export function resolveChatBillingCard(input: {
   billing: FreeTierState["billing"] | null;
   errored: boolean;
   interruption?: ChatBillingInterruption | null;
-  wall?: ChatPaidSource | null;
+  wall?: ChatWallCause | null;
 }): ChatBillingCard | null {
+  if (chatAllowanceWall(input.wall) != null) {
+    return input.interruption?.allowance == null ? "notice" : "wall";
+  }
   if (input.wall != null) {
     return "wall";
   }
@@ -156,6 +168,40 @@ function PaidWallCard({
 }
 
 /**
+ * The advisory sibling of the wall (ADR-0073): the same allowance cause in
+ * the warning voice, shown while the composer is still open — the user
+ * learns what the next send runs into before the pre-send gate refuses it.
+ */
+function AllowanceNoticeCard({
+  copy,
+  onNavigateToBilling,
+}: {
+  copy: ChatBillingCopy;
+  onNavigateToBilling: (destination: ChatBillingDestination) => void;
+}) {
+  return (
+    <BillingCalloutCard
+      action={
+        <AppButton
+          onClick={() => onNavigateToBilling(copy.cta.destination)}
+          size="sm"
+          variant="chip"
+        >
+          {copy.cta.label}
+        </AppButton>
+      }
+      body={copy.body}
+      className="rounded-xl p-3"
+      data-slot="chat-allowance-notice-card"
+      icon={TriangleAlert}
+      layout="inline"
+      title={copy.title}
+      tone="warning"
+    />
+  );
+}
+
+/**
  * The error card once the failed turn is known to be a billing refusal: the
  * error frame stays, the copy tells the truth and offers the fix. It locks
  * nothing — the next send re-gates, and the lock lives in exactly one place.
@@ -241,6 +287,7 @@ export function ChatBillingCardSlot({
   if (card == null) {
     return null;
   }
+  const allowance = chatAllowanceWall(wall);
   return (
     <div className="shrink-0 px-2.5 pt-1">
       {card === "wall" && wall != null ? (
@@ -249,9 +296,15 @@ export function ChatBillingCardSlot({
           onNavigateToBilling={onNavigateToBilling}
         />
       ) : null}
+      {card === "notice" && allowance != null ? (
+        <AllowanceNoticeCard
+          copy={chatBillingNoticeCopy(allowance, freeTier?.limit ?? 0)}
+          onNavigateToBilling={onNavigateToBilling}
+        />
+      ) : null}
       {card === "billing-error" ? (
         <BillingErrorCard
-          copy={chatBillingInterruptionCopy(interruption?.paidSource ?? null)}
+          copy={chatBillingInterruptionCopy(interruption)}
           onNavigateToBilling={onNavigateToBilling}
         />
       ) : null}

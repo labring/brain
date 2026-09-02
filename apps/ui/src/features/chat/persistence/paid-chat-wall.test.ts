@@ -23,7 +23,7 @@ function standing(
 
 describe("paidChatWall", () => {
   it("walls a PAYG workspace in Account Debt on its balance", () => {
-    expect(paidChatWall(standing({ accountDebt: true }))).toEqual({
+    expect(paidChatWall(standing({ accountDebt: true }), "not-trial")).toEqual({
       paidSource: "balance",
       wall: "balance",
     });
@@ -32,7 +32,8 @@ describe("paidChatWall", () => {
   it("leaves a low-but-positive PAYG balance open — the $5 tier belongs to notifications", () => {
     expect(
       paidChatWall(
-        standing({ accountDebt: false, availableBalanceMicroUnits: 400_000 })
+        standing({ accountDebt: false, availableBalanceMicroUnits: 400_000 }),
+        "not-trial"
       )
     ).toEqual({ paidSource: "balance", wall: null });
   });
@@ -43,7 +44,22 @@ describe("paidChatWall", () => {
         standing({
           aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 3_000_000 },
           paidSource: "ai-credits",
-        })
+        }),
+        "not-trial"
+      )
+    ).toEqual({ paidSource: "ai-credits", wall: "ai-credits" });
+  });
+
+  it("walls below aiproxy's minimum-balance floor, not only at zero (ADR-0073)", () => {
+    // aiproxy refuses at remain < 0.3 (GroupMinimumBalance); a remainder
+    // inside that dead zone would be refused upstream on every turn.
+    expect(
+      paidChatWall(
+        standing({
+          aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 2_800_000 },
+          paidSource: "ai-credits",
+        }),
+        "not-trial"
       )
     ).toEqual({ paidSource: "ai-credits", wall: "ai-credits" });
   });
@@ -57,18 +73,55 @@ describe("paidChatWall", () => {
           accountDebt: true,
           aiCredits: { totalMicroUnits: 3_000_000, usedMicroUnits: 1_200_000 },
           paidSource: "ai-credits",
-        })
+        }),
+        "not-trial"
       )
     ).toEqual({ paidSource: "ai-credits", wall: null });
   });
 
-  it("never walls on a plan with no AI Credits allowance at all", () => {
+  it("walls a zero-allowance plan with the trial voice on an Active Free Trial (ADR-0073)", () => {
+    // The production Free plan grants no AI Credits at all; upstream refuses
+    // every user-billed turn regardless of the account balance.
     expect(
       paidChatWall(
         standing({
           aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
           paidSource: "ai-credits",
-        })
+        }),
+        "trial"
+      )
+    ).toEqual({ paidSource: "ai-credits", wall: "allowance-trial" });
+  });
+
+  it("walls a zero-allowance plan with the plan voice off-trial (ADR-0073)", () => {
+    expect(
+      paidChatWall(
+        standing({
+          aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
+          paidSource: "ai-credits",
+        }),
+        "not-trial"
+      )
+    ).toEqual({ paidSource: "ai-credits", wall: "allowance-plan" });
+  });
+
+  it("speaks the plan voice when the trial judgment is unknown", () => {
+    expect(
+      paidChatWall(
+        standing({
+          aiCredits: { totalMicroUnits: 0, usedMicroUnits: 0 },
+          paidSource: "ai-credits",
+        }),
+        "unknown"
+      )
+    ).toEqual({ paidSource: "ai-credits", wall: "allowance-plan" });
+  });
+
+  it("fails open when the credits read is unknown", () => {
+    expect(
+      paidChatWall(
+        standing({ aiCredits: null, paidSource: "ai-credits" }),
+        "not-trial"
       )
     ).toEqual({ paidSource: "ai-credits", wall: null });
   });
@@ -76,7 +129,8 @@ describe("paidChatWall", () => {
   it("fails open when the standing is unknown", () => {
     expect(
       paidChatWall(
-        standing({ accountDebt: null, aiCredits: null, paidSource: null })
+        standing({ accountDebt: null, aiCredits: null, paidSource: null }),
+        "not-trial"
       )
     ).toEqual({ paidSource: null, wall: null });
   });

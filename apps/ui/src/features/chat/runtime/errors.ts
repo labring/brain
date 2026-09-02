@@ -10,6 +10,7 @@ import type { WorkspaceActorAuthFailureCode } from "@/lib/request-kubeconfig-aut
 export type ChatApiErrorCode =
   | WorkspaceActorAuthFailureCode
   | "account_balance_exhausted"
+  | "ai_allowance_missing"
   | "ai_connection_unavailable"
   | "ai_credits_exhausted"
   | "ai_proxy_billing_refused"
