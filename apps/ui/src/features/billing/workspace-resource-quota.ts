@@ -9,6 +9,14 @@ const WORKSPACE_QUOTA_TYPES = [
   "nodeport",
 ] as const;
 
+const quantityValueSchema = z.union([z.string(), z.number()]);
+const accountServiceQuotaResponseSchema = z.object({
+  quota: z.object({
+    hard: z.record(z.string(), quantityValueSchema).optional().default({}),
+    used: z.record(z.string(), quantityValueSchema).optional().default({}),
+  }),
+});
+
 export const workspaceQuotaItemSchema = z
   .object({
     limit: z.number().finite().nonnegative(),
@@ -106,6 +114,77 @@ export function parseWorkspaceQuotaItems(value: unknown): WorkspaceQuotaItem[] {
     const parsed = workspaceQuotaItemSchema.safeParse(item);
     return parsed.success ? [parsed.data] : [];
   });
+}
+
+const ACCOUNT_SERVICE_QUOTA_DEFINITIONS = [
+  { keys: ["limits.cpu"], scale: "milli", type: "cpu" },
+  { keys: ["limits.memory"], scale: "mebi", type: "memory" },
+  { keys: ["requests.storage"], scale: "mebi", type: "storage" },
+  { keys: ["pods", "count/pods"], scale: "unit", type: "pod" },
+  { keys: ["services.nodeports"], scale: "unit", type: "nodeport" },
+] as const;
+
+function firstQuantityValue(
+  values: Record<string, string | number>,
+  keys: readonly string[]
+): string | number | undefined {
+  for (const key of keys) {
+    if (values[key] !== undefined) {
+      return values[key];
+    }
+  }
+  return undefined;
+}
+
+function normalizedQuotaNumber(
+  value: string | number,
+  scale: "mebi" | "milli" | "unit"
+): number | null {
+  try {
+    const quantity = Quantity.fromJSON(value);
+    let normalized: bigint;
+    if (scale === "milli") {
+      normalized = quantity.milliValue();
+    } else if (scale === "mebi") {
+      normalized = quantity.scaledBinaryValue(BinaryScale.Mebi);
+    } else {
+      normalized = quantity.value();
+    }
+    const number = Number(normalized);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Converts account-service's Kubernetes quantity payload into the compact
+ * snapshot shared by the sidebar, notifications, and assistant context.
+ */
+export function workspaceQuotaSnapshotFromPayload(
+  payload: unknown
+): WorkspaceResourceQuotaSnapshot | undefined {
+  const parsed = accountServiceQuotaResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    return undefined;
+  }
+  const { hard, used } = parsed.data.quota;
+  const items = ACCOUNT_SERVICE_QUOTA_DEFINITIONS.flatMap(
+    ({ keys, scale, type }) => {
+      const limitValue = firstQuantityValue(hard, keys);
+      if (limitValue === undefined) {
+        return [];
+      }
+      const limit = normalizedQuotaNumber(limitValue, scale);
+      const usedValue = firstQuantityValue(used, keys);
+      const consumed =
+        usedValue === undefined ? 0 : normalizedQuotaNumber(usedValue, scale);
+      return limit == null || consumed == null
+        ? []
+        : [{ limit, type, used: consumed }];
+    }
+  );
+  return items.length === 0 ? undefined : { items };
 }
 
 export function formatWorkspaceQuotaRows(

@@ -13,7 +13,7 @@ const NOTIFICATION_FEED_KEY_PREFIX = "notifications-feed";
 
 export interface WorkspaceQuotaObservationDependencies {
   loadSnapshot: (
-    namespace: string
+    credentials: NotificationClientCredentials
   ) => Promise<WorkspaceResourceQuotaSnapshot | undefined>;
   refreshFeed: () => Promise<unknown>;
   report: (
@@ -59,7 +59,10 @@ export async function observeWorkspaceQuotaForInbox(
     return false;
   }
   try {
-    const snapshot = await dependencies.loadSnapshot(namespace);
+    const snapshot = await dependencies.loadSnapshot({
+      ...credentials,
+      namespace,
+    });
     if (snapshot == null) {
       return false;
     }

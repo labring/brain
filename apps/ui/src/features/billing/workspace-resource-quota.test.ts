@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   formatWorkspaceQuotaRows,
   parseWorkspaceQuotaItems,
+  workspaceQuotaSnapshotFromPayload,
 } from "./workspace-resource-quota";
 
 describe("workspace resource quota", () => {
@@ -52,5 +53,70 @@ describe("workspace resource quota", () => {
     expect(formatWorkspaceQuotaRows(items, { includeMissing: false })).toEqual([
       ["CPU", "1C/2C"],
     ]);
+  });
+
+  test("normalizes account-service quantities into snapshot units", () => {
+    expect(
+      workspaceQuotaSnapshotFromPayload({
+        quota: {
+          hard: {
+            "limits.cpu": "36",
+            "limits.memory": "164Gi",
+            pods: "20",
+            "requests.storage": "200Gi",
+            "services.nodeports": 10,
+          },
+          used: {
+            "limits.cpu": "19200m",
+            "limits.memory": "26880Mi",
+            pods: 3,
+            "requests.storage": "12Gi",
+            "services.nodeports": "0",
+          },
+        },
+      })
+    ).toEqual({
+      items: [
+        { limit: 36_000, type: "cpu", used: 19_200 },
+        { limit: 167_936, type: "memory", used: 26_880 },
+        { limit: 204_800, type: "storage", used: 12_288 },
+        { limit: 20, type: "pod", used: 3 },
+        { limit: 10, type: "nodeport", used: 0 },
+      ],
+    });
+  });
+
+  test("ignores GPU and traffic fields from the account-service payload", () => {
+    expect(
+      workspaceQuotaSnapshotFromPayload({
+        quota: {
+          hard: {
+            "limits.nvidia.com/gpu": "1",
+            pods: "10",
+            traffic: "100Gi",
+          },
+          used: {
+            "limits.nvidia.com/gpu": "1",
+            pods: "3",
+            traffic: "2Gi",
+          },
+        },
+      })
+    ).toEqual({ items: [{ limit: 10, type: "pod", used: 3 }] });
+  });
+
+  test("fails open for malformed account-service payloads and quantities", () => {
+    expect(workspaceQuotaSnapshotFromPayload(null)).toBeUndefined();
+    expect(
+      workspaceQuotaSnapshotFromPayload({ quota: { hard: [], used: {} } })
+    ).toBeUndefined();
+    expect(
+      workspaceQuotaSnapshotFromPayload({
+        quota: {
+          hard: { "limits.cpu": "not-a-quantity" },
+          used: { "limits.cpu": "1" },
+        },
+      })
+    ).toBeUndefined();
   });
 });

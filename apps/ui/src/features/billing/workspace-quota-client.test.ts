@@ -1,147 +1,221 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
-let getWorkspaceQuota: () => Promise<unknown>;
-let sdkCalls = 0;
+import type { BillingFetch } from "./billing-data-client";
+import {
+  loadWorkspaceQuotaSnapshot,
+  readCachedWorkspaceQuotaSnapshot,
+  type WorkspaceQuotaLoadInput,
+} from "./workspace-quota-client";
+import type { WorkspaceResourceQuotaSnapshot } from "./workspace-resource-quota";
 
-mock.module("@labring/sealos-desktop-sdk/app", () => ({
-  sealosApp: {
-    getWorkspaceQuota: () => {
-      sdkCalls += 1;
-      return getWorkspaceQuota();
+const QUOTA_PAYLOAD = {
+  quota: {
+    hard: {
+      "limits.cpu": "36",
+      "limits.memory": "164Gi",
+      pods: "20",
+      "requests.storage": "200Gi",
+      "services.nodeports": "10",
+    },
+    used: {
+      "limits.cpu": "19200m",
+      "limits.memory": "26880Mi",
+      pods: "3",
+      "requests.storage": "12Gi",
+      "services.nodeports": "0",
     },
   },
-}));
+};
 
-const { loadWorkspaceQuotaSnapshot, readCachedWorkspaceQuotaSnapshot } =
-  await import("./workspace-quota-client");
+const EXPECTED_SNAPSHOT: WorkspaceResourceQuotaSnapshot = {
+  items: [
+    { limit: 36_000, type: "cpu", used: 19_200 },
+    { limit: 167_936, type: "memory", used: 26_880 },
+    { limit: 204_800, type: "storage", used: 12_288 },
+    { limit: 20, type: "pod", used: 3 },
+    { limit: 10, type: "nodeport", used: 0 },
+  ],
+};
+
+function input(namespace: string): WorkspaceQuotaLoadInput {
+  return {
+    appToken: "desktop-app-token",
+    kubeconfig: "apiVersion: v1",
+    namespace,
+  };
+}
+
+function jsonFetch(
+  payload: unknown,
+  requests: Array<{ init?: RequestInit; url: string }> = []
+): BillingFetch {
+  return (request, init) => {
+    requests.push({ init, url: request.toString() });
+    return Promise.resolve(Response.json(payload));
+  };
+}
 
 describe("loadWorkspaceQuotaSnapshot", () => {
-  beforeEach(() => {
-    sdkCalls = 0;
-    getWorkspaceQuota = () =>
-      Promise.resolve({
-        quota: [
-          { limit: 36_000, type: "cpu", used: 19_200 },
-          { limit: 167_936, type: "memory", used: 26_880 },
-          { limit: 204_800, type: "storage", used: 12_288 },
-          { limit: 20, type: "pod", used: 3 },
-          { limit: 10, type: "nodeport", used: 0 },
-        ],
-      });
-  });
+  test("loads normalized quota through the Brain API", async () => {
+    const requests: Array<{ init?: RequestInit; url: string }> = [];
 
-  test("loads the supported resource quota items", async () => {
-    expect(await loadWorkspaceQuotaSnapshot("workspace-loaded")).toEqual({
-      items: [
-        { limit: 36_000, type: "cpu", used: 19_200 },
-        { limit: 167_936, type: "memory", used: 26_880 },
-        { limit: 204_800, type: "storage", used: 12_288 },
-        { limit: 20, type: "pod", used: 3 },
-        { limit: 10, type: "nodeport", used: 0 },
-      ],
-    });
-  });
-
-  test("filters GPU and traffic quota entries", async () => {
-    getWorkspaceQuota = () =>
-      Promise.resolve({
-        quota: [
-          { limit: 1, type: "gpu", used: 1 },
-          { limit: 100, type: "traffic", used: 2 },
-          { limit: 10, type: "pod", used: 3 },
-        ],
-      });
-
-    expect(await loadWorkspaceQuotaSnapshot("workspace-filtered")).toEqual({
-      items: [{ limit: 10, type: "pod", used: 3 }],
-    });
-  });
-
-  test("fails open when the Desktop SDK is unavailable", async () => {
-    getWorkspaceQuota = () => Promise.reject(new Error("sdk unavailable"));
     expect(
-      await loadWorkspaceQuotaSnapshot("workspace-unavailable")
+      await loadWorkspaceQuotaSnapshot(
+        input("workspace-loaded"),
+        jsonFetch(QUOTA_PAYLOAD, requests)
+      )
+    ).toEqual(EXPECTED_SNAPSHOT);
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe("/api/billing/workspace-quota");
+    expect(requests[0]?.init?.method).toBe("POST");
+    expect(requests[0]?.init?.cache).toBe("no-store");
+    expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
+      workspace: "workspace-loaded",
+    });
+    const headers = new Headers(requests[0]?.init?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer apiVersion%3A%20v1");
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("X-Sealos-App-Token")).toBe("desktop-app-token");
+  });
+
+  test("fails open when the Brain API is unavailable", async () => {
+    const fetch: BillingFetch = () => Promise.reject(new Error("api down"));
+
+    expect(
+      await loadWorkspaceQuotaSnapshot(input("workspace-unavailable"), fetch)
     ).toBeUndefined();
   });
 
   test("returns no snapshot when there are no supported items", async () => {
-    getWorkspaceQuota = () => Promise.resolve({ quota: [] });
-    expect(await loadWorkspaceQuotaSnapshot("workspace-empty")).toBeUndefined();
+    expect(
+      await loadWorkspaceQuotaSnapshot(
+        input("workspace-empty"),
+        jsonFetch({ quota: { hard: {}, used: {} } })
+      )
+    ).toBeUndefined();
+  });
+
+  test("does not request quota without complete credentials", async () => {
+    let calls = 0;
+    const fetch: BillingFetch = () => {
+      calls += 1;
+      return Promise.resolve(Response.json(QUOTA_PAYLOAD));
+    };
+
+    expect(
+      await loadWorkspaceQuotaSnapshot(
+        { ...input("workspace-no-token"), appToken: "" },
+        fetch
+      )
+    ).toBeUndefined();
+    expect(
+      await loadWorkspaceQuotaSnapshot(
+        { ...input("workspace-no-kubeconfig"), kubeconfig: "" },
+        fetch
+      )
+    ).toBeUndefined();
+    expect(calls).toBe(0);
   });
 
   test("reuses a cached snapshot for the same namespace", async () => {
-    const namespace = "workspace-cache";
+    const credentials = input("workspace-cache");
+    let calls = 0;
+    const fetch: BillingFetch = () => {
+      calls += 1;
+      return Promise.resolve(Response.json(QUOTA_PAYLOAD));
+    };
 
-    await loadWorkspaceQuotaSnapshot(namespace);
-    getWorkspaceQuota = () => Promise.reject(new Error("should not reload"));
+    await loadWorkspaceQuotaSnapshot(credentials, fetch);
+    expect(await loadWorkspaceQuotaSnapshot(credentials, fetch)).toEqual(
+      EXPECTED_SNAPSHOT
+    );
+    expect(calls).toBe(1);
+  });
 
-    expect(await loadWorkspaceQuotaSnapshot(namespace)).toEqual({
-      items: [
-        { limit: 36_000, type: "cpu", used: 19_200 },
-        { limit: 167_936, type: "memory", used: 26_880 },
-        { limit: 204_800, type: "storage", used: 12_288 },
-        { limit: 20, type: "pod", used: 3 },
-        { limit: 10, type: "nodeport", used: 0 },
-      ],
-    });
+  test("returns the previous snapshot when a stale refresh fails", async () => {
+    const credentials = input("workspace-stale");
+    const originalDateNow = Date.now;
+    let now = 1000;
+    let calls = 0;
+    Date.now = () => now;
+
+    try {
+      const fetch: BillingFetch = () => {
+        calls += 1;
+        return calls === 1
+          ? Promise.resolve(Response.json(QUOTA_PAYLOAD))
+          : Promise.reject(new Error("api down"));
+      };
+
+      await loadWorkspaceQuotaSnapshot(credentials, fetch);
+      now += 30_000;
+
+      expect(await loadWorkspaceQuotaSnapshot(credentials, fetch)).toEqual(
+        EXPECTED_SNAPSHOT
+      );
+      expect(calls).toBe(2);
+    } finally {
+      Date.now = originalDateNow;
+    }
   });
 
   test("deduplicates concurrent requests per namespace", async () => {
-    const namespace = "workspace-in-flight";
-    let resolveQuota!: (value: unknown) => void;
-    getWorkspaceQuota = () =>
-      new Promise((resolve) => {
+    const credentials = input("workspace-in-flight");
+    let calls = 0;
+    let resolveQuota!: (response: Response) => void;
+    const fetch: BillingFetch = () => {
+      calls += 1;
+      return new Promise((resolve) => {
         resolveQuota = resolve;
       });
+    };
 
-    const first = loadWorkspaceQuotaSnapshot(namespace);
-    const second = loadWorkspaceQuotaSnapshot(namespace);
-    expect(sdkCalls).toBe(1);
-    resolveQuota({ quota: [{ limit: 10, type: "pod", used: 3 }] });
+    const first = loadWorkspaceQuotaSnapshot(credentials, fetch);
+    const second = loadWorkspaceQuotaSnapshot(credentials, fetch);
+    expect(calls).toBe(1);
+    resolveQuota(Response.json(QUOTA_PAYLOAD));
 
-    await expect(first).resolves.toEqual({
-      items: [{ limit: 10, type: "pod", used: 3 }],
-    });
-    await expect(second).resolves.toEqual({
-      items: [{ limit: 10, type: "pod", used: 3 }],
-    });
+    await expect(first).resolves.toEqual(EXPECTED_SNAPSHOT);
+    await expect(second).resolves.toEqual(EXPECTED_SNAPSHOT);
   });
 
   test("isolates cached snapshots by namespace", async () => {
-    await loadWorkspaceQuotaSnapshot("workspace-one");
-    getWorkspaceQuota = () =>
-      Promise.resolve({ quota: [{ limit: 8, type: "pod", used: 2 }] });
-    await loadWorkspaceQuotaSnapshot("workspace-two");
+    const firstInput = input("workspace-one");
+    const secondInput = input("workspace-two");
 
-    expect(readCachedWorkspaceQuotaSnapshot("workspace-one")).toEqual({
-      items: [
-        { limit: 36_000, type: "cpu", used: 19_200 },
-        { limit: 167_936, type: "memory", used: 26_880 },
-        { limit: 204_800, type: "storage", used: 12_288 },
-        { limit: 20, type: "pod", used: 3 },
-        { limit: 10, type: "nodeport", used: 0 },
-      ],
-    });
-    expect(readCachedWorkspaceQuotaSnapshot("workspace-two")).toEqual({
+    await loadWorkspaceQuotaSnapshot(firstInput, jsonFetch(QUOTA_PAYLOAD));
+    await loadWorkspaceQuotaSnapshot(
+      secondInput,
+      jsonFetch({
+        quota: { hard: { pods: "8" }, used: { pods: "2" } },
+      })
+    );
+
+    expect(readCachedWorkspaceQuotaSnapshot(firstInput)).toEqual(
+      EXPECTED_SNAPSHOT
+    );
+    expect(readCachedWorkspaceQuotaSnapshot(secondInput)).toEqual({
       items: [{ limit: 8, type: "pod", used: 2 }],
     });
   });
 
-  test("reads the cache synchronously without calling the SDK", async () => {
-    const namespace = "workspace-sync-read";
-    expect(readCachedWorkspaceQuotaSnapshot(namespace)).toBeUndefined();
-    await loadWorkspaceQuotaSnapshot(namespace);
-    getWorkspaceQuota = () => Promise.reject(new Error("should not load"));
+  test("reads the cache synchronously without another API request", async () => {
+    const credentials = input("workspace-sync-read");
+    let calls = 0;
+    const fetch: BillingFetch = () => {
+      calls += 1;
+      return Promise.resolve(Response.json(QUOTA_PAYLOAD));
+    };
 
-    expect(readCachedWorkspaceQuotaSnapshot(namespace)).toEqual({
-      items: [
-        { limit: 36_000, type: "cpu", used: 19_200 },
-        { limit: 167_936, type: "memory", used: 26_880 },
-        { limit: 204_800, type: "storage", used: 12_288 },
-        { limit: 20, type: "pod", used: 3 },
-        { limit: 10, type: "nodeport", used: 0 },
-      ],
-    });
-    expect(sdkCalls).toBe(1);
+    expect(
+      readCachedWorkspaceQuotaSnapshot(credentials, fetch)
+    ).toBeUndefined();
+    await loadWorkspaceQuotaSnapshot(credentials, fetch);
+
+    expect(readCachedWorkspaceQuotaSnapshot(credentials, fetch)).toEqual(
+      EXPECTED_SNAPSHOT
+    );
+    expect(calls).toBe(1);
   });
 });

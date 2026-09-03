@@ -23,7 +23,7 @@ function dependencies(
   overrides: Partial<WorkspaceQuotaObservationDependencies> = {}
 ) {
   const calls = {
-    loaded: [] as string[],
+    loaded: [] as NotificationClientCredentials[],
     refreshed: 0,
     reported: [] as {
       credentials: NotificationClientCredentials;
@@ -31,8 +31,8 @@ function dependencies(
     }[],
   };
   const deps: WorkspaceQuotaObservationDependencies = {
-    loadSnapshot: (namespace) => {
-      calls.loaded.push(namespace);
+    loadSnapshot: (credentials) => {
+      calls.loaded.push(credentials);
       return Promise.resolve(SNAPSHOT);
     },
     refreshFeed: () => {
@@ -52,7 +52,7 @@ test("a read snapshot is reported for the workspace and the inbox is refreshed",
   const { calls, deps } = dependencies();
 
   assert.equal(await observeWorkspaceQuotaForInbox(CREDENTIALS, deps), true);
-  assert.deepEqual(calls.loaded, ["ns-a"]);
+  assert.deepEqual(calls.loaded, [CREDENTIALS]);
   assert.deepEqual(calls.reported, [
     { credentials: CREDENTIALS, snapshot: SNAPSHOT },
   ]);
@@ -81,7 +81,7 @@ test("missing credentials or an empty snapshot report nothing", async () => {
 
 test("a failed read or report resolves false without throwing and never refreshes", async () => {
   const readFailed = dependencies({
-    loadSnapshot: () => Promise.reject(new Error("sdk down")),
+    loadSnapshot: () => Promise.reject(new Error("api down")),
   });
   const reportFailed = dependencies({
     report: () => Promise.reject(new Error("503")),

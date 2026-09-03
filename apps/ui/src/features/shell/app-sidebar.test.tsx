@@ -161,16 +161,18 @@ mock.module("@/features/projects/explorer/use-projects-explorer", () => ({
   }),
 }));
 
+mock.module("@/features/billing/workspace-quota-client", () => ({
+  loadWorkspaceQuotaSnapshot: async () => {
+    await workspaceQuota.hold;
+    return workspaceQuota.items == null
+      ? undefined
+      : { items: workspaceQuota.items };
+  },
+}));
+
 mock.module("@labring/sealos-desktop-sdk/app", () => ({
   sealosApp: {
     getHostConfig: async () => ({ cloud: { domain: "https://desktop.test" } }),
-    getWorkspaceQuota: async () => {
-      await workspaceQuota.hold;
-      if (workspaceQuota.items == null) {
-        throw new Error("workspace quota unavailable");
-      }
-      return { quota: workspaceQuota.items };
-    },
     runEvents: async () => undefined,
   },
 }));

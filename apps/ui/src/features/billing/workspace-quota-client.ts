@@ -1,9 +1,13 @@
 "use client";
 
-import { sealosApp } from "@labring/sealos-desktop-sdk/app";
 import {
-  parseWorkspaceQuotaItems,
+  type BillingCredentials,
+  type BillingFetch,
+  createBillingJsonRequester,
+} from "./billing-data-client";
+import {
   type WorkspaceResourceQuotaSnapshot,
+  workspaceQuotaSnapshotFromPayload,
 } from "./workspace-resource-quota";
 
 const WORKSPACE_QUOTA_CACHE_TTL_MS = 30_000;
@@ -19,17 +23,29 @@ const workspaceQuotaRequests = new Map<
   Promise<WorkspaceResourceQuotaSnapshot | undefined>
 >();
 
-function cacheKey(namespace: string): string {
-  return namespace.trim();
+export interface WorkspaceQuotaLoadInput extends BillingCredentials {
+  namespace: string;
+}
+
+function cacheKey(input: WorkspaceQuotaLoadInput): string {
+  return input.namespace.trim();
 }
 
 async function fetchWorkspaceQuotaSnapshot(
-  namespace: string
+  input: WorkspaceQuotaLoadInput,
+  fetch: BillingFetch
 ): Promise<WorkspaceResourceQuotaSnapshot | undefined> {
+  const namespace = cacheKey(input);
   try {
-    const snapshot = await sealosApp.getWorkspaceQuota();
-    const items = parseWorkspaceQuotaItems(snapshot?.quota);
-    const result = items.length === 0 ? undefined : { items };
+    const requestBillingJson = createBillingJsonRequester({
+      credentials: input,
+      fallbackErrorMessage: "Could not load workspace quota.",
+      fetch,
+    });
+    const payload = await requestBillingJson("/api/billing/workspace-quota", {
+      workspace: namespace,
+    });
+    const result = workspaceQuotaSnapshotFromPayload(payload);
     workspaceQuotaCache.set(namespace, {
       fetchedAt: Date.now(),
       snapshot: result,
@@ -46,23 +62,32 @@ async function fetchWorkspaceQuotaSnapshot(
 }
 
 export function readCachedWorkspaceQuotaSnapshot(
-  namespace: string
+  input: WorkspaceQuotaLoadInput,
+  fetch: BillingFetch = globalThis.fetch
 ): WorkspaceResourceQuotaSnapshot | undefined {
-  const key = cacheKey(namespace);
+  const key = cacheKey(input);
   const cached = workspaceQuotaCache.get(key);
   if (
     cached != null &&
     Date.now() - cached.fetchedAt >= WORKSPACE_QUOTA_CACHE_TTL_MS
   ) {
-    loadWorkspaceQuotaSnapshot(key).catch(() => undefined);
+    loadWorkspaceQuotaSnapshot(input, fetch).catch(() => undefined);
   }
   return cached?.snapshot;
 }
 
 export function loadWorkspaceQuotaSnapshot(
-  namespace: string
+  input: WorkspaceQuotaLoadInput,
+  fetch: BillingFetch = globalThis.fetch
 ): Promise<WorkspaceResourceQuotaSnapshot | undefined> {
-  const key = cacheKey(namespace);
+  const key = cacheKey(input);
+  if (
+    key === "" ||
+    input.appToken.trim() === "" ||
+    input.kubeconfig.trim() === ""
+  ) {
+    return Promise.resolve(undefined);
+  }
   const cached = workspaceQuotaCache.get(key);
   if (
     cached != null &&
@@ -76,7 +101,10 @@ export function loadWorkspaceQuotaSnapshot(
     return pending;
   }
 
-  const request = fetchWorkspaceQuotaSnapshot(key).finally(() => {
+  const request = fetchWorkspaceQuotaSnapshot(
+    { ...input, namespace: key },
+    fetch
+  ).finally(() => {
     workspaceQuotaRequests.delete(key);
   });
   workspaceQuotaRequests.set(key, request);
