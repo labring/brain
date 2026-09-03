@@ -149,6 +149,40 @@ test("the backdrop dismisses exactly once", async () => {
   });
 });
 
+test("the close-complete callback fires once, only after the closed dialog has left", async () => {
+  await withTestDom(async (act) => {
+    const { BillingEscalationDialogView } = await import(
+      "./billing-escalation-dialog"
+    );
+    let completed = 0;
+    const view = (open: boolean) => (
+      <BillingEscalationDialogView
+        onCloseComplete={() => {
+          completed += 1;
+        }}
+        onDismiss={() => {
+          // The close is driven from outside here.
+        }}
+        open={open}
+        stage={PAYMENT_DUE}
+      />
+    );
+    let rendered: ReturnType<typeof render> | undefined;
+    try {
+      await act(() => {
+        rendered = render(view(true));
+      });
+      rendered?.getByRole("dialog");
+      assert.equal(completed, 0, "opening completes nothing");
+      await act(() => rendered?.rerender(view(false)));
+      assert.equal(rendered?.queryByRole("dialog"), null);
+      assert.equal(completed, 1);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("an account stage's fix falls back to the Billing Area while the Desktop link is unresolved", async () => {
   await renderStage(ACCOUNT_DEBT, (rendered) => {
     rendered.getByRole("dialog", { name: "Account balance in debt" });

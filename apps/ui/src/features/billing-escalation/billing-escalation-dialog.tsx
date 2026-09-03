@@ -5,7 +5,7 @@ import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { useSetAtom } from "jotai";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useLayoutEffect, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useState } from "react";
 
 import type { BillingCta } from "@/features/billing/billing-cta";
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
@@ -76,10 +76,13 @@ function BillingEscalationFix({
 }
 
 export function BillingEscalationDialogView({
+  onCloseComplete,
   onDismiss,
   open,
   stage,
 }: {
+  /** Fired once a closed dialog has finished leaving (its exit animation). */
+  onCloseComplete?: () => void;
   /** Fired exactly once per close, whatever closed it. */
   onDismiss: () => void;
   open: boolean;
@@ -90,6 +93,11 @@ export function BillingEscalationDialogView({
       onOpenChange={(next) => {
         if (!next) {
           onDismiss();
+        }
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          onCloseComplete?.();
         }
       }}
       open={open}
@@ -148,20 +156,31 @@ export function BillingEscalationDialog() {
     setShown(stage);
   }
 
-  // Published before paint, so a sampling dialog that would open in the
-  // same commit is held back rather than flashed and snapped shut.
+  // Raised before paint, so a sampling dialog that would open in the same
+  // commit is held back rather than flashed and snapped shut — and lowered
+  // only once the exit animation has finished (`onCloseComplete`), never on
+  // the optimistic read itself, so the gate cannot open its dialog over the
+  // fading one. Unmounting lowers it regardless.
   useLayoutEffect(() => {
-    setEscalationOpen(open);
-    return () => {
-      setEscalationOpen(false);
-    };
+    if (open) {
+      setEscalationOpen(true);
+    }
   }, [open, setEscalationOpen]);
+  useEffect(
+    () => () => {
+      setEscalationOpen(false);
+    },
+    [setEscalationOpen]
+  );
 
   if (shown == null) {
     return null;
   }
   return (
     <BillingEscalationDialogView
+      onCloseComplete={() => {
+        setEscalationOpen(false);
+      }}
       onDismiss={dismiss}
       open={open}
       stage={shown}

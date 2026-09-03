@@ -59,9 +59,12 @@ export interface BillingEscalationSelection {
   announced: AppNotification;
   ladder: BillingLadder;
   /**
-   * Older unread stages of the same ladder, read along with the announced
-   * one — a newer stage supersedes them, so the inbox must not keep an
-   * unread count for what the dialog already told.
+   * Every other unread stage of the same ladder — the older ones, and a
+   * peer written in the same second that the id tie-break passed over —
+   * read along with the announced one: a newer stage supersedes them, so
+   * the inbox must not keep an unread count for what the dialog already
+   * told, and no candidate is left behind to reopen the dialog after a
+   * dismissal.
    */
   superseded: AppNotification[];
 }
@@ -138,11 +141,14 @@ export function selectBillingEscalation(
   return {
     announced: newest.item,
     ladder: newest.ladder,
+    // Sorted newest first, so every other same-ladder candidate is older or
+    // a same-second peer; matching on the id rather than a strict timestamp
+    // keeps the tie-break's loser from surviving the dismissal unread.
     superseded: candidates
       .filter(
         (candidate) =>
           candidate.ladder === newest.ladder &&
-          candidate.item.timestamp < newest.item.timestamp
+          candidate.item.id !== newest.item.id
       )
       .map((candidate) => candidate.item),
   };
@@ -203,9 +209,10 @@ function deadlineSegments(
  * Deletion Countdown's next deadline — the same date the Status Hint
  * states — and speak in the subscription's recovery voice (an unpriced Free
  * plan is never asked to renew). The final stage deliberately names no
- * date: its message is that resources can go at any time, and a date would
- * soften exactly that urgency (AIM-348, story 5; the prototype's final
- * variant).
+ * date: by then the deadline the summary derives (expiry plus the grace
+ * period) has already passed, and its message is that resources can go at
+ * any time — a date would soften exactly that urgency (AIM-348, story 5;
+ * the prototype's final variant; CONTEXT.md names the exception).
  */
 function workspaceBody(
   crName: string,

@@ -6,8 +6,14 @@ import { isValidElement, type ReactNode } from "react";
 // layout reaches it through the Devbox warmup server action.
 mock.module("server-only", () => ({}));
 
+const { BillingEscalationDialog } = await import(
+  "@/features/billing-escalation/billing-escalation-dialog"
+);
 const { OnboardingGate } = await import(
   "@/features/onboarding/onboarding-gate"
+);
+const { StatusHintBanner } = await import(
+  "@/features/status-hint/status-hint-banner"
 );
 const { DevboxBootstrap, SealosSdkBootstrap } = await import(
   "@/features/shell/auth-bootstrap"
@@ -54,4 +60,17 @@ test("project layout mounts the Onboarding Gate", () => {
   const mounted = mountedComponents(ProjectLayout({ children: null }));
 
   assert.ok(mounted.has(OnboardingGate), "OnboardingGate is mounted");
+});
+
+// The Billing Escalation Dialog announces a debt stage wherever the Status
+// Hint is mounted (CONTEXT.md); an unmounted dialog silently stops every
+// announcement, exactly the failure the gate's pin above guards against.
+test("project layout mounts the Billing Escalation Dialog beside the Status Hint", () => {
+  const mounted = mountedComponents(ProjectLayout({ children: null }));
+
+  assert.ok(mounted.has(StatusHintBanner), "StatusHintBanner is mounted");
+  assert.ok(
+    mounted.has(BillingEscalationDialog),
+    "BillingEscalationDialog is mounted"
+  );
 });

@@ -9,6 +9,7 @@ import type { AppNotification } from "@/features/shell/app-sidebar-notifications
 
 import {
   type BillingEscalationStage,
+  billingEscalationDismissalTargets,
   billingEscalationStage,
   billingEscalationStageForName,
   selectBillingEscalation,
@@ -164,6 +165,27 @@ test("the superseded set is same-ladder-and-older only: other ladders, read rung
     selection?.superseded.map((item) => item.id),
     [workspaceSuspended.id]
   );
+});
+
+test("a same-ladder peer written in the same second is superseded too, so a dismissal leaves nothing to reopen the dialog", () => {
+  // `spec.timestamp` is Unix seconds, so two rungs can share one; the id
+  // tie-break then picks the announced rung, and the other must not stay
+  // unread — it would be the next poll's candidate.
+  const suspended = platform("workspace-debt-debt", { timestamp: T0 });
+  const deletion = platform("workspace-debt-debtpredeletion", {
+    timestamp: T0,
+  });
+  const selection = select([deletion, suspended]);
+  assert.ok(selection);
+  const loser = selection.announced.id === suspended.id ? deletion : suspended;
+  assert.deepEqual(
+    selection.superseded.map((item) => item.id),
+    [loser.id]
+  );
+  const readIds = billingEscalationDismissalTargets(selection).map(
+    (item) => item.id
+  );
+  assert.equal(select([deletion, suspended], { readIds }), null);
 });
 
 test("a ladder rung the override table does not know stays in the inbox: Brain never announces upstream words", () => {
