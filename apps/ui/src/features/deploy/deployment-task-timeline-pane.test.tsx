@@ -975,10 +975,15 @@ test("the verified result takes the panel and keeps the process one click away",
   assert.match(html, VIEW_DETAILS_RE);
   assert.match(html, SUCCESS_VERIFICATION_SLOT_RE);
   assert.match(html, CHECKS_PASSED_RE);
-  // Both declared addresses are listed; only the primary one is a link, and
-  // the UI never builds an address of its own.
+  // Both declared addresses are listed, and the UI never builds one of its
+  // own: the secondary address is only the element's own title and text node,
+  // so it reads as an address to copy rather than a link to click.
   assert.equal((html.match(SUCCESS_ENTRY_SLOT_RE) ?? []).length, 2);
-  assert.ok(html.includes("https://lobby.demo.sealos.run"));
+  assert.ok(
+    html.includes(
+      'title="https://lobby.demo.sealos.run">https://lobby.demo.sealos.run<'
+    )
+  );
   assert.equal(html.includes('href="https://lobby.demo.sealos.run"'), false);
   assert.ok(html.includes('href="https://eaglercraft.demo.sealos.run"'));
   assert.ok(html.includes('target="_blank"'));
