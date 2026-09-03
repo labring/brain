@@ -1,14 +1,14 @@
-import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
+import {
+  type PersonalResourceCredentials,
+  personalResourceAuthHeaders,
+} from "@/lib/personal-resource-headers";
 
 export type BillingFetch = (
   input: RequestInfo | URL,
   init?: RequestInit
 ) => Promise<Response>;
 
-export interface BillingCredentials {
-  appToken: string;
-  kubeconfig: string;
-}
+export type BillingCredentials = PersonalResourceCredentials;
 
 interface BillingJsonRequesterOptions {
   credentials: BillingCredentials;

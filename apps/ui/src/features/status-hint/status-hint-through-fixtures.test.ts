@@ -29,16 +29,21 @@ const RENEWAL_PATTERN = /renew/i;
 const CREDENTIALS = {
   appToken: "test-token",
   kubeconfig: "test-kubeconfig",
+  namespace: "ns-test",
   workspace: "ns-test",
 };
 
 async function hintFor(scenario: BillingDevScenario) {
   const fetch = scenarioTestFetch(scenario);
+  const quotaCredentials = {
+    ...CREDENTIALS,
+    namespace: `${CREDENTIALS.namespace}-status-${scenario}`,
+  };
   const [subscription, balance, credits, quota] = await Promise.all([
     loadWorkspaceSubscriptionSummary(CREDENTIALS, { fetch }),
     loadAccountBalanceTerms(CREDENTIALS, fetch),
     loadAccountCredits(CREDENTIALS, fetch),
-    loadWorkspaceQuotaUsage(CREDENTIALS, fetch),
+    loadWorkspaceQuotaUsage(quotaCredentials, fetch),
   ]);
   const evaluation = evaluateStatusHints({
     availableBalanceMicroUnits:

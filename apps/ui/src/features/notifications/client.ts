@@ -1,5 +1,8 @@
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
-import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
+import {
+  personalResourceAuthHeaders,
+  type WorkspaceCredentials,
+} from "@/lib/personal-resource-headers";
 
 import {
   type GiftObservationRequest,
@@ -10,11 +13,7 @@ import {
 } from "./types";
 
 /** Credentials every Brain-side notification request carries (ADR-0059). */
-export interface NotificationClientCredentials {
-  appToken: string;
-  kubeconfig: string;
-  namespace: string;
-}
+export type NotificationClientCredentials = WorkspaceCredentials;
 
 function notificationsUrl(pathname: string, namespace: string): string {
   const search = new URLSearchParams({ namespace });

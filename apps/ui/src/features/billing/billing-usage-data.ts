@@ -1,22 +1,31 @@
 import { Quantity, Scale } from "@workspace/shared";
 import { z } from "zod";
+import type { WorkspaceCredentials } from "@/lib/personal-resource-headers";
 
 import {
   type BillingCredentials,
   type BillingFetch,
   createBillingJsonRequester,
 } from "./billing-data-client";
+import { loadWorkspaceQuotaResponse } from "./workspace-quota-client";
+import {
+  ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES,
+  type AccountServiceWorkspaceQuotaResponse,
+  type AccountServiceWorkspaceQuotaType,
+  accountServiceWorkspaceQuotaResponseSchema,
+  isQuantityQuotaExhausted,
+  SNAPSHOT_WORKSPACE_QUOTA_RESOURCES,
+  workspaceQuotaValuesForAliases,
+} from "./workspace-quota-payload";
+import {
+  type WorkspaceResourceQuotaSnapshot,
+  workspaceQuotaSnapshotFromResponse,
+} from "./workspace-resource-quota";
 
-export type BillingQuotaType =
-  | "cpu"
-  | "gpu"
-  | "memory"
-  | "nodeport"
-  | "pod"
-  | "storage"
-  | "traffic";
+export type BillingQuotaType = AccountServiceWorkspaceQuotaType;
 
 export interface BillingUsageRow {
+  exhausted: boolean;
   label: string;
   percentUsed: number;
   remaining: string;
@@ -36,48 +45,10 @@ interface BillingUsageDependencies {
   now?: () => Date;
 }
 
-const quantityValueSchema = z.union([z.string(), z.number()]);
 const workspacesResponseSchema = z.object({
   data: z.array(z.tuple([z.string().trim().min(1), z.string()])),
 });
-const quotaResponseSchema = z.object({
-  quota: z.object({
-    hard: z.record(z.string(), quantityValueSchema).optional().default({}),
-    used: z.record(z.string(), quantityValueSchema).optional().default({}),
-  }),
-});
-
 const DAYS_31_IN_MILLISECONDS = 31 * 24 * 60 * 60 * 1000;
-
-const QUOTA_RESOURCES: ReadonlyArray<{
-  keys: readonly string[];
-  label: string;
-  type: BillingQuotaType;
-}> = [
-  { keys: ["limits.cpu"], label: "CPU", type: "cpu" },
-  { keys: ["limits.memory"], label: "Memory", type: "memory" },
-  { keys: ["requests.storage"], label: "Storage", type: "storage" },
-  { keys: ["pods", "count/pods"], label: "Pods", type: "pod" },
-  { keys: ["services.nodeports"], label: "Ports", type: "nodeport" },
-  { keys: ["traffic"], label: "Traffic", type: "traffic" },
-  {
-    keys: ["limits.nvidia.com/gpu", "requests.nvidia.com/gpu"],
-    label: "GPU",
-    type: "gpu",
-  },
-];
-
-function firstValue(
-  values: Record<string, string | number>,
-  keys: readonly string[]
-): string | number | undefined {
-  for (const key of keys) {
-    if (values[key] !== undefined) {
-      return values[key];
-    }
-  }
-  return undefined;
-}
 
 function displayQuantity(quantity: Quantity, type: BillingQuotaType): string {
   return quantity.formatForDisplay({
@@ -95,16 +66,22 @@ function percentUsed(used: Quantity, limit: Quantity): number {
   const ratio =
     Number(used.scaledValue(Scale.Nano)) /
     Number(limit.scaledValue(Scale.Nano));
-  return Number.isFinite(ratio) ? Math.round(ratio * 1000) / 10 : 0;
+  if (!Number.isFinite(ratio)) {
+    return 0;
+  }
+  const rounded = Math.round(ratio * 1000) / 10;
+  return rounded >= 100 && !isQuantityQuotaExhausted(used, limit)
+    ? 99.9
+    : rounded;
 }
 
 function quotaRows(
-  response: z.infer<typeof quotaResponseSchema>
+  response: AccountServiceWorkspaceQuotaResponse
 ): BillingUsageRow[] {
   const { hard, used } = response.quota;
-  return QUOTA_RESOURCES.flatMap((resource) => {
-    const hardValue = firstValue(hard, resource.keys);
-    const usedValue = firstValue(used, resource.keys);
+  return ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES.flatMap((resource) => {
+    const { limit: hardValue, used: usedValue } =
+      workspaceQuotaValuesForAliases(hard, used, resource.keys);
     if (hardValue === undefined && usedValue === undefined) {
       return [];
     }
@@ -113,6 +90,7 @@ function quotaRows(
     const consumed = Quantity.fromJSON(usedValue ?? "0");
     return [
       {
+        exhausted: isQuantityQuotaExhausted(consumed, limit),
         label: resource.label,
         percentUsed: percentUsed(consumed, limit),
         remaining: displayQuantity(limit.sub(consumed), resource.type),
@@ -128,18 +106,20 @@ function quotaRows(
  * The quota rows a deployment can actually run into (design spec catalog
  * A1/A2): the resources a new workload asks for. Traffic and GPU stay out.
  */
-export const DEPLOYABLE_QUOTA_TYPES: ReadonlySet<BillingQuotaType> = new Set([
-  "cpu",
-  "memory",
-  "storage",
-  "pod",
-  "nodeport",
-]);
+export const DEPLOYABLE_QUOTA_TYPES: ReadonlySet<BillingQuotaType> = new Set(
+  SNAPSHOT_WORKSPACE_QUOTA_RESOURCES.map(({ type }) => type)
+);
 
 export type QuotaFullnessRow = Pick<
   BillingUsageRow,
   "label" | "percentUsed" | "type"
->;
+> &
+  Partial<Pick<BillingUsageRow, "exhausted">>;
+
+/** Exact account-service judgment, with a legacy percentage fallback. */
+export function isQuotaFullnessRowExhausted(row: QuotaFullnessRow): boolean {
+  return row.exhausted ?? row.percentUsed >= 100;
+}
 
 /** "CPU" keeps its initialism mid-sentence; the rest read as common nouns. */
 export function quotaResourceNoun(label: string): string {
@@ -152,7 +132,8 @@ export function firstFullQuotaRow<Row extends QuotaFullnessRow>(
 ): Row | null {
   return (
     rows.find(
-      (row) => DEPLOYABLE_QUOTA_TYPES.has(row.type) && row.percentUsed >= 100
+      (row) =>
+        DEPLOYABLE_QUOTA_TYPES.has(row.type) && isQuotaFullnessRowExhausted(row)
     ) ?? null
   );
 }
@@ -180,7 +161,7 @@ export function firstDoomingQuotaRow<Row extends QuotaFullnessRow>(
       (row) =>
         (UNIVERSAL_DEPLOYABLE_QUOTA_TYPES.has(row.type) ||
           paneConsumes.includes(row.type)) &&
-        row.percentUsed >= 100
+        isQuotaFullnessRowExhausted(row)
     ) ?? null
   );
 }
@@ -193,8 +174,25 @@ export function firstDoomingQuotaRow<Row extends QuotaFullnessRow>(
 export function workspaceQuotaRowsFromPayload(
   payload: unknown
 ): BillingUsageRow[] | null {
-  const parsed = quotaResponseSchema.safeParse(payload);
+  const parsed = accountServiceWorkspaceQuotaResponseSchema.safeParse(payload);
   return parsed.success ? quotaRows(parsed.data) : null;
+}
+
+export interface WorkspaceQuotaData {
+  rows: BillingUsageRow[];
+  snapshot: WorkspaceResourceQuotaSnapshot | undefined;
+}
+
+/** Derives every client quota view from one parsed account-service payload. */
+export async function loadWorkspaceQuotaData(
+  credentials: WorkspaceCredentials,
+  fetch: BillingFetch = globalThis.fetch
+): Promise<WorkspaceQuotaData> {
+  const response = await loadWorkspaceQuotaResponse(credentials, fetch);
+  return {
+    rows: quotaRows(response),
+    snapshot: workspaceQuotaSnapshotFromResponse(response),
+  };
 }
 
 /**
@@ -203,22 +201,10 @@ export function workspaceQuotaRowsFromPayload(
  * judge fullness (the status hint's quota-full evaluation).
  */
 export async function loadWorkspaceQuotaUsage(
-  credentials: BillingCredentials & { workspace: string },
+  credentials: WorkspaceCredentials,
   fetch: BillingFetch = globalThis.fetch
 ): Promise<BillingUsageRow[]> {
-  const requestBillingJson = createBillingJsonRequester({
-    credentials: {
-      appToken: credentials.appToken,
-      kubeconfig: credentials.kubeconfig,
-    },
-    fallbackErrorMessage: "Could not load workspace usage.",
-    fetch,
-  });
-  const quotaPayload = await requestBillingJson(
-    "/api/billing/workspace-quota",
-    { workspace: credentials.workspace }
-  );
-  return quotaRows(quotaResponseSchema.parse(quotaPayload));
+  return (await loadWorkspaceQuotaData(credentials, fetch)).rows;
 }
 
 export async function loadBillingUsage(
@@ -264,7 +250,7 @@ export async function loadBillingUsage(
 
   return {
     rows: await loadWorkspaceQuotaUsage(
-      { ...credentials, workspace: selectedWorkspace },
+      { ...credentials, namespace: selectedWorkspace },
       fetch
     ),
     selectedWorkspace,

@@ -10,8 +10,8 @@ import { loadAccountCredits } from "@/features/billing/account-credits";
 import { planUpgradeCeiling } from "@/features/billing/billing-plan-catalog";
 import { loadBillingPlans } from "@/features/billing/billing-plan-data";
 import { accountCreditsSwrKey } from "@/features/billing/billing-subscription-settlement";
-import { loadWorkspaceQuotaUsage } from "@/features/billing/billing-usage-data";
-import { observeWorkspaceQuotaForInbox } from "@/features/notifications/quota-observation";
+import { loadWorkspaceQuotaData } from "@/features/billing/billing-usage-data";
+import { observeWorkspaceQuotaSnapshotForInbox } from "@/features/notifications/quota-observation";
 import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
@@ -87,15 +87,22 @@ export function useStatusHintInputs(): StatusHintInputs {
     credentialsReady
       ? (["status-hint-quota", workspace, credentialKey, appToken] as const)
       : null,
-    () => loadWorkspaceQuotaUsage({ appToken, kubeconfig, workspace }),
+    () =>
+      loadWorkspaceQuotaData({ appToken, kubeconfig, namespace: workspace }),
     {
       ...swrOptions,
-      onSuccess: () => {
-        observeWorkspaceQuotaForInbox({
-          appToken,
-          kubeconfig,
-          namespace: workspace,
-        }).catch(() => undefined);
+      onSuccess: ({ snapshot }) => {
+        if (snapshot == null) {
+          return;
+        }
+        observeWorkspaceQuotaSnapshotForInbox(
+          {
+            appToken,
+            kubeconfig,
+            namespace: workspace,
+          },
+          snapshot
+        ).catch(() => undefined);
       },
     }
   );
@@ -125,7 +132,7 @@ export function useStatusHintInputs(): StatusHintInputs {
 
   const balanceTerms = balance.data;
   const usableCreditMicroUnits = credits.data?.usableMicroUnits;
-  const quotaRows = quota.data;
+  const quotaRows = quota.data?.rows;
   const subscriptionSummary = subscription.data;
   const planCatalog = plans.data;
   return useMemo(

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { SIDEBAR_COOKIE_NAME } from "@workspace/ui/lib/sidebar-cookie";
 import { getDefaultStore } from "jotai";
 import type { ReactNode } from "react";
+import { SNAPSHOT_WORKSPACE_QUOTA_RESOURCES } from "@/features/billing/workspace-quota-payload";
 import {
   actAndDrain,
   defineGlobal,
@@ -51,6 +52,7 @@ const billing = {
 const workspaceQuota = {
   hold: null as Promise<void> | null,
   items: [] as unknown[] | null,
+  requests: 0,
 };
 // The popover's AI usage row fixtures. null = the route fails and the row
 // must be omitted alone.
@@ -66,6 +68,16 @@ function deferred(): { promise: Promise<void>; release: () => void } {
     release = resolve;
   });
   return { promise, release };
+}
+
+function snapshotQuantitySuffix(scale: "mebi" | "milli" | "unit"): string {
+  if (scale === "milli") {
+    return "m";
+  }
+  if (scale === "mebi") {
+    return "Mi";
+  }
+  return "";
 }
 
 const ACCOUNT_USER = { id: "usr-Kx92mQ", name: "Ada Lovelace" };
@@ -90,6 +102,36 @@ function proSubscription(
   };
 }
 
+function workspaceQuotaPayload(items: unknown[]): Record<string, unknown> {
+  const hard: Record<string, string> = {};
+  const used: Record<string, string> = {};
+  for (const item of items) {
+    if (typeof item !== "object" || item == null) {
+      continue;
+    }
+    const quota = item as { limit?: number; type?: string; used?: number };
+    if (quota.limit === undefined || quota.used === undefined) {
+      continue;
+    }
+    const definition = SNAPSHOT_WORKSPACE_QUOTA_RESOURCES.find(
+      ({ type }) => type === quota.type
+    );
+    const resource =
+      definition == null
+        ? null
+        : {
+            key: definition.keys[0],
+            suffix: snapshotQuantitySuffix(definition.snapshotScale),
+          };
+    if (resource == null) {
+      continue;
+    }
+    hard[resource.key] = `${quota.limit}${resource.suffix}`;
+    used[resource.key] = `${quota.used}${resource.suffix}`;
+  }
+  return { quota: { hard, used } };
+}
+
 async function billingFetchStub(input: unknown): Promise<Response> {
   const url = requestUrl(input);
   if (url === "/api/billing/regions") {
@@ -105,6 +147,14 @@ async function billingFetchStub(input: unknown): Promise<Response> {
     return jsonResponse({ subscription: billing.subscription });
   }
   if (url === "/api/billing/workspace-quota") {
+    workspaceQuota.requests += 1;
+    if (workspaceQuota.requests === 1) {
+      await workspaceQuota.hold;
+      if (workspaceQuota.items == null) {
+        return new Response("{}", { status: 500 });
+      }
+      return jsonResponse(workspaceQuotaPayload(workspaceQuota.items));
+    }
     await aiUsage.hold;
     if (aiUsage.credits == null) {
       return new Response("{}", { status: 500 });
@@ -164,13 +214,6 @@ mock.module("@/features/projects/explorer/use-projects-explorer", () => ({
 mock.module("@labring/sealos-desktop-sdk/app", () => ({
   sealosApp: {
     getHostConfig: async () => ({ cloud: { domain: "https://desktop.test" } }),
-    getWorkspaceQuota: async () => {
-      await workspaceQuota.hold;
-      if (workspaceQuota.items == null) {
-        throw new Error("workspace quota unavailable");
-      }
-      return { quota: workspaceQuota.items };
-    },
     runEvents: async () => undefined,
   },
 }));
@@ -219,6 +262,7 @@ async function withSidebar(
     billing.subscription = null;
     workspaceQuota.hold = null;
     workspaceQuota.items = [];
+    workspaceQuota.requests = 0;
     aiUsage.credits = null;
     aiUsage.freeTurns = null;
     aiUsage.hold = null;

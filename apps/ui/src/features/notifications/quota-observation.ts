@@ -2,6 +2,7 @@ import { mutate } from "swr";
 
 import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
+import { hasWorkspaceCredentials } from "@/lib/personal-resource-headers";
 
 import {
   type NotificationClientCredentials,
@@ -13,7 +14,7 @@ const NOTIFICATION_FEED_KEY_PREFIX = "notifications-feed";
 
 export interface WorkspaceQuotaObservationDependencies {
   loadSnapshot: (
-    namespace: string
+    credentials: NotificationClientCredentials
   ) => Promise<WorkspaceResourceQuotaSnapshot | undefined>;
   refreshFeed: () => Promise<unknown>;
   report: (
@@ -51,19 +52,50 @@ export async function observeWorkspaceQuotaForInbox(
   dependencies: WorkspaceQuotaObservationDependencies = DEFAULT_DEPENDENCIES
 ): Promise<boolean> {
   const namespace = credentials.namespace.trim();
-  if (
-    namespace === "" ||
-    credentials.appToken === "" ||
-    credentials.kubeconfig === ""
-  ) {
+  const normalizedCredentials = { ...credentials, namespace };
+  if (!hasWorkspaceCredentials(normalizedCredentials)) {
     return false;
   }
   try {
-    const snapshot = await dependencies.loadSnapshot(namespace);
+    const snapshot = await dependencies.loadSnapshot(normalizedCredentials);
     if (snapshot == null) {
       return false;
     }
-    await dependencies.report({ ...credentials, namespace }, snapshot);
+    return reportWorkspaceQuotaSnapshotForInbox(
+      normalizedCredentials,
+      snapshot,
+      dependencies
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Reports a snapshot another quota surface already derived from its read. */
+export function observeWorkspaceQuotaSnapshotForInbox(
+  credentials: NotificationClientCredentials,
+  snapshot: WorkspaceResourceQuotaSnapshot,
+  dependencies: WorkspaceQuotaObservationDependencies = DEFAULT_DEPENDENCIES
+): Promise<boolean> {
+  const namespace = credentials.namespace.trim();
+  const normalizedCredentials = { ...credentials, namespace };
+  if (!hasWorkspaceCredentials(normalizedCredentials)) {
+    return Promise.resolve(false);
+  }
+  return reportWorkspaceQuotaSnapshotForInbox(
+    normalizedCredentials,
+    snapshot,
+    dependencies
+  );
+}
+
+async function reportWorkspaceQuotaSnapshotForInbox(
+  credentials: NotificationClientCredentials,
+  snapshot: WorkspaceResourceQuotaSnapshot,
+  dependencies: WorkspaceQuotaObservationDependencies
+): Promise<boolean> {
+  try {
+    await dependencies.report(credentials, snapshot);
   } catch {
     return false;
   }

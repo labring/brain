@@ -580,9 +580,11 @@ function ProjectAssistantChatSession({
             currentProject.displayName,
             wire.projectId
           );
-          const workspaceResourceQuota = readCachedWorkspaceQuotaSnapshot(
-            wire.namespace
-          );
+          const workspaceResourceQuota = readCachedWorkspaceQuotaSnapshot({
+            appToken,
+            kubeconfig,
+            namespace: wire.namespace,
+          });
 
           const headersWithAppToken = new Headers(headers);
           for (const [name, value] of Object.entries(

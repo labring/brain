@@ -255,11 +255,15 @@ function useCopyFeedback(): [boolean, (text: string) => void] {
   return [copied, copy];
 }
 
-async function loadQuotaRows(namespace: string): Promise<AppSidebarQuotaRow[]> {
+async function loadQuotaRows(input: {
+  appToken: string;
+  kubeconfig: string;
+  namespace: string;
+}): Promise<AppSidebarQuotaRow[]> {
   // The quota client fails open (undefined instead of rejecting); surface
   // that as a failure so the slot keeps its snapshot-or-collapse contract
   // instead of rendering a list of "--/--" placeholders.
-  const snapshot = await loadWorkspaceQuotaSnapshot(namespace);
+  const snapshot = await loadWorkspaceQuotaSnapshot(input);
   if (snapshot == null) {
     throw new Error("workspace quota unavailable");
   }
@@ -798,8 +802,15 @@ export function AppSidebarAccount() {
   // subscription answer — it decides whether the row exists at all — so an
   // unknown subscription is pending, never "not applicable": opening before
   // it lands can no longer eat the row.
-  const loadQuota = useCallback(() => loadQuotaRows(workspace), [workspace]);
-  const quotaSlot = useUsageSlot(open, loadQuota, "load workspace quota");
+  const loadQuota = useCallback(
+    () => loadQuotaRows({ appToken, kubeconfig, namespace: workspace }),
+    [appToken, kubeconfig, workspace]
+  );
+  const quotaSlot = useUsageSlot(
+    open && credentialsReady,
+    loadQuota,
+    "load workspace quota"
+  );
   const aiSlot = useUsageSlot(
     open && !subscriptionPending,
     loadAiUsageRow,

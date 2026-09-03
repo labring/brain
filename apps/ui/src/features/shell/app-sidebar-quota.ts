@@ -1,5 +1,8 @@
-import { BinaryScale, Quantity, Scale } from "@workspace/shared";
-import type { WorkspaceQuotaItem } from "@/features/billing/workspace-resource-quota";
+import { SNAPSHOT_WORKSPACE_QUOTA_RESOURCES } from "@/features/billing/workspace-quota-payload";
+import {
+  formatWorkspaceQuotaItemValue,
+  type WorkspaceQuotaItem,
+} from "@/features/billing/workspace-resource-quota";
 
 export type { WorkspaceQuotaItem } from "@/features/billing/workspace-resource-quota";
 
@@ -37,75 +40,6 @@ export function quotaUsageTone(percent: number | null): QuotaUsageTone | null {
   return null;
 }
 
-const WORKSPACE_QUOTA_ROW_DEFINITIONS = [
-  { label: "CPU", type: "cpu" },
-  { label: "Memory", type: "memory" },
-  { label: "Storage", type: "storage" },
-  { label: "Pods", type: "pod" },
-  { label: "Ports", type: "nodeport" },
-] as const;
-
-function formatPortQuotaNumber(value: number) {
-  if (!Number.isFinite(value)) {
-    return "--";
-  }
-  if (!Number.isInteger(value)) {
-    return "--";
-  }
-  return String(value);
-}
-
-function formatCpuQuotaNumber(value: number) {
-  if (!Number.isFinite(value)) {
-    return "--";
-  }
-  try {
-    return Quantity.parse(`${value}m`).formatForDisplay({
-      digits: 2,
-      format: "DecimalSI",
-      scale: Scale.None,
-    });
-  } catch {
-    return "--";
-  }
-}
-
-function formatBinaryQuotaNumberFromMi(value: number) {
-  if (!Number.isFinite(value)) {
-    return "--";
-  }
-  try {
-    return Quantity.parse(`${value}Mi`).formatForDisplay({
-      digits: 2,
-      format: "BinarySI",
-      scale: BinaryScale.Gibi,
-    });
-  } catch {
-    return "--";
-  }
-}
-
-function formatQuotaValue(item: WorkspaceQuotaItem) {
-  switch (item.type) {
-    case "cpu":
-      return `${formatCpuQuotaNumber(item.used)}C/${formatCpuQuotaNumber(
-        item.limit
-      )}C`;
-    case "memory":
-    case "storage":
-      return `${formatBinaryQuotaNumberFromMi(
-        item.used
-      )}/${formatBinaryQuotaNumberFromMi(item.limit)}`;
-    case "nodeport":
-    case "pod":
-      return `${formatPortQuotaNumber(item.used)}/${formatPortQuotaNumber(
-        item.limit
-      )}`;
-    default:
-      return "--/--";
-  }
-}
-
 function quotaPercent(item: WorkspaceQuotaItem): number | null {
   if (
     !(Number.isFinite(item.used) && Number.isFinite(item.limit)) ||
@@ -119,7 +53,7 @@ function quotaPercent(item: WorkspaceQuotaItem): number | null {
 export function formatWorkspaceQuotaRows(
   quota: readonly WorkspaceQuotaItem[]
 ): AppSidebarQuotaRow[] {
-  return WORKSPACE_QUOTA_ROW_DEFINITIONS.map(({ label, type }) => {
+  return SNAPSHOT_WORKSPACE_QUOTA_RESOURCES.map(({ label, type }) => {
     const item = quota.find((candidate) => candidate.type === type);
     if (item == null) {
       return { label, percent: null, value: "--/--" };
@@ -127,7 +61,7 @@ export function formatWorkspaceQuotaRows(
     return {
       label,
       percent: quotaPercent(item),
-      value: formatQuotaValue(item),
+      value: formatWorkspaceQuotaItemValue(item),
     };
   });
 }
