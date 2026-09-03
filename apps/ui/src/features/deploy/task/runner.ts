@@ -183,6 +183,7 @@ import {
   attachDeploymentTaskSuccess,
   DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentResultResourceCard,
+  deploymentTaskSuccessFromResultReadiness,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
   markTimelineStep,
@@ -2656,27 +2657,24 @@ async function completeTaskWithArtifact(input: {
     taskId: input.task.id,
   });
   // Everything this runner can honestly claim about usability: the required
-  // result resources are running. It declares no entry address and no
-  // first-use guidance, so those fields stay absent and the Timeline omits
-  // them rather than inventing an address or a protocol (issue #160).
-  const requiredCards = resultCards.filter((card) => card.required);
-  await updateDeployTaskTimeline(input.task.id, {
-    update: (timeline) =>
-      attachDeploymentTaskSuccess(timeline, {
-        success: {
-          ...(requiredCards.length === 0
-            ? {}
-            : {
-                verification: {
-                  passed: requiredCards.length,
-                  total: requiredCards.length,
-                },
-              }),
-          productName: deploymentTaskSourceSummary(input.task.source),
-        },
-        updatedAt: new Date().toISOString(),
-      }),
+  // result resources are running. With no required result resource there is
+  // no evidence behind the claim, so no record is attached and the Timeline
+  // keeps reporting progress (issue #160). Neither an entry address nor
+  // first-use guidance is declared here, so both stay absent rather than
+  // being invented from a host or a port.
+  const success = deploymentTaskSuccessFromResultReadiness({
+    productName: deploymentTaskSourceSummary(input.task.source),
+    requiredRunningCards: resultCards.filter((card) => card.required).length,
   });
+  if (success != null) {
+    await updateDeployTaskTimeline(input.task.id, {
+      update: (timeline) =>
+        attachDeploymentTaskSuccess(timeline, {
+          success,
+          updatedAt: new Date().toISOString(),
+        }),
+    });
+  }
   await deployTaskComplete(input.task.id, {
     kind: "deployment_task.completed",
     message: input.completionRecordMessage ?? "Deployment task completed.",

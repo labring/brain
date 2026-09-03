@@ -785,6 +785,33 @@ export function deploymentTaskSuccessSignature(
 }
 
 /**
+ * Turns what the runner actually observed into the claim it may publish, or
+ * null when there is nothing to claim.
+ *
+ * A success record needs evidence: at least one required result resource
+ * reached the running state — the same bar as
+ * `deploymentTimelineResultReadinessReached`. A task that completed with no
+ * required result resource proved nothing about usability, so it gets no
+ * record and the Timeline keeps reporting progress instead of announcing a
+ * result the user cannot verify (issue #160).
+ */
+export function deploymentTaskSuccessFromResultReadiness(input: {
+  productName: string | null;
+  requiredRunningCards: number;
+}): DeploymentTaskSuccessAttachment | null {
+  if (input.requiredRunningCards < 1) {
+    return null;
+  }
+  return {
+    ...(input.productName == null ? {} : { productName: input.productName }),
+    verification: {
+      passed: input.requiredRunningCards,
+      total: input.requiredRunningCards,
+    },
+  };
+}
+
+/**
  * Appends the user-facing success conclusion to the Timeline.
  *
  * Callers invoke this only once Deployment Result Readiness has been reached

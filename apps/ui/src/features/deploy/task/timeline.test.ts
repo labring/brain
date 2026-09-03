@@ -10,6 +10,7 @@ import {
   createDeploymentTaskTimeline,
   createDeploymentTaskTimelineForRunner,
   declareTimelineSteps,
+  deploymentTaskSuccessFromResultReadiness,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
   deploymentTimelineStepsForRunner,
@@ -638,6 +639,44 @@ const EAGLERCRAFT_SUCCESS = {
   verification: { passed: 3, total: 3 },
   verifiedAt: "2026-06-17T10:00:05.000Z",
 };
+
+test("readiness with no required result resource claims nothing", () => {
+  // A task can complete without a single required result resource: nothing
+  // reached the running state, so "you can start using it" would be a claim
+  // with no evidence behind it.
+  assert.equal(
+    deploymentTaskSuccessFromResultReadiness({
+      productName: "Site",
+      requiredRunningCards: 0,
+    }),
+    null
+  );
+});
+
+test("readiness claims exactly the required resources it saw running", () => {
+  assert.deepEqual(
+    deploymentTaskSuccessFromResultReadiness({
+      productName: "Site",
+      requiredRunningCards: 2,
+    }),
+    { productName: "Site", verification: { passed: 2, total: 2 } }
+  );
+});
+
+test("a readiness claim never drops its verification count", () => {
+  const success = deploymentTaskSuccessFromResultReadiness({
+    productName: null,
+    requiredRunningCards: 3,
+  });
+  assert.deepEqual(success, { verification: { passed: 3, total: 3 } });
+
+  const next = attachDeploymentTaskSuccess(emptyTimeline(), {
+    success,
+    updatedAt: "2026-06-17T10:00:06.000Z",
+  });
+  assert.equal(next.success?.productName, undefined);
+  assert.deepEqual(next.success?.verification, { passed: 3, total: 3 });
+});
 
 test("attaching success stamps the timeline revision it was recorded at", () => {
   const timeline = emptyTimeline();
