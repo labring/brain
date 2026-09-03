@@ -2,6 +2,73 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.11] - 2026-09-03
+
+### Added
+
+- Adopted external Template Instances as Brain Projects via
+  `POST /api/projects/adopt-template-instance`, so a Sealos Skills apply
+  (and any other non-Brain apply) can be claimed after the fact: one
+  Project, `brain.io/*` ownership labels, identity by Instance UID.
+  Brain's own GitHub extraLabels-at-create path is unchanged.
+- Grew the Plan view's cancel dialog into a Cancellation Survey. Cancelling
+  a paid Workspace Subscription still goes through account-service; Brain
+  now also asks why (optional reason chips and free text), stores the
+  answers as feedback in its own Postgres, and confirms the plan stays
+  active until period end. Keep Plan / close / Escape all keep the plan;
+  the undoing control is now Resume Plan.
+- Walled zero-allowance plans with a truthful Paid Chat Wall cause:
+  `allowance-trial` ("Free trial messages used up") on an Active Free
+  Trial, `allowance-plan` ("AI usage not included") otherwise, instead of
+  letting the composer stay open and die as a generic error.
+- Forwarded optional Langfuse credentials (`LANGFUSE_PUBLIC_KEY`,
+  `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`) into newly created GitHub Deploy
+  Devboxes so Codex Gateway can trace those sessions.
+
+### Changed
+
+- Softened the Deploy Billing Wall into the Deploy Billing Notice. The
+  four deployment panes keep the form usable under Account Debt, a full
+  cpu/memory/pod quota, or a payment-due subscription; only the
+  assistant's deploy tool still refuses. Billing CTAs are plan-first:
+  top-up goes to the Sealos Desktop cost center, quota reminders lead
+  with Upgrade plan / Subscribe, and Account Debt titles unify as
+  "in debt".
+- Separated Chat Agent platform credentials (`SYSTEM_OPENAI_*`) from
+  GitHub Deploy (`GITHUB_DEPLOY_OPENAI_*`). Free-trial allowance turns
+  use the platform key; exhausted or missing platform config falls back
+  to the caller's AI Proxy. GitHub Deploy uses its own pair when both
+  are set, the caller's AI Proxy when both are blank, and fails closed
+  on a partial pair — it never reuses Chat Agent or host Codex
+  credentials.
+
+### Fixed
+
+- Classified the platform's `debt.sealos.io` admission denial at the
+  apply boundary (`subscription-expired` / `balance-exhausted`) and sent
+  the App Token on every deployment source, so a docker/template/database
+  run that dies on billing gets a Billing Interruption card instead of
+  raw JSON.
+- Made the last Free Chat Turn report the allowance wall in the response
+  headers, so the composer locks with that reply without waiting for a
+  session refetch.
+- Made Dev Mocks read their cookie directly and register app-globally, so
+  panel toggles actually flip and an enabled mock stays visible across
+  routes.
+
+### Upgrade Notes
+
+- Run UI database migrations `0016` (cancellation survey) and `0017`
+  (template instance adoptions). Boot-time migrate still covers this
+  unless `APP_POSTGRES_SKIP_MIGRATIONS` is set.
+- New optional environment variables for GitHub Deploy tracing:
+  `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`. Leave
+  empty to disable; both keys must be set for Codex Gateway to export
+  traces. Only newly created Devboxes pick this up.
+- `GITHUB_DEPLOY_OPENAI_API_KEY` / `GITHUB_DEPLOY_OPENAI_BASE_URL` now
+  fail closed when only one is set, and never fall back to
+  `SYSTEM_OPENAI_*` or host Codex credentials.
+
 ## [2.0.10] - 2026-08-31
 
 ### Changed
@@ -407,6 +474,7 @@ databases, and day-to-day operations into one Project workspace.
 - Added Project Assistant for understanding the current Project context and
   starting supported operations.
 
+[2.0.11]: https://github.com/labring/brain/compare/v2.0.10...v2.0.11
 [2.0.10]: https://github.com/labring/brain/compare/v2.0.9...v2.0.10
 [2.0.9]: https://github.com/labring/brain/compare/v2.0.8...v2.0.9
 [2.0.8]: https://github.com/labring/brain/compare/v2.0.7...v2.0.8
