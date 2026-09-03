@@ -200,3 +200,62 @@ test("claims are scoped to one task, not to every Timeline", async () => {
     }
   );
 });
+
+test("a surface that joins mid-celebration does not get its own", async () => {
+  resetDeploymentTaskSuccessCelebrationClaims();
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let celebrated = 0;
+  const probe = (revision: number | null) => (
+    <CelebrationProbe
+      onCelebrated={() => {
+        celebrated += 1;
+      }}
+      revision={revision}
+      taskId="task-1"
+    />
+  );
+  let first: ReturnType<typeof render> | undefined;
+  let second: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      first = render(probe(null));
+    });
+    const firstContainer = first?.container;
+    assert.ok(firstContainer);
+
+    // The success lands in the surface the user is watching, and a second
+    // surface for the same task opens on the same conclusion. Both halves have
+    // to be observed in one step: the test window is shorter than a render
+    // round trip, and the arrival is what is being measured.
+    await actAndDrain(() => {
+      first?.rerender(probe(5));
+      second = render(probe(5));
+    });
+    assert.equal(isCelebrating(firstContainer), true);
+    assert.equal(
+      document.querySelectorAll('[data-celebrating="true"]').length,
+      1,
+      "the celebration stays with the mount that watched it land"
+    );
+
+    await actAndDrain(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, SETTLE_MS);
+      });
+    }, SETTLE_MS);
+    assert.equal(celebrated, 1);
+    assert.equal(isCelebrating(firstContainer), false);
+    if (second) {
+      assert.equal(isCelebrating(second.container), false);
+    }
+  } finally {
+    await actAndDrain(() => {
+      first?.unmount();
+      second?.unmount();
+    });
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+    resetDeploymentTaskSuccessCelebrationClaims();
+  }
+});
