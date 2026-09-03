@@ -228,7 +228,7 @@ export function BillingPriceTable({
           ) : (
             sections.map((section) => (
               <Fragment key={section.title}>
-                <TableRow className="bg-white/5 hover:bg-white/5">
+                <TableRow className="bg-muted hover:bg-muted dark:bg-white/5 dark:hover:bg-white/5">
                   <TableCell className="h-12 font-medium" colSpan={3}>
                     {section.title}
                   </TableCell>
@@ -439,7 +439,7 @@ function CalculatorRow({
 
 function CalculatorSectionBar({ title }: { title: string }) {
   return (
-    <h3 className="border-border border-y bg-white/5 px-5 py-3.5 font-medium text-foreground text-sm">
+    <h3 className="border-border border-y bg-muted px-5 py-3.5 font-medium text-foreground text-sm dark:bg-white/5">
       {title}
     </h3>
   );

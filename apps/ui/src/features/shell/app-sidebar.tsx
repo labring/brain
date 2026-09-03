@@ -11,6 +11,7 @@ import {
   SidebarProvider,
   useSidebar,
 } from "@workspace/ui/components/sidebar";
+import { ThemeToggle } from "@workspace/ui/components/theme-toggle";
 import {
   Tooltip,
   TooltipContent,
@@ -66,7 +67,8 @@ function ProjectIcon({
         aria-hidden
         className={cn(
           "size-4 shrink-0 transition-colors",
-          !active && "text-neutral-400 group-hover/row:text-blue-400"
+          !active &&
+            "text-muted-foreground group-hover/row:text-blue-600 dark:group-hover/row:text-blue-400"
         )}
         strokeWidth={1.8}
       />
@@ -78,7 +80,8 @@ function ProjectIcon({
       brandKey={iconKey}
       className={cn(
         "transition-colors",
-        !active && "text-neutral-400 group-hover/row:text-blue-400"
+        !active &&
+          "text-muted-foreground group-hover/row:text-blue-600 dark:group-hover/row:text-blue-400"
       )}
     />
   );
@@ -127,7 +130,7 @@ function AppSidebarNavRow({
   const iconSlotRef = useRef<HTMLSpanElement>(null);
   const accessibleName = ariaLabel ?? label;
   const className =
-    "group/row relative flex h-9 w-full shrink-0 items-center overflow-hidden rounded-md text-left text-neutral-50 text-sm";
+    "group/row relative flex h-9 w-full shrink-0 items-center overflow-hidden rounded-md text-left text-foreground text-sm";
   const body = (
     <>
       <span
@@ -142,8 +145,8 @@ function AppSidebarNavRow({
       />
       <span
         className={cn(
-          "relative flex w-9 shrink-0 items-center justify-center transition-colors group-hover/row:text-blue-400",
-          active && "text-blue-400"
+          "relative flex w-9 shrink-0 items-center justify-center transition-colors group-hover/row:text-blue-600 dark:group-hover/row:text-blue-400",
+          active && "text-blue-600 dark:text-blue-400"
         )}
         ref={iconSlotRef}
       >
@@ -211,6 +214,67 @@ function AppSidebarNavRow({
   );
 }
 
+// Footer row for the theme switch, mirroring AppSidebarNavRow's geometry so
+// the icon column, hover sheet, and collapsed-rail tooltip anchor match the
+// Projects/Notifications rows above it. The row itself IS the toggle button
+// (AnimatedThemeToggler renders a button) — no nested interactive element.
+function AppSidebarThemeToggleRow() {
+  const { state } = useSidebar();
+  const expanded = state === "expanded";
+  const iconSlotRef = useRef<HTMLSpanElement>(null);
+
+  return (
+    <Tooltip disabled={expanded}>
+      <TooltipTrigger
+        render={
+          <ThemeToggle
+            aria-label="Toggle theme"
+            className={cn(
+              "group/row relative isolate flex h-9 w-full shrink-0 cursor-pointer items-center overflow-hidden rounded-md text-left text-sm",
+              // Semantic so the row follows the theme; in dark,
+              // --foreground is exactly the rows' near-white above it.
+              "text-foreground"
+            )}
+            data-slot="app-sidebar-theme-toggle"
+            iconClassName={cn(
+              // Match AppSidebarNavRow's icon column: a w-9 centered slot.
+              "relative size-9 w-9 shrink-0",
+              "transition-colors group-hover/row:text-blue-600 dark:group-hover/row:text-blue-400"
+            )}
+            iconRef={iconSlotRef}
+            title={expanded ? "Theme" : undefined}
+          >
+            {/* Same hover sheet as AppSidebarNavRow; -z-10 inside the row's
+                isolate keeps it under the icon/label without DOM reorder. */}
+            <span
+              aria-hidden
+              className={cn(
+                "app-sidebar-hover absolute inset-y-0 left-0 -z-10 rounded-md transition-[width,background-color] group-hover/row:bg-input/30 motion-reduce:transition-none",
+                expanded
+                  ? "w-full duration-300 ease-sidebar"
+                  : "w-9 duration-200 ease-out"
+              )}
+            />
+            <span
+              className={cn(
+                "app-sidebar-label relative min-w-0 flex-1 truncate whitespace-nowrap pr-2 transition-opacity motion-reduce:transition-none",
+                expanded
+                  ? "opacity-100 duration-300 ease-sidebar"
+                  : "opacity-0 duration-200 ease-out"
+              )}
+            >
+              Theme
+            </span>
+          </ThemeToggle>
+        }
+      />
+      <TooltipContent anchor={iconSlotRef} side="right">
+        Theme
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function AppSidebarGroupHeading({
   children,
   collapsed,
@@ -240,7 +304,7 @@ function AppSidebarGroupHeading({
         tabIndex={expanded ? undefined : -1}
         type="button"
       >
-        <span className="flex min-w-0 flex-1 items-center gap-1 pl-2 font-medium text-muted-foreground text-xs transition-colors group-hover/heading:text-neutral-300">
+        <span className="flex min-w-0 flex-1 items-center gap-1 pl-2 font-medium text-muted-foreground text-xs transition-colors group-hover/heading:text-foreground dark:group-hover/heading:text-neutral-300">
           <span className="truncate">{children}</span>
           <ChevronRight
             aria-hidden
@@ -282,7 +346,7 @@ function AppSidebarHeader() {
         aria-hidden={expanded || undefined}
         aria-label="Expand sidebar"
         className={cn(
-          "group/expand shrink-0 border-0 text-neutral-50",
+          "group/expand shrink-0 border-0 text-foreground",
           expanded && "pointer-events-none"
         )}
         data-slot="app-sidebar-expand"
@@ -304,7 +368,7 @@ function AppSidebarHeader() {
       </AppIconButton>
       <span
         className={cn(
-          "min-w-0 flex-1 truncate whitespace-nowrap font-semibold text-neutral-50 text-sm transition-opacity motion-reduce:transition-none",
+          "min-w-0 flex-1 truncate whitespace-nowrap font-semibold text-foreground text-sm transition-opacity motion-reduce:transition-none",
           expanded
             ? "opacity-100 duration-300 ease-sidebar"
             : "opacity-0 duration-200 ease-out"
@@ -318,7 +382,7 @@ function AppSidebarHeader() {
         aria-hidden={expanded ? undefined : true}
         aria-label="Collapse sidebar"
         className={cn(
-          "shrink-0 border-0 text-neutral-50 transition-opacity motion-reduce:transition-none",
+          "shrink-0 border-0 text-foreground transition-opacity motion-reduce:transition-none",
           expanded
             ? "opacity-100 duration-300 ease-sidebar"
             : "pointer-events-none opacity-0 duration-150 ease-out"
@@ -619,8 +683,9 @@ function AppSidebarChrome({
         </SidebarContent>
         <SidebarFooter className="p-0">
           <div className="flex shrink-0 flex-col gap-0.5 pt-3 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:pt-2 motion-reduce:transition-none">
+            <AppSidebarThemeToggleRow />
             {/* Billing and the Sealos Desktop Entry live inside the account
-                popover; the account row is the whole footer. */}
+                popover. */}
             {/* Account-row exception: the avatar disc is visually heavier
                   than the row glyphs, so in both states it takes this extra
                   margin on top of the footer gap. */}

@@ -83,7 +83,7 @@ export function BillingNavigationFrame({
         <div className="flex min-w-0 items-center gap-2">
           <ReceiptText
             aria-hidden
-            className="size-4 shrink-0 text-blue-400"
+            className="size-4 shrink-0 text-blue-600 dark:text-blue-400"
             strokeWidth={2}
           />
           <h1 className="truncate font-semibold text-foreground text-lg leading-none">
@@ -108,7 +108,7 @@ export function BillingNavigationFrame({
                   className={cn(
                     "flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md p-2 font-medium text-primary text-sm leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
                     active
-                      ? "bg-input text-foreground [&_svg]:text-blue-400"
+                      ? "bg-input text-foreground [&_svg]:text-blue-600 dark:[&_svg]:text-blue-400"
                       : "hover:bg-input/30 hover:text-foreground"
                   )}
                   href={tab.href}

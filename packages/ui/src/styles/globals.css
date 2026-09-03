@@ -80,6 +80,7 @@
   --color-db-access-sticky-header-surface: var(
     --db-access-sticky-header-surface
   );
+  --color-db-access-row-selector-surface: var(--db-access-row-selector-surface);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -153,7 +154,14 @@
   /** Canvas component tokens. */
   --color-canvas-surface: var(--color-neutral-950);
   --canvas-minimap-node-radius: 0.625rem;
-  --db-access-sticky-header-surface: #161e33;
+  /* DB Access sticky surfaces: light values here; the dark navy originals
+     moved to `.dark` (dark resolves pixel-identical). */
+  --db-access-sticky-header-surface: var(--muted);
+  --db-access-row-selector-surface: var(--muted);
+  /* Main action surface (DB Access / logs overlay): light is a plain chrome
+     sheet; `.dark` swaps in the canvas navy base + blue glow. */
+  --main-action-surface-bg: var(--background);
+  --main-action-surface-glow-color: transparent;
   --color-canvas-glow: var(--color-blue-700);
   --color-canvas-dot: color-mix(
     in oklab,
@@ -163,8 +171,9 @@
   /** Shared glass-sheet blur radius; mirrors CANVAS_GLASS_BLUR_RADIUS in JS. */
   --canvas-glass-blur-radius: 40px;
 
-  /** Project chrome surface tokens. */
-  --project-chrome-surface-base: #080a11;
+  /** Project chrome surface tokens. The dark base (#080a11) moved into
+      `.dark` so light mode follows the theme; dark resolves identically. */
+  --project-chrome-surface-base: oklch(0.985 0 0);
   --project-chrome-surface: color-mix(
     in oklab,
     var(--input) 30%,
@@ -256,6 +265,18 @@
   );
   --sealai-brand-primary-hover: var(--color-blue-500);
   --sealai-brand-primary-foreground: oklch(0.922 0 0);
+
+  /** Project chrome surface base (was :root-only dark; paired here so dark
+      resolves exactly as before while light follows the theme). */
+  --project-chrome-surface-base: #080a11;
+
+  /** DB Access sticky surfaces (dark navy originals, now paired). */
+  --db-access-sticky-header-surface: #161e33;
+  --db-access-row-selector-surface: #0c1120;
+
+  /** Main action surface: dark keeps the canvas navy base + blue glow. */
+  --main-action-surface-bg: var(--color-canvas-surface);
+  --main-action-surface-glow-color: var(--color-canvas-glow);
 }
 
 @layer base {
@@ -747,6 +768,26 @@
   }
 }
 
+/* AnimatedThemeToggler View Transitions (ported from magicui): disable the
+   browser's default crossfade so the JS clip-path animation owns the reveal.
+   Scoped via the data-attribute the toggler sets only while a toggle is in
+   flight, so other view transitions in the app (e.g. Next.js navigation)
+   keep default behavior. The clip-from pin keeps Firefox from painting the
+   new theme unclipped between snapshot and the JS animation. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation: none;
+}
+
+html[data-sealai-theme-vt="active"]::view-transition-group(root) {
+  animation-duration: var(--sealai-theme-toggle-vt-duration);
+}
+
+html[data-sealai-theme-vt="active"]::view-transition-new(root) {
+  clip-path: var(--sealai-theme-vt-clip-from);
+}
+
 /* Registered via @utility (not a plain class in @layer utilities) so it can
    compose with variants; plain layered classes silently produce no CSS when
    used behind a variant prefix. */
@@ -781,7 +822,7 @@
 
   .main-action-surface-background {
     overflow: hidden;
-    background-color: var(--color-canvas-surface);
+    background-color: var(--main-action-surface-bg);
     isolation: isolate;
   }
 
@@ -796,7 +837,7 @@
     content: "";
     background: radial-gradient(
       ellipse closest-side at center,
-      var(--color-canvas-glow) 0%,
+      var(--main-action-surface-glow-color) 0%,
       transparent 100%
     );
     mix-blend-mode: screen;
@@ -809,11 +850,12 @@
   }
 
   /* Canvas Glow material (see CONTEXT.md): same canvas base + glow as
-     .main-action-surface-background, but the glow renders above the surface's
-     content: content layers must stay below z-20. */
+     .main-action-surface-background, but the glow renders above the
+     surface's content: content layers must stay below z-20. Shares the
+     theme-paired surface/glow tokens (light sheet, dark canvas navy). */
   .canvas-glow-overlay {
     overflow: hidden;
-    background-color: var(--color-canvas-surface);
+    background-color: var(--main-action-surface-bg);
     isolation: isolate;
   }
 
@@ -828,7 +870,7 @@
     content: "";
     background: radial-gradient(
       ellipse closest-side at center,
-      var(--color-canvas-glow) 0%,
+      var(--main-action-surface-glow-color) 0%,
       transparent 100%
     );
     mix-blend-mode: screen;

@@ -62,7 +62,7 @@ export function MainActionSurfaceFrame({
   return (
     <section
       aria-label={label}
-      className="dark main-action-surface-background absolute inset-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden bg-neutral-950 text-foreground"
+      className="main-action-surface-background absolute inset-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden text-foreground"
       data-slot="main-action-surface"
     >
       <header
@@ -73,7 +73,7 @@ export function MainActionSurfaceFrame({
       >
         <div className="flex min-w-0 items-center gap-2">
           {icon == null ? null : (
-            <span className="flex size-4 shrink-0 items-center justify-center text-blue-400">
+            <span className="flex size-4 shrink-0 items-center justify-center text-blue-600 dark:text-blue-400">
               {icon}
             </span>
           )}

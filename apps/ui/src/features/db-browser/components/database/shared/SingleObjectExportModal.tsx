@@ -71,8 +71,8 @@ export function SingleObjectExportModal({
                 className={cn(
                   "inline-flex h-9 items-center justify-start gap-2 rounded-lg border border-border px-3 font-medium text-sm/5 outline-none transition-colors",
                   format === option
-                    ? "bg-white/10 text-zinc-50"
-                    : "bg-white/[0.045] text-zinc-300 hover:bg-white/10 hover:text-zinc-50"
+                    ? "bg-input text-foreground dark:bg-white/10 dark:text-zinc-50"
+                    : "text-muted-foreground hover:bg-input/60 dark:bg-white/[0.045] dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-50"
                 )}
                 disabled={isExporting}
                 key={option}
