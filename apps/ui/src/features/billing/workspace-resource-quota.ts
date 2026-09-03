@@ -1,6 +1,14 @@
 import { BinaryScale, Quantity, Scale } from "@workspace/shared";
 import { z } from "zod";
 
+import {
+  ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES,
+  type AccountServiceWorkspaceQuotaResponse,
+  accountServiceWorkspaceQuotaResponseSchema,
+  firstWorkspaceQuotaValue,
+  isQuantityQuotaExhausted,
+} from "./workspace-quota-payload";
+
 const WORKSPACE_QUOTA_TYPES = [
   "cpu",
   "memory",
@@ -9,16 +17,9 @@ const WORKSPACE_QUOTA_TYPES = [
   "nodeport",
 ] as const;
 
-const quantityValueSchema = z.union([z.string(), z.number()]);
-const accountServiceQuotaResponseSchema = z.object({
-  quota: z.object({
-    hard: z.record(z.string(), quantityValueSchema).optional().default({}),
-    used: z.record(z.string(), quantityValueSchema).optional().default({}),
-  }),
-});
-
 export const workspaceQuotaItemSchema = z
   .object({
+    exhausted: z.boolean().optional(),
     limit: z.number().finite().nonnegative(),
     type: z.enum(WORKSPACE_QUOTA_TYPES),
     used: z.number().finite().nonnegative(),
@@ -116,32 +117,11 @@ export function parseWorkspaceQuotaItems(value: unknown): WorkspaceQuotaItem[] {
   });
 }
 
-const ACCOUNT_SERVICE_QUOTA_DEFINITIONS = [
-  { keys: ["limits.cpu"], scale: "milli", type: "cpu" },
-  { keys: ["limits.memory"], scale: "mebi", type: "memory" },
-  { keys: ["requests.storage"], scale: "mebi", type: "storage" },
-  { keys: ["pods", "count/pods"], scale: "unit", type: "pod" },
-  { keys: ["services.nodeports"], scale: "unit", type: "nodeport" },
-] as const;
-
-function firstQuantityValue(
-  values: Record<string, string | number>,
-  keys: readonly string[]
-): string | number | undefined {
-  for (const key of keys) {
-    if (values[key] !== undefined) {
-      return values[key];
-    }
-  }
-  return undefined;
-}
-
 function normalizedQuotaNumber(
-  value: string | number,
+  quantity: Quantity,
   scale: "mebi" | "milli" | "unit"
 ): number | null {
   try {
-    const quantity = Quantity.fromJSON(value);
     let normalized: bigint;
     if (scale === "milli") {
       normalized = quantity.milliValue();
@@ -164,24 +144,48 @@ function normalizedQuotaNumber(
 export function workspaceQuotaSnapshotFromPayload(
   payload: unknown
 ): WorkspaceResourceQuotaSnapshot | undefined {
-  const parsed = accountServiceQuotaResponseSchema.safeParse(payload);
+  const parsed = accountServiceWorkspaceQuotaResponseSchema.safeParse(payload);
   if (!parsed.success) {
     return undefined;
   }
-  const { hard, used } = parsed.data.quota;
-  const items = ACCOUNT_SERVICE_QUOTA_DEFINITIONS.flatMap(
-    ({ keys, scale, type }) => {
-      const limitValue = firstQuantityValue(hard, keys);
+  return workspaceQuotaSnapshotFromResponse(parsed.data);
+}
+
+export function workspaceQuotaSnapshotFromResponse(
+  response: AccountServiceWorkspaceQuotaResponse
+): WorkspaceResourceQuotaSnapshot | undefined {
+  const { hard, used } = response.quota;
+  const items = ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES.flatMap(
+    ({ keys, snapshotScale, type }) => {
+      if (snapshotScale == null) {
+        return [];
+      }
+      const limitValue = firstWorkspaceQuotaValue(hard, keys);
       if (limitValue === undefined) {
         return [];
       }
-      const limit = normalizedQuotaNumber(limitValue, scale);
-      const usedValue = firstQuantityValue(used, keys);
-      const consumed =
-        usedValue === undefined ? 0 : normalizedQuotaNumber(usedValue, scale);
-      return limit == null || consumed == null
-        ? []
-        : [{ limit, type, used: consumed }];
+      try {
+        const limitQuantity = Quantity.fromJSON(limitValue);
+        const usedValue = firstWorkspaceQuotaValue(used, keys);
+        const consumedQuantity = Quantity.fromJSON(usedValue ?? "0");
+        const limit = normalizedQuotaNumber(limitQuantity, snapshotScale);
+        const consumed = normalizedQuotaNumber(consumedQuantity, snapshotScale);
+        return limit == null || consumed == null
+          ? []
+          : [
+              {
+                exhausted: isQuantityQuotaExhausted(
+                  consumedQuantity,
+                  limitQuantity
+                ),
+                limit,
+                type,
+                used: consumed,
+              },
+            ];
+      } catch {
+        return [];
+      }
     }
   );
   return items.length === 0 ? undefined : { items };

@@ -66,6 +66,31 @@ export async function observeWorkspaceQuotaForInbox(
     if (snapshot == null) {
       return false;
     }
+    return observeWorkspaceQuotaSnapshotForInbox(
+      { ...credentials, namespace },
+      snapshot,
+      dependencies
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Reports a snapshot another quota surface already derived from its read. */
+export async function observeWorkspaceQuotaSnapshotForInbox(
+  credentials: NotificationClientCredentials,
+  snapshot: WorkspaceResourceQuotaSnapshot,
+  dependencies: WorkspaceQuotaObservationDependencies = DEFAULT_DEPENDENCIES
+): Promise<boolean> {
+  const namespace = credentials.namespace.trim();
+  if (
+    namespace === "" ||
+    credentials.appToken === "" ||
+    credentials.kubeconfig === ""
+  ) {
+    return false;
+  }
+  try {
     await dependencies.report({ ...credentials, namespace }, snapshot);
   } catch {
     return false;

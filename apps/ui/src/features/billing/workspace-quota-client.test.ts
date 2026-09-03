@@ -29,11 +29,11 @@ const QUOTA_PAYLOAD = {
 
 const EXPECTED_SNAPSHOT: WorkspaceResourceQuotaSnapshot = {
   items: [
-    { limit: 36_000, type: "cpu", used: 19_200 },
-    { limit: 167_936, type: "memory", used: 26_880 },
-    { limit: 204_800, type: "storage", used: 12_288 },
-    { limit: 20, type: "pod", used: 3 },
-    { limit: 10, type: "nodeport", used: 0 },
+    { exhausted: false, limit: 36_000, type: "cpu", used: 19_200 },
+    { exhausted: false, limit: 167_936, type: "memory", used: 26_880 },
+    { exhausted: false, limit: 204_800, type: "storage", used: 12_288 },
+    { exhausted: false, limit: 20, type: "pod", used: 3 },
+    { exhausted: false, limit: 10, type: "nodeport", used: 0 },
   ],
 };
 
@@ -196,7 +196,7 @@ describe("loadWorkspaceQuotaSnapshot", () => {
       EXPECTED_SNAPSHOT
     );
     expect(readCachedWorkspaceQuotaSnapshot(secondInput)).toEqual({
-      items: [{ limit: 8, type: "pod", used: 2 }],
+      items: [{ exhausted: false, limit: 8, type: "pod", used: 2 }],
     });
   });
 

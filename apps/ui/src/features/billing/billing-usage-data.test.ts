@@ -1,9 +1,64 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { loadBillingUsage } from "./billing-usage-data";
+import {
+  firstFullQuotaRow,
+  loadBillingUsage,
+  loadWorkspaceQuotaData,
+} from "./billing-usage-data";
 
 const NOW = new Date("2026-07-30T12:00:00.000Z");
+
+test("one quota payload drives usage and notification fullness exactly", async () => {
+  let requests = 0;
+  const quota = await loadWorkspaceQuotaData(
+    {
+      appToken: "desktop-app-token",
+      kubeconfig: "apiVersion: v1",
+      workspace: "workspace-a",
+    },
+    () => {
+      requests += 1;
+      return Promise.resolve(
+        Response.json({
+          quota: {
+            hard: { "count/pods": "20", "limits.cpu": "100m" },
+            used: { "count/pods": "3", "limits.cpu": "99999u" },
+          },
+        })
+      );
+    }
+  );
+
+  assert.equal(requests, 1);
+  assert.deepEqual(quota.rows, [
+    {
+      exhausted: false,
+      label: "CPU",
+      percentUsed: 99.9,
+      remaining: "1u",
+      total: "100m",
+      type: "cpu",
+      used: "100m",
+    },
+    {
+      exhausted: false,
+      label: "Pods",
+      percentUsed: 15,
+      remaining: "17",
+      total: "20",
+      type: "pod",
+      used: "3",
+    },
+  ]);
+  assert.deepEqual(quota.snapshot, {
+    items: [
+      { exhausted: false, limit: 100, type: "cpu", used: 100 },
+      { exhausted: false, limit: 20, type: "pod", used: 3 },
+    ],
+  });
+  assert.equal(firstFullQuotaRow(quota.rows), null);
+});
 
 test("loads current workspace quota with ordered headroom rows", async () => {
   const requests: Array<{ body: unknown; headers: Headers; url: string }> = [];
@@ -71,6 +126,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
   ]);
   assert.deepEqual(snapshot.rows, [
     {
+      exhausted: false,
       label: "CPU",
       percentUsed: 37.5,
       remaining: "2.5",
@@ -79,6 +135,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
       used: "1.5",
     },
     {
+      exhausted: false,
       label: "Memory",
       percentUsed: 37.5,
       remaining: "5Gi",
@@ -87,6 +144,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
       used: "3Gi",
     },
     {
+      exhausted: false,
       label: "Storage",
       percentUsed: 40,
       remaining: "60Gi",
@@ -95,6 +153,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
       used: "40Gi",
     },
     {
+      exhausted: false,
       label: "Ports",
       percentUsed: 30,
       remaining: "7",
@@ -103,6 +162,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
       used: "3",
     },
     {
+      exhausted: false,
       label: "Traffic",
       percentUsed: 25,
       remaining: "75Gi",
@@ -111,6 +171,7 @@ test("loads current workspace quota with ordered headroom rows", async () => {
       used: "25Gi",
     },
     {
+      exhausted: false,
       label: "GPU",
       percentUsed: 50,
       remaining: "1",

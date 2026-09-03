@@ -54,6 +54,16 @@ test("isQuotaExhausted fires at 100% and never on an unknown limit", () => {
     isQuotaExhausted({ limit: 20, type: "storage", used: 19.9 }),
     false
   );
+  assert.equal(
+    isQuotaExhausted({
+      exhausted: false,
+      limit: 100,
+      type: "cpu",
+      used: 100,
+    }),
+    false,
+    "the exact quantity predicate outranks normalized integer rounding"
+  );
   assert.equal(isQuotaExhausted({ limit: 0, type: "pod", used: 0 }), false);
 });
 

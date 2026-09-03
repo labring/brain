@@ -77,11 +77,11 @@ describe("workspace resource quota", () => {
       })
     ).toEqual({
       items: [
-        { limit: 36_000, type: "cpu", used: 19_200 },
-        { limit: 167_936, type: "memory", used: 26_880 },
-        { limit: 204_800, type: "storage", used: 12_288 },
-        { limit: 20, type: "pod", used: 3 },
-        { limit: 10, type: "nodeport", used: 0 },
+        { exhausted: false, limit: 36_000, type: "cpu", used: 19_200 },
+        { exhausted: false, limit: 167_936, type: "memory", used: 26_880 },
+        { exhausted: false, limit: 204_800, type: "storage", used: 12_288 },
+        { exhausted: false, limit: 20, type: "pod", used: 3 },
+        { exhausted: false, limit: 10, type: "nodeport", used: 0 },
       ],
     });
   });
@@ -102,7 +102,9 @@ describe("workspace resource quota", () => {
           },
         },
       })
-    ).toEqual({ items: [{ limit: 10, type: "pod", used: 3 }] });
+    ).toEqual({
+      items: [{ exhausted: false, limit: 10, type: "pod", used: 3 }],
+    });
   });
 
   test("fails open for malformed account-service payloads and quantities", () => {

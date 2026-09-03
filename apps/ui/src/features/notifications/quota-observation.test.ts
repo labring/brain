@@ -6,6 +6,7 @@ import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspac
 import type { NotificationClientCredentials } from "./client";
 import {
   observeWorkspaceQuotaForInbox,
+  observeWorkspaceQuotaSnapshotForInbox,
   type WorkspaceQuotaObservationDependencies,
 } from "./quota-observation";
 
@@ -53,6 +54,24 @@ test("a read snapshot is reported for the workspace and the inbox is refreshed",
 
   assert.equal(await observeWorkspaceQuotaForInbox(CREDENTIALS, deps), true);
   assert.deepEqual(calls.loaded, [CREDENTIALS]);
+  assert.deepEqual(calls.reported, [
+    { credentials: CREDENTIALS, snapshot: SNAPSHOT },
+  ]);
+  assert.equal(calls.refreshed, 1);
+});
+
+test("an existing snapshot is reported without loading quota again", async () => {
+  const { calls, deps } = dependencies({
+    loadSnapshot: () => {
+      throw new Error("the shared payload must not be fetched twice");
+    },
+  });
+
+  assert.equal(
+    await observeWorkspaceQuotaSnapshotForInbox(CREDENTIALS, SNAPSHOT, deps),
+    true
+  );
+  assert.deepEqual(calls.loaded, []);
   assert.deepEqual(calls.reported, [
     { credentials: CREDENTIALS, snapshot: SNAPSHOT },
   ]);
