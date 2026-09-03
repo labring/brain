@@ -168,6 +168,12 @@ export async function fireTimelineSuccessConfetti(
  * The celebration surface. Mounted with the Timeline and toggled by the
  * celebration state, so the particle engine is only ever asked to draw during
  * the window in which the result is also visible.
+ *
+ * The element stays mounted for the life of the pane — remounting a canvas
+ * mid-burst would cut the particles in flight — so `data-active` is what tells
+ * a reader whether this surface is the one currently throwing confetti. Two
+ * Timeline surfaces watching the same success is a real state of the product,
+ * and exactly one of them owns the celebration.
  */
 export function DeploymentTaskSuccessConfetti({
   active,
@@ -194,6 +200,7 @@ export function DeploymentTaskSuccessConfetti({
     <canvas
       aria-hidden
       className="pointer-events-none absolute inset-0 z-10 size-full"
+      data-active={active ? "true" : "false"}
       data-slot="deployment-task-success-confetti"
       ref={canvasRef}
     />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /**
  * Celebrating a verified-successful Deployment Task is a one-shot event, not a
@@ -14,7 +14,9 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
  *   which is what makes replays impossible.
  * - the open celebration windows are a store outside React that the hook
  *   subscribes to, so starting a window never writes React state from inside an
- *   effect body.
+ *   effect body. Each window records which mount opened it, so a second pane
+ *   for the same success reads the open window, does not own it, and stays
+ *   without confetti.
  * - the hook additionally requires a transition observed while mounted, so
  *   entering an already-completed task never celebrates.
  */
@@ -22,8 +24,20 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 export const DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS = 1600;
 
 const claimedCelebrations = new Set<string>();
-/** The celebration windows open right now, under the same keys as their claims. */
-const openCelebrations = new Set<string>();
+/**
+ * The celebration windows open right now, each keyed by its claim and owned
+ * by the mount that opened it. Ownership is what keeps a second pane for the
+ * same task + revision from drawing a second confetti layer while the first
+ * window is still running.
+ */
+const openCelebrations = new Map<string, number>();
+/** Distinguishes mounts: useId() repeats across separate roots, a counter does not. */
+let nextCelebrationOwnerId = 0;
+
+function claimCelebrationOwnerId(): number {
+  nextCelebrationOwnerId += 1;
+  return nextCelebrationOwnerId;
+}
 const celebrationListeners = new Set<() => void>();
 
 /**
@@ -92,6 +106,10 @@ export function useDeploymentTaskSuccessCelebration(input: {
     onCelebratedRef.current = input.onCelebrated;
   });
 
+  // Identifies this mount: a celebration belongs to the mount that observed
+  // the transition, not to every viewer of the same success. useState keeps
+  // it stable across re-renders and unique across roots.
+  const [ownerId] = useState(claimCelebrationOwnerId);
   const key =
     input.successRevision == null
       ? null
@@ -106,7 +124,7 @@ export function useDeploymentTaskSuccessCelebration(input: {
 
   const openWindow = useSyncExternalStore(
     subscribeToCelebrationWindows,
-    () => (key != null && openCelebrations.has(key) ? key : null),
+    () => (key != null && openCelebrations.get(key) === ownerId ? key : null),
     () => null
   );
 
@@ -120,21 +138,23 @@ export function useDeploymentTaskSuccessCelebration(input: {
     if (!claimDeploymentTaskSuccessCelebration(key)) {
       return;
     }
-    openCelebrations.add(key);
+    openCelebrations.set(key, ownerId);
     notifyCelebrationListeners();
-    const timer = setTimeout(() => {
-      if (openCelebrations.delete(key)) {
+    const close = () => {
+      if (openCelebrations.get(key) === ownerId) {
+        openCelebrations.delete(key);
         notifyCelebrationListeners();
       }
+    };
+    const timer = setTimeout(() => {
+      close();
       onCelebratedRef.current?.();
     }, celebrationMs);
     return () => {
       clearTimeout(timer);
-      if (openCelebrations.delete(key)) {
-        notifyCelebrationListeners();
-      }
+      close();
     };
-  }, [celebrationMs, key]);
+  }, [celebrationMs, key, ownerId]);
 
   return key != null && openWindow === key;
 }

@@ -164,6 +164,11 @@ test("the confetti surface stays mounted but only draws while active", async () 
     assert.ok(container);
     assert.match(container.innerHTML, CONFETTI_SLOT_RE);
     assert.equal(state.targets.length, 0);
+    // Mounted is not the same as celebrating, and the surface says which it is:
+    // counting canvases is a valid way to count celebrations.
+    const surface = container.querySelector("canvas");
+    assert.ok(surface);
+    assert.equal(surface.dataset.active, "false");
 
     // The centre burst is deliberately staggered, so the drain has to outlast
     // it before the shot count is meaningful.
@@ -174,6 +179,7 @@ test("the confetti surface stays mounted but only draws while active", async () 
     }, 300);
     assert.equal(state.targets.length, 1);
     assert.equal(state.shots.length, 3);
+    assert.equal(surface.dataset.active, "true");
   } finally {
     if (rendered) {
       await actAndDrain(() => {
