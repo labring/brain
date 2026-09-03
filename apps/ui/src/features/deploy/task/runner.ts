@@ -183,7 +183,7 @@ import {
   attachDeploymentTaskSuccess,
   DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentResultResourceCard,
-  deploymentTaskSuccessFromResultReadiness,
+  deploymentTaskSuccessFromTimeline,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
   markTimelineStep,
@@ -2656,25 +2656,26 @@ async function completeTaskWithArtifact(input: {
     stepId: "create-resources",
     taskId: input.task.id,
   });
-  // Everything this runner can honestly claim about usability: the required
-  // result resources are running. With no required result resource there is
-  // no evidence behind the claim, so no record is attached and the Timeline
-  // keeps reporting progress (issue #160). Neither an entry address nor
-  // first-use guidance is declared here, so both stay absent rather than
-  // being invented from a host or a port.
-  const success = deploymentTaskSuccessFromResultReadiness({
-    productName: deploymentTaskSourceSummary(input.task.source),
-    requiredRunningCards: resultCards.filter((card) => card.required).length,
+  // Everything this runner can honestly claim about usability is what the
+  // Timeline can show as running, entry probe included. The claim is read back
+  // off the snapshot rather than built from the runner's own resource list, so
+  // the two cannot disagree: while any required resource is still pending, no
+  // record is attached and the Timeline keeps reporting progress (issue #160).
+  // Neither an entry address nor first-use guidance is declared here, so both
+  // stay absent rather than being invented from a host or a port.
+  await updateDeployTaskTimeline(input.task.id, {
+    update: (timeline) => {
+      const success = deploymentTaskSuccessFromTimeline(timeline, {
+        productName: deploymentTaskSourceSummary(input.task.source),
+      });
+      return success == null
+        ? timeline
+        : attachDeploymentTaskSuccess(timeline, {
+            success,
+            updatedAt: new Date().toISOString(),
+          });
+    },
   });
-  if (success != null) {
-    await updateDeployTaskTimeline(input.task.id, {
-      update: (timeline) =>
-        attachDeploymentTaskSuccess(timeline, {
-          success,
-          updatedAt: new Date().toISOString(),
-        }),
-    });
-  }
   await deployTaskComplete(input.task.id, {
     kind: "deployment_task.completed",
     message: input.completionRecordMessage ?? "Deployment task completed.",

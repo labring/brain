@@ -812,6 +812,30 @@ export function deploymentTaskSuccessFromResultReadiness(input: {
 }
 
 /**
+ * Reads the evidence back off the Timeline itself and returns the claim it can
+ * support, or null while the Timeline is still proving its case.
+ *
+ * Going through the snapshot instead of the runner's own list of resources is
+ * what keeps the two from disagreeing: the verification count is exactly the
+ * required result resources the user can see running, so a workload that is
+ * ready while its entry probe is still pending claims nothing at all.
+ */
+export function deploymentTaskSuccessFromTimeline(
+  timeline: DeploymentTaskTimelineSnapshot,
+  input: { productName: string | null }
+): DeploymentTaskSuccessAttachment | null {
+  if (!deploymentTimelineResultReadinessReached(timeline)) {
+    return null;
+  }
+  return deploymentTaskSuccessFromResultReadiness({
+    productName: input.productName,
+    requiredRunningCards: timeline.steps
+      .flatMap((step) => step.resultCards ?? [])
+      .filter((card) => card.required && card.status === "running").length,
+  });
+}
+
+/**
  * Appends the user-facing success conclusion to the Timeline.
  *
  * Callers invoke this only once Deployment Result Readiness has been reached

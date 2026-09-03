@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { DeploymentTaskSuccessAttachment } from "./timeline";
+import type {
+  DeploymentResultResourceCard,
+  DeploymentTaskSuccessAttachment,
+} from "./timeline";
 import {
   appendCardEvent,
   appendStepEvent,
@@ -11,6 +14,7 @@ import {
   createDeploymentTaskTimelineForRunner,
   declareTimelineSteps,
   deploymentTaskSuccessFromResultReadiness,
+  deploymentTaskSuccessFromTimeline,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
   deploymentTimelineStepsForRunner,
@@ -676,6 +680,135 @@ test("a readiness claim never drops its verification count", () => {
   });
   assert.equal(next.success?.productName, undefined);
   assert.deepEqual(next.success?.verification, { passed: 3, total: 3 });
+});
+
+const EAGLERCRAFT_WORKLOAD_CARD: DeploymentResultResourceCard = {
+  events: [],
+  id: "AP:default:eaglercraft",
+  required: true,
+  resultRef: { kind: "AP", name: "eaglercraft", namespace: "default" },
+  status: "creating",
+  title: "eaglercraft",
+};
+
+const EAGLERCRAFT_PROBE_CARD: DeploymentResultResourceCard = {
+  events: [],
+  id: "PublicAccess:default:eaglercraft:lobby",
+  required: true,
+  resultRef: {
+    apName: "eaglercraft",
+    id: "lobby",
+    kind: "PublicAccess",
+    namespace: "default",
+  },
+  status: "creating",
+  title: "Public access",
+};
+
+/**
+ * The three frames a deployment really passes through, asserted at the
+ * snapshot seam the runner reads from: the claim may only appear once every
+ * required result resource — the entry probe included — is running in the same
+ * Timeline the user is watching.
+ */
+function timelineFrame(statusByCard: Record<string, "creating" | "running">) {
+  let timeline = declareTimelineSteps(
+    createDeploymentTaskTimeline({
+      status: "applying",
+      taskId: "task-eaglercraft",
+      updatedAt: NOW,
+    }),
+    {
+      steps: [{ id: "create-resources", label: "Create resources" }],
+      updatedAt: NOW,
+    }
+  );
+  for (const card of [EAGLERCRAFT_WORKLOAD_CARD, EAGLERCRAFT_PROBE_CARD]) {
+    timeline = upsertResultResourceCard(timeline, {
+      card: { ...card, status: statusByCard[card.id] ?? "creating" },
+      stepId: "create-resources",
+      updatedAt: NOW,
+    });
+  }
+  return timeline;
+}
+
+test("a running workload with a pending probe is not yet a usable product", () => {
+  const deploying = timelineFrame({});
+  assert.equal(
+    deploymentTaskSuccessFromTimeline(deploying, { productName: null }),
+    null
+  );
+
+  const workloadReady = timelineFrame({
+    "AP:default:eaglercraft": "running",
+  });
+  assert.equal(deploymentTimelineResultReadinessReached(workloadReady), false);
+  assert.equal(
+    deploymentTaskSuccessFromTimeline(workloadReady, {
+      productName: "EaglerCraft Server",
+    }),
+    null
+  );
+});
+
+test("the claim published with the probe covers exactly what is on screen", () => {
+  const verified = timelineFrame({
+    "AP:default:eaglercraft": "running",
+    "PublicAccess:default:eaglercraft:lobby": "running",
+  });
+  const visibleRequiredCards = verified.steps
+    .flatMap((step) => step.resultCards ?? [])
+    .filter((card) => card.required).length;
+
+  const success = deploymentTaskSuccessFromTimeline(verified, {
+    productName: "EaglerCraft Server",
+  });
+  assert.deepEqual(success, {
+    productName: "EaglerCraft Server",
+    verification: { passed: visibleRequiredCards, total: visibleRequiredCards },
+  });
+
+  assert.ok(success, "a fully verified timeline publishes a claim");
+  const next = attachDeploymentTaskSuccess(verified, {
+    success,
+    updatedAt: "2026-06-17T10:00:06.000Z",
+  });
+  assert.equal(next.success?.verification?.passed, 2);
+  assert.equal(next.revision, verified.revision + 1);
+  // The evidence stays on screen underneath the conclusion.
+  assert.equal(next.steps[0]?.resultCards?.length, 2);
+});
+
+test("a timeline with no required result resource publishes no claim", () => {
+  const optional = upsertResultResourceCard(
+    declareTimelineSteps(
+      createDeploymentTaskTimeline({
+        status: "applying",
+        taskId: "task-optional",
+        updatedAt: NOW,
+      }),
+      {
+        steps: [{ id: "create-resources", label: "Create resources" }],
+        updatedAt: NOW,
+      }
+    ),
+    {
+      card: {
+        id: "AP:default:sidekiq",
+        required: false,
+        resultRef: { kind: "AP", name: "sidekiq", namespace: "default" },
+        status: "running",
+        title: "sidekiq",
+      },
+      stepId: "create-resources",
+      updatedAt: NOW,
+    }
+  );
+  assert.equal(
+    deploymentTaskSuccessFromTimeline(optional, { productName: "Web app" }),
+    null
+  );
 });
 
 test("attaching success stamps the timeline revision it was recorded at", () => {
