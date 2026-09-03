@@ -1,0 +1,66 @@
+# Conclude Deployment Tasks with an Evidence-Gated Success Record
+
+## Context
+
+ADR-0028 models deployment *progress* as a task-owned timeline, and ADR-0042
+explains deployment *failure* inside that same pane. The end state had no
+equivalent: a task flipping to `completed` rendered as one more ticked step,
+so the first successful deployment left the user staring at a green checklist
+with no answer to the only question that matters at that moment — "is it up,
+and what do I do now?" (sealos-private #160).
+
+Two placements were on the table: tell the user in the Assistant chat on the
+right, or conclude inside the Timeline itself. Two hazards came with it. The
+runner already announced success from whatever its artifact summary happened to
+list, which for a task with no required result resource meant claiming usable
+nothing; and confetti fired from render, so it replayed on every stream tick,
+remount, and refresh onto a finished task.
+
+## Decision
+
+The conclusion lives in the Deployment Task Timeline as a Deployment Task
+Success Record appended to the task-owned snapshot, and it is gated by
+evidence rather than by status:
+
+- The record is derived by reading the Timeline snapshot back, not from the
+  runner's own resource list. The verification count is exactly the required
+  Deployment Result Resource Cards the user can see running, so a workload
+  that is ready while its entry probe is still pending publishes no claim.
+- A task with no required result resource publishes no record at all. Absence
+  of evidence reads as progress, never as success.
+- The record carries only declared facts: product name, entry addresses, and
+  first-use guidance from the product contract. The UI never derives an
+  address from a host and a port, and never writes a step the contract did
+  not declare.
+- Re-attaching an identical conclusion is a no-op: it does not bump the
+  Timeline revision, so the conclusion is stable across reconnects.
+- A Deployment Celebration owns the one-shot announcement, claimed by
+  task-plus-revision and held in a store outside React; it requires a
+  transition observed while mounted, so entering an already-successful task
+  shows the record without a party. The celebration window is also the
+  auto-close window: show, celebrate, close, with the record still readable
+  from that task's Timeline afterwards.
+
+## Considered Options
+
+- Post the success message in the Assistant chat and keep the Timeline as a
+  progress log: rejected. The chat is a conversation surface, and a deployment
+  that succeeded while the user was typing has nothing to say; it also splits
+  one outcome across two places the user must reconcile.
+- Announce from `status === "completed"`: rejected. Completed is runner
+  bookkeeping; usability is what the required resources and their probes
+  prove. The pane still requires it, so the two gates must both hold.
+- Fire confetti from an effect watching the success flag: rejected. Every
+  re-render path of a live surface becomes a replay.
+
+## Consequences
+
+- `DeploymentTaskTimelineSnapshot.success` is a versioned contract field, and
+  the Timeline drops anything undisplayable when a record is attached rather
+  than rendering it unverified.
+- First-use guidance can only appear once a product contract actually declares
+  it. Until the template contract carries those steps, the record shows what
+  it can prove — the verified resources and any declared address.
+- Any surface that renders a Timeline renders its conclusion; there is no
+  second success channel to keep in sync.
+

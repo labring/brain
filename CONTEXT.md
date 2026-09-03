@@ -354,6 +354,18 @@ The user-facing progress view for one Deployment Task: runner-defined Deployment
 
 A Deployment Task Timeline section for one Deployment Result Resource, presenting its status and events within the task's progress. Blocked means the task can still proceed after an external action or changed condition; failed means the current run has ended for that resource. Required cards gate Deployment Result Readiness; optional cards may keep showing progress or warnings without blocking completion.
 
+### Deployment Task Success Record
+
+The conclusion a Deployment Task Timeline appends once Deployment Result Readiness is reached and every required entry probe has passed: the product is usable now. It carries only facts the deployment declared — product name, entry addresses, first-use steps — so the Timeline never presents an address or an instruction the runner cannot evidence; a task with no required Deployment Result Resource publishes no record and keeps reporting progress. It is part of the task-owned timeline snapshot, not a Chat message or a toast, and its Timeline revision doubles as its identity.
+
+_Avoid_: success toast, deploy done banner, completion notification.
+
+### Deployment Celebration
+
+The one-shot confetti that marks a Deployment Task Success Record arriving while the user is watching. It belongs to the mount that observed the transition and is claimed once per task plus record revision, so reconnects, duplicate snapshots, refreshes onto a finished task, and a second pane for the same success never replay it. Its lifetime is also the Timeline's auto-close window: the record is shown, celebrated, and then the pane closes.
+
+_Avoid_: success animation state, confetti on completed.
+
 ### Deployment Failure Reason
 
 The stable classification and corresponding user-facing action shown on a failed Deployment Timeline Step — the narrowest reason the engine can prove, `unknown` with the Task ID otherwise; safe to persist and aggregate, never a raw stack trace. Its expandable diagnostic context (Deployment Failure Detail) shows the scrubbed provider or Kubernetes error for direct/template runners, and for the AI runner only allowlisted fields — never a raw Gateway or command error. Three reasons are proven by a Billing Interruption judgment rather than by the runner: `balance-exhausted` (Account Debt on a Pay-As-You-Go workspace — the only kind the platform suspends for it), `subscription-expired` (a subscribed workspace suspended under a payment-due Workspace Subscription), and a resource-attributed `quota-exceeded` (a full Deployable Quota); the first two are also proven by the platform's own billing denial at the apply boundary — the one Billing Interruption the platform does signal — and then carry no Billing Evidence. When the judgment proves the reason it carries Billing Evidence; either way the failed step shows the billing callout while Redeploy stays in the pane footer, and the Deployment Task Dock chip carries the reason phrase.
