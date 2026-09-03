@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 /**
  * Celebrating a verified-successful Deployment Task is a one-shot event, not a
@@ -9,9 +9,12 @@ import { useEffect, useRef, useState } from "react";
  * lands directly on the already-successful snapshot. Firing confetti from any of
  * those would mean a party that replays every time the user looks.
  *
- * So the decision is split in two:
+ * So the decision is split in three:
  * - the claim registry is page-session state keyed by task id + success revision,
  *   which is what makes replays impossible.
+ * - the open celebration windows are a store outside React that the hook
+ *   subscribes to, so starting a window never writes React state from inside an
+ *   effect body.
  * - the hook additionally requires a transition observed while mounted, so
  *   entering an already-completed task never celebrates.
  */
@@ -19,6 +22,9 @@ import { useEffect, useRef, useState } from "react";
 export const DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS = 1600;
 
 const claimedCelebrations = new Set<string>();
+/** The celebration windows open right now, under the same keys as their claims. */
+const openCelebrations = new Set<string>();
+const celebrationListeners = new Set<() => void>();
 
 /**
  * A success revision is its own claim: the same task re-deployed (and therefore
@@ -49,13 +55,27 @@ export function hasDeploymentTaskSuccessCelebrationClaim(key: string): boolean {
 /** Test-only: forget the session's claims so scenarios stay independent. */
 export function resetDeploymentTaskSuccessCelebrationClaims(): void {
   claimedCelebrations.clear();
+  openCelebrations.clear();
+}
+
+function notifyCelebrationListeners(): void {
+  for (const listener of celebrationListeners) {
+    listener();
+  }
+}
+
+function subscribeToCelebrationWindows(listener: () => void): () => void {
+  celebrationListeners.add(listener);
+  return () => {
+    celebrationListeners.delete(listener);
+  };
 }
 
 /**
  * Drives one celebration: true from the moment a live transition to verified
- * success is observed until the celebration window closes, when
- * `onCelebrated` fires — the Timeline's auto-close hook (show the result,
- * celebrate, then close).
+ * success is observed until the celebration window closes, when `onCelebrated`
+ * fires — the Timeline's auto-close hook (show the result, celebrate, then
+ * close).
  */
 export function useDeploymentTaskSuccessCelebration(input: {
   celebrationMs?: number;
@@ -65,11 +85,12 @@ export function useDeploymentTaskSuccessCelebration(input: {
 }): boolean {
   const celebrationMs =
     input.celebrationMs ?? DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS;
-  const [celebrating, setCelebrating] = useState(false);
   // Latest-callback ref: a celebration timer must never be re-armed merely
   // because the host re-created its inline onClose closure on a stream tick.
   const onCelebratedRef = useRef(input.onCelebrated);
-  onCelebratedRef.current = input.onCelebrated;
+  useEffect(() => {
+    onCelebratedRef.current = input.onCelebrated;
+  });
 
   const key =
     input.successRevision == null
@@ -78,42 +99,42 @@ export function useDeploymentTaskSuccessCelebration(input: {
           input.taskId,
           input.successRevision
         );
-  // `undefined` means nothing has been observed yet in this mount, which is the
+  // Undefined means nothing has been observed yet in this mount, which is the
   // one state that must not celebrate: a refresh onto a finished task is not a
   // transition the user watched happen.
   const observedKeyRef = useRef<string | null | undefined>(undefined);
-  const armedKeysRef = useRef<Set<string>>(new Set());
+
+  const openWindow = useSyncExternalStore(
+    subscribeToCelebrationWindows,
+    () => (key != null && openCelebrations.has(key) ? key : null),
+    () => null
+  );
 
   useEffect(() => {
     const firstObservation = observedKeyRef.current === undefined;
     const previousKey = observedKeyRef.current ?? null;
     observedKeyRef.current = key;
-
-    if (key == null) {
-      armedKeysRef.current.clear();
-      setCelebrating((current) => (current ? false : current));
+    if (key == null || firstObservation || previousKey === key) {
       return;
     }
-    if (
-      !firstObservation &&
-      previousKey !== key &&
-      claimDeploymentTaskSuccessCelebration(key)
-    ) {
-      armedKeysRef.current.add(key);
-    }
-    if (!armedKeysRef.current.has(key)) {
+    if (!claimDeploymentTaskSuccessCelebration(key)) {
       return;
     }
-    setCelebrating(true);
+    openCelebrations.add(key);
+    notifyCelebrationListeners();
     const timer = setTimeout(() => {
-      armedKeysRef.current.delete(key);
-      setCelebrating((current) => (current ? false : current));
+      if (openCelebrations.delete(key)) {
+        notifyCelebrationListeners();
+      }
       onCelebratedRef.current?.();
     }, celebrationMs);
     return () => {
       clearTimeout(timer);
+      if (openCelebrations.delete(key)) {
+        notifyCelebrationListeners();
+      }
     };
   }, [celebrationMs, key]);
 
-  return celebrating;
+  return key != null && openWindow === key;
 }
