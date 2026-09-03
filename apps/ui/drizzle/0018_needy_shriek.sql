@@ -1,4 +1,5 @@
-DROP INDEX "sealai_assistant"."assistant_chats_namespace_actor_project_updated_at_idx";--> statement-breakpoint
+DROP INDEX "sealai_assistant"."assistant_chats_namespace_actor_updated_at_idx";--> statement-breakpoint
+ALTER TABLE "sealai_assistant"."assistant_chats" ADD COLUMN "project_id" text;--> statement-breakpoint
 ALTER TABLE "sealai_assistant"."assistant_chats" ADD COLUMN "scope_kind" text;--> statement-breakpoint
 UPDATE "sealai_assistant"."assistant_chats"
 SET "scope_kind" = 'project'

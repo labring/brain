@@ -1,5 +1,5 @@
 {
-  "id": "58f633be-b7dc-4a84-b711-43a26abaf094",
+  "id": "8ba391cf-d361-4beb-b3cd-4bb0c39d07d6",
   "prevId": "7804d409-c455-4a2c-8d79-0e2fba430650",
   "version": "7",
   "dialect": "postgresql",
@@ -118,6 +118,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "scope_kind": {
+          "name": "scope_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "workspace_actor": {
           "name": "workspace_actor",
           "type": "text",
@@ -169,8 +175,8 @@
           "method": "btree",
           "with": {}
         },
-        "assistant_chats_namespace_actor_project_updated_at_idx": {
-          "name": "assistant_chats_namespace_actor_project_updated_at_idx",
+        "assistant_chats_namespace_actor_scope_project_updated_at_idx": {
+          "name": "assistant_chats_namespace_actor_scope_project_updated_at_idx",
           "columns": [
             {
               "expression": "namespace",
@@ -180,6 +186,12 @@
             },
             {
               "expression": "workspace_actor",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scope_kind",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
