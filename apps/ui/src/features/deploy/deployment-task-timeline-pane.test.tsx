@@ -814,6 +814,12 @@ const SUCCESS_VERIFICATION_SLOT_RE =
 const STEP_LABEL_RE = /Create resources/;
 const CONFETTI_CANVAS_RE =
   /<canvas(?=[^>]*pointer-events-none)(?=[^>]*absolute inset-0)[^>]*data-slot="deployment-task-success-confetti"/;
+// The canvas is mounted with the pane for as long as the pane lives, so only an
+// active surface is evidence of a celebration.
+const CELEBRATING_SURFACE_RE =
+  /<canvas(?=[^>]*data-active="true")[^>]*data-slot="deployment-task-success-confetti"/;
+const CELEBRATING_SURFACE_SELECTOR =
+  '[data-slot="deployment-task-success-confetti"][data-active="true"]';
 const FALLBACK_HEADLINE_RE = /You can start using it/;
 const VIEW_DETAILS_RE = /View deployment details/;
 const DECLARED_HEADLINE_RE = /Your server is online/;
@@ -945,6 +951,13 @@ function skipCelebrationPainting() {
   return () => restoreGlobal(override);
 }
 
+/** The surfaces inside `root` that are throwing confetti right now. */
+function celebratingSurfaces(root: ParentNode | null | undefined): Element[] {
+  return root == null
+    ? []
+    : Array.from(root.querySelectorAll(CELEBRATING_SURFACE_SELECTOR));
+}
+
 test("a completed task without a verified record reports progress, not success", () => {
   const html = renderPaneContent(successSnapshot({ success: null }));
 
@@ -968,6 +981,9 @@ test("the verified result takes the panel and keeps the process one click away",
 
   assert.match(html, SUCCESS_SLOT_RE);
   assert.match(html, CONFETTI_CANVAS_RE);
+  // A pane that opens straight onto a finished success reads the result; it
+  // does not throw confetti at it.
+  assert.doesNotMatch(html, CELEBRATING_SURFACE_RE);
   assert.match(html, DECLARED_HEADLINE_RE);
   assert.match(html, PRODUCT_NAME_RE);
   assert.doesNotMatch(html, FALLBACK_HEADLINE_RE);
@@ -1081,11 +1097,10 @@ test("a success that arrives live celebrates once and closes the panel", async (
     assert.equal(celebrated, 0);
     await show(successSnapshot({}));
     assert.equal(hasDeploymentTaskSuccessCelebrationClaim(claim), true);
-    assert.ok(
-      rendered?.container.querySelector(
-        '[data-slot="deployment-task-success-confetti"]'
-      ),
-      "the celebration is drawn inside the Timeline surface"
+    assert.equal(
+      celebratingSurfaces(rendered?.container).length,
+      1,
+      "this pane is the surface throwing the confetti"
     );
     assert.ok(
       rendered?.container.querySelector(
@@ -1172,6 +1187,125 @@ test("a pane opened on a finished task does not celebrate or close itself", asyn
         rendered?.unmount();
       });
     }
+    restoreActEnvironment(previousActEnvironment);
+    stopPainting();
+    await dom.restore();
+    resetDeploymentTaskSuccessCelebrationClaims();
+  }
+});
+
+test("the result is scrolled into view when it lands", async () => {
+  resetDeploymentTaskSuccessCelebrationClaims();
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const stopPainting = skipCelebrationPainting();
+  const previousScrollIntoView = Element.prototype.scrollIntoView;
+  const scrolledBlocks: string[] = [];
+  Element.prototype.scrollIntoView = function scroll(
+    this: Element,
+    options?: boolean | ScrollIntoViewOptions
+  ) {
+    scrolledBlocks.push(
+      typeof options === "object" && options != null
+        ? String(options.block)
+        : "default"
+    );
+  };
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    const show = async (snapshot: DeploymentTaskTimelineSnapshotDTO) => {
+      await actAndDrain(() => {
+        const element = (
+          <DeploymentTaskTimelinePaneContent
+            kubeconfig="kubeconfig"
+            namespace="default"
+            snapshot={snapshot}
+          />
+        );
+        if (rendered == null) {
+          rendered = render(element);
+        } else {
+          rendered.rerender(element);
+        }
+      });
+    };
+
+    // The steps above are the process and this is the answer, so the result
+    // has to come into view instead of waiting below the fold.
+    await show(successSnapshot({ status: "applying", success: null }));
+    assert.deepEqual(scrolledBlocks, []);
+    await show(successSnapshot({}));
+    assert.deepEqual(scrolledBlocks, ["nearest"]);
+    // A duplicate frame of the same conclusion is not a new arrival.
+    await show(successSnapshot({}));
+    assert.deepEqual(scrolledBlocks, ["nearest"]);
+  } finally {
+    Element.prototype.scrollIntoView = previousScrollIntoView;
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    stopPainting();
+    await dom.restore();
+    resetDeploymentTaskSuccessCelebrationClaims();
+  }
+});
+
+test("only the pane that watched the success land celebrates it", async () => {
+  resetDeploymentTaskSuccessCelebrationClaims();
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const stopPainting = skipCelebrationPainting();
+  let celebrated = 0;
+  const panes: ReturnType<typeof render>[] = [];
+  const paneFor = (snapshot: DeploymentTaskTimelineSnapshotDTO) => (
+    <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
+      onSuccessCelebrated={() => {
+        celebrated += 1;
+      }}
+      snapshot={snapshot}
+    />
+  );
+  try {
+    await actAndDrain(() => {
+      for (let index = 0; index < 2; index += 1) {
+        panes.push(
+          render(
+            paneFor(successSnapshot({ status: "applying", success: null }))
+          )
+        );
+      }
+    });
+    await actAndDrain(() => {
+      for (const pane of panes) {
+        pane.rerender(paneFor(successSnapshot({})));
+      }
+    });
+
+    // Reading an open window is not the same as owning one: another surface
+    // for the same success must not get its own layer of confetti.
+    assert.equal(
+      celebratingSurfaces(document).length,
+      1,
+      "the whole page celebrates exactly once"
+    );
+
+    await actAndDrain(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS + 150);
+      });
+    });
+    assert.equal(celebrated, 1);
+  } finally {
+    await actAndDrain(() => {
+      for (const pane of panes) {
+        pane.unmount();
+      }
+    });
     restoreActEnvironment(previousActEnvironment);
     stopPainting();
     await dom.restore();
