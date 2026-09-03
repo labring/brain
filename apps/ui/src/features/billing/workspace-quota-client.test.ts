@@ -200,6 +200,24 @@ describe("loadWorkspaceQuotaSnapshot", () => {
     });
   });
 
+  test("isolates cached snapshots when workspace credentials change", async () => {
+    const firstInput = input("workspace-credential-scope");
+    const secondInput = { ...firstInput, appToken: "rotated-app-token" };
+    let calls = 0;
+    const fetch = jsonFetch({
+      quota: { hard: { pods: "8" }, used: { pods: "2" } },
+    });
+    const countingFetch: BillingFetch = (request, init) => {
+      calls += 1;
+      return fetch(request, init);
+    };
+
+    await loadWorkspaceQuotaSnapshot(firstInput, countingFetch);
+    await loadWorkspaceQuotaSnapshot(secondInput, countingFetch);
+
+    expect(calls).toBe(2);
+  });
+
   test("reads the cache synchronously without another API request", async () => {
     const credentials = input("workspace-sync-read");
     let calls = 0;

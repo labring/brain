@@ -68,16 +68,50 @@ export const ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES = [
 export type AccountServiceWorkspaceQuotaType =
   (typeof ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES)[number]["type"];
 
-export function firstWorkspaceQuotaValue(
-  values: Record<string, string | number>,
+type AccountServiceWorkspaceQuotaResource =
+  (typeof ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES)[number];
+
+export type SnapshotWorkspaceQuotaResource = Extract<
+  AccountServiceWorkspaceQuotaResource,
+  { snapshotScale: "mebi" | "milli" | "unit" }
+>;
+
+export const SNAPSHOT_WORKSPACE_QUOTA_RESOURCES =
+  ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES.filter(
+    (resource): resource is SnapshotWorkspaceQuotaResource =>
+      resource.snapshotScale !== null
+  );
+
+export interface WorkspaceQuotaValues {
+  limit: string | number | undefined;
+  used: string | number | undefined;
+}
+
+/** Selects one account-service alias and reads both sides through that key. */
+export function workspaceQuotaValuesForAliases(
+  hard: Record<string, string | number>,
+  used: Record<string, string | number>,
   keys: readonly string[]
-): string | number | undefined {
+): WorkspaceQuotaValues {
+  let hardOnlyKey: string | undefined;
+  let usedOnlyKey: string | undefined;
   for (const key of keys) {
-    if (values[key] !== undefined) {
-      return values[key];
+    const hasHard = hard[key] !== undefined;
+    const hasUsed = used[key] !== undefined;
+    if (hasHard && hasUsed) {
+      return { limit: hard[key], used: used[key] };
+    }
+    if (hasHard && hardOnlyKey === undefined) {
+      hardOnlyKey = key;
+    }
+    if (hasUsed && usedOnlyKey === undefined) {
+      usedOnlyKey = key;
     }
   }
-  return undefined;
+  const key = hardOnlyKey ?? usedOnlyKey;
+  return key === undefined
+    ? { limit: undefined, used: undefined }
+    : { limit: hard[key], used: used[key] };
 }
 
 /** A zero or unknown ceiling is never exhausted. */

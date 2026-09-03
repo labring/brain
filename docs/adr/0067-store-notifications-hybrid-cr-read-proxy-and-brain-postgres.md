@@ -11,6 +11,12 @@ automatic read-back on recovery. Brain, in turn, holds no standing cluster
 credentials — every request arrives with the user's own kubeconfig
 (ADR-0052) — and no controller of its own.
 
+Implementation amendment (2026-09): workspace quota observations now read
+account-service through Brain's existing authenticated billing proxy instead
+of the Desktop SDK. The client still derives and reports the snapshot during a
+user request, so the trust boundary and nuisance-only fabrication risk below
+are unchanged.
+
 ## Decision
 
 Each message has exactly one source of truth, chosen by who produces it.
@@ -89,15 +95,15 @@ keeping Brain's own messages in Brain's own database needs none.
 - Read state can diverge between Brain and the desktop for Developers (no
   patch permission) and whenever the best-effort patch fails; the receipt is
   authoritative inside Brain.
-- Producers only fire where a request carries the observed data (the chat
-  turn and the sidebar's quota warm-up for quota; the inbox's own credits
-  read for the gift hint; the Plan view's settlement for subscription-change
-  receipts). A state that changes while no
-  one is using Brain is noticed on the next request, not at the moment it
-  changes. The observed snapshot is the client's (the desktop SDK's quota
-  read, already trusted for chat context), so a workspace member could post
-  a fabricated one — the write lands only in that member's own verified
-  workspace, as a nuisance entry, never across workspaces.
+- Producers only fire where a request carries the observed data (the sidebar
+  and Status Hint quota reads; the inbox's own credits read for the gift hint;
+  the Plan view's settlement for subscription-change receipts). A state that
+  changes while no one is using Brain is noticed on the next request, not at
+  the moment it changes. The observed snapshot is the client's (the Brain
+  billing proxy's account-service quota read, also used for chat context), so
+  a workspace member could post a fabricated one — the write lands only in
+  that member's own verified workspace, as a nuisance entry, never across
+  workspaces.
 - Freshness is poll-bound (≤5 minutes); a WATCH upgrade is a later change to
   the proxy only.
 - `sealai_notification` joins the app-owned schemas: migrations apply at

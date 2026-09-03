@@ -1,18 +1,21 @@
 import { Quantity, Scale } from "@workspace/shared";
 import { z } from "zod";
+import type { WorkspaceCredentials } from "@/lib/personal-resource-headers";
 
 import {
   type BillingCredentials,
   type BillingFetch,
   createBillingJsonRequester,
 } from "./billing-data-client";
+import { loadWorkspaceQuotaResponse } from "./workspace-quota-client";
 import {
   ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES,
   type AccountServiceWorkspaceQuotaResponse,
   type AccountServiceWorkspaceQuotaType,
   accountServiceWorkspaceQuotaResponseSchema,
-  firstWorkspaceQuotaValue,
   isQuantityQuotaExhausted,
+  SNAPSHOT_WORKSPACE_QUOTA_RESOURCES,
+  workspaceQuotaValuesForAliases,
 } from "./workspace-quota-payload";
 import {
   type WorkspaceResourceQuotaSnapshot,
@@ -22,7 +25,7 @@ import {
 export type BillingQuotaType = AccountServiceWorkspaceQuotaType;
 
 export interface BillingUsageRow {
-  exhausted?: boolean;
+  exhausted: boolean;
   label: string;
   percentUsed: number;
   remaining: string;
@@ -77,8 +80,8 @@ function quotaRows(
 ): BillingUsageRow[] {
   const { hard, used } = response.quota;
   return ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES.flatMap((resource) => {
-    const hardValue = firstWorkspaceQuotaValue(hard, resource.keys);
-    const usedValue = firstWorkspaceQuotaValue(used, resource.keys);
+    const { limit: hardValue, used: usedValue } =
+      workspaceQuotaValuesForAliases(hard, used, resource.keys);
     if (hardValue === undefined && usedValue === undefined) {
       return [];
     }
@@ -103,18 +106,20 @@ function quotaRows(
  * The quota rows a deployment can actually run into (design spec catalog
  * A1/A2): the resources a new workload asks for. Traffic and GPU stay out.
  */
-export const DEPLOYABLE_QUOTA_TYPES: ReadonlySet<BillingQuotaType> = new Set([
-  "cpu",
-  "memory",
-  "storage",
-  "pod",
-  "nodeport",
-]);
+export const DEPLOYABLE_QUOTA_TYPES: ReadonlySet<BillingQuotaType> = new Set(
+  SNAPSHOT_WORKSPACE_QUOTA_RESOURCES.map(({ type }) => type)
+);
 
 export type QuotaFullnessRow = Pick<
   BillingUsageRow,
-  "exhausted" | "label" | "percentUsed" | "type"
->;
+  "label" | "percentUsed" | "type"
+> &
+  Partial<Pick<BillingUsageRow, "exhausted">>;
+
+/** Exact account-service judgment, with a legacy percentage fallback. */
+export function isQuotaFullnessRowExhausted(row: QuotaFullnessRow): boolean {
+  return row.exhausted ?? row.percentUsed >= 100;
+}
 
 /** "CPU" keeps its initialism mid-sentence; the rest read as common nouns. */
 export function quotaResourceNoun(label: string): string {
@@ -128,8 +133,7 @@ export function firstFullQuotaRow<Row extends QuotaFullnessRow>(
   return (
     rows.find(
       (row) =>
-        DEPLOYABLE_QUOTA_TYPES.has(row.type) &&
-        (row.exhausted ?? row.percentUsed >= 100)
+        DEPLOYABLE_QUOTA_TYPES.has(row.type) && isQuotaFullnessRowExhausted(row)
     ) ?? null
   );
 }
@@ -157,7 +161,7 @@ export function firstDoomingQuotaRow<Row extends QuotaFullnessRow>(
       (row) =>
         (UNIVERSAL_DEPLOYABLE_QUOTA_TYPES.has(row.type) ||
           paneConsumes.includes(row.type)) &&
-        (row.exhausted ?? row.percentUsed >= 100)
+        isQuotaFullnessRowExhausted(row)
     ) ?? null
   );
 }
@@ -181,23 +185,10 @@ export interface WorkspaceQuotaData {
 
 /** Derives every client quota view from one parsed account-service payload. */
 export async function loadWorkspaceQuotaData(
-  credentials: BillingCredentials & { workspace: string },
+  credentials: WorkspaceCredentials,
   fetch: BillingFetch = globalThis.fetch
 ): Promise<WorkspaceQuotaData> {
-  const requestBillingJson = createBillingJsonRequester({
-    credentials: {
-      appToken: credentials.appToken,
-      kubeconfig: credentials.kubeconfig,
-    },
-    fallbackErrorMessage: "Could not load workspace usage.",
-    fetch,
-  });
-  const quotaPayload = await requestBillingJson(
-    "/api/billing/workspace-quota",
-    { workspace: credentials.workspace }
-  );
-  const response =
-    accountServiceWorkspaceQuotaResponseSchema.parse(quotaPayload);
+  const response = await loadWorkspaceQuotaResponse(credentials, fetch);
   return {
     rows: quotaRows(response),
     snapshot: workspaceQuotaSnapshotFromResponse(response),
@@ -210,7 +201,7 @@ export async function loadWorkspaceQuotaData(
  * judge fullness (the status hint's quota-full evaluation).
  */
 export async function loadWorkspaceQuotaUsage(
-  credentials: BillingCredentials & { workspace: string },
+  credentials: WorkspaceCredentials,
   fetch: BillingFetch = globalThis.fetch
 ): Promise<BillingUsageRow[]> {
   return (await loadWorkspaceQuotaData(credentials, fetch)).rows;
@@ -259,7 +250,7 @@ export async function loadBillingUsage(
 
   return {
     rows: await loadWorkspaceQuotaUsage(
-      { ...credentials, workspace: selectedWorkspace },
+      { ...credentials, namespace: selectedWorkspace },
       fetch
     ),
     selectedWorkspace,

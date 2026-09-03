@@ -2,20 +2,19 @@ import { BinaryScale, Quantity, Scale } from "@workspace/shared";
 import { z } from "zod";
 
 import {
-  ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES,
   type AccountServiceWorkspaceQuotaResponse,
   accountServiceWorkspaceQuotaResponseSchema,
-  firstWorkspaceQuotaValue,
   isQuantityQuotaExhausted,
+  SNAPSHOT_WORKSPACE_QUOTA_RESOURCES,
+  type SnapshotWorkspaceQuotaResource,
+  workspaceQuotaValuesForAliases,
 } from "./workspace-quota-payload";
 
-const WORKSPACE_QUOTA_TYPES = [
-  "cpu",
-  "memory",
-  "storage",
-  "pod",
-  "nodeport",
-] as const;
+export type WorkspaceQuotaType = SnapshotWorkspaceQuotaResource["type"];
+
+const WORKSPACE_QUOTA_TYPES = SNAPSHOT_WORKSPACE_QUOTA_RESOURCES.map(
+  ({ type }) => type
+) as [WorkspaceQuotaType, ...WorkspaceQuotaType[]];
 
 export const workspaceQuotaItemSchema = z
   .object({
@@ -39,17 +38,9 @@ export type WorkspaceResourceQuotaSnapshot = z.infer<
 >;
 
 export type WorkspaceResourceQuotaRow = readonly [
-  label: "CPU" | "Memory" | "Storage" | "Pods" | "Ports",
+  label: SnapshotWorkspaceQuotaResource["label"],
   value: string,
 ];
-
-const WORKSPACE_QUOTA_ROW_DEFINITIONS = [
-  { label: "CPU", type: "cpu" },
-  { label: "Memory", type: "memory" },
-  { label: "Storage", type: "storage" },
-  { label: "Pods", type: "pod" },
-  { label: "Ports", type: "nodeport" },
-] as const;
 
 function formatPortQuotaNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : "--";
@@ -79,7 +70,9 @@ function formatBinaryQuotaNumberFromMi(value: number): string {
   }
 }
 
-function formatQuotaValue(item: WorkspaceQuotaItem): string {
+export function formatWorkspaceQuotaItemValue(
+  item: WorkspaceQuotaItem
+): string {
   switch (item.type) {
     case "cpu":
       return (
@@ -105,16 +98,6 @@ function formatQuotaValue(item: WorkspaceQuotaItem): string {
     default:
       return "--/--";
   }
-}
-
-export function parseWorkspaceQuotaItems(value: unknown): WorkspaceQuotaItem[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((item) => {
-    const parsed = workspaceQuotaItemSchema.safeParse(item);
-    return parsed.success ? [parsed.data] : [];
-  });
 }
 
 function normalizedQuotaNumber(
@@ -155,19 +138,16 @@ export function workspaceQuotaSnapshotFromResponse(
   response: AccountServiceWorkspaceQuotaResponse
 ): WorkspaceResourceQuotaSnapshot | undefined {
   const { hard, used } = response.quota;
-  const items = ACCOUNT_SERVICE_WORKSPACE_QUOTA_RESOURCES.flatMap(
+  const items = SNAPSHOT_WORKSPACE_QUOTA_RESOURCES.flatMap(
     ({ keys, snapshotScale, type }) => {
-      if (snapshotScale == null) {
-        return [];
-      }
-      const limitValue = firstWorkspaceQuotaValue(hard, keys);
+      const values = workspaceQuotaValuesForAliases(hard, used, keys);
+      const limitValue = values.limit;
       if (limitValue === undefined) {
         return [];
       }
       try {
         const limitQuantity = Quantity.fromJSON(limitValue);
-        const usedValue = firstWorkspaceQuotaValue(used, keys);
-        const consumedQuantity = Quantity.fromJSON(usedValue ?? "0");
+        const consumedQuantity = Quantity.fromJSON(values.used ?? "0");
         const limit = normalizedQuotaNumber(limitQuantity, snapshotScale);
         const consumed = normalizedQuotaNumber(consumedQuantity, snapshotScale);
         return limit == null || consumed == null
@@ -196,11 +176,11 @@ export function formatWorkspaceQuotaRows(
   options: { includeMissing?: boolean } = {}
 ): WorkspaceResourceQuotaRow[] {
   const includeMissing = options.includeMissing ?? true;
-  return WORKSPACE_QUOTA_ROW_DEFINITIONS.flatMap(({ label, type }) => {
+  return SNAPSHOT_WORKSPACE_QUOTA_RESOURCES.flatMap(({ label, type }) => {
     const item = quota.find((candidate) => candidate.type === type);
     if (item == null) {
       return includeMissing ? ([[label, "--/--"]] as const) : [];
     }
-    return [[label, formatQuotaValue(item)] as const];
+    return [[label, formatWorkspaceQuotaItemValue(item)] as const];
   });
 }

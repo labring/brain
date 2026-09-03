@@ -29,6 +29,7 @@ const NOW = new Date("2026-08-28T10:00:00Z");
 const CREDENTIALS = {
   appToken: "test-token",
   kubeconfig: "test-kubeconfig",
+  namespace: "ns-test",
   workspace: "ns-test",
 };
 
@@ -78,11 +79,15 @@ async function inputsFor(
   scenario: BillingDevScenario
 ): Promise<StatusHintInputs> {
   const fetch = scenarioTestFetch(scenario);
+  const quotaCredentials = {
+    ...CREDENTIALS,
+    namespace: `${CREDENTIALS.namespace}-deploy-${scenario}`,
+  };
   const [subscription, balance, credits, quota] = await Promise.all([
     loadWorkspaceSubscriptionSummary(CREDENTIALS, { fetch }),
     loadAccountBalanceTerms(CREDENTIALS, fetch),
     loadAccountCredits(CREDENTIALS, fetch),
-    loadWorkspaceQuotaUsage(CREDENTIALS, fetch),
+    loadWorkspaceQuotaUsage(quotaCredentials, fetch),
   ]);
   return {
     availableBalanceMicroUnits:

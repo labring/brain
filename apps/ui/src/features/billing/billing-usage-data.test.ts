@@ -6,6 +6,7 @@ import {
   loadBillingUsage,
   loadWorkspaceQuotaData,
 } from "./billing-usage-data";
+import { loadWorkspaceQuotaSnapshot } from "./workspace-quota-client";
 
 const NOW = new Date("2026-07-30T12:00:00.000Z");
 
@@ -15,14 +16,18 @@ test("one quota payload drives usage and notification fullness exactly", async (
     {
       appToken: "desktop-app-token",
       kubeconfig: "apiVersion: v1",
-      workspace: "workspace-a",
+      namespace: "workspace-a",
     },
     () => {
       requests += 1;
       return Promise.resolve(
         Response.json({
           quota: {
-            hard: { "count/pods": "20", "limits.cpu": "100m" },
+            hard: {
+              "count/pods": "20",
+              "limits.cpu": "100m",
+              pods: "10",
+            },
             used: { "count/pods": "3", "limits.cpu": "99999u" },
           },
         })
@@ -58,6 +63,28 @@ test("one quota payload drives usage and notification fullness exactly", async (
     ],
   });
   assert.equal(firstFullQuotaRow(quota.rows), null);
+});
+
+test("quota consumers share one cached Brain API read", async () => {
+  let requests = 0;
+  const credentials = {
+    appToken: "desktop-app-token",
+    kubeconfig: "apiVersion: v1",
+    namespace: "workspace-shared-quota-read",
+  };
+  const fetch = () => {
+    requests += 1;
+    return Promise.resolve(
+      Response.json({
+        quota: { hard: { pods: "20" }, used: { pods: "3" } },
+      })
+    );
+  };
+
+  await loadWorkspaceQuotaSnapshot(credentials, fetch);
+  await loadWorkspaceQuotaData(credentials, fetch);
+
+  assert.equal(requests, 1);
 });
 
 test("loads current workspace quota with ordered headroom rows", async () => {

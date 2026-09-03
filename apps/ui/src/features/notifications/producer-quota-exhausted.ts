@@ -24,7 +24,7 @@ export function quotaExhaustedDedupeKey(
   return `${QUOTA_EXHAUSTED_DEDUPE_PREFIX}:${namespace}:${resource}`;
 }
 
-/** 100% of the limit; a zero or unknown limit never counts as exhausted. */
+/** Uses the exact quantity verdict when present; zero limits never exhaust. */
 export function isQuotaExhausted(item: WorkspaceQuotaItem): boolean {
   if (item.exhausted !== undefined) {
     return item.exhausted;

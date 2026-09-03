@@ -89,6 +89,7 @@ const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
 const USAGE_SNAPSHOT = {
   rows: [
     {
+      exhausted: false,
       label: "CPU",
       percentUsed: 37.5,
       remaining: "2.5",
@@ -97,6 +98,7 @@ const USAGE_SNAPSHOT = {
       used: "1.5",
     },
     {
+      exhausted: false,
       label: "Memory",
       percentUsed: 37.5,
       remaining: "5Gi",
@@ -105,6 +107,7 @@ const USAGE_SNAPSHOT = {
       used: "3Gi",
     },
     {
+      exhausted: false,
       label: "Storage",
       percentUsed: 40,
       remaining: "60Gi",
@@ -113,6 +116,7 @@ const USAGE_SNAPSHOT = {
       used: "40Gi",
     },
     {
+      exhausted: false,
       label: "Ports",
       percentUsed: 30,
       remaining: "7",
@@ -121,6 +125,7 @@ const USAGE_SNAPSHOT = {
       used: "3",
     },
     {
+      exhausted: false,
       label: "Traffic",
       percentUsed: 25,
       remaining: "75Gi",
@@ -129,6 +134,7 @@ const USAGE_SNAPSHOT = {
       used: "25Gi",
     },
     {
+      exhausted: false,
       label: "GPU",
       percentUsed: 50,
       remaining: "1",

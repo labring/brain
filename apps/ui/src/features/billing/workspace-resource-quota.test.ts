@@ -2,20 +2,21 @@ import { describe, expect, test } from "bun:test";
 
 import {
   formatWorkspaceQuotaRows,
-  parseWorkspaceQuotaItems,
   workspaceQuotaSnapshotFromPayload,
+  workspaceResourceQuotaSnapshotSchema,
 } from "./workspace-resource-quota";
 
 describe("workspace resource quota", () => {
   test("parses and formats the supported resource items", () => {
-    const items = parseWorkspaceQuotaItems([
-      { limit: 36_000, type: "cpu", used: 19_200 },
-      { limit: 167_936, type: "memory", used: 26_880 },
-      { limit: 204_800, type: "storage", used: 12_288 },
-      { limit: 20, type: "pod", used: 3 },
-      { limit: 10, type: "nodeport", used: 0 },
-      { limit: 1, type: "gpu", used: 1 },
-    ]);
+    const items = workspaceResourceQuotaSnapshotSchema.parse({
+      items: [
+        { limit: 36_000, type: "cpu", used: 19_200 },
+        { limit: 167_936, type: "memory", used: 26_880 },
+        { limit: 204_800, type: "storage", used: 12_288 },
+        { limit: 20, type: "pod", used: 3 },
+        { limit: 10, type: "nodeport", used: 0 },
+      ],
+    }).items;
 
     expect(formatWorkspaceQuotaRows(items)).toEqual([
       ["CPU", "19.2C/36C"],
@@ -27,17 +28,21 @@ describe("workspace resource quota", () => {
   });
 
   test("filters malformed and unsupported items", () => {
-    const items = parseWorkspaceQuotaItems([
-      { limit: 4, type: "cpu", used: Number.NaN },
-      { limit: 4, type: "gpu", used: 1 },
-      { limit: 4096, type: "memory", used: 2048 },
-      { limit: -1, type: "pod", used: 0 },
-    ]);
+    expect(
+      workspaceResourceQuotaSnapshotSchema.safeParse({
+        items: [
+          { limit: 4, type: "cpu", used: Number.NaN },
+          { limit: 4096, type: "memory", used: 2048 },
+          { limit: -1, type: "pod", used: 0 },
+        ],
+      }).success
+    ).toBe(false);
 
-    expect(items).toEqual([{ limit: 4096, type: "memory", used: 2048 }]);
-    expect(formatWorkspaceQuotaRows(items, { includeMissing: false })).toEqual([
-      ["Memory", "2Gi/4Gi"],
-    ]);
+    expect(
+      formatWorkspaceQuotaRows([{ limit: 4096, type: "memory", used: 2048 }], {
+        includeMissing: false,
+      })
+    ).toEqual([["Memory", "2Gi/4Gi"]]);
   });
 
   test("fills missing rows for the sidebar but not for the agent", () => {
@@ -83,6 +88,19 @@ describe("workspace resource quota", () => {
         { exhausted: false, limit: 20, type: "pod", used: 3 },
         { exhausted: false, limit: 10, type: "nodeport", used: 0 },
       ],
+    });
+  });
+
+  test("pairs quota aliases from the same account-service resource key", () => {
+    expect(
+      workspaceQuotaSnapshotFromPayload({
+        quota: {
+          hard: { "count/pods": "40", pods: "20" },
+          used: { "count/pods": "30" },
+        },
+      })
+    ).toEqual({
+      items: [{ exhausted: false, limit: 40, type: "pod", used: 30 }],
     });
   });
 

@@ -87,7 +87,8 @@ export function useStatusHintInputs(): StatusHintInputs {
     credentialsReady
       ? (["status-hint-quota", workspace, credentialKey, appToken] as const)
       : null,
-    () => loadWorkspaceQuotaData({ appToken, kubeconfig, workspace }),
+    () =>
+      loadWorkspaceQuotaData({ appToken, kubeconfig, namespace: workspace }),
     {
       ...swrOptions,
       onSuccess: ({ snapshot }) => {
