@@ -15,6 +15,12 @@ const { default: ProjectWorkspaceLayout } = await import(
 const { default: BillingTabShell } = await import(
   "@/features/billing/billing-tab-shell"
 );
+const { BillingEscalationDialog } = await import(
+  "@/features/billing-escalation/billing-escalation-dialog"
+);
+const { StatusHintBanner } = await import(
+  "@/features/status-hint/status-hint-banner"
+);
 const { default: BillingLayout } = await import("./layout");
 
 function mountedComponents(
@@ -52,5 +58,17 @@ test("billing layout keeps one tab shell and shared auth chrome across tabs", ()
     mounted.has(ProjectWorkspaceLayout),
     false,
     "ProjectWorkspaceLayout is absent"
+  );
+});
+
+// The Billing Area announces a debt stage where the user already is
+// (AIM-348, story 15); an unmounted dialog silently drops that.
+test("billing layout mounts the Billing Escalation Dialog beside the Status Hint", () => {
+  const mounted = mountedComponents(BillingLayout({ children: null }));
+
+  assert.ok(mounted.has(StatusHintBanner), "StatusHintBanner is mounted");
+  assert.ok(
+    mounted.has(BillingEscalationDialog),
+    "BillingEscalationDialog is mounted"
   );
 });

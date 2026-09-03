@@ -3,11 +3,15 @@ import {
   accountDebtSuspends,
 } from "@/features/billing/account-debt";
 import {
+  type BillingCta,
   type QuotaCtaContext,
   quotaCtaFor,
   TOP_UP_DESKTOP,
 } from "@/features/billing/billing-cta";
-import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
+import type {
+  RecoveryVoice,
+  WorkspaceSubscriptionSummary,
+} from "@/features/billing/billing-plan-data";
 import type { BillingSurfaceTone } from "@/features/billing/billing-surface-tones";
 import {
   type BillingUsageRow,
@@ -102,6 +106,28 @@ function formatDate(date: Date): string {
   return DATE_FORMATTER.format(date);
 }
 
+/**
+ * The Deletion Countdown's deadline as the banner states it ("Sep 6"), or
+ * null while the summary carries none. The Billing Escalation Dialog reads
+ * the same field through this formatter so the two can never disagree.
+ */
+export function formatStatusHintDeadline(iso: string | null): string | null {
+  const deadline = parsedDate(iso);
+  return deadline == null ? null : formatDate(deadline);
+}
+
+/**
+ * How a payment-due workspace recovers: an unpriced Free plan is not a
+ * renewal target, so its recovery is choosing a paid plan — the CTA opens
+ * the Plan Picker and never says "renew". Shared with the Billing
+ * Escalation Dialog's workspace-ladder fix.
+ */
+export function paymentDueCta(voice: RecoveryVoice): BillingCta {
+  return voice === "resubscribe"
+    ? { href: "/billing?mode=upgrade", label: "Upgrade plan" }
+    : { href: "/billing", label: "Renew plan" };
+}
+
 function paymentDueHint(
   subscription: WorkspaceSubscriptionSummary
 ): StatusHint | null {
@@ -109,12 +135,8 @@ function paymentDueHint(
   if (subscription.isPayg || subscription.lifecycle !== "payment-due") {
     return null;
   }
-  // An unpriced Free plan is not a renewal target: its recovery is choosing
-  // a paid plan, so the CTA opens the Plan Picker and never says "renew".
   const resubscribe = subscription.recoveryVoice === "resubscribe";
-  const cta = resubscribe
-    ? { href: "/billing?mode=upgrade", label: "Upgrade plan" }
-    : { href: "/billing", label: "Renew plan" };
+  const cta = paymentDueCta(subscription.recoveryVoice);
   const deadline = parsedDate(subscription.warningDeadlineAt);
   if (subscription.warningStage === "deletion-imminent") {
     // Copy advances with the stage; the visuals deliberately do not.

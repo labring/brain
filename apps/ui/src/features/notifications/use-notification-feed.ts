@@ -35,6 +35,11 @@ const EMPTY_ITEMS: readonly AppNotification[] = [];
 export interface NotificationFeed {
   items: readonly AppNotification[];
   markAllRead: () => void;
+  /**
+   * One dispatch for several items — the Billing Escalation Dialog's
+   * dismissal reads the announced stage and the ones it superseded together.
+   */
+  markManyRead: (items: readonly AppNotification[]) => void;
   markRead: (item: AppNotification) => void;
   readIds: ReadonlySet<string>;
   unreadCount: number;
@@ -248,6 +253,7 @@ export function useNotificationFeed(): NotificationFeed {
   return {
     items,
     markAllRead,
+    markManyRead: dispatchRead,
     markRead,
     readIds,
     unreadCount: countUnreadNotifications(items, readIds),

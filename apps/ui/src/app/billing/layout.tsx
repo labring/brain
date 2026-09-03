@@ -1,4 +1,5 @@
 import BillingTabShell from "@/features/billing/billing-tab-shell";
+import { BillingEscalationDialog } from "@/features/billing-escalation/billing-escalation-dialog";
 import {
   AppShellChrome,
   AppShellSidebar,
@@ -26,6 +27,7 @@ export default function BillingLayout({
         <AppShellSidebar />
         <AppShellView className="min-w-0 flex-1 basis-0">
           <StatusHintBanner />
+          <BillingEscalationDialog />
           <BillingTabShell>{children}</BillingTabShell>
         </AppShellView>
       </AppSidebarCookieBridge>

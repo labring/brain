@@ -44,6 +44,12 @@ export interface AppNotification {
   crName?: string;
   cta?: NotificationCTA;
   id: string;
+  /**
+   * The platform's popup flag (`spec.desktopPopup`): the message was meant
+   * to be shown as a popup the moment its stage changed. Only `cr:` items
+   * carry it; the Billing Escalation Dialog announces critical ones.
+   */
+  popup?: boolean;
   project?: string;
   severity: NotificationSeverity;
   source: AppNotificationSource;
