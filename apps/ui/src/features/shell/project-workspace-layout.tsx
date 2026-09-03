@@ -1017,6 +1017,7 @@ function ProjectAssistantChatPane() {
   // The verified actor is bound when the first message materializes this draft.
   // Abandoned drafts therefore never leave empty persisted conversations.
   const startDraftThread = useCallback(() => {
+    threadSelectionSequenceRef.current += 1;
     setSession((prev) =>
       prev == null ? prev : { ...prev, chatId: generateId(), messages: [] }
     );
