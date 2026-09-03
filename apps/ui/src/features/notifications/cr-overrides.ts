@@ -20,8 +20,9 @@ export interface CROverride {
 /**
  * Account money recovers by a Desktop top-up (CONTEXT.md, Account Debt);
  * the Plan view is only the fallback while the desktop link is unresolved.
+ * Shared with the Billing Escalation Dialog's account-ladder fix.
  */
-const TOP_UP_BALANCE: NotificationCTA = {
+export const TOP_UP_BALANCE: NotificationCTA = {
   desktop: TOP_UP_DESKTOP,
   href: "/billing",
   label: "Top up balance",

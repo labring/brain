@@ -229,6 +229,7 @@ export function platformNotification(
     crName: item.name,
     ...(override == null ? {} : { cta: override.cta }),
     id,
+    popup: item.desktopPopup,
     severity: notificationSeverityForCR(item),
     source: "cr",
     timestamp: item.timestamp * 1000,

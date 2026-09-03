@@ -585,7 +585,8 @@ console always renders, and the dialog appears only on a definitive
 Unsampled verdict. Any unknown outcome — credentials never arriving, a
 failed or unresolved status check — means the Gate silently stands down
 until the next entry. Sampling is never bought at the cost of console
-access.
+access, and the sampling dialog waits while a Billing Escalation Dialog is
+open — money and deletion outrank a survey.
 
 _Avoid_: login wall, blocking splash, mandatory interstitial, onboarding redirect.
 
@@ -776,15 +777,21 @@ _Avoid_: alert, toast (for persistent items), event (for the user-facing message
 
 ### Notification Severity
 
-How much a Notification's message matters to the reader, on three levels — **critical** (something is already suspended or faces deletion), **warning** (a threshold was crossed or a deadline approaches; action prevents the next stage), **info** (a receipt, a hint, or an announcement; nothing to fix). Derived from what the message is about, never chosen per message, and shown without visual escalation: a critical item is marked, not shouted.
+How much a Notification's message matters to the reader, on three levels — **critical** (something is already suspended or faces deletion), **warning** (a threshold was crossed or a deadline approaches; action prevents the next stage), **info** (a receipt, a hint, or an announcement; nothing to fix). Derived from what the message is about, never chosen per message, and shown in the Notification Center without visual escalation: a critical item is marked, not shouted — the Billing Escalation Dialog, not the list, is where a critical platform stage is announced.
 
 _Avoid_: priority, importance (the platform CR field), level, tone.
 
 ### Status Hint
 
-The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt (on a Pay-As-You-Go workspace only — the same judgment as the Deploy Billing Notice, so the banner and the notice can never disagree), a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
+The one banner at the top of the content area that explains a billing state while it holds — payment-due (under the Deletion Countdown), Account Debt (on a Pay-As-You-Go workspace only — the same judgment as the Deploy Billing Notice, so the banner and the notice can never disagree), a full workspace quota, or an Active Free Trial about to end — and offers the way out. It is a state, not a message: it appears and vanishes with the condition, writes nothing to the Notification Center, leaves announcing a stage change to the Billing Escalation Dialog, and only the most severe holding state shows. The destructive states cannot be dismissed; a dismissed quota or trial hint stays hidden until its state ends and re-enters.
 
 _Avoid_: alert bar, global notification, sticky toast, warning strip (as the concept's name).
+
+### Billing Escalation Dialog
+
+The one dialog that announces a step up the platform's debt ladder — a critical Notification the platform has just written, or revived as unread, with its popup flag set — wherever the Status Hint is mounted, on entry and mid-session alike. It speaks only for stages that already suspend or threaten deletion (Account Debt's suspension and scheduled-deletion stages, and every payment-due stage under the Deletion Countdown); the low-balance warning tiers stay in the Notification Center. A payment-due stage carries the Deletion Countdown's next deadline, the same date the Status Hint states; an Account Debt stage states no date, since the platform gives none. It obeys the Account Debt voice rule — the account ladder is announced only on a Pay-As-You-Go workspace — and shows one stage at a time: the newest, whose dismissal marks it and every older unread stage of the same ladder read, because a newer stage supersedes an older one; that read mark is the same one the Sealos Desktop writes, so a stage dismissed in either place is dismissed in both. It is an event, not a state — the Status Hint keeps carrying the state beside it — it never blocks (closing is always available and nothing is locked), and it outranks the Onboarding Gate's dialog, which waits for it to close.
+
+_Avoid_: debt popup, 欠费弹窗 (as the concept's name), billing alert, billing modal (bare), suspension dialog, low-balance popup.
 
 ## Design System
 

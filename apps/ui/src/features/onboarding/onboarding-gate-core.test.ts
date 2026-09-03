@@ -7,6 +7,7 @@ import {
   obtainOnboardingSessionJudgment,
   onboardingCredentialsKey,
   onboardingCredentialsReady,
+  onboardingDialogOpen,
   resetOnboardingGateSessionForTesting,
   settleOnboardingSessionJudgmentSampled,
 } from "./onboarding-gate-core";
@@ -198,4 +199,56 @@ test("after two failed retries the gate silently stands down", async () => {
 
   assert.equal(opened, false);
   assert.equal(attempts, 1 + ONBOARDING_GATE_RETRY_DELAYS_MS.length);
+});
+
+test("the dialog opens only for the identity whose judgment opened it", () => {
+  assert.equal(
+    onboardingDialogOpen({
+      billingEscalationOpen: false,
+      openForKey: null,
+      renderedKey: "a",
+    }),
+    false,
+    "no judgment opened it"
+  );
+  assert.equal(
+    onboardingDialogOpen({
+      billingEscalationOpen: false,
+      openForKey: "a",
+      renderedKey: "a",
+    }),
+    true
+  );
+  assert.equal(
+    onboardingDialogOpen({
+      billingEscalationOpen: false,
+      openForKey: "a",
+      renderedKey: "b",
+    }),
+    false,
+    "a mid-session rekey closes it"
+  );
+  assert.equal(
+    onboardingDialogOpen({
+      billingEscalationOpen: false,
+      openForKey: "a",
+      renderedKey: null,
+    }),
+    true,
+    "momentarily unready credentials leave it open"
+  );
+});
+
+test("the dialog waits while a Billing Escalation Dialog is open and opens on the next evaluation after it closes", () => {
+  const judged = { openForKey: "a", renderedKey: "a" };
+  assert.equal(
+    onboardingDialogOpen({ ...judged, billingEscalationOpen: true }),
+    false,
+    "money and deletion outrank the survey"
+  );
+  assert.equal(
+    onboardingDialogOpen({ ...judged, billingEscalationOpen: false }),
+    true,
+    "the same judgment opens it once the escalation has closed"
+  );
 });

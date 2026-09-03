@@ -1,3 +1,4 @@
+import { BillingEscalationDialog } from "@/features/billing-escalation/billing-escalation-dialog";
 import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
 import {
   AppShellChrome,
@@ -30,6 +31,7 @@ export default function ProjectLayout({
         <AppShellSidebar />
         <AppShellView className="min-w-0 flex-1 basis-0">
           <StatusHintBanner />
+          <BillingEscalationDialog />
           <ProjectWorkspaceLayout>{children}</ProjectWorkspaceLayout>
         </AppShellView>
       </AppSidebarCookieBridge>

@@ -73,6 +73,7 @@ function feedOf(items: readonly AppNotification[]): NotificationFeed {
   return {
     items,
     markAllRead: () => undefined,
+    markManyRead: () => undefined,
     markRead: () => undefined,
     readIds: new Set(),
     unreadCount: countUnreadNotifications(items, new Set()),

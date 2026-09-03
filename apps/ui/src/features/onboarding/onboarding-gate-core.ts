@@ -115,3 +115,26 @@ export async function judgeOnboardingSampling(input: {
   }
   return false;
 }
+
+/**
+ * Whether the sampling dialog is open this render. It opens for the
+ * identity whose judgment opened it: on a mid-session rekey the rendered
+ * credential key stops matching and the dialog closes in the same render —
+ * whatever the discarded identity's judgment opened must not survive it;
+ * credentials going momentarily unready (a null rendered key) leave an open
+ * dialog open. And it waits while a Billing Escalation Dialog is open —
+ * money and deletion outrank a survey (CONTEXT.md, Onboarding Gate) — then
+ * opens on the next evaluation once that dialog has closed.
+ */
+export function onboardingDialogOpen(input: {
+  billingEscalationOpen: boolean;
+  /** The credential key whose judgment opened the dialog; null while closed. */
+  openForKey: string | null;
+  /** The key of the credentials rendering now; null while they are unready. */
+  renderedKey: string | null;
+}): boolean {
+  if (input.billingEscalationOpen || input.openForKey === null) {
+    return false;
+  }
+  return input.renderedKey === null || input.renderedKey === input.openForKey;
+}

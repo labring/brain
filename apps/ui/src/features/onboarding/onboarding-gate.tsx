@@ -4,6 +4,7 @@ import { type DevTweaksConfig, useDevTweaks } from "@workspace/dev-tweaks";
 import { useAtomValue } from "jotai";
 import { useEffect, useState } from "react";
 
+import { billingEscalationOpenAtom } from "@/features/billing-escalation/billing-escalation-store";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 import {
@@ -19,6 +20,7 @@ import {
   obtainOnboardingSessionJudgment,
   onboardingCredentialsKey,
   onboardingCredentialsReady,
+  onboardingDialogOpen,
   settleOnboardingSessionJudgmentSampled,
 } from "./onboarding-gate-core";
 import type {
@@ -48,6 +50,7 @@ export function OnboardingGate() {
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const namespace = useAtomValue(namespaceAtom);
+  const billingEscalationOpen = useAtomValue(billingEscalationOpenAtom);
   const [openForKey, setOpenForKey] = useState<string | null>(null);
   const values = useDevTweaks(
     "Onboarding · sampling dialog",
@@ -96,11 +99,10 @@ export function OnboardingGate() {
     };
   }, [appToken, kubeconfig, namespace]);
 
-  // Open derives from which identity's judgment opened the dialog: on a
-  // mid-session rekey the credential key stops matching and the dialog
-  // closes in the same render — whatever the discarded identity's judgment
-  // opened must not survive it; the new judgment reopens it if it should.
-  // Credentials going momentarily unready leave an open dialog open.
+  // Open derives from which identity's judgment opened the dialog (see
+  // `onboardingDialogOpen`): a mid-session rekey closes it in the same
+  // render, and a Billing Escalation Dialog holds it closed until the
+  // escalation is dismissed — the same judgment then opens it.
   const renderedKey = onboardingCredentialsReady({
     appToken,
     kubeconfig,
@@ -108,8 +110,11 @@ export function OnboardingGate() {
   })
     ? onboardingCredentialsKey({ appToken, kubeconfig, namespace })
     : null;
-  const open =
-    openForKey !== null && (renderedKey === null || renderedKey === openForKey);
+  const open = onboardingDialogOpen({
+    billingEscalationOpen,
+    openForKey,
+    renderedKey,
+  });
 
   // The shared tail of every dialog write, all fire-and-forget: the
   // forced-open preview knob must never mutate the developer's real sampling
