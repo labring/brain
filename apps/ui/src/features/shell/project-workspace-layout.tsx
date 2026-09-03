@@ -134,7 +134,10 @@ import {
   ProjectEditDialog,
   type ProjectEditDialogValues,
 } from "@/features/projects/project-edit-dialog";
-import { isAssistantChatNamespaceReady } from "@/features/shell/project-assistant-chat-readiness";
+import {
+  assistantChatBootstrapState,
+  isAssistantChatCredentialsReady,
+} from "@/features/shell/project-assistant-chat-readiness";
 import {
   ProjectTopBarSlotHost,
   ProjectTopBarSlotProvider,
@@ -235,7 +238,11 @@ function buildAssistantContextPayload(
 ): AssistantContextPayload {
   const pn = projectName?.trim() ?? "";
   const pu = projectId.trim();
+  if (pu === "") {
+    return { kind: "workspace" };
+  }
   return {
+    kind: "project",
     ...(pn === "" ? {} : { projectName: pn }),
     projectId: pu,
   };
@@ -443,16 +450,22 @@ function ProjectAssistantChatSession({
   }>({ projectId: "", scannedParts: new Map() });
 
   const projectId = useProjectId();
+  const hasProjectContext = projectId.trim() !== "";
+  // Workspace-scoped Chat must not discover or read Project resources. The
+  // resource hooks use an empty kubeconfig as their explicit disabled state,
+  // which keeps the workspace transcript independent from any Project the
+  // user may have visited previously.
+  const projectResourceKubeconfig = hasProjectContext ? kubeconfig : "";
   const selectedContextLabelSelector = useMemo(
-    () => `${BRAIN_PROJECT_ID_LABEL}=${projectId}`,
-    [projectId]
+    () => (hasProjectContext ? `${BRAIN_PROJECT_ID_LABEL}=${projectId}` : ""),
+    [hasProjectContext, projectId]
   );
   const {
     data: selectedContextApsData,
     error: selectedContextApsError,
     isLoading: selectedContextApsLoading,
   } = useApsK8sList({
-    kubeconfig,
+    kubeconfig: projectResourceKubeconfig,
     labelSelector: selectedContextLabelSelector,
     namespace,
     revalidateIfStale: false,
@@ -466,7 +479,7 @@ function ProjectAssistantChatSession({
     error: selectedContextDbsError,
     isLoading: selectedContextDbsLoading,
   } = useDbsK8sList({
-    kubeconfig,
+    kubeconfig: projectResourceKubeconfig,
     labelSelector: selectedContextLabelSelector,
     namespace,
     revalidateIfStale: false,
@@ -489,6 +502,7 @@ function ProjectAssistantChatSession({
     [selectedContextFacts]
   );
   const selectedContextSnapshotReady =
+    hasProjectContext &&
     selectedContextApsData != null &&
     selectedContextDbsData != null &&
     selectedContextApsError == null &&
@@ -893,7 +907,11 @@ function ProjectAssistantChatPane() {
   const namespaceRaw = useAtomValue(namespaceAtom);
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
-  const namespaceReady = isAssistantChatNamespaceReady(namespaceRaw);
+  const credentialsReady = isAssistantChatCredentialsReady({
+    appToken,
+    kubeconfig,
+    namespace: namespaceRaw,
+  });
   const sidePaneRouter = useProjectSidePaneAssistantRouter();
   const [session, setSession] = useState<AssistantSessionPayload | null>(null);
   const [sessionError, setSessionError] = useState(false);
@@ -902,7 +920,7 @@ function ProjectAssistantChatPane() {
   const assistantStateRefreshSequenceRef = useRef(0);
   const threadSelectionSequenceRef = useRef(0);
 
-  const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${namespaceReady}\u0000${projectId}`;
+  const sessionResetKey = `${kubeconfig}\u0000${appToken}\u0000${namespaceRaw}\u0000${credentialsReady}\u0000${projectId}`;
   const assistantScopeKeyRef = useRef(sessionResetKey);
   useLayoutEffect(() => {
     if (assistantScopeKeyRef.current === sessionResetKey) {
@@ -924,7 +942,7 @@ function ProjectAssistantChatPane() {
     let cancelled = false;
     assistantStateRefreshSequenceRef.current += 1;
 
-    if (!namespaceReady || projectId.trim() === "") {
+    if (!credentialsReady) {
       return;
     }
 
@@ -949,7 +967,7 @@ function ProjectAssistantChatPane() {
       cancelled = true;
       assistantStateRefreshSequenceRef.current += 1;
     };
-  }, [appToken, kubeconfig, namespaceRaw, namespaceReady, projectId]);
+  }, [appToken, credentialsReady, kubeconfig, namespaceRaw, projectId]);
 
   // Every chat response — paid-wall refusals included — carries the server's
   // Chat Billing Posture in the `X-Chat-*` headers; the pane renders it and
@@ -1076,25 +1094,53 @@ function ProjectAssistantChatPane() {
       .catch(() => undefined);
   }, [sidePaneRouter]);
 
-  if (sessionError) {
+  const bootstrapState = assistantChatBootstrapState({
+    credentialsReady,
+    session,
+    sessionError,
+  });
+
+  if (bootstrapState === "credentials") {
+    return (
+      <div
+        className="project-chrome-surface flex h-full min-h-0 flex-1 items-center justify-center p-4 text-center text-muted-foreground text-sm"
+        data-slot="assistant-chat-credentials"
+        role="status"
+      >
+        <div className="max-w-xs">
+          <p className="font-medium text-foreground">
+            Workspace connection required
+          </p>
+          <p className="mt-1.5 text-xs leading-relaxed">
+            Connect Brain to a workspace to use Assistant Chat. Project context
+            will be added automatically when you enter a project.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (bootstrapState === "error") {
     return (
       <div
         className="project-chrome-surface flex h-full min-h-0 flex-1 items-center justify-center p-4 text-center text-muted-foreground text-sm"
         data-slot="assistant-chat-error"
       >
-        Could not load assistant chat. Check DATABASE_URL and database
-        migrations, then refresh.
+        Could not load assistant chat. Check the workspace connection and
+        database migrations, then refresh.
       </div>
     );
   }
 
-  if (session === null) {
+  if (session == null) {
     return (
       <div
         aria-busy
-        className="project-chrome-surface h-full min-h-0 flex-1"
+        className="project-chrome-surface flex h-full min-h-0 flex-1 items-center justify-center p-4 text-center text-muted-foreground text-sm"
         data-slot="assistant-chat-boot"
-      />
+      >
+        Loading Assistant Chat…
+      </div>
     );
   }
 

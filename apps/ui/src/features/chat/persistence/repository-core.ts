@@ -1,6 +1,6 @@
 import type { UIMessage } from "ai";
 import { generateId } from "ai";
-import { and, asc, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { requireCurrentIdentityBinding } from "@/lib/identity-fingerprint-core";
 
@@ -12,6 +12,7 @@ import {
 } from "./schema";
 import type {
   AssistantConversationScope,
+  AssistantConversationTarget,
   VerifiedAssistantConversationActor,
 } from "./types";
 
@@ -51,7 +52,7 @@ export interface AssistantConversationRepository {
   ensureThreadForOwner: (input: {
     actor: VerifiedAssistantConversationActor;
     id: string;
-    projectId: string;
+    target: AssistantConversationTarget;
     title: string;
   }) => Promise<boolean>;
   persistAssistantMessageIfLeaseOwned: (input: {
@@ -188,13 +189,28 @@ function requiredProjectId(projectId: string): string {
   return normalized;
 }
 
-function scopedThreadWhere(chatId: string, scope: AssistantConversationScope) {
+function normalizedTarget(
+  target: AssistantConversationTarget
+): AssistantConversationTarget {
+  return target.kind === "workspace"
+    ? { kind: "workspace" }
+    : { kind: "project", projectId: requiredProjectId(target.projectId) };
+}
+
+function scopeWhere(scope: AssistantConversationScope) {
+  const target = normalizedTarget(scope);
   return and(
-    eq(assistantChats.id, chatId),
     eq(assistantChats.namespace, scope.namespace),
     eq(assistantChats.workspaceActor, scope.userUid),
-    eq(assistantChats.projectId, requiredProjectId(scope.projectId))
+    eq(assistantChats.scopeKind, target.kind),
+    target.kind === "project"
+      ? eq(assistantChats.projectId, target.projectId)
+      : isNull(assistantChats.projectId)
   );
+}
+
+function scopedThreadWhere(chatId: string, scope: AssistantConversationScope) {
+  return and(eq(assistantChats.id, chatId), scopeWhere(scope));
 }
 
 async function transactionOwnsThread(
@@ -313,13 +329,7 @@ export function createAssistantConversationRepository(
     getDb()
       .select()
       .from(assistantChats)
-      .where(
-        and(
-          eq(assistantChats.namespace, scope.namespace),
-          eq(assistantChats.workspaceActor, scope.userUid),
-          eq(assistantChats.projectId, requiredProjectId(scope.projectId))
-        )
-      )
+      .where(scopeWhere(scope))
       .orderBy(desc(assistantChats.updatedAt));
 
   /**
@@ -362,12 +372,12 @@ export function createAssistantConversationRepository(
   const ensureThreadForOwner = async (input: {
     actor: VerifiedAssistantConversationActor;
     id: string;
-    projectId: string;
+    target: AssistantConversationTarget;
     title: string;
   }): Promise<boolean> => {
     const owner = input.actor.owner;
-    const projectId = requiredProjectId(input.projectId);
-    const scope = { ...owner, projectId };
+    const target = normalizedTarget(input.target);
+    const scope: AssistantConversationScope = { ...owner, ...target };
     await getDb().transaction(async (tx) => {
       // A new thread row is keyed by this uid; re-check the fingerprint in
       // the same transaction so a concurrent merge either sweeps this row or
@@ -381,7 +391,8 @@ export function createAssistantConversationRepository(
         .values({
           id: input.id,
           namespace: owner.namespace,
-          projectId,
+          projectId: target.kind === "project" ? target.projectId : null,
+          scopeKind: target.kind,
           workspaceActor: owner.userUid,
           title: input.title,
           titleAiGenerated: false,

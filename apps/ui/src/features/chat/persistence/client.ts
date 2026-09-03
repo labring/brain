@@ -57,7 +57,7 @@ export interface AssistantFetcherCredentials {
   appToken: string;
   kubeconfig: string;
   namespace: string;
-  projectId: string;
+  projectId?: string;
 }
 
 type AssistantNamespaceCredentials = Omit<
@@ -66,7 +66,12 @@ type AssistantNamespaceCredentials = Omit<
 >;
 
 function assistantScopeQuery(credentials: AssistantFetcherCredentials): string {
-  return `namespace=${encodeURIComponent(credentials.namespace)}&projectId=${encodeURIComponent(credentials.projectId)}`;
+  const query = new URLSearchParams({ namespace: credentials.namespace });
+  const projectId = credentials.projectId?.trim();
+  if (projectId) {
+    query.set("projectId", projectId);
+  }
+  return query.toString();
 }
 
 async function safeJsonGet<T>(

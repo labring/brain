@@ -61,17 +61,18 @@ function conversationNotFound(): Response {
   );
 }
 
-function projectIdFromRequest(request: Request): string | null {
+function projectIdFromRequest(request: Request): string | undefined {
   const projectId = new URL(request.url).searchParams.get("projectId")?.trim();
-  return projectId ? projectId : null;
+  return projectId || undefined;
 }
 
-function projectIdRequired(): Response {
-  return jsonError(
-    "invalid_request",
-    "projectId query parameter required",
-    400
-  );
+function conversationScope(
+  owner: VerifiedAssistantConversationActor["owner"],
+  projectId: string | undefined
+): AssistantConversationScope {
+  return projectId == null
+    ? { ...owner, kind: "workspace" }
+    : { ...owner, kind: "project", projectId };
 }
 
 export function createAssistantConversationHandlers(
@@ -105,9 +106,6 @@ export function createAssistantConversationHandlers(
         );
       }
       const projectId = projectIdFromRequest(request);
-      if (projectId == null) {
-        return projectIdRequired();
-      }
       const authorization = await authorize(request);
       if (!authorization.ok) {
         return authorization.response;
@@ -115,7 +113,7 @@ export function createAssistantConversationHandlers(
       try {
         await dependencies.adoptLegacyConversations(authorization.actor);
         const messages = await dependencies.read(
-          { ...authorization.actor.owner, projectId },
+          conversationScope(authorization.actor.owner, projectId),
           chatId
         );
         return messages == null
@@ -158,9 +156,6 @@ export function createAssistantConversationHandlers(
     },
     session: async (request: Request): Promise<Response> => {
       const projectId = projectIdFromRequest(request);
-      if (projectId == null) {
-        return projectIdRequired();
-      }
       const authorization = await authorize(request);
       if (!authorization.ok) {
         return authorization.response;
@@ -169,10 +164,9 @@ export function createAssistantConversationHandlers(
         const [payload, freeTier] = await Promise.all([
           (async () => {
             await dependencies.adoptLegacyConversations(authorization.actor);
-            return await dependencies.bootstrap({
-              ...authorization.actor.owner,
-              projectId,
-            });
+            return await dependencies.bootstrap(
+              conversationScope(authorization.actor.owner, projectId)
+            );
           })(),
           dependencies.resolveFreeTier({
             actor: authorization.actor,
@@ -195,9 +189,6 @@ export function createAssistantConversationHandlers(
     },
     threads: async (request: Request): Promise<Response> => {
       const projectId = projectIdFromRequest(request);
-      if (projectId == null) {
-        return projectIdRequired();
-      }
       const authorization = await authorize(request);
       if (!authorization.ok) {
         return authorization.response;
@@ -205,10 +196,9 @@ export function createAssistantConversationHandlers(
 
       try {
         await dependencies.adoptLegacyConversations(authorization.actor);
-        const threads = await dependencies.list({
-          ...authorization.actor.owner,
-          projectId,
-        });
+        const threads = await dependencies.list(
+          conversationScope(authorization.actor.owner, projectId)
+        );
         return Response.json({ threads });
       } catch (error) {
         const superseded = supersededBindingResponse(error);

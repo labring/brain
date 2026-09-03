@@ -1,5 +1,10 @@
 # Scope Assistant Conversations to Brain Projects
 
+## Status
+
+Revised by ADR-0077. Project scope remains the stable boundary when a Project
+is open; workspace scope is now allowed on the Project index route.
+
 The Project Assistant is rendered inside a Brain Project, but its persisted
 threads were keyed only by namespace and Workspace Actor. Moving between two
 Projects in the same workspace could therefore reuse the same transcript and

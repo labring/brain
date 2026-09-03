@@ -38,14 +38,18 @@ export function normalizeAssistantNamespace(namespace: string): string {
  */
 export type AssistantConversationOwner = PersonalResourceOwner;
 
+/** The product context that gives one Assistant Conversation its stable identity. */
+export type AssistantConversationTarget =
+  | { kind: "workspace"; projectId?: never }
+  | { kind: "project"; projectId: string };
+
 /**
- * Stable scope of one Project Assistant conversation. Ownership remains the
- * verified Workspace Actor; `projectId` prevents two Projects in the same
- * namespace from sharing thread history or a system-prompt identity.
+ * Stable scope of one Assistant Conversation. Workspace conversations remain
+ * usable on `/project`; Project conversations add `projectId` so two Projects
+ * never share history or a system-prompt identity.
  */
-export interface AssistantConversationScope extends AssistantConversationOwner {
-  projectId: string;
-}
+export type AssistantConversationScope = AssistantConversationOwner &
+  AssistantConversationTarget;
 
 /**
  * A verified actor entering a conversation route. Conversation persistence
@@ -125,10 +129,14 @@ export interface AssistantSessionPayload {
  * selection is NOT here — it is pinned to individual user messages instead (see
  * {@link SelectedContextReference}).
  */
-export const assistantContextPayloadSchema = z.object({
-  projectName: z.string().max(512).optional(),
-  projectId: z.string().trim().min(1).max(256),
-});
+export const assistantContextPayloadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("workspace") }),
+  z.object({
+    kind: z.literal("project"),
+    projectName: z.string().max(512).optional(),
+    projectId: z.string().trim().min(1).max(256),
+  }),
+]);
 export type AssistantContextPayload = z.infer<
   typeof assistantContextPayloadSchema
 >;

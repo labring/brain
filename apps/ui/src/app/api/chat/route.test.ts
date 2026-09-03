@@ -16,6 +16,7 @@ const NAMESPACE = "ns-route-test";
 const PROJECT_ID = "project-route-test";
 const WORKSPACE_ACTOR = "workspace-actor-route-test";
 const TEST_SCOPE = {
+  kind: "project",
   namespace: NAMESPACE,
   projectId: PROJECT_ID,
   userUid: `${WORKSPACE_ACTOR}-uid`,
@@ -58,9 +59,9 @@ interface TestOwner {
   userUid: string;
 }
 
-interface TestScope extends TestOwner {
-  projectId: string;
-}
+type TestScope =
+  | (TestOwner & { kind: "workspace" })
+  | (TestOwner & { kind: "project"; projectId: string });
 
 let activeLease: TestLease | null = null;
 let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
@@ -395,9 +396,13 @@ mock.module("@/features/chat/persistence/service", () => ({
   ensureAssistantThreadForOwner: (
     _chatId: string,
     actor: { legacyWorkspaceActor: string; owner: TestOwner },
-    projectId: string
+    target: { kind: "project"; projectId: string } | { kind: "workspace" }
   ) => {
-    serviceOwners.push({ ...actor.owner, projectId });
+    serviceOwners.push(
+      target.kind === "project"
+        ? { ...actor.owner, kind: "project", projectId: target.projectId }
+        : { ...actor.owner, kind: "workspace" }
+    );
     return Promise.resolve(true);
   },
   isReservedChatMessageId: (messageId: string) =>
@@ -672,6 +677,9 @@ function chatRequest(
   signal?: AbortSignal,
   options?: {
     appToken?: string | null;
+    assistantContext?:
+      | { kind: "project"; projectId: string }
+      | { kind: "workspace" };
     workspaceResourceQuota?: unknown;
   }
 ): Request {
@@ -679,7 +687,9 @@ function chatRequest(
     options?.appToken === undefined ? "valid-app-token" : options.appToken;
   return new Request("https://brain.test/api/chat", {
     body: JSON.stringify({
-      assistantContext: { projectId: PROJECT_ID },
+      assistantContext:
+        options?.assistantContext ??
+        ({ kind: "project", projectId: PROJECT_ID } as const),
       chatId: CHAT_ID,
       encodedKubeconfig: "encoded-kubeconfig",
       message,
@@ -709,6 +719,25 @@ test("chat POST fails closed with 401 when the app token header is missing", asy
     code: "app_token_required",
     error: "Authentication is required.",
   });
+});
+
+test("chat POST remains available in workspace scope without a project id", async () => {
+  const response = await POST(
+    chatRequest(
+      userMessage("user-workspace-scope", "what can you help me with?"),
+      undefined,
+      { assistantContext: { kind: "workspace" } }
+    )
+  );
+
+  expect(response.status).toBe(200);
+  await drain(response);
+  expect(serviceOwners).toContainEqual(
+    expect.objectContaining({
+      kind: "workspace",
+      namespace: NAMESPACE,
+    })
+  );
 });
 
 async function drain(response: Response): Promise<void> {
@@ -908,6 +937,7 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   expect(serviceOwners).not.toHaveLength(0);
   expect(serviceOwners).toEqual(
     serviceOwners.map(() => ({
+      kind: "project",
       namespace: NAMESPACE,
       projectId: PROJECT_ID,
       userUid: `${WORKSPACE_ACTOR}-uid`,

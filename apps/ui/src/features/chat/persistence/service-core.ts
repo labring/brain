@@ -6,6 +6,7 @@ import type {
 } from "./repository-core";
 import {
   type AssistantConversationScope,
+  type AssistantConversationTarget,
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   normalizeAssistantNamespace,
@@ -37,15 +38,18 @@ export interface AssistantConversationServiceDependencies {
 function normalizedScope(
   scope: AssistantConversationScope
 ): AssistantConversationScope {
+  const owner = {
+    namespace: normalizeAssistantNamespace(scope.namespace),
+    userUid: scope.userUid,
+  };
+  if (scope.kind === "workspace") {
+    return { ...owner, kind: "workspace" };
+  }
   const projectId = scope.projectId.trim();
   if (projectId === "") {
     throw new Error("assistant project id is required");
   }
-  return {
-    namespace: normalizeAssistantNamespace(scope.namespace),
-    projectId,
-    userUid: scope.userUid,
-  };
+  return { ...owner, kind: "project", projectId };
 }
 
 function toThreadDTO(row: ThreadRow): AssistantThreadDTO {
@@ -93,12 +97,9 @@ export function createAssistantConversationService(
     ensureThread: (
       chatId: string,
       actor: VerifiedAssistantConversationActor,
-      projectId: string
+      target: AssistantConversationTarget
     ): Promise<boolean> => {
-      const normalizedProjectId = projectId.trim();
-      if (normalizedProjectId === "") {
-        throw new Error("assistant project id is required");
-      }
+      const scope = normalizedScope({ ...actor.owner, ...target });
       return repository.ensureThreadForOwner({
         actor: {
           legacyWorkspaceActor: actor.legacyWorkspaceActor,
@@ -108,7 +109,10 @@ export function createAssistantConversationService(
           },
         },
         id: chatId,
-        projectId: normalizedProjectId,
+        target:
+          scope.kind === "project"
+            ? { kind: "project", projectId: scope.projectId }
+            : { kind: "workspace" },
         title: dependencies.placeholderTitle(),
       });
     },

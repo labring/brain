@@ -3,7 +3,10 @@ import { test } from "node:test";
 
 import { SignJWT } from "jose";
 
-import type { AssistantThreadDTO } from "../persistence/types";
+import type {
+  AssistantConversationScope,
+  AssistantThreadDTO,
+} from "../persistence/types";
 import {
   type AssistantConversationHandlerDependencies,
   createAssistantConversationHandlers,
@@ -13,6 +16,10 @@ const APP_TOKEN_SECRET = "cluster-shared-jwt-internal";
 const APP_TOKEN_CONFIG = {
   secret: APP_TOKEN_SECRET,
 };
+
+function scopeLabel(scope: AssistantConversationScope): string {
+  return scope.kind === "project" ? scope.projectId : "workspace";
+}
 
 function mintAppToken(crName: string, secret = APP_TOKEN_SECRET) {
   return new SignJWT({
@@ -123,7 +130,7 @@ test("conversation listing keys the owner by the token-proven userUid, ignoring 
       list: (scope) =>
         Promise.resolve(
           threads.get(
-            `${scope.namespace}:${scope.userUid}:${scope.projectId}`
+            `${scope.namespace}:${scope.userUid}:${scopeLabel(scope)}`
           ) ?? []
         ),
     })
@@ -147,15 +154,15 @@ test("conversation handlers pass the requested project into every scoped read", 
   const handlers = createAssistantConversationHandlers(
     handlerDependencies({
       bootstrap: (scope) => {
-        scopes.push(`bootstrap:${scope.projectId}`);
+        scopes.push(`bootstrap:${scopeLabel(scope)}`);
         return Promise.resolve({ chatId: "draft", messages: [], threads: [] });
       },
       list: (scope) => {
-        scopes.push(`list:${scope.projectId}`);
+        scopes.push(`list:${scopeLabel(scope)}`);
         return Promise.resolve([]);
       },
       read: (scope) => {
-        scopes.push(`read:${scope.projectId}`);
+        scopes.push(`read:${scopeLabel(scope)}`);
         return Promise.resolve([]);
       },
     })
@@ -188,20 +195,20 @@ test("conversation handlers pass the requested project into every scoped read", 
   ]);
 });
 
-test("project-scoped conversation routes reject a missing or empty project id", async () => {
-  let storageRead = false;
+test("conversation routes use workspace scope when project id is missing or empty", async () => {
+  const scopes: string[] = [];
   const handlers = createAssistantConversationHandlers(
     handlerDependencies({
-      bootstrap: () => {
-        storageRead = true;
-        return Promise.reject(new Error("must not run"));
+      bootstrap: (scope) => {
+        scopes.push(`bootstrap:${scopeLabel(scope)}`);
+        return Promise.resolve({ chatId: "draft", messages: [], threads: [] });
       },
-      list: () => {
-        storageRead = true;
+      list: (scope) => {
+        scopes.push(`list:${scopeLabel(scope)}`);
         return Promise.resolve([]);
       },
-      read: () => {
-        storageRead = true;
+      read: (scope) => {
+        scopes.push(`read:${scopeLabel(scope)}`);
         return Promise.resolve([]);
       },
     })
@@ -214,13 +221,13 @@ test("project-scoped conversation routes reject a missing or empty project id", 
 
   for (const [path, handler] of requests) {
     const response = await handler(await authorizedRequest(path, "alice-cr"));
-    assert.equal(response.status, 400);
-    assert.deepEqual(await response.json(), {
-      code: "invalid_request",
-      error: "projectId query parameter required",
-    });
+    assert.equal(response.status, 200);
   }
-  assert.equal(storageRead, false);
+  assert.deepEqual(scopes, [
+    "bootstrap:workspace",
+    "list:workspace",
+    "read:workspace",
+  ]);
 });
 
 test("every verified entry request adopts the actor's legacy conversations before reading them", async () => {
@@ -236,7 +243,7 @@ test("every verified entry request adopts the actor's legacy conversations befor
       },
       bootstrap: (scope) => {
         calls.push(
-          `bootstrap:${scope.namespace}:${scope.userUid}:${scope.projectId}`
+          `bootstrap:${scope.namespace}:${scope.userUid}:${scopeLabel(scope)}`
         );
         return Promise.resolve({
           chatId: "bootstrap-chat",
@@ -246,13 +253,13 @@ test("every verified entry request adopts the actor's legacy conversations befor
       },
       list: (scope) => {
         calls.push(
-          `list:${scope.namespace}:${scope.userUid}:${scope.projectId}`
+          `list:${scope.namespace}:${scope.userUid}:${scopeLabel(scope)}`
         );
         return Promise.resolve([]);
       },
       read: (scope) => {
         calls.push(
-          `read:${scope.namespace}:${scope.userUid}:${scope.projectId}`
+          `read:${scope.namespace}:${scope.userUid}:${scopeLabel(scope)}`
         );
         return Promise.resolve([]);
       },

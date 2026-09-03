@@ -43,7 +43,10 @@ import {
 } from "@/features/chat/persistence/service";
 import type { FreeTierState } from "@/features/chat/persistence/types";
 import {
+  type AssistantContextPayload,
+  type AssistantConversationOwner,
   type AssistantConversationScope,
+  type AssistantConversationTarget,
   buildAssistantContinuationFromPending,
   buildRecoveredAssistantMessageForInterruptedTools,
   type ChatStreamRequest,
@@ -88,6 +91,29 @@ const CHAT_TITLE_TIMEOUT_MS = 5000;
 
 const INTERRUPTED_TOOL_ERROR =
   "Tool execution was interrupted before a result was available.";
+
+function assistantConversationScope(
+  owner: AssistantConversationOwner,
+  context: AssistantContextPayload
+): AssistantConversationScope {
+  return context.kind === "project"
+    ? { ...owner, kind: "project", projectId: context.projectId }
+    : { ...owner, kind: "workspace" };
+}
+
+function assistantConversationTarget(
+  scope: AssistantConversationScope
+): AssistantConversationTarget {
+  return scope.kind === "project"
+    ? { kind: "project", projectId: scope.projectId }
+    : { kind: "workspace" };
+}
+
+function assistantProjectName(
+  context: AssistantContextPayload
+): string | undefined {
+  return context.kind === "project" ? context.projectName : undefined;
+}
 
 /** The `X-Chat-*` set every chat response carries — paid-wall refusals included. */
 function chatBillingHeaders(state: FreeTierState): Record<string, string> {
@@ -698,10 +724,7 @@ async function runChatPipeline(input: {
     input.request;
   const { actor, kubeconfig, requestAbortSignal } = input;
   const owner = actor.owner;
-  const scope: AssistantConversationScope = {
-    ...owner,
-    projectId: assistantContext.projectId,
-  };
+  const scope = assistantConversationScope(owner, assistantContext);
   let ownedLease: ChatStreamLease | null = null;
   let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
@@ -729,7 +752,7 @@ async function runChatPipeline(input: {
     const threadReady = await ensureAssistantThreadForOwner(
       chatId,
       actor,
-      scope.projectId
+      assistantConversationTarget(scope)
     );
     if (!threadReady) {
       return jsonError(
@@ -888,7 +911,7 @@ async function runChatPipeline(input: {
         history,
         heartbeat: streamHeartbeat,
         scope,
-        projectName: assistantContext?.projectName,
+        projectName: assistantProjectName(assistantContext),
         titleModel,
         toolDurationMsByCallId,
       }),
@@ -1006,24 +1029,26 @@ export async function POST(req: Request) {
   }
   const actor: VerifiedAssistantConversationActor =
     verifiedPersonalResourceActor(authorization);
-  try {
-    const project = await getProject(
-      authorization.namespace,
-      request.assistantContext.projectId
-    );
-    if (project == null) {
+  if (request.assistantContext.kind === "project") {
+    try {
+      const project = await getProject(
+        authorization.namespace,
+        request.assistantContext.projectId
+      );
+      if (project == null) {
+        return jsonError(
+          "assistant_project_not_found",
+          "Assistant project not found.",
+          404
+        );
+      }
+    } catch {
       return jsonError(
-        "assistant_project_not_found",
-        "Assistant project not found.",
-        404
+        "assistant_project_unavailable",
+        "Could not verify the Assistant project.",
+        503
       );
     }
-  } catch {
-    return jsonError(
-      "assistant_project_unavailable",
-      "Could not verify the Assistant project.",
-      503
-    );
   }
   // The chat turn is a natural observation point for the quota-exhausted
   // producer: the snapshot already crossed the server boundary here.

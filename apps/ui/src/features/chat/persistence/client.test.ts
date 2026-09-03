@@ -51,3 +51,26 @@ test("conversation list and bootstrap requests do not send a client-owned user i
   ]);
   assert.deepEqual(appTokenHeaders, ["app-token", "app-token", "app-token"]);
 });
+
+test("workspace conversation requests omit projectId from the scope query", async () => {
+  const requestedUrls: string[] = [];
+  globalThis.fetch = ((input: string | URL | Request) => {
+    requestedUrls.push(String(input));
+    return Promise.resolve(
+      Response.json({
+        chatId: "workspace-chat",
+        freeTier: { billing: "user", limit: 0, remaining: 0 },
+        messages: [],
+        threads: [],
+      })
+    );
+  }) as typeof fetch;
+
+  await fetchAssistantSession({
+    appToken: "app-token",
+    kubeconfig: "encoded-kubeconfig",
+    namespace: "shared",
+  });
+
+  assert.deepEqual(requestedUrls, ["/api/chat/session?namespace=shared"]);
+});

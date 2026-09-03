@@ -59,11 +59,13 @@ test("repository never exposes or mutates a foreign conversation", async () => {
   await migrate(db, { migrationsFolder });
   const repository = createAssistantConversationRepository(() => db);
   const alice = {
+    kind: "project" as const,
     namespace: "shared",
     projectId: "project-alice",
     userUid: "alice-uid",
   };
   const bob = {
+    kind: "project" as const,
     namespace: "shared",
     projectId: "project-bob",
     userUid: "bob-uid",
@@ -80,7 +82,7 @@ test("repository never exposes or mutates a foreign conversation", async () => {
     await repository.ensureThreadForOwner({
       actor: bobActor,
       id: "bob-chat",
-      projectId: bob.projectId,
+      target: { kind: "project", projectId: bob.projectId },
       title: "Bob title",
     }),
     true
@@ -95,12 +97,13 @@ test("repository never exposes or mutates a foreign conversation", async () => {
     await repository.ensureThreadForOwner({
       actor: aliceActor,
       id: "alice-chat",
-      projectId: alice.projectId,
+      target: { kind: "project", projectId: alice.projectId },
       title: "Alice title",
     }),
     true
   );
   const aliceOtherProject = {
+    kind: "project" as const,
     namespace: alice.namespace,
     projectId: "project-alice-other",
     userUid: alice.userUid,
@@ -109,7 +112,10 @@ test("repository never exposes or mutates a foreign conversation", async () => {
     await repository.ensureThreadForOwner({
       actor: aliceActor,
       id: "alice-other-chat",
-      projectId: aliceOtherProject.projectId,
+      target: {
+        kind: "project",
+        projectId: aliceOtherProject.projectId,
+      },
       title: "Alice other Project",
     }),
     true
@@ -118,7 +124,7 @@ test("repository never exposes or mutates a foreign conversation", async () => {
     await repository.ensureThreadForOwner({
       actor: aliceActor,
       id: "bob-chat",
-      projectId: alice.projectId,
+      target: { kind: "project", projectId: alice.projectId },
       title: "Re-keyed title",
     }),
     false
@@ -184,6 +190,50 @@ test("repository never exposes or mutates a foreign conversation", async () => {
       (thread) => thread.id
     ),
     ["alice-other-chat"]
+  );
+
+  const aliceWorkspace = {
+    kind: "workspace" as const,
+    namespace: alice.namespace,
+    userUid: alice.userUid,
+  };
+  assert.equal(
+    await repository.ensureThreadForOwner({
+      actor: aliceActor,
+      id: "alice-workspace-chat",
+      target: { kind: "workspace" },
+      title: "Alice workspace",
+    }),
+    true
+  );
+  await db.insert(assistantChats).values({
+    id: "alice-unscoped-legacy-chat",
+    namespace: alice.namespace,
+    projectId: null,
+    scopeKind: null,
+    title: "Legacy unscoped",
+    workspaceActor: alice.userUid,
+  });
+  assert.deepEqual(
+    (await repository.selectThreadsByOwner(aliceWorkspace)).map(
+      (thread) => thread.id
+    ),
+    ["alice-workspace-chat"]
+  );
+  assert.equal(
+    await repository.selectThreadByOwner(
+      "alice-unscoped-legacy-chat",
+      aliceWorkspace
+    ),
+    null
+  );
+  assert.equal(
+    await repository.selectThreadByOwner("alice-workspace-chat", alice),
+    null
+  );
+  assert.equal(
+    await repository.selectThreadByOwner("alice-chat", aliceWorkspace),
+    null
   );
 });
 
@@ -264,11 +314,13 @@ test("ownership migration invalidates legacy conversations without resetting nam
 const TEST_CHAT_ID = "chat-cas";
 const TEST_MESSAGE_ID = "message-cas";
 const TEST_OWNER = {
+  kind: "project",
   namespace: "ns-test",
   projectId: "project-test",
   userUid: "user-test",
 } as const;
 const OTHER_OWNER = {
+  kind: "project",
   namespace: "ns-test",
   projectId: "project-test",
   userUid: "other-user",
@@ -341,6 +393,7 @@ async function seedThread() {
     id: TEST_CHAT_ID,
     namespace: "ns-test",
     projectId: TEST_OWNER.projectId,
+    scopeKind: "project",
     title: "CAS test",
     updatedAt: INITIAL_UPDATED_AT,
     workspaceActor: TEST_OWNER.userUid,
@@ -995,6 +1048,7 @@ describe("adoptLegacyThreadsForActor", () => {
   const USER_UID = "31b8a2f4-0f9f-4a3e-9c56-0d9f6f9e2b41";
   const SURVIVOR_UID = "5c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f";
   const UID_OWNER = {
+    kind: "project" as const,
     namespace: "ns-test",
     projectId: "project-test",
     userUid: USER_UID,
@@ -1199,7 +1253,7 @@ describe("adoptLegacyThreadsForActor", () => {
       assistantConversationRepository.ensureThreadForOwner({
         actor: VERIFIED_ACTOR,
         id: "tombstone-thread",
-        projectId: UID_OWNER.projectId,
+        target: { kind: "project", projectId: UID_OWNER.projectId },
         title: "Never created",
       })
     ).rejects.toThrow(IdentityBindingSupersededError);

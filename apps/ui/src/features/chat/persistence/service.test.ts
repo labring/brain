@@ -20,33 +20,46 @@ test("first-message creation pins the verified owner and project scope", async (
   const scopes = new Map<string, AssistantConversationScope>();
   const repository = {
     ensureThreadForOwner: (input) => {
-      const requested = { ...input.actor.owner, projectId: input.projectId };
+      const requested: AssistantConversationScope = {
+        ...input.actor.owner,
+        ...input.target,
+      };
       if (!scopes.has(input.id)) {
         scopes.set(input.id, requested);
       }
+      const stored = scopes.get(input.id);
       return Promise.resolve(
-        scopes.get(input.id)?.namespace === requested.namespace &&
-          scopes.get(input.id)?.projectId === requested.projectId &&
-          scopes.get(input.id)?.userUid === requested.userUid
+        stored?.namespace === requested.namespace &&
+          stored?.kind === requested.kind &&
+          (stored?.kind !== "project" ||
+            (requested.kind === "project" &&
+              stored.projectId === requested.projectId)) &&
+          stored?.userUid === requested.userUid
       );
     },
-    selectThreadByOwner: (chatId, scope) =>
-      Promise.resolve(
-        scopes.get(chatId)?.namespace === scope.namespace &&
-          scopes.get(chatId)?.projectId === scope.projectId &&
-          scopes.get(chatId)?.userUid === scope.userUid
+    selectThreadByOwner: (chatId, scope) => {
+      const stored = scopes.get(chatId);
+      return Promise.resolve(
+        stored?.namespace === scope.namespace &&
+          stored?.kind === scope.kind &&
+          (stored?.kind !== "project" ||
+            (scope.kind === "project" &&
+              stored.projectId === scope.projectId)) &&
+          stored?.userUid === scope.userUid
           ? {
               createdAt: new Date("2026-07-21T00:00:00.000Z"),
               id: chatId,
               namespace: scope.namespace,
-              projectId: scope.projectId,
+              projectId: scope.kind === "project" ? scope.projectId : null,
+              scopeKind: scope.kind,
               title: "Chat",
               titleAiGenerated: false,
               updatedAt: new Date("2026-07-21T00:00:00.000Z"),
               workspaceActor: scope.userUid,
             }
           : null
-      ),
+      );
+    },
     selectThreadsByOwner: () => Promise.resolve([]),
     selectMessagesByOwner: () => Promise.resolve(null),
     updateThreadAiTitleOnceForOwner: () => Promise.resolve(false),
@@ -58,18 +71,26 @@ test("first-message creation pins the verified owner and project scope", async (
     titleThread: () => Promise.resolve("Generated title"),
   });
   const alice = {
+    kind: "project" as const,
     namespace: "shared",
     projectId: "project-a",
     userUid: "alice-cr",
   };
   const aliceOtherProject = { ...alice, projectId: "project-b" };
   const bob = {
+    kind: "project" as const,
     namespace: "shared",
     projectId: "project-a",
     userUid: "bob-cr",
   };
-  const aliceActor = { legacyWorkspaceActor: "alicecr1", owner: alice };
-  const bobActor = { legacyWorkspaceActor: "bobcrnm1", owner: bob };
+  const aliceActor = {
+    legacyWorkspaceActor: "alicecr1",
+    owner: { namespace: alice.namespace, userUid: alice.userUid },
+  };
+  const bobActor = {
+    legacyWorkspaceActor: "bobcrnm1",
+    owner: { namespace: bob.namespace, userUid: bob.userUid },
+  };
 
   const draft = await service.bootstrap(alice);
 
@@ -77,11 +98,17 @@ test("first-message creation pins the verified owner and project scope", async (
   assert.deepEqual(draft.threads, []);
   assert.equal(scopes.size, 0);
   assert.equal(
-    await service.ensureThread(draft.chatId, aliceActor, alice.projectId),
+    await service.ensureThread(draft.chatId, aliceActor, {
+      kind: "project",
+      projectId: alice.projectId,
+    }),
     true
   );
   assert.equal(
-    await service.ensureThread(draft.chatId, bobActor, bob.projectId),
+    await service.ensureThread(draft.chatId, bobActor, {
+      kind: "project",
+      projectId: bob.projectId,
+    }),
     false
   );
   assert.equal(
@@ -96,6 +123,7 @@ test("automatic titling cannot cross actor or project scope", async () => {
   let generatedTitles = 0;
   let titleAbortSignal: AbortSignal | undefined;
   const bobScope = {
+    kind: "project" as const,
     namespace: "shared",
     projectId: "project-b",
     userUid: "bob-cr",
@@ -105,6 +133,7 @@ test("automatic titling cannot cross actor or project scope", async () => {
     id: "bob-chat",
     namespace: bobScope.namespace,
     projectId: bobScope.projectId,
+    scopeKind: "project" as const,
     title: "Chat",
     titleAiGenerated: false,
     updatedAt: new Date("2026-07-21T00:00:00.000Z"),
@@ -112,6 +141,7 @@ test("automatic titling cannot cross actor or project scope", async () => {
   };
   const isBobScope = (scope: AssistantConversationScope) =>
     scope.namespace === bobScope.namespace &&
+    scope.kind === "project" &&
     scope.projectId === bobScope.projectId &&
     scope.userUid === bobScope.userUid;
   const repository = {
@@ -198,6 +228,7 @@ test("conversation service fails closed on an empty project scope", async () => 
     titleThread: () => Promise.resolve("Generated title"),
   });
   const emptyProjectScope = {
+    kind: "project" as const,
     namespace: "shared",
     projectId: "   ",
     userUid: "alice-cr",
@@ -212,7 +243,7 @@ test("conversation service fails closed on an empty project scope", async () => 
       service.ensureThread(
         "chat-a",
         { legacyWorkspaceActor: "alicecr1", owner: emptyProjectScope },
-        emptyProjectScope.projectId
+        { kind: "project", projectId: emptyProjectScope.projectId }
       ),
     PROJECT_ID_REQUIRED_PATTERN
   );

@@ -35,15 +35,18 @@ export type { ChatStreamLease } from "./repository";
 function normalizedScope(
   scope: AssistantConversationScope
 ): AssistantConversationScope {
+  const owner = {
+    namespace: normalizeAssistantNamespace(scope.namespace),
+    userUid: scope.userUid,
+  };
+  if (scope.kind === "workspace") {
+    return { ...owner, kind: "workspace" };
+  }
   const projectId = scope.projectId.trim();
   if (projectId === "") {
     throw new Error("assistant project id is required");
   }
-  return {
-    namespace: normalizeAssistantNamespace(scope.namespace),
-    projectId,
-    userUid: scope.userUid,
-  };
+  return { ...owner, kind: "project", projectId };
 }
 
 export const bootstrapAssistantSession = service.bootstrap;
