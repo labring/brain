@@ -41,6 +41,10 @@ export function useApsK8sList(options: UseApsK8sListOptions) {
     labelSelector,
     namespace,
     refreshInterval,
+    revalidateOnMount,
+    revalidateIfStale,
+    revalidateOnFocus,
+    revalidateOnReconnect,
   } = options;
   const pollWhileEmpty = options.pollWhileEmpty === true;
   const peerEmpty = options.peerEmpty;
@@ -76,6 +80,10 @@ export function useApsK8sList(options: UseApsK8sListOptions) {
         select: (raw) => k8sGetResponseSchema.parse(raw),
       }),
     {
+      revalidateOnMount,
+      revalidateIfStale,
+      revalidateOnFocus,
+      revalidateOnReconnect,
       refreshInterval: (latestData) => {
         const configuredInterval = resolveRefreshInterval(
           refreshInterval,

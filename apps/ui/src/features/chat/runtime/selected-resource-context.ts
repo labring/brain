@@ -3,12 +3,13 @@ import "server-only";
 import type { UIMessage } from "ai";
 
 import {
-  readSelectedResourceContext,
-  type SelectedResourceContext,
+  readSelectedContextReference,
+  type SelectedContextReference,
 } from "@/features/chat/persistence/types";
 
 /**
- * Bridge the per-message `data-selectedResource` snapshot into model-visible text.
+ * Bridge the per-message typed Selected Context snapshot into model-visible text.
+ * Legacy `data-selectedResource` parts are normalized by the persistence reader.
  *
  * `convertToModelMessages` drops custom data parts, so the pinned selection is
  * invisible to the model unless we surface it. We prepend a delimited
@@ -30,7 +31,7 @@ export function withSelectedResourceContext(history: UIMessage[]): UIMessage[] {
     if (message.role !== "user") {
       return message;
     }
-    const context = readSelectedResourceContext(message);
+    const context = readSelectedContextReference(message);
     if (context == null) {
       // A user turn with nothing selected breaks the consecutive run, so the
       // next selection must re-emit its full block rather than collapse to
@@ -51,7 +52,7 @@ export function withSelectedResourceContext(history: UIMessage[]): UIMessage[] {
   });
 }
 
-function selectionKey(context: SelectedResourceContext): string {
+function selectionKey(context: SelectedContextReference): string {
   // The display name participates so a rename re-emits a full block instead
   // of collapsing to "unchanged" under the old name.
   return [
@@ -59,10 +60,11 @@ function selectionKey(context: SelectedResourceContext): string {
     context.namespace ?? "",
     context.name ?? "",
     context.displayName ?? "",
+    context.observedUid ?? "",
   ].join("|");
 }
 
-function describeSelection(context: SelectedResourceContext): string {
+function describeSelection(context: SelectedContextReference): string {
   const kind = context.kind ? `${context.kind} ` : "";
   // Escaped like the full block: the terse marker echoes the name as free text,
   // so an untrusted name must not be able to break out of the data framing.
@@ -71,7 +73,9 @@ function describeSelection(context: SelectedResourceContext): string {
   );
 }
 
-function renderSelectedResourceBlock(context: SelectedResourceContext): string {
+function renderSelectedResourceBlock(
+  context: SelectedContextReference
+): string {
   const attributes = [
     attribute("kind", context.kind),
     attribute("name", context.name),

@@ -28,6 +28,10 @@ export const assistantChats = ns.table(
     id: text("id").primaryKey(),
     /** Logical namespace bucket (UI: `namespaceAtom`); empty namespaces map to the default bucket at write time. */
     namespace: text("namespace").notNull(),
+    /** Project-scoped conversation boundary; workspace conversations keep this NULL. */
+    projectId: text("project_id"),
+    /** Explicit product context; legacy NULL rows remain unscoped and hidden. */
+    scopeKind: text("scope_kind").$type<"workspace" | "project">(),
     /**
      * The owner's global `userUid` (ADR-0059). Set at creation and immutable;
      * legacy beta rows carry the per-region crName until lazily adopted.
@@ -46,9 +50,11 @@ export const assistantChats = ns.table(
   },
   (table) => [
     index("assistant_chats_updated_at_idx").on(table.updatedAt),
-    index("assistant_chats_namespace_actor_updated_at_idx").on(
+    index("assistant_chats_namespace_actor_scope_project_updated_at_idx").on(
       table.namespace,
       table.workspaceActor,
+      table.scopeKind,
+      table.projectId,
       table.updatedAt
     ),
   ]

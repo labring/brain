@@ -50,11 +50,28 @@ export interface UseK8sNamespacedListOptions {
   pollWhileEmpty?: boolean;
   /** Additional SWR refresh cadence. Combined with empty-list polling by choosing the faster active interval. */
   refreshInterval?: K8sNamespacedListRefreshInterval;
+  /** Keep stale cached data read-only for consumers that must not trigger I/O. */
+  revalidateIfStale?: boolean;
+  /** Disable focus-triggered revalidation for cache-only consumers. */
+  revalidateOnFocus?: boolean;
+  /** Read an existing SWR snapshot without initiating a request on mount. */
+  revalidateOnMount?: boolean;
+  /** Disable reconnect-triggered revalidation for cache-only consumers. */
+  revalidateOnReconnect?: boolean;
 }
 
 /** Plural k8s resource short name as accepted by `GET /api/k8s/.../get` (e.g. `aps`, `dbs`). */
 export function useK8sNamespacedList(options: UseK8sNamespacedListOptions) {
-  const { kind, labelSelector, namespace, refreshInterval } = options;
+  const {
+    kind,
+    labelSelector,
+    namespace,
+    refreshInterval,
+    revalidateOnMount,
+    revalidateIfStale,
+    revalidateOnFocus,
+    revalidateOnReconnect,
+  } = options;
   const pollWhileEmpty = options.pollWhileEmpty === true;
   const peerEmpty = options.peerEmpty;
   const kubeconfig = options.kubeconfig ?? "";
@@ -96,6 +113,10 @@ export function useK8sNamespacedList(options: UseK8sNamespacedListOptions) {
         select: (raw) => k8sGetResponseSchema.parse(raw),
       }),
     {
+      revalidateOnMount,
+      revalidateIfStale,
+      revalidateOnFocus,
+      revalidateOnReconnect,
       refreshInterval: (latestData) => {
         const configuredInterval = resolveRefreshInterval(
           refreshInterval,

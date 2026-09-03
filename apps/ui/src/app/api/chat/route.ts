@@ -43,7 +43,10 @@ import {
 } from "@/features/chat/persistence/service";
 import type { FreeTierState } from "@/features/chat/persistence/types";
 import {
+  type AssistantContextPayload,
   type AssistantConversationOwner,
+  type AssistantConversationScope,
+  type AssistantConversationTarget,
   buildAssistantContinuationFromPending,
   buildRecoveredAssistantMessageForInterruptedTools,
   type ChatStreamRequest,
@@ -80,6 +83,7 @@ import { observeWorkspaceQuotaQuietly } from "@/features/notifications/producers
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
+import { getProject } from "@/lib/project-persistence/projects";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 
@@ -87,6 +91,29 @@ const CHAT_TITLE_TIMEOUT_MS = 5000;
 
 const INTERRUPTED_TOOL_ERROR =
   "Tool execution was interrupted before a result was available.";
+
+function assistantConversationScope(
+  owner: AssistantConversationOwner,
+  context: AssistantContextPayload
+): AssistantConversationScope {
+  return context.kind === "project"
+    ? { ...owner, kind: "project", projectId: context.projectId }
+    : { ...owner, kind: "workspace" };
+}
+
+function assistantConversationTarget(
+  scope: AssistantConversationScope
+): AssistantConversationTarget {
+  return scope.kind === "project"
+    ? { kind: "project", projectId: scope.projectId }
+    : { kind: "workspace" };
+}
+
+function assistantProjectName(
+  context: AssistantContextPayload
+): string | undefined {
+  return context.kind === "project" ? context.projectName : undefined;
+}
 
 /** The `X-Chat-*` set every chat response carries — paid-wall refusals included. */
 function chatBillingHeaders(state: FreeTierState): Record<string, string> {
@@ -477,12 +504,12 @@ async function releaseLeaseQuietly(lease: ChatStreamLease): Promise<void> {
 
 async function acquireLeaseForHistory(
   chatId: string,
-  owner: AssistantConversationOwner,
+  scope: AssistantConversationScope,
   expectedHistory: UIMessage[]
 ): Promise<
   { lease: ChatStreamLease; response?: never } | { response: Response }
 > {
-  const lease = await acquireChatStreamLease(chatId, owner);
+  const lease = await acquireChatStreamLease(chatId, scope);
   if (lease == null) {
     return {
       response: jsonError(
@@ -493,7 +520,7 @@ async function acquireLeaseForHistory(
     };
   }
 
-  const claimedHistory = await loadMessagesForOwner(chatId, owner);
+  const claimedHistory = await loadMessagesForOwner(chatId, scope);
   if (isDeepStrictEqual(claimedHistory, expectedHistory)) {
     return { lease };
   }
@@ -512,7 +539,7 @@ function createChatStreamFinishHandler(input: {
   chatId: string;
   history: UIMessage[];
   heartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease>;
-  owner: AssistantConversationOwner;
+  scope: AssistantConversationScope;
   projectName?: string;
   titleModel: Parameters<typeof maybeAutoTitleThread>[0]["languageModel"];
   toolDurationMsByCallId: Map<string, number>;
@@ -559,7 +586,7 @@ function createChatStreamFinishHandler(input: {
         abortSignal: AbortSignal.timeout(CHAT_TITLE_TIMEOUT_MS),
         chatId: input.chatId,
         languageModel: input.titleModel,
-        owner: input.owner,
+        scope: input.scope,
         projectName: input.projectName,
       });
     } catch (error) {
@@ -569,7 +596,7 @@ function createChatStreamFinishHandler(input: {
       // a persisted, uninterrupted turn keeps it — an empty or errored
       // stream, an abort, or a lost lease rolls it back.
       if (input.billing === "free" && !freeTurnSpent) {
-        await releaseReservedFreeTurnQuietly(input.owner.namespace);
+        await releaseReservedFreeTurnQuietly(input.scope.namespace);
       }
       if (lease != null && !leaseReleased) {
         await releaseLeaseQuietly(lease);
@@ -697,6 +724,7 @@ async function runChatPipeline(input: {
     input.request;
   const { actor, kubeconfig, requestAbortSignal } = input;
   const owner = actor.owner;
+  const scope = assistantConversationScope(owner, assistantContext);
   let ownedLease: ChatStreamLease | null = null;
   let leaseHeartbeat: ChatStreamLeaseHeartbeat<ChatStreamLease> | null = null;
   let rollbackAssistant: PendingAssistantReplacement | null = null;
@@ -721,7 +749,11 @@ async function runChatPipeline(input: {
     // conversation must find the re-keyed row instead of refusing its id.
     await adoptLegacyAssistantConversationsForActor(actor);
 
-    const threadReady = await ensureAssistantThreadForOwner(chatId, actor);
+    const threadReady = await ensureAssistantThreadForOwner(
+      chatId,
+      actor,
+      assistantConversationTarget(scope)
+    );
     if (!threadReady) {
       return jsonError(
         "assistant_conversation_not_found",
@@ -730,7 +762,7 @@ async function runChatPipeline(input: {
       );
     }
 
-    const storedHistory = await loadMessagesForOwner(chatId, owner);
+    const storedHistory = await loadMessagesForOwner(chatId, scope);
     if (storedHistory == null) {
       return jsonError(
         "assistant_conversation_not_found",
@@ -804,7 +836,7 @@ async function runChatPipeline(input: {
       { tools }
     );
 
-    const claimed = await acquireLeaseForHistory(chatId, owner, storedHistory);
+    const claimed = await acquireLeaseForHistory(chatId, scope, storedHistory);
     if (claimed.response != null) {
       return claimed.response;
     }
@@ -878,8 +910,8 @@ async function runChatPipeline(input: {
         chatId,
         history,
         heartbeat: streamHeartbeat,
-        owner,
-        projectName: assistantContext?.projectName,
+        scope,
+        projectName: assistantProjectName(assistantContext),
         titleModel,
         toolDurationMsByCallId,
       }),
@@ -997,6 +1029,27 @@ export async function POST(req: Request) {
   }
   const actor: VerifiedAssistantConversationActor =
     verifiedPersonalResourceActor(authorization);
+  if (request.assistantContext.kind === "project") {
+    try {
+      const project = await getProject(
+        authorization.namespace,
+        request.assistantContext.projectId
+      );
+      if (project == null) {
+        return jsonError(
+          "assistant_project_not_found",
+          "Assistant project not found.",
+          404
+        );
+      }
+    } catch {
+      return jsonError(
+        "assistant_project_unavailable",
+        "Could not verify the Assistant project.",
+        503
+      );
+    }
+  }
   // The chat turn is a natural observation point for the quota-exhausted
   // producer: the snapshot already crossed the server boundary here.
   if (workspaceResourceQuota.success) {

@@ -4,7 +4,8 @@ import type {
   UIMessage,
 } from "ai";
 import type { ReactNode } from "react";
-
+import type { SelectedContextReference } from "@/features/chat/persistence/types";
+import type { SelectedContextAvailability } from "@/features/chat/selected-context";
 import type {
   GithubDeployerActions,
   GithubDeployerStates,
@@ -57,6 +58,9 @@ export interface ChatMessagesStates {
 export interface ChatTranscriptProps {
   addToolApprovalResponse?: ChatAddToolApproveResponseFunction;
   messages: UIMessage[];
+  selectedContextAvailability?: (
+    reference: SelectedContextReference
+  ) => SelectedContextAvailability;
   status?: ChatStatus;
   transcriptFooter?: ReactNode;
 }

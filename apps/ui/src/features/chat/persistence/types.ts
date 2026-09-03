@@ -38,6 +38,19 @@ export function normalizeAssistantNamespace(namespace: string): string {
  */
 export type AssistantConversationOwner = PersonalResourceOwner;
 
+/** The product context that gives one Assistant Conversation its stable identity. */
+export type AssistantConversationTarget =
+  | { kind: "workspace"; projectId?: never }
+  | { kind: "project"; projectId: string };
+
+/**
+ * Stable scope of one Assistant Conversation. Workspace conversations remain
+ * usable on `/project`; Project conversations add `projectId` so two Projects
+ * never share history or a system-prompt identity.
+ */
+export type AssistantConversationScope = AssistantConversationOwner &
+  AssistantConversationTarget;
+
 /**
  * A verified actor entering a conversation route. Conversation persistence
  * consults the crName only to find the actor's legacy rows; surfaces still
@@ -114,12 +127,16 @@ export interface AssistantSessionPayload {
  * Only carries values that do not change within a thread (project name + id), so
  * the system prompt stays a byte-stable, cacheable prefix. The volatile canvas
  * selection is NOT here — it is pinned to individual user messages instead (see
- * {@link SelectedResourceContext}).
+ * {@link SelectedContextReference}).
  */
-export const assistantContextPayloadSchema = z.object({
-  projectName: z.string().max(512).optional(),
-  projectId: z.string().max(256).optional(),
-});
+export const assistantContextPayloadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("workspace") }),
+  z.object({
+    kind: z.literal("project"),
+    projectName: z.string().max(512).optional(),
+    projectId: z.string().trim().min(1).max(256),
+  }),
+]);
 export type AssistantContextPayload = z.infer<
   typeof assistantContextPayloadSchema
 >;
@@ -127,7 +144,7 @@ export type AssistantContextPayload = z.infer<
 /**
  * Snapshot of the resource selected on the canvas when a user message was sent.
  *
- * Pinned to that message as a `data-selectedResource` part so the model resolves
+ * Pinned to that message as a typed `data-selectedContext` part so the model resolves
  * deictic references ("this" / "it") against the selection that was live at send
  * time — not whatever happens to be selected on a later request. Absence means
  * "nothing was selected"; we never backfill a stale target.
@@ -143,15 +160,56 @@ export type SelectedResourceContext = z.infer<
   typeof selectedResourceContextSchema
 >;
 
-/** UIMessage part type carrying {@link SelectedResourceContext} on a user turn. */
+/**
+ * Typed, message-scoped reference captured from the UI when a user turn is sent.
+ *
+ * The reference is historical context, not live cluster state or an authority
+ * token. `observedUid` distinguishes the selected Kubernetes object from a later
+ * object recreated under the same name.
+ */
+export const selectedContextReferenceSchema = z
+  .object({
+    type: z.literal("resource"),
+    /** Resource Display Name (ADR 0066), frozen at send time. */
+    displayName: z.string().max(512).optional(),
+    kind: z.enum(["AP", "DB", "PublicAccess"]),
+    name: z.string().min(1).max(512),
+    namespace: z.string().min(1).max(256),
+    observedUid: z.string().min(1).max(512).optional(),
+    /** Project identity captured with the message; absent only on legacy rows. */
+    projectId: z.string().min(1).max(256).optional(),
+  })
+  .strict();
+export type SelectedContextReference = z.infer<
+  typeof selectedContextReferenceSchema
+>;
+
+/** UIMessage part type carrying a typed {@link SelectedContextReference}. */
+export const SELECTED_CONTEXT_PART_TYPE = "data-selectedContext" as const;
+
+/** UIMessage part type carrying the legacy {@link SelectedResourceContext} on a user turn. */
 export const SELECTED_RESOURCE_CONTEXT_PART_TYPE =
   "data-selectedResource" as const;
 
-/** Read + validate the pinned selection from a message; `null` when absent or empty. */
-export function readSelectedResourceContext(
+/**
+ * Read and normalize the message-scoped Context Reference. New typed parts are
+ * preferred; legacy `data-selectedResource` parts remain readable in place.
+ */
+export function readSelectedContextReference(
   message: UIMessage
-): SelectedResourceContext | null {
+): SelectedContextReference | null {
+  let legacyReference: SelectedContextReference | null = null;
   for (const part of message.parts) {
+    if (part.type === SELECTED_CONTEXT_PART_TYPE) {
+      const parsed = selectedContextReferenceSchema.safeParse(
+        (part as { data?: unknown }).data
+      );
+      if (parsed.success) {
+        return parsed.data;
+      }
+      continue;
+    }
+
     if (part.type !== SELECTED_RESOURCE_CONTEXT_PART_TYPE) {
       continue;
     }
@@ -161,12 +219,40 @@ export function readSelectedResourceContext(
     if (!parsed.success) {
       continue;
     }
-    const ctx = parsed.data;
-    if (ctx.kind || ctx.name || ctx.namespace) {
-      return ctx;
+    const { displayName, kind, name, namespace } = parsed.data;
+    if (!(kind && name && namespace)) {
+      continue;
+    }
+    const normalized = selectedContextReferenceSchema.safeParse({
+      type: "resource",
+      ...(displayName === undefined ? {} : { displayName }),
+      kind,
+      name,
+      namespace,
+    });
+    if (normalized.success) {
+      legacyReference ??= normalized.data;
     }
   }
-  return null;
+  return legacyReference;
+}
+
+/** Read + validate the pinned selection from a message; `null` when absent or empty. */
+export function readSelectedResourceContext(
+  message: UIMessage
+): SelectedResourceContext | null {
+  const reference = readSelectedContextReference(message);
+  if (reference == null) {
+    return null;
+  }
+  return {
+    ...(reference.displayName === undefined
+      ? {}
+      : { displayName: reference.displayName }),
+    kind: reference.kind,
+    name: reference.name,
+    namespace: reference.namespace,
+  };
 }
 
 /**
@@ -178,7 +264,7 @@ export const chatStreamRequestSchema = z.object({
   namespace: z.string(),
   message: z.unknown(),
   encodedKubeconfig: z.string().optional(),
-  assistantContext: assistantContextPayloadSchema.optional(),
+  assistantContext: assistantContextPayloadSchema,
 });
 export type ChatStreamRequest = z.infer<typeof chatStreamRequestSchema> & {
   workspaceResourceQuota?: WorkspaceResourceQuotaSnapshot;

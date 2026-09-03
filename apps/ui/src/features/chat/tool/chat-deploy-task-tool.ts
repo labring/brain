@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { judgeWorkspaceBillingStandingForActor } from "@/features/billing/server/billing-standing";
+import type { AssistantContextPayload } from "@/features/chat/persistence/types";
 import {
   createDeployTaskToolInputSchema,
   defaultRunnerForSource,
@@ -67,16 +68,17 @@ const cancelDeployTaskToolInputSchema = z.object({
 });
 
 function defaultTargetFromContext(options: {
-  assistantContext?: {
-    projectName?: string;
-    projectId?: string;
-  };
+  assistantContext?: AssistantContextPayload;
 }): DeploymentTaskTarget | null {
-  const projectId = options.assistantContext?.projectId?.trim();
+  const context = options.assistantContext;
+  if (context?.kind !== "project") {
+    return null;
+  }
+  const projectId = context.projectId.trim();
   if (!projectId) {
     return null;
   }
-  const projectName = options.assistantContext?.projectName?.trim();
+  const projectName = context.projectName?.trim();
   return {
     kind: "existingProject",
     projectId,
@@ -90,10 +92,7 @@ function defaultTargetFromContext(options: {
  */
 export function createDeployTaskTools(
   options: {
-    assistantContext?: {
-      projectName?: string;
-      projectId?: string;
-    };
+    assistantContext?: AssistantContextPayload;
     /** Request-memory identity for a run's billing reverse-check (E1/E2). */
     billingActor?: DeployBillingActor;
     kubeconfig: string;

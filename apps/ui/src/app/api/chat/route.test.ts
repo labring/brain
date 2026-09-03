@@ -13,7 +13,14 @@ const actualRequestKubeconfigAuth = {
 
 const CHAT_ID = "chat-route-test";
 const NAMESPACE = "ns-route-test";
+const PROJECT_ID = "project-route-test";
 const WORKSPACE_ACTOR = "workspace-actor-route-test";
+const TEST_SCOPE = {
+  kind: "project",
+  namespace: NAMESPACE,
+  projectId: PROJECT_ID,
+  userUid: `${WORKSPACE_ACTOR}-uid`,
+} as const;
 
 const MOCK_USAGE = {
   inputTokens: {
@@ -43,6 +50,7 @@ interface TestLease {
   chatId: string;
   messageId: string;
   parts: UIMessage["parts"];
+  scope: TestScope;
   token: string;
 }
 
@@ -50,6 +58,10 @@ interface TestOwner {
   namespace: string;
   userUid: string;
 }
+
+type TestScope =
+  | (TestOwner & { kind: "workspace" })
+  | (TestOwner & { kind: "project"; projectId: string });
 
 let activeLease: TestLease | null = null;
 let adoptionCalls: { legacyWorkspaceActor: string; owner: TestOwner }[] = [];
@@ -102,9 +114,10 @@ let modelAbortSignals: (AbortSignal | undefined)[] = [];
 let modelPrompts: unknown[] = [];
 let modelProviderOptions: unknown[] = [];
 let persistedLease: TestLease | null = null;
+let projectExists = true;
 let replaceCalls = 0;
 let streamMode: StreamMode = "success";
-let serviceOwners: TestOwner[] = [];
+let serviceOwners: TestScope[] = [];
 let titleCalls = 0;
 let titleWait: Promise<void> | null = null;
 let toolsetAvailable = true;
@@ -319,8 +332,8 @@ mock.module("@/features/chat/persistence/service", () => ({
     adoptionCalls.push(structuredClone(actor));
     return Promise.resolve();
   },
-  acquireChatStreamLease: (chatId: string, owner: TestOwner) => {
-    serviceOwners.push(owner);
+  acquireChatStreamLease: (chatId: string, scope: TestScope) => {
+    serviceOwners.push(scope);
     leaseAcquireCalls += 1;
     if (activeLease != null) {
       return Promise.resolve(null);
@@ -329,6 +342,7 @@ mock.module("@/features/chat/persistence/service", () => ({
       chatId,
       messageId: `lease-${chatId}`,
       parts: [],
+      scope,
       token: `lease-token-${leaseAcquireCalls}`,
     };
     activeLease = acquired;
@@ -381,19 +395,24 @@ mock.module("@/features/chat/persistence/service", () => ({
   },
   ensureAssistantThreadForOwner: (
     _chatId: string,
-    actor: { legacyWorkspaceActor: string; owner: TestOwner }
+    actor: { legacyWorkspaceActor: string; owner: TestOwner },
+    target: { kind: "project"; projectId: string } | { kind: "workspace" }
   ) => {
-    serviceOwners.push(actor.owner);
+    serviceOwners.push(
+      target.kind === "project"
+        ? { ...actor.owner, kind: "project", projectId: target.projectId }
+        : { ...actor.owner, kind: "workspace" }
+    );
     return Promise.resolve(true);
   },
   isReservedChatMessageId: (messageId: string) =>
     messageId.startsWith("__chat_stream_lease__:"),
-  loadMessagesForOwner: (_chatId: string, owner: TestOwner) => {
-    serviceOwners.push(owner);
+  loadMessagesForOwner: (_chatId: string, scope: TestScope) => {
+    serviceOwners.push(scope);
     return Promise.resolve(structuredClone(history));
   },
-  maybeAutoTitleThread: (input: { owner: TestOwner }) => {
-    serviceOwners.push(input.owner);
+  maybeAutoTitleThread: (input: { scope: TestScope }) => {
+    serviceOwners.push(input.scope);
     titleCalls += 1;
     return titleWait ?? Promise.resolve();
   },
@@ -459,6 +478,21 @@ mock.module("@/lib/kubeconfig", () => ({
     encoded === "encoded-kubeconfig"
       ? "kubeconfig"
       : actualKubeconfig.decodeKubeconfig(encoded),
+}));
+mock.module("@/lib/project-persistence/projects", () => ({
+  getProject: (namespace: string, projectId: string) =>
+    Promise.resolve(
+      projectExists && namespace === NAMESPACE && projectId === PROJECT_ID
+        ? {
+            createdAt: "2026-09-02T00:00:00.000Z",
+            description: "",
+            displayName: "Route test project",
+            id: PROJECT_ID,
+            namespace: NAMESPACE,
+            updatedAt: "2026-09-02T00:00:00.000Z",
+          }
+        : null
+    ),
 }));
 mock.module("@/lib/request-kubeconfig-auth", () => ({
   ...actualRequestKubeconfigAuth,
@@ -643,6 +677,9 @@ function chatRequest(
   signal?: AbortSignal,
   options?: {
     appToken?: string | null;
+    assistantContext?:
+      | { kind: "project"; projectId: string }
+      | { kind: "workspace" };
     workspaceResourceQuota?: unknown;
   }
 ): Request {
@@ -650,6 +687,9 @@ function chatRequest(
     options?.appToken === undefined ? "valid-app-token" : options.appToken;
   return new Request("https://brain.test/api/chat", {
     body: JSON.stringify({
+      assistantContext:
+        options?.assistantContext ??
+        ({ kind: "project", projectId: PROJECT_ID } as const),
       chatId: CHAT_ID,
       encodedKubeconfig: "encoded-kubeconfig",
       message,
@@ -679,6 +719,25 @@ test("chat POST fails closed with 401 when the app token header is missing", asy
     code: "app_token_required",
     error: "Authentication is required.",
   });
+});
+
+test("chat POST remains available in workspace scope without a project id", async () => {
+  const response = await POST(
+    chatRequest(
+      userMessage("user-workspace-scope", "what can you help me with?"),
+      undefined,
+      { assistantContext: { kind: "workspace" } }
+    )
+  );
+
+  expect(response.status).toBe(200);
+  await drain(response);
+  expect(serviceOwners).toContainEqual(
+    expect.objectContaining({
+      kind: "workspace",
+      namespace: NAMESPACE,
+    })
+  );
 });
 
 async function drain(response: Response): Promise<void> {
@@ -739,6 +798,7 @@ beforeEach(() => {
   modelPrompts = [];
   modelProviderOptions = [];
   persistedLease = null;
+  projectExists = true;
   replaceCalls = 0;
   serviceOwners = [];
   streamMode = "success";
@@ -747,6 +807,24 @@ beforeEach(() => {
   toolsetAvailable = true;
   toolsetOwner = null;
   transformSetup = null;
+});
+
+test("rejects an unknown project before creating or billing a conversation", async () => {
+  projectExists = false;
+
+  const response = await POST(
+    chatRequest(userMessage("user-unknown-project", "hello"))
+  );
+
+  expect(response.status).toBe(404);
+  expect(await response.json()).toEqual({
+    code: "assistant_project_not_found",
+    error: "Assistant project not found.",
+  });
+  expect(adoptionCalls).toHaveLength(0);
+  expect(modelCalls).toBe(0);
+  expect(reserveCalls).toBe(0);
+  expect(serviceOwners).toHaveLength(0);
 });
 
 function interceptHeartbeatTimer() {
@@ -782,6 +860,7 @@ test("lease heartbeat loss aborts the stream without releasing a replacement lea
       chatId: CHAT_ID,
       messageId: `lease-${CHAT_ID}`,
       parts: [],
+      scope: TEST_SCOPE,
       token: "replacement-after-heartbeat-loss",
     };
     heartbeatTick?.();
@@ -858,7 +937,9 @@ test("accepts and streams a canonical client-tool continuation", async () => {
   expect(serviceOwners).not.toHaveLength(0);
   expect(serviceOwners).toEqual(
     serviceOwners.map(() => ({
+      kind: "project",
       namespace: NAMESPACE,
+      projectId: PROJECT_ID,
       userUid: `${WORKSPACE_ACTOR}-uid`,
     }))
   );
@@ -1215,6 +1296,7 @@ test("does not commit after the acquired lease is stolen", async () => {
       chatId: CHAT_ID,
       messageId: `lease-${CHAT_ID}`,
       parts: [],
+      scope: TEST_SCOPE,
       token: "replacement-owner-before-commit",
     };
   };
@@ -1251,6 +1333,7 @@ test("does not roll a continuation back after its lease is stolen", async () => 
       chatId: CHAT_ID,
       messageId: `lease-${CHAT_ID}`,
       parts: [],
+      scope: TEST_SCOPE,
       token: "replacement-owner-before-rollback",
     };
     throw new Error("stream setup failed after takeover");
@@ -1510,6 +1593,7 @@ test("discards a late response after its lease is stolen", async () => {
     chatId: CHAT_ID,
     messageId: `lease-${CHAT_ID}`,
     parts: [],
+    scope: TEST_SCOPE,
     token: "replacement-owner",
   };
 

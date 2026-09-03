@@ -1,7 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { UIMessage } from "ai";
 
-import { SELECTED_RESOURCE_CONTEXT_PART_TYPE } from "@/features/chat/persistence/types";
+import {
+  SELECTED_CONTEXT_PART_TYPE,
+  SELECTED_RESOURCE_CONTEXT_PART_TYPE,
+} from "@/features/chat/persistence/types";
 
 // The module under test is marked `server-only`; neutralize it (repo pattern),
 // then load it dynamically so the mock is registered before evaluation.
@@ -43,6 +46,89 @@ function firstText(message: UIMessage | undefined): string {
 }
 
 describe("withSelectedResourceContext", () => {
+  it("bridges a typed resource context reference into model-visible data", () => {
+    const input = {
+      id: "u-typed",
+      role: "user",
+      parts: [
+        {
+          type: SELECTED_CONTEXT_PART_TYPE,
+          data: {
+            type: "resource",
+            displayName: "Orders API",
+            kind: "AP",
+            name: "orders-api-x7k2",
+            namespace: "ns-x",
+            observedUid: "uid-orders-api",
+          },
+        },
+        { type: "text", text: "restart this" },
+      ],
+    } as unknown as UIMessage;
+
+    const [out] = withSelectedResourceContext([input]);
+
+    expect(firstText(out)).toContain('displayName="Orders API"');
+    expect(firstText(out)).not.toContain("observedUid");
+    expect(out?.parts.at(-1)).toEqual({
+      type: "text",
+      text: "restart this",
+    });
+  });
+
+  it("ignores malformed typed context instead of exposing unvalidated data", () => {
+    const input = {
+      id: "u-malformed",
+      role: "user",
+      parts: [
+        {
+          type: SELECTED_CONTEXT_PART_TYPE,
+          data: { kind: "AP", name: "missing-type", namespace: "ns-x" },
+        },
+        { type: "text", text: "inspect this" },
+      ],
+    } as unknown as UIMessage;
+
+    const [out] = withSelectedResourceContext([input]);
+
+    expect(out?.parts).toHaveLength(2);
+    expect(out?.parts.at(-1)).toEqual({ type: "text", text: "inspect this" });
+  });
+
+  it("prefers a valid typed reference over a legacy part regardless of part order", () => {
+    const input = {
+      id: "u-preferred",
+      role: "user",
+      parts: [
+        {
+          type: SELECTED_RESOURCE_CONTEXT_PART_TYPE,
+          data: {
+            kind: "AP",
+            name: "legacy-app",
+            namespace: "ns-x",
+          },
+        },
+        {
+          type: SELECTED_CONTEXT_PART_TYPE,
+          data: {
+            type: "resource",
+            kind: "DB",
+            name: "primary-db",
+            namespace: "ns-x",
+            observedUid: "uid-primary-db",
+          },
+        },
+        { type: "text", text: "inspect this" },
+      ],
+    } as unknown as UIMessage;
+
+    const [out] = withSelectedResourceContext([input]);
+
+    expect(firstText(out)).toContain('kind="DB"');
+    expect(firstText(out)).toContain('name="primary-db"');
+    expect(firstText(out)).not.toContain('name="legacy-app"');
+  });
+
   it("prepends a delimited block to a turn that carries a selection", () => {
     const [out] = withSelectedResourceContext([
       userMessage("deploy this", {
@@ -95,6 +181,36 @@ describe("withSelectedResourceContext", () => {
     const text = firstText(second);
     expect(text).toContain('displayName="My Service"');
     expect(text).not.toContain('unchanged="true"');
+  });
+
+  it("re-emits a full block when the observed UID changes", () => {
+    const [, second] = withSelectedResourceContext([
+      userMessage("inspect this", {
+        kind: "AP",
+        name: "orders-api",
+        namespace: "ns-x",
+      }),
+      {
+        id: "u-uid-2",
+        role: "user",
+        parts: [
+          {
+            type: SELECTED_CONTEXT_PART_TYPE,
+            data: {
+              type: "resource",
+              kind: "AP",
+              name: "orders-api",
+              namespace: "ns-x",
+              observedUid: "uid-new",
+            },
+          },
+          { type: "text", text: "restart this" },
+        ],
+      } as unknown as UIMessage,
+    ]);
+
+    expect(firstText(second)).not.toContain("observedUid");
+    expect(firstText(second)).not.toContain('unchanged="true"');
   });
 
   it("describes an unchanged selection by its display name", () => {

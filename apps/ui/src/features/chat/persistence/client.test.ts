@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
-import { fetchAssistantSession, fetchAssistantThreads } from "./client";
+import {
+  fetchAssistantSession,
+  fetchAssistantThreadMessages,
+  fetchAssistantThreads,
+} from "./client";
 
 const originalFetch = globalThis.fetch;
 
@@ -34,13 +38,39 @@ test("conversation list and bootstrap requests do not send a client-owned user i
     appToken: "app-token",
     kubeconfig: "encoded-kubeconfig",
     namespace: "shared",
+    projectId: "project-a",
   };
   await fetchAssistantSession(credentials);
   await fetchAssistantThreads(credentials);
+  await fetchAssistantThreadMessages("chat-1", credentials);
 
   assert.deepEqual(requestedUrls, [
-    "/api/chat/session?namespace=shared",
-    "/api/chat/threads?namespace=shared",
+    "/api/chat/session?namespace=shared&projectId=project-a",
+    "/api/chat/threads?namespace=shared&projectId=project-a",
+    "/api/chat/messages?chatId=chat-1&namespace=shared&projectId=project-a",
   ]);
-  assert.deepEqual(appTokenHeaders, ["app-token", "app-token"]);
+  assert.deepEqual(appTokenHeaders, ["app-token", "app-token", "app-token"]);
+});
+
+test("workspace conversation requests omit projectId from the scope query", async () => {
+  const requestedUrls: string[] = [];
+  globalThis.fetch = ((input: string | URL | Request) => {
+    requestedUrls.push(String(input));
+    return Promise.resolve(
+      Response.json({
+        chatId: "workspace-chat",
+        freeTier: { billing: "user", limit: 0, remaining: 0 },
+        messages: [],
+        threads: [],
+      })
+    );
+  }) as typeof fetch;
+
+  await fetchAssistantSession({
+    appToken: "app-token",
+    kubeconfig: "encoded-kubeconfig",
+    namespace: "shared",
+  });
+
+  assert.deepEqual(requestedUrls, ["/api/chat/session?namespace=shared"]);
 });

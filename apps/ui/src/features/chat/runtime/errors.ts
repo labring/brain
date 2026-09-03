@@ -16,6 +16,8 @@ export type ChatApiErrorCode =
   | "ai_proxy_billing_refused"
   | "assistant_chat_unavailable"
   | "assistant_conversation_not_found"
+  | "assistant_project_not_found"
+  | "assistant_project_unavailable"
   | "assistant_thread_conflict"
   | "assistant_turn_in_progress"
   | "incomplete_tool_history"

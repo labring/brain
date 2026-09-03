@@ -48,7 +48,10 @@ export function serializeProjectCanvasSelection(
   if (selection.kind === "edge") {
     return `edge:${encodePart(selection.edgeId)}`;
   }
-  return serializeProjectTarget(selection.target);
+  const target = serializeProjectTarget(selection.target);
+  return selection.target.observedUid == null
+    ? target
+    : `${target}:${encodePart(selection.target.observedUid)}`;
 }
 
 export function parseProjectCanvasSelection(
@@ -66,12 +69,21 @@ export function parseProjectCanvasSelection(
     return edgeId == null ? null : { edgeId, kind: "edge" };
   }
 
-  const target = parseProjectTarget(value);
-  if (target?.kind === "AP" || target?.kind === "DB") {
-    return { kind: "resource", target };
+  if (parts.length !== 3 && parts.length !== 4) {
+    return null;
   }
-  if (target?.kind === "PublicAccess") {
-    return { kind: "publicAddresses", target };
+  const target = parseProjectTarget(parts.slice(0, 3).join(":"));
+  const observedUid = parts.length === 4 ? decodePart(parts[3]) : null;
+  if (parts.length === 4 && observedUid == null) {
+    return null;
+  }
+  const restoredTarget =
+    target == null || observedUid == null ? target : { ...target, observedUid };
+  if (restoredTarget?.kind === "AP" || restoredTarget?.kind === "DB") {
+    return { kind: "resource", target: restoredTarget };
+  }
+  if (restoredTarget?.kind === "PublicAccess") {
+    return { kind: "publicAddresses", target: restoredTarget };
   }
   return null;
 }
