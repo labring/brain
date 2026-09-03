@@ -24,6 +24,7 @@ import {
   type DeploymentTimelineEventSource,
   type DeploymentTimelineStepStatus,
   isDeploymentTaskTerminalFailureEventKey,
+  sanitizeDeploymentTaskSuccess,
 } from "./timeline";
 
 const AI_ENGINE_RESOLUTION_REASONS = new Set([
@@ -737,6 +738,18 @@ function projectAiDeployTaskTimelineSnapshot(
     snapshot.publicProjectionVersion ===
       CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION;
   const retainUnknownPlaceholder = options.mode === "persistence";
+  const revision =
+    Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0
+      ? snapshot.revision
+      : 0;
+  // The verified-success record is user-facing contract content, so it is
+  // rebuilt field by field here too: an untrusted AI timeline cannot smuggle
+  // an address or an instruction past the projection gate, and a UI reading
+  // the public payload sees exactly what the Timeline is allowed to render.
+  const success = sanitizeDeploymentTaskSuccess(snapshot.success, {
+    revision,
+    verifiedAt: fallbackCreatedAt,
+  });
   return {
     ...(options.mode === "persistence"
       ? {
@@ -744,10 +757,7 @@ function projectAiDeployTaskTimelineSnapshot(
             CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
         }
       : {}),
-    revision:
-      Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0
-        ? snapshot.revision
-        : 0,
+    revision,
     status,
     steps: (Array.isArray(snapshot.steps) ? snapshot.steps : []).flatMap(
       (step) => {
@@ -795,6 +805,7 @@ function projectAiDeployTaskTimelineSnapshot(
         ];
       }
     ),
+    ...(success == null ? {} : { success }),
     taskId: options.taskId ?? snapshot.taskId,
     updatedAt: fallbackCreatedAt,
   };

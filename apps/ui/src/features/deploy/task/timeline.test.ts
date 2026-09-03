@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
+import type { DeploymentTaskSuccessAttachment } from "./timeline";
 import {
   appendCardEvent,
   appendStepEvent,
   applyDeploymentOutputProgressToTimeline,
   applyResultResourceTimeout,
+  attachDeploymentTaskSuccess,
   createDeploymentTaskTimeline,
   createDeploymentTaskTimelineForRunner,
   declareTimelineSteps,
@@ -600,4 +601,155 @@ test("marking a step updates only the matching runner step", () => {
     ]
   );
   assert.equal(next.revision, 2);
+});
+
+function emptyTimeline(taskId = "task-1") {
+  return declareTimelineSteps(
+    createDeploymentTaskTimeline({
+      status: "applying",
+      taskId,
+      updatedAt: NOW,
+    }),
+    {
+      steps: [
+        { id: "validate-settings", label: "Validate settings" },
+        { id: "create-resources", label: "Create resources" },
+      ],
+      updatedAt: NOW,
+    }
+  );
+}
+
+const EAGLERCRAFT_SUCCESS = {
+  entries: [
+    { label: "Server address", url: "https://mc.mock.sealos.run" },
+    { url: "https://console.mock.sealos.run" },
+  ],
+  guidance: [
+    {
+      detail: "Use the EaglerCraft-compatible client.",
+      label: "Open the client",
+    },
+    { label: "Enter the server address" },
+  ],
+  openActionLabel: "Open server address",
+  productId: "eaglercraft-server",
+  productName: "EaglerCraft Server",
+  verification: { passed: 3, total: 3 },
+  verifiedAt: "2026-06-17T10:00:05.000Z",
+};
+
+test("attaching success stamps the timeline revision it was recorded at", () => {
+  const timeline = emptyTimeline();
+  assert.equal(timeline.revision, 1);
+
+  const next = attachDeploymentTaskSuccess(timeline, {
+    success: EAGLERCRAFT_SUCCESS,
+    updatedAt: "2026-06-17T10:00:06.000Z",
+  });
+
+  assert.equal(next.revision, 2);
+  assert.equal(next.success?.revision, 2);
+  assert.equal(next.success?.contractVersion, 1);
+  assert.equal(next.success?.productName, "EaglerCraft Server");
+  assert.deepEqual(next.success?.entries, [
+    { label: "Server address", url: "https://mc.mock.sealos.run" },
+    { url: "https://console.mock.sealos.run" },
+  ]);
+  assert.equal(next.success?.verifiedAt, "2026-06-17T10:00:05.000Z");
+  // The internal evidence is untouched: success is appended, not substituted.
+  assert.deepEqual(
+    next.steps.map((step) => step.id),
+    ["validate-settings", "create-resources"]
+  );
+});
+
+test("attaching success falls back to the write time when no stamp is given", () => {
+  const next = attachDeploymentTaskSuccess(emptyTimeline(), {
+    success: { productName: "Web app" },
+    updatedAt: "2026-06-17T11:00:00.000Z",
+  });
+  assert.equal(next.success?.verifiedAt, "2026-06-17T11:00:00.000Z");
+});
+
+test("re-attaching the same success conclusion does not churn the revision", () => {
+  const timeline = emptyTimeline();
+  const first = attachDeploymentTaskSuccess(timeline, {
+    success: EAGLERCRAFT_SUCCESS,
+    updatedAt: "2026-06-17T10:00:06.000Z",
+  });
+  const second = attachDeploymentTaskSuccess(first, {
+    success: EAGLERCRAFT_SUCCESS,
+    updatedAt: "2026-06-17T10:00:09.000Z",
+  });
+
+  assert.equal(second, first);
+  assert.equal(second.revision, first.revision);
+  assert.equal(second.success?.revision, first.success?.revision);
+});
+
+test("a materially different success conclusion gets a fresh revision", () => {
+  const first = attachDeploymentTaskSuccess(emptyTimeline(), {
+    success: { productName: "Web app", verification: { passed: 1, total: 2 } },
+    updatedAt: "2026-06-17T10:00:06.000Z",
+  });
+  const second = attachDeploymentTaskSuccess(first, {
+    success: { productName: "Web app", verification: { passed: 2, total: 2 } },
+    updatedAt: "2026-06-17T10:00:08.000Z",
+  });
+
+  assert.equal(second.revision, first.revision + 1);
+  assert.equal(second.success?.revision, second.revision);
+  assert.deepEqual(second.success?.verification, { passed: 2, total: 2 });
+});
+
+test("success sanitisation drops undisplayable content instead of rendering it", () => {
+  const next = attachDeploymentTaskSuccess(emptyTimeline(), {
+    success: {
+      entries: [
+        { label: "  ", url: "  https://mc.mock.sealos.run  " },
+        { label: "Database", url: "postgres://user:pw@db:5432" },
+        { label: "Gopher", url: "not a url" },
+        { url: 42 },
+      ],
+      guidance: ["", "Open the client", { detail: "  ", label: " Join " }],
+      headline: "   ",
+      productName: null,
+      verification: { passed: 5, total: 3 },
+    } as unknown as DeploymentTaskSuccessAttachment,
+    updatedAt: "2026-06-17T10:00:06.000Z",
+  });
+
+  assert.deepEqual(next.success?.entries, [
+    { url: "https://mc.mock.sealos.run" },
+  ]);
+  assert.deepEqual(next.success?.guidance, [
+    { label: "Open the client" },
+    { label: "Join" },
+  ]);
+  assert.equal(next.success?.headline, undefined);
+  assert.equal(next.success?.productName, undefined);
+  assert.equal(next.success?.verification, undefined);
+});
+
+test("non-object success records are rejected outright", () => {
+  const timeline = emptyTimeline();
+  for (const value of [null, undefined, "completed", 7, []]) {
+    assert.equal(
+      attachDeploymentTaskSuccess(timeline, {
+        success: value as unknown as DeploymentTaskSuccessAttachment,
+        updatedAt: "2026-06-17T10:00:06.000Z",
+      }),
+      timeline
+    );
+  }
+});
+
+test("a long contract headline is bounded so the card stays presentable", () => {
+  const next = attachDeploymentTaskSuccess(emptyTimeline(), {
+    success: { headline: "x".repeat(400) },
+    updatedAt: "2026-06-17T10:00:06.000Z",
+  });
+  assert.equal(next.success?.headline?.length, 140);
+  assert.ok(next.success?.headline?.endsWith("\u2026"));
 });

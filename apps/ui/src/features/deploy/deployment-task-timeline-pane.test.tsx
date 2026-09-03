@@ -3,12 +3,26 @@ import { test } from "node:test";
 import { render } from "@testing-library/react/pure";
 import { SidePane } from "@workspace/ui/components/side-pane";
 import { renderToStaticMarkup } from "react-dom/server";
+import {
+  DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS,
+  deploymentTaskSuccessCelebrationKey,
+  hasDeploymentTaskSuccessCelebrationClaim,
+  resetDeploymentTaskSuccessCelebrationClaims,
+} from "@/features/deploy/deployment-task-success-celebration";
+import { deployTaskDevMockTask } from "@/features/deploy/task/dev-fixtures";
 import { deploymentFailureMessage } from "@/features/deploy/task/failure-summary";
-import type { DeployTaskDTO } from "@/features/deploy/task/types";
+import type { DeploymentTaskSuccessSnapshot } from "@/features/deploy/task/timeline";
+import type {
+  DeploymentTaskTimelineSnapshotDTO,
+  DeployTaskDTO,
+  DeployTaskStatus,
+} from "@/features/deploy/task/types";
 import {
   actAndDrain,
+  defineGlobal,
   installTestDom,
   restoreActEnvironment,
+  restoreGlobal,
   setActEnvironment,
 } from "@/features/project-canvas/react-test-harness";
 import {
@@ -787,5 +801,375 @@ test("deployment task lifecycle actions pin in the side pane footer slot", async
     }
     restoreActEnvironment(previousActEnvironment);
     await dom.restore();
+  }
+});
+/* -------------------------------------------------------------------------- */
+/* Verified-success result card (issue #160)                                   */
+/* -------------------------------------------------------------------------- */
+
+const SUCCESS_SLOT_RE = /data-slot="deployment-task-success"/;
+const SUCCESS_ENTRY_SLOT_RE = /data-slot="deployment-task-success-entry"/g;
+const SUCCESS_VERIFICATION_SLOT_RE =
+  /data-slot="deployment-task-success-verification"/;
+const STEP_LABEL_RE = /Create resources/;
+const CONFETTI_CANVAS_RE =
+  /<canvas(?=[^>]*pointer-events-none)(?=[^>]*absolute inset-0)[^>]*data-slot="deployment-task-success-confetti"/;
+const FALLBACK_HEADLINE_RE = /You can start using it/;
+const VIEW_DETAILS_RE = /View deployment details/;
+const DECLARED_HEADLINE_RE = /Your server is online/;
+const PRODUCT_NAME_RE = /EaglerCraft Server/;
+const OPEN_SERVER_RE = /Open server/;
+const CHECKS_PASSED_RE = /2\/2 checks passed/;
+const VALIDATE_SETTINGS_RE = /Validate settings/;
+const GUIDANCE_DETAIL_RE = /Keep it open in another tab\./;
+const SERVER_ADDRESS_LABEL_RE = /Server address/;
+const MULTIPLAYER_STEP_RE = /Go to Multiplayer and add a server\./;
+const PLAY_STEP_RE = /Join the server and start playing\./;
+const FIXTURE_ADDRESS_RE = /https:\/\/eaglercraft-server\.mock\.sealos\.run/;
+const ORDERED_GUIDANCE_RE = /<ol/;
+const DECLARED_ADDRESS_RE = /wss:/;
+const PRIMARY_LINK_RE =
+  /<a href="https:\/\/web-app\.demo\.sealos\.run"[^>]*>[\s\S]*?Open<\/a>/;
+const ADDRESS_TEXT_RE =
+  /<span class="truncate font-mono[^>]*title="https:\/\/web-app\.demo\.sealos\.run"/;
+
+const VERIFIED_AT = "2026-06-17T10:00:05.000Z";
+
+const SUCCESS_RECORD: DeploymentTaskSuccessSnapshot = {
+  contractVersion: 1,
+  entries: [
+    { label: "Server address", url: "https://eaglercraft.demo.sealos.run" },
+    { label: "Lobby", url: "https://lobby.demo.sealos.run" },
+  ],
+  guidance: [
+    { detail: "Keep it open in another tab.", label: "Open the client." },
+    { label: "Add the server in Multiplayer." },
+  ],
+  headline: "Your server is online",
+  openActionLabel: "Open server",
+  productName: "EaglerCraft Server",
+  revision: 5,
+  verification: { passed: 2, total: 2 },
+  verifiedAt: VERIFIED_AT,
+};
+
+function successSnapshot(input: {
+  runner?: DeployTaskDTO["runner"];
+  source?: DeployTaskDTO["source"];
+  status?: DeployTaskStatus;
+  success?: DeploymentTaskSuccessSnapshot | null;
+  taskId?: string;
+}): DeploymentTaskTimelineSnapshotDTO {
+  const status = input.status ?? "completed";
+  const success = input.success === undefined ? SUCCESS_RECORD : input.success;
+  const taskId = input.taskId ?? "task-success";
+  return {
+    events: [],
+    task: {
+      artifactSummary: {},
+      blockingInputs: [],
+      canvasProjection: {},
+      completedAt: status === "completed" ? VERIFIED_AT : null,
+      createdAt: "2026-06-17T10:00:00.000Z",
+      createdFrom: "ui",
+      error: null,
+      failureDetails: null,
+      gatewaySessionId: null,
+      gatewayStateSnapshot: null,
+      gatewayTurnId: null,
+      gatewayUrl: null,
+      id: taskId,
+      namespace: "default",
+      phase: status === "completed" ? "completed" : "verify",
+      previewUrl: null,
+      projectId: "project-1",
+      projectName: "Project 1",
+      resultUrl: success == null ? null : (success.entries?.[0]?.url ?? null),
+      runner: input.runner ?? { kind: "direct" },
+      runtimeName: null,
+      runtimeProvider: null,
+      runtimeState: null,
+      source: input.source ?? { kind: "docker", settings: {} },
+      startedAt: null,
+      status,
+      target: { kind: "existingProject", projectId: "project-1" },
+      timelineSnapshot: null,
+      updatedAt: VERIFIED_AT,
+    },
+    timeline: {
+      revision: success?.revision ?? 4,
+      status,
+      steps: [
+        {
+          events: [],
+          id: "create-resources",
+          label: "Create resources",
+          order: 1,
+          status: "completed",
+        },
+        {
+          events: [],
+          id: "validate-settings",
+          label: "Validate settings",
+          order: 0,
+          status: "completed",
+        },
+      ],
+      ...(success == null ? {} : { success }),
+      taskId,
+      updatedAt: VERIFIED_AT,
+    },
+  };
+}
+
+function renderPaneContent(
+  snapshot: DeploymentTaskTimelineSnapshotDTO
+): string {
+  return renderToStaticMarkup(
+    <DeploymentTaskTimelinePaneContent
+      kubeconfig="kubeconfig"
+      namespace="default"
+      snapshot={snapshot}
+    />
+  );
+}
+
+/**
+ * Skips the celebration's *painting* for a mounted test: the result card's
+ * static markup is what these tests read, and the browser canvas in this
+ * harness has no 2D context. The reduced-motion path is covered in
+ * deployment-task-success-confetti.test.tsx.
+ */
+function skipCelebrationPainting() {
+  const override = defineGlobal("matchMedia", () => ({ matches: true }));
+  return () => restoreGlobal(override);
+}
+
+test("a completed task without a verified record reports progress, not success", () => {
+  const html = renderPaneContent(successSnapshot({ success: null }));
+
+  assert.match(html, TIMELINE_SLOT_RE);
+  assert.match(html, STEP_LABEL_RE);
+  assert.doesNotMatch(html, SUCCESS_SLOT_RE);
+  assert.doesNotMatch(html, FALLBACK_HEADLINE_RE);
+  // Nothing collapsed the process away, so there is no details toggle either.
+  assert.doesNotMatch(html, VIEW_DETAILS_RE);
+});
+
+test("a record attached before the task completed is not shown", () => {
+  const html = renderPaneContent(successSnapshot({ status: "applying" }));
+
+  assert.doesNotMatch(html, SUCCESS_SLOT_RE);
+  assert.doesNotMatch(html, DECLARED_HEADLINE_RE);
+});
+
+test("the verified result takes the panel and keeps the process one click away", () => {
+  const html = renderPaneContent(successSnapshot({}));
+
+  assert.match(html, SUCCESS_SLOT_RE);
+  assert.match(html, CONFETTI_CANVAS_RE);
+  assert.match(html, DECLARED_HEADLINE_RE);
+  assert.match(html, PRODUCT_NAME_RE);
+  assert.doesNotMatch(html, FALLBACK_HEADLINE_RE);
+  assert.match(html, OPEN_SERVER_RE);
+  assert.match(html, VIEW_DETAILS_RE);
+  assert.match(html, SUCCESS_VERIFICATION_SLOT_RE);
+  assert.match(html, CHECKS_PASSED_RE);
+  // Both declared addresses are listed; only the primary one is a link, and
+  // the UI never builds an address of its own.
+  assert.equal((html.match(SUCCESS_ENTRY_SLOT_RE) ?? []).length, 2);
+  assert.ok(html.includes("https://lobby.demo.sealos.run"));
+  assert.equal(html.includes('href="https://lobby.demo.sealos.run"'), false);
+  assert.ok(html.includes('href="https://eaglercraft.demo.sealos.run"'));
+  assert.ok(html.includes('target="_blank"'));
+  // Ordered first-use instructions, with their detail line.
+  assert.ok(
+    html.indexOf("Open the client.") <
+      html.indexOf("Add the server in Multiplayer.")
+  );
+  assert.match(html, GUIDANCE_DETAIL_RE);
+  // The steps are hidden behind the toggle but stay in the panel.
+  assert.match(html, STEP_LABEL_RE);
+  assert.match(html, VALIDATE_SETTINGS_RE);
+  assert.ok(
+    html.indexOf("Validate settings") < html.indexOf("Your server is online")
+  );
+});
+
+test("a record that declares only an address still reads as a result", () => {
+  const html = renderPaneContent(
+    successSnapshot({
+      success: {
+        contractVersion: 1,
+        entries: [{ url: "https://web-app.demo.sealos.run" }],
+        revision: 3,
+        verifiedAt: VERIFIED_AT,
+      },
+    })
+  );
+
+  assert.match(html, SUCCESS_SLOT_RE);
+  assert.match(html, FALLBACK_HEADLINE_RE);
+  assert.match(html, PRIMARY_LINK_RE);
+  // The address is still listed as text next to the link.
+  assert.match(html, ADDRESS_TEXT_RE);
+  // No guidance was declared, so nothing is invented in its place.
+  assert.doesNotMatch(html, ORDERED_GUIDANCE_RE);
+});
+
+test("the EaglerCraft fixture teaches a player how to join the server", () => {
+  const snapshot = deployTaskDevMockTask("succeeded-eaglercraft", {
+    namespace: "ns-demo",
+    nowMs: Date.parse(VERIFIED_AT),
+    projectId: "project-1",
+  });
+  assert.equal(snapshot.timeline.status, "completed");
+
+  const html = renderPaneContent(snapshot);
+  assert.match(html, DECLARED_HEADLINE_RE);
+  assert.match(html, PRODUCT_NAME_RE);
+  assert.match(html, OPEN_SERVER_RE);
+  assert.match(html, SERVER_ADDRESS_LABEL_RE);
+  assert.match(html, FIXTURE_ADDRESS_RE);
+  assert.match(html, MULTIPLAYER_STEP_RE);
+  assert.match(html, PLAY_STEP_RE);
+  assert.match(html, CHECKS_PASSED_RE);
+  // The fixture declares one http(s) address; the UI must not turn it into a
+  // WebSocket endpoint on its own (that question is still open, issue #160).
+  assert.doesNotMatch(html, DECLARED_ADDRESS_RE);
+});
+
+test("a success that arrives live celebrates once and closes the panel", async () => {
+  resetDeploymentTaskSuccessCelebrationClaims();
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const stopPainting = skipCelebrationPainting();
+  let celebrated = 0;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    const show = async (snapshot: DeploymentTaskTimelineSnapshotDTO) => {
+      await actAndDrain(() => {
+        const element = (
+          <DeploymentTaskTimelinePaneContent
+            kubeconfig="kubeconfig"
+            namespace="default"
+            onSuccessCelebrated={() => {
+              celebrated += 1;
+            }}
+            snapshot={snapshot}
+          />
+        );
+        if (rendered == null) {
+          rendered = render(element);
+        } else {
+          rendered.rerender(element);
+        }
+      });
+    };
+    const claim = deploymentTaskSuccessCelebrationKey(
+      "task-success",
+      SUCCESS_RECORD.revision
+    );
+
+    // The user is watching the last step finish, then the probes pass.
+    await show(successSnapshot({ status: "applying", success: null }));
+    assert.equal(celebrated, 0);
+    await show(successSnapshot({}));
+    assert.equal(hasDeploymentTaskSuccessCelebrationClaim(claim), true);
+    assert.ok(
+      rendered?.container.querySelector(
+        '[data-slot="deployment-task-success-confetti"]'
+      ),
+      "the celebration is drawn inside the Timeline surface"
+    );
+    assert.ok(
+      rendered?.container.querySelector(
+        '[data-slot="deployment-task-success"]'
+      ),
+      "the result is readable while it celebrates"
+    );
+    // A duplicate frame of the same conclusion must not extend the window.
+    await show(successSnapshot({}));
+    assert.equal(celebrated, 0);
+
+    await actAndDrain(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS + 150);
+      });
+    });
+    assert.equal(celebrated, 1);
+
+    // Later stream ticks replaying the same success never reopen the panel.
+    await show(successSnapshot({}));
+    await actAndDrain(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 120);
+      });
+    });
+    assert.equal(celebrated, 1);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    stopPainting();
+    await dom.restore();
+    resetDeploymentTaskSuccessCelebrationClaims();
+  }
+});
+
+test("a pane opened on a finished task does not celebrate or close itself", async () => {
+  resetDeploymentTaskSuccessCelebrationClaims();
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const stopPainting = skipCelebrationPainting();
+  let celebrated = 0;
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <DeploymentTaskTimelinePaneContent
+          kubeconfig="kubeconfig"
+          namespace="default"
+          onSuccessCelebrated={() => {
+            celebrated += 1;
+          }}
+          snapshot={successSnapshot({})}
+        />
+      );
+    });
+    assert.ok(
+      rendered?.container.querySelector(
+        '[data-slot="deployment-task-success"]'
+      ),
+      "the result is still readable after a refresh"
+    );
+    await actAndDrain(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS + 150);
+      });
+    });
+    assert.equal(celebrated, 0);
+    assert.equal(
+      hasDeploymentTaskSuccessCelebrationClaim(
+        deploymentTaskSuccessCelebrationKey(
+          "task-success",
+          SUCCESS_RECORD.revision
+        )
+      ),
+      false
+    );
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    stopPainting();
+    await dom.restore();
+    resetDeploymentTaskSuccessCelebrationClaims();
   }
 });

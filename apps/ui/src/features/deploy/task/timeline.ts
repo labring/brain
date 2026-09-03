@@ -85,12 +85,78 @@ export interface DeploymentTimelineStep {
   status: DeploymentTimelineStepStatus;
 }
 
+/**
+ * The user-facing conclusion of a Deployment Task: the product is usable now.
+ * It is deliberately separate from Deployment Timeline Steps, which stay the
+ * internal evidence, and from the raw result-resource cards, which say that a
+ * Kubernetes object is healthy — not that a person can start using the product.
+ *
+ * Every field is supplied by the task contract. The UI renders what is here
+ * and omits what is not; it never infers an instruction, an entry point or a
+ * protocol from names, URLs or deployment status (issue #160).
+ */
+export const DEPLOYMENT_TASK_SUCCESS_CONTRACT_VERSION = 1;
+
+/** A declared, probe-verified way to reach the deployed product. */
+export interface DeploymentTaskSuccessEntry {
+  /** What the address is for, e.g. "Server address". Omitted when the
+   * contract declares an address without naming it; the UI then shows the
+   * address alone rather than inventing a label. */
+  label?: string;
+  /** Absolute http(s) URL exactly as declared — never derived by the UI. */
+  url: string;
+}
+
+/** One first-use instruction, ordered as the user should perform it. */
+export interface DeploymentTaskSuccessStep {
+  /** Optional second line, e.g. the address to paste. */
+  detail?: string;
+  label: string;
+}
+
+/** How many required entry probes passed, for the compact summary line. */
+export interface DeploymentTaskSuccessVerification {
+  passed: number;
+  total: number;
+}
+
+export interface DeploymentTaskSuccessSnapshot {
+  /** Labels the version of the product contract this record was written against. */
+  contractVersion: number;
+  /** Entries in contract priority order; the first one is the primary action. */
+  entries?: DeploymentTaskSuccessEntry[];
+  guidance?: DeploymentTaskSuccessStep[];
+  /** Contract headline; wins over the UI's default "You can start using it". */
+  headline?: string;
+  openActionLabel?: string;
+  productId?: string;
+  productName?: string;
+  /**
+   * Timeline revision this record was attached at. Doubles as the celebration
+   * idempotency key (task id + revision), so a refresh or a duplicate stream
+   * snapshot can never replay the confetti.
+   */
+  revision: number;
+  verification?: DeploymentTaskSuccessVerification;
+  verifiedAt: string;
+}
+
+/** What a caller may attach; the revision and stamp are owned by the timeline. */
+export type DeploymentTaskSuccessAttachment = Omit<
+  DeploymentTaskSuccessSnapshot,
+  "contractVersion" | "revision" | "verifiedAt"
+> &
+  Partial<Pick<DeploymentTaskSuccessSnapshot, "contractVersion">> &
+  Pick<Partial<DeploymentTaskSuccessSnapshot>, "verifiedAt">;
+
 export interface DeploymentTaskTimelineSnapshot {
   /** Independent server stamp proving AI timeline fields were rebuilt safely. */
   publicProjectionVersion?: number;
   revision: number;
   status: DeployTaskStatus;
   steps: DeploymentTimelineStep[];
+  /** Verified usability conclusion, appended once deployment + probes pass. */
+  success?: DeploymentTaskSuccessSnapshot;
   taskId: string;
   updatedAt: string;
 }
@@ -527,4 +593,249 @@ export function deploymentResultResourceCardId(
     default:
       return ref satisfies never;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Verified-success record
+ * ------------------------------------------------------------------------- */
+
+const MAX_SUCCESS_ENTRIES = 8;
+const MAX_SUCCESS_GUIDANCE_STEPS = 6;
+const MAX_SUCCESS_HEADLINE_LENGTH = 140;
+const MAX_SUCCESS_LABEL_LENGTH = 140;
+const MAX_SUCCESS_DETAIL_LENGTH = 280;
+const MAX_SUCCESS_URL_LENGTH = 2048;
+const MAX_SUCCESS_VERIFICATION_TOTAL = 64;
+
+/** Trims to a single presentable line, or drops the value when unusable. */
+function successText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const text = value.trim();
+  if (text === "") {
+    return undefined;
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+/**
+ * Accepts only an address that was actually declared. Deriving a URL — let
+ * alone a protocol such as wss from https — is out of contract (#160).
+ */
+function successUrl(value: unknown): string | undefined {
+  return successText(value, MAX_SUCCESS_URL_LENGTH);
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function successCount(value: unknown, max: number): number | undefined {
+  return Number.isSafeInteger(value) &&
+    (value as number) >= 0 &&
+    (value as number) <= max
+    ? (value as number)
+    : undefined;
+}
+
+function successEntries(
+  value: unknown
+): DeploymentTaskSuccessEntry[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = value.flatMap((item) => {
+    if (typeof item !== "object" || item === null) {
+      return [];
+    }
+    const candidate = item as Record<string, unknown>;
+    const url = successUrl(candidate.url);
+    if (url == null || !isHttpUrl(url)) {
+      return [];
+    }
+    const label = successText(candidate.label, MAX_SUCCESS_LABEL_LENGTH);
+    return [{ ...(label == null ? {} : { label }), url }];
+  });
+  return entries.slice(0, MAX_SUCCESS_ENTRIES);
+}
+
+function successGuidance(
+  value: unknown
+): DeploymentTaskSuccessStep[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const steps = value.flatMap((item) => {
+    if (typeof item === "string") {
+      const label = successText(item, MAX_SUCCESS_LABEL_LENGTH);
+      return label == null ? [] : [{ label }];
+    }
+    if (typeof item !== "object" || item === null) {
+      return [];
+    }
+    const candidate = item as Record<string, unknown>;
+    const label = successText(candidate.label, MAX_SUCCESS_LABEL_LENGTH);
+    if (label == null) {
+      return [];
+    }
+    const detail = successText(candidate.detail, MAX_SUCCESS_DETAIL_LENGTH);
+    return [{ ...(detail == null ? {} : { detail }), label }];
+  });
+  return steps.slice(0, MAX_SUCCESS_GUIDANCE_STEPS);
+}
+
+function successVerification(
+  value: unknown
+): DeploymentTaskSuccessVerification | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const candidate = value as Record<string, unknown>;
+  const total = successCount(candidate.total, MAX_SUCCESS_VERIFICATION_TOTAL);
+  const passed = successCount(candidate.passed, MAX_SUCCESS_VERIFICATION_TOTAL);
+  if (total == null || passed == null || passed > total) {
+    return undefined;
+  }
+  return { passed, total };
+}
+
+function isoTimestamp(value: unknown): string | undefined {
+  return typeof value === "string" && Number.isFinite(Date.parse(value))
+    ? value
+    : undefined;
+}
+
+/**
+ * Rebuilds a success record field by field from untrusted JSON. Anything that
+ * is not a presentable string, a declared http(s) address or a sane count is
+ * dropped rather than rendered, so a stream payload can never put arbitrary
+ * content into the Timeline (the AI projection gate reuses this on every read).
+ */
+export function sanitizeDeploymentTaskSuccess(
+  value: unknown,
+  fallback: { revision: number; verifiedAt: string }
+): DeploymentTaskSuccessSnapshot | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const headline = successText(candidate.headline, MAX_SUCCESS_HEADLINE_LENGTH);
+  const openActionLabel = successText(
+    candidate.openActionLabel,
+    MAX_SUCCESS_LABEL_LENGTH
+  );
+  const productId = successText(candidate.productId, MAX_SUCCESS_LABEL_LENGTH);
+  const productName = successText(
+    candidate.productName,
+    MAX_SUCCESS_LABEL_LENGTH
+  );
+  const entries = successEntries(candidate.entries);
+  const guidance = successGuidance(candidate.guidance);
+  const verification = successVerification(candidate.verification);
+  const revision = successCount(candidate.revision, Number.MAX_SAFE_INTEGER);
+  return {
+    ...(Number.isSafeInteger(candidate.contractVersion) &&
+    (candidate.contractVersion as number) > 0
+      ? { contractVersion: candidate.contractVersion as number }
+      : { contractVersion: DEPLOYMENT_TASK_SUCCESS_CONTRACT_VERSION }),
+    ...(entries == null || entries.length === 0 ? {} : { entries }),
+    ...(headline == null ? {} : { headline }),
+    ...(guidance == null || guidance.length === 0 ? {} : { guidance }),
+    ...(openActionLabel == null ? {} : { openActionLabel }),
+    ...(productId == null ? {} : { productId }),
+    ...(productName == null ? {} : { productName }),
+    revision: revision ?? fallback.revision,
+    verifiedAt: isoTimestamp(candidate.verifiedAt) ?? fallback.verifiedAt,
+    ...(verification == null ? {} : { verification }),
+  };
+}
+
+/**
+ * Content identity of a success record, ignoring the revision it happened to
+ * be stamped with. Two identical signatures mean "the same conclusion", which
+ * is what makes attaching success idempotent for a re-entrant runner.
+ */
+export function deploymentTaskSuccessSignature(
+  success: DeploymentTaskSuccessSnapshot
+): string {
+  return JSON.stringify({
+    entries: (success.entries ?? []).map((entry) => [
+      entry.label ?? "",
+      entry.url,
+    ]),
+    guidance: (success.guidance ?? []).map((step) => [
+      step.detail ?? "",
+      step.label,
+    ]),
+    headline: success.headline ?? "",
+    openActionLabel: success.openActionLabel ?? "",
+    productId: success.productId ?? "",
+    productName: success.productName ?? "",
+    verification: success.verification
+      ? [success.verification.passed, success.verification.total]
+      : null,
+    verifiedAt: success.verifiedAt,
+  });
+}
+
+/**
+ * Appends the user-facing success conclusion to the Timeline.
+ *
+ * Callers invoke this only once Deployment Result Readiness has been reached
+ * and every required entry probe has passed — the presence of `success` is
+ * itself the claim that the product is usable, so a bare `completed` status
+ * must never reach this helper on its own. Re-attaching the same conclusion is
+ * a no-op: it neither bumps `revision` nor replays the celebration.
+ */
+export function attachDeploymentTaskSuccess(
+  timeline: DeploymentTaskTimelineSnapshot,
+  input: {
+    success: DeploymentTaskSuccessAttachment;
+    updatedAt: string;
+  }
+): DeploymentTaskTimelineSnapshot {
+  // Callers are typed, but the value often arrives from a stream or a
+  // persisted blob: anything that is not a record is rejected, not rendered.
+  if (
+    typeof input.success !== "object" ||
+    input.success === null ||
+    Array.isArray(input.success)
+  ) {
+    return timeline;
+  }
+  const verifiedAt = isoTimestamp(input.success.verifiedAt) ?? input.updatedAt;
+  const candidate = sanitizeDeploymentTaskSuccess(
+    {
+      ...input.success,
+      contractVersion:
+        input.success.contractVersion ??
+        DEPLOYMENT_TASK_SUCCESS_CONTRACT_VERSION,
+      verifiedAt,
+    },
+    { revision: timeline.revision + 1, verifiedAt }
+  );
+  if (candidate == null) {
+    return timeline;
+  }
+  if (
+    timeline.success != null &&
+    deploymentTaskSuccessSignature(timeline.success) ===
+      deploymentTaskSuccessSignature(candidate)
+  ) {
+    return timeline;
+  }
+  const next = bumpRevision(
+    { ...timeline, success: { ...candidate, revision: timeline.revision + 1 } },
+    input.updatedAt
+  );
+  return {
+    ...next,
+    success: { ...candidate, revision: next.revision },
+  };
 }

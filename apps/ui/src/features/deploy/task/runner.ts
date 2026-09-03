@@ -127,6 +127,7 @@ import {
 } from "./managed-deployment-verifier";
 import { probeManagedPublicUrl } from "./managed-public-probe";
 import { deployOutputProgressSummary } from "./output-progress";
+import { deploymentTaskSourceSummary } from "./projection";
 import {
   isResultReadinessTerminalError,
   observeDeploymentResultCardReadiness,
@@ -179,6 +180,7 @@ import {
   appendStepEvent,
   applyDeploymentOutputProgressToTimeline,
   applyResultResourceTimeout,
+  attachDeploymentTaskSuccess,
   DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentResultResourceCard,
   deploymentTimelineFailureStepId,
@@ -2653,6 +2655,28 @@ async function completeTaskWithArtifact(input: {
     stepId: "create-resources",
     taskId: input.task.id,
   });
+  // Everything this runner can honestly claim about usability: the required
+  // result resources are running. It declares no entry address and no
+  // first-use guidance, so those fields stay absent and the Timeline omits
+  // them rather than inventing an address or a protocol (issue #160).
+  const requiredCards = resultCards.filter((card) => card.required);
+  await updateDeployTaskTimeline(input.task.id, {
+    update: (timeline) =>
+      attachDeploymentTaskSuccess(timeline, {
+        success: {
+          ...(requiredCards.length === 0
+            ? {}
+            : {
+                verification: {
+                  passed: requiredCards.length,
+                  total: requiredCards.length,
+                },
+              }),
+          productName: deploymentTaskSourceSummary(input.task.source),
+        },
+        updatedAt: new Date().toISOString(),
+      }),
+  });
   await deployTaskComplete(input.task.id, {
     kind: "deployment_task.completed",
     message: input.completionRecordMessage ?? "Deployment task completed.",
@@ -3249,6 +3273,8 @@ interface ManagedMcpTurnSignals {
   applyingStarted?: boolean;
   deploymentCompleted?: {
     ok: boolean;
+    /** Public address the Agent declared and Brain's probe accepted. */
+    publicUrl?: string;
     resources: ManagedResourceRef[];
     violations: string[];
   };
@@ -3272,6 +3298,8 @@ interface ManagedAgentToolContext {
 
 interface ManagedIdentityGateResult {
   ok: boolean;
+  /** Set only when an address was declared and the probe passed for it. */
+  publicUrl?: string;
   resources: ManagedResourceRef[];
   violations: string[];
 }
@@ -3306,6 +3334,8 @@ async function observeManagedWorkloadReadiness(input: {
     observations,
   });
   const violations = [...readiness.violations];
+  const declaredPublicUrl = input.publicUrl?.trim() ?? "";
+  let probedPublicUrl: string | undefined;
   if (input.publicUrl != null && input.publicUrl.trim() !== "") {
     try {
       await probeManagedPublicUrl({
@@ -3313,6 +3343,7 @@ async function observeManagedWorkloadReadiness(input: {
         deadlineAtMs: input.deadlineAtMs,
         publicUrl: input.publicUrl,
       });
+      probedPublicUrl = declaredPublicUrl;
     } catch (error) {
       violations.push(
         error instanceof Error ? error.message : "Public URL probe failed."
@@ -3321,6 +3352,7 @@ async function observeManagedWorkloadReadiness(input: {
   }
   return {
     ok: violations.length === 0,
+    ...(probedPublicUrl == null ? {} : { publicUrl: probedPublicUrl }),
     resources: managedObservedResourceRefs(observations),
     violations,
   };
@@ -3723,6 +3755,33 @@ async function runManagedDeploymentLifecycleCore(input: {
           resources: completion.resources,
         },
         phase: "verify",
+      });
+      // The managed gate already probed this address over HTTP before
+      // accepting completion, so it is the one entry point Brain can name.
+      // The reported workload set is what the readiness count covers; no
+      // guidance and no second address are declared by this contract.
+      await updateDeployTaskTimeline(input.task.id, {
+        update: (timeline) =>
+          attachDeploymentTaskSuccess(timeline, {
+            success: {
+              ...(completion.publicUrl == null
+                ? {}
+                : {
+                    entries: [
+                      {
+                        label: "Public address",
+                        url: completion.publicUrl,
+                      },
+                    ],
+                    verification: {
+                      passed: completion.resources.length + 1,
+                      total: completion.resources.length + 1,
+                    },
+                  }),
+              productName: deploymentTaskSourceSummary(input.task.source),
+            },
+            updatedAt: new Date().toISOString(),
+          }),
       });
       await deployTaskComplete(input.task.id, {
         kind: "deployment_task.completed",
