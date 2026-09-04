@@ -33,7 +33,7 @@ function resultCard(
   ref: DeploymentResultResourceRef,
   input: { required?: boolean } = {}
 ): DeploymentResultResourceCard {
-  const title = ref.kind === "PublicAccess" ? "Public access" : ref.name;
+  const title = resultCardTitle(ref);
   return {
     events: [],
     id: deploymentResultResourceCardId(ref),
@@ -42,6 +42,118 @@ function resultCard(
     status: "creating",
     title,
   };
+}
+
+function resultCardTitle(ref: DeploymentResultResourceRef): string {
+  switch (ref.kind) {
+    case "PublicAccess":
+      return "Public access";
+    case "TemplatePublicAccess":
+      return "Public domain";
+    default:
+      return ref.name;
+  }
+}
+
+const DNS_HOST_RE =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
+
+function ingressHost(value: unknown): string | null {
+  const host = stringValue(value)?.toLowerCase();
+  return host != null && DNS_HOST_RE.test(host) ? host : null;
+}
+
+function yamlResourceDocs(raw: string): Record<string, unknown>[] {
+  try {
+    return YAML.parseAllDocuments(raw).flatMap((doc) => {
+      const parsed = objectValue(doc.toJS());
+      return parsed == null ? [] : [parsed];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function ingressTlsHosts(spec: Record<string, unknown> | null): Set<string> {
+  return new Set(
+    (Array.isArray(spec?.tls) ? spec.tls : []).flatMap((entry) => {
+      const tls = objectValue(entry);
+      return (Array.isArray(tls?.hosts) ? tls.hosts : []).flatMap((host) => {
+        const normalized = ingressHost(host);
+        return normalized == null ? [] : [normalized];
+      });
+    })
+  );
+}
+
+function templateIngressIdentity(
+  summary: DeployTaskArtifactSummary,
+  doc: Record<string, unknown>
+): { name: string; namespace: string } | null {
+  const apiVersion = stringValue(doc.apiVersion);
+  if (
+    apiVersion == null ||
+    !apiVersion.startsWith("networking.k8s.io/") ||
+    doc.kind !== "Ingress"
+  ) {
+    return null;
+  }
+  const metadata = objectValue(doc.metadata);
+  const name = stringValue(metadata?.name);
+  const namespace =
+    stringValue(metadata?.namespace) ??
+    summary.resources?.find(
+      (resource) =>
+        resource.apiVersion === apiVersion &&
+        resource.kind === "Ingress" &&
+        resource.name === name
+    )?.namespace ??
+    null;
+  return name == null || namespace == null ? null : { name, namespace };
+}
+
+function templatePublicAccessCardsFromDoc(
+  summary: DeployTaskArtifactSummary,
+  doc: Record<string, unknown>
+): DeploymentResultResourceCard[] {
+  const identity = templateIngressIdentity(summary, doc);
+  if (identity == null) {
+    return [];
+  }
+  const spec = objectValue(doc.spec);
+  const tlsHosts = ingressTlsHosts(spec);
+  return (Array.isArray(spec?.rules) ? spec.rules : []).flatMap((ruleValue) => {
+    const host = ingressHost(objectValue(ruleValue)?.host);
+    if (host == null) {
+      return [];
+    }
+    const url = `${tlsHosts.has(host) ? "https" : "http"}://${host}`;
+    return [
+      resultCard({
+        kind: "TemplatePublicAccess",
+        name: identity.name,
+        namespace: identity.namespace,
+        url,
+      }),
+    ];
+  });
+}
+
+function templatePublicAccessCardsFromArtifactSummary(
+  summary: DeployTaskArtifactSummary
+): DeploymentResultResourceCard[] {
+  const cardsByUrl = new Map<string, DeploymentResultResourceCard>();
+  const cards = (summary.resourceYamls ?? []).flatMap((raw) =>
+    yamlResourceDocs(raw).flatMap((doc) =>
+      templatePublicAccessCardsFromDoc(summary, doc)
+    )
+  );
+  for (const card of cards) {
+    if (card.resultRef.kind === "TemplatePublicAccess") {
+      cardsByUrl.set(card.resultRef.url, card);
+    }
+  }
+  return [...cardsByUrl.values()];
 }
 
 function directApDocsFromResourceYamls(
@@ -176,6 +288,7 @@ export function resultResourceCardsFromArtifactSummary(
       ];
     }),
     ...publicAccessCardsFromArtifactSummary(summary),
+    ...templatePublicAccessCardsFromArtifactSummary(summary),
   ];
 }
 

@@ -780,6 +780,47 @@ test("the claim published with the probe covers exactly what is on screen", () =
   assert.equal(next.steps[0]?.resultCards?.length, 2);
 });
 
+test("a verified template Ingress becomes the Public domain success entry", () => {
+  const publicDomainCard: DeploymentResultResourceCard = {
+    events: [],
+    id: "TemplatePublicAccess:default:affine:https://affine.example.sealos.run",
+    required: true,
+    resultRef: {
+      kind: "TemplatePublicAccess",
+      name: "affine",
+      namespace: "default",
+      url: "https://affine.example.sealos.run",
+    },
+    status: "running",
+    title: "Public domain",
+  };
+  const timeline = upsertResultResourceCard(
+    timelineFrame({
+      "AP:default:eaglercraft": "running",
+      "PublicAccess:default:eaglercraft:lobby": "running",
+    }),
+    {
+      card: publicDomainCard,
+      stepId: "create-resources",
+      updatedAt: NOW,
+    }
+  );
+
+  assert.deepEqual(
+    deploymentTaskSuccessFromTimeline(timeline, { productName: "AFFiNE" }),
+    {
+      entries: [
+        {
+          label: "Public domain",
+          url: "https://affine.example.sealos.run",
+        },
+      ],
+      productName: "AFFiNE",
+      verification: { passed: 3, total: 3 },
+    }
+  );
+});
+
 test("a timeline with no required result resource publishes no claim", () => {
   const optional = upsertResultResourceCard(
     declareTimelineSteps(

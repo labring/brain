@@ -412,6 +412,7 @@ const AI_RESULT_CARD_EVENT_REASONS = new Set([
   "APWorkloadReadiness",
   "DBServiceReadiness",
   "PublicAddressReadiness",
+  "TemplatePublicAccessReadiness",
   "TemplateWorkloadReadiness",
 ]);
 
@@ -590,6 +591,24 @@ function safeResourceIdentifier(value: unknown): string | null {
     : null;
 }
 
+function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const url = value.trim();
+  if (url.length === 0 || url.length > 2048) {
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function publicAiResultRef(value: unknown): DeploymentResultResourceRef | null {
   const ref = recordValue(value);
   const kind = ref?.kind;
@@ -610,6 +629,13 @@ function publicAiResultRef(value: unknown): DeploymentResultResourceRef | null {
         ? null
         : { apName, id, kind, namespace };
     }
+    case "TemplatePublicAccess": {
+      const name = safeKubernetesName(ref.name);
+      const url = safeHttpUrl(ref.url);
+      return name == null || url == null
+        ? null
+        : { kind, name, namespace, url };
+    }
     case "TemplateWorkload": {
       const name = safeKubernetesName(ref.name);
       const workloadKind = safeResourceIdentifier(ref.workloadKind);
@@ -629,6 +655,8 @@ function resultCardId(ref: DeploymentResultResourceRef): string {
       return `${ref.kind}:${ref.namespace}:${ref.name}`;
     case "PublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.apName}:${ref.id}`;
+    case "TemplatePublicAccess":
+      return `${ref.kind}:${ref.namespace}:${ref.name}:${ref.url}`;
     case "TemplateWorkload":
       return `${ref.kind}:${ref.namespace}:${ref.workloadKind}:${ref.name}`;
     default:
@@ -644,6 +672,8 @@ function resultCardTitle(ref: DeploymentResultResourceRef): string {
       return "Database";
     case "PublicAccess":
       return "Public address";
+    case "TemplatePublicAccess":
+      return "Public domain";
     case "TemplateWorkload":
       return "Workload";
     default:

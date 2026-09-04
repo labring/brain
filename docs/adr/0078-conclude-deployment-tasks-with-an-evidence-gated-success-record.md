@@ -32,6 +32,11 @@ evidence rather than by status:
   first-use guidance from the product contract. The UI never derives an
   address from a host and a port, and never writes a step the contract did
   not declare.
+- A deterministic template's `networking.k8s.io/*` Ingress declares a Public
+  Domain result. Each valid rule host becomes a required result card and is
+  probed inside the tenant routing domain before success is attached. A host
+  explicitly covered by that Ingress's TLS hosts uses `https`; other hosts use
+  `http`. The runner does not infer `wss` or any other protocol.
 - Re-attaching an identical conclusion is a no-op: it does not bump the
   Timeline revision, so the conclusion is stable across reconnects.
 - A Deployment Celebration owns the one-shot announcement, claimed by
@@ -60,6 +65,8 @@ evidence rather than by status:
   than rendering it unverified.
 - First-use guidance can only appear once a product contract actually declares
   it. Until the template contract carries those steps, the record shows what
-  it can prove — the verified resources and any declared address.
+  it can prove — the verified resources and any declared address. Template
+  Ingress hosts therefore appear as clickable Public Domain entries after
+  their probes pass.
 - Any surface that renders a Timeline renders its conclusion; there is no
   second success channel to keep in sync.

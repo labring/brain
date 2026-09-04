@@ -356,7 +356,7 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Task Success Record
 
-The conclusion a Deployment Task Timeline appends once Deployment Result Readiness is reached and every required entry probe has passed: the product is usable now. It carries only facts the deployment declared — product name, entry addresses, first-use steps — so the Timeline never presents an address or an instruction the runner cannot evidence; a task with no required Deployment Result Resource publishes no record and keeps reporting progress. It is part of the task-owned timeline snapshot, not a Chat message or a toast, and its Timeline revision doubles as its identity.
+The conclusion a Deployment Task Timeline appends once Deployment Result Readiness is reached and every required entry probe has passed: the product is usable now. It carries only facts the deployment declared — product name, entry addresses, first-use steps — so the Timeline never presents an address or an instruction the runner cannot evidence; a deterministic template's valid Ingress rule hosts become Public Domain entries only after tenant-domain HTTP probes pass, using `https` only when that Ingress explicitly covers the host with TLS and never inferring `wss`. A task with no required Deployment Result Resource publishes no record and keeps reporting progress. It is part of the task-owned timeline snapshot, not a Chat message or a toast, and its Timeline revision doubles as its identity.
 
 _Avoid_: success toast, deploy done banner, completion notification.
 
@@ -392,7 +392,7 @@ _Avoid_: resource quota (for this set), workspace limits, all quotas.
 
 ### Deployment Task Dock
 
-A Project Canvas affordance presenting the current Project's visible Deployment Task Projections so users notice active or attention-needing deployment work and re-enter each task's Deployment Task Timeline. Chips carry no inline lifecycle actions — cancel and Redeploy live in the timeline pane a chip opens; terminal tasks additionally offer dismissal. Not deployment history, a task center, or a canvas node.
+A Project Canvas affordance presenting the current Project's visible Deployment Task Projections so users notice active or terminal deployment work and re-enter each task's Deployment Task Timeline. Terminal chips remain until the user dismisses them; they do not expire on a timer. Chips carry no inline lifecycle actions — cancel and Redeploy live in the timeline pane a chip opens; terminal tasks additionally offer dismissal. Not deployment history, a task center, or a canvas node.
 
 ### Deployment Task Dock Dismissal
 

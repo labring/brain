@@ -38,6 +38,12 @@ export type DeploymentResultResourceRef =
   | { kind: "DB"; name: string; namespace: string }
   | { apName: string; id: string; kind: "PublicAccess"; namespace: string }
   | {
+      kind: "TemplatePublicAccess";
+      name: string;
+      namespace: string;
+      url: string;
+    }
+  | {
       kind: "TemplateWorkload";
       name: string;
       namespace: string;
@@ -588,6 +594,8 @@ export function deploymentResultResourceCardId(
       return `${ref.kind}:${ref.namespace}:${ref.name}`;
     case "PublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.apName}:${ref.id}`;
+    case "TemplatePublicAccess":
+      return `${ref.kind}:${ref.namespace}:${ref.name}:${ref.url}`;
     case "TemplateWorkload":
       return `${ref.kind}:${ref.namespace}:${ref.workloadKind}:${ref.name}`;
     default:
@@ -827,12 +835,30 @@ export function deploymentTaskSuccessFromTimeline(
   if (!deploymentTimelineResultReadinessReached(timeline)) {
     return null;
   }
-  return deploymentTaskSuccessFromResultReadiness({
+  const runningCards = timeline.steps
+    .flatMap((step) => step.resultCards ?? [])
+    .filter((card) => card.required && card.status === "running");
+  const publicDomainEntries = [
+    ...new Set(
+      runningCards.flatMap((card) =>
+        card.resultRef.kind === "TemplatePublicAccess"
+          ? [card.resultRef.url]
+          : []
+      )
+    ),
+  ].map((url) => ({ label: "Public domain", url }));
+  const success = deploymentTaskSuccessFromResultReadiness({
     productName: input.productName,
-    requiredRunningCards: timeline.steps
-      .flatMap((step) => step.resultCards ?? [])
-      .filter((card) => card.required && card.status === "running").length,
+    requiredRunningCards: runningCards.length,
   });
+  return success == null
+    ? null
+    : {
+        ...success,
+        ...(publicDomainEntries.length === 0
+          ? {}
+          : { entries: publicDomainEntries }),
+      };
 }
 
 /**

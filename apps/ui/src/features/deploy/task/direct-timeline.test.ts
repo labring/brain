@@ -110,6 +110,66 @@ test("deployment timeline creates template workload cards without support object
   );
 });
 
+test("deployment timeline creates deduplicated public domain cards from template Ingress rules", () => {
+  const cards = resultResourceCardsFromArtifactSummary({
+    resources: [
+      {
+        apiVersion: "networking.k8s.io/v1",
+        kind: "Ingress",
+        name: "affine",
+        namespace: "ns-demo",
+      },
+    ],
+    resourceYamls: [
+      `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: affine
+spec:
+  tls:
+    - hosts:
+        - affine.example.sealos.run
+  rules:
+    - host: affine.example.sealos.run
+    - host: status.example.sealos.run
+    - host: status.example.sealos.run
+    - host: "*.example.sealos.run"
+    - host: invalid/path
+`,
+    ],
+  });
+
+  assert.deepEqual(cards, [
+    {
+      events: [],
+      id: "TemplatePublicAccess:ns-demo:affine:https://affine.example.sealos.run",
+      required: true,
+      resultRef: {
+        kind: "TemplatePublicAccess",
+        name: "affine",
+        namespace: "ns-demo",
+        url: "https://affine.example.sealos.run",
+      },
+      status: "creating",
+      title: "Public domain",
+    },
+    {
+      events: [],
+      id: "TemplatePublicAccess:ns-demo:affine:http://status.example.sealos.run",
+      required: true,
+      resultRef: {
+        kind: "TemplatePublicAccess",
+        name: "affine",
+        namespace: "ns-demo",
+        url: "http://status.example.sealos.run",
+      },
+      status: "creating",
+      title: "Public domain",
+    },
+  ]);
+});
+
 test("deployment timeline creates optional Public Address cards from AP network evidence", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resources: [

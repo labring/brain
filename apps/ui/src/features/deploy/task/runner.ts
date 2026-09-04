@@ -865,7 +865,9 @@ async function upsertResultTimelineCard(input: {
 }
 
 async function observeResultCardReadiness(input: {
+  allowedDomain: string;
   card: DeploymentResultResourceCard;
+  deadlineAtMs: number;
   kubeconfig: string;
   previousLatestStatus: string | undefined;
   previousStatus: DeploymentResultResourceCard["status"] | undefined;
@@ -879,7 +881,9 @@ async function observeResultCardReadiness(input: {
 }> {
   try {
     const observed = await observeDeploymentResultCardReadiness({
+      allowedDomain: input.allowedDomain,
       card: input.card,
+      deadlineAtMs: input.deadlineAtMs,
       kubeconfig: input.kubeconfig,
       signal: input.signal,
       surfaceObservationError: input.surfaceObservationError,
@@ -930,6 +934,7 @@ async function observeResultCardReadiness(input: {
 }
 
 async function observeResultCardBeforeDeadline(input: {
+  allowedDomain: string;
   card: DeploymentResultResourceCard;
   deadlineAtMs: number;
   kubeconfig: string;
@@ -963,6 +968,7 @@ async function observeResultCardBeforeDeadline(input: {
 }
 
 async function waitForRequiredResultCards(input: {
+  allowedDomain: string;
   cards: DeploymentResultResourceCard[];
   deadlineAtMs?: number;
   kubeconfig: string;
@@ -989,6 +995,7 @@ async function waitForRequiredResultCards(input: {
 
     for (const card of input.cards) {
       const observed = await observeResultCardBeforeDeadline({
+        allowedDomain: input.allowedDomain,
         card,
         deadlineAtMs,
         kubeconfig: input.kubeconfig,
@@ -2636,6 +2643,7 @@ async function completeTaskWithArtifact(input: {
       taskDeadlineAtMs,
     });
     await waitForRequiredResultCards({
+      allowedDomain: apUserDomain(input.kubeconfig),
       cards: resultCards,
       deadlineAtMs: readinessDeadlineAtMs,
       kubeconfig: input.kubeconfig,

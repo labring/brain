@@ -3,7 +3,7 @@ import "server-only";
 import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
-
+import { probeManagedPublicUrl } from "./managed-public-probe";
 import {
   apWorkloadReadinessFromProductView,
   type DeploymentResultReadiness,
@@ -198,6 +198,8 @@ export function resultReadinessEventReason(
       return "DBServiceReadiness";
     case "PublicAccess":
       return "PublicAddressReadiness";
+    case "TemplatePublicAccess":
+      return "TemplatePublicAccessReadiness";
     case "TemplateWorkload":
       return "TemplateWorkloadReadiness";
     default:
@@ -215,6 +217,8 @@ export function resultReadinessLabel(
       return `DB Service ${card.resultRef.name}`;
     case "PublicAccess":
       return `Public Address ${card.resultRef.id}`;
+    case "TemplatePublicAccess":
+      return `Public domain ${card.resultRef.url}`;
     case "TemplateWorkload":
       return `${card.resultRef.workloadKind} ${card.resultRef.name}`;
     default:
@@ -241,7 +245,9 @@ export function waitingForResultObservationStatus(
 }
 
 async function resultCardReadiness(input: {
+  allowedDomain?: string;
   card: DeploymentResultResourceCard;
+  deadlineAtMs?: number;
   kubeconfig: string;
   signal?: AbortSignal;
 }): Promise<DeploymentResultReadiness> {
@@ -279,6 +285,21 @@ async function resultCardReadiness(input: {
         })
       );
     }
+    case "TemplatePublicAccess": {
+      if (!input.allowedDomain) {
+        throw new Error("Tenant routing domain is unavailable.");
+      }
+      await probeManagedPublicUrl({
+        allowedDomain: input.allowedDomain,
+        deadlineAtMs: input.deadlineAtMs ?? Date.now() + 15_000,
+        publicUrl: resultRef.url,
+      });
+      return {
+        eventMessage: "Public domain is reachable.",
+        latestStatusText: "Public domain is reachable.",
+        status: "running",
+      };
+    }
     case "TemplateWorkload": {
       const workload = await fetchTemplateWorkloadProductView({
         kubeconfig: input.kubeconfig,
@@ -295,7 +316,9 @@ async function resultCardReadiness(input: {
 }
 
 export async function observeDeploymentResultCardReadiness(input: {
+  allowedDomain?: string;
   card: DeploymentResultResourceCard;
+  deadlineAtMs?: number;
   kubeconfig: string;
   signal?: AbortSignal;
   surfaceObservationError?: boolean;

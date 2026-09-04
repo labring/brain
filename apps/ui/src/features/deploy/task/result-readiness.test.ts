@@ -6,9 +6,14 @@ import type { DeploymentResultResourceCard } from "./timeline";
 const requireModule = createRequire(import.meta.url);
 
 mock.module("server-only", () => ({}));
+const probeManagedPublicUrl = mock(async () => undefined);
+mock.module("./managed-public-probe", () => ({ probeManagedPublicUrl }));
 
-const { resultReadinessForPresentation, waitingForResultObservationStatus } =
-  requireModule("./result-readiness") as typeof import("./result-readiness");
+const {
+  observeDeploymentResultCardReadiness,
+  resultReadinessForPresentation,
+  waitingForResultObservationStatus,
+} = requireModule("./result-readiness") as typeof import("./result-readiness");
 
 const card: DeploymentResultResourceCard = {
   events: [],
@@ -81,4 +86,37 @@ describe("result observation error presentation", () => {
     expect(observed.latestStatusText).toContain("provider-status-token");
     expect(observed.eventMessage).toContain("provider-status-token");
   });
+});
+
+it("marks a template public domain running only after its HTTP probe passes", async () => {
+  probeManagedPublicUrl.mockClear();
+  const publicDomainCard: DeploymentResultResourceCard = {
+    events: [],
+    id: "TemplatePublicAccess:ns-demo:affine:https://affine.example.sealos.run",
+    required: true,
+    resultRef: {
+      kind: "TemplatePublicAccess",
+      name: "affine",
+      namespace: "ns-demo",
+      url: "https://affine.example.sealos.run",
+    },
+    status: "creating",
+    title: "Public domain",
+  };
+  const deadlineAtMs = Date.now() + 10_000;
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    card: publicDomainCard,
+    deadlineAtMs,
+    kubeconfig: "unused",
+  });
+
+  expect(probeManagedPublicUrl).toHaveBeenCalledWith({
+    allowedDomain: "example.sealos.run",
+    deadlineAtMs,
+    publicUrl: "https://affine.example.sealos.run",
+  });
+  expect(observed.status).toBe("running");
+  expect(observed.latestStatus).toBe("Public domain is reachable.");
 });
