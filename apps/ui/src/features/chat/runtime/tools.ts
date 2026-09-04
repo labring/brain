@@ -8,6 +8,7 @@ import {
 } from "@/features/chat/agui/gen-ui-tool";
 import { getChatDevboxSkillsSnapshot } from "@/features/chat/devbox/chat-runtime";
 import type { AssistantContextPayload } from "@/features/chat/persistence/types";
+import { createProjectContextTools } from "@/features/chat/project-context/tool";
 import { createChatBashTool } from "@/features/chat/tool/chat-bash-tool";
 import { createSearchDeployCatalogTool } from "@/features/chat/tool/chat-deploy-catalog-tool";
 import { createDeployTaskTools } from "@/features/chat/tool/chat-deploy-task-tool";
@@ -101,11 +102,18 @@ export async function buildChatToolset({
     kubernetesNamespace,
     workspaceUserUid,
   });
+  const projectContextTools = createProjectContextTools({
+    assistantContext,
+    kubeconfig,
+    kubernetesNamespace,
+    workspaceActor: workspaceUserUid,
+  });
 
   const tools = {
     ...deployTaskTools,
     ...productTools,
     ...projectTools,
+    ...projectContextTools,
     searchDeployCatalog: createSearchDeployCatalogTool(),
     emitGenUISpec,
     navigateApp: navigateAppTool,
