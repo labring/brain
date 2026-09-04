@@ -1,35 +1,68 @@
 /**
- * Thin Brain-side public URL gate for Agent-managed deployments.
+ * Thin Brain-side public URL gate shared by deterministic and Agent-managed
+ * deployments.
  *
  * Codex reports the deployed public URL; Brain fetches it directly from the
- * control plane (never from the Devbox) and requires 2xx with a non-empty
- * body. The target must stay inside the tenant-owned routing domain so a
- * confused or adversarial Agent cannot point Brain at arbitrary hosts.
+ * control plane (never from the Devbox). Any HTTP response proves that the
+ * declared tenant route is reachable; application status and response content
+ * deliberately remain outside this routing-health check.
  */
 
+export function isAllowedDeploymentAccessUrl(
+  url: URL,
+  allowedDomain: string
+): boolean {
+  return (
+    ["http:", "https:", "ws:", "wss:"].includes(url.protocol) &&
+    url.username === "" &&
+    url.password === "" &&
+    url.hash === "" &&
+    (url.hostname === allowedDomain ||
+      url.hostname.endsWith(`.${allowedDomain}`))
+  );
+}
+
+/** Historical name retained for callers that specifically validate HTTP. */
 export function isAllowedManagedHttpUrl(
   url: URL,
   allowedDomain: string
 ): boolean {
   return (
     (url.protocol === "http:" || url.protocol === "https:") &&
-    (url.hostname === allowedDomain ||
-      url.hostname.endsWith(`.${allowedDomain}`))
+    isAllowedDeploymentAccessUrl(url, allowedDomain)
   );
 }
 
-async function assertManagedHttpResponseBody(
-  response: Response
-): Promise<void> {
-  const reader = response.body?.getReader();
-  if (reader == null) {
-    throw new Error("Public URL probe returned an empty body.");
+async function probeWebSocketUrl(url: URL, timeoutMs: number): Promise<void> {
+  if (typeof globalThis.WebSocket !== "function") {
+    throw new Error("WebSocket endpoint verification is unavailable.");
   }
-  const first = await reader.read();
-  await reader.cancel().catch(() => undefined);
-  if (first.done || first.value.byteLength === 0) {
-    throw new Error("Public URL probe returned an empty body.");
-  }
+  await new Promise<void>((resolve, reject) => {
+    const socket = new globalThis.WebSocket(url);
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish(new Error("WebSocket endpoint probe timed out."));
+    }, timeoutMs);
+    const finish = (error?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      socket.close();
+      if (error == null) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    };
+    socket.addEventListener("open", () => finish(), { once: true });
+    socket.addEventListener(
+      "error",
+      () => finish(new Error("WebSocket endpoint upgrade failed.")),
+      { once: true }
+    );
+  });
 }
 
 export async function probeManagedPublicUrl(input: {
@@ -37,28 +70,19 @@ export async function probeManagedPublicUrl(input: {
   deadlineAtMs: number;
   publicUrl: string;
 }): Promise<void> {
-  let url = new URL(input.publicUrl);
-  for (let redirects = 0; redirects <= 5; redirects += 1) {
-    if (!isAllowedManagedHttpUrl(url, input.allowedDomain)) {
-      throw new Error("Public URL probe target is outside the tenant domain.");
-    }
-    const remainingMs = Math.max(1, input.deadlineAtMs - Date.now());
-    const response = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(Math.min(15_000, remainingMs)),
-    });
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (location == null || redirects === 5) {
-        throw new Error("Public URL probe exceeded its redirect limit.");
-      }
-      url = new URL(location, url);
-      continue;
-    }
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`Public URL probe returned ${response.status}.`);
-    }
-    await assertManagedHttpResponseBody(response);
+  const url = new URL(input.publicUrl);
+  if (!isAllowedDeploymentAccessUrl(url, input.allowedDomain)) {
+    throw new Error("Public URL probe target is outside the tenant domain.");
+  }
+  const remainingMs = Math.max(1, input.deadlineAtMs - Date.now());
+  if (url.protocol === "ws:" || url.protocol === "wss:") {
+    await probeWebSocketUrl(url, Math.min(15_000, remainingMs));
     return;
   }
+  await fetch(url, {
+    // Do not follow a tenant response to an arbitrary external login or CDN.
+    // The response itself is sufficient evidence that the tenant route exists.
+    redirect: "manual",
+    signal: AbortSignal.timeout(Math.min(15_000, remainingMs)),
+  });
 }

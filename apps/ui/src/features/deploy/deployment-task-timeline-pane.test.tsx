@@ -835,6 +835,9 @@ const PLAY_STEP_RE = /Join the server and start playing\./;
 const FIXTURE_ADDRESS_RE = /https:\/\/eaglercraft-server\.mock\.sealos\.run/;
 const ORDERED_GUIDANCE_RE = /<ol/;
 const DECLARED_ADDRESS_RE = /wss:/;
+const GAME_SERVER_LABEL_RE = /Game server/;
+const GAME_SERVER_ADDRESS_RE = /wss:\/\/eaglercraft\.demo\.sealos\.run\/server/;
+const COPY_ADDRESS_LABEL_RE = /aria-label="Copy address"/;
 const PRIMARY_LINK_RE =
   /<a href="https:\/\/web-app\.demo\.sealos\.run"[^>]*>[\s\S]*?Open<\/a>/;
 const ADDRESS_TEXT_RE =
@@ -1037,6 +1040,33 @@ test("a record that declares only an address still reads as a result", () => {
   assert.match(html, ADDRESS_TEXT_RE);
   // No guidance was declared, so nothing is invented in its place.
   assert.doesNotMatch(html, ORDERED_GUIDANCE_RE);
+});
+
+test("a verified WebSocket endpoint is copyable but is not opened as a page", () => {
+  const html = renderPaneContent(
+    successSnapshot({
+      success: {
+        contractVersion: 2,
+        entries: [
+          {
+            label: "Game server",
+            protocol: "wss",
+            url: "wss://eaglercraft.demo.sealos.run/server",
+          },
+        ],
+        revision: 3,
+        verifiedAt: VERIFIED_AT,
+      },
+    })
+  );
+
+  assert.match(html, GAME_SERVER_LABEL_RE);
+  assert.match(html, GAME_SERVER_ADDRESS_RE);
+  assert.equal(
+    html.includes('href="wss://eaglercraft.demo.sealos.run/server"'),
+    false
+  );
+  assert.match(html, COPY_ADDRESS_LABEL_RE);
 });
 
 test("the EaglerCraft fixture teaches a player how to join the server", () => {

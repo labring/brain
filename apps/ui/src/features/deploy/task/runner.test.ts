@@ -238,11 +238,11 @@ describe("managed public URL probe", () => {
     ).toBe(false);
   });
 
-  it("accepts a 2xx response with a non-empty body", async () => {
+  it("accepts any HTTP response as tenant-route reachability", async () => {
     globalThis.fetch = (() =>
       Promise.resolve(
-        new Response("ok", {
-          status: 200,
+        new Response(null, {
+          status: 503,
         })
       )) as unknown as typeof fetch;
 
@@ -255,13 +255,26 @@ describe("managed public URL probe", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("rejects a non-2xx response", async () => {
+  it("does not follow redirects outside the tenant route", async () => {
+    const calls: RequestInit[] = [];
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return Promise.resolve(Response.redirect("https://login.example.com"));
+    }) as typeof fetch;
+
+    await probeManagedPublicUrl({
+      allowedDomain: "tenant-a.sealos.io",
+      deadlineAtMs: Date.now() + 30_000,
+      publicUrl: "https://demo.tenant-a.sealos.io",
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.redirect).toBe("manual");
+  });
+
+  it("rejects network failures", async () => {
     globalThis.fetch = (() =>
-      Promise.resolve(
-        new Response("oops", {
-          status: 503,
-        })
-      )) as unknown as typeof fetch;
+      Promise.reject(new TypeError("fetch failed"))) as unknown as typeof fetch;
 
     await expect(
       probeManagedPublicUrl({
@@ -269,7 +282,7 @@ describe("managed public URL probe", () => {
         deadlineAtMs: Date.now() + 30_000,
         publicUrl: "https://demo.tenant-a.sealos.io",
       })
-    ).rejects.toThrow("returned 503");
+    ).rejects.toThrow("fetch failed");
   });
 
   it("rejects a target outside the tenant domain", async () => {

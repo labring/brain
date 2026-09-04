@@ -230,6 +230,7 @@ export function renderDockerDeploymentYaml(
               port: appListeningPort,
             }),
           port: appListeningPort,
+          required: true,
         },
       ],
     },

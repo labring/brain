@@ -1,5 +1,9 @@
 # Conclude Deployment Tasks with an Evidence-Gated Success Record
 
+## Status
+
+Accepted. The address model and success-copy rules are revised by ADR-0079.
+
 ## Context
 
 ADR-0028 models deployment *progress* as a task-owned timeline, and ADR-0042
@@ -32,11 +36,18 @@ evidence rather than by status:
   first-use guidance from the product contract. The UI never derives an
   address from a host and a port, and never writes a step the contract did
   not declare.
-- A deterministic template's `networking.k8s.io/*` Ingress declares a Public
-  Domain result. Each valid rule host becomes a required result card and is
-  probed inside the tenant routing domain before success is attached. A host
-  explicitly covered by that Ingress's TLS hosts uses `https`; other hosts use
-  `http`. The runner does not infer `wss` or any other protocol.
+- Public entry points use the source-independent Access Endpoint contract in
+  ADR-0079. This record contains only endpoints that completed that contract's
+  source observation, tenant-boundary validation, and protocol probe.
+- Deterministic and Agent-managed runners share the same raw Kubernetes
+  readiness predicate for a given Kind. A non-suspended CronJob is a valid
+  runtime result without waiting for its next scheduled execution. Agent
+  completion still needs at least one ready runtime result or one responding
+  public entry; support resources alone are not completion evidence.
+- Readiness and Agent verification/repair each receive a 30-minute aggregate
+  convergence window. Individual HTTP requests remain capped at 15 seconds,
+  and individual Agent control checks remain bounded below the MCP route's
+  60-second request duration.
 - Re-attaching an identical conclusion is a no-op: it does not bump the
   Timeline revision, so the conclusion is stable across reconnects.
 - A Deployment Celebration owns the one-shot announcement, claimed by

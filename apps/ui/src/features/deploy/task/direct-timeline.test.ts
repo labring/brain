@@ -143,12 +143,15 @@ spec:
   assert.deepEqual(cards, [
     {
       events: [],
-      id: "TemplatePublicAccess:ns-demo:affine:https://affine.example.sealos.run",
+      id: "AccessEndpoint:ns-demo:ingress:affine:affine.example.sealos.run",
       required: true,
       resultRef: {
-        kind: "TemplatePublicAccess",
-        name: "affine",
+        id: "ingress:affine:affine.example.sealos.run",
+        kind: "AccessEndpoint",
+        label: "Public domain",
         namespace: "ns-demo",
+        observer: { kind: "ingress", name: "affine" },
+        protocol: "https",
         url: "https://affine.example.sealos.run",
       },
       status: "creating",
@@ -156,12 +159,15 @@ spec:
     },
     {
       events: [],
-      id: "TemplatePublicAccess:ns-demo:affine:http://status.example.sealos.run",
+      id: "AccessEndpoint:ns-demo:ingress:affine:status.example.sealos.run",
       required: true,
       resultRef: {
-        kind: "TemplatePublicAccess",
-        name: "affine",
+        id: "ingress:affine:status.example.sealos.run",
+        kind: "AccessEndpoint",
+        label: "Public domain",
         namespace: "ns-demo",
+        observer: { kind: "ingress", name: "affine" },
+        protocol: "http",
         url: "http://status.example.sealos.run",
       },
       status: "creating",
@@ -170,7 +176,7 @@ spec:
   ]);
 });
 
-test("deployment timeline creates optional Public Address cards from AP network evidence", () => {
+test("deployment timeline creates required Access Endpoint cards from AP network evidence", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resources: [
       {
@@ -214,22 +220,28 @@ spec:
         title: "api",
       },
       {
-        id: "PublicAccess:default:api:pa_api",
-        required: false,
+        id: "AccessEndpoint:default:public-address:pa_api",
+        required: true,
         resultRef: {
-          apName: "api",
-          id: "pa_api",
-          kind: "PublicAccess",
+          id: "public-address:pa_api",
+          kind: "AccessEndpoint",
+          label: "Public address",
           namespace: "default",
+          observer: {
+            addressId: "pa_api",
+            apName: "api",
+            kind: "ap-public-address",
+          },
+          protocol: "https",
         },
         status: "creating",
-        title: "Public access",
+        title: "Public address",
       },
     ]
   );
 });
 
-test("deployment timeline marks Public Address cards required only from explicit evidence", () => {
+test("deployment timeline lets an explicitly optional endpoint stay optional", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resourceYamls: [
       `
@@ -244,13 +256,13 @@ spec:
       platformAddresses:
         - id: pa_api
           port: 80
-          required: true
+          required: false
 `,
     ],
   });
 
-  assert.equal(cards[0]?.id, "PublicAccess:default:api:pa_api");
-  assert.equal(cards[0]?.required, true);
+  assert.equal(cards[0]?.id, "AccessEndpoint:default:public-address:pa_api");
+  assert.equal(cards[0]?.required, false);
 });
 
 test("direct deployment timeline applies AP workload readiness to the AP card", () => {

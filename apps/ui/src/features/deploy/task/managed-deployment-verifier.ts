@@ -7,6 +7,10 @@ import {
 } from "@/lib/brain-labels";
 
 import {
+  isKubernetesResourceReady,
+  isKubernetesRuntimeResourceKind,
+} from "./kubernetes-resource-readiness";
+import {
   type ManagedResourceRef,
   managedResourceRefSchema,
 } from "./managed-deployment-contract";
@@ -159,116 +163,15 @@ export function parseManagedResourceObservations(
   return observationsSchema.parse(JSON.parse(contents));
 }
 
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function conditionTrue(
-  conditions: readonly Record<string, unknown>[],
-  type: string
-): boolean {
-  return conditions.some(
-    (condition) =>
-      condition.type === type &&
-      String(condition.status).toLowerCase() === "true"
-  );
-}
-
-function phaseReady(status: Record<string, unknown>): boolean {
-  const phase = String(status.phase ?? "").toLowerCase();
-  return ["completed", "deployed", "ready", "running", "succeeded"].includes(
-    phase
-  );
-}
-
-function workloadReady(observation: ManagedResourceObservation): boolean {
-  const snapshot = observation.snapshot;
-  if (snapshot == null) {
-    return false;
-  }
-  const kind = observation.resource.kind.toLowerCase();
-  const desired = numberValue(snapshot.spec.replicas) ?? 1;
-  const observedGeneration = numberValue(snapshot.status.observedGeneration);
-  if (
-    snapshot.generation != null &&
-    observedGeneration != null &&
-    observedGeneration < snapshot.generation
-  ) {
-    return false;
-  }
-  if (kind === "deployment") {
-    return (
-      (numberValue(snapshot.status.readyReplicas) ?? 0) >= desired &&
-      (numberValue(snapshot.status.availableReplicas) ?? 0) >= desired
-    );
-  }
-  if (kind === "statefulset") {
-    return (numberValue(snapshot.status.readyReplicas) ?? 0) >= desired;
-  }
-  if (kind === "daemonset") {
-    const scheduled = numberValue(snapshot.status.desiredNumberScheduled) ?? 0;
-    return (
-      scheduled > 0 &&
-      (numberValue(snapshot.status.numberReady) ?? 0) >= scheduled
-    );
-  }
-  return false;
-}
-
 function resourceReady(observation: ManagedResourceObservation): boolean {
   const snapshot = observation.snapshot;
   if (snapshot == null || observation.error != null) {
     return false;
   }
-  const kind = observation.resource.kind.toLowerCase();
-  if (["deployment", "statefulset", "daemonset"].includes(kind)) {
-    return workloadReady(observation);
-  }
-  if (kind === "job") {
-    return conditionTrue(snapshot.conditions, "Complete");
-  }
-  if (kind === "pod") {
-    return conditionTrue(snapshot.conditions, "Ready");
-  }
-  if (kind === "service") {
-    return (
-      snapshot.spec.type === "ExternalName" ||
-      (observation.endpointsReady ?? 0) > 0
-    );
-  }
-  if (kind === "persistentvolumeclaim") {
-    return String(snapshot.status.phase).toLowerCase() === "bound";
-  }
-  if (
-    [
-      "configmap",
-      "cronjob",
-      "ingress",
-      "networkpolicy",
-      "role",
-      "rolebinding",
-      "secret",
-      "serviceaccount",
-    ].includes(kind)
-  ) {
-    return true;
-  }
-  const readinessRequired = [
-    "app",
-    "certificate",
-    "cluster",
-    "instance",
-    "issuer",
-    "objectstoragebucket",
-  ].includes(kind);
-  const hasReadinessSignal =
-    snapshot.conditions.length > 0 || typeof snapshot.status.phase === "string";
-  if (!(readinessRequired || hasReadinessSignal)) {
-    return true;
-  }
-  return (
-    conditionTrue(snapshot.conditions, "Ready") || phaseReady(snapshot.status)
-  );
+  return isKubernetesResourceReady(observation.resource.kind, {
+    ...snapshot,
+    endpointsReady: observation.endpointsReady,
+  });
 }
 
 export interface ManagedBrainVerificationResult {
@@ -279,11 +182,12 @@ export interface ManagedBrainVerificationResult {
 /**
  * Thin Brain-side completion gate. The Agent supplies the resources it
  * actually created; Brain only re-reads those resources and requires at least
- * one reported runtime workload (or Pod) to be Ready. Deeper runtime truth,
- * logs, HTTP probes and repair decisions stay with the Agent.
+ * one reported runtime result or one responding public entry. Deeper runtime
+ * truth, logs and repair decisions stay with the Agent.
  */
 export function verifyManagedWorkloadReadiness(input: {
   observations: readonly ManagedResourceObservation[];
+  publicEntryReady?: boolean;
   workloads: readonly ManagedResourceRef[];
 }): ManagedBrainVerificationResult {
   const violations: string[] = [];
@@ -312,14 +216,13 @@ export function verifyManagedWorkloadReadiness(input: {
     if (observation.error != null || observation.snapshot == null) {
       return false;
     }
-    const kind = observation.resource.kind.toLowerCase();
     return (
-      ["deployment", "statefulset", "daemonset", "job", "pod"].includes(kind) &&
+      isKubernetesRuntimeResourceKind(observation.resource.kind) &&
       resourceReady(observation)
     );
   });
-  if (!hasReadyRuntime) {
-    violations.push("no reported runtime workload is Ready");
+  if (!(hasReadyRuntime || input.publicEntryReady === true)) {
+    violations.push("no reported runtime or public entry is Ready");
   }
 
   return { ok: violations.length === 0, violations };

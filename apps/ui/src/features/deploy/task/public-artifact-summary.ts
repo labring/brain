@@ -409,6 +409,7 @@ const AI_OUTPUT_TIMELINE_EVENT_KINDS = [
   "deployment_task.output_ready",
 ] as const;
 const AI_RESULT_CARD_EVENT_REASONS = new Set([
+  "AccessEndpointReadiness",
   "APWorkloadReadiness",
   "DBServiceReadiness",
   "PublicAddressReadiness",
@@ -609,6 +610,65 @@ function safeHttpUrl(value: unknown): string | null {
   }
 }
 
+function safeAccessUrl(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const url = value.trim();
+  if (url.length === 0 || url.length > 2048) {
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:", "ws:", "wss:"].includes(parsed.protocol) &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.hash === ""
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function publicAiAccessEndpointRef(input: {
+  namespace: string;
+  ref: Record<string, unknown>;
+}): DeploymentResultResourceRef | null {
+  const { ref } = input;
+  const id = safeResourceIdentifier(ref.id);
+  const label =
+    typeof ref.label === "string" && ref.label.trim().length > 0
+      ? ref.label.trim().slice(0, 140)
+      : null;
+  const url = ref.url == null ? null : safeAccessUrl(ref.url);
+  const protocol =
+    typeof ref.protocol === "string" &&
+    ["http", "https", "ws", "wss"].includes(ref.protocol)
+      ? ref.protocol
+      : null;
+  const observer = recordValue(ref.observer);
+  if (
+    id == null ||
+    label == null ||
+    protocol == null ||
+    observer?.kind !== "declared" ||
+    (ref.url != null && url == null) ||
+    (url != null && new URL(url).protocol !== `${protocol}:`)
+  ) {
+    return null;
+  }
+  return {
+    id,
+    kind: "AccessEndpoint",
+    label,
+    namespace: input.namespace,
+    observer: { kind: "declared" },
+    protocol,
+    ...(url == null ? {} : { url }),
+  } as DeploymentResultResourceRef;
+}
+
 function publicAiResultRef(value: unknown): DeploymentResultResourceRef | null {
   const ref = recordValue(value);
   const kind = ref?.kind;
@@ -628,6 +688,9 @@ function publicAiResultRef(value: unknown): DeploymentResultResourceRef | null {
       return apName == null || id == null
         ? null
         : { apName, id, kind, namespace };
+    }
+    case "AccessEndpoint": {
+      return publicAiAccessEndpointRef({ namespace, ref });
     }
     case "TemplatePublicAccess": {
       const name = safeKubernetesName(ref.name);
@@ -655,6 +718,8 @@ function resultCardId(ref: DeploymentResultResourceRef): string {
       return `${ref.kind}:${ref.namespace}:${ref.name}`;
     case "PublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.apName}:${ref.id}`;
+    case "AccessEndpoint":
+      return `${ref.kind}:${ref.namespace}:${ref.id}`;
     case "TemplatePublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.name}:${ref.url}`;
     case "TemplateWorkload":
@@ -672,6 +737,8 @@ function resultCardTitle(ref: DeploymentResultResourceRef): string {
       return "Database";
     case "PublicAccess":
       return "Public address";
+    case "AccessEndpoint":
+      return ref.label;
     case "TemplatePublicAccess":
       return "Public domain";
     case "TemplateWorkload":

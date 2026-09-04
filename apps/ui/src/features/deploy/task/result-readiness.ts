@@ -11,7 +11,16 @@ import {
   publicAccessReadinessFromProductView,
   templateWorkloadReadinessFromProductView,
 } from "./readiness";
-import type { DeploymentResultResourceCard } from "./timeline";
+import type {
+  DeploymentAccessEndpointProtocol,
+  DeploymentResultResourceCard,
+  DeploymentResultResourceRef,
+} from "./timeline";
+
+interface DeploymentResultObservation extends DeploymentResultReadiness {
+  resolvedProtocol?: DeploymentAccessEndpointProtocol;
+  resolvedUrl?: string;
+}
 
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -140,11 +149,20 @@ export function readinessEventSeverity(
 
 function applyReadinessToResultCard(
   card: DeploymentResultResourceCard,
-  readiness: DeploymentResultReadiness
+  readiness: DeploymentResultObservation
 ): DeploymentResultResourceCard {
+  const resultRef: DeploymentResultResourceRef =
+    card.resultRef.kind === "AccessEndpoint" && readiness.resolvedUrl != null
+      ? {
+          ...card.resultRef,
+          protocol: readiness.resolvedProtocol ?? card.resultRef.protocol,
+          url: readiness.resolvedUrl,
+        }
+      : card.resultRef;
   return {
     ...card,
     latestStatusText: readiness.latestStatusText,
+    resultRef,
     status: readiness.status,
   };
 }
@@ -198,6 +216,8 @@ export function resultReadinessEventReason(
       return "DBServiceReadiness";
     case "PublicAccess":
       return "PublicAddressReadiness";
+    case "AccessEndpoint":
+      return "AccessEndpointReadiness";
     case "TemplatePublicAccess":
       return "TemplatePublicAccessReadiness";
     case "TemplateWorkload":
@@ -217,6 +237,8 @@ export function resultReadinessLabel(
       return `DB Service ${card.resultRef.name}`;
     case "PublicAccess":
       return `Public Address ${card.resultRef.id}`;
+    case "AccessEndpoint":
+      return `${card.resultRef.label} ${card.resultRef.url ?? card.resultRef.id}`;
     case "TemplatePublicAccess":
       return `Public domain ${card.resultRef.url}`;
     case "TemplateWorkload":
@@ -250,7 +272,7 @@ async function resultCardReadiness(input: {
   deadlineAtMs?: number;
   kubeconfig: string;
   signal?: AbortSignal;
-}): Promise<DeploymentResultReadiness> {
+}): Promise<DeploymentResultObservation> {
   const { resultRef } = input.card;
   switch (resultRef.kind) {
     case "AP": {
@@ -285,6 +307,55 @@ async function resultCardReadiness(input: {
         })
       );
     }
+    case "AccessEndpoint": {
+      let publicUrl = resultRef.url;
+      let readiness: DeploymentResultReadiness | null = null;
+      if (resultRef.observer.kind === "ap-public-address") {
+        const ap = await fetchApProductView({
+          kubeconfig: input.kubeconfig,
+          name: resultRef.observer.apName,
+          namespace: resultRef.namespace,
+          signal: input.signal,
+        });
+        const address = publicAddressViewFromAp({
+          ap,
+          publicAddressId: resultRef.observer.addressId,
+        });
+        readiness = publicAccessReadinessFromProductView(address);
+        if (readiness.status !== "running") {
+          return readiness;
+        }
+        publicUrl = stringValue(objectValue(address)?.url) ?? undefined;
+      }
+      if (publicUrl == null) {
+        throw new Error("The access endpoint URL has not been assigned yet.");
+      }
+      if (!input.allowedDomain) {
+        throw new Error("Tenant routing domain is unavailable.");
+      }
+      const parsed = new URL(publicUrl);
+      const resolvedProtocol = parsed.protocol.slice(
+        0,
+        -1
+      ) as DeploymentAccessEndpointProtocol;
+      if (
+        !(["http", "https", "ws", "wss"] as const).includes(resolvedProtocol)
+      ) {
+        throw new Error("The access endpoint protocol is unsupported.");
+      }
+      await probeManagedPublicUrl({
+        allowedDomain: input.allowedDomain,
+        deadlineAtMs: input.deadlineAtMs ?? Date.now() + 15_000,
+        publicUrl,
+      });
+      return {
+        eventMessage: `${resultRef.label} is reachable.`,
+        latestStatusText: `${resultRef.label} is reachable.`,
+        resolvedProtocol,
+        resolvedUrl: publicUrl,
+        status: "running",
+      };
+    }
     case "TemplatePublicAccess": {
       if (!input.allowedDomain) {
         throw new Error("Tenant routing domain is unavailable.");
@@ -308,7 +379,10 @@ async function resultCardReadiness(input: {
         signal: input.signal,
         workloadKind: resultRef.workloadKind,
       });
-      return templateWorkloadReadinessFromProductView(workload);
+      return templateWorkloadReadinessFromProductView(
+        workload,
+        resultRef.workloadKind
+      );
     }
     default:
       return resultRef satisfies never;

@@ -164,7 +164,11 @@ describe("verified success fixtures (issue #160)", () => {
     expect(timeline.success?.revision).toBe(timeline.revision);
     expect(timeline.success?.productName).toBe("acme/web-app");
     expect(timeline.success?.entries).toEqual([
-      { label: "Public address", url: "https://web-app.mock.sealos.run" },
+      {
+        label: "Public address",
+        protocol: "https",
+        url: "https://web-app.mock.sealos.run",
+      },
     ]);
     expect(timeline.success?.entries?.[0]?.url).toBe(
       task.resultUrl ?? undefined
@@ -184,6 +188,7 @@ describe("verified success fixtures (issue #160)", () => {
     expect(timeline.success?.entries).toEqual([
       {
         label: "Server address",
+        protocol: "https",
         url: "https://eaglercraft-server.mock.sealos.run",
       },
     ]);

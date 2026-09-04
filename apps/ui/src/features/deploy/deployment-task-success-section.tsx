@@ -67,6 +67,18 @@ const SUCCESS_OPEN_LABEL_FALLBACK = "Open";
 /** How often the freshness label is allowed to age while the card sits open. */
 const SUCCESS_FRESHNESS_REFRESH_MS = 30_000;
 
+function isOpenableEntry(entry: DeploymentTaskSuccessEntry): boolean {
+  if (entry.protocol != null) {
+    return entry.protocol === "http" || entry.protocol === "https";
+  }
+  try {
+    const protocol = new URL(entry.url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function SuccessEntryRow({ entry }: { entry: DeploymentTaskSuccessEntry }) {
   const [copied, copyEntry] = useCopyFeedback(entry.url);
 
@@ -125,7 +137,7 @@ export const DeploymentTaskSuccessSection = memo(
     const [now, setNow] = useState(() => Date.now());
     const entries = success.entries ?? [];
     const guidance = success.guidance ?? [];
-    const primaryEntry = entries[0];
+    const primaryEntry = entries.find(isOpenableEntry);
     const verification = success.verification;
 
     useEffect(() => {

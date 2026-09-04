@@ -480,6 +480,8 @@ function resultResourceKindLabel(ref: DeploymentResultResourceRef): string {
       return "DB";
     case "PublicAccess":
       return "Public access";
+    case "AccessEndpoint":
+      return ref.protocol.toUpperCase();
     case "TemplatePublicAccess":
       return "Public domain";
     case "TemplateWorkload":

@@ -880,6 +880,40 @@ test("public AI timeline rebuilds a verified success record field by field", () 
   assert.equal(serialized.includes(leaked), false);
 });
 
+test("public AI timeline preserves a verified v2 WebSocket endpoint", () => {
+  const timeline = {
+    revision: 7,
+    status: "completed",
+    steps: [],
+    success: {
+      contractVersion: 2,
+      entries: [
+        {
+          label: "Game server",
+          protocol: "wss",
+          url: "wss://play.demo.sealos.run/server",
+        },
+      ],
+      revision: 7,
+      verifiedAt: "2026-07-23T00:00:05.000Z",
+    },
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:05.000Z",
+  } as DeploymentTaskTimelineSnapshot;
+
+  assert.deepEqual(
+    publicDeployTaskTimelineSnapshot(timeline, { runner: AI_RUNNER })?.success
+      ?.entries,
+    [
+      {
+        label: "Game server",
+        protocol: "wss",
+        url: "wss://play.demo.sealos.run/server",
+      },
+    ]
+  );
+});
+
 test("public AI timeline falls back to the owning revision for an empty success record", () => {
   const timeline = {
     revision: 9,
@@ -900,7 +934,7 @@ test("public AI timeline falls back to the owning revision for an empty success 
   });
 
   assert.deepEqual(projected?.success, {
-    contractVersion: 1,
+    contractVersion: 2,
     revision: 9,
     verifiedAt: "2026-07-23T00:00:07.000Z",
   });

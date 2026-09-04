@@ -21,6 +21,13 @@ export type DeploymentResultResourceCardStatus =
   | "failed"
   | "unknown";
 
+export type DeploymentAccessEndpointProtocol = "http" | "https" | "ws" | "wss";
+
+export type DeploymentAccessEndpointObserver =
+  | { addressId: string; apName: string; kind: "ap-public-address" }
+  | { kind: "declared" }
+  | { kind: "ingress"; name: string };
+
 export type DeploymentTimelineEventSeverity =
   | "info"
   | "success"
@@ -36,7 +43,18 @@ export type DeploymentTimelineEventSource =
 export type DeploymentResultResourceRef =
   | { kind: "AP"; name: string; namespace: string }
   | { kind: "DB"; name: string; namespace: string }
+  | {
+      id: string;
+      kind: "AccessEndpoint";
+      label: string;
+      namespace: string;
+      observer: DeploymentAccessEndpointObserver;
+      protocol: DeploymentAccessEndpointProtocol;
+      url?: string;
+    }
+  /** Legacy v1 result reference. New writers use AccessEndpoint. */
   | { apName: string; id: string; kind: "PublicAccess"; namespace: string }
+  /** Legacy v1 result reference. New writers use AccessEndpoint. */
   | {
       kind: "TemplatePublicAccess";
       name: string;
@@ -101,7 +119,7 @@ export interface DeploymentTimelineStep {
  * and omits what is not; it never infers an instruction, an entry point or a
  * protocol from names, URLs or deployment status (issue #160).
  */
-export const DEPLOYMENT_TASK_SUCCESS_CONTRACT_VERSION = 1;
+export const DEPLOYMENT_TASK_SUCCESS_CONTRACT_VERSION = 2;
 
 /** A declared, probe-verified way to reach the deployed product. */
 export interface DeploymentTaskSuccessEntry {
@@ -109,7 +127,9 @@ export interface DeploymentTaskSuccessEntry {
    * contract declares an address without naming it; the UI then shows the
    * address alone rather than inventing a label. */
   label?: string;
-  /** Absolute http(s) URL exactly as declared — never derived by the UI. */
+  /** Explicit protocol for v2 records. Missing on historical v1 records. */
+  protocol?: DeploymentAccessEndpointProtocol;
+  /** Absolute access URL exactly as declared — never derived by the UI. */
   url: string;
 }
 
@@ -594,6 +614,8 @@ export function deploymentResultResourceCardId(
       return `${ref.kind}:${ref.namespace}:${ref.name}`;
     case "PublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.apName}:${ref.id}`;
+    case "AccessEndpoint":
+      return `${ref.kind}:${ref.namespace}:${ref.id}`;
     case "TemplatePublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.name}:${ref.url}`;
     case "TemplateWorkload":
@@ -635,12 +657,28 @@ function successUrl(value: unknown): string | undefined {
   return successText(value, MAX_SUCCESS_URL_LENGTH);
 }
 
-function isHttpUrl(value: string): boolean {
+function accessProtocol(
+  value: string
+): DeploymentAccessEndpointProtocol | undefined {
   try {
-    const protocol = new URL(value).protocol;
-    return protocol === "http:" || protocol === "https:";
+    const url = new URL(value);
+    if (url.username !== "" || url.password !== "" || url.hash !== "") {
+      return undefined;
+    }
+    switch (url.protocol) {
+      case "http:":
+        return "http";
+      case "https:":
+        return "https";
+      case "ws:":
+        return "ws";
+      case "wss:":
+        return "wss";
+      default:
+        return undefined;
+    }
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -653,7 +691,8 @@ function successCount(value: unknown, max: number): number | undefined {
 }
 
 function successEntries(
-  value: unknown
+  value: unknown,
+  contractVersion: number
 ): DeploymentTaskSuccessEntry[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
@@ -664,11 +703,23 @@ function successEntries(
     }
     const candidate = item as Record<string, unknown>;
     const url = successUrl(candidate.url);
-    if (url == null || !isHttpUrl(url)) {
+    const protocol = url == null ? undefined : accessProtocol(url);
+    if (
+      url == null ||
+      protocol == null ||
+      (contractVersion < 2 && protocol !== "http" && protocol !== "https") ||
+      (candidate.protocol != null && candidate.protocol !== protocol)
+    ) {
       return [];
     }
     const label = successText(candidate.label, MAX_SUCCESS_LABEL_LENGTH);
-    return [{ ...(label == null ? {} : { label }), url }];
+    return [
+      {
+        ...(label == null ? {} : { label }),
+        ...(contractVersion < 2 ? {} : { protocol }),
+        url,
+      },
+    ];
   });
   return entries.slice(0, MAX_SUCCESS_ENTRIES);
 }
@@ -721,7 +772,7 @@ function isoTimestamp(value: unknown): string | undefined {
 
 /**
  * Rebuilds a success record field by field from untrusted JSON. Anything that
- * is not a presentable string, a declared http(s) address or a sane count is
+ * is not a presentable string, a declared access address or a sane count is
  * dropped rather than rendered, so a stream payload can never put arbitrary
  * content into the Timeline (the AI projection gate reuses this on every read).
  */
@@ -733,6 +784,11 @@ export function sanitizeDeploymentTaskSuccess(
     return null;
   }
   const candidate = value as Record<string, unknown>;
+  const contractVersion =
+    Number.isSafeInteger(candidate.contractVersion) &&
+    (candidate.contractVersion as number) > 0
+      ? (candidate.contractVersion as number)
+      : DEPLOYMENT_TASK_SUCCESS_CONTRACT_VERSION;
   const headline = successText(candidate.headline, MAX_SUCCESS_HEADLINE_LENGTH);
   const openActionLabel = successText(
     candidate.openActionLabel,
@@ -743,15 +799,12 @@ export function sanitizeDeploymentTaskSuccess(
     candidate.productName,
     MAX_SUCCESS_LABEL_LENGTH
   );
-  const entries = successEntries(candidate.entries);
+  const entries = successEntries(candidate.entries, contractVersion);
   const guidance = successGuidance(candidate.guidance);
   const verification = successVerification(candidate.verification);
   const revision = successCount(candidate.revision, Number.MAX_SAFE_INTEGER);
   return {
-    ...(Number.isSafeInteger(candidate.contractVersion) &&
-    (candidate.contractVersion as number) > 0
-      ? { contractVersion: candidate.contractVersion as number }
-      : { contractVersion: DEPLOYMENT_TASK_SUCCESS_CONTRACT_VERSION }),
+    contractVersion,
     ...(entries == null || entries.length === 0 ? {} : { entries }),
     ...(headline == null ? {} : { headline }),
     ...(guidance == null || guidance.length === 0 ? {} : { guidance }),
@@ -838,15 +891,29 @@ export function deploymentTaskSuccessFromTimeline(
   const runningCards = timeline.steps
     .flatMap((step) => step.resultCards ?? [])
     .filter((card) => card.required && card.status === "running");
-  const publicDomainEntries = [
-    ...new Set(
-      runningCards.flatMap((card) =>
-        card.resultRef.kind === "TemplatePublicAccess"
-          ? [card.resultRef.url]
-          : []
-      )
-    ),
-  ].map((url) => ({ label: "Public domain", url }));
+  const endpointEntries = runningCards.flatMap((card) => {
+    switch (card.resultRef.kind) {
+      case "AccessEndpoint":
+        return card.resultRef.url == null
+          ? []
+          : [
+              {
+                label: card.resultRef.label,
+                protocol: card.resultRef.protocol,
+                url: card.resultRef.url,
+              },
+            ];
+      case "TemplatePublicAccess":
+        return [{ label: "Public domain", url: card.resultRef.url }];
+      default:
+        return [];
+    }
+  });
+  const uniqueEntries = endpointEntries.filter(
+    (entry, index) =>
+      endpointEntries.findIndex((candidate) => candidate.url === entry.url) ===
+      index
+  );
   const success = deploymentTaskSuccessFromResultReadiness({
     productName: input.productName,
     requiredRunningCards: runningCards.length,
@@ -855,9 +922,9 @@ export function deploymentTaskSuccessFromTimeline(
     ? null
     : {
         ...success,
-        ...(publicDomainEntries.length === 0
-          ? {}
-          : { entries: publicDomainEntries }),
+        ...(uniqueEntries.length === 0
+          ? { headline: "Deployment completed" }
+          : { entries: uniqueEntries }),
       };
 }
 

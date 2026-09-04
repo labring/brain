@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { createRequire } from "node:module";
 
 import type { DeploymentResultResourceCard } from "./timeline";
@@ -6,8 +6,18 @@ import type { DeploymentResultResourceCard } from "./timeline";
 const requireModule = createRequire(import.meta.url);
 
 mock.module("server-only", () => ({}));
-const probeManagedPublicUrl = mock(async () => undefined);
-mock.module("./managed-public-probe", () => ({ probeManagedPublicUrl }));
+const fetcher = mock(async () => ({}));
+mock.module("@workspace/api/fetch", () => ({ fetcher }));
+const originalFetch = globalThis.fetch;
+const probeFetch = mock(
+  async (_input: RequestInfo | URL, _init?: RequestInit) =>
+    new Response(null, { status: 200 })
+);
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  probeFetch.mockClear();
+});
 
 const {
   observeDeploymentResultCardReadiness,
@@ -89,7 +99,7 @@ describe("result observation error presentation", () => {
 });
 
 it("marks a template public domain running only after its HTTP probe passes", async () => {
-  probeManagedPublicUrl.mockClear();
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
   const publicDomainCard: DeploymentResultResourceCard = {
     events: [],
     id: "TemplatePublicAccess:ns-demo:affine:https://affine.example.sealos.run",
@@ -112,11 +122,70 @@ it("marks a template public domain running only after its HTTP probe passes", as
     kubeconfig: "unused",
   });
 
-  expect(probeManagedPublicUrl).toHaveBeenCalledWith({
-    allowedDomain: "example.sealos.run",
-    deadlineAtMs,
-    publicUrl: "https://affine.example.sealos.run",
-  });
+  expect(String(probeFetch.mock.calls[0]?.[0])).toBe(
+    "https://affine.example.sealos.run/"
+  );
   expect(observed.status).toBe("running");
   expect(observed.latestStatus).toBe("Public domain is reachable.");
+});
+
+it("resolves and verifies an AP-backed access endpoint before marking it running", async () => {
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+  fetcher.mockResolvedValueOnce({
+    status: {
+      network: {
+        publicAddresses: [
+          {
+            id: "pa_nginx",
+            status: "accessible",
+            url: "https://nginx.example.sealos.run",
+          },
+        ],
+      },
+    },
+  });
+  const deadlineAtMs = Date.now() + 10_000;
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    card: {
+      events: [],
+      id: "AccessEndpoint:ns-demo:public-address:pa_nginx",
+      required: true,
+      resultRef: {
+        id: "public-address:pa_nginx",
+        kind: "AccessEndpoint",
+        label: "Public address",
+        namespace: "ns-demo",
+        observer: {
+          addressId: "pa_nginx",
+          apName: "nginx",
+          kind: "ap-public-address",
+        },
+        protocol: "https",
+      },
+      status: "creating",
+      title: "Public address",
+    },
+    deadlineAtMs,
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.status).toBe("running");
+  expect(observed.card.resultRef).toEqual({
+    id: "public-address:pa_nginx",
+    kind: "AccessEndpoint",
+    label: "Public address",
+    namespace: "ns-demo",
+    observer: {
+      addressId: "pa_nginx",
+      apName: "nginx",
+      kind: "ap-public-address",
+    },
+    protocol: "https",
+    url: "https://nginx.example.sealos.run",
+  });
+  expect(String(probeFetch.mock.calls[0]?.[0])).toBe(
+    "https://nginx.example.sealos.run/"
+  );
 });

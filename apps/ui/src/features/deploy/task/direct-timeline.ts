@@ -46,6 +46,8 @@ function resultCard(
 
 function resultCardTitle(ref: DeploymentResultResourceRef): string {
   switch (ref.kind) {
+    case "AccessEndpoint":
+      return ref.label;
     case "PublicAccess":
       return "Public access";
     case "TemplatePublicAccess":
@@ -88,7 +90,8 @@ function ingressTlsHosts(spec: Record<string, unknown> | null): Set<string> {
 
 function templateIngressIdentity(
   summary: DeployTaskArtifactSummary,
-  doc: Record<string, unknown>
+  doc: Record<string, unknown>,
+  fallbackNamespace?: string
 ): { name: string; namespace: string } | null {
   const apiVersion = stringValue(doc.apiVersion);
   if (
@@ -102,6 +105,7 @@ function templateIngressIdentity(
   const name = stringValue(metadata?.name);
   const namespace =
     stringValue(metadata?.namespace) ??
+    stringValue(fallbackNamespace) ??
     summary.resources?.find(
       (resource) =>
         resource.apiVersion === apiVersion &&
@@ -114,9 +118,10 @@ function templateIngressIdentity(
 
 function templatePublicAccessCardsFromDoc(
   summary: DeployTaskArtifactSummary,
-  doc: Record<string, unknown>
+  doc: Record<string, unknown>,
+  fallbackNamespace?: string
 ): DeploymentResultResourceCard[] {
-  const identity = templateIngressIdentity(summary, doc);
+  const identity = templateIngressIdentity(summary, doc, fallbackNamespace);
   if (identity == null) {
     return [];
   }
@@ -127,33 +132,62 @@ function templatePublicAccessCardsFromDoc(
     if (host == null) {
       return [];
     }
-    const url = `${tlsHosts.has(host) ? "https" : "http"}://${host}`;
+    const protocol = tlsHosts.has(host) ? "https" : "http";
+    const url = `${protocol}://${host}`;
     return [
       resultCard({
-        kind: "TemplatePublicAccess",
-        name: identity.name,
+        id: `ingress:${identity.name}:${host}`,
+        kind: "AccessEndpoint",
+        label: "Public domain",
         namespace: identity.namespace,
+        observer: { kind: "ingress", name: identity.name },
+        protocol,
         url,
       }),
     ];
   });
 }
 
+function deduplicateTemplatePublicAccessCards(
+  cards: DeploymentResultResourceCard[]
+): DeploymentResultResourceCard[] {
+  const cardsByUrl = new Map<string, DeploymentResultResourceCard>();
+  for (const card of cards) {
+    if (
+      card.resultRef.kind === "AccessEndpoint" &&
+      card.resultRef.observer.kind === "ingress" &&
+      card.resultRef.url != null &&
+      !cardsByUrl.has(card.resultRef.url)
+    ) {
+      cardsByUrl.set(card.resultRef.url, card);
+    }
+  }
+  return [...cardsByUrl.values()];
+}
+
+export function templatePublicAccessCardsFromObservedIngresses(input: {
+  ingresses: unknown[];
+  namespace: string;
+}): DeploymentResultResourceCard[] {
+  return deduplicateTemplatePublicAccessCards(
+    input.ingresses.flatMap((ingress) => {
+      const doc = objectValue(ingress);
+      return doc == null
+        ? []
+        : templatePublicAccessCardsFromDoc({}, doc, input.namespace);
+    })
+  );
+}
+
 function templatePublicAccessCardsFromArtifactSummary(
   summary: DeployTaskArtifactSummary
 ): DeploymentResultResourceCard[] {
-  const cardsByUrl = new Map<string, DeploymentResultResourceCard>();
   const cards = (summary.resourceYamls ?? []).flatMap((raw) =>
     yamlResourceDocs(raw).flatMap((doc) =>
       templatePublicAccessCardsFromDoc(summary, doc)
     )
   );
-  for (const card of cards) {
-    if (card.resultRef.kind === "TemplatePublicAccess") {
-      cardsByUrl.set(card.resultRef.url, card);
-    }
-  }
-  return [...cardsByUrl.values()];
+  return deduplicateTemplatePublicAccessCards(cards);
 }
 
 function directApDocsFromResourceYamls(
@@ -222,19 +256,26 @@ function publicAccessCardsFromApDoc(
     if (address == null) {
       return [];
     }
+    const addressId = publicAddressId({
+      address,
+      index: entry.index,
+      kind: entry.kind,
+    });
     return [
       resultCard(
         {
-          apName,
-          id: publicAddressId({
-            address,
-            index: entry.index,
-            kind: entry.kind,
-          }),
-          kind: "PublicAccess",
+          id: `public-address:${addressId}`,
+          kind: "AccessEndpoint",
+          label: "Public address",
           namespace,
+          observer: {
+            apName,
+            addressId,
+            kind: "ap-public-address",
+          },
+          protocol: "https",
         },
-        { required: address.required === true }
+        { required: address.required !== false }
       ),
     ];
   });

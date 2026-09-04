@@ -415,6 +415,40 @@ export const Index: RegistryIndex = {
     load: () => import("@registry/linear/components/toaster/toaster-preview"),
   },
 
+  "linear/components/deployment-timeline-success": {
+    style: "linear",
+    group: "components",
+    name: "deployment-timeline-success",
+    title: "Deployment Timeline Success",
+    description:
+      "Verified deployment result inside the Timeline: scoped confetti, a usable-product conclusion, probe-backed Public Domain, and persistent process access.",
+    state: "reviewing",
+    type: "registry:preview",
+    registryDependencies: [
+      "preview",
+      "app-button",
+      "app-icon-button",
+      "collapsible",
+    ],
+    files: [
+      {
+        path: "registry/linear/components/deployment-timeline-success/deployment-timeline-success-preview.tsx",
+        type: "registry:preview",
+        target: "",
+      },
+      {
+        path: "apps/ui/src/features/deploy/deployment-task-success-confetti.tsx",
+        type: "registry:component",
+        target: "",
+      },
+      previewUiFile,
+    ],
+    load: () =>
+      import(
+        "@registry/linear/components/deployment-timeline-success/deployment-timeline-success-preview"
+      ),
+  },
+
   "linear/components/log-viewer": {
     style: "linear",
     group: "components",

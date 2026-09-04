@@ -765,6 +765,7 @@ test("the claim published with the probe covers exactly what is on screen", () =
     productName: "EaglerCraft Server",
   });
   assert.deepEqual(success, {
+    headline: "Deployment completed",
     productName: "EaglerCraft Server",
     verification: { passed: visibleRequiredCards, total: visibleRequiredCards },
   });
@@ -821,6 +822,82 @@ test("a verified template Ingress becomes the Public domain success entry", () =
   );
 });
 
+test("a verified generic access endpoint becomes a v2 success entry", () => {
+  const endpointCard: DeploymentResultResourceCard = {
+    events: [],
+    id: "AccessEndpoint:default:public-address:pa_nginx",
+    required: true,
+    resultRef: {
+      id: "public-address:pa_nginx",
+      kind: "AccessEndpoint",
+      label: "Public address",
+      namespace: "default",
+      observer: {
+        addressId: "pa_nginx",
+        apName: "nginx",
+        kind: "ap-public-address",
+      },
+      protocol: "https",
+      url: "https://nginx.example.sealos.run",
+    },
+    status: "running",
+    title: "Public address",
+  };
+  const timeline = upsertResultResourceCard(
+    timelineFrame({
+      "AP:default:eaglercraft": "running",
+      "PublicAccess:default:eaglercraft:lobby": "running",
+    }),
+    {
+      card: endpointCard,
+      stepId: "create-resources",
+      updatedAt: NOW,
+    }
+  );
+
+  assert.deepEqual(
+    deploymentTaskSuccessFromTimeline(timeline, { productName: "nginx" }),
+    {
+      entries: [
+        {
+          label: "Public address",
+          protocol: "https",
+          url: "https://nginx.example.sealos.run",
+        },
+      ],
+      productName: "nginx",
+      verification: { passed: 3, total: 3 },
+    }
+  );
+});
+
+test("a workload-only success uses a neutral headline", () => {
+  const timeline = timelineFrame({
+    "AP:default:eaglercraft": "running",
+    "PublicAccess:default:eaglercraft:lobby": "running",
+  });
+  const withoutEndpoint = {
+    ...timeline,
+    steps: timeline.steps.map((step) => ({
+      ...step,
+      resultCards: step.resultCards?.filter(
+        (card) => card.resultRef.kind === "AP"
+      ),
+    })),
+  };
+
+  assert.deepEqual(
+    deploymentTaskSuccessFromTimeline(withoutEndpoint, {
+      productName: "background worker",
+    }),
+    {
+      headline: "Deployment completed",
+      productName: "background worker",
+      verification: { passed: 1, total: 1 },
+    }
+  );
+});
+
 test("a timeline with no required result resource publishes no claim", () => {
   const optional = upsertResultResourceCard(
     declareTimelineSteps(
@@ -863,11 +940,15 @@ test("attaching success stamps the timeline revision it was recorded at", () => 
 
   assert.equal(next.revision, 2);
   assert.equal(next.success?.revision, 2);
-  assert.equal(next.success?.contractVersion, 1);
+  assert.equal(next.success?.contractVersion, 2);
   assert.equal(next.success?.productName, "EaglerCraft Server");
   assert.deepEqual(next.success?.entries, [
-    { label: "Server address", url: "https://mc.mock.sealos.run" },
-    { url: "https://console.mock.sealos.run" },
+    {
+      label: "Server address",
+      protocol: "https",
+      url: "https://mc.mock.sealos.run",
+    },
+    { protocol: "https", url: "https://console.mock.sealos.run" },
   ]);
   assert.equal(next.success?.verifiedAt, "2026-06-17T10:00:05.000Z");
   // The internal evidence is untouched: success is appended, not substituted.
@@ -934,7 +1015,7 @@ test("success sanitisation drops undisplayable content instead of rendering it",
   });
 
   assert.deepEqual(next.success?.entries, [
-    { url: "https://mc.mock.sealos.run" },
+    { protocol: "https", url: "https://mc.mock.sealos.run" },
   ]);
   assert.deepEqual(next.success?.guidance, [
     { label: "Open the client" },

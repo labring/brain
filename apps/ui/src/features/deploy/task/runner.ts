@@ -116,6 +116,7 @@ import {
   MANAGED_INPUT_CLEANUP_COMPLETE_RUNTIME_STATE,
   MANAGED_INPUT_CLEANUP_PENDING_RUNTIME_STATE,
   MANAGED_INPUT_VALUES_MAX_BYTES,
+  type ManagedAccessEndpoint,
   type ManagedResourceRef,
   managedDeploymentCompletedInputSchema,
 } from "./managed-deployment-contract";
@@ -175,6 +176,7 @@ import {
   withoutSensitiveArgs,
 } from "./sensitive-inputs";
 import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
+import { templateProviderPublicAccessCards } from "./template-provider-public-access";
 import {
   appendCardEvent,
   appendStepEvent,
@@ -605,6 +607,7 @@ async function applyDeploymentArtifact(input: {
 }): Promise<{
   artifactSummary: DeployTaskArtifactSummary;
   notes: string;
+  templateProviderResources?: DeploymentTemplateInstanceArtifact["resources"];
 }> {
   if (input.artifact.kind === "template-instance-pending") {
     // The instance is created HERE, inside create-resources — not during
@@ -654,6 +657,7 @@ async function applyDeploymentArtifact(input: {
         })),
       },
       notes: `Deployed template instance ${created.instanceName}.`,
+      templateProviderResources: created.resources,
     };
   }
 
@@ -669,6 +673,7 @@ async function applyDeploymentArtifact(input: {
         })),
       },
       notes: `Deployed template instance ${input.artifact.instanceName}.`,
+      templateProviderResources: input.artifact.resources,
     };
   }
 
@@ -2622,7 +2627,42 @@ async function completeTaskWithArtifact(input: {
   });
   throwIfDeploymentDeadlineElapsed(applyDeadlineAtMs);
 
-  const resultCards = resultResourceCardsFromArtifactSummary(persistedSummary);
+  const readinessDeadlineAtMs = deploymentPhaseDeadlineAt({
+    budgetMs: DEPLOY_TIMEOUT_POLICY.readinessMs,
+    reserveMs: DEPLOY_TIMEOUT_POLICY.finalizeMs,
+    taskDeadlineAtMs,
+  });
+  let templatePublicAccessCards: DeploymentResultResourceCard[] = [];
+  if (applied.templateProviderResources !== undefined) {
+    const discoverySignal = deploymentOperationSignal({
+      deadlineAtMs: readinessDeadlineAtMs,
+      reason: "readiness-timeout",
+      stage: "readiness",
+      taskId: input.task.id,
+    });
+    try {
+      templatePublicAccessCards = await templateProviderPublicAccessCards({
+        kubeconfig: input.kubeconfig,
+        namespace: input.task.namespace,
+        resources: applied.templateProviderResources,
+        signal: discoverySignal,
+      });
+    } catch (error) {
+      throwIfDeploymentOperationAborted({
+        deadlineAtMs: readinessDeadlineAtMs,
+        reason: "readiness-timeout",
+        signal: discoverySignal,
+        stage: "readiness",
+        taskId: input.task.id,
+      });
+      throw withDeployFailureDetails(error, { stage: "readiness" });
+    }
+  }
+
+  const resultCards = [
+    ...resultResourceCardsFromArtifactSummary(persistedSummary),
+    ...templatePublicAccessCards,
+  ];
   for (const card of resultCards) {
     await upsertResultTimelineCard({
       card,
@@ -2630,18 +2670,13 @@ async function completeTaskWithArtifact(input: {
       eventReason: "ResultResourceKnown",
       taskId: input.task.id,
     });
-    throwIfDeploymentDeadlineElapsed(applyDeadlineAtMs);
+    throwIfDeploymentDeadlineElapsed(readinessDeadlineAtMs);
   }
 
   // Reaching completed requires Deployment Result Readiness (ADR 0028): a
   // readiness timeout throws and resolves to failed with the resources
   // preserved — never a completed-on-timeout.
   if (resultCards.some((card) => card.required)) {
-    const readinessDeadlineAtMs = deploymentPhaseDeadlineAt({
-      budgetMs: DEPLOY_TIMEOUT_POLICY.readinessMs,
-      reserveMs: DEPLOY_TIMEOUT_POLICY.finalizeMs,
-      taskDeadlineAtMs,
-    });
     await waitForRequiredResultCards({
       allowedDomain: apUserDomain(input.kubeconfig),
       cards: resultCards,
@@ -3279,9 +3314,9 @@ const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
 interface ManagedMcpTurnSignals {
   applyingStarted?: boolean;
   deploymentCompleted?: {
+    /** User-facing endpoints declared by the Agent and verified by Brain. */
+    accessEndpoints: ManagedAccessEndpoint[];
     ok: boolean;
-    /** Public address the Agent declared and Brain's probe accepted. */
-    publicUrl?: string;
     resources: ManagedResourceRef[];
     violations: string[];
   };
@@ -3304,18 +3339,17 @@ interface ManagedAgentToolContext {
 }
 
 interface ManagedIdentityGateResult {
+  accessEndpoints: ManagedAccessEndpoint[];
   ok: boolean;
-  /** Set only when an address was declared and the probe passed for it. */
-  publicUrl?: string;
   resources: ManagedResourceRef[];
   violations: string[];
 }
 
 async function observeManagedWorkloadReadiness(input: {
+  accessEndpoints: readonly ManagedAccessEndpoint[];
   allowedDomain: string;
   deadlineAtMs: number;
   namespace: string;
-  publicUrl?: string;
   resources: readonly ManagedResourceRef[];
   runtimeName: string;
   taskId: string;
@@ -3336,30 +3370,33 @@ async function observeManagedWorkloadReadiness(input: {
     }),
   });
   const observations = parseManagedResourceObservations(observationsText);
-  const readiness = verifyManagedWorkloadReadiness({
-    workloads: scopedResources,
-    observations,
-  });
-  const violations = [...readiness.violations];
-  const declaredPublicUrl = input.publicUrl?.trim() ?? "";
-  let probedPublicUrl: string | undefined;
-  if (input.publicUrl != null && input.publicUrl.trim() !== "") {
+  const violations: string[] = [];
+  const probedAccessEndpoints: ManagedAccessEndpoint[] = [];
+  for (const endpoint of input.accessEndpoints) {
     try {
       await probeManagedPublicUrl({
         allowedDomain: input.allowedDomain,
         deadlineAtMs: input.deadlineAtMs,
-        publicUrl: input.publicUrl,
+        publicUrl: endpoint.url,
       });
-      probedPublicUrl = declaredPublicUrl;
+      probedAccessEndpoints.push(endpoint);
     } catch (error) {
       violations.push(
-        error instanceof Error ? error.message : "Public URL probe failed."
+        error instanceof Error
+          ? `${endpoint.label}: ${error.message}`
+          : `${endpoint.label}: endpoint probe failed.`
       );
     }
   }
+  const readiness = verifyManagedWorkloadReadiness({
+    workloads: scopedResources,
+    observations,
+    publicEntryReady: probedAccessEndpoints.length > 0,
+  });
+  violations.push(...readiness.violations);
   return {
+    accessEndpoints: probedAccessEndpoints,
     ok: violations.length === 0,
-    ...(probedPublicUrl == null ? {} : { publicUrl: probedPublicUrl }),
     resources: managedObservedResourceRefs(observations),
     violations,
   };
@@ -3452,6 +3489,16 @@ async function handleManagedDeploymentCompletedCall(
   const completionRequest = managedDeploymentCompletedInputSchema.parse(
     call.request
   );
+  let accessEndpoints = completionRequest.accessEndpoints ?? [];
+  if (accessEndpoints.length === 0 && completionRequest.publicUrl != null) {
+    accessEndpoints = [
+      {
+        id: "public-url",
+        label: "Public address",
+        url: completionRequest.publicUrl,
+      },
+    ];
+  }
   const previousCallAt = await lastAgentToolCallAt({
     taskId: call.taskId,
     toolName: "deployment_completed",
@@ -3471,13 +3518,13 @@ async function handleManagedDeploymentCompletedCall(
   let readiness: ManagedIdentityGateResult;
   try {
     readiness = await observeManagedWorkloadReadiness({
+      accessEndpoints,
       allowedDomain: input.allowedDomain,
       deadlineAtMs: Math.min(
         input.deadlineAtMs,
         Date.now() + MCP_AGENT_CONTROL_GATE_MS
       ),
       namespace: input.namespace,
-      publicUrl: completionRequest.publicUrl,
       resources: completionRequest.workloads,
       runtimeName: input.runtimeName,
       taskId: input.task.id,
@@ -3487,6 +3534,7 @@ async function handleManagedDeploymentCompletedCall(
       throw error;
     }
     readiness = {
+      accessEndpoints: [],
       ok: false,
       resources: [],
       violations: [
@@ -3611,6 +3659,20 @@ export function enterManagedDeploymentCompletionRequired(
   return { ...state, resumeMode: "completion-required" };
 }
 
+export function managedVerificationDeadlineAt(input: {
+  nowMs?: number;
+  taskDeadlineAtMs: number;
+}): number {
+  return deploymentPhaseDeadlineAt({
+    budgetMs: AGENT_DEPLOY_TIMEOUT_POLICY.verifyMs,
+    nowMs: input.nowMs,
+    reserveMs:
+      AGENT_DEPLOY_TIMEOUT_POLICY.finalizeMs +
+      AGENT_DEPLOY_TIMEOUT_POLICY.operationalSlackMs,
+    taskDeadlineAtMs: input.taskDeadlineAtMs,
+  });
+}
+
 async function continueManagedDeploymentAfterMissingControlNotification(input: {
   attempt: number;
   applying: boolean;
@@ -3689,12 +3751,15 @@ async function runManagedDeploymentLifecycleCore(input: {
   let applying = input.task.status === "applying";
   let repairFindings: string[] | undefined;
   let completionRequiredTurns = 0;
+  let verificationDeadlineAtMs: number | null = null;
 
   while (true) {
-    throwIfDeploymentDeadlineElapsed(input.executionDeadlineAtMs);
-    // No per-turn limit: every turn shares the same Agent execution window,
-    // which is itself clamped to the 70-minute task deadline.
-    const deadlineAtMs = input.executionDeadlineAtMs;
+    // The initial work stays inside the Agent execution budget. Once Brain has
+    // requested a repair, short verification calls and repair turns share one
+    // 30-minute aggregate window without holding a single MCP request open.
+    const deadlineAtMs =
+      verificationDeadlineAtMs ?? input.executionDeadlineAtMs;
+    throwIfDeploymentDeadlineElapsed(deadlineAtMs);
     const result = await runManagedDeploymentTurn({
       allowedDomain,
       context: input.context,
@@ -3763,29 +3828,37 @@ async function runManagedDeploymentLifecycleCore(input: {
         },
         phase: "verify",
       });
-      // The managed gate already probed this address over HTTP before
-      // accepting completion, so it is the one entry point Brain can name.
-      // The reported workload set is what the readiness count covers; no
-      // guidance and no second address are declared by this contract.
+      // The managed gate has validated and probed every declared endpoint.
+      // Brain renders those facts verbatim and never invents a protocol/path.
       await updateDeployTaskTimeline(input.task.id, {
         update: (timeline) =>
           attachDeploymentTaskSuccess(timeline, {
             success: {
-              ...(completion.publicUrl == null
+              ...(completion.accessEndpoints.length === 0
                 ? {}
                 : {
-                    entries: [
-                      {
-                        label: "Public address",
-                        url: completion.publicUrl,
-                      },
-                    ],
-                    verification: {
-                      passed: completion.resources.length + 1,
-                      total: completion.resources.length + 1,
-                    },
+                    entries: completion.accessEndpoints.map((endpoint) => ({
+                      label: endpoint.label,
+                      protocol: new URL(endpoint.url).protocol.slice(0, -1) as
+                        | "http"
+                        | "https"
+                        | "ws"
+                        | "wss",
+                      url: endpoint.url,
+                    })),
                   }),
+              ...(completion.accessEndpoints.length === 0
+                ? { headline: "Deployment completed" }
+                : {}),
               productName: deploymentTaskSourceSummary(input.task.source),
+              verification: {
+                passed:
+                  completion.resources.length +
+                  completion.accessEndpoints.length,
+                total:
+                  completion.resources.length +
+                  completion.accessEndpoints.length,
+              },
             },
             updatedAt: new Date().toISOString(),
           }),
@@ -3798,6 +3871,9 @@ async function runManagedDeploymentLifecycleCore(input: {
       return;
     }
     if (completion != null) {
+      verificationDeadlineAtMs ??= managedVerificationDeadlineAt({
+        taskDeadlineAtMs: input.taskDeadlineAtMs,
+      });
       repairFindings = completion.violations.slice(0, 64);
       await recordDeployTaskEvent(input.task.id, {
         kind: "deployment_task.brain_verification_rejected",
