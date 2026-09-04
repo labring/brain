@@ -37,9 +37,9 @@ evidence rather than by status:
 - A Deployment Celebration owns the one-shot announcement, claimed by
   task-plus-revision and held in a store outside React; it requires a
   transition observed while mounted, so entering an already-successful task
-  shows the record without a party. The celebration window is also the
-  auto-close window: show, celebrate, close, with the record still readable
-  from that task's Timeline afterwards.
+  shows the record without a party. The celebration window ends only the
+  confetti; the Timeline stays open with the result visible until the user
+  closes it.
 
 ## Considered Options
 
@@ -63,4 +63,3 @@ evidence rather than by status:
   it can prove — the verified resources and any declared address.
 - Any surface that renders a Timeline renders its conclusion; there is no
   second success channel to keep in sync.
-

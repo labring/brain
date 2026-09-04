@@ -87,24 +87,16 @@ function subscribeToCelebrationWindows(listener: () => void): () => void {
 
 /**
  * Drives one celebration: true from the moment a live transition to verified
- * success is observed until the celebration window closes, when `onCelebrated`
- * fires — the Timeline's auto-close hook (show the result, celebrate, then
- * close).
+ * success is observed until the celebration window closes. The window only
+ * owns the confetti; the Timeline remains open until the user closes it.
  */
 export function useDeploymentTaskSuccessCelebration(input: {
   celebrationMs?: number;
-  onCelebrated?: () => void;
   successRevision: number | null;
   taskId: string;
 }): boolean {
   const celebrationMs =
     input.celebrationMs ?? DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS;
-  // Latest-callback ref: a celebration timer must never be re-armed merely
-  // because the host re-created its inline onClose closure on a stream tick.
-  const onCelebratedRef = useRef(input.onCelebrated);
-  useEffect(() => {
-    onCelebratedRef.current = input.onCelebrated;
-  });
 
   // Identifies this mount: a celebration belongs to the mount that observed
   // the transition, not to every viewer of the same success. useState keeps
@@ -148,7 +140,6 @@ export function useDeploymentTaskSuccessCelebration(input: {
     };
     const timer = setTimeout(() => {
       close();
-      onCelebratedRef.current?.();
     }, celebrationMs);
     return () => {
       clearTimeout(timer);

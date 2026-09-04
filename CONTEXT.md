@@ -362,7 +362,7 @@ _Avoid_: success toast, deploy done banner, completion notification.
 
 ### Deployment Celebration
 
-The one-shot confetti that marks a Deployment Task Success Record arriving while the user is watching. It belongs to the mount that observed the transition and is claimed once per task plus record revision, so reconnects, duplicate snapshots, refreshes onto a finished task, and a second pane for the same success never replay it. Its lifetime is also the Timeline's auto-close window: the record is shown, celebrated, and then the pane closes.
+The one-shot confetti that marks a Deployment Task Success Record arriving while the user is watching. It belongs to the mount that observed the transition and is claimed once per task plus record revision, so reconnects, duplicate snapshots, refreshes onto a finished task, and a second pane for the same success never replay it. Its lifetime controls only the confetti; the Timeline stays open with the record visible until the user closes it.
 
 _Avoid_: success animation state, confetti on completed.
 

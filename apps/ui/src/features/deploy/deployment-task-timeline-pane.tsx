@@ -1186,25 +1186,14 @@ const TimelineSteps = memo(function TimelineSteps({
 /**
  * The Timeline surface: declared steps, then — once the runner has verified
  * the product is usable — the success conclusion.
- *
- * The celebration and the auto-close live here because this is the component
- * that actually sees each stream snapshot; the host only says what to do when
- * the party is over via `onSuccessCelebrated`.
  */
 export function DeploymentTaskTimelinePaneContent({
   kubeconfig,
   namespace,
-  onSuccessCelebrated,
   snapshot,
 }: {
   kubeconfig: string;
   namespace: string;
-  /**
-   * Fired once per success, after the celebration window closes. The Side Pane
-   * host passes its close handler so the Timeline gets out of the way after it
-   * has delivered the result (issue #160).
-   */
-  onSuccessCelebrated?: () => void;
   snapshot: DeploymentTaskTimelineSnapshotDTO;
 }) {
   // Only the runner may claim success (Result Readiness + every required entry
@@ -1216,7 +1205,6 @@ export function DeploymentTaskTimelinePaneContent({
       : null;
   const [detailsOpen, setDetailsOpen] = useState(false);
   const celebrating = useDeploymentTaskSuccessCelebration({
-    onCelebrated: onSuccessCelebrated,
     successRevision: success?.revision ?? null,
     taskId: snapshot.task.id,
   });
@@ -1451,15 +1439,12 @@ function DeploymentTaskTimelineBody({
   namespace,
   onEditRedeploy,
   onIdentity,
-  onSuccessCelebrated,
   taskId,
 }: {
   kubeconfig: string;
   namespace: string;
   onEditRedeploy?: (task: DeployTaskDTO) => void;
   onIdentity: (identity: DeploymentTaskPaneIdentity) => void;
-  /** Fired when the celebration window for a live success has closed. */
-  onSuccessCelebrated?: () => void;
   taskId: string;
 }) {
   const timeline = useDeploymentTaskTimeline({ kubeconfig, namespace, taskId });
@@ -1501,7 +1486,6 @@ function DeploymentTaskTimelineBody({
         <DeploymentTaskTimelinePaneContent
           kubeconfig={kubeconfig}
           namespace={namespace}
-          onSuccessCelebrated={onSuccessCelebrated}
           snapshot={timeline.data}
         />
       )}
@@ -1552,9 +1536,6 @@ export function DeploymentTaskTimelinePane({
         namespace={namespace}
         onEditRedeploy={onEditRedeploy}
         onIdentity={handleIdentity}
-        // The celebration ends by handing the panel back: the result has been
-        // delivered, and the Timeline should not keep covering the canvas (issue #160).
-        onSuccessCelebrated={onClose}
         taskId={taskId}
       />
     </SidePane>

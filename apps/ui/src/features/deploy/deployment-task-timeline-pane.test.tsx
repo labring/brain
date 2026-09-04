@@ -27,6 +27,7 @@ import {
 } from "@/features/project-canvas/react-test-harness";
 import {
   DeploymentTaskTimelineActions,
+  DeploymentTaskTimelinePane,
   DeploymentTaskTimelinePaneContent,
 } from "./deployment-task-timeline-pane";
 
@@ -1060,12 +1061,11 @@ test("the EaglerCraft fixture teaches a player how to join the server", () => {
   assert.doesNotMatch(html, DECLARED_ADDRESS_RE);
 });
 
-test("a success that arrives live celebrates once and closes the panel", async () => {
+test("a success that arrives live celebrates once and stays readable", async () => {
   resetDeploymentTaskSuccessCelebrationClaims();
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
   const stopPainting = skipCelebrationPainting();
-  let celebrated = 0;
   let rendered: ReturnType<typeof render> | undefined;
   try {
     const show = async (snapshot: DeploymentTaskTimelineSnapshotDTO) => {
@@ -1074,9 +1074,6 @@ test("a success that arrives live celebrates once and closes the panel", async (
           <DeploymentTaskTimelinePaneContent
             kubeconfig="kubeconfig"
             namespace="default"
-            onSuccessCelebrated={() => {
-              celebrated += 1;
-            }}
             snapshot={snapshot}
           />
         );
@@ -1094,7 +1091,6 @@ test("a success that arrives live celebrates once and closes the panel", async (
 
     // The user is watching the last step finish, then the probes pass.
     await show(successSnapshot({ status: "applying", success: null }));
-    assert.equal(celebrated, 0);
     await show(successSnapshot({}));
     assert.equal(hasDeploymentTaskSuccessCelebrationClaim(claim), true);
     assert.equal(
@@ -1110,23 +1106,28 @@ test("a success that arrives live celebrates once and closes the panel", async (
     );
     // A duplicate frame of the same conclusion must not extend the window.
     await show(successSnapshot({}));
-    assert.equal(celebrated, 0);
 
     await actAndDrain(async () => {
       await new Promise((resolve) => {
         setTimeout(resolve, DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS + 150);
       });
     });
-    assert.equal(celebrated, 1);
+    assert.equal(celebratingSurfaces(rendered?.container).length, 0);
+    assert.ok(
+      rendered?.container.querySelector(
+        '[data-slot="deployment-task-success"]'
+      ),
+      "the result stays readable after the celebration ends"
+    );
 
-    // Later stream ticks replaying the same success never reopen the panel.
+    // Later stream ticks replaying the same success never restart the party.
     await show(successSnapshot({}));
     await actAndDrain(async () => {
       await new Promise((resolve) => {
         setTimeout(resolve, 120);
       });
     });
-    assert.equal(celebrated, 1);
+    assert.equal(celebratingSurfaces(rendered?.container).length, 0);
   } finally {
     if (rendered) {
       await actAndDrain(() => {
@@ -1140,12 +1141,103 @@ test("a success that arrives live celebrates once and closes the panel", async (
   }
 });
 
-test("a pane opened on a finished task does not celebrate or close itself", async () => {
+test("a live success stops celebrating without closing the Timeline pane", async () => {
   resetDeploymentTaskSuccessCelebrationClaims();
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
   const stopPainting = skipCelebrationPainting();
-  let celebrated = 0;
+  const initial = successSnapshot({ status: "applying", success: null });
+  const succeeded = successSnapshot({});
+  const encoder = new TextEncoder();
+  let closeRequests = 0;
+  let publishSuccess: (() => void) | undefined;
+  let rendered: ReturnType<typeof render> | undefined;
+  const fetchOverride = defineGlobal(
+    "fetch",
+    (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).includes("/stream")) {
+        return Promise.resolve(Response.json(initial));
+      }
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              publishSuccess = () => {
+                controller.enqueue(
+                  encoder.encode(
+                    `event: update\ndata: ${JSON.stringify({ snapshot: succeeded, type: "update" })}\n\n`
+                  )
+                );
+              };
+              init?.signal?.addEventListener(
+                "abort",
+                () => controller.close(),
+                {
+                  once: true,
+                }
+              );
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } }
+        )
+      );
+    }
+  );
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <DeploymentTaskTimelinePane
+          kubeconfig="kubeconfig"
+          namespace="default"
+          onClose={() => {
+            closeRequests += 1;
+          }}
+          taskId="task-success"
+        />
+      );
+    });
+    assert.equal(
+      rendered?.container.querySelector(
+        '[data-slot="deployment-task-success"]'
+      ),
+      null
+    );
+    assert.ok(publishSuccess, "the Timeline stream is connected");
+    await actAndDrain(() => {
+      publishSuccess?.();
+    }, 250);
+    await actAndDrain(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS + 500);
+      });
+    });
+
+    assert.equal(closeRequests, 0);
+    assert.ok(
+      rendered?.container.querySelector(
+        '[data-slot="deployment-task-success"]'
+      ),
+      "the verified result stays readable until the user closes the pane"
+    );
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreGlobal(fetchOverride);
+    restoreActEnvironment(previousActEnvironment);
+    stopPainting();
+    await dom.restore();
+    resetDeploymentTaskSuccessCelebrationClaims();
+  }
+});
+
+test("a pane opened on a finished task does not celebrate", async () => {
+  resetDeploymentTaskSuccessCelebrationClaims();
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const stopPainting = skipCelebrationPainting();
   let rendered: ReturnType<typeof render> | undefined;
   try {
     await actAndDrain(() => {
@@ -1153,9 +1245,6 @@ test("a pane opened on a finished task does not celebrate or close itself", asyn
         <DeploymentTaskTimelinePaneContent
           kubeconfig="kubeconfig"
           namespace="default"
-          onSuccessCelebrated={() => {
-            celebrated += 1;
-          }}
           snapshot={successSnapshot({})}
         />
       );
@@ -1171,7 +1260,7 @@ test("a pane opened on a finished task does not celebrate or close itself", asyn
         setTimeout(resolve, DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS + 150);
       });
     });
-    assert.equal(celebrated, 0);
+    assert.equal(celebratingSurfaces(rendered?.container).length, 0);
     assert.equal(
       hasDeploymentTaskSuccessCelebrationClaim(
         deploymentTaskSuccessCelebrationKey(
@@ -1258,15 +1347,11 @@ test("only the pane that watched the success land celebrates it", async () => {
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
   const stopPainting = skipCelebrationPainting();
-  let celebrated = 0;
   const panes: ReturnType<typeof render>[] = [];
   const paneFor = (snapshot: DeploymentTaskTimelineSnapshotDTO) => (
     <DeploymentTaskTimelinePaneContent
       kubeconfig="kubeconfig"
       namespace="default"
-      onSuccessCelebrated={() => {
-        celebrated += 1;
-      }}
       snapshot={snapshot}
     />
   );
@@ -1299,7 +1384,7 @@ test("only the pane that watched the success land celebrates it", async () => {
         setTimeout(resolve, DEPLOYMENT_TASK_SUCCESS_CELEBRATION_MS + 150);
       });
     });
-    assert.equal(celebrated, 1);
+    assert.equal(celebratingSurfaces(document).length, 0);
   } finally {
     await actAndDrain(() => {
       for (const pane of panes) {

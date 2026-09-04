@@ -21,17 +21,14 @@ const TEST_CELEBRATION_MS = 25;
 const SETTLE_MS = 120;
 
 function CelebrationProbe({
-  onCelebrated,
   revision,
   taskId,
 }: {
-  onCelebrated: () => void;
   revision: number | null;
   taskId: string;
 }) {
   const celebrating = useDeploymentTaskSuccessCelebration({
     celebrationMs: TEST_CELEBRATION_MS,
-    onCelebrated,
     successRevision: revision,
     taskId,
   });
@@ -39,7 +36,6 @@ function CelebrationProbe({
 }
 
 interface Harness {
-  celebrate: () => number;
   claimFor: (revision: number, taskId?: string) => boolean;
   container: HTMLElement;
   rerender: (revision: number | null) => Promise<void>;
@@ -59,19 +55,12 @@ async function withCelebrationHarness(
   resetDeploymentTaskSuccessCelebrationClaims();
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
-  let celebrated = 0;
   let rendered: ReturnType<typeof render> | undefined;
   try {
     const show = async (revision: number | null) => {
       await actAndDrain(() => {
         const element = (
-          <CelebrationProbe
-            onCelebrated={() => {
-              celebrated += 1;
-            }}
-            revision={revision}
-            taskId="task-1"
-          />
+          <CelebrationProbe revision={revision} taskId="task-1" />
         );
         if (rendered == null) {
           rendered = render(element);
@@ -86,7 +75,6 @@ async function withCelebrationHarness(
     const container = rendered?.container;
     assert.ok(container);
     await run({
-      celebrate: () => celebrated,
       container,
       claimFor: (revision, taskId = "task-1") =>
         hasDeploymentTaskSuccessCelebrationClaim(
@@ -126,29 +114,24 @@ test("a success revision is claimed exactly once per page session", () => {
 });
 
 test("opening a task that already succeeded does not celebrate", async () => {
-  await withCelebrationHarness(
-    7,
-    async ({ celebrate, claimFor, container }) => {
-      // A refresh lands straight on the finished snapshot: the user did not
-      // watch anything change, so the party is skipped and the panel stays put.
-      assert.equal(isCelebrating(container), false);
-      await new Promise((resolve) => {
-        setTimeout(resolve, SETTLE_MS);
-      });
-      assert.equal(celebrate(), 0);
-      assert.equal(claimFor(7), false);
-    }
-  );
+  await withCelebrationHarness(7, async ({ claimFor, container }) => {
+    // A refresh lands straight on the finished snapshot: the user did not
+    // watch anything change, so the party is skipped.
+    assert.equal(isCelebrating(container), false);
+    await new Promise((resolve) => {
+      setTimeout(resolve, SETTLE_MS);
+    });
+    assert.equal(claimFor(7), false);
+  });
 });
 
-test("a live success celebrates once and then hands the panel back", async () => {
+test("a live success celebrates once and then closes its confetti window", async () => {
   await withCelebrationHarness(
     null,
-    async ({ celebrate, claimFor, container, rerender, settle }) => {
+    async ({ claimFor, container, rerender, settle }) => {
       await rerender(5);
       assert.equal(isCelebrating(container), true);
       assert.equal(claimFor(5), true);
-      assert.equal(celebrate(), 0);
 
       // Stream ticks keep arriving after the transition, including a frame that
       // is no different from the last; none of them may reopen the window.
@@ -156,7 +139,6 @@ test("a live success celebrates once and then hands the panel back", async () =>
       await rerender(5);
       await settle();
       assert.equal(isCelebrating(container), false);
-      assert.equal(celebrate(), 1);
 
       // Reconnecting through a running frame and back to the same conclusion is
       // still the same conclusion, so it stays silent.
@@ -164,7 +146,6 @@ test("a live success celebrates once and then hands the panel back", async () =>
       await rerender(5);
       await settle();
       assert.equal(isCelebrating(container), false);
-      assert.equal(celebrate(), 1);
     }
   );
 });
@@ -172,15 +153,15 @@ test("a live success celebrates once and then hands the panel back", async () =>
 test("a new conclusion on the same task celebrates again", async () => {
   await withCelebrationHarness(
     null,
-    async ({ celebrate, claimFor, container, rerender, settle }) => {
+    async ({ claimFor, container, rerender, settle }) => {
       await rerender(5);
       await settle();
-      assert.equal(celebrate(), 1);
+      assert.equal(isCelebrating(container), false);
 
       await rerender(6);
       assert.equal(isCelebrating(container), true);
       await settle();
-      assert.equal(celebrate(), 2);
+      assert.equal(isCelebrating(container), false);
       assert.equal(claimFor(5), true);
       assert.equal(claimFor(6), true);
     }
@@ -188,32 +169,21 @@ test("a new conclusion on the same task celebrates again", async () => {
 });
 
 test("claims are scoped to one task, not to every Timeline", async () => {
-  await withCelebrationHarness(
-    null,
-    async ({ celebrate, claimFor, rerender, settle }) => {
-      await rerender(5);
-      await settle();
-      assert.equal(celebrate(), 1);
-      assert.equal(claimFor(5), true);
-      assert.equal(claimFor(5, "task-2"), false);
-      assert.equal(claimFor(5, "task-1"), true);
-    }
-  );
+  await withCelebrationHarness(null, async ({ claimFor, rerender, settle }) => {
+    await rerender(5);
+    await settle();
+    assert.equal(claimFor(5), true);
+    assert.equal(claimFor(5, "task-2"), false);
+    assert.equal(claimFor(5, "task-1"), true);
+  });
 });
 
 test("a surface that joins mid-celebration does not get its own", async () => {
   resetDeploymentTaskSuccessCelebrationClaims();
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
-  let celebrated = 0;
   const probe = (revision: number | null) => (
-    <CelebrationProbe
-      onCelebrated={() => {
-        celebrated += 1;
-      }}
-      revision={revision}
-      taskId="task-1"
-    />
+    <CelebrationProbe revision={revision} taskId="task-1" />
   );
   let first: ReturnType<typeof render> | undefined;
   let second: ReturnType<typeof render> | undefined;
@@ -244,7 +214,6 @@ test("a surface that joins mid-celebration does not get its own", async () => {
         setTimeout(resolve, SETTLE_MS);
       });
     }, SETTLE_MS);
-    assert.equal(celebrated, 1);
     assert.equal(isCelebrating(firstContainer), false);
     if (second) {
       assert.equal(isCelebrating(second.container), false);
