@@ -34,16 +34,58 @@ export const managedResourceRefSchema = z
 
 export type ManagedResourceRef = z.infer<typeof managedResourceRefSchema>;
 
+const managedAccessEndpointSchema = z
+  .object({
+    id: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .regex(/^[a-z0-9](?:[-._a-z0-9]*[a-z0-9])?$/),
+    label: z.string().trim().min(1).max(140),
+    url: z
+      .string()
+      .trim()
+      .max(2048)
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return (
+            ["http:", "https:", "ws:", "wss:"].includes(url.protocol) &&
+            url.username === "" &&
+            url.password === "" &&
+            url.hash === ""
+          );
+        } catch {
+          return false;
+        }
+      }, "endpoint url must be an absolute HTTP or WebSocket URL without credentials or a fragment"),
+  })
+  .strict();
+
+export type ManagedAccessEndpoint = z.infer<typeof managedAccessEndpointSchema>;
+
 /**
  * v1 intentionally trusts the Agent to report the resources it created. Brain
  * treats those reports as lookup references and decides readiness from a fresh
  * Kubernetes read; independent label-based discovery is a later hardening
  * option, not part of this contract.
- * `publicUrl` is optional: when present, Brain performs a thin HTTP probe
- * (2xx + non-empty body) against the tenant-owned domain before accepting.
+ * `accessEndpoints` is the v2 result contract. Brain validates and probes every
+ * exact HTTP or WebSocket URL inside the tenant domain before accepting it.
+ * `publicUrl` remains the single-HTTP-entry v1 compatibility field.
  */
 export const managedDeploymentCompletedInputSchema = z
   .object({
+    accessEndpoints: z
+      .array(managedAccessEndpointSchema)
+      .max(8)
+      .refine(
+        (endpoints) =>
+          new Set(endpoints.map((endpoint) => endpoint.id)).size ===
+          endpoints.length,
+        "access endpoint ids must be unique"
+      )
+      .optional(),
     workloads: z.array(managedResourceRefSchema).min(1).max(32),
     publicUrl: z
       .string()

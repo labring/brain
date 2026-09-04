@@ -3,8 +3,6 @@ import {
   deploymentTaskProjectionIsVisible,
 } from "@/features/deploy/task/projection";
 
-export const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS = 6000;
-
 /**
  * Dock chip slot geometry (px). The chip floor mirrors the row's `min-w-32`
  * class (a chip narrower than this stops being readable, so it folds into
@@ -86,7 +84,6 @@ function taskDismissedAtCurrentVersion(input: {
 
 function shouldIncludeDockTask(input: {
   active: boolean;
-  completedNoticeTaskIds: ReadonlySet<string>;
   dismissedTaskUpdatedAt: string | undefined;
   now: Date;
   supersededTaskIds: ReadonlySet<string>;
@@ -111,13 +108,12 @@ function shouldIncludeDockTask(input: {
   ) {
     return false;
   }
-  if (input.task.status === "failed") {
+  if (
+    input.task.status === "failed" ||
+    input.task.status === "completed" ||
+    input.task.status === "cancelled"
+  ) {
     return true;
-  }
-  // Cancelled is not attention-needed: a brief dismissible notice only
-  // (ADR 0038), riding the same expiry machinery as completed.
-  if (input.task.status === "completed" || input.task.status === "cancelled") {
-    return input.completedNoticeTaskIds.has(input.task.id);
   }
   return deploymentTaskProjectionIsVisible(input.task, input.now);
 }
@@ -137,12 +133,10 @@ function sortedDockItems(
 
 export function selectDeploymentTaskDock(input: {
   activeTaskId: string | null;
-  completedNoticeTaskIds?: ReadonlySet<string>;
   dismissedTaskUpdatedAtById: ReadonlyMap<string, string>;
   now?: Date;
   tasks: readonly DeploymentTaskProjection[];
 }): DeploymentTaskDockModel {
-  const completedNoticeTaskIds = input.completedNoticeTaskIds ?? new Set();
   const now = input.now ?? new Date();
   const supersededTaskIds = new Set(
     input.tasks.flatMap((task) =>
@@ -154,7 +148,6 @@ export function selectDeploymentTaskDock(input: {
       const active = task.id === input.activeTaskId;
       return shouldIncludeDockTask({
         active,
-        completedNoticeTaskIds,
         dismissedTaskUpdatedAt: input.dismissedTaskUpdatedAtById.get(task.id),
         now,
         supersededTaskIds,

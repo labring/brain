@@ -24,6 +24,7 @@ import {
   type DeploymentTimelineEventSource,
   type DeploymentTimelineStepStatus,
   isDeploymentTaskTerminalFailureEventKey,
+  sanitizeDeploymentTaskSuccess,
 } from "./timeline";
 
 const AI_ENGINE_RESOLUTION_REASONS = new Set([
@@ -151,6 +152,7 @@ const TIMELINE_EVENT_SOURCES = new Set<DeploymentTimelineEventSource>([
 ]);
 const KUBERNETES_NAME_REGEX = /^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$/;
 const RESOURCE_IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const API_VERSION_REGEX = /^[A-Za-z0-9][A-Za-z0-9./-]*$/;
 
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -408,9 +410,11 @@ const AI_OUTPUT_TIMELINE_EVENT_KINDS = [
   "deployment_task.output_ready",
 ] as const;
 const AI_RESULT_CARD_EVENT_REASONS = new Set([
+  "AccessEndpointReadiness",
   "APWorkloadReadiness",
   "DBServiceReadiness",
   "PublicAddressReadiness",
+  "TemplatePublicAccessReadiness",
   "TemplateWorkloadReadiness",
 ]);
 
@@ -589,6 +593,92 @@ function safeResourceIdentifier(value: unknown): string | null {
     : null;
 }
 
+function safeApiVersion(value: unknown): string | null {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 253 &&
+    API_VERSION_REGEX.test(value)
+    ? value
+    : null;
+}
+
+function safeHttpUrl(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const url = value.trim();
+  if (url.length === 0 || url.length > 2048) {
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeAccessUrl(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const url = value.trim();
+  if (url.length === 0 || url.length > 2048) {
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:", "ws:", "wss:"].includes(parsed.protocol) &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.hash === ""
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function publicAiAccessEndpointRef(input: {
+  namespace: string;
+  ref: Record<string, unknown>;
+}): DeploymentResultResourceRef | null {
+  const { ref } = input;
+  const id = safeResourceIdentifier(ref.id);
+  const label =
+    typeof ref.label === "string" && ref.label.trim().length > 0
+      ? ref.label.trim().slice(0, 140)
+      : null;
+  const url = ref.url == null ? null : safeAccessUrl(ref.url);
+  const protocol =
+    typeof ref.protocol === "string" &&
+    ["http", "https", "ws", "wss"].includes(ref.protocol)
+      ? ref.protocol
+      : null;
+  const observer = recordValue(ref.observer);
+  if (
+    id == null ||
+    label == null ||
+    protocol == null ||
+    observer?.kind !== "declared" ||
+    (ref.url != null && url == null) ||
+    (url != null && new URL(url).protocol !== `${protocol}:`)
+  ) {
+    return null;
+  }
+  return {
+    id,
+    kind: "AccessEndpoint",
+    label,
+    namespace: input.namespace,
+    observer: { kind: "declared" },
+    protocol,
+    ...(url == null ? {} : { url }),
+  } as DeploymentResultResourceRef;
+}
+
 function publicAiResultRef(value: unknown): DeploymentResultResourceRef | null {
   const ref = recordValue(value);
   const kind = ref?.kind;
@@ -609,6 +699,24 @@ function publicAiResultRef(value: unknown): DeploymentResultResourceRef | null {
         ? null
         : { apName, id, kind, namespace };
     }
+    case "AccessEndpoint": {
+      return publicAiAccessEndpointRef({ namespace, ref });
+    }
+    case "TemplatePublicAccess": {
+      const name = safeKubernetesName(ref.name);
+      const url = safeHttpUrl(ref.url);
+      return name == null || url == null
+        ? null
+        : { kind, name, namespace, url };
+    }
+    case "KubernetesWorkload": {
+      const apiVersion = safeApiVersion(ref.apiVersion);
+      const name = safeKubernetesName(ref.name);
+      const workloadKind = safeResourceIdentifier(ref.workloadKind);
+      return apiVersion == null || name == null || workloadKind == null
+        ? null
+        : { apiVersion, kind, name, namespace, workloadKind };
+    }
     case "TemplateWorkload": {
       const name = safeKubernetesName(ref.name);
       const workloadKind = safeResourceIdentifier(ref.workloadKind);
@@ -628,6 +736,12 @@ function resultCardId(ref: DeploymentResultResourceRef): string {
       return `${ref.kind}:${ref.namespace}:${ref.name}`;
     case "PublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.apName}:${ref.id}`;
+    case "AccessEndpoint":
+      return `${ref.kind}:${ref.namespace}:${ref.id}`;
+    case "TemplatePublicAccess":
+      return `${ref.kind}:${ref.namespace}:${ref.name}:${ref.url}`;
+    case "KubernetesWorkload":
+      return `${ref.kind}:${ref.namespace}:${ref.apiVersion}:${ref.workloadKind}:${ref.name}`;
     case "TemplateWorkload":
       return `${ref.kind}:${ref.namespace}:${ref.workloadKind}:${ref.name}`;
     default:
@@ -643,6 +757,12 @@ function resultCardTitle(ref: DeploymentResultResourceRef): string {
       return "Database";
     case "PublicAccess":
       return "Public address";
+    case "AccessEndpoint":
+      return ref.label;
+    case "TemplatePublicAccess":
+      return "Public domain";
+    case "KubernetesWorkload":
+      return "Workload";
     case "TemplateWorkload":
       return "Workload";
     default:
@@ -737,6 +857,18 @@ function projectAiDeployTaskTimelineSnapshot(
     snapshot.publicProjectionVersion ===
       CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION;
   const retainUnknownPlaceholder = options.mode === "persistence";
+  const revision =
+    Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0
+      ? snapshot.revision
+      : 0;
+  // The verified-success record is user-facing contract content, so it is
+  // rebuilt field by field here too: an untrusted AI timeline cannot smuggle
+  // an address or an instruction past the projection gate, and a UI reading
+  // the public payload sees exactly what the Timeline is allowed to render.
+  const success = sanitizeDeploymentTaskSuccess(snapshot.success, {
+    revision,
+    verifiedAt: fallbackCreatedAt,
+  });
   return {
     ...(options.mode === "persistence"
       ? {
@@ -744,10 +876,7 @@ function projectAiDeployTaskTimelineSnapshot(
             CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
         }
       : {}),
-    revision:
-      Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0
-        ? snapshot.revision
-        : 0,
+    revision,
     status,
     steps: (Array.isArray(snapshot.steps) ? snapshot.steps : []).flatMap(
       (step) => {
@@ -795,6 +924,7 @@ function projectAiDeployTaskTimelineSnapshot(
         ];
       }
     ),
+    ...(success == null ? {} : { success }),
     taskId: options.taskId ?? snapshot.taskId,
     updatedAt: fallbackCreatedAt,
   };

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  persistableAiDeployTaskTimelineSnapshot,
   publicDeployTaskArtifactSummary,
   publicDeployTaskBlockingInputs,
   publicDeployTaskEventFields,
@@ -596,6 +597,59 @@ test("public AI result cards retain safe status and timeout events", () => {
   assert.equal(JSON.stringify(projected).includes(privateText), false);
 });
 
+test("public AI timeline retains verified Kubernetes workload evidence", () => {
+  const timeline: DeploymentTaskTimelineSnapshot = {
+    publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+    revision: 2,
+    status: "completed",
+    steps: [
+      {
+        events: [],
+        id: "create-resources",
+        label: "Create resources",
+        order: 3,
+        resultCards: [
+          {
+            events: [],
+            id: "KubernetesWorkload:ns-demo:apps/v1:Deployment:web",
+            latestStatusText: "private provider detail",
+            required: true,
+            resultRef: {
+              apiVersion: "apps/v1",
+              kind: "KubernetesWorkload",
+              name: "web",
+              namespace: "ns-demo",
+              workloadKind: "Deployment",
+            },
+            status: "running",
+            title: "private title",
+          },
+        ],
+        status: "completed",
+      },
+    ],
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:01.000Z",
+  };
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+  });
+
+  assert.deepEqual(projected?.steps[0]?.resultCards?.[0]?.resultRef, {
+    apiVersion: "apps/v1",
+    kind: "KubernetesWorkload",
+    name: "web",
+    namespace: "ns-demo",
+    workloadKind: "Deployment",
+  });
+  assert.equal(projected?.steps[0]?.resultCards?.[0]?.title, "Workload");
+  assert.equal(
+    projected?.steps[0]?.resultCards?.[0]?.latestStatusText,
+    "Running"
+  );
+});
+
 test("public AI timeline shows allowlisted progress and omits unknown events", () => {
   const privateText = "private-timeline-text";
   const timeline = {
@@ -818,6 +872,181 @@ test("public timeline leaves non-AI snapshots unchanged", () => {
   );
 });
 
+const AI_RUNNER = { kind: "ai", runtimeProvider: "devbox" } as const;
+
+test("public AI timeline rebuilds a verified success record field by field", () => {
+  const leaked = "private-gateway-stderr";
+  const timeline = {
+    revision: 6,
+    status: "completed",
+    steps: [],
+    success: {
+      contractVersion: 1,
+      entries: [
+        { label: "Server address", url: "https://demo.sealos.run" },
+        // Neither a socket endpoint nor a relative path was probed, so the
+        // gate must not let either reach the UI (issue #160).
+        { label: "Socket", url: "wss://demo.sealos.run" },
+        { label: "Relative", url: "/healthz" },
+        { url: "https://spare.sealos.run" },
+        "not-an-entry",
+      ],
+      guidance: [
+        { detail: "Paste it in Multiplayer.", label: "Add the server." },
+        { detail: "no label", label: "   " },
+        "Join and play.",
+      ],
+      headline: "   ",
+      openActionLabel: "Open server",
+      productName: "EaglerCraft Server",
+      stderr: leaked,
+      // More checks passed than exist, so the summary line is dropped rather
+      // than shown with a count nobody verified.
+      verification: { passed: 5, total: 4 },
+      verifiedAt: "2026-07-23T00:00:05.000Z",
+    },
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:03.000Z",
+  } as unknown as DeploymentTaskTimelineSnapshot;
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    runner: AI_RUNNER,
+  });
+
+  assert.deepEqual(projected?.success, {
+    contractVersion: 1,
+    entries: [
+      { label: "Server address", url: "https://demo.sealos.run" },
+      { url: "https://spare.sealos.run" },
+    ],
+    guidance: [
+      { detail: "Paste it in Multiplayer.", label: "Add the server." },
+      { label: "Join and play." },
+    ],
+    openActionLabel: "Open server",
+    productName: "EaglerCraft Server",
+    revision: 6,
+    verifiedAt: "2026-07-23T00:00:05.000Z",
+  });
+  const serialized = JSON.stringify(projected);
+  assert.equal(serialized.includes("wss:"), false);
+  assert.equal(serialized.includes(leaked), false);
+});
+
+test("public AI timeline preserves a verified v2 WebSocket endpoint", () => {
+  const timeline = {
+    revision: 7,
+    status: "completed",
+    steps: [],
+    success: {
+      contractVersion: 2,
+      entries: [
+        {
+          label: "Game server",
+          protocol: "wss",
+          url: "wss://play.demo.sealos.run/server",
+        },
+      ],
+      revision: 7,
+      verifiedAt: "2026-07-23T00:00:05.000Z",
+    },
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:05.000Z",
+  } as DeploymentTaskTimelineSnapshot;
+
+  assert.deepEqual(
+    publicDeployTaskTimelineSnapshot(timeline, { runner: AI_RUNNER })?.success
+      ?.entries,
+    [
+      {
+        label: "Game server",
+        protocol: "wss",
+        url: "wss://play.demo.sealos.run/server",
+      },
+    ]
+  );
+});
+
+test("public AI timeline falls back to the owning revision for an empty success record", () => {
+  const timeline = {
+    revision: 9,
+    status: "completed",
+    steps: [],
+    success: {
+      entries: "not-a-list",
+      revision: "8",
+      verifiedAt: "not-a-timestamp",
+    },
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:03.000Z",
+  } as unknown as DeploymentTaskTimelineSnapshot;
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    runner: AI_RUNNER,
+    updatedAt: "2026-07-23T00:00:07.000Z",
+  });
+
+  assert.deepEqual(projected?.success, {
+    contractVersion: 2,
+    revision: 9,
+    verifiedAt: "2026-07-23T00:00:07.000Z",
+  });
+});
+
+test("persisted AI timeline keeps its success record for a later reload", () => {
+  const timeline = {
+    revision: 4,
+    status: "completed",
+    steps: [],
+    success: {
+      contractVersion: 1,
+      entries: [{ label: "Public address", url: "https://demo.sealos.run" }],
+      headline: "Your app is live",
+      verification: { passed: 3, total: 3 },
+      verifiedAt: "2026-07-23T00:00:05.000Z",
+    },
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:05.000Z",
+  } as unknown as DeploymentTaskTimelineSnapshot;
+
+  const persisted = persistableAiDeployTaskTimelineSnapshot(timeline, {
+    taskId: "task-ai",
+  });
+  assert.equal(
+    persisted.publicProjectionVersion,
+    CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION
+  );
+  // The engine declares the conclusion, the projection owns the revision it
+  // was recorded at, so a reload can never replay the celebration.
+  assert.deepEqual(persisted.success, { ...timeline.success, revision: 4 });
+  // Re-reading the stored snapshot through the public gate is a no-op, so a
+  // reload shows what the user saw the first time.
+  assert.deepEqual(
+    publicDeployTaskTimelineSnapshot(persisted, { runner: AI_RUNNER })?.success,
+    persisted.success
+  );
+});
+
+test("public timeline leaves direct-runner success records untouched", () => {
+  const timeline: DeploymentTaskTimelineSnapshot = {
+    revision: 2,
+    status: "completed",
+    steps: [],
+    success: {
+      contractVersion: 1,
+      entries: [{ label: "Public address", url: "https://demo.sealos.run" }],
+      revision: 2,
+      verifiedAt: "2026-07-23T00:00:05.000Z",
+    },
+    taskId: "task-direct",
+    updatedAt: "2026-07-23T00:00:05.000Z",
+  };
+
+  assert.equal(
+    publicDeployTaskTimelineSnapshot(timeline, { runner: { kind: "direct" } }),
+    timeline
+  );
+});
 test("public event payload redacts nested artifact summary", () => {
   const payload = publicDeployTaskEventPayload(
     {

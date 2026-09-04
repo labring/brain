@@ -3,7 +3,6 @@ import { test } from "node:test";
 
 import { DEPLOY_TASK_CREATED_EVENT } from "@/features/deploy/task/browser-events";
 import { findDialog } from "@/features/project-canvas/react-test-harness";
-import { DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS } from "./deployment-task-timeline-reentry";
 import type { useProjectCanvasModule } from "./use-project-canvas-module";
 import {
   apItem,
@@ -637,7 +636,7 @@ test("a dismissal seeded before mount keeps the task out of the dock", async () 
   }
 });
 
-test("a task that completes raises a dock notice that expires on the clock", async () => {
+test("a completed task stays in the dock until the user dismisses it", async () => {
   const harness = await mountWorkbench({ tasks: [RUNNING_TASK] });
   try {
     assert.deepEqual(
@@ -646,8 +645,6 @@ test("a task that completes raises a dock notice that expires on the clock", asy
       "the running task is docked"
     );
 
-    // A completed task is only docked while its completion notice is live, so
-    // its presence below is the notice, not the task.
     harness.setTasks([
       taskProjection({
         id: "task-1",
@@ -662,22 +659,17 @@ test("a task that completes raises a dock notice that expires on the clock", asy
     assert.deepEqual(
       harness.latest().canvas.deploymentTaskDock.tasks.map((i) => i.task.id),
       ["task-1"],
-      "the completion notice is docked"
+      "the completed task remains docked"
     );
 
-    await harness.advanceClock(DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS - 500);
-    assert.deepEqual(
-      harness.latest().canvas.deploymentTaskDock.tasks.map((i) => i.task.id),
-      ["task-1"],
-      "the notice is still live before its window closes"
-    );
-
-    await harness.advanceClock(600);
+    await harness.act(() => {
+      harness.latest().actions.dismissDeploymentTaskDockTask("task-1");
+    });
 
     assert.deepEqual(
       harness.latest().canvas.deploymentTaskDock.tasks,
       [],
-      "the notice expires off the dock"
+      "manual dismissal removes the completed task"
     );
   } finally {
     await harness.unmount();

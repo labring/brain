@@ -148,6 +148,73 @@ describe("deployment task dev fixtures", () => {
   });
 });
 
+describe("verified success fixtures (issue #160)", () => {
+  const input = {
+    namespace: "ns-test",
+    nowMs: NOW_MS,
+    projectId: "project-1",
+  } as const;
+
+  test("succeeded declares only what the AI runner can prove", () => {
+    const { task, timeline } = deployTaskDevMockTask("succeeded", input);
+    expect(timeline.status).toBe("completed");
+    // The record is appended after the steps, so it owns the later revision
+    // — the value the celebration's idempotency key is built from.
+    expect(timeline.revision).toBe(timeline.steps.length + 1);
+    expect(timeline.success?.revision).toBe(timeline.revision);
+    expect(timeline.success?.productName).toBe("acme/web-app");
+    expect(timeline.success?.entries).toEqual([
+      {
+        label: "Public address",
+        protocol: "https",
+        url: "https://web-app.mock.sealos.run",
+      },
+    ]);
+    expect(timeline.success?.entries?.[0]?.url).toBe(
+      task.resultUrl ?? undefined
+    );
+    expect(timeline.success?.verification).toEqual({ passed: 3, total: 3 });
+    // Nothing was declared, so nothing is invented: the UI falls back for the
+    // headline and leaves the guidance list out entirely.
+    expect(timeline.success?.headline).toBeUndefined();
+    expect(timeline.success?.guidance).toBeUndefined();
+  });
+
+  test("succeeded-eaglercraft teaches the player how to start playing", () => {
+    const { timeline } = deployTaskDevMockTask("succeeded-eaglercraft", input);
+    expect(timeline.success?.productName).toBe("EaglerCraft Server");
+    expect(timeline.success?.headline).toBe("Your server is online");
+    expect(timeline.success?.openActionLabel).toBe("Open server");
+    expect(timeline.success?.entries).toEqual([
+      {
+        label: "Server address",
+        protocol: "https",
+        url: "https://eaglercraft-server.mock.sealos.run",
+      },
+    ]);
+    expect(timeline.success?.guidance?.map((step) => step.label)).toEqual([
+      "Open the EaglerCraft client in your browser.",
+      "Go to Multiplayer and add a server.",
+      "Paste the server address.",
+      "Join the server and start playing.",
+    ]);
+    expect(timeline.success?.verification).toEqual({ passed: 2, total: 2 });
+    // One declared address, exactly as the runner probed it. How the client
+    // reaches the same host over WebSocket is a separate, open question and
+    // must not be smuggled into a fixture.
+    expect(JSON.stringify(timeline.success)).not.toContain("wss:");
+  });
+
+  test("no other scenario claims the product is usable", () => {
+    for (const scenario of DEPLOY_TASK_DEV_SCENARIOS) {
+      if (scenario.startsWith("succeeded")) {
+        continue;
+      }
+      const { timeline } = deployTaskDevMockTask(scenario, input);
+      expect(timeline.success).toBeUndefined();
+    }
+  });
+});
 describe("interruption fixtures (catalog E1/E2)", () => {
   test("failed-balance is a balance-exhausted task with its billing evidence and chip reason", () => {
     const { task } = deployTaskDevMockTask("failed-balance", {

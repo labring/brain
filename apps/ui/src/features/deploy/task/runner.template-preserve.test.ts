@@ -24,6 +24,35 @@ function installFetchRecorder() {
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     fetchCalls.push({ method: init?.method, url: String(input) });
     if (String(input).includes("/api/k8s/v1alpha1/get")) {
+      const url = new URL(String(input));
+      if (url.searchParams.get("kind") === "ingresses") {
+        const name = url.searchParams.get("name");
+        const websocket = name === "eaglercraft-demo";
+        return Promise.resolve(
+          Response.json({
+            apiVersion: "networking.k8s.io/v1",
+            kind: "Ingress",
+            metadata: {
+              annotations: websocket
+                ? { "nginx.ingress.kubernetes.io/backend-protocol": "WS" }
+                : {},
+              name,
+              namespace: "ns-demo",
+            },
+            spec: {
+              rules: [
+                {
+                  host: "eaglercraft-demo.example.sealos.run",
+                  http: {
+                    paths: websocket ? [{ path: "/" }] : [{ path: "/admin" }],
+                  },
+                },
+              ],
+              tls: [{ hosts: ["eaglercraft-demo.example.sealos.run"] }],
+            },
+          })
+        );
+      }
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -51,6 +80,7 @@ const completeCalls: unknown[] = [];
 const eventKinds: string[] = [];
 const requestInputsCalls: unknown[] = [];
 const stateWrites: Record<string, unknown>[] = [];
+const timelineEvents: Record<string, unknown>[] = [];
 
 let currentRow: DeployTaskRow;
 let deployTemplateInstanceImpl: () => Promise<{
@@ -155,7 +185,15 @@ mock.module("./runner-writes", () => ({
     } as DeployTaskRow;
     return Promise.resolve();
   },
-  updateDeployTaskTimeline: () => Promise.resolve(),
+  updateDeployTaskTimeline: (
+    _taskId: string,
+    input: { event?: Record<string, unknown> }
+  ) => {
+    if (input.event !== undefined) {
+      timelineEvents.push(input.event);
+    }
+    return Promise.resolve();
+  },
 }));
 
 mock.module("./result-readiness", () => ({
@@ -246,6 +284,8 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     eventKinds.length = 0;
     requestInputsCalls.length = 0;
     stateWrites.length = 0;
+    timelineEvents.length = 0;
+    process.env.API_URL = "https://api.example.com";
     process.env.DIRECT_AP_READINESS_TIMEOUT_MS = "1";
     currentRow = templateTaskRow({});
     deployTemplateInstanceImpl = () =>
@@ -266,6 +306,64 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     expect(failCalls).toHaveLength(1);
     expect(attachedFailureDetails().reason).toBe("readiness-timeout");
     expect(attachedFailureDetails().stage).toBe("readiness");
+  });
+
+  it("reads provider Ingress resources into the task Timeline before readiness", async () => {
+    deployTemplateInstanceImpl = () =>
+      Promise.resolve({
+        instanceName: "unused",
+        resources: [
+          { name: "eaglercraft-demo", resourceType: "StatefulSet" },
+          { name: "eaglercraft-demo", resourceType: "ingress" },
+          { name: "eaglercraft-demo-admin", resourceType: "Ingress" },
+        ],
+      });
+
+    await runTemplateTask();
+
+    const publicAccessRefs = [
+      ...new Map(
+        timelineEvents.flatMap((event) => {
+          const payload = event.payload as
+            | {
+                resultRef?: {
+                  id?: string;
+                  kind?: string;
+                  label?: string;
+                  name?: string;
+                  namespace?: string;
+                  observer?: { kind?: string; name?: string };
+                  protocol?: string;
+                  url?: string;
+                };
+              }
+            | undefined;
+          return payload?.resultRef?.kind === "AccessEndpoint"
+            ? [[payload.resultRef.url, payload.resultRef] as const]
+            : [];
+        })
+      ).values(),
+    ];
+    expect(publicAccessRefs).toEqual([
+      {
+        id: "ingress:eaglercraft-demo:https:eaglercraft-demo.example.sealos.run:/",
+        kind: "AccessEndpoint",
+        label: "Web address",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "eaglercraft-demo" },
+        protocol: "https",
+        url: "https://eaglercraft-demo.example.sealos.run/",
+      },
+      {
+        id: "ingress:eaglercraft-demo:wss:eaglercraft-demo.example.sealos.run:/",
+        kind: "AccessEndpoint",
+        label: "WebSocket address",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "eaglercraft-demo" },
+        protocol: "wss",
+        url: "wss://eaglercraft-demo.example.sealos.run/",
+      },
+    ]);
   });
 
   it("cleans up a freshly allocated identity when the apply call itself fails", async () => {

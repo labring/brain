@@ -22,10 +22,6 @@ import {
 } from "@/features/project-canvas/react-test-harness";
 
 import { useProjectCanvasModule } from "@/features/project-canvas/workbench/use-project-canvas-module";
-import { createManualWorkbenchClock } from "@/features/project-canvas/workbench/workbench-clock";
-
-const START_MS = 1_760_000_000_000;
-
 /** A deployment task projection, as the deploy-tasks endpoint returns it. */
 export function taskProjection(
   overrides: Record<string, unknown> = {}
@@ -90,8 +86,6 @@ type Workbench = ReturnType<typeof useProjectCanvasModule>;
 export interface WorkbenchHarness {
   /** Runs `fn` inside `act`, flushing effects and state updates. */
   act: (fn: () => Promise<void> | void) => Promise<void>;
-  /** Moves the workbench clock forward, firing anything that comes due. */
-  advanceClock: (ms: number) => Promise<void>;
   /** Fires a cross-tab storage event at the workbench. */
   emitStorage: (key: string | null) => void;
   /** Dispatches a window event at the workbench, as the browser would. */
@@ -173,12 +167,9 @@ export async function mountWorkbench(
   }
   const fetchStub = stubFetch((url) => routeRequest(url, served));
   const fetchCalls = fetchStub.calls;
-  const clock = createManualWorkbenchClock(START_MS);
-
   let latest: Workbench | undefined;
   function Harness() {
     latest = useProjectCanvasModule({
-      clock,
       kubeconfig,
       namespace: identity.namespace,
       projectId: identity.projectId,
@@ -225,7 +216,6 @@ export async function mountWorkbench(
 
   return {
     act: runAct,
-    advanceClock: (ms: number) => runAct(() => clock.advance(ms)),
     emitStorage: (key: string | null) => {
       window.dispatchEvent(
         new StorageEvent("storage", { key, storageArea: localStorage })

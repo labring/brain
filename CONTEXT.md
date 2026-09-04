@@ -330,13 +330,19 @@ The transition where a concrete slot stops being a Deployment Placeholder Node a
 
 ### Deployment Result Resource
 
-A user-visible Project result a Deployment Task creates or changes — an AP, DB, AP-owned Public Address, or template-visible workload. Support objects may explain progress but are never result resources.
+A user-visible Project result a Deployment Task creates or changes — an AP, DB, public access endpoint, template-visible workload, or Agent-reported Kubernetes runtime independently observed by Brain. Support objects may explain progress but are never result resources.
 
 _Avoid_: applied object, Kubernetes object.
 
+### Deployment Access Endpoint
+
+A source-independent Deployment Result Resource describing one user-facing way to reach a deployed product. It has a stable task-local identity, explicit HTTP or WebSocket protocol, a provider observer or declared URL, and an independently verified readiness state. Docker AP addresses, Template Ingress hosts, and GitHub Agent-declared URLs all converge on this contract. The observer resolves the provider's actual address; Brain never reconstructs an address or infers WSS from HTTPS.
+
+_Avoid_: guessed URL, inferred socket address, source-specific public access card.
+
 ### Deployment Result Readiness
 
-The condition where a task's user-visible result resources have become healthy enough for the task to count as complete — distinct from having applied Deployment Artifacts.
+The condition where a task's user-visible result resources have become healthy enough for the task to count as complete — distinct from having applied Deployment Artifacts. Raw Kubernetes resources use one task-facing predicate per Kind across deterministic and Agent-managed runners: replica controllers require their Ready counts, Pods and Jobs require their Ready/Complete conditions, and a non-suspended CronJob is ready without waiting for a scheduled execution.
 
 _Avoid_: apply complete, manifest applied.
 
@@ -353,6 +359,18 @@ The user-facing progress view for one Deployment Task: runner-defined Deployment
 ### Deployment Result Resource Card
 
 A Deployment Task Timeline section for one Deployment Result Resource, presenting its status and events within the task's progress. Blocked means the task can still proceed after an external action or changed condition; failed means the current run has ended for that resource. Required cards gate Deployment Result Readiness; optional cards may keep showing progress or warnings without blocking completion.
+
+### Deployment Task Success Record
+
+The conclusion a Deployment Task Timeline appends once Deployment Result Readiness is reached and every required access endpoint has passed its protocol probe. It carries only facts the deployment declared — product name, verified HTTP or WebSocket entries, first-use steps — so the Timeline never presents an address or instruction the runner cannot evidence. HTTP(S) entries can be opened and copied; WS(S) entries are copied. A verified deployment with no endpoint uses the neutral `Deployment completed` headline, while `You can start using it` is reserved for a verified actionable entry. A task with no required Deployment Result Resource publishes no record and keeps reporting progress. It is part of the task-owned timeline snapshot, not a Chat message or a toast, and its Timeline revision doubles as its identity.
+
+_Avoid_: success toast, deploy done banner, completion notification.
+
+### Deployment Celebration
+
+The one-shot confetti that marks a Deployment Task Success Record arriving while the user is watching. It belongs to the mount that observed the transition and is claimed once per task plus record revision, so reconnects, duplicate snapshots, refreshes onto a finished task, and a second pane for the same success never replay it. Its lifetime controls only the confetti; the Timeline stays open with the record visible until the user closes it.
+
+_Avoid_: success animation state, confetti on completed.
 
 ### Deployment Failure Reason
 
@@ -380,7 +398,7 @@ _Avoid_: resource quota (for this set), workspace limits, all quotas.
 
 ### Deployment Task Dock
 
-A Project Canvas affordance presenting the current Project's visible Deployment Task Projections so users notice active or attention-needing deployment work and re-enter each task's Deployment Task Timeline. Chips carry no inline lifecycle actions — cancel and Redeploy live in the timeline pane a chip opens; terminal tasks additionally offer dismissal. Not deployment history, a task center, or a canvas node.
+A Project Canvas affordance presenting the current Project's visible Deployment Task Projections so users notice active or terminal deployment work and re-enter each task's Deployment Task Timeline. Terminal chips remain until the user dismisses them; they do not expire on a timer. Chips carry no inline lifecycle actions — cancel and Redeploy live in the timeline pane a chip opens; terminal tasks additionally offer dismissal. Not deployment history, a task center, or a canvas node.
 
 ### Deployment Task Dock Dismissal
 

@@ -110,7 +110,164 @@ test("deployment timeline creates template workload cards without support object
   );
 });
 
-test("deployment timeline creates optional Public Address cards from AP network evidence", () => {
+test("deployment timeline keeps the first declared path for a path-only host", () => {
+  const cards = resultResourceCardsFromArtifactSummary({
+    resources: [
+      {
+        apiVersion: "networking.k8s.io/v1",
+        kind: "Ingress",
+        name: "affine",
+        namespace: "ns-demo",
+      },
+    ],
+    resourceYamls: [
+      `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: affine
+spec:
+  tls:
+    - hosts:
+        - affine.example.sealos.run
+  rules:
+    - host: affine.example.sealos.run
+      http:
+        paths:
+          - path: /
+    - host: status.example.sealos.run
+      http:
+        paths:
+          - path: /status
+    - host: status.example.sealos.run
+      http:
+        paths:
+          - path: /health
+    - host: "*.example.sealos.run"
+    - host: invalid/path
+`,
+    ],
+  });
+
+  assert.deepEqual(cards, [
+    {
+      events: [],
+      id: "AccessEndpoint:ns-demo:ingress:affine:https:affine.example.sealos.run:/",
+      required: true,
+      resultRef: {
+        id: "ingress:affine:https:affine.example.sealos.run:/",
+        kind: "AccessEndpoint",
+        label: "Web address",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "affine" },
+        protocol: "https",
+        url: "https://affine.example.sealos.run/",
+      },
+      status: "creating",
+      title: "Web address",
+    },
+    {
+      events: [],
+      id: "AccessEndpoint:ns-demo:ingress:affine:http:status.example.sealos.run:/status",
+      required: true,
+      resultRef: {
+        id: "ingress:affine:http:status.example.sealos.run:/status",
+        kind: "AccessEndpoint",
+        label: "Web address /status",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "affine" },
+        protocol: "http",
+        url: "http://status.example.sealos.run/status",
+      },
+      status: "creating",
+      title: "Web address /status",
+    },
+  ]);
+});
+
+test("an explicitly WebSocket-backed Ingress keeps only its primary path", () => {
+  const cards = resultResourceCardsFromArtifactSummary({
+    resourceYamls: [
+      `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: game
+  namespace: ns-demo
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: WS
+spec:
+  tls:
+    - hosts: [game.example.sealos.run]
+  rules:
+    - host: game.example.sealos.run
+      http:
+        paths:
+          - path: /
+          - path: /server
+`,
+    ],
+  });
+
+  assert.deepEqual(
+    cards.map((card) =>
+      card.resultRef.kind === "AccessEndpoint"
+        ? [card.resultRef.protocol, card.resultRef.url]
+        : null
+    ),
+    [
+      ["https", "https://game.example.sealos.run/"],
+      ["wss", "wss://game.example.sealos.run/"],
+    ]
+  );
+});
+
+test("a root route wins over auxiliary routes for the same hostname", () => {
+  const cards = resultResourceCardsFromArtifactSummary({
+    resourceYamls: [
+      `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auxiliary
+  namespace: ns-demo
+spec:
+  tls:
+    - hosts: [app.example.sealos.run]
+  rules:
+    - host: app.example.sealos.run
+      http:
+        paths:
+          - path: /api
+          - path: /admin.css
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: primary
+  namespace: ns-demo
+spec:
+  tls:
+    - hosts: [app.example.sealos.run]
+  rules:
+    - host: app.example.sealos.run
+      http:
+        paths:
+          - path: /
+          - path: /dynmap
+`,
+    ],
+  });
+
+  assert.deepEqual(
+    cards.map((card) =>
+      card.resultRef.kind === "AccessEndpoint" ? card.resultRef.url : null
+    ),
+    ["https://app.example.sealos.run/"]
+  );
+});
+
+test("deployment timeline creates required Access Endpoint cards from AP network evidence", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resources: [
       {
@@ -154,22 +311,28 @@ spec:
         title: "api",
       },
       {
-        id: "PublicAccess:default:api:pa_api",
-        required: false,
+        id: "AccessEndpoint:default:public-address:pa_api",
+        required: true,
         resultRef: {
-          apName: "api",
-          id: "pa_api",
-          kind: "PublicAccess",
+          id: "public-address:pa_api",
+          kind: "AccessEndpoint",
+          label: "Public address",
           namespace: "default",
+          observer: {
+            addressId: "pa_api",
+            apName: "api",
+            kind: "ap-public-address",
+          },
+          protocol: "https",
         },
         status: "creating",
-        title: "Public access",
+        title: "Public address",
       },
     ]
   );
 });
 
-test("deployment timeline marks Public Address cards required only from explicit evidence", () => {
+test("deployment timeline lets an explicitly optional endpoint stay optional", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resourceYamls: [
       `
@@ -184,13 +347,13 @@ spec:
       platformAddresses:
         - id: pa_api
           port: 80
-          required: true
+          required: false
 `,
     ],
   });
 
-  assert.equal(cards[0]?.id, "PublicAccess:default:api:pa_api");
-  assert.equal(cards[0]?.required, true);
+  assert.equal(cards[0]?.id, "AccessEndpoint:default:public-address:pa_api");
+  assert.equal(cards[0]?.required, false);
 });
 
 test("direct deployment timeline applies AP workload readiness to the AP card", () => {
