@@ -110,7 +110,7 @@ test("deployment timeline creates template workload cards without support object
   );
 });
 
-test("deployment timeline creates deduplicated public domain cards from template Ingress rules", () => {
+test("deployment timeline keeps the first declared path for a path-only host", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resources: [
       {
@@ -142,7 +142,7 @@ spec:
     - host: status.example.sealos.run
       http:
         paths:
-          - path: /status
+          - path: /health
     - host: "*.example.sealos.run"
     - host: invalid/path
 `,
@@ -185,7 +185,7 @@ spec:
   ]);
 });
 
-test("an explicitly WebSocket-backed Ingress keeps every declared path", () => {
+test("an explicitly WebSocket-backed Ingress keeps only its primary path", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resourceYamls: [
       `
@@ -218,9 +218,52 @@ spec:
     [
       ["https", "https://game.example.sealos.run/"],
       ["wss", "wss://game.example.sealos.run/"],
-      ["https", "https://game.example.sealos.run/server"],
-      ["wss", "wss://game.example.sealos.run/server"],
     ]
+  );
+});
+
+test("a root route wins over auxiliary routes for the same hostname", () => {
+  const cards = resultResourceCardsFromArtifactSummary({
+    resourceYamls: [
+      `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auxiliary
+  namespace: ns-demo
+spec:
+  tls:
+    - hosts: [app.example.sealos.run]
+  rules:
+    - host: app.example.sealos.run
+      http:
+        paths:
+          - path: /api
+          - path: /admin.css
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: primary
+  namespace: ns-demo
+spec:
+  tls:
+    - hosts: [app.example.sealos.run]
+  rules:
+    - host: app.example.sealos.run
+      http:
+        paths:
+          - path: /
+          - path: /dynmap
+`,
+    ],
+  });
+
+  assert.deepEqual(
+    cards.map((card) =>
+      card.resultRef.kind === "AccessEndpoint" ? card.resultRef.url : null
+    ),
+    ["https://app.example.sealos.run/"]
   );
 });
 

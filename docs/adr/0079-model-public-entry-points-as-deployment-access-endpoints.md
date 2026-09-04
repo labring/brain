@@ -33,14 +33,22 @@ no database table and performs no read-path backfill.
 
 An AP public address is observed by AP name plus address id. Brain reads the
 provider-assigned URL from the AP Product View and never reconstructs it from a
-prefix, namespace, port, or cluster convention. A template Ingress declares
-exact paths and HTTP or HTTPS according to its rule and TLS host coverage. The
-existing nginx `backend-protocol: WS|WSS` annotation is an explicit WebSocket
-declaration, so Brain also verifies the matching WS or WSS endpoint; Brain
-never derives WebSocket support from TLS or a product name. Because the
-annotation applies to the whole Ingress, each path declared by that Ingress is
-retained and verified independently; a root path never hides a more specific
-path.
+prefix, namespace, port, or cluster convention.
+
+A template Ingress supplies host, TLS, and ordered path candidates, but those
+paths are routing implementation rather than independent user entry points.
+Brain groups candidates by hostname and endpoint role, retaining at most one
+HTTP(S) address and one WS(S) address for each host. A declared root path wins;
+a path-only app retains its first manifest-ordered path. Only retained entries
+are probed and gate completion. This keeps `/api`, static assets, and secondary
+admin routes from becoming deployment requirements when the primary app is
+already usable.
+
+Some existing catalog templates use `backend-protocol: WS|WSS` as a legacy
+marker for a public WebSocket entry. Brain preserves that marker narrowly for
+compatibility and verifies one matching WS or WSS address; it is not treated as
+general ingress-nginx protocol semantics, and Brain never derives WebSocket
+support from TLS or a product name.
 
 Agent-managed completion accepts at most eight `accessEndpoints`, each with a
 stable id, label, and exact URL. The v1 `publicUrl` field remains an input
@@ -63,6 +71,9 @@ using it` is reserved for results with an actionable verified entry.
   while preserving separate Docker, Template, and Agent result contracts.
 - Derive WSS from an HTTPS Ingress: rejected because TLS does not declare an
   application WebSocket path or subprotocol.
+- Treat every Ingress path or every HTTP response as a usable entry: rejected.
+  Route paths are not product-entry metadata, and accepting a 404 would turn a
+  broken link into a success claim.
 - Backfill historical timelines: rejected because task reads never write and a
   historical probe cannot reproduce what was verified at completion time.
 
@@ -70,10 +81,10 @@ using it` is reserved for results with an actionable verified entry.
 
 - nginx and other direct web deployments wait for both workload readiness and
   a resolved, reachable platform address, then show that exact address.
-- Templates show every verified Ingress path through the same result type.
-  Ingresses that explicitly declare an nginx WS/WSS backend also show a
-  separately verified WebSocket address. Richer product-specific labels and
-  probes still belong in a future versioned Template Runtime Contract.
+- Templates show one primary verified web address per Ingress hostname.
+  Catalog templates carrying the legacy WS/WSS marker also show one separately
+  verified WebSocket address. Richer product-specific labels and probes still
+  belong in a future versioned Template Runtime Contract.
 - GitHub deployments can report multiple independently labelled web and
   WebSocket endpoints while old deployment skills continue to work.
 - Rollback may stop writing v2 records, but readers must retain v1 and v2

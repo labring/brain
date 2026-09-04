@@ -89,17 +89,19 @@ function ingressTlsHosts(spec: Record<string, unknown> | null): Set<string> {
   );
 }
 
-const NGINX_INGRESS_BACKEND_PROTOCOL =
+const LEGACY_WEBSOCKET_BACKEND_PROTOCOL =
   "nginx.ingress.kubernetes.io/backend-protocol";
 
-function ingressDeclaresWebSocket(doc: Record<string, unknown>): boolean {
+function ingressCarriesLegacyWebSocketMarker(
+  doc: Record<string, unknown>
+): boolean {
   const annotations = objectValue(objectValue(doc.metadata)?.annotations);
   const backendProtocol = stringValue(
-    annotations?.[NGINX_INGRESS_BACKEND_PROTOCOL]
+    annotations?.[LEGACY_WEBSOCKET_BACKEND_PROTOCOL]
   )?.toUpperCase();
-  // nginx applies this Ingress-level backend declaration to every path owned
-  // by the same object. The path list below remains the exact source of URL
-  // paths; the annotation only contributes the explicitly declared protocol.
+  // Existing provider templates use these non-standard values as a public
+  // WebSocket marker. Keep that narrow compatibility signal without treating
+  // every Ingress path as a separate product entry point.
   return backendProtocol === "WS" || backendProtocol === "WSS";
 }
 
@@ -181,7 +183,7 @@ function templatePublicAccessCardsFromDoc(
   }
   const spec = objectValue(doc.spec);
   const tlsHosts = ingressTlsHosts(spec);
-  const declaresWebSocket = ingressDeclaresWebSocket(doc);
+  const declaresWebSocket = ingressCarriesLegacyWebSocketMarker(doc);
   return (Array.isArray(spec?.rules) ? spec.rules : []).flatMap((ruleValue) => {
     const rule = objectValue(ruleValue);
     const host = ingressHost(rule?.host);
@@ -211,33 +213,45 @@ function templatePublicAccessCardsFromDoc(
   });
 }
 
-function deduplicateTemplatePublicAccessCards(
+function selectPrimaryTemplatePublicAccessCards(
   cards: DeploymentResultResourceCard[]
 ): DeploymentResultResourceCard[] {
-  const cardsByProtocolAndUrl = new Map<string, DeploymentResultResourceCard>();
+  const cardsByRoleAndHost = new Map<
+    string,
+    { card: DeploymentResultResourceCard; rootPath: boolean }
+  >();
   for (const card of cards) {
     if (
-      card.resultRef.kind === "AccessEndpoint" &&
-      card.resultRef.observer.kind === "ingress" &&
-      card.resultRef.url != null &&
-      !cardsByProtocolAndUrl.has(
-        `${card.resultRef.protocol}:${card.resultRef.url}`
-      )
+      card.resultRef.kind !== "AccessEndpoint" ||
+      card.resultRef.observer.kind !== "ingress" ||
+      card.resultRef.url == null
     ) {
-      cardsByProtocolAndUrl.set(
-        `${card.resultRef.protocol}:${card.resultRef.url}`,
-        card
-      );
+      continue;
+    }
+    const url = new URL(card.resultRef.url);
+    const role =
+      card.resultRef.protocol === "ws" || card.resultRef.protocol === "wss"
+        ? "websocket"
+        : "web";
+    const key = `${role}:${url.hostname}`;
+    const rootPath = url.pathname === "/";
+    const selected = cardsByRoleAndHost.get(key);
+    // Ingress paths describe routing implementation, not a list of product
+    // entry points. Keep one primary address per host and protocol role. A
+    // declared root is the stable default; path-only apps retain their first
+    // manifest-ordered path without probing every fallback route.
+    if (selected == null || (rootPath && !selected.rootPath)) {
+      cardsByRoleAndHost.set(key, { card, rootPath });
     }
   }
-  return [...cardsByProtocolAndUrl.values()];
+  return [...cardsByRoleAndHost.values()].map(({ card }) => card);
 }
 
 export function templatePublicAccessCardsFromObservedIngresses(input: {
   ingresses: unknown[];
   namespace: string;
 }): DeploymentResultResourceCard[] {
-  return deduplicateTemplatePublicAccessCards(
+  return selectPrimaryTemplatePublicAccessCards(
     input.ingresses.flatMap((ingress) => {
       const doc = objectValue(ingress);
       return doc == null
@@ -255,7 +269,7 @@ function templatePublicAccessCardsFromArtifactSummary(
       templatePublicAccessCardsFromDoc(summary, doc)
     )
   );
-  return deduplicateTemplatePublicAccessCards(cards);
+  return selectPrimaryTemplatePublicAccessCards(cards);
 }
 
 function directApDocsFromResourceYamls(
