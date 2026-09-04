@@ -2,6 +2,8 @@
   "extends": "@workspace/typescript-config/nextjs.json",
   "compilerOptions": {
     "baseUrl": ".",
+    "declaration": false,
+    "declarationMap": false,
     "paths": {
       "@db-browser/*": ["./src/features/db-browser/*"],
       "@/*": ["./src/*"],

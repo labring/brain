@@ -80,7 +80,9 @@ function wrapChatBashTool<T>(
     ...(toolDef as object),
     execute: async (...args: unknown[]) => {
       try {
-        const executionOptions = args[1] as ToolExecutionOptions | undefined;
+        const executionOptions = args[1] as
+          | ToolExecutionOptions<unknown>
+          | undefined;
         return await sandbox.runWithAbortSignal(
           executionOptions?.abortSignal,
           async () =>
@@ -135,15 +137,21 @@ export type ChatBashWriteFileInput = z.infer<
   typeof writeFileWithIntentionInputSchema
 >;
 
-export type ChatBashBashTool = Tool<BashToolWithIntentionInput, CommandResult>;
+export type ChatBashBashTool = Tool<
+  BashToolWithIntentionInput,
+  CommandResult,
+  never
+>;
 export type ChatBashReadFileTool = Tool<
   ChatBashReadFileInput,
-  { content: string }
+  { content: string },
+  never
 >;
 
 export type ChatBashWriteFileTool = Tool<
   ChatBashWriteFileInput,
-  { success: true }
+  { success: true },
+  never
 >;
 
 export type ChatBashToolkit = Omit<BashToolkit, "bash" | "tools"> & {
@@ -171,7 +179,7 @@ function augmentBashToolWithIntention(innerUnknown: unknown) {
 INTENTION:
 Always set \`intention\`--one or two clauses on what cluster/Devbox work this command advances (e.g. verify rollout in namespace X). Execution uses \`command\` only; \`intention\` is for auditability/transcripts and is echoed to server logs.`.trimStart();
 
-  return tool<BashToolWithIntentionInput, CommandResult>({
+  return tool<BashToolWithIntentionInput, CommandResult, never>({
     description: enrichedDescription,
     inputSchema: bashWithIntentionInputSchema,
     execute: async (input) => {
@@ -198,7 +206,7 @@ function augmentReadFileToolWithIntention(innerUnknown: unknown) {
 INTENTION:
 Always set \`intention\`; execution uses only \`path\`.`;
 
-  return tool<ChatBashReadFileInput, { content: string }>({
+  return tool<ChatBashReadFileInput, { content: string }, never>({
     description: enrichedDescription,
     inputSchema: readFileWithIntentionInputSchema,
     execute: async (input) => {
@@ -224,7 +232,7 @@ function augmentWriteFileToolWithIntention(innerUnknown: unknown) {
 INTENTION:
 Always set \`intention\`; execution uses only \`path\` + \`content\`.`;
 
-  return tool<ChatBashWriteFileInput, { success: true }>({
+  return tool<ChatBashWriteFileInput, { success: true }, never>({
     description: enrichedDescription,
     inputSchema: writeFileWithIntentionInputSchema,
     execute: async (input) => {

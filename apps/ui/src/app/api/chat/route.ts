@@ -3,12 +3,13 @@ import {
   consumeStream,
   convertToModelMessages,
   generateId,
+  isStepCount,
   isToolUIPart,
-  stepCountIs,
   streamText,
   type UIMessage,
   type UIMessageStreamOnFinishCallback,
 } from "ai";
+import { after } from "next/server";
 import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
   type ChatBillingMode,
@@ -83,6 +84,11 @@ import { observeWorkspaceQuotaQuietly } from "@/features/notifications/producers
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
+import {
+  flushLangfuseTelemetry,
+  isLangfuseTelemetryEnabled,
+  withLangfuseChatTrace,
+} from "@/lib/observability/langfuse";
 import { getProject } from "@/lib/project-persistence/projects";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
@@ -723,6 +729,7 @@ async function runChatPipeline(input: {
   const { assistantContext, chatId, encodedKubeconfig, message } =
     input.request;
   const { actor, kubeconfig, requestAbortSignal } = input;
+  const chatTurnId = generateId();
   const owner = actor.owner;
   const scope = assistantConversationScope(owner, assistantContext);
   let ownedLease: ChatStreamLease | null = null;
@@ -873,48 +880,75 @@ async function runChatPipeline(input: {
       leaseAbortController.signal,
     ]);
 
-    const result = streamText({
-      abortSignal: streamAbortSignal,
-      model,
-      providerOptions: {
-        openai: {
-          reasoningEffort: "high",
-        },
-      },
-      system: systemPrompt,
-      messages: modelMessages,
-      tools,
-      stopWhen: stepCountIs(CHAT_MAX_STEPS),
-      experimental_transform: createInjectToolDurationStreamTransform(
-        toolDurationMsByCallId
-      ),
-      experimental_onToolCallFinish: (event) => {
-        toolDurationMsByCallId.set(event.toolCall.toolCallId, event.durationMs);
-      },
-    });
-
     const responseHeaders = chatBillingHeaders(clientFreeTier);
-
     const streamHeartbeat = leaseHeartbeat;
-    const response = result.toUIMessageStreamResponse({
-      consumeSseStream: consumeStream,
-      originalMessages: history,
-      generateMessageId: generateId,
-      headers: responseHeaders,
-      // A mid-stream aiproxy billing refusal reaches the pane classified;
-      // every other error stays masked.
-      onError: (error) =>
-        chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
-      onFinish: createChatStreamFinishHandler({
-        billing,
-        chatId,
-        history,
-        heartbeat: streamHeartbeat,
-        scope,
-        projectName: assistantProjectName(assistantContext),
-        titleModel,
-        toolDurationMsByCallId,
-      }),
+    const response = await withLangfuseChatTrace({
+      chatId,
+      chatTurnId,
+      userId: owner.userUid,
+      callback: () => {
+        const result = streamText({
+          abortSignal: streamAbortSignal,
+          model,
+          providerOptions: {
+            openai: {
+              reasoningEffort: "high",
+            },
+          },
+          instructions: systemPrompt,
+          messages: modelMessages,
+          tools,
+          telemetry: {
+            functionId: "project-assistant-chat",
+            recordInputs: false,
+            recordOutputs: false,
+          },
+          stopWhen: isStepCount(CHAT_MAX_STEPS),
+          experimental_transform: createInjectToolDurationStreamTransform(
+            toolDurationMsByCallId
+          ),
+          onToolExecutionEnd: (event) => {
+            toolDurationMsByCallId.set(
+              event.toolCall.toolCallId,
+              event.toolExecutionMs
+            );
+          },
+        });
+
+        if (isLangfuseTelemetryEnabled()) {
+          try {
+            after(() => flushLangfuseTelemetry());
+          } catch (error) {
+            // `after()` requires a Next.js request scope. Keep direct route
+            // invocations and non-standard runtimes fail-open for telemetry.
+            console.warn(
+              "[observability] Langfuse flush could not be scheduled; continuing without telemetry:",
+              error
+            );
+          }
+        }
+
+        return result.toUIMessageStreamResponse({
+          consumeSseStream: consumeStream,
+          originalMessages: history,
+          generateMessageId: generateId,
+          headers: responseHeaders,
+          // A mid-stream aiproxy billing refusal reaches the pane classified;
+          // every other error stays masked.
+          onError: (error) =>
+            chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
+          onFinish: createChatStreamFinishHandler({
+            billing,
+            chatId,
+            history,
+            heartbeat: streamHeartbeat,
+            scope,
+            projectName: assistantProjectName(assistantContext),
+            titleModel,
+            toolDurationMsByCallId,
+          }),
+        });
+      },
     });
     ownedLease = null;
     leaseHeartbeat = null;

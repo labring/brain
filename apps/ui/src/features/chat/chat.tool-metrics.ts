@@ -1,4 +1,4 @@
-/** Server merges execution time here (`experimental_onToolCallFinish`). */
+/** Server merges execution time here (`onToolExecutionEnd`). */
 export function readDurationMsFromToolMetadata(
   toolMetadata: unknown
 ): number | undefined {
