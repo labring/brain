@@ -30,13 +30,27 @@ test("template provider ingress resources become one verified public-domain card
     const url = new URL(String(input));
     requests.push(url);
     const name = url.searchParams.get("name");
+    const websocket = name === "eaglercraft-demo";
     return Promise.resolve(
       Response.json({
         apiVersion: "networking.k8s.io/v1",
         kind: "Ingress",
-        metadata: { name, namespace: "ns-demo" },
+        metadata: {
+          annotations: websocket
+            ? { "nginx.ingress.kubernetes.io/backend-protocol": "WS" }
+            : {},
+          name,
+          namespace: "ns-demo",
+        },
         spec: {
-          rules: [{ host: "eaglercraft-demo.example.sealos.run" }],
+          rules: [
+            {
+              host: "eaglercraft-demo.example.sealos.run",
+              http: {
+                paths: websocket ? [{ path: "/" }] : [{ path: "/admin" }],
+              },
+            },
+          ],
           tls: [{ hosts: ["eaglercraft-demo.example.sealos.run"] }],
         },
       })
@@ -71,19 +85,35 @@ test("template provider ingress resources become one verified public-domain card
   assert.deepEqual(cards, [
     {
       events: [],
-      id: "AccessEndpoint:ns-demo:ingress:eaglercraft-demo:eaglercraft-demo.example.sealos.run",
+      id: "AccessEndpoint:ns-demo:ingress:eaglercraft-demo:https:eaglercraft-demo.example.sealos.run:/",
       required: true,
       resultRef: {
-        id: "ingress:eaglercraft-demo:eaglercraft-demo.example.sealos.run",
+        id: "ingress:eaglercraft-demo:https:eaglercraft-demo.example.sealos.run:/",
         kind: "AccessEndpoint",
-        label: "Public domain",
+        label: "Web address",
         namespace: "ns-demo",
         observer: { kind: "ingress", name: "eaglercraft-demo" },
         protocol: "https",
-        url: "https://eaglercraft-demo.example.sealos.run",
+        url: "https://eaglercraft-demo.example.sealos.run/",
       },
       status: "creating",
-      title: "Public domain",
+      title: "Web address",
+    },
+    {
+      events: [],
+      id: "AccessEndpoint:ns-demo:ingress:eaglercraft-demo:wss:eaglercraft-demo.example.sealos.run:/",
+      required: true,
+      resultRef: {
+        id: "ingress:eaglercraft-demo:wss:eaglercraft-demo.example.sealos.run:/",
+        kind: "AccessEndpoint",
+        label: "WebSocket address",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "eaglercraft-demo" },
+        protocol: "wss",
+        url: "wss://eaglercraft-demo.example.sealos.run/",
+      },
+      status: "creating",
+      title: "WebSocket address",
     },
   ]);
 });
@@ -101,7 +131,14 @@ test("template provider ingress observation retries transient failures", async (
         apiVersion: "networking.k8s.io/v1",
         kind: "Ingress",
         metadata: { name: "demo", namespace: "ns-demo" },
-        spec: { rules: [{ host: "demo.example.sealos.run" }] },
+        spec: {
+          rules: [
+            {
+              host: "demo.example.sealos.run",
+              http: { paths: [{ path: "/" }] },
+            },
+          ],
+        },
       })
     );
   }) as unknown as typeof fetch;

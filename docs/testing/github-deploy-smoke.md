@@ -57,7 +57,7 @@ Success requires all of the following:
 - the created task uses the AI runner;
 - `status` is `completed`;
 - `phase` is `completed`;
-- any reported public result URL is route-reachable and returns an HTTP response;
+- every reported public result URL returns a successful application response;
   the status code and response body are not application-health assertions.
 
 In the Agent-managed state machine, `completed/completed` is only written after

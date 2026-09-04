@@ -132,8 +132,17 @@ spec:
         - affine.example.sealos.run
   rules:
     - host: affine.example.sealos.run
+      http:
+        paths:
+          - path: /
     - host: status.example.sealos.run
+      http:
+        paths:
+          - path: /status
     - host: status.example.sealos.run
+      http:
+        paths:
+          - path: /status
     - host: "*.example.sealos.run"
     - host: invalid/path
 `,
@@ -143,35 +152,35 @@ spec:
   assert.deepEqual(cards, [
     {
       events: [],
-      id: "AccessEndpoint:ns-demo:ingress:affine:affine.example.sealos.run",
+      id: "AccessEndpoint:ns-demo:ingress:affine:https:affine.example.sealos.run:/",
       required: true,
       resultRef: {
-        id: "ingress:affine:affine.example.sealos.run",
+        id: "ingress:affine:https:affine.example.sealos.run:/",
         kind: "AccessEndpoint",
-        label: "Public domain",
+        label: "Web address",
         namespace: "ns-demo",
         observer: { kind: "ingress", name: "affine" },
         protocol: "https",
-        url: "https://affine.example.sealos.run",
+        url: "https://affine.example.sealos.run/",
       },
       status: "creating",
-      title: "Public domain",
+      title: "Web address",
     },
     {
       events: [],
-      id: "AccessEndpoint:ns-demo:ingress:affine:status.example.sealos.run",
+      id: "AccessEndpoint:ns-demo:ingress:affine:http:status.example.sealos.run:/status",
       required: true,
       resultRef: {
-        id: "ingress:affine:status.example.sealos.run",
+        id: "ingress:affine:http:status.example.sealos.run:/status",
         kind: "AccessEndpoint",
-        label: "Public domain",
+        label: "Web address /status",
         namespace: "ns-demo",
         observer: { kind: "ingress", name: "affine" },
         protocol: "http",
-        url: "http://status.example.sealos.run",
+        url: "http://status.example.sealos.run/status",
       },
       status: "creating",
-      title: "Public domain",
+      title: "Web address /status",
     },
   ]);
 });

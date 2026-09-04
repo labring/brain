@@ -347,6 +347,7 @@ async function resultCardReadiness(input: {
         allowedDomain: input.allowedDomain,
         deadlineAtMs: input.deadlineAtMs ?? Date.now() + 15_000,
         publicUrl,
+        signal: input.signal,
       });
       return {
         eventMessage: `${resultRef.label} is reachable.`,

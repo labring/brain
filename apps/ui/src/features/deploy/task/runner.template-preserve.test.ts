@@ -27,13 +27,27 @@ function installFetchRecorder() {
       const url = new URL(String(input));
       if (url.searchParams.get("kind") === "ingresses") {
         const name = url.searchParams.get("name");
+        const websocket = name === "eaglercraft-demo";
         return Promise.resolve(
           Response.json({
             apiVersion: "networking.k8s.io/v1",
             kind: "Ingress",
-            metadata: { name, namespace: "ns-demo" },
+            metadata: {
+              annotations: websocket
+                ? { "nginx.ingress.kubernetes.io/backend-protocol": "WS" }
+                : {},
+              name,
+              namespace: "ns-demo",
+            },
             spec: {
-              rules: [{ host: "eaglercraft-demo.example.sealos.run" }],
+              rules: [
+                {
+                  host: "eaglercraft-demo.example.sealos.run",
+                  http: {
+                    paths: websocket ? [{ path: "/" }] : [{ path: "/admin" }],
+                  },
+                },
+              ],
               tls: [{ hosts: ["eaglercraft-demo.example.sealos.run"] }],
             },
           })
@@ -332,13 +346,22 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     ];
     expect(publicAccessRefs).toEqual([
       {
-        id: "ingress:eaglercraft-demo:eaglercraft-demo.example.sealos.run",
+        id: "ingress:eaglercraft-demo:https:eaglercraft-demo.example.sealos.run:/",
         kind: "AccessEndpoint",
-        label: "Public domain",
+        label: "Web address",
         namespace: "ns-demo",
         observer: { kind: "ingress", name: "eaglercraft-demo" },
         protocol: "https",
-        url: "https://eaglercraft-demo.example.sealos.run",
+        url: "https://eaglercraft-demo.example.sealos.run/",
+      },
+      {
+        id: "ingress:eaglercraft-demo:wss:eaglercraft-demo.example.sealos.run:/",
+        kind: "AccessEndpoint",
+        label: "WebSocket address",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "eaglercraft-demo" },
+        protocol: "wss",
+        url: "wss://eaglercraft-demo.example.sealos.run/",
       },
     ]);
   });

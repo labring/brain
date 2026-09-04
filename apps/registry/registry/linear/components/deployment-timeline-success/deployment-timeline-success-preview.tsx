@@ -15,11 +15,8 @@ import {
   Copy,
   ExternalLink,
   Rocket,
-  RotateCw,
 } from "lucide-react";
 import { useState } from "react";
-
-import { DeploymentTaskSuccessConfetti } from "../../../../../ui/src/features/deploy/deployment-task-success-confetti";
 
 const PUBLIC_DOMAIN = "https://affine.demo.sealos.run";
 
@@ -33,7 +30,6 @@ function TimelineStep({ children }: { children: string }) {
 }
 
 function DeploymentTimelineSuccessDemo() {
-  const [celebrationKey, setCelebrationKey] = useState(0);
   const [copied, setCopied] = useState(false);
 
   const copyDomain = async () => {
@@ -48,24 +44,11 @@ function DeploymentTimelineSuccessDemo() {
 
   return (
     <div className="mx-auto flex w-full max-w-lg flex-col gap-3">
-      <div className="flex justify-end">
-        <AppButton
-          onClick={() => setCelebrationKey((key) => key + 1)}
-          size="sm"
-          variant="secondary"
-        >
-          <RotateCw aria-hidden data-icon="inline-start" />
-          Replay confetti
-        </AppButton>
-      </div>
-
       <div
         className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4"
         data-slot="deployment-task-timeline"
       >
         <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border" />
-        <DeploymentTaskSuccessConfetti active key={celebrationKey} />
-
         <div className="mb-2.5 flex items-center gap-2 text-foreground">
           <Rocket aria-hidden className="size-4 text-foreground" />
           <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>

@@ -59,6 +59,7 @@ function resultCardTitle(ref: DeploymentResultResourceRef): string {
 
 const DNS_HOST_RE =
   /^(?=.{1,253}$)(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
+const INGRESS_PATH_RESERVED_CHARACTER_RE = /[?#]/;
 
 function ingressHost(value: unknown): string | null {
   const host = stringValue(value)?.toLowerCase();
@@ -86,6 +87,56 @@ function ingressTlsHosts(spec: Record<string, unknown> | null): Set<string> {
       });
     })
   );
+}
+
+const NGINX_INGRESS_BACKEND_PROTOCOL =
+  "nginx.ingress.kubernetes.io/backend-protocol";
+
+function ingressDeclaresWebSocket(doc: Record<string, unknown>): boolean {
+  const annotations = objectValue(objectValue(doc.metadata)?.annotations);
+  const backendProtocol = stringValue(
+    annotations?.[NGINX_INGRESS_BACKEND_PROTOCOL]
+  )?.toUpperCase();
+  return backendProtocol === "WS" || backendProtocol === "WSS";
+}
+
+function ingressPaths(rule: Record<string, unknown>): string[] {
+  const http = objectValue(rule.http);
+  const paths = Array.isArray(http?.paths) ? http.paths : [];
+  return [
+    ...new Set(
+      paths.flatMap((entry) => {
+        const path = stringValue(objectValue(entry)?.path);
+        return path?.startsWith("/") &&
+          !INGRESS_PATH_RESERVED_CHARACTER_RE.test(path)
+          ? [path]
+          : [];
+      })
+    ),
+  ];
+}
+
+function ingressAccessEndpointCard(input: {
+  host: string;
+  identity: { name: string; namespace: string };
+  path: string;
+  protocol: "http" | "https" | "ws" | "wss";
+}): DeploymentResultResourceCard {
+  const baseLabel =
+    input.protocol === "ws" || input.protocol === "wss"
+      ? "WebSocket address"
+      : "Web address";
+  const label = input.path === "/" ? baseLabel : `${baseLabel} ${input.path}`;
+  const url = `${input.protocol}://${input.host}${input.path}`;
+  return resultCard({
+    id: `ingress:${input.identity.name}:${input.protocol}:${input.host}:${input.path}`,
+    kind: "AccessEndpoint",
+    label,
+    namespace: input.identity.namespace,
+    observer: { kind: "ingress", name: input.identity.name },
+    protocol: input.protocol,
+    url,
+  });
 }
 
 function templateIngressIdentity(
@@ -127,42 +178,83 @@ function templatePublicAccessCardsFromDoc(
   }
   const spec = objectValue(doc.spec);
   const tlsHosts = ingressTlsHosts(spec);
+  const declaresWebSocket = ingressDeclaresWebSocket(doc);
   return (Array.isArray(spec?.rules) ? spec.rules : []).flatMap((ruleValue) => {
-    const host = ingressHost(objectValue(ruleValue)?.host);
-    if (host == null) {
+    const rule = objectValue(ruleValue);
+    const host = ingressHost(rule?.host);
+    if (host == null || rule == null) {
       return [];
     }
-    const protocol = tlsHosts.has(host) ? "https" : "http";
-    const url = `${protocol}://${host}`;
-    return [
-      resultCard({
-        id: `ingress:${identity.name}:${host}`,
-        kind: "AccessEndpoint",
-        label: "Public domain",
-        namespace: identity.namespace,
-        observer: { kind: "ingress", name: identity.name },
-        protocol,
-        url,
+    const webProtocol = tlsHosts.has(host) ? "https" : "http";
+    const websocketProtocol = tlsHosts.has(host) ? "wss" : "ws";
+    return ingressPaths(rule).flatMap((path) => [
+      ingressAccessEndpointCard({
+        host,
+        identity,
+        path,
+        protocol: webProtocol,
       }),
-    ];
+      ...(declaresWebSocket
+        ? [
+            ingressAccessEndpointCard({
+              host,
+              identity,
+              path,
+              protocol: websocketProtocol,
+            }),
+          ]
+        : []),
+    ]);
   });
 }
 
 function deduplicateTemplatePublicAccessCards(
   cards: DeploymentResultResourceCard[]
 ): DeploymentResultResourceCard[] {
-  const cardsByUrl = new Map<string, DeploymentResultResourceCard>();
+  const cardsByProtocolAndUrl = new Map<string, DeploymentResultResourceCard>();
   for (const card of cards) {
     if (
       card.resultRef.kind === "AccessEndpoint" &&
       card.resultRef.observer.kind === "ingress" &&
       card.resultRef.url != null &&
-      !cardsByUrl.has(card.resultRef.url)
+      !cardsByProtocolAndUrl.has(
+        `${card.resultRef.protocol}:${card.resultRef.url}`
+      )
     ) {
-      cardsByUrl.set(card.resultRef.url, card);
+      cardsByProtocolAndUrl.set(
+        `${card.resultRef.protocol}:${card.resultRef.url}`,
+        card
+      );
     }
   }
-  return [...cardsByUrl.values()];
+  const uniqueCards = [...cardsByProtocolAndUrl.values()];
+  const rootOrigins = new Set(
+    uniqueCards.flatMap((card) => {
+      if (
+        card.resultRef.kind !== "AccessEndpoint" ||
+        card.resultRef.url == null
+      ) {
+        return [];
+      }
+      const url = new URL(card.resultRef.url);
+      return url.pathname === "/"
+        ? [`${card.resultRef.protocol}:${url.origin}`]
+        : [];
+    })
+  );
+  return uniqueCards.filter((card) => {
+    if (
+      card.resultRef.kind !== "AccessEndpoint" ||
+      card.resultRef.url == null
+    ) {
+      return true;
+    }
+    const url = new URL(card.resultRef.url);
+    return (
+      url.pathname === "/" ||
+      !rootOrigins.has(`${card.resultRef.protocol}:${url.origin}`)
+    );
+  });
 }
 
 export function templatePublicAccessCardsFromObservedIngresses(input: {

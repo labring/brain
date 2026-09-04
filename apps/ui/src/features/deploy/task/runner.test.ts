@@ -238,7 +238,7 @@ describe("managed public URL probe", () => {
     ).toBe(false);
   });
 
-  it("accepts any HTTP response as tenant-route reachability", async () => {
+  it("rejects an HTTP response that says the application is unavailable", async () => {
     globalThis.fetch = (() =>
       Promise.resolve(
         new Response(null, {
@@ -252,21 +252,23 @@ describe("managed public URL probe", () => {
         deadlineAtMs: Date.now() + 30_000,
         publicUrl: "https://demo.tenant-a.sealos.io",
       })
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow("returned 503");
   });
 
-  it("does not follow redirects outside the tenant route", async () => {
+  it("rejects redirects outside the tenant route", async () => {
     const calls: RequestInit[] = [];
     globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
       calls.push(init ?? {});
       return Promise.resolve(Response.redirect("https://login.example.com"));
     }) as typeof fetch;
 
-    await probeManagedPublicUrl({
-      allowedDomain: "tenant-a.sealos.io",
-      deadlineAtMs: Date.now() + 30_000,
-      publicUrl: "https://demo.tenant-a.sealos.io",
-    });
+    await expect(
+      probeManagedPublicUrl({
+        allowedDomain: "tenant-a.sealos.io",
+        deadlineAtMs: Date.now() + 30_000,
+        publicUrl: "https://demo.tenant-a.sealos.io",
+      })
+    ).rejects.toThrow("outside the tenant domain");
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.redirect).toBe("manual");

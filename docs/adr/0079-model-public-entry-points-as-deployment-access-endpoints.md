@@ -34,16 +34,19 @@ no database table and performs no read-path backfill.
 An AP public address is observed by AP name plus address id. Brain reads the
 provider-assigned URL from the AP Product View and never reconstructs it from a
 prefix, namespace, port, or cluster convention. A template Ingress declares
-HTTP or HTTPS according to its rule and TLS host coverage. It never implies a
-WebSocket endpoint.
+exact paths and HTTP or HTTPS according to its rule and TLS host coverage. The
+existing nginx `backend-protocol: WS|WSS` annotation is an explicit WebSocket
+declaration, so Brain also verifies the matching WS or WSS endpoint; Brain
+never derives WebSocket support from TLS or a product name.
 
 Agent-managed completion accepts at most eight `accessEndpoints`, each with a
 stable id, label, and exact URL. The v1 `publicUrl` field remains an input
 compatibility adapter and becomes one HTTP endpoint when the new array is
 absent. Brain validates the protocol, credentials, fragment, and tenant-domain
-boundary, then verifies every endpoint. HTTP(S) verification requires a tenant
-route response without following redirects. WS(S) verification requires the
-WebSocket upgrade to open. A failed required probe prevents completion.
+boundary, then verifies every endpoint. HTTP(S) verification requires a
+successful application response and follows redirects only while every target
+remains in the tenant domain. WS(S) verification requires the WebSocket
+upgrade to open. A failed required probe prevents completion.
 
 The Success Record contract advances to v2 and includes the verified endpoint
 protocol. HTTP(S) entries may be opened and copied. WS(S) entries are copied,
@@ -64,9 +67,10 @@ using it` is reserved for results with an actionable verified entry.
 
 - nginx and other direct web deployments wait for both workload readiness and
   a resolved, reachable platform address, then show that exact address.
-- Templates show every verified Ingress URL through the same result type.
-  Products that need a distinct WSS entry must declare it explicitly through a
-  future versioned Template Runtime Contract.
+- Templates show every verified Ingress path through the same result type.
+  Ingresses that explicitly declare an nginx WS/WSS backend also show a
+  separately verified WebSocket address. Richer product-specific labels and
+  probes still belong in a future versioned Template Runtime Contract.
 - GitHub deployments can report multiple independently labelled web and
   WebSocket endpoints while old deployment skills continue to work.
 - Rollback may stop writing v2 records, but readers must retain v1 and v2
