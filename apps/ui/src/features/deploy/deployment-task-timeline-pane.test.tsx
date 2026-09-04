@@ -810,8 +810,10 @@ test("deployment task lifecycle actions pin in the side pane footer slot", async
 
 const SUCCESS_SLOT_RE = /data-slot="deployment-task-success"/;
 const SUCCESS_ENTRY_SLOT_RE = /data-slot="deployment-task-success-entry"/g;
-const SUCCESS_VERIFICATION_SLOT_RE =
-  /data-slot="deployment-task-success-verification"/;
+const SUCCESS_PRIMARY_ACTION_SLOT_RE =
+  /data-slot="deployment-task-success-primary-action"/;
+const FULL_WIDTH_PRIMARY_ACTION_RE =
+  /<div data-slot="deployment-task-success-primary-action"><a(?=[^>]*class="[^"]*w-full[^"]*")(?=[^>]*data-size="default")[^>]*>/;
 const STEP_LABEL_RE = /Create resources/;
 const CONFETTI_CANVAS_RE =
   /<canvas(?=[^>]*pointer-events-none)(?=[^>]*absolute inset-0)[^>]*data-slot="deployment-task-success-confetti"/;
@@ -992,9 +994,10 @@ test("the verified result takes the panel and keeps the process one click away",
   assert.match(html, PRODUCT_NAME_RE);
   assert.doesNotMatch(html, FALLBACK_HEADLINE_RE);
   assert.match(html, OPEN_SERVER_RE);
+  assert.match(html, SUCCESS_PRIMARY_ACTION_SLOT_RE);
+  assert.match(html, FULL_WIDTH_PRIMARY_ACTION_RE);
   assert.match(html, VIEW_DETAILS_RE);
-  assert.match(html, SUCCESS_VERIFICATION_SLOT_RE);
-  assert.match(html, CHECKS_PASSED_RE);
+  assert.doesNotMatch(html, CHECKS_PASSED_RE);
   // Both declared addresses are listed, and the UI never builds one of its
   // own: the secondary address is only the element's own title and text node,
   // so it reads as an address to copy rather than a link to click.
@@ -1007,6 +1010,14 @@ test("the verified result takes the panel and keeps the process one click away",
   assert.equal(html.includes('href="https://lobby.demo.sealos.run"'), false);
   assert.ok(html.includes('href="https://eaglercraft.demo.sealos.run"'));
   assert.ok(html.includes('target="_blank"'));
+  assert.ok(
+    html.indexOf('data-slot="deployment-task-success-entry"') <
+      html.indexOf('data-slot="deployment-task-success-primary-action"')
+  );
+  assert.ok(
+    html.indexOf('data-slot="deployment-task-success-primary-action"') <
+      html.indexOf("Open the client.")
+  );
   // Ordered first-use instructions, with their detail line.
   assert.ok(
     html.indexOf("Open the client.") <
@@ -1085,7 +1096,7 @@ test("the EaglerCraft fixture teaches a player how to join the server", () => {
   assert.match(html, FIXTURE_ADDRESS_RE);
   assert.match(html, MULTIPLAYER_STEP_RE);
   assert.match(html, PLAY_STEP_RE);
-  assert.match(html, CHECKS_PASSED_RE);
+  assert.doesNotMatch(html, CHECKS_PASSED_RE);
   // The fixture declares one http(s) address; the UI must not turn it into a
   // WebSocket endpoint on its own (that question is still open, issue #160).
   assert.doesNotMatch(html, DECLARED_ADDRESS_RE);
