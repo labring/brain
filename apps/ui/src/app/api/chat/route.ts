@@ -84,12 +84,12 @@ import { observeWorkspaceQuotaQuietly } from "@/features/notifications/producers
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
-import { getProject } from "@/lib/project-persistence/projects";
 import {
   flushLangfuseTelemetry,
   isLangfuseTelemetryEnabled,
   withLangfuseChatTrace,
 } from "@/lib/observability/langfuse";
+import { getProject } from "@/lib/project-persistence/projects";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 
