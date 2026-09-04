@@ -3383,6 +3383,9 @@ async function observeManagedWorkloadReadiness(input: {
       });
       probedAccessEndpoints.push(endpoint);
     } catch (error) {
+      if (isDeployTaskAbortError(error)) {
+        throw error;
+      }
       violations.push(
         error instanceof Error
           ? `${endpoint.label}: ${error.message}`
