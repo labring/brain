@@ -127,6 +127,7 @@ import {
   verifyManagedWorkloadReadiness,
 } from "./managed-deployment-verifier";
 import { probeManagedPublicUrl } from "./managed-public-probe";
+import { attachManagedDeploymentTimelineSuccess } from "./managed-timeline";
 import { deployOutputProgressSummary } from "./output-progress";
 import { deploymentTaskSourceSummary } from "./projection";
 import {
@@ -3834,39 +3835,19 @@ async function runManagedDeploymentLifecycleCore(input: {
         phase: "verify",
       });
       // The managed gate has validated and probed every declared endpoint.
-      // Brain renders those facts verbatim and never invents a protocol/path.
+      // Project those facts into the same Timeline evidence seam used by the
+      // deterministic runners before publishing a user-facing conclusion.
       await updateDeployTaskTimeline(input.task.id, {
-        update: (timeline) =>
-          attachDeploymentTaskSuccess(timeline, {
-            success: {
-              ...(completion.accessEndpoints.length === 0
-                ? {}
-                : {
-                    entries: completion.accessEndpoints.map((endpoint) => ({
-                      label: endpoint.label,
-                      protocol: new URL(endpoint.url).protocol.slice(0, -1) as
-                        | "http"
-                        | "https"
-                        | "ws"
-                        | "wss",
-                      url: endpoint.url,
-                    })),
-                  }),
-              ...(completion.accessEndpoints.length === 0
-                ? { headline: "Deployment completed" }
-                : {}),
-              productName: deploymentTaskSourceSummary(input.task.source),
-              verification: {
-                passed:
-                  completion.resources.length +
-                  completion.accessEndpoints.length,
-                total:
-                  completion.resources.length +
-                  completion.accessEndpoints.length,
-              },
-            },
-            updatedAt: new Date().toISOString(),
-          }),
+        update: (timeline) => {
+          const updatedAt = new Date().toISOString();
+          return attachManagedDeploymentTimelineSuccess(timeline, {
+            accessEndpoints: completion.accessEndpoints,
+            namespace: input.task.namespace,
+            productName: deploymentTaskSourceSummary(input.task.source),
+            resources: completion.resources,
+            updatedAt,
+          });
+        },
       });
       await deployTaskComplete(input.task.id, {
         kind: "deployment_task.completed",

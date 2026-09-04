@@ -484,6 +484,8 @@ function resultResourceKindLabel(ref: DeploymentResultResourceRef): string {
       return ref.protocol.toUpperCase();
     case "TemplatePublicAccess":
       return "Public domain";
+    case "KubernetesWorkload":
+      return ref.workloadKind || "Workload";
     case "TemplateWorkload":
       return ref.workloadKind || "Workload";
     default:
@@ -1536,6 +1538,7 @@ export function DeploymentTaskTimelinePane({
       title={identity?.title ?? "Deployment Timeline"}
     >
       <DeploymentTaskTimelineBody
+        key={taskId}
         kubeconfig={kubeconfig}
         namespace={namespace}
         onEditRedeploy={onEditRedeploy}

@@ -220,6 +220,8 @@ export function resultReadinessEventReason(
       return "AccessEndpointReadiness";
     case "TemplatePublicAccess":
       return "TemplatePublicAccessReadiness";
+    case "KubernetesWorkload":
+      return "KubernetesWorkloadReadiness";
     case "TemplateWorkload":
       return "TemplateWorkloadReadiness";
     default:
@@ -241,6 +243,8 @@ export function resultReadinessLabel(
       return `${card.resultRef.label} ${card.resultRef.url ?? card.resultRef.id}`;
     case "TemplatePublicAccess":
       return `Public domain ${card.resultRef.url}`;
+    case "KubernetesWorkload":
+      return `${card.resultRef.workloadKind} ${card.resultRef.name}`;
     case "TemplateWorkload":
       return `${card.resultRef.workloadKind} ${card.resultRef.name}`;
     default:
@@ -365,6 +369,7 @@ async function resultCardReadiness(input: {
         allowedDomain: input.allowedDomain,
         deadlineAtMs: input.deadlineAtMs ?? Date.now() + 15_000,
         publicUrl: resultRef.url,
+        signal: input.signal,
       });
       return {
         eventMessage: "Public domain is reachable.",
@@ -372,6 +377,10 @@ async function resultCardReadiness(input: {
         status: "running",
       };
     }
+    case "KubernetesWorkload":
+      throw new Error(
+        "Kubernetes workload readiness is supplied by the managed deployment runner."
+      );
     case "TemplateWorkload": {
       const workload = await fetchTemplateWorkloadProductView({
         kubeconfig: input.kubeconfig,

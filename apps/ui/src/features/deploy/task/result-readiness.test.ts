@@ -129,6 +129,38 @@ it("marks a template public domain running only after its HTTP probe passes", as
   expect(observed.latestStatus).toBe("Public domain is reachable.");
 });
 
+it("propagates task cancellation to a historical template public probe", async () => {
+  let probeWasAborted: boolean | undefined;
+  globalThis.fetch = mock((_input: RequestInfo | URL, init?: RequestInit) => {
+    probeWasAborted = init?.signal?.aborted;
+    return Promise.resolve(new Response(null, { status: 200 }));
+  }) as unknown as typeof fetch;
+  const controller = new AbortController();
+  controller.abort(new Error("cancelled by task"));
+
+  await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    card: {
+      events: [],
+      id: "TemplatePublicAccess:ns-demo:affine:https://affine.example.sealos.run",
+      required: true,
+      resultRef: {
+        kind: "TemplatePublicAccess",
+        name: "affine",
+        namespace: "ns-demo",
+        url: "https://affine.example.sealos.run",
+      },
+      status: "creating",
+      title: "Public domain",
+    },
+    deadlineAtMs: Date.now() + 10_000,
+    kubeconfig: "unused",
+    signal: controller.signal,
+  });
+
+  expect(probeWasAborted).toBe(true);
+});
+
 it("resolves and verifies an AP-backed access endpoint before marking it running", async () => {
   globalThis.fetch = probeFetch as unknown as typeof fetch;
   fetcher.mockResolvedValueOnce({

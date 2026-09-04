@@ -48,8 +48,9 @@ evidence rather than by status:
   convergence window. Individual HTTP requests remain capped at 15 seconds,
   and individual Agent control checks remain bounded below the MCP route's
   60-second request duration.
-- Re-attaching an identical conclusion is a no-op: it does not bump the
-  Timeline revision, so the conclusion is stable across reconnects.
+- Re-attaching an identical conclusion is a no-op: its observation timestamp is
+  not part of content identity, the first verified timestamp is retained, and
+  the Timeline revision remains stable across reconnects.
 - A Deployment Celebration owns the one-shot announcement, claimed by
   task-plus-revision and held in a store outside React; it requires a
   transition observed while mounted, so entering an already-successful task

@@ -122,3 +122,45 @@ test("a page without a clipboard never claims a copy", async () => {
     await dom.restore();
   }
 });
+
+test("a delayed clipboard write cannot mark replacement text as copied", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let acceptFirstWrite: () => void = () => {
+    assert.fail("the clipboard promise was settled twice");
+  };
+  stubClipboard({
+    onWrite: () =>
+      new Promise<void>((resolve) => {
+        acceptFirstWrite = resolve;
+      }),
+  });
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(<CopyProbe text="task-a" />);
+    });
+    const container = rendered?.container;
+    assert.ok(container);
+    await actAndDrain(() => {
+      fireEvent.click(control(container));
+    }, 0);
+
+    await actAndDrain(() => {
+      rendered?.rerender(<CopyProbe text="task-b" />);
+    });
+    await actAndDrain(() => {
+      acceptFirstWrite();
+    });
+
+    assert.equal(container.textContent, "copy");
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});

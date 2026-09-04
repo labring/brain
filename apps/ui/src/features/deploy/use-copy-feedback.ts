@@ -21,7 +21,8 @@ export function useCopyFeedback(
   text: string,
   feedbackMs: number = COPY_FEEDBACK_MS
 ): [boolean, () => void] {
-  const [copied, setCopied] = useState(false);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearReset = useCallback(() => {
@@ -37,18 +38,24 @@ export function useCopyFeedback(
     if (typeof navigator === "undefined" || navigator.clipboard == null) {
       return;
     }
+    requestIdRef.current += 1;
+    const requestId = requestIdRef.current;
+    const requestedText = text;
     navigator.clipboard
-      .writeText(text)
+      .writeText(requestedText)
       .then(() => {
-        setCopied(true);
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+        setCopiedText(requestedText);
         clearReset();
         resetTimerRef.current = setTimeout(() => {
           resetTimerRef.current = null;
-          setCopied(false);
+          setCopiedText(null);
         }, feedbackMs);
       })
       .catch(() => undefined);
   }, [clearReset, feedbackMs, text]);
 
-  return [copied, copy];
+  return [copiedText === text, copy];
 }

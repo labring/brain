@@ -330,7 +330,7 @@ The transition where a concrete slot stops being a Deployment Placeholder Node a
 
 ### Deployment Result Resource
 
-A user-visible Project result a Deployment Task creates or changes — an AP, DB, AP-owned Public Address, or template-visible workload. Support objects may explain progress but are never result resources.
+A user-visible Project result a Deployment Task creates or changes — an AP, DB, public access endpoint, template-visible workload, or Agent-reported Kubernetes runtime independently observed by Brain. Support objects may explain progress but are never result resources.
 
 _Avoid_: applied object, Kubernetes object.
 

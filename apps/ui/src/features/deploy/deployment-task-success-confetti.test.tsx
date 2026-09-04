@@ -190,3 +190,42 @@ test("the confetti surface stays mounted but only draws while active", async () 
     await dom.restore();
   }
 });
+
+test("turning the celebration off immediately resets particles in flight", async () => {
+  const dom = installTestDom();
+  const stub = stubReducedMotion(false);
+  const previousActEnvironment = setActEnvironment(true);
+  let resets = 0;
+  const load: TimelineConfettiLoader = async () => () =>
+    Object.assign(() => new Promise<never>(() => undefined), {
+      reset: () => {
+        resets += 1;
+      },
+    });
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    await actAndDrain(() => {
+      rendered = render(
+        <DeploymentTaskSuccessConfetti active loadConfetti={load} />
+      );
+    }, 0);
+    assert.equal(resets, 0);
+
+    await actAndDrain(() => {
+      rendered?.rerender(
+        <DeploymentTaskSuccessConfetti active={false} loadConfetti={load} />
+      );
+    }, 0);
+
+    assert.equal(resets, 1);
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreActEnvironment(previousActEnvironment);
+    stub.restore();
+    await dom.restore();
+  }
+});

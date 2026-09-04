@@ -71,6 +71,9 @@ const TASK_ID_ROW_SLOT_RE = /data-slot="deployment-task-id"/;
 const TASK_ID_LABEL_RE = /Task ID:/;
 const TASK_ID_VALUE_RE = /task-1/;
 const TASK_ID_COPY_BUTTON_RE = /aria-label="Copy task ID"/;
+const TASK_A_ADDRESS_RE = /task-a\.demo\.sealos\.run/;
+const TASK_B_ADDRESS_RE = /task-b\.demo\.sealos\.run/;
+const LOADING_TIMELINE_RE = /Loading deployment timeline/;
 const APPLY_EVENT_CREATED_AT = "2026-06-17T10:00:02.000Z";
 const AP_READY_EVENT_CREATED_AT = "2026-06-17T10:00:03.000Z";
 const RAW_EVENT_TIME_AS_TEXT_RE = />2026-06-17T10:00:0[234]\.000Z</;
@@ -1317,6 +1320,104 @@ test("a pane opened on a finished task does not celebrate", async () => {
         rendered?.unmount();
       });
     }
+    restoreActEnvironment(previousActEnvironment);
+    stopPainting();
+    await dom.restore();
+    resetDeploymentTaskSuccessCelebrationClaims();
+  }
+});
+
+test("switching dock tasks clears the old result and does not celebrate history", async () => {
+  resetDeploymentTaskSuccessCelebrationClaims();
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  const stopPainting = skipCelebrationPainting();
+  const taskA = successSnapshot({
+    success: {
+      ...SUCCESS_RECORD,
+      entries: [{ url: "https://task-a.demo.sealos.run" }],
+      revision: 5,
+    },
+    taskId: "task-a",
+  });
+  const taskB = successSnapshot({
+    success: {
+      ...SUCCESS_RECORD,
+      entries: [{ url: "https://task-b.demo.sealos.run" }],
+      revision: 6,
+    },
+    taskId: "task-b",
+  });
+  let resolveTaskB: (() => void) | undefined;
+  const taskBResponse = new Promise<Response>((resolve) => {
+    resolveTaskB = () => resolve(Response.json(taskB));
+  });
+  const fetchOverride = defineGlobal(
+    "fetch",
+    (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/stream")) {
+        return Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                init?.signal?.addEventListener(
+                  "abort",
+                  () => controller.close(),
+                  { once: true }
+                );
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } }
+          )
+        );
+      }
+      return url.includes("/task-b/")
+        ? taskBResponse
+        : Promise.resolve(Response.json(taskA));
+    }
+  );
+  let rendered: ReturnType<typeof render> | undefined;
+  const pane = (taskId: string) => (
+    <DeploymentTaskTimelinePane
+      kubeconfig="kubeconfig"
+      namespace="default"
+      onClose={() => undefined}
+      taskId={taskId}
+    />
+  );
+  try {
+    await actAndDrain(() => {
+      rendered = render(pane("task-a"));
+    });
+    const container = rendered?.container;
+    assert.ok(container);
+    assert.match(container.textContent ?? "", TASK_A_ADDRESS_RE);
+
+    await actAndDrain(() => {
+      rendered?.rerender(pane("task-b"));
+    }, 0);
+    assert.doesNotMatch(container.textContent ?? "", TASK_A_ADDRESS_RE);
+    assert.match(container.textContent ?? "", LOADING_TIMELINE_RE);
+
+    await actAndDrain(() => {
+      resolveTaskB?.();
+    });
+    assert.match(container.textContent ?? "", TASK_B_ADDRESS_RE);
+    assert.equal(celebratingSurfaces(container).length, 0);
+    assert.equal(
+      hasDeploymentTaskSuccessCelebrationClaim(
+        deploymentTaskSuccessCelebrationKey("task-b", 6)
+      ),
+      false
+    );
+  } finally {
+    if (rendered) {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+    }
+    restoreGlobal(fetchOverride);
     restoreActEnvironment(previousActEnvironment);
     stopPainting();
     await dom.restore();

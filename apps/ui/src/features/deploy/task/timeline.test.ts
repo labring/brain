@@ -969,17 +969,18 @@ test("attaching success falls back to the write time when no stamp is given", ()
 test("re-attaching the same success conclusion does not churn the revision", () => {
   const timeline = emptyTimeline();
   const first = attachDeploymentTaskSuccess(timeline, {
-    success: EAGLERCRAFT_SUCCESS,
+    success: { productName: "Web app" },
     updatedAt: "2026-06-17T10:00:06.000Z",
   });
   const second = attachDeploymentTaskSuccess(first, {
-    success: EAGLERCRAFT_SUCCESS,
+    success: { productName: "Web app" },
     updatedAt: "2026-06-17T10:00:09.000Z",
   });
 
   assert.equal(second, first);
   assert.equal(second.revision, first.revision);
   assert.equal(second.success?.revision, first.success?.revision);
+  assert.equal(second.success?.verifiedAt, "2026-06-17T10:00:06.000Z");
 });
 
 test("a materially different success conclusion gets a fresh revision", () => {

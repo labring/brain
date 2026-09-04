@@ -597,6 +597,59 @@ test("public AI result cards retain safe status and timeout events", () => {
   assert.equal(JSON.stringify(projected).includes(privateText), false);
 });
 
+test("public AI timeline retains verified Kubernetes workload evidence", () => {
+  const timeline: DeploymentTaskTimelineSnapshot = {
+    publicProjectionVersion: CURRENT_AI_TIMELINE_PUBLIC_PROJECTION_VERSION,
+    revision: 2,
+    status: "completed",
+    steps: [
+      {
+        events: [],
+        id: "create-resources",
+        label: "Create resources",
+        order: 3,
+        resultCards: [
+          {
+            events: [],
+            id: "KubernetesWorkload:ns-demo:apps/v1:Deployment:web",
+            latestStatusText: "private provider detail",
+            required: true,
+            resultRef: {
+              apiVersion: "apps/v1",
+              kind: "KubernetesWorkload",
+              name: "web",
+              namespace: "ns-demo",
+              workloadKind: "Deployment",
+            },
+            status: "running",
+            title: "private title",
+          },
+        ],
+        status: "completed",
+      },
+    ],
+    taskId: "task-ai",
+    updatedAt: "2026-07-23T00:00:01.000Z",
+  };
+
+  const projected = publicDeployTaskTimelineSnapshot(timeline, {
+    runner: { kind: "ai", runtimeProvider: "devbox" },
+  });
+
+  assert.deepEqual(projected?.steps[0]?.resultCards?.[0]?.resultRef, {
+    apiVersion: "apps/v1",
+    kind: "KubernetesWorkload",
+    name: "web",
+    namespace: "ns-demo",
+    workloadKind: "Deployment",
+  });
+  assert.equal(projected?.steps[0]?.resultCards?.[0]?.title, "Workload");
+  assert.equal(
+    projected?.steps[0]?.resultCards?.[0]?.latestStatusText,
+    "Running"
+  );
+});
+
 test("public AI timeline shows allowlisted progress and omits unknown events", () => {
   const privateText = "private-timeline-text";
   const timeline = {

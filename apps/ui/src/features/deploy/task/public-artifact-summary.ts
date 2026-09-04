@@ -152,6 +152,7 @@ const TIMELINE_EVENT_SOURCES = new Set<DeploymentTimelineEventSource>([
 ]);
 const KUBERNETES_NAME_REGEX = /^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$/;
 const RESOURCE_IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const API_VERSION_REGEX = /^[A-Za-z0-9][A-Za-z0-9./-]*$/;
 
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
@@ -592,6 +593,15 @@ function safeResourceIdentifier(value: unknown): string | null {
     : null;
 }
 
+function safeApiVersion(value: unknown): string | null {
+  return typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 253 &&
+    API_VERSION_REGEX.test(value)
+    ? value
+    : null;
+}
+
 function safeHttpUrl(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
@@ -699,6 +709,14 @@ function publicAiResultRef(value: unknown): DeploymentResultResourceRef | null {
         ? null
         : { kind, name, namespace, url };
     }
+    case "KubernetesWorkload": {
+      const apiVersion = safeApiVersion(ref.apiVersion);
+      const name = safeKubernetesName(ref.name);
+      const workloadKind = safeResourceIdentifier(ref.workloadKind);
+      return apiVersion == null || name == null || workloadKind == null
+        ? null
+        : { apiVersion, kind, name, namespace, workloadKind };
+    }
     case "TemplateWorkload": {
       const name = safeKubernetesName(ref.name);
       const workloadKind = safeResourceIdentifier(ref.workloadKind);
@@ -722,6 +740,8 @@ function resultCardId(ref: DeploymentResultResourceRef): string {
       return `${ref.kind}:${ref.namespace}:${ref.id}`;
     case "TemplatePublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.name}:${ref.url}`;
+    case "KubernetesWorkload":
+      return `${ref.kind}:${ref.namespace}:${ref.apiVersion}:${ref.workloadKind}:${ref.name}`;
     case "TemplateWorkload":
       return `${ref.kind}:${ref.namespace}:${ref.workloadKind}:${ref.name}`;
     default:
@@ -741,6 +761,8 @@ function resultCardTitle(ref: DeploymentResultResourceRef): string {
       return ref.label;
     case "TemplatePublicAccess":
       return "Public domain";
+    case "KubernetesWorkload":
+      return "Workload";
     case "TemplateWorkload":
       return "Workload";
     default:

@@ -59,6 +59,11 @@ successful application response and follows redirects only while every target
 remains in the tenant domain. WS(S) verification requires the WebSocket
 upgrade to open. A failed required probe prevents completion.
 
+Agent-managed completion projects every verified endpoint and independently
+observed runtime into required Timeline result cards before deriving the
+Success Record. Services, Ingresses, PVCs, and other supporting objects remain
+in the artifact summary but do not inflate the user-visible verification count.
+
 The Success Record contract advances to v2 and includes the verified endpoint
 protocol. HTTP(S) entries may be opened and copied. WS(S) entries are copied,
 not opened as browser pages. A result with verified resources but no access

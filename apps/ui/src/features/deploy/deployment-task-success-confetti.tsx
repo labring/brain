@@ -93,7 +93,8 @@ export function prefersReducedMotion(): boolean {
  */
 export async function fireTimelineSuccessConfetti(
   canvas: HTMLCanvasElement,
-  load: TimelineConfettiLoader = loadTimelineConfetti
+  load: TimelineConfettiLoader = loadTimelineConfetti,
+  signal?: AbortSignal
 ): Promise<boolean> {
   if (typeof window === "undefined" || prefersReducedMotion()) {
     return false;
@@ -111,7 +112,23 @@ export async function fireTimelineSuccessConfetti(
       return Promise.resolve();
     }
   };
+  let removeAbortListener: () => void = () => undefined;
+  const aborted = new Promise<void>((resolve) => {
+    if (signal == null) {
+      return;
+    }
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => resolve();
+    signal.addEventListener("abort", onAbort, { once: true });
+    removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+  });
   try {
+    if (signal?.aborted) {
+      return false;
+    }
     await Promise.race([
       (async () => {
         await Promise.all([
@@ -136,25 +153,32 @@ export async function fireTimelineSuccessConfetti(
             ticks: 220,
           }),
         ]);
+        if (signal?.aborted) {
+          return;
+        }
         await new Promise((resolve) => {
           setTimeout(resolve, CONFETTI_CENTER_BURST_DELAY_MS);
         });
-        await settle({
-          angle: 90,
-          colors: [...CONFETTI_COLORS],
-          gravity: 0.9,
-          origin: { x: 0.5, y: 0.42 },
-          particleCount: 30,
-          spread: 120,
-          startVelocity: 21,
-          ticks: 200,
-        });
+        if (!signal?.aborted) {
+          await settle({
+            angle: 90,
+            colors: [...CONFETTI_COLORS],
+            gravity: 0.9,
+            origin: { x: 0.5, y: 0.42 },
+            particleCount: 30,
+            spread: 120,
+            startVelocity: 21,
+            ticks: 200,
+          });
+        }
       })(),
       new Promise((resolve) => {
         setTimeout(resolve, CONFETTI_MAX_MS);
       }),
+      aborted,
     ]);
   } finally {
+    removeAbortListener();
     try {
       instance.reset();
     } catch {
@@ -193,7 +217,11 @@ export function DeploymentTaskSuccessConfetti({
     if (canvas == null) {
       return;
     }
-    fireTimelineSuccessConfetti(canvas, loadConfetti).catch(() => undefined);
+    const controller = new AbortController();
+    fireTimelineSuccessConfetti(canvas, loadConfetti, controller.signal).catch(
+      () => undefined
+    );
+    return () => controller.abort();
   }, [active, loadConfetti]);
 
   return (

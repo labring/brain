@@ -52,6 +52,8 @@ function resultCardTitle(ref: DeploymentResultResourceRef): string {
       return "Public access";
     case "TemplatePublicAccess":
       return "Public domain";
+    case "KubernetesWorkload":
+      return ref.name;
     default:
       return ref.name;
   }

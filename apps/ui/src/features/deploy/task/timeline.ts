@@ -62,6 +62,13 @@ export type DeploymentResultResourceRef =
       url: string;
     }
   | {
+      apiVersion: string;
+      kind: "KubernetesWorkload";
+      name: string;
+      namespace: string;
+      workloadKind: string;
+    }
+  | {
       kind: "TemplateWorkload";
       name: string;
       namespace: string;
@@ -618,6 +625,8 @@ export function deploymentResultResourceCardId(
       return `${ref.kind}:${ref.namespace}:${ref.id}`;
     case "TemplatePublicAccess":
       return `${ref.kind}:${ref.namespace}:${ref.name}:${ref.url}`;
+    case "KubernetesWorkload":
+      return `${ref.kind}:${ref.namespace}:${ref.apiVersion}:${ref.workloadKind}:${ref.name}`;
     case "TemplateWorkload":
       return `${ref.kind}:${ref.namespace}:${ref.workloadKind}:${ref.name}`;
     default:
@@ -841,7 +850,6 @@ export function deploymentTaskSuccessSignature(
     verification: success.verification
       ? [success.verification.passed, success.verification.total]
       : null,
-    verifiedAt: success.verifiedAt,
   });
 }
 
