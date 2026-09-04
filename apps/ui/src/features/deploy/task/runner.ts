@@ -112,13 +112,18 @@ import {
   buildAtomicStdinWriteCommand,
   buildCodexMcpConfig,
   buildCodexMcpConfigWriteCommand,
+  buildManagedDeploymentLabelsFile,
+  buildManagedDeploymentLabelsWriteCommand,
   CODEX_GATEWAY_CODEX_HOME,
   CODEX_MCP_TOKEN_ENV,
+  MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT,
+  MANAGED_DEPLOYMENT_LABELS_PATH,
   MANAGED_INPUT_CLEANUP_COMPLETE_RUNTIME_STATE,
   MANAGED_INPUT_CLEANUP_PENDING_RUNTIME_STATE,
   MANAGED_INPUT_VALUES_MAX_BYTES,
   type ManagedResourceRef,
   managedDeploymentCompletedInputSchema,
+  managedDeploymentRegionEnv,
 } from "./managed-deployment-contract";
 import {
   buildManagedResourceObservationCommand,
@@ -217,9 +222,7 @@ const DEPLOY_BUILD_RESULT_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-result.j
 const DEPLOY_BUILD_RUNTIME_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/build-runtime.json`;
 const DEPLOY_TEMPLATE_YAML_PATH = `${DEPLOY_WORKSPACE_DIR}/.sealos/template/index.yaml`;
 const MANAGED_DEPLOYMENT_CONTRACT_DIR = `${DEPLOY_WORKSPACE_DIR}/.sealos/brain`;
-const MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT = "/run/sealai/deployment";
 const MANAGED_DEPLOYMENT_FIXED_INPUT_PATH = `${MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT}/inputs.json`;
-const MANAGED_DEPLOYMENT_KUBECONFIG_PATH = "/home/devbox/.kube/config";
 const MANAGED_VERIFICATION_QUERY_BATCH_MS = 60_000;
 const READ_OUTPUT_TIMEOUT_SECONDS = DEPLOY_TIMEOUT_POLICY.outputReadMs / 1000;
 const DEPLOY_OUTPUT_PROGRESS_POLL_MS = DEPLOY_TIMEOUT_POLICY.outputPollMs;
@@ -3183,21 +3186,24 @@ export async function ensureAiDeploymentDevbox(input: {
     return await ensureDeployDevbox({
       deadlineAtMs: input.deadlineAtMs,
       existingRuntimeName: input.task.runtimeName,
+      // The Devbox kubeAccess mount owns $KUBECONFIG (Brain writes no
+      // kubeconfig). The labels file is authoritative: the platform env path
+      // mangles JSON, so SEALAI_DEPLOY_LABELS_JSON stays only for compatibility.
       env: {
-        KUBECONFIG: MANAGED_DEPLOYMENT_KUBECONFIG_PATH,
         SEALAI_CONTRACT_DIR: MANAGED_DEPLOYMENT_CONTRACT_DIR,
         SEALAI_DEPLOY_MODE: "managed",
         SEALAI_DEPLOY_LABELS_JSON: JSON.stringify(
           managedTemplateDeploymentLabels(projectId)
         ),
+        SEALAI_DEPLOY_LABELS_PATH: MANAGED_DEPLOYMENT_LABELS_PATH,
         SEALAI_PROJECT_ID: projectId,
         SEALAI_TURN_DEADLINE_AT: new Date(input.taskDeadlineAtMs).toISOString(),
         SEALAI_DEPLOY_NAMESPACE: input.task.namespace,
         SEALAI_NAMESPACE: input.task.namespace,
         SEALAI_DEPLOY_TASK_ID: input.task.id,
         SEALAI_INPUTS_PATH: MANAGED_DEPLOYMENT_FIXED_INPUT_PATH,
-        SEALAI_KUBECONFIG_PATH: MANAGED_DEPLOYMENT_KUBECONFIG_PATH,
         CODEX_GATEWAY_CODEX_HOME,
+        ...managedDeploymentRegionEnv(input.kubeconfig),
         ...(input.agentControlToken == null
           ? {}
           : { [CODEX_MCP_TOKEN_ENV]: input.agentControlToken }),
@@ -4188,6 +4194,28 @@ async function runAiDeploymentTask(input: {
       namespace: input.task.namespace,
       runtimeName: runtime.name,
       stdin: buildCodexMcpConfig({ url: controlMcpUrl }),
+      taskId: input.task.id,
+      timeoutSeconds: deploymentExecTimeoutSeconds({
+        capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,
+        deadlineAtMs: prepareDeadlineAtMs,
+      }),
+    });
+  } catch (error) {
+    throw withDeployFailureDetails(error, {
+      reason: "deploy-runtime-unavailable",
+    });
+  }
+  // Rewritten on every prepare (fresh and resume) because the Devbox may have
+  // been recreated or resumed from pause since the last write.
+  try {
+    await execOrThrow({
+      command: buildManagedDeploymentLabelsWriteCommand(),
+      deadlineAtMs: prepareDeadlineAtMs,
+      namespace: input.task.namespace,
+      runtimeName: runtime.name,
+      stdin: buildManagedDeploymentLabelsFile(
+        managedTemplateDeploymentLabels(projectId)
+      ),
       taskId: input.task.id,
       timeoutSeconds: deploymentExecTimeoutSeconds({
         capMs: DEPLOY_TIMEOUT_POLICY.outputReadMs,

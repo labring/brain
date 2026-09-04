@@ -682,7 +682,12 @@ describe("deployment AI Proxy credentials", () => {
         "brain.io/project-id": "project-1",
         "brain.io/deployment-kind": "template",
       }),
+      SEALAI_DEPLOY_LABELS_PATH: "/run/sealai/deployment/labels.json",
+      SEALOS_REGION: "https://test.sealos.io",
+      SEALAI_TEMPLATE_API_URL: "https://template.test.sealos.io",
     });
+    expect(createdEnv).not.toHaveProperty("KUBECONFIG");
+    expect(createdEnv).not.toHaveProperty("SEALAI_KUBECONFIG_PATH");
     expect(createdStorageLimit).toBe("10Gi");
   });
 
@@ -730,7 +735,12 @@ describe("deployment AI Proxy credentials", () => {
     expect(createdEnv).toMatchObject({
       CODEX_GATEWAY_OPENAI_API_KEY: "github-override-key",
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://override.example/v1",
+      SEALAI_DEPLOY_LABELS_PATH: "/run/sealai/deployment/labels.json",
+      SEALOS_REGION: "https://test.sealos.io",
+      SEALAI_TEMPLATE_API_URL: "https://template.test.sealos.io",
     });
+    expect(createdEnv).not.toHaveProperty("KUBECONFIG");
+    expect(createdEnv).not.toHaveProperty("SEALAI_KUBECONFIG_PATH");
   });
 
   it("uses the caller's AI Proxy for GitHub Devboxes when GITHUB_DEPLOY_OPENAI_* is unset", async () => {
