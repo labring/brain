@@ -22,6 +22,19 @@ export const AGENT_CONTROL_CALL_MAX_ATTEMPTS = 3;
 export const AGENT_CONTROL_CALL_CLAIM_EXHAUSTED = "claim_exhausted" as const;
 export const AGENT_DEPLOYMENT_COMPLETED_MIN_INTERVAL_MS = 5000;
 
+/**
+ * `claim_exhausted` alone tells the Agent nothing actionable; when a retried
+ * call carried a (safe, runner-allowlisted) error code, the exhausted verdict
+ * keeps it as a suffix: `claim_exhausted:<code>`.
+ */
+export function agentControlClaimExhaustedCode(
+  lastErrorCode: string | null | undefined
+): string {
+  return lastErrorCode == null || lastErrorCode === ""
+    ? AGENT_CONTROL_CALL_CLAIM_EXHAUSTED
+    : `${AGENT_CONTROL_CALL_CLAIM_EXHAUSTED}:${lastErrorCode}`;
+}
+
 export function hashAgentControlCapability(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
@@ -153,8 +166,9 @@ export async function lastAgentToolCallAt(input: {
  * is only claimable after its `claimExpiresAt` passes (the previous Runner
  * crashed or stalled), at which point the lease epoch is taken over and the
  * attempt counter is bumped. When attempts reach the configured maximum the
- * call is failed with `claim_exhausted` so the MCP client can retry instead
- * of waiting forever.
+ * call is failed with `claim_exhausted[:<last error code>]` so the MCP client
+ * can retry instead of waiting forever; callers must not run the handler for
+ * a row returned in the `failed` state.
  */
 export async function claimNextAgentToolCall(input: {
   taskId: string;
@@ -198,7 +212,9 @@ export async function claimNextAgentToolCall(input: {
       attempt: row.attempt + 1,
       claimExpiresAt,
       claimOwner: input.claimOwner,
-      errorCode: exhausted ? AGENT_CONTROL_CALL_CLAIM_EXHAUSTED : row.errorCode,
+      errorCode: exhausted
+        ? agentControlClaimExhaustedCode(row.errorCode)
+        : row.errorCode,
       leaseEpoch: input.leaseEpoch,
       state: exhausted ? "failed" : "running",
       updatedAt: now,
@@ -245,11 +261,14 @@ export async function resolveAgentToolCall(input: {
 /**
  * Return a transiently failed control call to the durable inbox. The same
  * MCP request remains open while the runner makes another bounded attempt.
+ * `errorCode` records why this attempt failed so an eventual exhaustion can
+ * report it; it must already be a safe (allowlisted) code.
  */
 export async function retryAgentToolCall(input: {
   taskId: string;
   callId: string;
   claimOwner: string;
+  errorCode?: string;
 }): Promise<boolean> {
   const db = getDeploymentTaskDb();
   const rows = await db
@@ -258,7 +277,7 @@ export async function retryAgentToolCall(input: {
       claimExpiresAt: null,
       claimOwner: null,
       completedAt: null,
-      errorCode: null,
+      errorCode: input.errorCode ?? null,
       response: null,
       state: "pending",
       updatedAt: new Date(),

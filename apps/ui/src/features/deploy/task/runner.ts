@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
+import { ZodError } from "zod";
 import type {
   DatabaseDeploymentChoice,
   DatabaseDeploymentSettings,
@@ -3326,6 +3327,22 @@ async function observeManagedWorkloadReadiness(input: {
   };
 }
 
+/**
+ * running → applying at most once per run. `task` is the snapshot taken at
+ * turn start, so after the first transition only the turn signal knows the
+ * row is already `applying`; re-running the guarded transition would be
+ * rejected by the engine (`from: ["running"]`) as a supersession.
+ */
+async function ensureManagedApplyingStarted(
+  input: ManagedAgentToolContext
+): Promise<void> {
+  if (input.task.status !== "running" || input.signals.applyingStarted) {
+    return;
+  }
+  await deployTaskBeginApplying(input.task.id);
+  input.signals.applyingStarted = true;
+}
+
 async function handleManagedTemplateReadyCall(
   input: ManagedAgentToolContext,
   call: DeployTaskAgentCallRow
@@ -3371,11 +3388,8 @@ async function handleManagedTemplateReadyCall(
         publicProjectionVersion:
           CURRENT_AI_BLOCKING_INPUT_PUBLIC_PROJECTION_VERSION,
       }));
-  const applyingStarted =
-    blockingInputs.length === 0 && input.task.status === "running";
-  if (applyingStarted) {
-    await deployTaskBeginApplying(input.task.id);
-    input.signals.applyingStarted = true;
+  if (blockingInputs.length === 0) {
+    await ensureManagedApplyingStarted(input);
   }
   await updateDeployTaskState(input.task.id, {
     agentCheckpointId: checkpointId,
@@ -3425,10 +3439,7 @@ async function handleManagedDeploymentCompletedCall(
   ) {
     throw new Error("deployment_completed_throttled");
   }
-  if (input.task.status === "running" && !input.signals.applyingStarted) {
-    await deployTaskBeginApplying(input.task.id);
-    input.signals.applyingStarted = true;
-  }
+  await ensureManagedApplyingStarted(input);
   let readiness: ManagedIdentityGateResult;
   try {
     readiness = await observeManagedWorkloadReadiness({
@@ -3479,7 +3490,41 @@ async function handleManagedDeploymentCompletedCall(
   });
 }
 
-async function processPendingManagedAgentToolCalls(input: {
+const MANAGED_AGENT_TOOL_CONTRACT_ERROR_CODES: ReadonlySet<string> = new Set([
+  "deployment_completed_before_template_ready",
+  "deployment_completed_throttled",
+  "input_schema_changed_after_submission",
+  "invalid_template_digest",
+  "template_digest_mismatch",
+]);
+const MANAGED_AGENT_TOOL_INVALID_REQUEST_CODE = "invalid_request";
+const MANAGED_AGENT_TOOL_FAILED_CODE = "agent_tool_failed";
+
+interface ManagedAgentToolFailure {
+  code: string;
+  retryable: boolean;
+}
+
+/**
+ * Only allowlisted codes reach the Agent: raw messages may quote template or
+ * cluster content. Contract and request-schema violations are deterministic
+ * and fail the call on the first attempt; anything else (Devbox exec, DB) is
+ * treated as transient and retried within the claim budget.
+ */
+function classifyManagedAgentToolError(
+  error: unknown
+): ManagedAgentToolFailure {
+  if (error instanceof ZodError) {
+    return { code: MANAGED_AGENT_TOOL_INVALID_REQUEST_CODE, retryable: false };
+  }
+  const message = error instanceof Error ? error.message : "";
+  if (MANAGED_AGENT_TOOL_CONTRACT_ERROR_CODES.has(message)) {
+    return { code: message, retryable: false };
+  }
+  return { code: MANAGED_AGENT_TOOL_FAILED_CODE, retryable: true };
+}
+
+export async function processPendingManagedAgentToolCalls(input: {
   allowedDomain: string;
   deadlineAtMs: number;
   inputsSubmitted: boolean;
@@ -3489,18 +3534,6 @@ async function processPendingManagedAgentToolCalls(input: {
   task: DeployTaskRow;
 }): Promise<void> {
   const claimOwner = `${input.task.leaseOwner ?? "runner"}:${input.task.leaseEpoch}`;
-  const safeErrorCode = (error: unknown): string => {
-    const message = error instanceof Error ? error.message : "";
-    return [
-      "deployment_completed_before_template_ready",
-      "deployment_completed_throttled",
-      "input_schema_changed_after_submission",
-      "invalid_template_digest",
-      "template_digest_mismatch",
-    ].includes(message)
-      ? message
-      : "agent_tool_failed";
-  };
   while (true) {
     const call = await claimNextAgentToolCall({
       claimOwner,
@@ -3510,6 +3543,11 @@ async function processPendingManagedAgentToolCalls(input: {
     if (call == null) {
       return;
     }
+    if (call.state === "failed") {
+      // The claim itself exhausted the attempt budget and recorded the
+      // verdict; running the handler would only produce discarded side effects.
+      continue;
+    }
     try {
       const handlerContext = { ...input, claimOwner };
       if (call.toolName === "template_ready") {
@@ -3518,13 +3556,19 @@ async function processPendingManagedAgentToolCalls(input: {
       }
       await handleManagedDeploymentCompletedCall(handlerContext, call);
     } catch (error) {
-      const errorCode = safeErrorCode(error);
+      if (isDeployTaskAbortError(error)) {
+        // Not this call's failure: the run lost its fence or was cancelled.
+        // Leave the claim for lease failover and let the turn unwind.
+        throw error;
+      }
+      const failure = classifyManagedAgentToolError(error);
       if (
-        errorCode === "agent_tool_failed" &&
+        failure.retryable &&
         call.attempt < AGENT_CONTROL_CALL_MAX_ATTEMPTS &&
         (await retryAgentToolCall({
           callId: call.callId,
           claimOwner,
+          errorCode: failure.code,
           taskId: call.taskId,
         }))
       ) {
@@ -3534,7 +3578,7 @@ async function processPendingManagedAgentToolCalls(input: {
         claimOwner,
         taskId: call.taskId,
         callId: call.callId,
-        errorCode,
+        errorCode: failure.code,
       });
     }
   }
