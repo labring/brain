@@ -97,6 +97,9 @@ function ingressDeclaresWebSocket(doc: Record<string, unknown>): boolean {
   const backendProtocol = stringValue(
     annotations?.[NGINX_INGRESS_BACKEND_PROTOCOL]
   )?.toUpperCase();
+  // nginx applies this Ingress-level backend declaration to every path owned
+  // by the same object. The path list below remains the exact source of URL
+  // paths; the annotation only contributes the explicitly declared protocol.
   return backendProtocol === "WS" || backendProtocol === "WSS";
 }
 
@@ -227,34 +230,7 @@ function deduplicateTemplatePublicAccessCards(
       );
     }
   }
-  const uniqueCards = [...cardsByProtocolAndUrl.values()];
-  const rootOrigins = new Set(
-    uniqueCards.flatMap((card) => {
-      if (
-        card.resultRef.kind !== "AccessEndpoint" ||
-        card.resultRef.url == null
-      ) {
-        return [];
-      }
-      const url = new URL(card.resultRef.url);
-      return url.pathname === "/"
-        ? [`${card.resultRef.protocol}:${url.origin}`]
-        : [];
-    })
-  );
-  return uniqueCards.filter((card) => {
-    if (
-      card.resultRef.kind !== "AccessEndpoint" ||
-      card.resultRef.url == null
-    ) {
-      return true;
-    }
-    const url = new URL(card.resultRef.url);
-    return (
-      url.pathname === "/" ||
-      !rootOrigins.has(`${card.resultRef.protocol}:${url.origin}`)
-    );
-  });
+  return [...cardsByProtocolAndUrl.values()];
 }
 
 export function templatePublicAccessCardsFromObservedIngresses(input: {

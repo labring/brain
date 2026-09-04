@@ -37,7 +37,10 @@ prefix, namespace, port, or cluster convention. A template Ingress declares
 exact paths and HTTP or HTTPS according to its rule and TLS host coverage. The
 existing nginx `backend-protocol: WS|WSS` annotation is an explicit WebSocket
 declaration, so Brain also verifies the matching WS or WSS endpoint; Brain
-never derives WebSocket support from TLS or a product name.
+never derives WebSocket support from TLS or a product name. Because the
+annotation applies to the whole Ingress, each path declared by that Ingress is
+retained and verified independently; a root path never hides a more specific
+path.
 
 Agent-managed completion accepts at most eight `accessEndpoints`, each with a
 stable id, label, and exact URL. The v1 `publicUrl` field remains an input

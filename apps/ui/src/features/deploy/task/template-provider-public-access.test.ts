@@ -115,6 +115,22 @@ test("template provider ingress resources become one verified public-domain card
       status: "creating",
       title: "WebSocket address",
     },
+    {
+      events: [],
+      id: "AccessEndpoint:ns-demo:ingress:eaglercraft-demo-admin:https:eaglercraft-demo.example.sealos.run:/admin",
+      required: true,
+      resultRef: {
+        id: "ingress:eaglercraft-demo-admin:https:eaglercraft-demo.example.sealos.run:/admin",
+        kind: "AccessEndpoint",
+        label: "Web address /admin",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "eaglercraft-demo-admin" },
+        protocol: "https",
+        url: "https://eaglercraft-demo.example.sealos.run/admin",
+      },
+      status: "creating",
+      title: "Web address /admin",
+    },
   ]);
 });
 

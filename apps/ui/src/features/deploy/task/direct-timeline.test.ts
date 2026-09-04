@@ -185,6 +185,45 @@ spec:
   ]);
 });
 
+test("an explicitly WebSocket-backed Ingress keeps every declared path", () => {
+  const cards = resultResourceCardsFromArtifactSummary({
+    resourceYamls: [
+      `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: game
+  namespace: ns-demo
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: WS
+spec:
+  tls:
+    - hosts: [game.example.sealos.run]
+  rules:
+    - host: game.example.sealos.run
+      http:
+        paths:
+          - path: /
+          - path: /server
+`,
+    ],
+  });
+
+  assert.deepEqual(
+    cards.map((card) =>
+      card.resultRef.kind === "AccessEndpoint"
+        ? [card.resultRef.protocol, card.resultRef.url]
+        : null
+    ),
+    [
+      ["https", "https://game.example.sealos.run/"],
+      ["wss", "wss://game.example.sealos.run/"],
+      ["https", "https://game.example.sealos.run/server"],
+      ["wss", "wss://game.example.sealos.run/server"],
+    ]
+  );
+});
+
 test("deployment timeline creates required Access Endpoint cards from AP network evidence", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resources: [

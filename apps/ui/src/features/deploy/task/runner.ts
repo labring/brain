@@ -3372,12 +3372,14 @@ async function observeManagedWorkloadReadiness(input: {
   const observations = parseManagedResourceObservations(observationsText);
   const violations: string[] = [];
   const probedAccessEndpoints: ManagedAccessEndpoint[] = [];
+  const signal = deployTaskRunSignal(input.taskId);
   for (const endpoint of input.accessEndpoints) {
     try {
       await probeManagedPublicUrl({
         allowedDomain: input.allowedDomain,
         deadlineAtMs: input.deadlineAtMs,
         publicUrl: endpoint.url,
+        signal,
       });
       probedAccessEndpoints.push(endpoint);
     } catch (error) {

@@ -421,7 +421,7 @@ export const Index: RegistryIndex = {
     name: "deployment-timeline-success",
     title: "Deployment Timeline Success",
     description:
-      "Verified deployment result inside the Timeline: scoped confetti, a usable-product conclusion, probe-backed Public Domain, and persistent process access.",
+      "Verified deployment result inside the Timeline: a usable-product conclusion, probe-backed access addresses, and persistent process access.",
     state: "reviewing",
     type: "registry:preview",
     registryDependencies: [
@@ -434,11 +434,6 @@ export const Index: RegistryIndex = {
       {
         path: "registry/linear/components/deployment-timeline-success/deployment-timeline-success-preview.tsx",
         type: "registry:preview",
-        target: "",
-      },
-      {
-        path: "apps/ui/src/features/deploy/deployment-task-success-confetti.tsx",
-        type: "registry:component",
         target: "",
       },
       previewUiFile,
