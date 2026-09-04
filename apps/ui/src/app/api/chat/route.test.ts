@@ -468,6 +468,7 @@ mock.module("@/features/chat/runtime/tools", () => ({
     }
     return Promise.resolve({
       systemPrompt: "Test system prompt",
+      toolApproval: {},
       tools: { getDeployTaskStatus: serverTool, navigateApp: clientTool },
     });
   },

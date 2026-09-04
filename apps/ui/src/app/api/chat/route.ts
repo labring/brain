@@ -787,7 +787,7 @@ async function runChatPipeline(input: {
     // The toolset's deploy-task actor stays the per-region crName: chat
     // deploy tools perform only namespace-shared actions, which record the
     // kubeconfig-verified identity (AIM-154 keeps them token-free).
-    const { tools, systemPrompt } = await buildChatToolset({
+    const { toolApproval, tools, systemPrompt } = await buildChatToolset({
       assistantContext,
       billingActor: {
         cookieHeader: input.cookieHeader,
@@ -897,6 +897,7 @@ async function runChatPipeline(input: {
           },
           instructions: systemPrompt,
           messages: modelMessages,
+          toolApproval,
           tools,
           telemetry: {
             functionId: "project-assistant-chat",
