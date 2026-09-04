@@ -1,7 +1,6 @@
 "use client";
 
 import type { CanvasSelectedNode } from "@workspace/ui/components/canvas/canvas.types";
-import { isEffectivelyVisible } from "@workspace/ui/lib/effective-visibility";
 import type { Node } from "@xyflow/react";
 import {
   createElement,
@@ -98,10 +97,6 @@ import { useDbServiceRestoreFocus } from "@/features/project-canvas/workbench/us
 import { useProjectCanvasConnectionGesture } from "@/features/project-canvas/workbench/use-project-canvas-connection-gesture";
 import { createProjectCanvasViewportDirectiveStore } from "@/features/project-canvas/workbench/viewport-directive-store";
 import {
-  realWorkbenchClock,
-  type WorkbenchClock,
-} from "@/features/project-canvas/workbench/workbench-clock";
-import {
   createWorkbenchOrchestrationStore,
   type WorkbenchOrchestrationEvent,
   type WorkbenchOrchestrationStore,
@@ -112,10 +107,6 @@ import type {
   SettingsReadModelHints,
   SettingsSessionEvents,
 } from "@/features/resource-settings/settings-types";
-
-function currentPageVisible(): boolean {
-  return isEffectivelyVisible();
-}
 
 function sideEntrySupportedForProject(
   entry: ProjectSideSurfaceEntry,
@@ -137,8 +128,8 @@ function sideEntrySupportedForProject(
 }
 
 /**
- * The Project Canvas Workbench: three identifiers in (plus an optional clock
- * seam), three semantic groups out. It privately instantiates Project Runtime
+ * The Project Canvas Workbench: three identifiers in, three semantic groups
+ * out. It privately instantiates Project Runtime
  * observation and Canvas Layout persistence, then orchestrates Project
  * Surfaces, canvas selection and route sync, Settings Launch Context, leave
  * guards, the Deployment Task Dock and Timeline, Resource Actions, and
@@ -147,13 +138,10 @@ function sideEntrySupportedForProject(
  * boundary that reads facts, submits events, and executes effect plans.
  */
 export function useProjectCanvasModule({
-  clock = realWorkbenchClock,
   kubeconfig,
   namespace,
   projectId,
 }: {
-  /** Defaults to real timers; tests pass a manual clock to drive notice expiry. */
-  clock?: WorkbenchClock;
   kubeconfig: string;
   namespace: string;
   projectId: string;
@@ -174,7 +162,6 @@ export function useProjectCanvasModule({
     orchestration.getSnapshot,
     orchestration.getSnapshot
   );
-  const noticeExpiryCancelRef = useRef<(() => void) | null>(null);
   // Effect targets declared later in the hook (closeSideSurface itself
   // submits events, so plain reordering cannot break the cycle). They reach
   // the runner through this ref, refreshed by an insertion effect below —
@@ -226,20 +213,6 @@ export function useProjectCanvasModule({
           });
           break;
         }
-        case "rescheduleNoticeExpiry": {
-          noticeExpiryCancelRef.current?.();
-          noticeExpiryCancelRef.current =
-            effect.delayMs == null
-              ? null
-              : clock.schedule(() => {
-                  noticeExpiryCancelRef.current = null;
-                  submitEvent({
-                    kind: "noticeExpiryDue",
-                    now: clock.now(),
-                  });
-                }, effect.delayMs);
-          break;
-        }
         case "revalidateResourceSnapshot": {
           deps.revalidate().catch(() => undefined);
           break;
@@ -250,13 +223,6 @@ export function useProjectCanvasModule({
       }
     }
   });
-  useEffect(
-    () => () => {
-      noticeExpiryCancelRef.current?.();
-      noticeExpiryCancelRef.current = null;
-    },
-    []
-  );
   const deploymentTaskDockDismissalsKey = useMemo(
     () => deploymentTaskDockDismissalsStorageKey({ namespace, projectId }),
     [namespace, projectId]
@@ -342,15 +308,6 @@ export function useProjectCanvasModule({
       kind: "workbenchIdentityChanged",
     });
   }, [namespace, projectId, submitOrchestrationEvent]);
-
-  useEffect(() => {
-    submitOrchestrationEvent({
-      kind: "deploymentTasksArrived",
-      now: clock.now(),
-      pageVisible: currentPageVisible(),
-      tasks: deploymentTaskProjections,
-    });
-  }, [clock, deploymentTaskProjections, submitOrchestrationEvent]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1087,31 +1044,17 @@ export function useProjectCanvasModule({
     ]
   );
 
-  const completedNoticeExpiresAtByTaskId =
-    orchestrationState.completedNoticeExpiresAtByTaskId;
-  const completedNoticeTaskIds = useMemo(() => {
-    const now = clock.now();
-    const taskIds = new Set<string>();
-    for (const [taskId, expiresAt] of completedNoticeExpiresAtByTaskId) {
-      if (expiresAt > now) {
-        taskIds.add(taskId);
-      }
-    }
-    return taskIds;
-  }, [clock, completedNoticeExpiresAtByTaskId]);
   const dismissedDeploymentTaskUpdatedAtById =
     orchestrationState.dismissedDeploymentTaskUpdatedAtById;
   const deploymentTaskDock = useMemo(
     () =>
       selectDeploymentTaskDock({
         activeTaskId: activeDeploymentTaskTimelineTaskId,
-        completedNoticeTaskIds,
         dismissedTaskUpdatedAtById: dismissedDeploymentTaskUpdatedAtById,
         tasks: deploymentTaskProjections,
       }),
     [
       activeDeploymentTaskTimelineTaskId,
-      completedNoticeTaskIds,
       deploymentTaskProjections,
       dismissedDeploymentTaskUpdatedAtById,
     ]
@@ -1135,13 +1078,11 @@ export function useProjectCanvasModule({
       submitOrchestrationEvent({
         activeTimelineTaskId: activeDeploymentTaskTimelineTaskId,
         kind: "deploymentTaskDismissRequested",
-        now: clock.now(),
         task,
       });
     },
     [
       activeDeploymentTaskTimelineTaskId,
-      clock,
       deploymentTaskProjections,
       submitOrchestrationEvent,
     ]
