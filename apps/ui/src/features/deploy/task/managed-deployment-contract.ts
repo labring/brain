@@ -1,6 +1,11 @@
 import { posix as path } from "node:path";
 import { z } from "zod";
 
+import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
+
+export const MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT = "/run/sealai/deployment";
+export const MANAGED_DEPLOYMENT_LABELS_PATH = `${MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT}/labels.json`;
+export const MANAGED_DEPLOYMENT_LABELS_MAX_BYTES = 16 * 1024;
 export const MANAGED_INPUT_VALUES_MAX_BYTES = 64 * 1024;
 export const MANAGED_INPUT_CLEANUP_PENDING_RUNTIME_STATE =
   "input-cleanup-pending";
@@ -138,10 +143,57 @@ export function buildCodexMcpConfigWriteCommand(): string {
   });
 }
 
+export function buildManagedDeploymentLabelsFile(
+  labels: Record<string, string>
+): string {
+  if (Object.keys(labels).length === 0) {
+    throw new Error("Managed deployment labels must not be empty.");
+  }
+  const contents = `${JSON.stringify(labels)}\n`;
+  if (
+    Buffer.byteLength(contents, "utf8") > MANAGED_DEPLOYMENT_LABELS_MAX_BYTES
+  ) {
+    throw new Error("Managed deployment labels exceed their byte limit.");
+  }
+  return contents;
+}
+
+export function buildManagedDeploymentLabelsWriteCommand(): string {
+  return buildAtomicStdinWriteCommand({
+    allowedRoot: MANAGED_DEPLOYMENT_FIXED_INPUT_ROOT,
+    maxBytes: MANAGED_DEPLOYMENT_LABELS_MAX_BYTES,
+    path: MANAGED_DEPLOYMENT_LABELS_PATH,
+  });
+}
+
+const IN_CLUSTER_HOST_RE = /\.svc(?:\.cluster\.local)?$/i;
+
+/**
+ * The Template API lives at `template.<cloud domain>`, where the cloud domain
+ * is the host of Brain's request kubeconfig server — not `AP_USER_DOMAIN`,
+ * which may be a distinct user-facing AP domain. The kubeconfig the Devbox
+ * `kubeAccess` mount injects points at `kubernetes.default.svc`, so the skill
+ * cannot derive the region from it and Brain must pass it explicitly. An
+ * in-cluster host yields no region rather than a dead `template.*.svc` URL.
+ */
+export function managedDeploymentRegionEnv(
+  kubeconfig: string
+): Record<string, string> {
+  const domain = routingDomainFromKubeconfig(kubeconfig);
+  if (domain === "" || IN_CLUSTER_HOST_RE.test(domain)) {
+    return {};
+  }
+  return {
+    SEALOS_REGION: `https://${domain}`,
+    SEALAI_TEMPLATE_API_URL: `https://template.${domain}`,
+  };
+}
+
 /**
  * Writes a bounded payload into the Devbox from stdin without embedding the
  * values in the command line. Used for the fixed task input file the Agent
- * resumes from after Brain renders the Template form.
+ * resumes from after Brain renders the Template form, and for the ownership
+ * labels file.
  */
 export function buildAtomicStdinWriteCommand(input: {
   allowedRoot: string;
