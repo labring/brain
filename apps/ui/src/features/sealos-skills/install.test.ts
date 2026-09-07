@@ -24,3 +24,8 @@ test("legacy source overrides must be migrated, not silently ignored", () => {
     })
   ).toThrow("DEVBOX_RUNTIME_IMAGE");
 });
+
+test("only Chat explicitly initializes a workspace without repository cloning", () => {
+  expect(buildSealosSkillsInstallCommand(true)).toContain(" --init-workspace");
+  expect(buildSealosSkillsInstallCommand()).not.toContain(" --init-workspace");
+});

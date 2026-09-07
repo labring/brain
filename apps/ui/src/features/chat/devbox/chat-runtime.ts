@@ -311,7 +311,7 @@ async function installChatSkills(
   const result = await runDevboxCommand(
     authNamespace,
     name,
-    buildSealosSkillsInstallCommand(),
+    buildSealosSkillsInstallCommand(true),
     DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS,
     signal
   );
