@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  DEFAULT_LANGFUSE_BASE_URL,
+  DEFAULT_LANGFUSE_HOST,
   getLangfuseConfigFromEnv,
   isLangfusePartiallyConfiguredFromEnv,
 } from "./langfuse-core";
@@ -31,7 +31,7 @@ test("trims credentials and base URL and applies the Cloud default", () => {
     getLangfuseConfigFromEnv({
       LANGFUSE_PUBLIC_KEY: " pk-lf-test ",
       LANGFUSE_SECRET_KEY: " sk-lf-test ",
-      LANGFUSE_BASE_URL: " https://langfuse.example.test/// ",
+      LANGFUSE_HOST: " https://langfuse.example.test/// ",
     }),
     {
       publicKey: "pk-lf-test",
@@ -43,8 +43,8 @@ test("trims credentials and base URL and applies the Cloud default", () => {
     getLangfuseConfigFromEnv({
       LANGFUSE_PUBLIC_KEY: "pk-lf-test",
       LANGFUSE_SECRET_KEY: "sk-lf-test",
-      LANGFUSE_BASE_URL: "   ",
+      LANGFUSE_HOST: "   ",
     })?.baseUrl,
-    DEFAULT_LANGFUSE_BASE_URL
+    DEFAULT_LANGFUSE_HOST
   );
 });

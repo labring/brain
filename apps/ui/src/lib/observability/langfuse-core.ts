@@ -1,4 +1,4 @@
-export const DEFAULT_LANGFUSE_BASE_URL = "https://cloud.langfuse.com";
+export const DEFAULT_LANGFUSE_HOST = "https://cloud.langfuse.com";
 const TRAILING_SLASHES = /\/+$/;
 
 export type LangfuseEnv = Record<string, string | undefined>;
@@ -29,8 +29,8 @@ export function getLangfuseConfigFromEnv(
     publicKey,
     secretKey,
     baseUrl:
-      env.LANGFUSE_BASE_URL?.trim().replace(TRAILING_SLASHES, "") ||
-      DEFAULT_LANGFUSE_BASE_URL,
+      env.LANGFUSE_HOST?.trim().replace(TRAILING_SLASHES, "") ||
+      DEFAULT_LANGFUSE_HOST,
   };
 }
 
