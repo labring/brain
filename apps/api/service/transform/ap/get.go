@@ -438,32 +438,28 @@ type observedServicePorts struct {
 type observedIngressEndpoint struct {
 	host       string
 	key        string
-	path       string
+	paths      []string
 	port       int
 	scheme     string
 	serviceKey string
 }
 
 // url renders the endpoint's user-facing address: scheme, host, and the
-// primary Ingress path Brain retained for that host, service, and port.
+// primary Ingress path retained for that host, service, and port.
 func (endpoint observedIngressEndpoint) url() string {
-	path := endpoint.path
-	if path == "" {
-		path = "/"
-	}
-	return fmt.Sprintf("%s://%s%s", endpoint.scheme, endpoint.host, path)
+	return fmt.Sprintf("%s://%s%s", endpoint.scheme, endpoint.host, primaryIngressPath(endpoint.paths))
 }
 
 // ingressEntryPath reduces one Ingress rule path to the literal prefix a
-// browser can open. Regex paths (`/admin(/|$)(.*)`) keep their literal head,
-// query or fragment characters disqualify the path, and a path that is not
+// browser can open. Regex paths (`/admin(/|$)(.*)`, `/?(.*)`) keep their
+// literal head; a fragment disqualifies the path, and a path that is not
 // rooted contributes nothing.
 func ingressEntryPath(raw string) (string, bool) {
 	path := strings.TrimSpace(raw)
-	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "?#") {
+	if !strings.HasPrefix(path, "/") || strings.Contains(path, "#") {
 		return "", false
 	}
-	if index := strings.IndexAny(path, "()[]|*+^$"); index >= 0 {
+	if index := strings.IndexAny(path, "()[]|*+^$?"); index >= 0 {
 		path = path[:index]
 	}
 	if len(path) > 1 {
@@ -475,16 +471,66 @@ func ingressEntryPath(raw string) (string, bool) {
 	return path, true
 }
 
-// retainIngressPath applies ADR 0079's primary-path rule to one endpoint: a
-// declared root wins, otherwise the first manifest-ordered path stays.
+// ingressAssetPathRE marks a path whose last segment carries a short file
+// extension (`/admin.css`, `/favicon.ico`): a static asset routed next to a
+// page, never the page itself.
+var ingressAssetPathRE = regexp.MustCompile(`\.[A-Za-z0-9]{1,5}$`)
+
+func isIngressAssetPath(path string) bool {
+	last := path[strings.LastIndex(path, "/")+1:]
+	return ingressAssetPathRE.MatchString(last)
+}
+
+// primaryIngressPath picks the one path an Ingress rule set offers as the
+// product's entry (ADR 0079, amended): a declared root wins outright.
+// Otherwise asset paths step aside and the remaining path that the most
+// other declared paths extend is the page (`/admin` for `/admin.css`,
+// `/admin.js`, ...); a tie keeps manifest order. Ingress path order carries
+// no routing meaning, so it is only ever the last resort.
+func primaryIngressPath(paths []string) string {
+	if len(paths) == 0 {
+		return "/"
+	}
+	pages := []string{}
+	for _, path := range paths {
+		if path == "/" {
+			return "/"
+		}
+		if !isIngressAssetPath(path) {
+			pages = append(pages, path)
+		}
+	}
+	if len(pages) == 0 {
+		pages = paths
+	}
+	best, bestScore := pages[0], -1
+	for _, candidate := range pages {
+		score := 0
+		for _, other := range paths {
+			if other != candidate && strings.HasPrefix(other, candidate) {
+				score++
+			}
+		}
+		if score > bestScore {
+			best, bestScore = candidate, score
+		}
+	}
+	return best
+}
+
+// retainIngressPath records one declared path on an endpoint, in manifest
+// order and without duplicates; primaryIngressPath decides among them later.
 func retainIngressPath(endpoint *observedIngressEndpoint, raw string) {
 	path, ok := ingressEntryPath(raw)
 	if !ok {
 		return
 	}
-	if endpoint.path == "" || (path == "/" && endpoint.path != "/") {
-		endpoint.path = path
+	for _, existing := range endpoint.paths {
+		if existing == path {
+			return
+		}
 	}
+	endpoint.paths = append(endpoint.paths, path)
 }
 
 func observedServiceLookup(services []map[string]interface{}) (map[string]bool, map[string]observedServicePorts) {

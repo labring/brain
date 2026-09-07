@@ -7,7 +7,10 @@
  * - A stored Default Open Port (`status.network.defaultOpenPort`) wins when it
  *   has an HTTP Public Address; a stale one is ignored, never surfaced.
  * - Otherwise the first App Listening Port, in declaration order, that has an
- *   HTTP Public Address. Ports reached only over WS/WSS are never chosen.
+ *   HTTP Public Address at the root (`/`); with none at the root, the first
+ *   that has any HTTP Public Address. Ports reached only over WS/WSS are
+ *   never chosen. Backend ports routed under `/api` and the like therefore
+ *   yield to the page port however the template ordered them.
  * - URL: an accessible Custom Domain of that port, else an accessible
  *   Platform Address; with neither the target has no URL and Open is drawn
  *   disabled with `disabledReason`.
@@ -66,18 +69,41 @@ function roundedPort(port: number): number {
   return Math.round(port);
 }
 
+/** A pending address (no URL yet) is Brain-created and will route at the root. */
+function isRootOpenTargetAddress(
+  address: Pick<ApOpenTargetAddress, "url">
+): boolean {
+  const url = address.url?.trim() ?? "";
+  if (url === "") {
+    return true;
+  }
+  try {
+    return new URL(url).pathname === "/";
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Ports that can be the Default Open Port, in declaration order: every App
- * Listening Port with at least one HTTP Public Address. With no declared
- * ports (legacy read models) the addresses' own ports stand in, ascending.
+ * Ports that can be the Default Open Port, in preference order: every App
+ * Listening Port with an HTTP Public Address at the root, in declaration
+ * order, then every remaining port with any HTTP Public Address, in
+ * declaration order. With no declared ports (legacy read models) the
+ * addresses' own ports stand in, ascending.
  */
 export function apOpenTargetEligiblePorts({
   addresses,
   ports,
 }: Pick<ApOpenTargetInput, "addresses" | "ports">): number[] {
+  const httpAddresses = addresses.filter((address) =>
+    isHttpOpenTargetAddress(address)
+  );
   const httpPorts = new Set(
-    addresses
-      .filter((address) => isHttpOpenTargetAddress(address))
+    httpAddresses.map((address) => roundedPort(address.port))
+  );
+  const rootPorts = new Set(
+    httpAddresses
+      .filter((address) => isRootOpenTargetAddress(address))
       .map((address) => roundedPort(address.port))
   );
   const candidates =
@@ -85,13 +111,17 @@ export function apOpenTargetEligiblePorts({
       ? ports.map((port) => roundedPort(port.port))
       : Array.from(httpPorts).sort((a, b) => a - b);
   const seen = new Set<number>();
-  return candidates.filter((port) => {
+  const declared = candidates.filter((port) => {
     if (seen.has(port) || !httpPorts.has(port)) {
       return false;
     }
     seen.add(port);
     return true;
   });
+  return [
+    ...declared.filter((port) => rootPorts.has(port)),
+    ...declared.filter((port) => !rootPorts.has(port)),
+  ];
 }
 
 function bestUrlForPort(

@@ -171,3 +171,65 @@ test("Open target: without declared ports the addresses' ports stand in, ascendi
     [8080, 8081]
   );
 });
+
+test("Open target: automatic rule prefers the port whose HTTP address is at the root over an earlier API-path port", () => {
+  const target = resolveApOpenTarget({
+    addresses: [
+      {
+        accessible: true,
+        kind: "platform",
+        port: 3000,
+        url: "https://pangolin.demo.sealos.run/api/v1",
+      },
+      platform(3002, "pangolin.demo.sealos.run"),
+    ],
+    ports: [{ port: 3000 }, { port: 3001 }, { port: 3002 }],
+  });
+
+  assert.deepEqual(target, {
+    label: "Open",
+    port: 3002,
+    url: "https://pangolin.demo.sealos.run/",
+  });
+  assert.deepEqual(
+    apOpenTargetEligiblePorts({
+      addresses: [
+        {
+          accessible: true,
+          kind: "platform",
+          port: 3000,
+          url: "https://pangolin.demo.sealos.run/api/v1",
+        },
+        platform(3002, "pangolin.demo.sealos.run"),
+      ],
+      ports: [{ port: 3000 }, { port: 3001 }, { port: 3002 }],
+    }),
+    [3002, 3000]
+  );
+});
+
+test("Open target: with no root address the first declared path port still opens at its path", () => {
+  const target = resolveApOpenTarget({
+    addresses: [
+      {
+        accessible: true,
+        kind: "platform",
+        port: 5200,
+        url: "wss://eaglercraft.demo.sealos.run/",
+      },
+      {
+        accessible: true,
+        kind: "platform",
+        port: 5201,
+        url: "https://eaglercraft.demo.sealos.run/admin",
+      },
+    ],
+    ports: [{ port: 5200 }, { displayName: "Admin", port: 5201 }],
+  });
+
+  assert.deepEqual(target, {
+    label: "Open Admin",
+    port: 5201,
+    url: "https://eaglercraft.demo.sealos.run/admin",
+  });
+});

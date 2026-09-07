@@ -345,9 +345,31 @@ func TestAPTransformRetainsPrimaryIngressPathOnObservedPublicAddress(t *testing.
 			want:  "https://app.example.com/admin",
 		},
 		{
-			name:  "a path with query or fragment characters falls back to root",
-			paths: []interface{}{ingressPath("/admin?x=1", "svc", 8080)},
+			name:  "a regex catch-all path is the root",
+			paths: []interface{}{ingressPath("/?(.*)", "svc", 8080)},
 			want:  "https://app.example.com/",
+		},
+		{
+			name:  "a path with a fragment falls back to root",
+			paths: []interface{}{ingressPath("/admin#x", "svc", 8080)},
+			want:  "https://app.example.com/",
+		},
+		{
+			name: "the page its assets extend wins over an earlier API route",
+			paths: []interface{}{
+				ingressPath("/api", "svc", 8080),
+				ingressPath("/admin.css", "svc", 8080),
+				ingressPath("/admin.js", "svc", 8080),
+				ingressPath("/admin-i18n.js", "svc", 8080),
+				ingressPath("/admin", "svc", 8080),
+				ingressPath("/dynmap", "svc", 8080),
+			},
+			want: "https://app.example.com/admin",
+		},
+		{
+			name:  "asset-only paths still yield the first asset rather than a root the port never serves",
+			paths: []interface{}{ingressPath("/app.js", "svc", 8080), ingressPath("/app.css", "svc", 8080)},
+			want:  "https://app.example.com/app.js",
 		},
 	}
 	for _, tc := range cases {
