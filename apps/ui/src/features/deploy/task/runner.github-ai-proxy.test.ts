@@ -397,7 +397,7 @@ describe("deployment AI Proxy credentials", () => {
     ).toBe("deploy-model");
   });
 
-  it("forwards trimmed LANGFUSE_* values when they are set", () => {
+  it("keeps Chat Langfuse credentials out of Deploy Devboxes", () => {
     process.env.LANGFUSE_PUBLIC_KEY = "  pk-lf-test  ";
     process.env.LANGFUSE_SECRET_KEY = " sk-lf-test ";
     process.env.LANGFUSE_HOST = " https://langfuse.example.com ";
@@ -405,9 +405,6 @@ describe("deployment AI Proxy credentials", () => {
       CODEX_GATEWAY_MODEL: "deploy-model",
       CODEX_GATEWAY_OPENAI_API_KEY: "resolved-key",
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://resolved.example/v1",
-      LANGFUSE_PUBLIC_KEY: "pk-lf-test",
-      LANGFUSE_SECRET_KEY: "sk-lf-test",
-      LANGFUSE_HOST: "https://langfuse.example.com",
     });
   });
 

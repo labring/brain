@@ -2,6 +2,9 @@
   "extends": "@workspace/typescript-config/nextjs.json",
   "compilerOptions": {
     "baseUrl": ".",
+    // This app emits no declarations; inherited declaration settings trigger TS portability errors.
+    "declaration": false,
+    "declarationMap": false,
     "paths": {
       "@db-browser/*": ["./src/features/db-browser/*"],
       "@/*": ["./src/*"],
