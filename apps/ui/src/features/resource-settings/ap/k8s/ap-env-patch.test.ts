@@ -21,7 +21,7 @@ const APP_LISTENING_PORT_RANGE_RE =
 const PORT_DISPLAY_NAME_LENGTH_RE =
   /Port Display Name must be at most 64 characters/;
 const PORT_DISPLAY_NAME_UNIQUE_RE =
-  /Port Display Names must be unique among the AP's App Listening Ports/;
+  /Port Display Name “admin” is already used by App Listening Port 5200/;
 const PUBLIC_PORT_RANGE_RE =
   /Public Address target port must be an integer from 1 through 65535/;
 const PLATFORM_ADDRESS_ID_INVALID_RE =

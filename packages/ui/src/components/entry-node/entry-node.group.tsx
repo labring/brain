@@ -97,13 +97,12 @@ export function EntryNodeGroupBlock({
           </span>
         </div>
       ) : null}
-      {group.addresses.map((address, index) => (
-        <EntryNodeAddressRow
-          address={address}
-          key={getAddressKey(group, address, index)}
-          rowKey={getAddressKey(group, address, index)}
-        />
-      ))}
+      {group.addresses.map((address, index) => {
+        const rowKey = getAddressKey(group, address, index);
+        return (
+          <EntryNodeAddressRow address={address} key={rowKey} rowKey={rowKey} />
+        );
+      })}
     </div>
   );
 }

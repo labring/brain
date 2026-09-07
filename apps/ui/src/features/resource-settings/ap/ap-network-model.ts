@@ -215,13 +215,13 @@ export function networkWithAppListeningPortDisplayName(
   displayName: string
 ): ApNetwork {
   const rounded = Math.round(port);
-  const trimmed = displayName.trim();
+  const trimmed = appListeningPortDisplayNameValue({ displayName });
   const next = appListeningPortsFromNetwork(network).map((row) => {
     if (Math.round(row.port) !== rounded) {
       return row;
     }
     const { displayName: _previous, ...rest } = row;
-    return trimmed === "" ? rest : { ...rest, displayName: trimmed };
+    return trimmed === undefined ? rest : { ...rest, displayName: trimmed };
   });
   return networkWithAppListeningPorts(network, next);
 }
@@ -248,10 +248,10 @@ export function appListeningPortRowDetail(
     "appListeningPorts" | "privateAddress" | "privatePort"
   >,
   port: number,
-  ...trailing: string[]
+  trailing?: string
 ): string {
   const name = appListeningPortDisplayName(network, port);
-  return [name, String(Math.round(port)), ...trailing]
+  return [name, String(Math.round(port)), trailing]
     .filter((part): part is string => part !== undefined && part !== "")
     .join(" · ");
 }
@@ -276,10 +276,47 @@ export function domainCountForPort(network: ApNetwork, port: number): number {
 }
 
 export function domainCountLabel(count: number): string {
-  if (count === 0) {
-    return "No domains";
-  }
   return count === 1 ? "1 domain" : `${count} domains`;
+}
+
+/**
+ * The Port Display Name submit rules the API enforces (ADR 0080), checked
+ * before a draft leaves the UI: at most 64 characters after trimming, and no
+ * two of the AP's ports may share a name. Returns the message to show, or
+ * undefined when the name is acceptable. `takenNames` maps a name to the
+ * port that already carries it; a port may keep its own name.
+ */
+export function portDisplayNameError(
+  displayName: string,
+  port: number,
+  takenNames: ReadonlyMap<string, number>
+): string | undefined {
+  const trimmed = displayName.trim();
+  if (trimmed === "") {
+    return undefined;
+  }
+  if (Array.from(trimmed).length > PORT_DISPLAY_NAME_MAX_LENGTH) {
+    return `Port Display Name must be at most ${PORT_DISPLAY_NAME_MAX_LENGTH} characters.`;
+  }
+  const takenBy = takenNames.get(trimmed);
+  if (takenBy != null && Math.round(takenBy) !== Math.round(port)) {
+    return `Port Display Name \u201c${trimmed}\u201d is already used by App Listening Port ${takenBy}.`;
+  }
+  return undefined;
+}
+
+/** Names the AP's ports carry, keyed by name → the port that carries it. */
+export function takenPortDisplayNames(
+  ports: readonly Pick<ApNetworkAppListeningPort, "displayName" | "port">[]
+): ReadonlyMap<string, number> {
+  const out = new Map<string, number>();
+  for (const row of ports) {
+    const name = appListeningPortDisplayNameValue(row);
+    if (name !== undefined && !out.has(name)) {
+      out.set(name, Math.round(row.port));
+    }
+  }
+  return out;
 }
 
 export function addedAppListeningPorts(

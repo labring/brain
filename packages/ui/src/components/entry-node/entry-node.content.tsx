@@ -14,9 +14,6 @@ import {
 export const ENTRY_NODE_LABEL = "Public access";
 
 export function entryNodeAddressCountLabel(count: number): string {
-  if (count === 0) {
-    return "No addresses";
-  }
   return count === 1 ? "1 address" : `${count} addresses`;
 }
 

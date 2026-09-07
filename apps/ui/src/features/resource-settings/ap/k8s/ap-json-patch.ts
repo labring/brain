@@ -4,7 +4,8 @@ import { ApiUrl } from "@workspace/api/utils";
 import { parse as parseYaml } from "yaml";
 import {
   apNetworkSaveDraftFromNetwork,
-  PORT_DISPLAY_NAME_MAX_LENGTH,
+  appListeningPortDisplayNameValue,
+  portDisplayNameError,
 } from "@/features/resource-settings/ap/ap-network-model";
 import type {
   ApConfigMapMount,
@@ -705,23 +706,18 @@ function sourcePortRowsForSave(
  */
 function validatedPortDisplayName(
   displayName: string | undefined,
-  seenNames: Set<string>
+  port: number,
+  seenNames: Map<string, number>
 ): string | undefined {
-  const trimmed = displayName?.trim() ?? "";
-  if (trimmed === "") {
+  const trimmed = appListeningPortDisplayNameValue({ displayName });
+  if (trimmed === undefined) {
     return undefined;
   }
-  if (Array.from(trimmed).length > PORT_DISPLAY_NAME_MAX_LENGTH) {
-    throw new Error(
-      `Port Display Name must be at most ${PORT_DISPLAY_NAME_MAX_LENGTH} characters.`
-    );
+  const message = portDisplayNameError(trimmed, port, seenNames);
+  if (message !== undefined) {
+    throw new Error(message);
   }
-  if (seenNames.has(trimmed)) {
-    throw new Error(
-      "Port Display Names must be unique among the AP's App Listening Ports."
-    );
-  }
-  seenNames.add(trimmed);
+  seenNames.set(trimmed, port);
   return trimmed;
 }
 
@@ -729,7 +725,7 @@ function normalizedAppListeningPortsForSave(
   network: ApNetworkAppListeningPortsPatch
 ): Record<string, unknown>[] {
   const seen = new Set<number>();
-  const seenNames = new Set<string>();
+  const seenNames = new Map<string, number>();
   return sourcePortRowsForSave(network).map((row) => {
     const port = validatedNetworkPort(
       row.port ?? Number.NaN,
@@ -739,7 +735,11 @@ function normalizedAppListeningPortsForSave(
       throw new Error("App Listening Ports must be unique.");
     }
     seen.add(port);
-    const displayName = validatedPortDisplayName(row.displayName, seenNames);
+    const displayName = validatedPortDisplayName(
+      row.displayName,
+      port,
+      seenNames
+    );
     return { ...(displayName === undefined ? {} : { displayName }), port };
   });
 }
@@ -763,11 +763,13 @@ function normalizedAppListeningPortsFromInputNetwork(
         portFromUnknown(record?.port) ?? Number.NaN,
         "App Listening Port"
       );
-      const displayName =
-        typeof record?.displayName === "string"
-          ? record.displayName.trim()
-          : "";
-      return { ...(displayName === "" ? {} : { displayName }), port };
+      const displayName = appListeningPortDisplayNameValue({
+        displayName:
+          typeof record?.displayName === "string"
+            ? record.displayName
+            : undefined,
+      });
+      return { ...(displayName === undefined ? {} : { displayName }), port };
     });
   }
 

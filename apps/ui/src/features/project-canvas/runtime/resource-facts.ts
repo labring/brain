@@ -99,7 +99,7 @@ export interface PublicAccessGroupSummary {
 export interface PublicAccessFact {
   apRef: CanvasLayoutResourceRef & { kind: "AP" };
   displayName: string;
-  /** In App Listening Port order; only ports with at least one address. */
+  /** Ascending by port number; only ports with at least one address. */
   groups: PublicAccessGroupSummary[];
   key: ProjectRuntimeFactKey;
   observedUid?: string;

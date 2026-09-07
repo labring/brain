@@ -49,10 +49,12 @@ import {
   domainCountForPort,
   domainCountLabel,
   PORT_DISPLAY_NAME_MAX_LENGTH,
+  portDisplayNameError,
   publicAddressDefaultPort,
   publicAddressDisplayName,
   publicAddressesTargetingPort,
   publicAddressIdValue,
+  takenPortDisplayNames,
   visibleDomainRows,
 } from "./ap-network-model";
 import { apNetworkDraftBackingKey } from "./ap-settings-draft";
@@ -758,21 +760,12 @@ function AppListeningPortNameForm({
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    const trimmed = draft.trim();
-    if (Array.from(trimmed).length > PORT_DISPLAY_NAME_MAX_LENGTH) {
-      setError(
-        `Port Display Name must be at most ${PORT_DISPLAY_NAME_MAX_LENGTH} characters.`
-      );
+    const message = portDisplayNameError(draft, port, takenNames);
+    if (message !== undefined) {
+      setError(message);
       return;
     }
-    const takenBy = trimmed === "" ? undefined : takenNames.get(trimmed);
-    if (takenBy != null && takenBy !== port) {
-      setError(
-        `Port Display Name \u201c${trimmed}\u201d is already used by App Listening Port ${takenBy}.`
-      );
-      return;
-    }
-    await onSubmit(trimmed);
+    await onSubmit(draft.trim());
   };
 
   return (
@@ -828,19 +821,6 @@ function AppListeningPortNameForm({
       </div>
     </div>
   );
-}
-
-function takenPortDisplayNames(
-  ports: readonly ApNetworkAppListeningPort[]
-): ReadonlyMap<string, number> {
-  const out = new Map<string, number>();
-  for (const row of ports) {
-    const name = row.displayName?.trim() ?? "";
-    if (name !== "" && !out.has(name)) {
-      out.set(name, row.port);
-    }
-  }
-  return out;
 }
 
 interface DeletePortDialogTarget {
