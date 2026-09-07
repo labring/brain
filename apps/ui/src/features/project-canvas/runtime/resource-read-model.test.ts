@@ -159,22 +159,25 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
 
   assert.deepEqual(facts.publicAccessFacts, [
     {
-      accessDomain: { label: "Access domain", value: "api.example.com" },
       apRef: { kind: "AP", name: "api", namespace: "default" },
       displayName: "api",
+      groups: [
+        {
+          addresses: [
+            {
+              host: "api.example.com",
+              id: "pa_abc123",
+              status: { label: "Accessible", tone: "accessible" },
+              type: "platform",
+              value: "https://api.example.com/",
+            },
+          ],
+          port: 8080,
+        },
+      ],
       key: "PublicAccess:default:api",
       observedUid: "ap-uid",
       ref: { kind: "PublicAccess", name: "api", namespace: "default" },
-      targets: [
-        {
-          id: "pa_abc123",
-          label: "Platform Address",
-          port: 8080,
-          status: { label: "Accessible", tone: "accessible" },
-          type: "platform",
-          value: "https://api.example.com/",
-        },
-      ],
     },
   ]);
   assert.equal("settingsOwner" in required(facts.publicAccessFacts[0]), false);
@@ -186,6 +189,233 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
       target: { kind: "AP", name: "api", namespace: "default" },
     },
   ]);
+});
+
+function apWithNetwork(
+  network: Record<string, unknown>,
+  labels?: Record<string, string>
+) {
+  return {
+    metadata: {
+      ...(labels === undefined ? {} : { labels }),
+      name: "game",
+      namespace: "default",
+      uid: "game-uid",
+    },
+    spec: { input: { network: { appListeningPorts: [{ port: 5200 }] } } },
+    status: { network, phase: "Running" },
+  };
+}
+
+function publicAccessGroups(ap: unknown) {
+  return required(
+    projectRuntimeFactsFromResources({
+      apsData: { items: [ap] },
+      namespace: "default",
+    }).publicAccessFacts[0]
+  ).groups;
+}
+
+test("Public Access groups a single unnamed port into one nameless group", () => {
+  const groups = publicAccessGroups(
+    apWithNetwork({
+      appListeningPorts: [{ port: 5200 }],
+      publicAddresses: [
+        {
+          host: "game.example.com",
+          id: "pa_game",
+          port: 5200,
+          status: "accessible",
+          type: "platform",
+          url: "https://game.example.com/",
+        },
+      ],
+    })
+  );
+
+  assert.deepEqual(groups, [
+    {
+      addresses: [
+        {
+          host: "game.example.com",
+          id: "pa_game",
+          status: { label: "Accessible", tone: "accessible" },
+          type: "platform",
+          value: "https://game.example.com/",
+        },
+      ],
+      port: 5200,
+    },
+  ]);
+});
+
+test("Public Access groups Public Addresses by port in port order with the port's display name", () => {
+  const groups = publicAccessGroups(
+    apWithNetwork({
+      appListeningPorts: [
+        { displayName: "Admin console", port: 5201 },
+        { displayName: "game", port: 5200 },
+      ],
+      publicAddresses: [
+        {
+          host: "game-admin.example.com",
+          id: "pa_admin",
+          port: 5201,
+          status: "accessible",
+          type: "platform",
+          url: "https://game-admin.example.com/",
+        },
+        {
+          host: "game.example.com",
+          id: "pa_game",
+          port: 5200,
+          status: "accessible",
+          type: "platform",
+          url: "wss://game.example.com/",
+        },
+      ],
+    })
+  );
+
+  assert.deepEqual(
+    groups.map((group) => ({
+      addresses: group.addresses.map((address) => address.id),
+      name: group.name,
+      port: group.port,
+    })),
+    [
+      { addresses: ["pa_game"], name: "game", port: 5200 },
+      { addresses: ["pa_admin"], name: "Admin console", port: 5201 },
+    ]
+  );
+});
+
+test("Public Access keeps two Public Addresses on one port in one group, even with a shared host", () => {
+  const groups = publicAccessGroups(
+    apWithNetwork({
+      appListeningPorts: [{ port: 5200 }, { displayName: "web", port: 5201 }],
+      publicAddresses: [
+        {
+          host: "game.example.com",
+          id: "pa_game",
+          port: 5200,
+          status: "accessible",
+          type: "platform",
+          url: "wss://game.example.com/",
+        },
+        {
+          host: "game.example.com",
+          id: "pa_web",
+          port: 5201,
+          status: "accessible",
+          type: "platform",
+          url: "https://game.example.com/",
+        },
+        {
+          cnameTarget: "game.example.com",
+          host: "www.example.com",
+          id: "cd_www",
+          platformAddressId: "pa_web",
+          port: 5201,
+          status: "verifying",
+          type: "custom",
+          url: "https://www.example.com/",
+        },
+      ],
+    })
+  );
+
+  assert.deepEqual(
+    groups.map((group) => ({
+      addresses: group.addresses.map((address) => address.id),
+      name: group.name,
+      port: group.port,
+    })),
+    [
+      { addresses: ["pa_game"], name: undefined, port: 5200 },
+      { addresses: ["pa_web", "cd_www"], name: "web", port: 5201 },
+    ]
+  );
+});
+
+test("Public Access groups addresses whose port is not an App Listening Port under their number", () => {
+  const groups = publicAccessGroups(
+    apWithNetwork({
+      appListeningPorts: [{ displayName: "game", port: 5200 }],
+      publicAddresses: [
+        {
+          host: "old.example.com",
+          id: "pa_old",
+          port: 9000,
+          status: "blocked",
+          type: "platform",
+          url: "https://old.example.com/",
+        },
+      ],
+    })
+  );
+
+  assert.deepEqual(
+    groups.map((group) => ({ name: group.name, port: group.port })),
+    [{ name: undefined, port: 9000 }]
+  );
+});
+
+test("Public Access de-emphasises the routing domain suffix of Platform Address hosts", () => {
+  const groups = publicAccessGroups(
+    apWithNetwork(
+      {
+        appListeningPorts: [{ port: 5200 }],
+        publicAddresses: [
+          {
+            host: "abcdef.192.168.12.53.nip.io",
+            id: "pa_game",
+            port: 5200,
+            status: "accessible",
+            type: "platform",
+            url: "https://abcdef.192.168.12.53.nip.io/",
+          },
+          {
+            host: "www.example.com",
+            id: "cd_www",
+            platformAddressId: "pa_game",
+            port: 5200,
+            status: "accessible",
+            type: "custom",
+            url: "https://www.example.com/",
+          },
+          {
+            id: "pa_pending",
+            port: 5200,
+            status: "progressing",
+            type: "platform",
+          },
+        ],
+      },
+      { region: "192.168.12.53.nip.io" }
+    )
+  );
+
+  assert.deepEqual(
+    groups[0]?.addresses.map((address) => ({
+      host: address.host,
+      hostSuffix: address.hostSuffix,
+      value: address.value,
+    })),
+    [
+      {
+        host: "abcdef.192.168.12.53.nip.io",
+        hostSuffix: ".192.168.12.53.nip.io",
+        value: "https://abcdef.192.168.12.53.nip.io/",
+      },
+      {
+        host: "www.example.com",
+        hostSuffix: undefined,
+        value: "https://www.example.com/",
+      },
+      { host: "Pending", hostSuffix: undefined, value: undefined },
+    ]
+  );
 });
 
 test("Project Runtime does not show Public Access accessible while AP is updating", () => {
@@ -223,10 +453,13 @@ test("Project Runtime does not show Public Access accessible while AP is updatin
     namespace: "default",
   });
 
-  assert.deepEqual(facts.publicAccessFacts[0]?.targets[0]?.status, {
-    label: "Updating",
-    tone: "updating",
-  });
+  assert.deepEqual(
+    facts.publicAccessFacts[0]?.groups[0]?.addresses[0]?.status,
+    {
+      label: "Updating",
+      tone: "updating",
+    }
+  );
 });
 
 test("Project Runtime resolves Resource Display Names through the annotation chain", () => {
@@ -717,7 +950,7 @@ test("Project Runtime commits one AP Public Access update without notifying unre
 
   const apiAfter = store.selectPublicAccessFact(apiKey);
   assert.notEqual(apiAfter, apiBefore);
-  assert.deepEqual(apiAfter?.targets[0]?.status, {
+  assert.deepEqual(apiAfter?.groups[0]?.addresses[0]?.status, {
     label: "Accessible",
     tone: "accessible",
   });

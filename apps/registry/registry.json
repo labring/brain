@@ -434,9 +434,9 @@
           "target": "components/entry-node/entry-node.status.ts"
         },
         {
-          "path": "../../packages/ui/src/components/entry-node/entry-node.target.tsx",
+          "path": "../../packages/ui/src/components/entry-node/entry-node.group.tsx",
           "type": "registry:component",
-          "target": "components/entry-node/entry-node.target.tsx"
+          "target": "components/entry-node/entry-node.group.tsx"
         },
         {
           "path": "../../packages/ui/src/components/entry-node/entry-node.css",

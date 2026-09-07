@@ -1,41 +1,31 @@
 "use client";
 
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
-import { nodeTitle } from "@workspace/ui/lib/node-title";
 import { cn } from "@workspace/ui/lib/utils";
 import { Router } from "lucide-react";
 
 import { useEntryNode } from "./entry-node.context";
-import { resolveEntryNodeTargetStatus } from "./entry-node.status";
-import { EntryNodeTargetList } from "./entry-node.target";
-import type { EntryNodeAccessDomain } from "./entry-node.types";
+import { EntryNodeGroupList } from "./entry-node.group";
+import {
+  entryNodeAddresses,
+  resolveEntryNodeGroupsStatus,
+} from "./entry-node.status";
 
-function getAccessDomain(
-  fallbackName: string,
-  accessDomain: EntryNodeAccessDomain | undefined
-) {
-  return (
-    accessDomain ?? {
-      label: "Access domain",
-      value: fallbackName,
-    }
-  );
-}
+export const ENTRY_NODE_LABEL = "Public access";
 
-function useEntryNodeAccessDomain() {
-  const {
-    state: { accessDomain, states },
-  } = useEntryNode();
-
-  return getAccessDomain(nodeTitle(states), accessDomain);
+export function entryNodeAddressCountLabel(count: number): string {
+  if (count === 0) {
+    return "No addresses";
+  }
+  return count === 1 ? "1 address" : `${count} addresses`;
 }
 
 function useEntryNodeResolvedStatus() {
   const {
-    state: { targets },
+    state: { groups },
   } = useEntryNode();
 
-  return resolveEntryNodeTargetStatus(targets);
+  return resolveEntryNodeGroupsStatus(groups);
 }
 
 export function EntryNodeContent() {
@@ -45,7 +35,7 @@ export function EntryNodeContent() {
         <EntryNodeHeaderContent />
       </CanvasNode.Header>
       <CanvasNode.Body>
-        <EntryNodeTargetList />
+        <EntryNodeGroupList />
       </CanvasNode.Body>
     </CanvasNode.Card>
   );
@@ -63,7 +53,10 @@ export function EntryNodeHeaderContent({ className }: { className?: string }) {
 }
 
 export function EntryNodeAccess({ className }: { className?: string }) {
-  const accessDomain = useEntryNodeAccessDomain();
+  const {
+    state: { groups },
+  } = useEntryNode();
+  const addressCount = entryNodeAddresses(groups).length;
   const Icon = Router;
 
   return (
@@ -72,14 +65,14 @@ export function EntryNodeAccess({ className }: { className?: string }) {
         <Icon aria-hidden className="size-4 text-zinc-50" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <span
-          className="min-w-0 truncate font-normal text-sm text-zinc-50 leading-5"
-          title={accessDomain.value}
-        >
-          {accessDomain.value}
+        <span className="min-w-0 truncate font-normal text-sm text-zinc-50 leading-5">
+          {ENTRY_NODE_LABEL}
         </span>
-        <span className="min-w-0 truncate font-normal text-muted-foreground text-xs leading-4">
-          {accessDomain.label ?? "Access domain"}
+        <span
+          className="min-w-0 truncate font-normal text-muted-foreground text-xs leading-4"
+          data-slot="entry-node-address-count"
+        >
+          {entryNodeAddressCountLabel(addressCount)}
         </span>
       </span>
     </span>

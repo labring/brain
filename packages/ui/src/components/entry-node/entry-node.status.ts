@@ -4,7 +4,8 @@ import type {
 } from "@workspace/ui/components/canvas-node/canvas-node";
 
 import type {
-  EntryNodeTarget,
+  EntryNodeAddress,
+  EntryNodeGroup,
   EntryNodeTargetStatus,
 } from "./entry-node.types";
 
@@ -140,14 +141,17 @@ function everyTone(
   return buckets.every((item) => item === bucket);
 }
 
+/** Aggregate health of every address on the node, regardless of grouping. */
 export function resolveEntryNodeTargetStatus(
-  targets: readonly EntryNodeTarget[] | undefined
+  addresses: readonly Pick<EntryNodeAddress, "status">[] | undefined
 ): CanvasNodeStatus {
-  if (!targets || targets.length === 0) {
+  if (!addresses || addresses.length === 0) {
     return { label: "Not configured", visualTone: "neutral" };
   }
 
-  const buckets = targets.map((target) => resolveTargetBucket(target.status));
+  const buckets = addresses.map((address) =>
+    resolveTargetBucket(address.status)
+  );
 
   if (everyTone(buckets, "accessible")) {
     return { label: "Accessible", visualTone: "positive" };
@@ -166,4 +170,16 @@ export function resolveEntryNodeTargetStatus(
   }
 
   return { label: "Degraded", visualTone: "warning" };
+}
+
+export function entryNodeAddresses(
+  groups: readonly EntryNodeGroup[] | undefined
+): EntryNodeAddress[] {
+  return (groups ?? []).flatMap((group) => group.addresses);
+}
+
+export function resolveEntryNodeGroupsStatus(
+  groups: readonly EntryNodeGroup[] | undefined
+): CanvasNodeStatus {
+  return resolveEntryNodeTargetStatus(entryNodeAddresses(groups));
 }

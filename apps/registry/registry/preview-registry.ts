@@ -543,7 +543,7 @@ export const Index: RegistryIndex = {
     name: "entry-node",
     title: "Entry Node",
     description:
-      "Entry point node with hero canvas view and state matrix (access-domain header, target rows).",
+      "Entry point node with hero canvas view and state matrix (Public access header, address rows grouped by App Listening Port).",
     state: "done",
     type: "registry:preview",
     registryDependencies: ["preview", "canvas", "entry-node"],

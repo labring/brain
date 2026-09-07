@@ -1,22 +1,27 @@
 // biome-ignore lint/performance/noBarrelFile: entry-node public package surface
 export {
+  ENTRY_NODE_LABEL,
   EntryNode,
+  entryNodeAddressCountLabel,
+  entryNodeAddresses,
+  entryNodeShowsGroupHeaders,
+  resolveEntryNodeGroupsStatus,
   resolveEntryNodeTargetStatus,
   resolveEntryNodeTargetVisualStatus,
   useEntryNode,
 } from "./entry-node";
 export type {
-  EntryNodeAccessDomain,
   EntryNodeActions,
+  EntryNodeAddress,
+  EntryNodeAddressKey,
   EntryNodeContextValue,
-  EntryNodeCopyTargetHandler,
+  EntryNodeCopyAddressHandler,
+  EntryNodeGroup,
   EntryNodeMeta,
   EntryNodeProviderProps,
   EntryNodeRootProps,
   EntryNodeState,
   EntryNodeStates,
-  EntryNodeTarget,
-  EntryNodeTargetKey,
   EntryNodeTargetStatus,
   EntryNodeTargetStatusTone,
 } from "./entry-node.types";

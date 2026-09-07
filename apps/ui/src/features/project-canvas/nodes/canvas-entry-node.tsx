@@ -19,7 +19,7 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
 }: NodeProps<CanvasEntryRfNode>) {
   const model =
     useProjectRuntimeNodeModel<CanvasEntryNodeData>({ data, id, type }) ?? data;
-  const { accessDomain, actions = {}, states, targets } = model;
+  const { actions = {}, groups, states } = model;
   const interaction = useProjectCanvasNodeInteraction(id);
   const expansion = useCanvasNodeExpansion({
     data,
@@ -31,14 +31,13 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
 
   return (
     <EntryNode.Root
-      accessDomain={accessDomain}
       defaultExpanded={expansion.defaultExpanded}
       expanded={expansion.expanded}
+      groups={groups}
       interaction={{ ...interaction, connectable: isConnectable, dragging }}
-      onCopyTarget={actions.copyTarget}
+      onCopyAddress={actions.copyAddress}
       onExpandedChange={expansion.onExpandedChange}
       states={states}
-      targets={targets}
     >
       <EntryNode.Content />
     </EntryNode.Root>

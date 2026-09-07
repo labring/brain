@@ -18,6 +18,10 @@ import type { K8sJsonPatchOp } from "./http/json-patch";
 const DUPLICATE_ENV_NAME_RE = /Environment variable names must be unique/;
 const APP_LISTENING_PORT_RANGE_RE =
   /App Listening Port must be an integer from 1 through 65535/;
+const PORT_DISPLAY_NAME_LENGTH_RE =
+  /Port Display Name must be at most 64 characters/;
+const PORT_DISPLAY_NAME_UNIQUE_RE =
+  /Port Display Names must be unique among the AP's App Listening Ports/;
 const PUBLIC_PORT_RANGE_RE =
   /Public Address target port must be an integer from 1 through 65535/;
 const PLATFORM_ADDRESS_ID_INVALID_RE =
@@ -693,6 +697,82 @@ test("AP private port settings patch does not rewrite Public Addresses", () => {
       value: [{ port: 8080 }],
     },
   ]);
+});
+
+test("AP network settings write Port Display Names on App Listening Ports", () => {
+  const ops = patchOpsForApNetworkSettings(
+    { input: { network: { appListeningPorts: [{ port: 5200 }] } } },
+    {
+      appListeningPorts: [
+        { displayName: "game", port: 5200 },
+        { displayName: "  Admin console  ", port: 5201 },
+        { displayName: "", port: 5202 },
+      ],
+      publicAddresses: [],
+    }
+  );
+
+  assert.deepEqual(patchOpValue(ops[0]), {
+    appListeningPorts: [
+      { displayName: "game", port: 5200 },
+      { displayName: "Admin console", port: 5201 },
+      { port: 5202 },
+    ],
+  });
+});
+
+test("AP network settings reject over-long and duplicate Port Display Names", () => {
+  assert.throws(
+    () =>
+      patchOpsForApNetworkSettings(
+        { input: {} },
+        {
+          appListeningPorts: [{ displayName: "x".repeat(65), port: 5200 }],
+          publicAddresses: [],
+        }
+      ),
+    PORT_DISPLAY_NAME_LENGTH_RE
+  );
+  assert.throws(
+    () =>
+      patchOpsForApNetworkSettings(
+        { input: {} },
+        {
+          appListeningPorts: [
+            { displayName: "admin", port: 5200 },
+            { displayName: " admin ", port: 5201 },
+          ],
+          publicAddresses: [],
+        }
+      ),
+    PORT_DISPLAY_NAME_UNIQUE_RE
+  );
+});
+
+test("AP public address settings patch rewrites App Listening Ports when a Port Display Name changes", () => {
+  const ops = patchOpsForApPublicAddressesSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 8080 }],
+          platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ displayName: "web", port: 8080 }],
+      publicAddresses: [{ id: "pa_abc123", port: 8080 }],
+    }
+  );
+
+  assert.deepEqual(
+    ops.find((op) => op.path === "/spec/input/network/appListeningPorts"),
+    {
+      op: "replace",
+      path: "/spec/input/network/appListeningPorts",
+      value: [{ displayName: "web", port: 8080 }],
+    }
+  );
 });
 
 test("AP network settings validate App Listening Ports", () => {

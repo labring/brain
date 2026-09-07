@@ -11,6 +11,7 @@ import {
   apNetworkAfterUnbindCustomDomain,
   apNetworkWithAddedPublicAddress,
   networkWithAppListeningPort,
+  networkWithAppListeningPortDisplayName,
   networkWithoutAppListeningPort,
 } from "./ap-network-model";
 
@@ -31,6 +32,11 @@ export interface ApNetworkDraftController {
     row: ApNetworkVisiblePublicAddressRow
   ) => void | Promise<void>;
   network: ApNetwork;
+  /** Sets the Port Display Name of one port; an empty name clears it. */
+  renameAppListeningPort: (
+    port: number,
+    displayName: string
+  ) => void | Promise<void>;
   unbindCustomDomain: (domain: ApNetworkCustomDomain) => void | Promise<void>;
 }
 
@@ -88,6 +94,10 @@ export function useApNetworkDraftController({
       deletePublicAddress: (row: ApNetworkVisiblePublicAddressRow) =>
         commitNetwork(apNetworkAfterDeletePublicAddress(network, row)),
       network,
+      renameAppListeningPort: (port: number, displayName: string) =>
+        commitNetwork(
+          networkWithAppListeningPortDisplayName(network, port, displayName)
+        ),
       unbindCustomDomain: (domain: ApNetworkCustomDomain) =>
         commitNetwork(apNetworkAfterUnbindCustomDomain(network, domain)),
     }),

@@ -107,12 +107,14 @@ function apSettingsModelBase({
 }): Omit<SettingsViewModel, "sections"> {
   const title = displayName || target.name;
   if (resolvedView === AP_SETTINGS_PUBLIC_ADDRESSES_VIEW) {
+    // The Public Access Node opens the AP's Network settings (both cards),
+    // so the view is named like the Environment view: the AP, then "Network".
     return {
-      closeAriaLabel: "Close Public Address settings",
+      closeAriaLabel: "Close Network settings",
       icon: <Router aria-hidden className="size-4 shrink-0 text-blue-400" />,
       resolvedView,
       subtitle: `Container · ${target.namespace}`,
-      title: `${title} Public Addresses`,
+      title: title === "" ? "Network" : title,
     };
   }
   if (resolvedView === AP_SETTINGS_ENVIRONMENT_VIEW) {
@@ -423,11 +425,11 @@ function publicAddressesApSettingsModel({
             {
               content: (
                 <p className="text-muted-foreground text-sm">
-                  Public Address settings are unavailable.
+                  Network settings are unavailable.
                 </p>
               ),
-              id: "public-addresses-unavailable",
-              title: "Public Addresses",
+              id: "network-unavailable",
+              title: "Network",
             },
           ]
         : publicAddressesModel.sections,

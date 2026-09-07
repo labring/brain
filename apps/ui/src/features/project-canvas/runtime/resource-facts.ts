@@ -72,26 +72,38 @@ export interface DbFact {
   version?: string;
 }
 
-export interface PublicAccessTargetSummary {
+/** One Public Address as the Public Access Node shows it. */
+export interface PublicAccessAddressSummary {
+  /** Hostname drawn in the row; "Pending" while the host is unallocated. */
+  host: string;
+  /** The routing-domain suffix of a Platform Address host, drawn muted. */
+  hostSuffix?: string;
   id: string;
-  label: string;
-  port: number;
   status?: ProjectRuntimeStatusSummary;
   type?: string;
-  value: string;
+  /** Full URL for copy and open; absent while pending. */
+  value?: string;
+}
+
+/**
+ * Public Addresses that reach one App Listening Port, headed by the port's
+ * Port Display Name as the API resolved it (ADR 0080); the UI never
+ * re-derives that fallback.
+ */
+export interface PublicAccessGroupSummary {
+  addresses: PublicAccessAddressSummary[];
+  name?: string;
+  port: number;
 }
 
 export interface PublicAccessFact {
-  accessDomain?: {
-    label: "Access domain";
-    value: string;
-  };
   apRef: CanvasLayoutResourceRef & { kind: "AP" };
   displayName: string;
+  /** In App Listening Port order; only ports with at least one address. */
+  groups: PublicAccessGroupSummary[];
   key: ProjectRuntimeFactKey;
   observedUid?: string;
   ref: CanvasLayoutResourceRef & { kind: "PublicAccess" };
-  targets: PublicAccessTargetSummary[];
 }
 
 export interface ProjectRuntimeFacts {
@@ -141,9 +153,7 @@ const DISPLAY_ENGINE_BY_KEY: Record<string, string> = {
 };
 
 const VERSION_NUMBER_PATTERN = /\d+(?:\.\d+)+/;
-const PUBLIC_ACCESS_PROTOCOL_PATTERN = /^https?:\/\//;
 const PUBLIC_ACCESS_STATUS_SEPARATOR_PATTERN = /[\s_]+/g;
-const PUBLIC_ACCESS_TRAILING_SLASH_PATTERN = /\/$/;
 
 interface NetworkPublicAddress {
   cnameTarget?: string;
@@ -495,18 +505,6 @@ function publicAddressesForAp(ap: unknown): NetworkPublicAddress[] {
   ];
 }
 
-function publicAddressTargetLabel(type: string | undefined): string {
-  switch (type?.toLowerCase()) {
-    case "platform":
-      return "Platform Address";
-    case "custom":
-    case "custom-domain":
-      return "Custom Domain";
-    default:
-      return "Public Address";
-  }
-}
-
 function titleCaseStatus(status: string): string {
   return status
     .split("-")
@@ -536,35 +534,124 @@ function publicAccessTargetStatus(
   return { label: titleCaseStatus(tone), tone };
 }
 
-function publicAccessTargetsFromAddresses(
-  addresses: readonly NetworkPublicAddress[],
-  apStatus: ProjectRuntimeStatusSummary
-): PublicAccessTargetSummary[] {
-  return addresses.map((address, index) => {
-    const host = address.host;
-    return {
-      id: address.id ?? `${address.port}-${host ?? `pending-${index}`}`,
-      label: publicAddressTargetLabel(address.type),
-      port: address.port,
-      status: publicAccessTargetStatus(address.status, apStatus),
-      ...(address.type === undefined ? {} : { type: address.type }),
-      value:
-        address.url ?? (host === undefined ? "Pending" : `https://${host}/`),
-    };
-  });
+interface AppListeningPortSummary {
+  displayName?: string;
+  port: number;
 }
 
-function accessDomainFromTargets(
-  targets: readonly PublicAccessTargetSummary[]
-): PublicAccessFact["accessDomain"] {
-  const first = targets[0];
-  if (first === undefined) {
+/** `status.network.appListeningPorts[]` with the API-resolved display name. */
+function appListeningPortsForAp(ap: unknown): AppListeningPortSummary[] {
+  const root = asRecord(ap) ?? {};
+  const statusNetwork = asRecord(asRecord(root.status)?.network);
+  const rows = statusNetwork?.appListeningPorts;
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+  const out: AppListeningPortSummary[] = [];
+  const seen = new Set<number>();
+  for (const item of rows) {
+    const record = asRecord(item);
+    const port = publicAccessTargetPort(record?.port);
+    if (record === undefined || port === undefined || seen.has(port)) {
+      continue;
+    }
+    seen.add(port);
+    const displayName = nonEmptyString(record.displayName);
+    out.push({
+      ...(displayName === undefined ? {} : { displayName }),
+      port,
+    });
+  }
+  return out;
+}
+
+/** The routing domain an AP's Platform Addresses hang off (`labels.region`). */
+function apRoutingDomain(ap: unknown): string | undefined {
+  return nonEmptyString(metadataLabels(ap)?.region);
+}
+
+function publicAccessHostSuffix(
+  host: string,
+  routingDomain: string | undefined
+): string | undefined {
+  if (routingDomain === undefined) {
     return undefined;
   }
-  const value = first.value
-    .replace(PUBLIC_ACCESS_PROTOCOL_PATTERN, "")
-    .replace(PUBLIC_ACCESS_TRAILING_SLASH_PATTERN, "");
-  return { label: "Access domain", value };
+  const suffix = `.${routingDomain}`;
+  return host.length > suffix.length && host.endsWith(suffix)
+    ? suffix
+    : undefined;
+}
+
+function publicAccessAddressFromNetworkAddress(
+  address: NetworkPublicAddress,
+  index: number,
+  apStatus: ProjectRuntimeStatusSummary,
+  routingDomain: string | undefined
+): PublicAccessAddressSummary {
+  const host = address.host;
+  const value =
+    address.url ?? (host === undefined ? undefined : `https://${host}/`);
+  const hostSuffix =
+    host === undefined
+      ? undefined
+      : publicAccessHostSuffix(host, routingDomain);
+  return {
+    host: host ?? "Pending",
+    ...(hostSuffix === undefined ? {} : { hostSuffix }),
+    id: address.id ?? `${address.port}-${host ?? `pending-${index}`}`,
+    status: publicAccessTargetStatus(address.status, apStatus),
+    ...(address.type === undefined ? {} : { type: address.type }),
+    ...(value === undefined ? {} : { value }),
+  };
+}
+
+/**
+ * Joins an AP's Public Addresses with its App Listening Ports on `port`:
+ * one group per port that has at least one address, in port order, headed
+ * by the port's resolved display name. Addresses are never deduplicated by
+ * host — two rows may share a hostname when they target different ports.
+ */
+export function publicAccessGroupsFromAddresses({
+  addresses,
+  apStatus,
+  ports,
+  routingDomain,
+}: {
+  addresses: readonly NetworkPublicAddress[];
+  apStatus: ProjectRuntimeStatusSummary;
+  ports: readonly AppListeningPortSummary[];
+  routingDomain?: string;
+}): PublicAccessGroupSummary[] {
+  const nameByPort = new Map<number, string>();
+  for (const port of ports) {
+    if (port.displayName !== undefined) {
+      nameByPort.set(port.port, port.displayName);
+    }
+  }
+  const addressesByPort = new Map<number, PublicAccessAddressSummary[]>();
+  addresses.forEach((address, index) => {
+    const rows = addressesByPort.get(address.port) ?? [];
+    rows.push(
+      publicAccessAddressFromNetworkAddress(
+        address,
+        index,
+        apStatus,
+        routingDomain
+      )
+    );
+    addressesByPort.set(address.port, rows);
+  });
+  return Array.from(addressesByPort.keys())
+    .sort((a, b) => a - b)
+    .map((port) => {
+      const name = nameByPort.get(port);
+      return {
+        addresses: addressesByPort.get(port) ?? [],
+        ...(name === undefined ? {} : { name }),
+        port,
+      };
+    });
 }
 
 function publicAccessFactFromAp(
@@ -590,20 +677,20 @@ function publicAccessFactFromAp(
     name: apName,
     namespace,
   };
-  const targets = publicAccessTargetsFromAddresses(
-    publicAddresses,
-    apStatusSummary(ap)
-  );
-  const accessDomain = accessDomainFromTargets(targets);
+  const groups = publicAccessGroupsFromAddresses({
+    addresses: publicAddresses,
+    apStatus: apStatusSummary(ap),
+    ports: appListeningPortsForAp(ap),
+    routingDomain: apRoutingDomain(ap),
+  });
   return {
-    ...(accessDomain === undefined ? {} : { accessDomain }),
     apRef,
     // A Public Access node never owns a name — it shows its AP's (ADR 0066).
     displayName: apDisplayName(ap, apName),
+    groups,
     key: projectRuntimeResourceKey(ref),
     ...(metadataUid(ap) === undefined ? {} : { observedUid: metadataUid(ap) }),
     ref,
-    targets,
   };
 }
 

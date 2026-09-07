@@ -30,6 +30,7 @@ const BANNED_SHELL_DATA_KEYS = [
   "dbReferenceSources",
   "desired",
   "editableResource",
+  "groups",
   "lifecycleActions",
   "onAddPendingDbBinding",
   "onOpenSettings",
@@ -41,7 +42,6 @@ const BANNED_SHELL_DATA_KEYS = [
   "settingsSource",
   "settingsSourceData",
   "states",
-  "targets",
   "workload",
 ] as const;
 

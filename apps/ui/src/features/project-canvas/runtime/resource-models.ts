@@ -128,9 +128,19 @@ function publicAccessModelFromFact(
   fact: PublicAccessFact
 ): CanvasEntryNodeData {
   return {
-    ...(fact.accessDomain === undefined
-      ? {}
-      : { accessDomain: fact.accessDomain }),
+    groups: fact.groups.map((group) => ({
+      addresses: group.addresses.map((address) => ({
+        host: address.host,
+        ...(address.hostSuffix === undefined
+          ? {}
+          : { hostSuffix: address.hostSuffix }),
+        id: address.id,
+        ...(address.status === undefined ? {} : { status: address.status }),
+        ...(address.value === undefined ? {} : { value: address.value }),
+      })),
+      ...(group.name === undefined ? {} : { name: group.name }),
+      port: group.port,
+    })),
     resource: {
       apRef: fact.apRef.name,
       name: fact.apRef.name,
@@ -142,12 +152,6 @@ function publicAccessModelFromFact(
       ...(fact.observedUid === undefined ? {} : { uid: fact.observedUid }),
     },
     states: { displayName: fact.displayName, name: fact.apRef.name },
-    targets: fact.targets.map((target) => ({
-      id: target.id,
-      label: target.label,
-      status: target.status,
-      value: target.value,
-    })),
   };
 }
 
@@ -208,13 +212,13 @@ function fallbackPublicAccessModelFromLookup(
 ): CanvasEntryNodeData {
   const ref = lookup.resourceRef;
   return {
+    groups: [],
     resource: {
       apRef: ref?.name,
       name: ref?.name ?? lookup.modelKey,
       namespace: ref?.namespace ?? "",
     },
     states: { name: ref?.name ?? lookup.modelKey },
-    targets: [],
   };
 }
 

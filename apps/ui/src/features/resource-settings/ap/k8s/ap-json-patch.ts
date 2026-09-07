@@ -2,7 +2,10 @@ import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import { parse as parseYaml } from "yaml";
-import { apNetworkSaveDraftFromNetwork } from "@/features/resource-settings/ap/ap-network-model";
+import {
+  apNetworkSaveDraftFromNetwork,
+  PORT_DISPLAY_NAME_MAX_LENGTH,
+} from "@/features/resource-settings/ap/ap-network-model";
 import type {
   ApConfigMapMount,
   ApEnvVar,
@@ -618,7 +621,8 @@ function appListeningPortsEqual(
     const other = b[index];
     return (
       other != null &&
-      Math.round(Number(row.port)) === Math.round(Number(other.port))
+      Math.round(Number(row.port)) === Math.round(Number(other.port)) &&
+      (row.displayName ?? undefined) === (other.displayName ?? undefined)
     );
   });
 }
@@ -668,6 +672,9 @@ function apNetworkSettingsPatchSaveDraft(
       ? {}
       : {
           appListeningPorts: network.appListeningPorts.map((row) => ({
+            ...(row.displayName == null
+              ? {}
+              : { displayName: row.displayName }),
             port: row.port,
           })),
         }),
@@ -682,7 +689,7 @@ function apNetworkSettingsPatchSaveDraft(
 
 function sourcePortRowsForSave(
   network: ApNetworkAppListeningPortsPatch
-): readonly { port: number | undefined }[] {
+): readonly { displayName?: string; port: number | undefined }[] {
   if (
     network.appListeningPorts != null &&
     network.appListeningPorts.length > 0
@@ -692,10 +699,37 @@ function sourcePortRowsForSave(
   return [{ port: network.privatePort }];
 }
 
+/**
+ * Port Display Name as the API PATCH accepts it (ADR 0080): trimmed, at most
+ * 64 characters, unique among the AP's ports; undefined clears the name.
+ */
+function validatedPortDisplayName(
+  displayName: string | undefined,
+  seenNames: Set<string>
+): string | undefined {
+  const trimmed = displayName?.trim() ?? "";
+  if (trimmed === "") {
+    return undefined;
+  }
+  if (Array.from(trimmed).length > PORT_DISPLAY_NAME_MAX_LENGTH) {
+    throw new Error(
+      `Port Display Name must be at most ${PORT_DISPLAY_NAME_MAX_LENGTH} characters.`
+    );
+  }
+  if (seenNames.has(trimmed)) {
+    throw new Error(
+      "Port Display Names must be unique among the AP's App Listening Ports."
+    );
+  }
+  seenNames.add(trimmed);
+  return trimmed;
+}
+
 function normalizedAppListeningPortsForSave(
   network: ApNetworkAppListeningPortsPatch
 ): Record<string, unknown>[] {
   const seen = new Set<number>();
+  const seenNames = new Set<string>();
   return sourcePortRowsForSave(network).map((row) => {
     const port = validatedNetworkPort(
       row.port ?? Number.NaN,
@@ -705,7 +739,8 @@ function normalizedAppListeningPortsForSave(
       throw new Error("App Listening Ports must be unique.");
     }
     seen.add(port);
-    return { port };
+    const displayName = validatedPortDisplayName(row.displayName, seenNames);
+    return { ...(displayName === undefined ? {} : { displayName }), port };
   });
 }
 
@@ -723,11 +758,16 @@ function normalizedAppListeningPortsFromInputNetwork(
   const rawPorts = inputNetwork.appListeningPorts;
   if (Array.isArray(rawPorts) && rawPorts.length > 0) {
     return rawPorts.map((row) => {
+      const record = asRecord(row);
       const port = validatedNetworkPort(
-        portFromUnknown(asRecord(row)?.port) ?? Number.NaN,
+        portFromUnknown(record?.port) ?? Number.NaN,
         "App Listening Port"
       );
-      return { port };
+      const displayName =
+        typeof record?.displayName === "string"
+          ? record.displayName.trim()
+          : "";
+      return { ...(displayName === "" ? {} : { displayName }), port };
     });
   }
 

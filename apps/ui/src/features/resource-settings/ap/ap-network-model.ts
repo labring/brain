@@ -39,9 +39,17 @@ export interface ApNetworkCustomDomain {
 }
 
 export interface ApNetworkAppListeningPort {
+  /**
+   * Port Display Name as the API resolved it (annotation, else a meaningful
+   * Service port name); absent when the port has none. Read-side only —
+   * the UI never re-derives the fallback (ADR 0080).
+   */
+  displayName?: string;
   port: number;
   privateAddress?: string;
 }
+
+export const PORT_DISPLAY_NAME_MAX_LENGTH = 64;
 
 export interface ApNetwork {
   appListeningPorts?: ApNetworkAppListeningPort[];
@@ -63,8 +71,13 @@ export interface ApNetworkSaveCustomDomain {
   platformAddressId: string;
 }
 
+export interface ApNetworkSaveAppListeningPort {
+  displayName?: string;
+  port: number;
+}
+
 export interface ApNetworkSaveDraft {
-  appListeningPorts: ApNetworkAppListeningPort[];
+  appListeningPorts: ApNetworkSaveAppListeningPort[];
   customDomains?: ApNetworkSaveCustomDomain[];
   privatePort: number;
   publicAddresses: ApNetworkSavePublicAddress[];
@@ -104,6 +117,27 @@ function validApNetworkPort(port: number): boolean {
   return Number.isInteger(port) && port >= 1 && port <= 65_535;
 }
 
+/** Trimmed Port Display Name, or undefined when the row has none. */
+export function appListeningPortDisplayNameValue(
+  row: Pick<ApNetworkAppListeningPort, "displayName">
+): string | undefined {
+  const trimmed = row.displayName?.trim() ?? "";
+  return trimmed === "" ? undefined : trimmed;
+}
+
+function normalizedAppListeningPort(
+  row: ApNetworkAppListeningPort
+): ApNetworkAppListeningPort {
+  const displayName = appListeningPortDisplayNameValue(row);
+  return {
+    ...(displayName === undefined ? {} : { displayName }),
+    ...(row.privateAddress == null || row.privateAddress.trim() === ""
+      ? {}
+      : { privateAddress: row.privateAddress }),
+    port: Math.round(row.port),
+  };
+}
+
 export function appListeningPortsFromNetwork(
   network: Pick<
     ApNetwork,
@@ -113,14 +147,7 @@ export function appListeningPortsFromNetwork(
   const rows = network.appListeningPorts ?? [];
   const normalized = rows.flatMap((row) =>
     validApNetworkPort(Math.round(row.port))
-      ? [
-          {
-            ...(row.privateAddress == null || row.privateAddress.trim() === ""
-              ? {}
-              : { privateAddress: row.privateAddress }),
-            port: Math.round(row.port),
-          },
-        ]
+      ? [normalizedAppListeningPort(row)]
       : []
   );
   if (normalized.length > 0) {
@@ -143,12 +170,7 @@ export function networkWithAppListeningPorts(
   const normalized =
     appListeningPorts.length === 0
       ? appListeningPortsFromNetwork(network).slice(0, 1)
-      : appListeningPorts.map((row) => ({
-          ...(row.privateAddress == null || row.privateAddress.trim() === ""
-            ? {}
-            : { privateAddress: row.privateAddress }),
-          port: Math.round(row.port),
-        }));
+      : appListeningPorts.map(normalizedAppListeningPort);
   const first = normalized[0];
   return {
     ...network,
@@ -181,6 +203,83 @@ export function networkWithoutAppListeningPort(
     (row) => Math.round(row.port) !== rounded
   );
   return networkWithAppListeningPorts(network, next);
+}
+
+/**
+ * Sets (or, with an empty value, clears) the Port Display Name of one App
+ * Listening Port. Whitespace is trimmed; the port list itself is unchanged.
+ */
+export function networkWithAppListeningPortDisplayName(
+  network: ApNetwork,
+  port: number,
+  displayName: string
+): ApNetwork {
+  const rounded = Math.round(port);
+  const trimmed = displayName.trim();
+  const next = appListeningPortsFromNetwork(network).map((row) => {
+    if (Math.round(row.port) !== rounded) {
+      return row;
+    }
+    const { displayName: _previous, ...rest } = row;
+    return trimmed === "" ? rest : { ...rest, displayName: trimmed };
+  });
+  return networkWithAppListeningPorts(network, next);
+}
+
+/** The resolved Port Display Name of the App Listening Port `port`, if any. */
+export function appListeningPortDisplayName(
+  network: Pick<
+    ApNetwork,
+    "appListeningPorts" | "privateAddress" | "privatePort"
+  >,
+  port: number
+): string | undefined {
+  const rounded = Math.round(port);
+  const row = appListeningPortsFromNetwork(network).find(
+    (candidate) => Math.round(candidate.port) === rounded
+  );
+  return row === undefined ? undefined : appListeningPortDisplayNameValue(row);
+}
+
+/** `name · port` — the row grammar both Network cards share. */
+export function appListeningPortRowDetail(
+  network: Pick<
+    ApNetwork,
+    "appListeningPorts" | "privateAddress" | "privatePort"
+  >,
+  port: number,
+  ...trailing: string[]
+): string {
+  const name = appListeningPortDisplayName(network, port);
+  return [name, String(Math.round(port)), ...trailing]
+    .filter((part): part is string => part !== undefined && part !== "")
+    .join(" · ");
+}
+
+/**
+ * Domains listed for one App Listening Port: visible Public Address rows plus
+ * the Custom Domains bound to it (a bound Platform Address is hidden behind
+ * its Custom Domain, so it is not counted twice).
+ */
+export function domainCountForPort(network: ApNetwork, port: number): number {
+  const rounded = Math.round(port);
+  const rows = visibleDomainRows(network);
+  return (
+    rows.publicAddressRows.filter(
+      (row) => Math.round(row.address.port) === rounded
+    ).length +
+    rows.customDomains.filter(
+      (domain) =>
+        domain.targetPort != null && Math.round(domain.targetPort) === rounded
+    ).length
+  );
+}
+
+export function domainCountLabel(count: number): string {
+  if (count === 0) {
+    return "No domains";
+  }
+  return count === 1 ? "1 domain" : `${count} domains`;
 }
 
 export function addedAppListeningPorts(
@@ -229,9 +328,15 @@ export function publicAddressIdValue(address: ApNetworkPublicAddress): string {
 export function apNetworkSaveDraftFromNetwork(
   network: ApNetwork
 ): ApNetworkSaveDraft {
-  const appListeningPorts =
+  const appListeningPorts: ApNetworkSaveAppListeningPort[] =
     network.appListeningPorts != null && network.appListeningPorts.length > 0
-      ? network.appListeningPorts.map((row) => ({ port: row.port }))
+      ? network.appListeningPorts.map((row) => {
+          const displayName = appListeningPortDisplayNameValue(row);
+          return {
+            ...(displayName === undefined ? {} : { displayName }),
+            port: row.port,
+          };
+        })
       : [{ port: network.privatePort }];
   const firstPort = appListeningPorts[0]?.port ?? network.privatePort;
   const publicAddresses = network.publicAddresses.flatMap((address) => {

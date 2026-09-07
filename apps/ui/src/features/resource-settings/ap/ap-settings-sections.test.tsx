@@ -2,7 +2,7 @@ import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { render } from "@testing-library/react/pure";
+import { fireEvent, render } from "@testing-library/react/pure";
 import { ResourceSettingsSection } from "@workspace/ui/components/resource-settings/resource-settings";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -15,6 +15,8 @@ import {
 import { createPendingSettingsStore } from "../pending-settings-updates";
 import {
   apNetworkAfterDeletePublicAddress,
+  apNetworkSaveDraftFromNetwork,
+  networkWithAppListeningPortDisplayName,
   visibleDomainRows,
 } from "./ap-network-model";
 import type {
@@ -31,6 +33,7 @@ import {
   envRawSourceDraftWithAddReferenceIntent,
   pendingDbReferencesFromEnvRawSourceDraft,
   resourceQuotaReplicaPatchFromDraft,
+  useApPublicAddressesSettingsSections,
   useApSettingsSections,
 } from "./ap-settings-sections";
 import {
@@ -145,6 +148,20 @@ const PENDING_AP_IMAGE_RE = /ghcr.io\/acme\/api:pending/;
 const MYSQL_PRIVATE_DSN_RE = /mysql:\/\/private/;
 const MYSQL_DATABASE_URL_REFERENCE_RE = /\$\{\{mysql\.DATABASE_URL\}\}/;
 const PRIVATE_ADDRESS_RE = /Private Address/;
+const PRIVATE_ADDRESSES_CARD_RE = /Private Addresses/;
+const APP_LISTENING_PORTS_CARD_RE = /App Listening Ports/;
+const RENAME_PORT_5201_RE = /aria-label="Rename App Listening Port 5201"/;
+const PORT_5200_NO_DOMAINS_RE = />5200 · No domains</;
+const PORT_5201_ADMIN_DETAIL_RE = />admin · 5201 · 1 domain</;
+const DOMAIN_5201_ADMIN_DETAIL_RE = />admin · 5201</;
+const PORT_5201_RENAMED_DETAIL_RE = />Admin console · 5201 · 1 domain</;
+const DOMAIN_5201_RENAMED_DETAIL_RE = />Admin console · 5201</;
+const PORT_NAME_FORM_HEADER_RE = />Port 5201</;
+const PORT_NAME_TAKEN_RE = /already used by App Listening Port 5201/;
+const KIND_LABEL_OR_PLACEHOLDER_RE = /Unnamed|Add a name|Platform Address</;
+const INVISIBLE_RE = /invisible/;
+const NETWORK_SECTION_TITLE_RE = />Network</;
+const PUBLIC_ADDRESSES_SECTION_TITLE_RE = />Public Addresses</;
 const ADD_PORT_RE = /Add Port/;
 const PRIVATE_ADDRESS_DEFAULT_VALUE_RE =
   /http:\/\/api-service.default.svc:8080/;
@@ -192,7 +209,7 @@ const PUBLIC_ADDRESSES_COLLAPSED_RE = /aria-expanded="false"/;
 const SHOW_LESS_PUBLIC_ADDRESSES_RE = /aria-label="Show Less Public Addresses"/;
 const INLINE_END_ICON_RE = /data-icon="inline-end"/;
 const CURSOR_POINTER_RE = /cursor-pointer/;
-const PRIVATE_PORT_VALUE_RE = />8080</;
+const PRIVATE_PORT_VALUE_RE = />8080 · No domains</;
 const REPLICA_STRATEGY_RE = /Replica Strategy/;
 const FIXED_REPLICAS_RE = /Fixed Replicas/;
 const ELASTIC_SCALING_RE = /Elastic Scaling/;
@@ -1246,6 +1263,242 @@ test("AP network preserves WebSocket and web addresses on separate ports", async
     restoreActEnvironment(previous);
     await dom.restore();
   }
+});
+
+/** Happy DOM needs focus + input + keyUp for React's change fallback to fire. */
+function typeIntoInput(input: HTMLInputElement, value: string) {
+  fireEvent.focus(input);
+  fireEvent.input(input, { target: { value } });
+  fireEvent.keyUp(input, { key: value.at(-1) ?? "" });
+}
+
+const TWO_PORT_NETWORK = {
+  appListeningPorts: [
+    { port: 5200, privateAddress: "http://game.default.svc:5200" },
+    {
+      displayName: "admin",
+      port: 5201,
+      privateAddress: "http://game.default.svc:5201",
+    },
+  ],
+  privateAddress: "http://game.default.svc:5200",
+  privatePort: 5200,
+  publicAddresses: [
+    {
+      host: "game-admin.example.com",
+      id: "pa_admin",
+      port: 5201,
+      status: "accessible",
+      type: "platform",
+      url: "https://game-admin.example.com/",
+    },
+  ],
+};
+
+test("AP settings pane lists App Listening Ports with their display names and domain counts", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={TWO_PORT_NETWORK}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+
+  assert.match(html, APP_LISTENING_PORTS_CARD_RE);
+  assert.doesNotMatch(html, PRIVATE_ADDRESSES_CARD_RE);
+  assert.match(html, PORT_5200_NO_DOMAINS_RE);
+  assert.match(html, PORT_5201_ADMIN_DETAIL_RE);
+  assert.match(html, RENAME_PORT_5201_RE);
+  assert.match(html, DOMAIN_5201_ADMIN_DETAIL_RE);
+  assert.doesNotMatch(html, KIND_LABEL_OR_PLACEHOLDER_RE);
+});
+
+test("AP settings pane renames an App Listening Port inline and marks the draft dirty", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  try {
+    let rendered: ReturnType<typeof render> | undefined;
+    await actAndDrain(() => {
+      rendered = render(
+        <TestApSettingsSections
+          cpuQuota={{ onValueChange: noop, value: 1 }}
+          env={[]}
+          image="ghcr.io/acme/api:latest"
+          memoryQuota={{ onValueChange: noop, value: 512 }}
+          network={TWO_PORT_NETWORK}
+          onEnvChange={noop}
+          onImageChange={noop}
+          onSettingsDraftCommit={noop}
+        />
+      );
+    });
+    const view = rendered;
+    if (view === undefined) {
+      assert.fail("expected the pane to render");
+    }
+    const update = view.getByLabelText("Update AP Settings");
+    assert.equal((update as HTMLButtonElement).disabled, true);
+
+    await actAndDrain(() => {
+      view.getByLabelText("Rename App Listening Port 5201").click();
+    });
+    const input = view.getByLabelText("Name") as HTMLInputElement;
+    assert.equal(input.value, "admin");
+    assert.equal(input.maxLength, 64);
+    assert.match(view.container.innerHTML, PORT_NAME_FORM_HEADER_RE);
+
+    await actAndDrain(() => {
+      typeIntoInput(input, "  Admin console  ");
+    });
+    await actAndDrain(() => {
+      view.getByText("Done").click();
+    });
+
+    assert.match(view.container.innerHTML, PORT_5201_RENAMED_DETAIL_RE);
+    assert.match(view.container.innerHTML, DOMAIN_5201_RENAMED_DETAIL_RE);
+    assert.equal(view.queryByLabelText("Name"), null);
+    assert.equal(
+      (view.getByLabelText("Update AP Settings") as HTMLButtonElement).disabled,
+      false
+    );
+    assert.doesNotMatch(
+      view.getByText("Unsaved changes").parentElement?.className ?? "invisible",
+      INVISIBLE_RE
+    );
+  } finally {
+    await actAndDrain(() => {
+      /* settle */
+    });
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+test("AP settings pane refuses a Port Display Name another port already uses and cancels on Escape", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  try {
+    let rendered: ReturnType<typeof render> | undefined;
+    await actAndDrain(() => {
+      rendered = render(
+        <TestApSettingsSections
+          cpuQuota={{ onValueChange: noop, value: 1 }}
+          env={[]}
+          image="ghcr.io/acme/api:latest"
+          memoryQuota={{ onValueChange: noop, value: 512 }}
+          network={TWO_PORT_NETWORK}
+          onEnvChange={noop}
+          onImageChange={noop}
+          onSettingsDraftCommit={noop}
+        />
+      );
+    });
+    const view = rendered;
+    if (view === undefined) {
+      assert.fail("expected the pane to render");
+    }
+
+    await actAndDrain(() => {
+      view.getByLabelText("Rename App Listening Port 5200").click();
+    });
+    const input = view.getByLabelText("Name") as HTMLInputElement;
+    assert.equal(input.value, "");
+    await actAndDrain(() => {
+      typeIntoInput(input, "admin");
+    });
+    await actAndDrain(() => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    assert.match(view.container.innerHTML, PORT_NAME_TAKEN_RE);
+    assert.ok(view.getByLabelText("Name"));
+
+    await actAndDrain(() => {
+      fireEvent.keyDown(view.getByLabelText("Name"), { key: "Escape" });
+    });
+    assert.equal(view.queryByLabelText("Name"), null);
+    assert.match(view.container.innerHTML, PORT_5200_NO_DOMAINS_RE);
+    assert.equal(
+      (view.getByLabelText("Update AP Settings") as HTMLButtonElement).disabled,
+      true
+    );
+  } finally {
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+function TestPublicAccessNodeSettings(
+  props: Parameters<typeof useApPublicAddressesSettingsSections>[0]
+) {
+  const model = useApPublicAddressesSettingsSections(props);
+  return (
+    <div data-slot="public-access-node-settings-test-wrapper">
+      {model.sections.map((section) => (
+        <ResourceSettingsSection
+          icon={section.icon}
+          key={section.id}
+          title={section.title}
+        >
+          {section.content}
+        </ResourceSettingsSection>
+      ))}
+      {model.footer}
+    </div>
+  );
+}
+
+test("Public Access Node settings view renders both Network cards under one Network section", () => {
+  const html = renderToStaticMarkup(
+    <TestPublicAccessNodeSettings
+      network={TWO_PORT_NETWORK}
+      onNetworkDraftCommit={noop}
+    />
+  );
+
+  assert.match(html, NETWORK_SECTION_TITLE_RE);
+  assert.doesNotMatch(html, PUBLIC_ADDRESSES_SECTION_TITLE_RE);
+  assert.match(html, APP_LISTENING_PORTS_CARD_RE);
+  assert.match(html, DOMAIN_LIST_RE);
+  assert.match(html, RENAME_PORT_5201_RE);
+  assert.match(html, PORT_5201_ADMIN_DETAIL_RE);
+  assert.ok(
+    html.indexOf("App Listening Ports") < html.indexOf("Domain List"),
+    "App Listening Ports card comes first"
+  );
+});
+
+test("AP network draft carries Port Display Names into the save draft", () => {
+  const renamed = networkWithAppListeningPortDisplayName(
+    TWO_PORT_NETWORK,
+    5200,
+    "  game  "
+  );
+  assert.deepEqual(
+    renamed.appListeningPorts?.map((row) => [row.port, row.displayName]),
+    [
+      [5200, "game"],
+      [5201, "admin"],
+    ]
+  );
+  assert.deepEqual(apNetworkSaveDraftFromNetwork(renamed).appListeningPorts, [
+    { displayName: "game", port: 5200 },
+    { displayName: "admin", port: 5201 },
+  ]);
+
+  const cleared = networkWithAppListeningPortDisplayName(renamed, 5201, "");
+  assert.deepEqual(apNetworkSaveDraftFromNetwork(cleared).appListeningPorts, [
+    { displayName: "game", port: 5200 },
+    { port: 5201 },
+  ]);
+  assert.notEqual(
+    JSON.stringify(apNetworkSaveDraftFromNetwork(cleared)),
+    JSON.stringify(apNetworkSaveDraftFromNetwork(renamed))
+  );
 });
 
 test("read-only AP settings view cannot mutate environment rows", () => {

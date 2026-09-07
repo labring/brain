@@ -8,23 +8,22 @@ import { CanvasNodeRoot } from "@workspace/ui/components/canvas-node/canvas-node
 
 import { EntryNodeProvider } from "./entry-node.provider";
 import type {
+  EntryNodeAddressKey,
   EntryNodeContextValue,
   EntryNodeRootProps,
-  EntryNodeTargetKey,
 } from "./entry-node.types";
 
 export function EntryNodeRoot({
-  accessDomain,
   children,
+  copiedAddressKey,
   copiedFeedbackMs = CANVAS_NODE_DEFAULT_COPIED_FEEDBACK_MS,
-  copiedTargetKey,
   defaultExpanded,
   expanded,
+  groups,
   interaction,
-  onCopyTarget,
+  onCopyAddress,
   onExpandedChange,
   states,
-  targets,
 }: EntryNodeRootProps) {
   return (
     <CanvasNodeRoot
@@ -35,21 +34,20 @@ export function EntryNodeRoot({
     >
       <CanvasNodeCopyFeedbackScope
         copiedFeedbackMs={copiedFeedbackMs}
-        copiedKey={copiedTargetKey}
+        copiedKey={copiedAddressKey}
       >
         {({ copiedKey }) => {
           const value: EntryNodeContextValue = {
             actions: {
-              copyTarget: onCopyTarget,
+              copyAddress: onCopyAddress,
             },
             meta: {
               copiedFeedbackMs,
             },
             state: {
-              accessDomain,
-              copiedTargetKey: copiedKey as EntryNodeTargetKey | null,
+              copiedAddressKey: copiedKey as EntryNodeAddressKey | null,
+              groups,
               states,
-              targets,
             },
           };
 

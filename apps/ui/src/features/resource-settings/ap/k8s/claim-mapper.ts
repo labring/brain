@@ -351,7 +351,9 @@ function normalizeAppListeningPortRows(
     }
     seen.add(port);
     const privateAddress = trimStr(row.privateAddress);
+    const displayName = trimStr(row.displayName);
     out.push({
+      ...(displayName === "" ? {} : { displayName }),
       ...(includeObservedFields && privateAddress !== ""
         ? { privateAddress }
         : {}),

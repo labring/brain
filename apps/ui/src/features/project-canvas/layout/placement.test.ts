@@ -49,13 +49,13 @@ function apNode(name: string, uid?: string): Node {
 function entryNode(name: string, apRef: string): Node {
   return {
     data: {
+      groups: [],
       resource: {
         apRef,
         name,
         namespace: "default",
       },
       states: { name },
-      targets: [],
     },
     id: `entry-${name}`,
     measured: MEASURED_CARD,
