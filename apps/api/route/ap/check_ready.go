@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -263,7 +264,8 @@ func apCheckReadyDialContext(ctx context.Context, network string, address string
 	}
 	var target netip.Addr
 	for _, ip := range ips {
-		if apCheckReadyPublicAddr(ip) {
+		if apCheckReadyPublicAddr(ip) ||
+			(os.Getenv("NODE_ENV") == "development" && (ip.IsPrivate() || ip.IsLoopback())) {
 			target = ip
 			break
 		}

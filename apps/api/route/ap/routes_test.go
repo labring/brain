@@ -204,15 +204,26 @@ func TestAPCheckReadyTargetsWithClientSkipsPreconditionFailures(t *testing.T) {
 	}
 }
 
-func TestAPCheckReadyURLRejectsPrivateTargets(t *testing.T) {
+func TestAPCheckReadyURLAllowsLocalTargetsOnlyInDevelopment(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	got := apCheckReadyURL(context.Background(), newAPCheckReadyHTTPClient(), server.URL)
-	if got.Ready || got.Error != "fetch error" {
-		t.Fatalf("result = %#v, want private target fetch error", got)
+	for _, environment := range []string{"", "production", "test", "dev", "development"} {
+		t.Run("NODE_ENV="+environment, func(t *testing.T) {
+			t.Setenv("NODE_ENV", environment)
+			client := newAPCheckReadyHTTPClient()
+			defer client.CloseIdleConnections()
+			got := apCheckReadyURL(context.Background(), client, server.URL)
+			if environment == "development" {
+				if !got.Ready || got.Error != "" {
+					t.Fatalf("result = %#v, want successful local development probe", got)
+				}
+			} else if got.Ready || got.Error != "fetch error" {
+				t.Fatalf("result = %#v, want private target fetch error", got)
+			}
+		})
 	}
 }
 
