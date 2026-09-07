@@ -55,6 +55,7 @@ function TestApSettingsSections({
   const model = useApSettingsSections(props);
   return (
     <div className={className} data-slot="ap-settings-sections-test-wrapper">
+      <div data-slot="test-pane-header-actions">{model.headerActions}</div>
       {model.sections.map((section) =>
         section.chromeless ? (
           <div data-settings-section={section.id} key={section.id}>
@@ -159,15 +160,19 @@ const PRIVATE_ADDRESSES_CARD_RE = /Private Addresses/;
 const APP_LISTENING_PORTS_CARD_RE = /App Listening Ports/;
 const RENAME_PORT_5201_RE = /aria-label="App Listening Port 5201 actions"/;
 const OPEN_ADMIN_ACTION_RE =
-  /<a(?=[^>]*aria-label="Open admin")(?=[^>]*data-network-action="open")(?=[^>]*href="https:\/\/game-admin\.example\.com\/")(?=[^>]*target="_blank")/;
+  /<a(?=[^>]*aria-label="Open admin")(?=[^>]*data-settings-action="open")(?=[^>]*href="https:\/\/game-admin\.example\.com\/")(?=[^>]*target="_blank")/;
 const OPEN_CONSOLE_ACTION_RE =
-  /<a(?=[^>]*aria-label="Open Console")(?=[^>]*data-network-action="open")(?=[^>]*href="https:\/\/console\.example\.com\/")/;
+  /<a(?=[^>]*aria-label="Open Console")(?=[^>]*data-settings-action="open")(?=[^>]*href="https:\/\/console\.example\.com\/")/;
 const OPEN_S3_ACTION_RE =
-  /<a(?=[^>]*aria-label="Open S3 API")(?=[^>]*data-network-action="open")(?=[^>]*href="https:\/\/s3\.example\.com\/")/;
+  /<a(?=[^>]*aria-label="Open S3 API")(?=[^>]*data-settings-action="open")(?=[^>]*href="https:\/\/s3\.example\.com\/")/;
 const OPEN_CUSTOM_DOMAIN_ACTION_RE =
-  /<a(?=[^>]*data-network-action="open")(?=[^>]*href="https:\/\/www\.example\.com\/")/;
+  /<a(?=[^>]*data-settings-action="open")(?=[^>]*href="https:\/\/www\.example\.com\/")/;
+const OPEN_IN_PANE_HEADER_RE =
+  /data-slot="test-pane-header-actions"><a(?=[^>]*data-settings-action="open")[^>]*>(?:<svg[\s\S]*?<\/svg>)?Open<\/a>/;
+const NETWORK_SECTION_HEADER_ACTION_RE =
+  /Network<\/[\s\S]*?data-settings-action="open"/;
 const OPEN_DISABLED_ACTION_RE =
-  /<button(?=[^>]*aria-description="Not accessible yet")(?=[^>]*aria-disabled="true")(?=[^>]*aria-label="Open")(?=[^>]*data-network-action="open")/;
+  /<button(?=[^>]*aria-description="Not accessible yet")(?=[^>]*aria-disabled="true")(?=[^>]*aria-label="Open")(?=[^>]*data-settings-action="open")/;
 const PORT_5200_NO_DOMAINS_RE = />5200 · 0 domains</;
 const PORT_5201_ADMIN_DETAIL_RE = />admin · 5201 · 1 domain</;
 const DOMAIN_5201_ADMIN_DETAIL_RE = />admin · 5201</;
@@ -1514,6 +1519,7 @@ function TestPublicAccessNodeSettings(
   const model = useApPublicAddressesSettingsSections(props);
   return (
     <div data-slot="public-access-node-settings-test-wrapper">
+      <div data-slot="test-pane-header-actions">{model.headerActions}</div>
       {model.sections.map((section) => (
         <ResourceSettingsSection
           actions={section.actions}
@@ -1593,6 +1599,10 @@ test("Network section header opens the Default Open Port and greys out while not
     />
   );
   assert.match(html, OPEN_CONSOLE_ACTION_RE);
+  // The control sits in the pane header slot, reads just "Open", and the
+  // Network section header carries nothing.
+  assert.match(html, OPEN_IN_PANE_HEADER_RE);
+  assert.doesNotMatch(html, NETWORK_SECTION_HEADER_ACTION_RE);
 
   const automatic = renderToStaticMarkup(
     <TestApSettingsSections

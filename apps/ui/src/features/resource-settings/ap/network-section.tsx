@@ -413,12 +413,13 @@ function RowActionsMenu({
 }
 
 /**
- * The Network section's header action: opens the Default Open Port's best
- * Public Address in a new tab, named after the port ("Open Console"). It is
- * the only explicit indicator of the current target; greyed with a reason
- * when nothing is accessible yet.
+ * The AP Settings pane's header action: opens the Default Open Port's best
+ * Public Address in a new tab. Reads just "Open" — the App Listening Ports
+ * card beside it already shows which port that is — and names the port only
+ * on hover and to assistive tech ("Open Console"). Greyed with a reason when
+ * nothing is accessible yet.
  */
-export function NetworkOpenAction({ network }: { network: ApNetwork }) {
+export function ApSettingsOpenAction({ network }: { network: ApNetwork }) {
   const target = apNetworkOpenTarget(network);
   const label = target?.label ?? AP_OPEN_TARGET_LABEL;
   const reason = entryNodeOpenDisabledReason(target);
@@ -429,12 +430,14 @@ export function NetworkOpenAction({ network }: { network: ApNetwork }) {
       aria-description={reason}
       aria-disabled={reason === undefined ? undefined : true}
       aria-label={label}
+      // Header-weight, like the pane's close control: quiet, the same height,
+      // muted until hovered.
       className={cn(
-        "shrink-0",
+        "h-8 shrink-0 px-2 text-muted-foreground text-sm hover:text-foreground [&_svg:not([class*='size-'])]:size-4",
         reason !== undefined &&
-          "cursor-not-allowed opacity-50 hover:bg-input/30"
+          "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-muted-foreground"
       )}
-      data-network-action="open"
+      data-settings-action="open"
       nativeButton={url === undefined ? undefined : false}
       render={
         url === undefined ? undefined : (
@@ -445,10 +448,10 @@ export function NetworkOpenAction({ network }: { network: ApNetwork }) {
       size="sm"
       title={reason ?? label}
       type="button"
-      variant="secondary"
+      variant="quiet"
     >
       <ExternalLink aria-hidden data-icon="inline-start" />
-      {label}
+      {AP_OPEN_TARGET_LABEL}
     </AppButton>
   );
 }
@@ -1982,6 +1985,12 @@ export function useApPublicAddressesSettingsSections({
   ]);
 
   const networkForRender = commitMode ? draftNetwork : network;
+  // Identity-stable on the facts it shows: the settings host re-renders the
+  // pane header only when this element changes.
+  const headerActions = useMemo(
+    () => <ApSettingsOpenAction network={networkForRender} />,
+    [networkForRender]
+  );
   const networkDirty = publicAddressNetworkDirty(
     networkBackingState.base,
     draftNetwork
@@ -2110,10 +2119,10 @@ export function useApPublicAddressesSettingsSections({
         submitAriaLabel="Update Network settings"
       />
     ) : null,
+    headerActions,
     leaveGuard,
     sections: [
       {
-        actions: <NetworkOpenAction network={networkForRender} />,
         content: (
           <>
             <NetworkSettingsSection

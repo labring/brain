@@ -329,12 +329,12 @@ interface ApSettingsModelInput {
   onSettingsDraftCommit: ApWorkloadSettingsState["onSettingsDraftCommit"];
   publicAddressesModel: Pick<
     ReturnType<typeof useApPublicAddressesSettingsSections>,
-    "footer" | "leaveGuard" | "sections"
+    "footer" | "headerActions" | "leaveGuard" | "sections"
   >;
   resolvedView: string;
   settingsSectionsModel: Pick<
     ReturnType<typeof useApSettingsSections>,
-    "footer" | "leaveGuard" | "sections"
+    "footer" | "headerActions" | "leaveGuard" | "sections"
   >;
   titleContent?: ReactNode;
 }
@@ -418,6 +418,8 @@ function publicAddressesApSettingsModel({
   return {
     ...base,
     footer: network == null ? undefined : publicAddressesModel.footer,
+    headerActions:
+      network == null ? undefined : publicAddressesModel.headerActions,
     leaveGuard: network == null ? null : publicAddressesModel.leaveGuard,
     sections:
       network == null
@@ -458,6 +460,7 @@ function fullApSettingsModel({
   return {
     ...base,
     footer: input.settingsSectionsModel.footer,
+    headerActions: input.settingsSectionsModel.headerActions,
     leaveGuard: input.settingsSectionsModel.leaveGuard,
     sections: input.settingsSectionsModel.sections.map((section) =>
       section.id === metadata.id
@@ -733,6 +736,7 @@ export function ApSettingsProvider({
 
   const {
     closeAriaLabel,
+    headerActions,
     icon,
     leaveGuard,
     subtitle,
@@ -743,6 +747,7 @@ export function ApSettingsProvider({
   useEffect(() => {
     onModelChange({
       closeAriaLabel,
+      headerActions,
       icon,
       leaveGuard,
       resolvedView,
@@ -753,6 +758,7 @@ export function ApSettingsProvider({
     });
   }, [
     closeAriaLabel,
+    headerActions,
     icon,
     leaveGuard,
     modelTitleContent,

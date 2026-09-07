@@ -80,7 +80,7 @@ _Avoid_: Public Address name, domain name label, port alias.
 
 ### Default Open Port
 
-The App Listening Port that the Open control opens — on the AP Public Access Node header and at the top of AP Network Settings — through its best Public Address: an accessible Custom Domain, else an accessible Platform Address; with neither, Open is shown disabled. A stored choice lives only on the AP's Service (annotation `brain.io/default-open-port`, next to Port Display Names), so a template can preset it; users set or clear it from the port's row in the App Listening Ports card ("Open by default"), and clearing returns to the automatic rule: the first App Listening Port, in declaration order, that has an HTTP Public Address. A stored port that has no HTTP Public Address is ignored, not surfaced. Ports reached only by WS/WSS Public Addresses are never chosen. Owned by one AP; there is no Project-level or Template-Instance-level open link.
+The App Listening Port that the Open control opens — on the AP Public Access Node header and in the pane header of every AP-owned Settings View — through its best Public Address: an accessible Custom Domain, else an accessible Platform Address; with neither, Open is shown disabled, with the reason. The node's control names the port ("Open <Port Display Name>"), its only marker there; the pane control reads just "Open" and names the port only on hover, since the App Listening Ports card beside it already shows the choice. A stored choice lives only on the AP's Service (annotation `brain.io/default-open-port`, next to Port Display Names), so a template can preset it; users set or clear it from the port's row in the App Listening Ports card ("Open by default"), and clearing returns to the automatic rule: the first App Listening Port, in declaration order, that has an HTTP Public Address. A stored port that has no HTTP Public Address is ignored, not surfaced. Ports reached only by WS/WSS Public Addresses are never chosen. Owned by one AP; there is no Project-level or Template-Instance-level open link.
 
 _Avoid_: primary entry, primary port, primary address, launch link, main domain.
 
@@ -120,7 +120,7 @@ A presentation-only Project Canvas node derived from an AP's Public Addresses (u
 
 ### AP Network Settings
 
-The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings — one AP Settings Draft domain regardless of which Settings View shows it. Its port section (the App Listening Ports card) is where a Port Display Name is edited and the Default Open Port is chosen; its public-routing section (the Domain List) lists Public Addresses with their routing state and the name of the port each targets. Its header carries the Open control for the Default Open Port. Public Address edits may add App Listening Ports within the same draft.
+The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings — one AP Settings Draft domain regardless of which Settings View shows it. Its port section (the App Listening Ports card) is where a Port Display Name is edited and the Default Open Port is chosen; its public-routing section (the Domain List) lists Public Addresses with their routing state and the name of the port each targets. It carries no Open control of its own — that sits in the pane header of the Settings View showing it. Public Address edits may add App Listening Ports within the same draft.
 
 _Avoid_: Private Addresses card (the card lists App Listening Ports; the Private Address is one of their attributes).
 
@@ -504,7 +504,7 @@ _Avoid_: hidden unsupported action, missing menu item.
 
 ### Side Pane
 
-A non-modal, temporary project surface for focused work such as resource inspection, settings, or deployment flows — distinct from the persistent Project Assistant Pane. Its pinned footer carries pane-level actions chosen by the hosted surface, not by the pane; a surface without pane-level actions has none.
+A non-modal, temporary project surface for focused work such as resource inspection, settings, or deployment flows — distinct from the persistent Project Assistant Pane. Its header and its pinned footer carry pane-level actions chosen by the hosted surface, not by the pane — the header beside the title, the footer as a pinned strip; a surface without pane-level actions has none.
 
 ### Main Action Surface
 
