@@ -934,38 +934,33 @@ async function runChatPipeline(input: {
           },
         });
 
-        let finishPromise: PromiseLike<void> | undefined;
+        let finishCalled = false;
         return result.toUIMessageStreamResponse({
-          consumeSseStream: ({ stream }) =>
-            trace.run(async () => {
-              try {
-                let streamFailed = false;
-                await consumeStream({
-                  stream,
-                  onError: () => {
-                    streamFailed = true;
-                  },
-                });
-                if (finishPromise) {
-                  await finishPromise;
-                } else if (streamFailed) {
-                  // A source throw can bypass the SDK's finish callback. The
-                  // consumer then owns cleanup; never retain a failed turn's quota.
-                  finishPromise = (async () => {
-                    const failedLease = await streamHeartbeat.stop();
-                    if (billing === "free") {
-                      await releaseReservedFreeTurnQuietly(scope.namespace);
-                    }
-                    if (failedLease) {
-                      await releaseLeaseQuietly(failedLease);
-                    }
-                  })();
-                  await finishPromise;
+          consumeSseStream: async ({ stream }) => {
+            try {
+              let streamFailed = false;
+              await consumeStream({
+                stream,
+                onError: () => {
+                  streamFailed = true;
+                },
+              });
+              if (streamFailed && !finishCalled) {
+                // A source throw can bypass the SDK's finish callback. The
+                // consumer then owns cleanup; never retain a failed turn's quota.
+                finishCalled = true;
+                const failedLease = await streamHeartbeat.stop();
+                if (billing === "free") {
+                  await releaseReservedFreeTurnQuietly(scope.namespace);
                 }
-              } finally {
-                trace.end();
+                if (failedLease) {
+                  await releaseLeaseQuietly(failedLease);
+                }
               }
-            }),
+            } finally {
+              trace.end();
+            }
+          },
           originalMessages: history,
           generateMessageId: generateId,
           headers: responseHeaders,
@@ -974,21 +969,20 @@ async function runChatPipeline(input: {
           onError: (error) =>
             chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
           onFinish: (event) => {
-            finishPromise ??= Promise.resolve(
-              trace.run(() =>
-                createChatStreamFinishHandler({
-                  billing,
-                  chatId,
-                  history,
-                  heartbeat: streamHeartbeat,
-                  scope,
-                  projectName: assistantProjectName(assistantContext),
-                  titleModel,
-                  toolDurationMsByCallId,
-                })(event)
-              )
-            );
-            return finishPromise;
+            if (finishCalled) {
+              return;
+            }
+            finishCalled = true;
+            return createChatStreamFinishHandler({
+              billing,
+              chatId,
+              history,
+              heartbeat: streamHeartbeat,
+              scope,
+              projectName: assistantProjectName(assistantContext),
+              titleModel,
+              toolDurationMsByCallId,
+            })(event);
           },
         });
       },

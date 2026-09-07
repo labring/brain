@@ -11,7 +11,7 @@ export interface LangfuseConfig {
 /**
  * Resolves the Chat Assistant Langfuse configuration without exposing
  * credentials to callers that only need to decide whether tracing is enabled.
- * A partial key pair is intentionally treated as disabled so observability
+ * A missing host or key is treated as disabled so observability
  * cannot prevent the application from serving traffic.
  */
 export function getLangfuseConfigFromEnv(
@@ -31,16 +31,4 @@ export function getLangfuseConfigFromEnv(
     secretKey,
     baseUrl,
   };
-}
-
-export function isLangfusePartiallyConfiguredFromEnv(
-  env: LangfuseEnv
-): boolean {
-  const hasPublicKey = (env.LANGFUSE_PUBLIC_KEY?.trim() ?? "") !== "";
-  const hasSecretKey = (env.LANGFUSE_SECRET_KEY?.trim() ?? "") !== "";
-  const hasHost = (env.LANGFUSE_HOST?.trim() ?? "") !== "";
-  return (
-    (hasPublicKey || hasSecretKey || hasHost) &&
-    !(hasPublicKey && hasSecretKey && hasHost)
-  );
 }

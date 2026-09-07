@@ -174,34 +174,32 @@ test("Langfuse exports error codes and metrics without remote error content", as
           telemetry,
         });
         return result.toUIMessageStreamResponse({
-          consumeSseStream: ({ stream }) =>
-            trace.run(async () => {
-              try {
-                await consumeStream({ stream });
-              } finally {
-                trace.end();
-              }
-            }),
-          onFinish: () =>
-            trace.run(async () => {
-              titleStarted();
-              await titleGate;
-              await generateText({
-                model: new MockLanguageModelV3({
-                  doGenerate: async () => ({
-                    content: [{ type: "text", text: "Synthetic title" }],
-                    finishReason: { unified: "stop", raw: undefined },
-                    usage,
-                    warnings: [],
-                  }),
+          consumeSseStream: async ({ stream }) => {
+            try {
+              await consumeStream({ stream });
+            } finally {
+              trace.end();
+            }
+          },
+          onFinish: async () => {
+            titleStarted();
+            await titleGate;
+            await generateText({
+              model: new MockLanguageModelV3({
+                doGenerate: async () => ({
+                  content: [{ type: "text", text: "Synthetic title" }],
+                  finishReason: { unified: "stop", raw: undefined },
+                  usage,
+                  warnings: [],
                 }),
-                prompt: SECRET,
-                telemetry: {
-                  ...telemetry,
-                  functionId: "project-assistant-thread-title",
-                },
-              });
-            }),
+              }),
+              prompt: SECRET,
+              telemetry: {
+                ...telemetry,
+                functionId: "project-assistant-thread-title",
+              },
+            });
+          },
         });
       },
     });
@@ -219,8 +217,33 @@ test("Langfuse exports error codes and metrics without remote error content", as
       exported.some((span) => span.name === "project-assistant-chat"),
       false
     );
-    releaseTitle();
-    await drained;
+    // Resolve the first turn's title gate while a different user's trace is
+    // active. Async propagation must keep the first turn's tags and trace ID.
+    await withLangfuseChatTrace({
+      chatId: "other-session",
+      chatTurnId: "other-turn",
+      userId: "other-user",
+      callback: async (trace) => {
+        try {
+          await generateText({
+            model: new MockLanguageModelV3({
+              doGenerate: async () => ({
+                content: [{ type: "text", text: "Other turn" }],
+                finishReason: { unified: "stop", raw: undefined },
+                usage,
+                warnings: [],
+              }),
+            }),
+            prompt: SECRET,
+            telemetry,
+          });
+          releaseTitle();
+          await drained;
+        } finally {
+          trace.end();
+        }
+      },
+    });
     await completion;
     await processor.forceFlush();
     const turnSpans = exported.filter(
@@ -245,6 +268,20 @@ test("Langfuse exports error codes and metrics without remote error content", as
     );
     assert.ok(
       turnSpans.every((span) => span.attributes["user.id"] === "stream-user")
+    );
+
+    const otherSpans = exported.filter(
+      (span) => span.attributes["session.id"] === "other-session"
+    );
+    assert.ok(otherSpans.length >= 2);
+    assert.ok(
+      otherSpans.every((span) => span.attributes["user.id"] === "other-user")
+    );
+    assert.equal(
+      new Set(
+        [...turnSpans, ...otherSpans].map((span) => span.spanContext().traceId)
+      ).size,
+      2
     );
 
     const payload = (spans: ReadableSpan[]) =>

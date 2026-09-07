@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  getLangfuseConfigFromEnv,
-  isLangfusePartiallyConfiguredFromEnv,
-} from "./langfuse-core";
+import { getLangfuseConfigFromEnv } from "./langfuse-core";
 
 test("disables Langfuse when credentials are absent or incomplete", () => {
   assert.equal(getLangfuseConfigFromEnv({}), null);
@@ -16,13 +13,6 @@ test("disables Langfuse when credentials are absent or incomplete", () => {
     getLangfuseConfigFromEnv({ LANGFUSE_SECRET_KEY: "sk-lf-test" }),
     null
   );
-  assert.equal(
-    isLangfusePartiallyConfiguredFromEnv({
-      LANGFUSE_PUBLIC_KEY: "pk-lf-test",
-    }),
-    true
-  );
-  assert.equal(isLangfusePartiallyConfiguredFromEnv({}), false);
 });
 
 test("trims credentials and requires an explicit host", () => {
@@ -56,7 +46,6 @@ for (const host of [undefined, "", "   "]) {
       LANGFUSE_HOST: host,
     };
     assert.equal(getLangfuseConfigFromEnv(env), null);
-    assert.equal(isLangfusePartiallyConfiguredFromEnv(env), true);
   });
 }
 

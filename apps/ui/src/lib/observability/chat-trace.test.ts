@@ -1,12 +1,6 @@
 import { beforeEach, expect, mock, test } from "bun:test";
 
-let failure:
-  | "propagate"
-  | "start"
-  | "after-start"
-  | "context"
-  | "end"
-  | undefined;
+let failure: "propagate" | "start" | "after-start" | "end" | undefined;
 let ends = 0;
 mock.module("@langfuse/tracing", () => ({
   propagateAttributes: (_attributes: unknown, callback: () => unknown) => {
@@ -36,17 +30,6 @@ mock.module("@langfuse/tracing", () => ({
     return result;
   },
 }));
-mock.module("@opentelemetry/api", () => ({
-  context: {
-    active: () => ({}),
-    with: (_context: unknown, callback: () => unknown) => {
-      if (failure === "context") {
-        throw new Error("context unavailable");
-      }
-      return callback();
-    },
-  },
-}));
 const { withLangfuseChatTrace } = await import("./chat-trace");
 const attributes = { chatId: "chat", chatTurnId: "turn", userId: "user" };
 beforeEach(() => {
@@ -54,23 +37,15 @@ beforeEach(() => {
   ends = 0;
 });
 
-for (const mode of [
-  "propagate",
-  "start",
-  "after-start",
-  "context",
-  "end",
-] as const) {
+for (const mode of ["propagate", "start", "after-start", "end"] as const) {
   test(`telemetry failure at ${mode} does not fail or replay application work`, async () => {
     failure = mode;
     let calls = 0;
     const response = await withLangfuseChatTrace({
       ...attributes,
       callback: async (trace) => {
-        const result = trace.run(() => {
-          calls += 1;
-          return "response";
-        });
+        calls += 1;
+        const result = "response";
         trace.end();
         trace.end();
         await trace.completed;
@@ -90,14 +65,13 @@ for (const asyncFailure of [false, true]) {
     await expect(
       withLangfuseChatTrace({
         ...attributes,
-        callback: (trace) =>
-          trace.run(() => {
-            calls += 1;
-            if (asyncFailure) {
-              return Promise.reject(error);
-            }
-            throw error;
-          }),
+        callback: () => {
+          calls += 1;
+          if (asyncFailure) {
+            return Promise.reject(error);
+          }
+          throw error;
+        },
       })
     ).rejects.toBe(error);
     expect(calls).toBe(1);

@@ -6,10 +6,7 @@ import { registerTelemetry } from "ai";
 
 import { ChatLangfuseSpanProcessor } from "./chat-langfuse-span-processor";
 
-import {
-  getLangfuseConfigFromEnv,
-  isLangfusePartiallyConfiguredFromEnv,
-} from "./langfuse-core";
+import { getLangfuseConfigFromEnv } from "./langfuse-core";
 
 let initialization: Promise<boolean> | undefined;
 let langfuseSpanProcessor: ChatLangfuseSpanProcessor | undefined;
@@ -21,13 +18,6 @@ let langfuseSpanProcessor: ChatLangfuseSpanProcessor | undefined;
  */
 export function initializeLangfuseTelemetry(): Promise<boolean> {
   initialization ??= Promise.resolve().then(() => {
-    if (isLangfusePartiallyConfiguredFromEnv(process.env)) {
-      console.warn(
-        "[observability] LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY must all be set; Chat Assistant telemetry is disabled."
-      );
-      return false;
-    }
-
     const config = getLangfuseConfigFromEnv(process.env);
     if (config == null) {
       return false;
