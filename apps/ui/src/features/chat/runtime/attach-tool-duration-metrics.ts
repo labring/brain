@@ -1,7 +1,7 @@
 import { isToolUIPart, type UIMessage } from "ai";
 
 /**
- * Merges execution duration (ms) from `streamText` `experimental_onToolCallFinish`
+ * Merges execution duration (ms) from `streamText` `onToolExecutionEnd`
  * into each matching tool UI part's `toolMetadata`, so it persists with the message
  * and can be rendered client-side.
  */

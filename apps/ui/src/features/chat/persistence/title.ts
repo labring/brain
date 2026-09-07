@@ -143,12 +143,17 @@ export async function deriveThreadTitle(input: {
     const generated = await generateText({
       abortSignal: input.abortSignal,
       model: input.languageModel,
-      system: SYSTEM_PROMPT,
+      instructions: SYSTEM_PROMPT,
       prompt:
         projectName === ""
           ? userPart
           : `Current project: ${projectName}\n\n${userPart}`,
       maxOutputTokens: TITLE_MAX_OUTPUT_TOKENS,
+      telemetry: {
+        functionId: "project-assistant-thread-title",
+        recordInputs: false,
+        recordOutputs: false,
+      },
     });
     const raw = rawTitleFromGenerateTextResult(generated);
     const cleaned = raw

@@ -2,6 +2,26 @@
 
 All notable changes to Brain are documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Return free Chat reservations for failed, aborted, or unknown AI SDK operation
+  outcomes, including a source-stream failure after the model finishes.
+- Keep telemetry initialization, context and export failures from failing or
+  replaying Chat work. Langfuse requires an explicit host and both keys.
+- Keep Chat Langfuse credentials in Brain UI instead of forwarding them to new
+  Deploy Devboxes. This disables Codex Langfuse export in those Devboxes without
+  changing deployment model credentials or execution.
+
+### Upgrade Notes
+
+- Revoke any Langfuse key pair previously forwarded to Deploy Devboxes and set
+  a fresh pair only in Brain UI before enabling Chat tracing. Existing Devboxes
+  retain their old environment; this code change cannot revoke those keys.
+- No new environment variables are required. A blank `LANGFUSE_HOST` disables
+  Chat tracing; Langfuse Cloud requires an explicit `https://cloud.langfuse.com`.
+
 ## [2.0.11] - 2026-09-03
 
 ### Added

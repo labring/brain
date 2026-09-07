@@ -107,7 +107,7 @@ test("returns matches and catalog size through the tool", async () => {
   });
   const result = await tool.execute?.(
     { intention: "find the glpi template", limit: 5, query: "glpi" },
-    { messages: [], toolCallId: "call-1" }
+    { context: {}, messages: [], toolCallId: "call-1" }
   );
   assert.deepEqual(result, {
     matches: rankDeployCatalog(catalog, "glpi", 5),
@@ -123,7 +123,7 @@ test("degrades to a tool-level error when the provider is unreachable", async ()
   });
   const result = await tool.execute?.(
     { intention: "find the glpi template", limit: 5, query: "glpi" },
-    { messages: [], toolCallId: "call-2" }
+    { context: {}, messages: [], toolCallId: "call-2" }
   );
   assert.deepEqual(result, {
     error: DEPLOY_CATALOG_UNAVAILABLE_ERROR,

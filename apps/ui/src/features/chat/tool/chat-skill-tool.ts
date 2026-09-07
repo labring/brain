@@ -84,7 +84,7 @@ export function createLoadSkillTool(
     inputSchema: loadSkillInputSchema,
     execute: async (
       { intention, name },
-      executionOptions?: ToolExecutionOptions
+      executionOptions?: ToolExecutionOptions<unknown>
     ) => {
       logChatToolIntention("loadSkill", intention);
       const key = name.trim().toLowerCase();
@@ -114,7 +114,7 @@ export function createLoadSkillResourceTool(
     inputSchema: loadSkillResourceInputSchema,
     execute: async (
       { intention, name, path: resourcePath },
-      executionOptions?: ToolExecutionOptions
+      executionOptions?: ToolExecutionOptions<unknown>
     ) => {
       logChatToolIntention("loadSkillResource", intention);
       const key = name.trim().toLowerCase();
