@@ -1,18 +1,18 @@
 import "server-only";
 
-import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { propagateAttributes } from "@langfuse/tracing";
 import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { registerTelemetry } from "ai";
 
+import { ChatLangfuseSpanProcessor } from "./chat-langfuse-span-processor";
 import {
   getLangfuseConfigFromEnv,
   isLangfusePartiallyConfiguredFromEnv,
 } from "./langfuse-core";
 
 let initialization: Promise<boolean> | undefined;
-let langfuseSpanProcessor: LangfuseSpanProcessor | undefined;
+let langfuseSpanProcessor: ChatLangfuseSpanProcessor | undefined;
 
 /**
  * Starts the Langfuse OpenTelemetry exporter once per Node.js process.
@@ -34,7 +34,7 @@ export function initializeLangfuseTelemetry(): Promise<boolean> {
     }
 
     try {
-      const spanProcessor = new LangfuseSpanProcessor({
+      const spanProcessor = new ChatLangfuseSpanProcessor({
         publicKey: config.publicKey,
         secretKey: config.secretKey,
         baseUrl: config.baseUrl,
