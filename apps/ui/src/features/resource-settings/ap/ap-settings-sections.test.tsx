@@ -1168,6 +1168,66 @@ test("read-only network view renders addresses without mutation controls", () =>
   assert.doesNotMatch(html, DELETE_PUBLIC_ADDRESS_RE);
 });
 
+test("AP network preserves WebSocket and web addresses on separate ports", async () => {
+  const dom = await installTestDom();
+  const previous = setActEnvironment(true);
+  const view = render(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        appListeningPorts: [
+          {
+            port: 5200,
+            privateAddress: "ws://game.demo.svc.cluster.local:5200",
+          },
+          {
+            port: 5201,
+            privateAddress: "http://game.demo.svc.cluster.local:5201",
+          },
+        ],
+        privatePort: 5200,
+        publicAddresses: [
+          {
+            id: "game",
+            port: 5200,
+            status: "accessible",
+            url: "wss://game.example.com/",
+          },
+          {
+            id: "admin",
+            port: 5201,
+            status: "accessible",
+            url: "https://game.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+      readOnly
+    />
+  );
+  try {
+    assert.ok(view.getByText("wss://game.example.com/"));
+    assert.ok(view.getByText("https://game.example.com/"));
+    assert.ok(view.getByText("ws://game.demo.svc.cluster.local:5200"));
+    assert.equal(
+      view.container.querySelector('a[href="wss://game.example.com/"]'),
+      null
+    );
+    assert.ok(
+      view.container.querySelector('a[href="https://game.example.com/"]')
+    );
+  } finally {
+    view.unmount();
+    restoreActEnvironment(previous);
+    await dom.restore();
+  }
+});
+
 test("read-only AP settings view cannot mutate environment rows", () => {
   const html = renderPane(true);
 

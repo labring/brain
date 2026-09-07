@@ -79,6 +79,8 @@ const PUBLIC_ADDRESS_DRAFT_DOMAINS = ["network"] as const;
 const PUBLIC_ADDRESS_SUBMIT_CONFLICT_MESSAGE =
   "Public Address configuration changed since you started editing.";
 
+const BROWSER_ADDRESS_PATTERN = /^https?:\/\//;
+
 function publicAddressValue(address: ApNetworkPublicAddress): string {
   return address.url?.trim() || address.host?.trim() || "";
 }
@@ -114,7 +116,7 @@ function publicAddressReadinessKey(value: string): string {
   }
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    if (!["http:", "https:", "ws:", "wss:"].includes(parsed.protocol)) {
       return "";
     }
     return parsed.href;
@@ -406,7 +408,13 @@ function PublicAddressRow({
                 />
               </span>
               <CanvasNode.CopyableRowValue
-                href={publicAddressReadinessURLForAddress(address)}
+                href={
+                  BROWSER_ADDRESS_PATTERN.test(
+                    publicAddressReadinessURLForAddress(address)
+                  )
+                    ? publicAddressReadinessURLForAddress(address)
+                    : undefined
+                }
               >
                 {value === "" ? "Pending domain" : value}
               </CanvasNode.CopyableRowValue>

@@ -238,27 +238,10 @@ describe("managed public URL probe", () => {
     ).toBe(false);
   });
 
-  it("accepts a 2xx response with a non-empty body", async () => {
+  it("rejects an HTTP response that says the application is unavailable", async () => {
     globalThis.fetch = (() =>
       Promise.resolve(
-        new Response("ok", {
-          status: 200,
-        })
-      )) as unknown as typeof fetch;
-
-    await expect(
-      probeManagedPublicUrl({
-        allowedDomain: "tenant-a.sealos.io",
-        deadlineAtMs: Date.now() + 30_000,
-        publicUrl: "https://demo.tenant-a.sealos.io",
-      })
-    ).resolves.toBeUndefined();
-  });
-
-  it("rejects a non-2xx response", async () => {
-    globalThis.fetch = (() =>
-      Promise.resolve(
-        new Response("oops", {
+        new Response(null, {
           status: 503,
         })
       )) as unknown as typeof fetch;
@@ -270,6 +253,38 @@ describe("managed public URL probe", () => {
         publicUrl: "https://demo.tenant-a.sealos.io",
       })
     ).rejects.toThrow("returned 503");
+  });
+
+  it("rejects redirects outside the tenant route", async () => {
+    const calls: RequestInit[] = [];
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return Promise.resolve(Response.redirect("https://login.example.com"));
+    }) as typeof fetch;
+
+    await expect(
+      probeManagedPublicUrl({
+        allowedDomain: "tenant-a.sealos.io",
+        deadlineAtMs: Date.now() + 30_000,
+        publicUrl: "https://demo.tenant-a.sealos.io",
+      })
+    ).rejects.toThrow("outside the tenant domain");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.redirect).toBe("manual");
+  });
+
+  it("rejects network failures", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(new TypeError("fetch failed"))) as unknown as typeof fetch;
+
+    await expect(
+      probeManagedPublicUrl({
+        allowedDomain: "tenant-a.sealos.io",
+        deadlineAtMs: Date.now() + 30_000,
+        publicUrl: "https://demo.tenant-a.sealos.io",
+      })
+    ).rejects.toThrow("fetch failed");
   });
 
   it("rejects a target outside the tenant domain", async () => {

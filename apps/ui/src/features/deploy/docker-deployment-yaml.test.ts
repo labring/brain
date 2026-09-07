@@ -98,6 +98,7 @@ test("renderDockerDeploymentYaml writes Docker settings into a direct AP manifes
     PLATFORM_ADDRESS_DOMAIN_PREFIX_RE
   );
   assert.equal(out.spec.input.network.platformAddresses[0].port, 8080);
+  assert.equal(out.spec.input.network.platformAddresses[0].required, true);
   assert.equal(out.spec.resource, undefined);
 });
 

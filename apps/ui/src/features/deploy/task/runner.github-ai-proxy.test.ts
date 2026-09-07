@@ -53,6 +53,7 @@ const {
   enterManagedDeploymentRepair,
   ensureAiDeploymentDevbox,
   githubDeployOpenAiOverride,
+  managedVerificationDeadlineAt,
   resolveCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
 const { getDeploySkillSourceFromEnv } = requireModule(
@@ -190,6 +191,15 @@ describe("managed deployment workspace cleanup", () => {
       inputsSubmitted: false,
       resumeMode: "repair",
     });
+  });
+
+  it("gives managed repair turns one aggregate 30-minute verification window", () => {
+    expect(
+      managedVerificationDeadlineAt({
+        nowMs: Date.parse("2026-07-27T00:45:00.000Z"),
+        taskDeadlineAtMs: Date.parse("2026-07-27T01:30:00.000Z"),
+      })
+    ).toBe(Date.parse("2026-07-27T01:15:00.000Z"));
   });
 });
 

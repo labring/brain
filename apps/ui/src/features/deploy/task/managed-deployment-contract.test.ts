@@ -125,4 +125,55 @@ describe("managed deployment completed input", () => {
       }).success
     ).toBe(false);
   });
+
+  it("accepts multiple explicitly declared HTTP and WebSocket endpoints", () => {
+    const parsed = managedDeploymentCompletedInputSchema.parse({
+      accessEndpoints: [
+        {
+          id: "web-client",
+          label: "Web client",
+          url: "https://play.tenant-a.sealos.io",
+        },
+        {
+          id: "game-server",
+          label: "Game server",
+          url: "wss://play.tenant-a.sealos.io/server",
+        },
+      ],
+      workloads: [workload],
+    });
+
+    expect(parsed.accessEndpoints).toEqual([
+      {
+        id: "web-client",
+        label: "Web client",
+        url: "https://play.tenant-a.sealos.io",
+      },
+      {
+        id: "game-server",
+        label: "Game server",
+        url: "wss://play.tenant-a.sealos.io/server",
+      },
+    ]);
+  });
+
+  it("rejects duplicate endpoint ids and unsafe endpoint URLs", () => {
+    expect(
+      managedDeploymentCompletedInputSchema.safeParse({
+        accessEndpoints: [
+          { id: "web", label: "Web", url: "https://user:pass@demo.example" },
+        ],
+        workloads: [workload],
+      }).success
+    ).toBe(false);
+    expect(
+      managedDeploymentCompletedInputSchema.safeParse({
+        accessEndpoints: [
+          { id: "web", label: "Web", url: "https://a.example" },
+          { id: "web", label: "API", url: "https://b.example" },
+        ],
+        workloads: [workload],
+      }).success
+    ).toBe(false);
+  });
 });

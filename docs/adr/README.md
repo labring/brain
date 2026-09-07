@@ -49,6 +49,8 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0075 — Adopt External Template Instances as Brain Projects](0075-adopt-external-template-instances-as-brain-projects.md)
 - [0076 — Scope Assistant Conversations to Brain Projects](0076-scope-assistant-conversations-to-brain-projects.md) *(revised by ADR-0077; message-level Context remains governed by ADR-0044)*
 - [0077 — Allow Workspace-Scoped Assistant Conversations](0077-allow-workspace-scoped-assistant-conversations.md) *(revises ADR-0076; message-level Context remains governed by ADR-0044)*
+- [0078 — Conclude Deployment Tasks with an Evidence-Gated Success Record](0078-conclude-deployment-tasks-with-an-evidence-gated-success-record.md) *(extends ADR-0028 with the conclusion that timeline was missing; the failure counterpart is ADR-0042)*
+- [0079 — Model Public Entry Points as Deployment Access Endpoints](0079-model-public-entry-points-as-deployment-access-endpoints.md) *(revises ADR-0078's address and success-copy contract)*
 
 ## Conventions
 

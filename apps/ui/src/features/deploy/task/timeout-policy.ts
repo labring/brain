@@ -11,7 +11,7 @@ const COMMON_DEPLOY_TIMEOUT_POLICY = {
   imageBuildSeconds: 30 * 60,
   outputPollMs: 15 * SECOND_MS,
   outputReadMs: 30 * SECOND_MS,
-  overallMs: 70 * MINUTE_MS,
+  overallMs: 90 * MINUTE_MS,
   prepareMs: 8 * MINUTE_MS,
   repositoryCloneMs: 5 * MINUTE_MS,
   skillInstallMs: 3 * MINUTE_MS,
@@ -21,23 +21,23 @@ const COMMON_DEPLOY_TIMEOUT_POLICY = {
 export const DEPLOY_TIMEOUT_POLICY = {
   ...COMMON_DEPLOY_TIMEOUT_POLICY,
   applyMs: 5 * MINUTE_MS,
-  readinessMs: 10 * MINUTE_MS,
+  readinessMs: 30 * MINUTE_MS,
 } as const;
 
 /**
  * Agent-owned execution and Brain verification policy.
  *
- * The only hard deadline is `overallMs` (70 minutes) from the lease start.
- * Once the task is handed to Codex, no single turn or repair round has its
- * own limit; the whole Agent execution window (`agentExecutionMs`) is one
- * unsegmented budget and every Gateway turn runs against its remaining time.
+ * The only hard deadline is `overallMs` (90 minutes) from the lease start.
+ * Initial Agent work shares `agentExecutionMs`; after Brain first requests a
+ * repair, later verification calls and repair turns share `verifyMs`.
  */
 export const AGENT_DEPLOY_TIMEOUT_POLICY = {
   ...COMMON_DEPLOY_TIMEOUT_POLICY,
-  /** Codex execution window: analysis, build, apply, and unlimited repairs. */
+  /** Codex execution window before the first completion check. */
   agentExecutionMs: 44 * MINUTE_MS,
   operationalSlackMs: 6 * MINUTE_MS,
-  verifyMs: 10 * MINUTE_MS,
+  /** Aggregate window for short Brain checks and Agent repair turns. */
+  verifyMs: 30 * MINUTE_MS,
 } as const;
 
 function assertTimeoutPolicy(): void {

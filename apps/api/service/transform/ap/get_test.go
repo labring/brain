@@ -197,7 +197,7 @@ func TestAPTransformProjectsObservedPublicAccessFromIngressService(t *testing.T)
 	}
 }
 
-func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T) {
+func TestAPTransformPreservesDifferentPortsOnTheSameIngressHost(t *testing.T) {
 	paths := []interface{}{
 		ingressPath("/", "eaglercraft-server-service", 5201),
 		ingressPath("/api", "eaglercraft-server-service", 5201),
@@ -271,8 +271,8 @@ func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T)
 	status := out["status"].(map[string]interface{})
 	network := status["network"].(map[string]interface{})
 	addresses := network["publicAddresses"].([]map[string]interface{})
-	if got := len(addresses); got != 1 {
-		t.Fatalf("status.network.publicAddresses count = %d, want 1", got)
+	if got := len(addresses); got != 2 {
+		t.Fatalf("status.network.publicAddresses count = %d, want 2", got)
 	}
 	row := addresses[0]
 	if got := row["host"]; got != "eaglercraft-kjmioxdq.staging-usw-1.sealos.io" {
@@ -290,23 +290,20 @@ func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T)
 	for _, item := range variables {
 		variable := item
 		name, _ := variable["name"].(string)
-		if name == "port-5200-external" {
-			t.Fatalf("port-5200-external must not be projected from an ingress that routes only port 5201")
-		}
 		switch name {
 		case "port-5200-internal":
 			internalCount++
 		case "port-5201-internal":
 			internalCount++
-		case "port-5201-external":
+		case "port-5201-external", "port-5200-external":
 			externalCount++
 		}
 	}
 	if got := internalCount; got != 2 {
 		t.Fatalf("internal variable count = %d, want 2", got)
 	}
-	if got := externalCount; got != 1 {
-		t.Fatalf("external variable count = %d, want 1", got)
+	if got := externalCount; got != 2 {
+		t.Fatalf("external variable count = %d, want 2", got)
 	}
 }
 

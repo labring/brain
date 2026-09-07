@@ -1,3 +1,4 @@
+import { isKubernetesResourceReady } from "./kubernetes-resource-readiness";
 import type { DeploymentResultResourceCardStatus } from "./timeline";
 
 export interface DeploymentResultReadiness {
@@ -120,19 +121,52 @@ export function dbServiceReadinessFromProductView(
 }
 
 export function templateWorkloadReadinessFromProductView(
-  workload: unknown
+  workload: unknown,
+  workloadKind?: string
 ): DeploymentResultReadiness {
-  const status = objectValue(objectValue(workload)?.status);
+  const record = objectValue(workload);
+  const metadata = objectValue(record?.metadata);
+  const spec = objectValue(record?.spec) ?? {};
+  const status = objectValue(record?.status) ?? {};
+  const kind = stringValue(record?.kind) ?? workloadKind ?? "Deployment";
   const phaseRaw = stringValue(status?.phase) ?? "Progressing";
   const phase = normalizePhase(phaseRaw);
+  const normalizedKind = kind.toLowerCase();
   const readyReplicas =
-    numberValue(status?.readyReplicas) ??
-    numberValue(status?.availableReplicas) ??
-    0;
-  const replicas = Math.max(numberValue(status?.replicas) ?? 1, 1);
+    normalizedKind === "daemonset"
+      ? (numberValue(status.numberReady) ?? 0)
+      : (numberValue(status.readyReplicas) ?? 0);
+  const replicas = Math.max(
+    normalizedKind === "daemonset"
+      ? (numberValue(status.desiredNumberScheduled) ?? 1)
+      : (numberValue(spec.replicas) ?? numberValue(status.replicas) ?? 1),
+    1
+  );
   const latestStatusText = `${phaseRaw}, ${readyReplicas}/${replicas} replicas ready`;
+  const conditions = Array.isArray(status.conditions)
+    ? status.conditions.flatMap((condition) => {
+        const value = objectValue(condition);
+        return value == null ? [] : [value];
+      })
+    : [];
+  const ready = isKubernetesResourceReady(kind, {
+    conditions,
+    generation: numberValue(metadata?.generation),
+    spec: {
+      ...spec,
+      replicas: numberValue(spec.replicas) ?? numberValue(status.replicas) ?? 1,
+    },
+    status,
+  });
 
-  if (readyReplicas >= replicas) {
+  if (ready) {
+    if (normalizedKind === "cronjob") {
+      return {
+        eventMessage: "Template CronJob schedule is active.",
+        latestStatusText: "Schedule active",
+        status: "running",
+      };
+    }
     return {
       eventMessage: `Template workload has ${readyReplicas}/${replicas} ready replicas.`,
       latestStatusText: `${readyReplicas}/${replicas} replicas ready`,

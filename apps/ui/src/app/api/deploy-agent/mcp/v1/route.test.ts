@@ -182,6 +182,49 @@ describe("deployment control MCP route", () => {
     ]);
   });
 
+  it("persists multiple typed access endpoints with deployment_completed", async () => {
+    const accessEndpoints = [
+      {
+        id: "web-client",
+        label: "Web client",
+        url: "https://play.tenant-a.sealos.io",
+      },
+      {
+        id: "game-server",
+        label: "Game server",
+        url: "wss://play.tenant-a.sealos.io/server",
+      },
+    ];
+    const workloads = [
+      {
+        apiVersion: "apps/v1",
+        kind: "Deployment",
+        name: "eaglercraft",
+        namespace: "tenant-a",
+      },
+    ];
+
+    const response = await POST(
+      mcpRequest({
+        id: 7,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          arguments: { accessEndpoints, workloads },
+          name: "deployment_completed",
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(enqueued).toEqual([
+      {
+        request: { accessEndpoints, workloads },
+        toolName: "deployment_completed",
+      },
+    ]);
+  });
+
   it("rejects a non-http publicUrl before persistence", async () => {
     const response = await POST(
       mcpRequest({

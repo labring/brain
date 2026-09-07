@@ -111,6 +111,47 @@ test("template workload readiness reaches running from rollout replicas", () => 
   );
 });
 
+test("template Deployment readiness uses Ready rather than Available replicas", () => {
+  assert.equal(
+    templateWorkloadReadinessFromProductView({
+      kind: "Deployment",
+      metadata: { generation: 2 },
+      spec: { replicas: 1 },
+      status: {
+        availableReplicas: 0,
+        observedGeneration: 2,
+        readyReplicas: 1,
+      },
+    }).status,
+    "running"
+  );
+});
+
+test("template DaemonSet readiness uses scheduled daemon counts", () => {
+  assert.equal(
+    templateWorkloadReadinessFromProductView({
+      kind: "DaemonSet",
+      status: { desiredNumberScheduled: 2, numberReady: 2 },
+    }).status,
+    "running"
+  );
+});
+
+test("template CronJob readiness accepts an active schedule", () => {
+  assert.deepEqual(
+    templateWorkloadReadinessFromProductView({
+      kind: "CronJob",
+      spec: { suspend: false },
+      status: {},
+    }),
+    {
+      eventMessage: "Template CronJob schedule is active.",
+      latestStatusText: "Schedule active",
+      status: "running",
+    }
+  );
+});
+
 test("Public Address readiness reaches running from accessible route health", () => {
   assert.deepEqual(
     publicAccessReadinessFromProductView({
