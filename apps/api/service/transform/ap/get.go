@@ -83,6 +83,7 @@ func APWithIngressesAndServicesFromList(ap map[string]interface{}, ingresses, se
 	}
 	mergePrivateNetworkStatus(ap, statusCopy, services)
 	mergePortDisplayNames(statusCopy, services)
+	mergeDefaultOpenPort(statusCopy, services)
 	mergePublicNetworkStatus(ap, statusCopy)
 	mergeObservedPublicAccessStatus(statusCopy, ingresses, services)
 	projectObservedNetworkProtocols(statusCopy, ingresses, services)
@@ -159,6 +160,40 @@ func mergePortDisplayNames(status map[string]interface{}, services []map[string]
 		nextRows = append(nextRows, rowCopy)
 	}
 	networkCopy["appListeningPorts"] = nextRows
+	status["network"] = networkCopy
+}
+
+// mergeDefaultOpenPort surfaces the Default Open Port stored on the AP's
+// Service as status.network.defaultOpenPort, but only when the stored value
+// names one of the AP's App Listening Ports and the annotated Service exposes
+// it. A stale or foreign value is ignored, never surfaced; the automatic rule
+// (first port with an HTTP Public Address) belongs to the UI.
+func mergeDefaultOpenPort(status map[string]interface{}, services []map[string]interface{}) {
+	network, _ := status["network"].(map[string]interface{})
+	if network == nil {
+		return
+	}
+	networkCopy := networkStatusCopy(status)
+	delete(networkCopy, "defaultOpenPort")
+	rows, _ := network["appListeningPorts"].([]interface{})
+	listening := map[int]bool{}
+	for _, item := range rows {
+		row, _ := item.(map[string]interface{})
+		if port, ok := privatePortFromValue(row["port"]); ok {
+			listening[port] = true
+		}
+	}
+	for _, service := range services {
+		annotations := map[string]string{
+			orchestration.BrainDefaultOpenPortAnnotation: getString(service, "metadata", "annotations", orchestration.BrainDefaultOpenPortAnnotation),
+		}
+		port, ok := orchestration.DefaultOpenPortFromAnnotations(annotations)
+		if !ok || !listening[int(port)] || !serviceExposesPort(service, int(port)) {
+			continue
+		}
+		networkCopy["defaultOpenPort"] = int(port)
+		break
+	}
 	status["network"] = networkCopy
 }
 

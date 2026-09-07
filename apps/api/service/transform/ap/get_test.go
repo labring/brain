@@ -1502,3 +1502,96 @@ func TestAPTransformResolvesPortDisplayNamesFromServices(t *testing.T) {
 		}
 	})
 }
+
+func TestAPTransformSurfacesDefaultOpenPortFromTheService(t *testing.T) {
+	apWithPorts := func(ports ...int) map[string]interface{} {
+		rows := make([]interface{}, 0, len(ports))
+		for _, port := range ports {
+			rows = append(rows, map[string]interface{}{"port": port})
+		}
+		return map[string]interface{}{
+			"metadata": map[string]interface{}{"name": "minio", "namespace": "default"},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{"appListeningPorts": rows},
+				},
+			},
+		}
+	}
+	service := func(name string, annotation string, ports ...int) map[string]interface{} {
+		rows := make([]interface{}, 0, len(ports))
+		for _, port := range ports {
+			rows = append(rows, map[string]interface{}{"port": port})
+		}
+		annotations := map[string]interface{}{}
+		if annotation != "" {
+			annotations["brain.io/default-open-port"] = annotation
+		}
+		return map[string]interface{}{
+			"metadata": map[string]interface{}{"name": name, "namespace": "default", "annotations": annotations},
+			"spec":     map[string]interface{}{"ports": rows},
+		}
+	}
+	readDefaultOpenPort := func(t *testing.T, out map[string]interface{}) (int, bool) {
+		t.Helper()
+		status := out["status"].(map[string]interface{})
+		network := status["network"].(map[string]interface{})
+		raw, present := network["defaultOpenPort"]
+		if !present {
+			return 0, false
+		}
+		port, ok := privatePortFromValue(raw)
+		if !ok {
+			t.Fatalf("status.network.defaultOpenPort = %v, want a port number", raw)
+		}
+		return port, true
+	}
+
+	t.Run("stored on the AP's Service", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{service("minio-service", "9001", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); !ok || port != 9001 {
+			t.Fatalf("defaultOpenPort = %d (%v), want 9001", port, ok)
+		}
+	})
+	t.Run("template-preset annotation with padding", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{service("minio-service", " 9001 ", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); !ok || port != 9001 {
+			t.Fatalf("defaultOpenPort = %d (%v), want 9001", port, ok)
+		}
+	})
+	t.Run("stale port is ignored", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000), nil, []map[string]interface{}{service("minio-service", "9001", 9000)})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want no field for a port the AP no longer listens on", port)
+		}
+	})
+	t.Run("sibling service naming a port it does not expose", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{
+			service("minio-metrics", "9001", 9100),
+			service("minio-service", "", 9000, 9001),
+		})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want no field when only a foreign Service names it", port)
+		}
+	})
+	t.Run("missing", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{service("minio-service", "", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want no field without an annotation", port)
+		}
+	})
+	t.Run("unparseable", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{service("minio-service", "console", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want no field for an unparseable annotation", port)
+		}
+	})
+	t.Run("a stale spec-side value never leaks through", func(t *testing.T) {
+		ap := apWithPorts(9000, 9001)
+		ap["status"] = map[string]interface{}{"network": map[string]interface{}{"defaultOpenPort": 9000}}
+		out := APWithIngressesAndServicesFromList(ap, nil, []map[string]interface{}{service("minio-service", "", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want the Service to be the only source", port)
+		}
+	})
+}

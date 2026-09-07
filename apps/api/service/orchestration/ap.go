@@ -259,6 +259,14 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 	if portDisplayNames := APPortDisplayNameAnnotations(appListeningPorts); len(portDisplayNames) > 0 {
 		service.Annotations = portDisplayNames
 	}
+	// The Default Open Port shares that store; a manifest naming a port the
+	// AP does not listen on is dropped rather than failing the deploy.
+	if defaultOpenPort, ok := APDefaultOpenPortFromNetworkJSON(input.NetworkJSON, appListeningPorts); ok {
+		if service.Annotations == nil {
+			service.Annotations = map[string]string{}
+		}
+		service.Annotations[BrainDefaultOpenPortAnnotation] = DefaultOpenPortAnnotationValue(defaultOpenPort)
+	}
 
 	resources := &APResources{
 		ImagePullSecret: imagePullSecret,

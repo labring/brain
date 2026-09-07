@@ -24,6 +24,11 @@ const (
 	// "brain.io/port-display-name.<port number>". Display-only, like the
 	// Resource Display Name.
 	BrainPortDisplayNameAnnotationPrefix = "brain.io/port-display-name."
+	// BrainDefaultOpenPortAnnotation stores the Default Open Port on an AP's
+	// Service (ADR 0080's store): the App Listening Port number whose best
+	// Public Address the Open control opens. Display-only; a value naming a
+	// port the AP no longer listens on is ignored at read time.
+	BrainDefaultOpenPortAnnotation = "brain.io/default-open-port"
 
 	APDesiredNetworkAnnotation    = "brain.io/ap-desired-network"
 	APConfigMapChecksumAnnotation = "brain.io/ap-config-checksum"
@@ -133,6 +138,23 @@ func PortDisplayNameValue(raw interface{}) (string, error) {
 		return "", fmt.Errorf("a Port Display Name is at most %d characters", MaxPortDisplayNameLength)
 	}
 	return trimmed, nil
+}
+
+// DefaultOpenPortValue reads one Default Open Port value from a product
+// manifest or merge patch. A nil value is valid and means "no stored choice"
+// (present is false); anything else must be a port number from 1 through
+// 65535, read with the same leniency as an App Listening Port's "port" (a
+// numeric string is accepted). Whether the port is one of the AP's App
+// Listening Ports is checked by the caller against the normalized port list.
+func DefaultOpenPortValue(raw interface{}) (port int32, present bool, err error) {
+	if raw == nil {
+		return 0, false, nil
+	}
+	port, ok := APPortFromInterface(raw)
+	if !ok {
+		return 0, true, errors.New("defaultOpenPort must be an App Listening Port number from 1 through 65535")
+	}
+	return port, true, nil
 }
 
 func brainLabels(projectID, deploymentKind, deploymentName string) map[string]string {

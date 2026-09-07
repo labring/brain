@@ -156,22 +156,141 @@ func PreserveAPServicePortDisplayNames(service *corev1.Service, current map[stri
 	}
 }
 
+// ValidateAPDefaultOpenPort applies the Default Open Port submit rule to a
+// product network object: when the key is present and not null it must be a
+// port number that is one of the given App Listening Ports. Null clears the
+// stored choice and an absent key leaves it alone, so both pass.
+func ValidateAPDefaultOpenPort(network map[string]interface{}, ports []APAppListeningPort) error {
+	if network == nil {
+		return nil
+	}
+	port, present, err := DefaultOpenPortValue(network["defaultOpenPort"])
+	if err != nil {
+		return err
+	}
+	if !present {
+		return nil
+	}
+	for _, listening := range ports {
+		if listening.Port == port {
+			return nil
+		}
+	}
+	return fmt.Errorf("defaultOpenPort %d is not one of the AP's App Listening Ports", port)
+}
+
+// APDefaultOpenPortFromNetwork reads the Default Open Port a create or deploy
+// manifest asks for. Choosing never fails a deploy: an invalid value or one
+// naming a port outside the App Listening Ports is dropped here; the PATCH
+// route rejects it up front through ValidateAPDefaultOpenPort.
+func APDefaultOpenPortFromNetwork(network map[string]interface{}, ports []APAppListeningPort) (int32, bool) {
+	if network == nil {
+		return 0, false
+	}
+	port, present, err := DefaultOpenPortValue(network["defaultOpenPort"])
+	if err != nil || !present {
+		return 0, false
+	}
+	for _, listening := range ports {
+		if listening.Port == port {
+			return port, true
+		}
+	}
+	return 0, false
+}
+
+// APDefaultOpenPortFromNetworkJSON is APDefaultOpenPortFromNetwork over the
+// raw network JSON a render input carries.
+func APDefaultOpenPortFromNetworkJSON(raw string, ports []APAppListeningPort) (int32, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || !strings.Contains(trimmed, "defaultOpenPort") {
+		return 0, false
+	}
+	var network map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &network); err != nil {
+		return 0, false
+	}
+	return APDefaultOpenPortFromNetwork(network, ports)
+}
+
+// DefaultOpenPortAnnotationValue formats a Default Open Port for its Service
+// annotation.
+func DefaultOpenPortAnnotationValue(port int32) string {
+	return strconv.FormatInt(int64(port), 10)
+}
+
+// DefaultOpenPortFromAnnotations reads the Default Open Port stored on a
+// Service's annotations. Absent, blank, or unparseable values read as "none".
+func DefaultOpenPortFromAnnotations(annotations map[string]string) (int32, bool) {
+	raw := strings.TrimSpace(annotations[BrainDefaultOpenPortAnnotation])
+	if raw == "" {
+		return 0, false
+	}
+	value, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || !IsValidAPPort(int32(value)) {
+		return 0, false
+	}
+	return int32(value), true
+}
+
+// PreserveAPServiceDefaultOpenPort carries the Default Open Port already
+// stored on the AP's live Service onto a freshly rendered one, the way
+// PreserveAPServicePortDisplayNames carries the names: the Service is applied
+// as a whole object, so a render that did not choose would otherwise erase
+// the choice. A choice in the rendered Service wins; a stored port the
+// rendered Service no longer exposes is dropped with the port.
+func PreserveAPServiceDefaultOpenPort(service *corev1.Service, current map[string]string) {
+	if service == nil {
+		return
+	}
+	if _, ok := service.Annotations[BrainDefaultOpenPortAnnotation]; ok {
+		return
+	}
+	port, ok := DefaultOpenPortFromAnnotations(current)
+	if !ok {
+		return
+	}
+	for _, servicePort := range service.Spec.Ports {
+		if servicePort.Port != port {
+			continue
+		}
+		if service.Annotations == nil {
+			service.Annotations = map[string]string{}
+		}
+		service.Annotations[BrainDefaultOpenPortAnnotation] = DefaultOpenPortAnnotationValue(port)
+		return
+	}
+}
+
+// PreserveAPServicePortMetadata runs every "the Service is the only store"
+// preserve step (ADR 0080): Port Display Names and the Default Open Port.
+func PreserveAPServicePortMetadata(service *corev1.Service, current map[string]string) {
+	PreserveAPServicePortDisplayNames(service, current)
+	PreserveAPServiceDefaultOpenPort(service, current)
+}
+
 // APDesiredNetworkAnnotationValue returns the network JSON to persist in the
-// AP desired-network annotation: Port Display Names are removed because the
-// Service is their only store (ADR 0080). Anything unparseable is returned
-// unchanged so the caller's existing behavior is preserved.
+// AP desired-network annotation: Port Display Names and the Default Open Port
+// are removed because the Service is their only store (ADR 0080). Anything
+// unparseable is returned unchanged so the caller's existing behavior is
+// preserved.
 func APDesiredNetworkAnnotationValue(networkJSON string) string {
 	trimmed := strings.TrimSpace(networkJSON)
-	if trimmed == "" || !strings.Contains(trimmed, "displayName") {
+	if trimmed == "" || !(strings.Contains(trimmed, "displayName") || strings.Contains(trimmed, "defaultOpenPort")) {
 		return networkJSON
 	}
 	var network map[string]interface{}
 	if err := json.Unmarshal([]byte(trimmed), &network); err != nil {
 		return networkJSON
 	}
+	delete(network, "defaultOpenPort")
 	rows, ok := network["appListeningPorts"].([]interface{})
 	if !ok {
-		return networkJSON
+		out, err := json.Marshal(network)
+		if err != nil {
+			return networkJSON
+		}
+		return string(out)
 	}
 	nextRows := make([]interface{}, 0, len(rows))
 	for _, row := range rows {

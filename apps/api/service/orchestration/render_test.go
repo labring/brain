@@ -1469,3 +1469,78 @@ func TestRenderAPResourcesWritesPortDisplayNamesOnTheServiceOnly(t *testing.T) {
 		t.Fatalf("service annotations = %v, want none without Port Display Names", unnamed.Service.Annotations)
 	}
 }
+
+func TestRenderAPResourcesWritesDefaultOpenPortOnTheServiceOnly(t *testing.T) {
+	resources, err := RenderAPResources(APResourcesInput{
+		Image:       "minio:latest",
+		Name:        "minio",
+		Namespace:   "ns-a",
+		NetworkJSON: `{"appListeningPorts":[{"port":9000,"displayName":"S3 API"},{"port":9001,"displayName":"Console"}],"defaultOpenPort":9001}`,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if got := resources.Service.Annotations[BrainDefaultOpenPortAnnotation]; got != "9001" {
+		t.Fatalf("%s = %q, want 9001", BrainDefaultOpenPortAnnotation, got)
+	}
+	if got := resources.Service.Annotations[BrainPortDisplayNameAnnotation(9001)]; got != "Console" {
+		t.Fatalf("port 9001 display name = %q, want Console alongside the Default Open Port", got)
+	}
+	desired := resources.Deployment.Annotations[APDesiredNetworkAnnotation]
+	if strings.Contains(desired, "defaultOpenPort") || strings.Contains(desired, "displayName") {
+		t.Fatalf("desired network annotation must not carry Service-stored fields, got %s", desired)
+	}
+	if !strings.Contains(desired, `"port":9001`) {
+		t.Fatalf("desired network annotation lost ports, got %s", desired)
+	}
+
+	// A create drops what a PATCH would reject: a port the AP does not
+	// listen on, or a value that is not a port number.
+	for name, network := range map[string]string{
+		"unknown port": `{"appListeningPorts":[{"port":80}],"defaultOpenPort":9001}`,
+		"not a number": `{"appListeningPorts":[{"port":80}],"defaultOpenPort":"console"}`,
+		"null":         `{"appListeningPorts":[{"port":80}],"defaultOpenPort":null}`,
+	} {
+		dropped, err := RenderAPResources(APResourcesInput{
+			Image:       "nginx:1.27",
+			Name:        "web",
+			Namespace:   "ns-a",
+			NetworkJSON: network,
+			ProjectID:   "project-a",
+		})
+		if err != nil {
+			t.Fatalf("%s: RenderAPResources must never fail on a Default Open Port, got %v", name, err)
+		}
+		if got, ok := dropped.Service.Annotations[BrainDefaultOpenPortAnnotation]; ok {
+			t.Fatalf("%s: %s = %q, want none", name, BrainDefaultOpenPortAnnotation, got)
+		}
+	}
+}
+
+func TestPreserveAPServiceDefaultOpenPort(t *testing.T) {
+	render := func() *corev1.Service {
+		return &corev1.Service{Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 5200}, {Port: 5201}}}}
+	}
+	kept := render()
+	PreserveAPServiceDefaultOpenPort(kept, map[string]string{BrainDefaultOpenPortAnnotation: "5201"})
+	if got := kept.Annotations[BrainDefaultOpenPortAnnotation]; got != "5201" {
+		t.Fatalf("preserved annotation = %q, want 5201", got)
+	}
+	gone := render()
+	PreserveAPServiceDefaultOpenPort(gone, map[string]string{BrainDefaultOpenPortAnnotation: "9999"})
+	if _, ok := gone.Annotations[BrainDefaultOpenPortAnnotation]; ok {
+		t.Fatal("a stored port the Service no longer exposes must be dropped")
+	}
+	rendered := render()
+	rendered.Annotations = map[string]string{BrainDefaultOpenPortAnnotation: "5200"}
+	PreserveAPServiceDefaultOpenPort(rendered, map[string]string{BrainDefaultOpenPortAnnotation: "5201"})
+	if got := rendered.Annotations[BrainDefaultOpenPortAnnotation]; got != "5200" {
+		t.Fatalf("the rendered choice must win, got %q", got)
+	}
+	blank := render()
+	PreserveAPServiceDefaultOpenPort(blank, map[string]string{BrainDefaultOpenPortAnnotation: " oops "})
+	if _, ok := blank.Annotations[BrainDefaultOpenPortAnnotation]; ok {
+		t.Fatal("an unparseable stored value must not be carried over")
+	}
+}

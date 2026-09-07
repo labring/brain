@@ -1819,3 +1819,127 @@ func TestAPUpdatePlanRejectsInvalidPortDisplayNames(t *testing.T) {
 		t.Fatalf("a name of exactly %d characters must be accepted, got %v", orchestration.MaxPortDisplayNameLength, err)
 	}
 }
+
+func defaultOpenPortTestPatchAnnotations(t *testing.T, plan apUpdatePlan) map[string]interface{} {
+	t.Helper()
+	var patch map[string]interface{}
+	if err := json.Unmarshal(plan.Patch, &patch); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	metadata, _ := patch["metadata"].(map[string]interface{})
+	annotations, _ := metadata["annotations"].(map[string]interface{})
+	return annotations
+}
+
+func TestAPUpdatePlanWritesDefaultOpenPortOnTheService(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainDefaultOpenPortAnnotation:       "5200",
+		orchestration.BrainPortDisplayNameAnnotation(5201): "Admin console",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"defaultOpenPort":5201}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	service := plan.Resources.Service
+	if service == nil {
+		t.Fatal("expected the AP Service to be rendered")
+	}
+	if got := service.Annotations[orchestration.BrainDefaultOpenPortAnnotation]; got != "5201" {
+		t.Fatalf("default-open-port annotation = %q, want 5201", got)
+	}
+	// The patch left the port list alone, so the names ride along.
+	if got := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(5201)]; got != "Admin console" {
+		t.Fatalf("port 5201 display name = %q, want preserved Admin console", got)
+	}
+	foundService := false
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*corev1.Service); ok {
+			foundService = true
+		}
+	}
+	if !foundService {
+		t.Fatalf("SupportObjects = %#v, want the Service applied", plan.SupportObjects)
+	}
+	desired, _ := defaultOpenPortTestPatchAnnotations(t, plan)[orchestration.APDesiredNetworkAnnotation].(string)
+	if strings.Contains(desired, "defaultOpenPort") {
+		t.Fatalf("desired network annotation must not store the Default Open Port (the Service does), got %s", desired)
+	}
+	if !strings.Contains(desired, `"pa_abc123"`) {
+		t.Fatalf("desired network annotation lost unrelated network fields, got %s", desired)
+	}
+}
+
+func TestAPUpdatePlanClearsDefaultOpenPortWithNull(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainDefaultOpenPortAnnotation: "5201",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"defaultOpenPort":null}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	if got, ok := plan.Resources.Service.Annotations[orchestration.BrainDefaultOpenPortAnnotation]; ok {
+		t.Fatalf("default-open-port annotation = %q, want cleared (absent)", got)
+	}
+	desired, _ := defaultOpenPortTestPatchAnnotations(t, plan)[orchestration.APDesiredNetworkAnnotation].(string)
+	if strings.Contains(desired, "defaultOpenPort") {
+		t.Fatalf("desired network annotation must not mention the Default Open Port, got %s", desired)
+	}
+}
+
+func TestAPUpdatePlanKeepsDefaultOpenPortWhenThePatchOmitsIt(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainDefaultOpenPortAnnotation: "5201",
+	}
+	cases := map[string]string{
+		"public address change": `{"spec":{"input":{"network":{"platformAddresses":[{"id":"pa_abc123","port":5200},{"id":"pa_def456","port":5201}]}}}}`,
+		"port list re-sent":     `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"Game"},{"port":5201}]}}}}`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, currentServiceAnnotations, testTime())
+			if err != nil {
+				t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+			}
+			if got := plan.Resources.Service.Annotations[orchestration.BrainDefaultOpenPortAnnotation]; got != "5201" {
+				t.Fatalf("default-open-port annotation = %q, want preserved 5201", got)
+			}
+		})
+	}
+}
+
+func TestAPUpdatePlanDropsDefaultOpenPortWithItsPort(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainDefaultOpenPortAnnotation: "5201",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200}],"platformAddresses":[{"id":"pa_abc123","port":5200}]}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	if got, ok := plan.Resources.Service.Annotations[orchestration.BrainDefaultOpenPortAnnotation]; ok {
+		t.Fatalf("default-open-port annotation = %q, want dropped with port 5201", got)
+	}
+}
+
+func TestAPUpdatePlanRejectsInvalidDefaultOpenPort(t *testing.T) {
+	cases := map[string]string{
+		"not listened on":    `{"spec":{"input":{"network":{"defaultOpenPort":9999}}}}`,
+		"removed same patch": `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200}],"defaultOpenPort":5201}}}}`,
+		"not a number":       `{"spec":{"input":{"network":{"defaultOpenPort":"console"}}}}`,
+		"out of range":       `{"spec":{"input":{"network":{"defaultOpenPort":70000}}}}`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, nil, testTime())
+			if err == nil {
+				t.Fatal("expected the patch to be rejected")
+			}
+			if !strings.Contains(err.Error(), "invalid AP update request") {
+				t.Fatalf("error = %v, want a 400 invalid AP update request", err)
+			}
+		})
+	}
+	// A port added in the same patch is a valid choice.
+	if _, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200},{"port":5201},{"port":5202}],"defaultOpenPort":5202}}}}`), nil, nil, testTime()); err != nil {
+		t.Fatalf("a port named in the same patch must be accepted, got %v", err)
+	}
+}

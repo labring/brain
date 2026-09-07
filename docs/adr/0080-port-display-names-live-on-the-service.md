@@ -87,6 +87,10 @@ optional polish (a prettier or localised name).
   label once both exist; this ADR does not wire them together. WS/WSS Public
   Addresses (ADR 0079) group under their port like any other row and stay
   copy-only.
-- Which Public Address is the "open the app" link (a primary marker, as in
-  Qovery `is_default` or Cloudron `httpPort`) is a separate decision and is
-  deliberately not addressed here.
+- Which port the "open the app" control opens (the Default Open Port, cf.
+  Qovery `is_default` or Cloudron `httpPort`) was decided separately on
+  2026-09-07 and follows this ADR's store: one `brain.io/default-open-port`
+  annotation on the same Service, read through `status.network.defaultOpenPort`
+  and written through `spec.input.network.defaultOpenPort`, preserved across
+  writes that do not name it exactly as the names are. Without a stored value
+  the UI opens the first App Listening Port that has an HTTP Public Address.

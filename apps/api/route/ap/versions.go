@@ -194,9 +194,9 @@ func registerVersionRollback(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to read AP service", err)
 		}
-		// A version snapshot never carries Port Display Names (ADR 0080);
-		// rolling back the workload must not erase them.
-		orchestration.PreserveAPServicePortDisplayNames(resources.Service, currentServiceAnnotations)
+		// A version snapshot never carries Port Display Names or the Default
+		// Open Port (ADR 0080); rolling back the workload must not erase them.
+		orchestration.PreserveAPServicePortMetadata(resources.Service, currentServiceAnnotations)
 		applyAPResourcesPauseState(resources, paused)
 		applyAPResourcesRestartRequest(resources, current.Annotations(), renderInput.RestartRequest, time.Now().UTC())
 		objects := apRuntimeObjects(resources)
