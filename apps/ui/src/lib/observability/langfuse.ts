@@ -1,11 +1,11 @@
 import "server-only";
 
-import { propagateAttributes } from "@langfuse/tracing";
 import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { registerTelemetry } from "ai";
 
 import { ChatLangfuseSpanProcessor } from "./chat-langfuse-span-processor";
+
 import {
   getLangfuseConfigFromEnv,
   isLangfusePartiallyConfiguredFromEnv,
@@ -82,24 +82,4 @@ export async function flushLangfuseTelemetry(): Promise<void> {
 
 export function isLangfuseTelemetryEnabled(): boolean {
   return langfuseSpanProcessor != null;
-}
-
-export function withLangfuseChatTrace<T>(input: {
-  chatId: string;
-  chatTurnId: string;
-  userId: string;
-  callback: () => T | Promise<T>;
-}): T | Promise<T> {
-  return propagateAttributes(
-    {
-      traceName: "project-assistant-chat",
-      sessionId: input.chatId,
-      userId: input.userId,
-      metadata: {
-        feature: "project-assistant",
-        chatTurnId: input.chatTurnId,
-      },
-    },
-    input.callback
-  );
 }

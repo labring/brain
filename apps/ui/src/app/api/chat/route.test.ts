@@ -118,6 +118,25 @@ let projectExists = true;
 let replaceCalls = 0;
 let streamMode: StreamMode = "success";
 let serviceOwners: TestScope[] = [];
+let telemetryEnabled = false;
+let afterUnavailable = false;
+let flushCalls = 0;
+let afterCallbacks: (() => Promise<void>)[] = [];
+mock.module("next/server", () => ({
+  after: (callback: () => Promise<void>) => {
+    if (afterUnavailable) {
+      throw new Error("after unavailable");
+    }
+    afterCallbacks.push(callback);
+  },
+}));
+mock.module("@/lib/observability/langfuse", () => ({
+  isLangfuseTelemetryEnabled: () => telemetryEnabled,
+  flushLangfuseTelemetry: () => {
+    flushCalls += 1;
+    return Promise.resolve();
+  },
+}));
 let titleCalls = 0;
 let titleWait: Promise<void> | null = null;
 let toolsetAvailable = true;
@@ -802,6 +821,10 @@ beforeEach(() => {
   replaceCalls = 0;
   serviceOwners = [];
   streamMode = "success";
+  telemetryEnabled = false;
+  afterUnavailable = false;
+  flushCalls = 0;
+  afterCallbacks = [];
   titleCalls = 0;
   titleWait = null;
   toolsetAvailable = true;
@@ -1105,6 +1128,7 @@ test("request abort stops the model and releases the lease", async () => {
 
 test("request abort persists partial text without billing", async () => {
   streamMode = "partial-abort";
+  telemetryEnabled = true;
   const requestController = new AbortController();
   const timeoutController = new AbortController();
   const timeoutSpy = spyOn(AbortSignal, "timeout").mockReturnValue(
@@ -1124,6 +1148,8 @@ test("request abort persists partial text without billing", async () => {
     await response.body?.cancel();
     requestController.abort();
     await waitUntil(() => activeLease == null);
+    await afterCallbacks[0]?.();
+    expect(flushCalls).toBe(1);
 
     expect(timeoutController.signal.aborted).toBe(false);
     expect(leaseReleaseCalls).toBe(1);
@@ -2093,4 +2119,59 @@ test("aiproxy refusing the token request for balance reads as a billing refusal,
     detail: { paidSource: "balance" },
     error: "The AI proxy refused this turn for billing reasons.",
   });
+});
+
+test("enabled telemetry waits for title completion even when after starts early", async () => {
+  telemetryEnabled = true;
+  let finishTitle: () => void = () => undefined;
+  titleWait = new Promise<void>((resolve) => {
+    finishTitle = resolve;
+  });
+  const response = await POST(
+    chatRequest(userMessage("telemetry-title", "inspect the cluster"))
+  );
+  const drained = drain(response);
+  await waitUntil(() => titleCalls === 1);
+  expect(afterCallbacks).toHaveLength(1);
+  const flushed = afterCallbacks[0]?.();
+  await Promise.resolve();
+  expect(flushCalls).toBe(0);
+  finishTitle();
+  await drained;
+  await flushed;
+  expect(flushCalls).toBe(1);
+  expect(leaseReleaseCalls).toBe(1);
+});
+
+test("telemetry completes on stream errors and synchronous setup failures", async () => {
+  telemetryEnabled = true;
+  streamMode = "error";
+  const response = await POST(
+    chatRequest(userMessage("telemetry-error", "inspect"))
+  );
+  await drain(response);
+  await afterCallbacks[0]?.();
+  expect(flushCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
+  expect(leaseReleaseCalls).toBe(1);
+  transformSetup = () => {
+    throw new Error("synthetic setup failure");
+  };
+  await POST(
+    chatRequest(userMessage("telemetry-setup-error", "inspect again"))
+  );
+  await afterCallbacks[1]?.();
+  expect(flushCalls).toBe(2);
+});
+
+test("a missing Next after scope cannot fail an enabled telemetry turn", async () => {
+  telemetryEnabled = true;
+  afterUnavailable = true;
+  const response = await POST(
+    chatRequest(userMessage("telemetry-no-after", "inspect"))
+  );
+  await drain(response);
+  expect(response.status).toBe(200);
+  expect(titleCalls).toBe(1);
+  expect(leaseReleaseCalls).toBe(1);
 });

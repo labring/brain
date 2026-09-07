@@ -21,7 +21,7 @@
     "@hugeicons/react": "^1.1.6",
     "@workspace/ui": "workspace:*",
     "@xyflow/react": "12.10.2",
-    "ai": "^7.0.87",
+    "ai": "7.0.90",
     "class-variance-authority": "^0.7.1",
     "lucide-react": "^1.7.0",
     "next": "16.2.6",

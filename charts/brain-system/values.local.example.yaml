@@ -67,8 +67,8 @@ ui:
     SYSTEM_OPENAI_API_KEY: "REPLACE_ME_OPENAI_COMPATIBLE_KEY"
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
     FREE_CHAT_TURNS: "5"
-    # Optional. When both keys are set, Chat Assistant and GitHub Deploy
-    # Devboxes export traces to Langfuse. Leave empty to disable tracing.
+    # Optional. When both keys are set, Brain UI exports Chat Assistant traces
+    # and GitHub Deploy Devboxes export Codex traces to Langfuse. Leave empty to disable tracing.
     LANGFUSE_PUBLIC_KEY: ""
     LANGFUSE_SECRET_KEY: ""
     # Shared Langfuse instance root URL. Blank uses https://cloud.langfuse.com.

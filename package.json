@@ -28,6 +28,10 @@
   "engines": {
     "node": ">=22"
   },
+  "overrides": {
+    "@opentelemetry/api": "1.9.1",
+    "@ai-sdk/otel": "1.0.90"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"

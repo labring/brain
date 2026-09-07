@@ -1,19 +1,11 @@
 # ------------------------------------------------------------------
-# 1. Base – Bun (shared WORKDIR; pruner/builder stages stay thin)
+# 1. Base – Bun (shared WORKDIR)
 # ------------------------------------------------------------------
 FROM oven/bun:1.3.5 AS base
 WORKDIR /app
 
 # ------------------------------------------------------------------
-# 2. Pruner – turbo prune for @sealai/ui
-# ------------------------------------------------------------------
-FROM base AS pruner
-COPY . .
-# Must match apps/ui/package.json "name"
-RUN bunx turbo@2.8.17 prune @sealai/ui --docker
-
-# ------------------------------------------------------------------
-# 3. Builder – install with Bun, build Next.js
+# 2. Builder – install the frozen workspace, build Next.js
 # ------------------------------------------------------------------
 FROM base AS builder
 
@@ -23,11 +15,11 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=pruner /app/out/json/ .
-# Turbo's pruned bun.lock is not compatible with Bun's lockfile parser; install from pruned package.json trees.
-RUN rm -f bun.lock && bun install && bun pm cache rm
-
-COPY --from=pruner /app/out/full/ .
+# Keep the original workspace and lockfile together. Turbo's pruned lockfile
+# cannot be installed frozen with this Bun version; re-resolving it would make
+# the production dependency versions differ from CI.
+COPY . .
+RUN bun install --frozen-lockfile
 
 # Demo builds (see next.config.mjs `env`): DEV_TWEAKS=1 bakes the dev tweaks
 # panel in, DEMO_MOCK=1 opens with mock project data on. Empty (the default)
@@ -45,7 +37,7 @@ RUN mkdir -p apps/ui/public && \
     rm -rf .next/cache
 
 # ------------------------------------------------------------------
-# 4. Runner – Node (Next standalone; minimal runtime image)
+# 3. Runner – Node (Next standalone; minimal runtime image)
 # ------------------------------------------------------------------
 FROM node:22-alpine AS runner
 WORKDIR /app

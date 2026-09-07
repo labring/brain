@@ -2,13 +2,21 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { generateText, simulateReadableStream, streamText, tool } from "ai";
+import {
+  consumeStream,
+  generateText,
+  simulateReadableStream,
+  streamText,
+  tool,
+} from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
 
 import { ChatLangfuseSpanProcessor } from "./chat-langfuse-span-processor";
+import { type ChatTrace, withLangfuseChatTrace } from "./chat-trace";
 
 type ReadableSpan = Parameters<ChatLangfuseSpanProcessor["onEnd"]>[0];
+const TOOL_SECRET = "SYNTHETIC_SECRET_IN_TOOL_INPUT";
 const SECRET = "SYNTHETIC_SECRET_IN_REMOTE_ERROR";
 const usage = {
   inputTokens: {
@@ -60,7 +68,7 @@ test("Langfuse exports error codes and metrics without remote error content", as
               type: "tool-call",
               toolCallId: "read-1",
               toolName: "readFile",
-              input: "{}",
+              input: JSON.stringify({ command: TOOL_SECRET }),
             },
           ],
           finishReason: { unified: "tool-calls", raw: undefined },
@@ -71,7 +79,7 @@ test("Langfuse exports error codes and metrics without remote error content", as
       prompt: SECRET,
       tools: {
         readFile: tool({
-          inputSchema: z.object({}),
+          inputSchema: z.object({ command: z.string() }),
           execute: (): Promise<string> =>
             Promise.reject(new Error(`Devbox file read failed: ${SECRET}`)),
         }),
@@ -116,7 +124,126 @@ test("Langfuse exports error codes and metrics without remote error content", as
       telemetry,
     });
     assert.equal(await success.text, SECRET);
+    let releaseTitle: () => void = () => undefined;
+    let titleStarted: () => void = () => undefined;
+    const titleGate = new Promise<void>((resolve) => {
+      releaseTitle = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      titleStarted = resolve;
+    });
+    let turnTrace: ChatTrace | undefined;
+    const response = await withLangfuseChatTrace({
+      chatId: "stream-session",
+      chatTurnId: "stream-turn",
+      userId: "stream-user",
+      callback: (trace) => {
+        turnTrace = trace;
+        const result = streamText({
+          model: new MockLanguageModelV3({
+            doStream: async () => ({
+              stream: simulateReadableStream({
+                chunks: [
+                  {
+                    type: "tool-call" as const,
+                    toolCallId: "stream-read",
+                    toolName: "inspect",
+                    input: JSON.stringify({ command: TOOL_SECRET }),
+                  },
+                  {
+                    type: "finish" as const,
+                    finishReason: {
+                      unified: "tool-calls" as const,
+                      raw: undefined,
+                    },
+                    usage,
+                  },
+                ],
+              }),
+            }),
+          }),
+          prompt: SECRET,
+          tools: {
+            inspect: tool({
+              inputSchema: z.object({ command: z.string() }),
+              execute: async () => TOOL_SECRET,
+            }),
+          },
+          telemetry,
+        });
+        return result.toUIMessageStreamResponse({
+          consumeSseStream: ({ stream }) =>
+            trace.run(async () => {
+              try {
+                await consumeStream({ stream });
+              } finally {
+                trace.end();
+              }
+            }),
+          onFinish: () =>
+            trace.run(async () => {
+              titleStarted();
+              await titleGate;
+              await generateText({
+                model: new MockLanguageModelV3({
+                  doGenerate: async () => ({
+                    content: [{ type: "text", text: "Synthetic title" }],
+                    finishReason: { unified: "stop", raw: undefined },
+                    usage,
+                    warnings: [],
+                  }),
+                }),
+                prompt: SECRET,
+                telemetry: {
+                  ...telemetry,
+                  functionId: "project-assistant-thread-title",
+                },
+              });
+            }),
+        });
+      },
+    });
+    // Consume outside the callback's synchronous context, like Next does.
+    const drained = response.text();
+    await started;
+    assert.ok(turnTrace);
+    let completed = false;
+    const completion = turnTrace.completed.then(() => {
+      completed = true;
+    });
     await processor.forceFlush();
+    assert.equal(completed, false);
+    assert.equal(
+      exported.some((span) => span.name === "project-assistant-chat"),
+      false
+    );
+    releaseTitle();
+    await drained;
+    await completion;
+    await processor.forceFlush();
+    const turnSpans = exported.filter(
+      (span) => span.attributes["session.id"] === "stream-session"
+    );
+    assert.ok(turnSpans.some((span) => span.name === "project-assistant-chat"));
+    assert.ok(
+      turnSpans.some(
+        (span) => span.attributes["gen_ai.tool.name"] === "inspect"
+      )
+    );
+    assert.ok(
+      turnSpans.some(
+        (span) =>
+          span.attributes["gen_ai.agent.name"] ===
+          "project-assistant-thread-title"
+      )
+    );
+    assert.equal(
+      new Set(turnSpans.map((span) => span.spanContext().traceId)).size,
+      1
+    );
+    assert.ok(
+      turnSpans.every((span) => span.attributes["user.id"] === "stream-user")
+    );
 
     const payload = (spans: ReadableSpan[]) =>
       JSON.stringify(
@@ -130,6 +257,7 @@ test("Langfuse exports error codes and metrics without remote error content", as
     // mutate the SDK span or alter what Chat delivers to its caller.
     assert.ok(payload(original).includes(SECRET));
     assert.equal(payload(exported).includes(SECRET), false);
+    assert.equal(payload(exported).includes(TOOL_SECRET), false);
     const toolSpan = exported.find(
       (span) => span.attributes["gen_ai.tool.name"] === "readFile"
     );

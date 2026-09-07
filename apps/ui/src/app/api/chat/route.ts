@@ -84,10 +84,10 @@ import { observeWorkspaceQuotaQuietly } from "@/features/notifications/producers
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 import { decodeKubeconfig } from "@/lib/kubeconfig";
+import { withLangfuseChatTrace } from "@/lib/observability/chat-trace";
 import {
   flushLangfuseTelemetry,
   isLangfuseTelemetryEnabled,
-  withLangfuseChatTrace,
 } from "@/lib/observability/langfuse";
 import { getProject } from "@/lib/project-persistence/projects";
 import { authorizeWorkspaceActor } from "@/lib/request-kubeconfig-auth";
@@ -886,7 +886,23 @@ async function runChatPipeline(input: {
       chatId,
       chatTurnId,
       userId: owner.userUid,
-      callback: () => {
+      callback: (trace) => {
+        if (isLangfuseTelemetryEnabled()) {
+          try {
+            after(async () => {
+              await trace.completed;
+              await flushLangfuseTelemetry();
+            });
+          } catch (error) {
+            // `after()` requires a Next.js request scope. Keep direct route
+            // invocations and non-standard runtimes fail-open for telemetry.
+            console.warn(
+              "[observability] Langfuse flush could not be scheduled; continuing without telemetry:",
+              error
+            );
+          }
+        }
+
         const result = streamText({
           abortSignal: streamAbortSignal,
           model,
@@ -915,21 +931,15 @@ async function runChatPipeline(input: {
           },
         });
 
-        if (isLangfuseTelemetryEnabled()) {
-          try {
-            after(() => flushLangfuseTelemetry());
-          } catch (error) {
-            // `after()` requires a Next.js request scope. Keep direct route
-            // invocations and non-standard runtimes fail-open for telemetry.
-            console.warn(
-              "[observability] Langfuse flush could not be scheduled; continuing without telemetry:",
-              error
-            );
-          }
-        }
-
         return result.toUIMessageStreamResponse({
-          consumeSseStream: consumeStream,
+          consumeSseStream: ({ stream }) =>
+            trace.run(async () => {
+              try {
+                await consumeStream({ stream });
+              } finally {
+                trace.end();
+              }
+            }),
           originalMessages: history,
           generateMessageId: generateId,
           headers: responseHeaders,
@@ -937,16 +947,19 @@ async function runChatPipeline(input: {
           // every other error stays masked.
           onError: (error) =>
             chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
-          onFinish: createChatStreamFinishHandler({
-            billing,
-            chatId,
-            history,
-            heartbeat: streamHeartbeat,
-            scope,
-            projectName: assistantProjectName(assistantContext),
-            titleModel,
-            toolDurationMsByCallId,
-          }),
+          onFinish: (event) =>
+            trace.run(() =>
+              createChatStreamFinishHandler({
+                billing,
+                chatId,
+                history,
+                heartbeat: streamHeartbeat,
+                scope,
+                projectName: assistantProjectName(assistantContext),
+                titleModel,
+                toolDurationMsByCallId,
+              })(event)
+            ),
         });
       },
     });
