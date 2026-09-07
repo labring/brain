@@ -92,7 +92,9 @@ Observed Launchpad WS/WSS Ingress markers identify WebSocket ports: their privat
 
 ### Public Address
 
-An externally reachable URL/domain alias for an AP that declares a target port and reaches the App Listening Port for that port. Its two kinds are Platform Address and Custom Domain; editing the target port is Public Address editing, not Custom Domain Binding.
+An externally reachable URL/domain alias for an AP that declares a target port and reaches the App Listening Port for that port. Its two kinds are Platform Address and Custom Domain; editing the target port is Public Address editing, not Custom Domain Binding. Its URL is host plus one entry path: Platform Addresses and Custom Domains that Brain creates always enter at the root, while a Public Address observed from a template's Ingress keeps that host's primary path under the same rule as a Deployment Access Endpoint — a declared root wins, otherwise the first declared path — so an admin-only app opens at `/admin`, not at a root it never serves. The remaining Ingress paths are routing detail, never extra Public Addresses; the path is observed, not user-editable.
+
+_Avoid_: entry path setting, default open path, per-path public address.
 
 ### Platform Address
 

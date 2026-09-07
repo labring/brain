@@ -438,9 +438,53 @@ type observedServicePorts struct {
 type observedIngressEndpoint struct {
 	host       string
 	key        string
+	path       string
 	port       int
 	scheme     string
 	serviceKey string
+}
+
+// url renders the endpoint's user-facing address: scheme, host, and the
+// primary Ingress path Brain retained for that host, service, and port.
+func (endpoint observedIngressEndpoint) url() string {
+	path := endpoint.path
+	if path == "" {
+		path = "/"
+	}
+	return fmt.Sprintf("%s://%s%s", endpoint.scheme, endpoint.host, path)
+}
+
+// ingressEntryPath reduces one Ingress rule path to the literal prefix a
+// browser can open. Regex paths (`/admin(/|$)(.*)`) keep their literal head,
+// query or fragment characters disqualify the path, and a path that is not
+// rooted contributes nothing.
+func ingressEntryPath(raw string) (string, bool) {
+	path := strings.TrimSpace(raw)
+	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "?#") {
+		return "", false
+	}
+	if index := strings.IndexAny(path, "()[]|*+^$"); index >= 0 {
+		path = path[:index]
+	}
+	if len(path) > 1 {
+		path = strings.TrimRight(path, "/")
+	}
+	if path == "" {
+		path = "/"
+	}
+	return path, true
+}
+
+// retainIngressPath applies ADR 0079's primary-path rule to one endpoint: a
+// declared root wins, otherwise the first manifest-ordered path stays.
+func retainIngressPath(endpoint *observedIngressEndpoint, raw string) {
+	path, ok := ingressEntryPath(raw)
+	if !ok {
+		return
+	}
+	if endpoint.path == "" || (path == "/" && endpoint.path != "/") {
+		endpoint.path = path
+	}
 }
 
 func observedServiceLookup(services []map[string]interface{}) (map[string]bool, map[string]observedServicePorts) {
@@ -503,7 +547,7 @@ func (ports observedServicePorts) hasPort(port int) bool {
 func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []observedIngressEndpoint {
 	endpoints := []observedIngressEndpoint{}
 	includeAllServices := len(serviceNames) == 0
-	seenEndpoints := map[string]bool{}
+	seenEndpoints := map[string]int{}
 	for _, ingress := range ingresses {
 		spec, _ := ingress["spec"].(map[string]interface{})
 		if spec == nil {
@@ -552,17 +596,20 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 					}
 				}
 				key := fmt.Sprintf("%s|%s|%d", host, serviceName, port)
-				if seenEndpoints[key+"|"+scheme] {
+				if index, seen := seenEndpoints[key+"|"+scheme]; seen {
+					retainIngressPath(&endpoints[index], getString(path, "path"))
 					continue
 				}
-				seenEndpoints[key+"|"+scheme] = true
-				endpoints = append(endpoints, observedIngressEndpoint{
+				endpoint := observedIngressEndpoint{
 					host:       host,
 					key:        key,
 					port:       port,
 					scheme:     scheme,
 					serviceKey: serviceName + ":" + strconv.Itoa(port),
-				})
+				}
+				retainIngressPath(&endpoint, getString(path, "path"))
+				seenEndpoints[key+"|"+scheme] = len(endpoints)
+				endpoints = append(endpoints, endpoint)
 			}
 		}
 	}
@@ -578,7 +625,7 @@ func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames 
 			"port":   endpoint.port,
 			"status": "accessible",
 			"type":   "observed",
-			"url":    fmt.Sprintf("%s://%s/", endpoint.scheme, endpoint.host),
+			"url":    endpoint.url(),
 		})
 	}
 	return rows
@@ -1284,9 +1331,8 @@ func buildExternalAddressMap(ingresses, services []map[string]interface{}) map[s
 	result := make(map[string]string)
 	serviceNames, servicePorts := observedServiceLookup(services)
 	for _, endpoint := range observedIngressEndpoints(ingresses, serviceNames, servicePorts) {
-		addr := fmt.Sprintf("%s://%s/", endpoint.scheme, endpoint.host)
 		if _, exists := result[endpoint.serviceKey]; !exists {
-			result[endpoint.serviceKey] = addr
+			result[endpoint.serviceKey] = endpoint.url()
 		}
 	}
 	return result

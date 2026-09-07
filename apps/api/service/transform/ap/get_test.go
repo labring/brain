@@ -284,6 +284,15 @@ func TestAPTransformPreservesDifferentPortsOnTheSameIngressHost(t *testing.T) {
 	if got := row["port"]; got != 5201 {
 		t.Fatalf("observed public address port = %v, want 5201", got)
 	}
+	// The port-5200 backend is reached only through /dynmap, so its address
+	// keeps that path rather than pointing at a root the port never serves.
+	dynmap := addresses[1]
+	if got := dynmap["port"]; got != 5200 {
+		t.Fatalf("second observed public address port = %v, want 5200", got)
+	}
+	if got := dynmap["url"]; got != "https://eaglercraft-kjmioxdq.staging-usw-1.sealos.io/dynmap" {
+		t.Fatalf("second observed public address url = %v, want https://eaglercraft-kjmioxdq.staging-usw-1.sealos.io/dynmap", got)
+	}
 	variables := status["variables"].([]map[string]interface{})
 	externalCount := 0
 	internalCount := 0
@@ -297,6 +306,13 @@ func TestAPTransformPreservesDifferentPortsOnTheSameIngressHost(t *testing.T) {
 			internalCount++
 		case "port-5201-external", "port-5200-external":
 			externalCount++
+			want := "https://eaglercraft-kjmioxdq.staging-usw-1.sealos.io/"
+			if name == "port-5200-external" {
+				want += "dynmap"
+			}
+			if got := variable["value"]; got != want {
+				t.Fatalf("%s value = %v, want %s", name, got, want)
+			}
 		}
 	}
 	if got := internalCount; got != 2 {
@@ -304,6 +320,84 @@ func TestAPTransformPreservesDifferentPortsOnTheSameIngressHost(t *testing.T) {
 	}
 	if got := externalCount; got != 2 {
 		t.Fatalf("external variable count = %d, want 2", got)
+	}
+}
+
+func TestAPTransformRetainsPrimaryIngressPathOnObservedPublicAddress(t *testing.T) {
+	cases := []struct {
+		name  string
+		paths []interface{}
+		want  string
+	}{
+		{
+			name:  "path-only host keeps its first declared path",
+			paths: []interface{}{ingressPath("/admin", "svc", 8080), ingressPath("/api", "svc", 8080)},
+			want:  "https://app.example.com/admin",
+		},
+		{
+			name:  "a root declared after a sub-path still wins",
+			paths: []interface{}{ingressPath("/admin", "svc", 8080), ingressPath("/", "svc", 8080)},
+			want:  "https://app.example.com/",
+		},
+		{
+			name:  "a regex path keeps its literal head",
+			paths: []interface{}{ingressPath("/admin(/|$)(.*)", "svc", 8080)},
+			want:  "https://app.example.com/admin",
+		},
+		{
+			name:  "a path with query or fragment characters falls back to root",
+			paths: []interface{}{ingressPath("/admin?x=1", "svc", 8080)},
+			want:  "https://app.example.com/",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := APWithIngressesAndServicesFromList(
+				map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "app", "namespace": "default"},
+					"spec": map[string]interface{}{
+						"input": map[string]interface{}{
+							"network": map[string]interface{}{
+								"appListeningPorts": []interface{}{map[string]interface{}{"port": 8080}},
+							},
+						},
+					},
+				},
+				[]map[string]interface{}{
+					{
+						"metadata": map[string]interface{}{"name": "app-public", "namespace": "default"},
+						"spec": map[string]interface{}{
+							"rules": []interface{}{
+								map[string]interface{}{
+									"host": "app.example.com",
+									"http": map[string]interface{}{"paths": tc.paths},
+								},
+							},
+							"tls": []interface{}{
+								map[string]interface{}{"hosts": []interface{}{"app.example.com"}},
+							},
+						},
+					},
+				},
+				[]map[string]interface{}{
+					{
+						"metadata": map[string]interface{}{"name": "svc", "namespace": "default"},
+						"spec": map[string]interface{}{
+							"ports": []interface{}{map[string]interface{}{"port": 8080}},
+						},
+					},
+				},
+			)
+			status := out["status"].(map[string]interface{})
+			network := status["network"].(map[string]interface{})
+			addresses := network["publicAddresses"].([]map[string]interface{})
+			if got := len(addresses); got != 1 {
+				t.Fatalf("status.network.publicAddresses count = %d, want 1", got)
+			}
+			if got := addresses[0]["url"]; got != tc.want {
+				t.Fatalf("observed public address url = %v, want %s", got, tc.want)
+			}
+		})
 	}
 }
 
