@@ -3,6 +3,7 @@ package ap
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -81,6 +82,7 @@ func APWithIngressesAndServicesFromList(ap map[string]interface{}, ingresses, se
 		delete(statusCopy, "variables")
 	}
 	mergePrivateNetworkStatus(ap, statusCopy, services)
+	mergePortDisplayNames(statusCopy, services)
 	mergePublicNetworkStatus(ap, statusCopy)
 	mergeObservedPublicAccessStatus(statusCopy, ingresses, services)
 	projectObservedNetworkProtocols(statusCopy, ingresses, services)
@@ -119,6 +121,85 @@ func mergePrivateNetworkStatus(ap map[string]interface{}, status map[string]inte
 		networkCopy["appListeningPorts"] = rows
 	}
 	status["network"] = networkCopy
+}
+
+// genericServicePortNamePattern matches Service port names that describe a
+// protocol or repeat the number rather than a purpose; such a name is not a
+// Port Display Name (ADR 0080). No prefix stripping: "http-admin" stays.
+var genericServicePortNamePattern = regexp.MustCompile(`^(?i:https?|web|tcp|udp|grpc|ws|port-\d+|\d+)$`)
+
+// mergePortDisplayNames resolves the Port Display Name of every App
+// Listening Port row from the AP's Services (ADR 0080): the
+// brain.io/port-display-name.<port> annotation wins; else the Service port's
+// declared name unless it is generic; else the row carries no displayName.
+func mergePortDisplayNames(status map[string]interface{}, services []map[string]interface{}) {
+	network, _ := status["network"].(map[string]interface{})
+	rows, _ := network["appListeningPorts"].([]interface{})
+	if len(rows) == 0 {
+		return
+	}
+	networkCopy := networkStatusCopy(status)
+	nextRows := make([]interface{}, 0, len(rows))
+	for _, item := range rows {
+		row, _ := item.(map[string]interface{})
+		if row == nil {
+			nextRows = append(nextRows, item)
+			continue
+		}
+		rowCopy := make(map[string]interface{}, len(row)+1)
+		for k, v := range row {
+			rowCopy[k] = v
+		}
+		delete(rowCopy, "displayName")
+		if port, ok := privatePortFromValue(row["port"]); ok {
+			if name := portDisplayNameFromServices(services, port); name != "" {
+				rowCopy["displayName"] = name
+			}
+		}
+		nextRows = append(nextRows, rowCopy)
+	}
+	networkCopy["appListeningPorts"] = nextRows
+	status["network"] = networkCopy
+}
+
+func portDisplayNameFromServices(services []map[string]interface{}, port int) string {
+	annotationKey := orchestration.BrainPortDisplayNameAnnotation(int32(port))
+	for _, service := range services {
+		if !serviceExposesPort(service, port) {
+			continue
+		}
+		if name := strings.TrimSpace(getString(service, "metadata", "annotations", annotationKey)); name != "" {
+			return name
+		}
+	}
+	for _, service := range services {
+		for _, portMap := range servicePortEntries(service, port) {
+			name := strings.TrimSpace(getString(portMap, "name"))
+			if name != "" && !genericServicePortNamePattern.MatchString(name) {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
+func serviceExposesPort(service map[string]interface{}, port int) bool {
+	return len(servicePortEntries(service, port)) > 0
+}
+
+func servicePortEntries(service map[string]interface{}, port int) []map[string]interface{} {
+	rawPorts, _ := getSlice(service, "spec", "ports")
+	out := []map[string]interface{}{}
+	for _, item := range rawPorts {
+		portMap, _ := item.(map[string]interface{})
+		if portMap == nil {
+			continue
+		}
+		if servicePort, ok := privatePortFromValue(portMap["port"]); ok && servicePort == port {
+			out = append(out, portMap)
+		}
+	}
+	return out
 }
 
 func networkStatusCopy(status map[string]interface{}) map[string]interface{} {

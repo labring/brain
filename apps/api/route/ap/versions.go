@@ -190,6 +190,13 @@ func registerVersionRollback(grp huma.API) {
 			return nil, huma.Error400BadRequest("invalid AP direct resource request", err)
 		}
 		mergeAPWorkloadAnnotations(resources, current.Annotations())
+		currentServiceAnnotations, err := currentAPServiceAnnotations(cfg, *current)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to read AP service", err)
+		}
+		// A version snapshot never carries Port Display Names (ADR 0080);
+		// rolling back the workload must not erase them.
+		orchestration.PreserveAPServicePortDisplayNames(resources.Service, currentServiceAnnotations)
 		applyAPResourcesPauseState(resources, paused)
 		applyAPResourcesRestartRequest(resources, current.Annotations(), renderInput.RestartRequest, time.Now().UTC())
 		objects := apRuntimeObjects(resources)

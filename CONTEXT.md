@@ -70,7 +70,13 @@ _Avoid_: deployment (for an image revision), AP Deployments Pane.
 
 ### App Listening Port
 
-An AP container port where the application accepts traffic, identified by its unique port number within the AP. Each App Listening Port has one Private Address and may be targeted by zero or more Public Addresses.
+An AP container port where the application accepts traffic, identified by its unique port number within the AP. Each App Listening Port has one Private Address, may be targeted by zero or more Public Addresses, and may carry a Port Display Name.
+
+### Port Display Name
+
+An optional human-readable name owned by an App Listening Port that says what the port is for (`game`, `Admin console`). A Public Address shows the Port Display Name of the port it targets and owns no name of its own; a port without one is shown by its number alone. Defaults come from the declared name of the matching Service port when that name is a purpose rather than a protocol word.
+
+_Avoid_: Public Address name, domain name label, port alias.
 
 ### Private Address
 
@@ -102,11 +108,13 @@ _Avoid_: AP Public Access Node health, standalone public access monitor.
 
 ### AP Public Access Node
 
-A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner.
+A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). It groups Public Addresses by the App Listening Port they target, headed by that port's Port Display Name; a single unnamed port draws no group header. Rows show the domain, not the Public Address kind. Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner; selecting it opens the AP's Network Settings View.
 
 ### AP Network Settings
 
-The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings — one AP Settings Draft domain regardless of which Settings View shows it. Its public-routing section (the Domain List) lists Public Addresses with their routing state, and Public Address edits may add App Listening Ports within the same draft.
+The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings — one AP Settings Draft domain regardless of which Settings View shows it. Its port section (the App Listening Ports card) is where a Port Display Name is edited; its public-routing section (the Domain List) lists Public Addresses with their routing state and the name of the port each targets. Public Address edits may add App Listening Ports within the same draft.
+
+_Avoid_: Private Addresses card (the card lists App Listening Ports; the Private Address is one of their attributes).
 
 ## Database
 

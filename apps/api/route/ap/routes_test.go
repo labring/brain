@@ -1465,7 +1465,7 @@ func TestAPUpdatePlanRestoresHPAOnResume(t *testing.T) {
 		},
 	}
 
-	plan, err := buildAPUpdatePlan(apWorkload{Deployment: &current}, json.RawMessage(`{"spec":{"paused":false}}`), nil, testTime())
+	plan, err := buildAPUpdatePlan(apWorkload{Deployment: &current}, json.RawMessage(`{"spec":{"paused":false}}`), nil, nil, testTime())
 	if err != nil {
 		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
 	}
@@ -1685,5 +1685,137 @@ func TestAPRenderInputFromWorkloadPatchAcceptsElasticReplicaStrategy(t *testing.
 	}
 	if got.ReplicaStrategy.Elastic == nil || got.ReplicaStrategy.Elastic.MaxReplicas != 8 {
 		t.Fatalf("elastic strategy = %#v, want maxReplicas 8", got.ReplicaStrategy.Elastic)
+	}
+}
+
+func portDisplayNameTestWorkload() apWorkload {
+	replicas := int32(1)
+	return apWorkload{Deployment: &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				orchestration.APDesiredNetworkAnnotation: `{"appListeningPorts":[{"port":5200},{"port":5201}],"platformAddresses":[{"id":"pa_abc123","port":5200}]}`,
+			},
+			Labels: map[string]string{
+				orchestration.BrainManagedByLabel:            orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:            "project-a",
+				orchestration.LaunchpadAppDeployManagerLabel: "game",
+			},
+			Name:      "game",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Image: "game:1.0", Name: "game", Ports: []corev1.ContainerPort{{Name: "port-5200", ContainerPort: 5200}, {Name: "port-5201", ContainerPort: 5201}}}},
+				},
+			},
+		},
+	}}
+}
+
+func TestAPUpdatePlanWritesPortDisplayNamesOnTheService(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainPortDisplayNameAnnotation(5200): "Old game name",
+		orchestration.BrainPortDisplayNameAnnotation(5201): "Admin console",
+		orchestration.BrainPortDisplayNameAnnotation(5202): "Metrics",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"  Game  "},{"port":5201},{"port":5202,"displayName":""}],"platformAddresses":[{"id":"pa_abc123","port":5200}]}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	service := plan.Resources.Service
+	if service == nil {
+		t.Fatal("expected the AP Service to be rendered")
+	}
+	if got := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(5200)]; got != "Game" {
+		t.Fatalf("port 5200 annotation = %q, want trimmed Game", got)
+	}
+	// The patch names the port list, so a port without a displayName clears
+	// its annotation, whether the key is absent or empty.
+	for _, port := range []int32{5201, 5202} {
+		if got, ok := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(port)]; ok {
+			t.Fatalf("port %d annotation = %q, want cleared (absent)", port, got)
+		}
+	}
+	foundService := false
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*corev1.Service); ok {
+			foundService = true
+		}
+	}
+	if !foundService {
+		t.Fatalf("SupportObjects = %#v, want the Service applied", plan.SupportObjects)
+	}
+
+	var patch map[string]interface{}
+	if err := json.Unmarshal(plan.Patch, &patch); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	annotations := patch["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	desired, _ := annotations[orchestration.APDesiredNetworkAnnotation].(string)
+	if strings.Contains(desired, "displayName") {
+		t.Fatalf("desired network annotation must not store Port Display Names (the Service does), got %s", desired)
+	}
+	if !strings.Contains(desired, `"pa_abc123"`) {
+		t.Fatalf("desired network annotation lost unrelated network fields, got %s", desired)
+	}
+	if got := len(service.Spec.Ports); got != 3 {
+		t.Fatalf("service port count = %d, want 3", got)
+	}
+}
+
+func TestAPUpdatePlanKeepsPortDisplayNamesWhenThePatchLeavesPortsAlone(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainPortDisplayNameAnnotation(5200): "Game",
+		orchestration.BrainPortDisplayNameAnnotation(5201): "Admin console",
+		orchestration.BrainPortDisplayNameAnnotation(9999): "Stale port no longer listened on",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"platformAddresses":[{"id":"pa_abc123","port":5200},{"id":"pa_def456","port":5201}]}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	service := plan.Resources.Service
+	if service == nil {
+		t.Fatal("expected the AP Service to be re-rendered for the network change")
+	}
+	if got := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(5200)]; got != "Game" {
+		t.Fatalf("port 5200 annotation = %q, want Game kept from the live Service", got)
+	}
+	if got := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(5201)]; got != "Admin console" {
+		t.Fatalf("port 5201 annotation = %q, want Admin console kept from the live Service", got)
+	}
+	if got, ok := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(9999)]; ok {
+		t.Fatalf("port 9999 annotation = %q, want dropped with the port", got)
+	}
+	if got := len(service.Spec.Ports); got != 2 {
+		t.Fatalf("service port count = %d, want the 2 existing ports", got)
+	}
+}
+
+func TestAPUpdatePlanRejectsInvalidPortDisplayNames(t *testing.T) {
+	tooLong := strings.Repeat("名", orchestration.MaxPortDisplayNameLength+1)
+	for name, raw := range map[string]string{
+		"over-long": `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"` + tooLong + `"},{"port":5201}]}}}}`,
+		"duplicate": `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"Admin"},{"port":5201,"displayName":" Admin "}]}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, nil, testTime())
+			if err == nil {
+				t.Fatal("expected the patch to be rejected")
+			}
+			var updateErr *apUpdateError
+			if !errors.As(err, &updateErr) || updateErr.kind != apUpdateErrorBadRequest {
+				t.Fatalf("error = %v, want a bad request", err)
+			}
+			if !strings.Contains(err.Error(), "Port Display Name") {
+				t.Fatalf("error %q should name the Port Display Name rule", err.Error())
+			}
+		})
+	}
+
+	exact := strings.Repeat("名", orchestration.MaxPortDisplayNameLength)
+	if _, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"`+exact+`"},{"port":5201}]}}}}`), nil, nil, testTime()); err != nil {
+		t.Fatalf("a name of exactly %d characters must be accepted, got %v", orchestration.MaxPortDisplayNameLength, err)
 	}
 }

@@ -1374,3 +1374,131 @@ func assertBlockedCustomDomainPublicNetworkAddress(t *testing.T, addresses []map
 	}
 	t.Fatalf("missing blocked custom domain address for id %s", id)
 }
+
+func TestAPTransformResolvesPortDisplayNamesFromServices(t *testing.T) {
+	ap := map[string]interface{}{
+		"metadata": map[string]interface{}{"name": "game", "namespace": "default"},
+		"spec": map[string]interface{}{
+			"input": map[string]interface{}{
+				"network": map[string]interface{}{
+					"appListeningPorts": []interface{}{
+						map[string]interface{}{"port": 5200},
+						map[string]interface{}{"port": 5201},
+						map[string]interface{}{"port": 3000},
+						map[string]interface{}{"port": 3001},
+						map[string]interface{}{"port": 8080},
+						map[string]interface{}{"port": 9000},
+						map[string]interface{}{"port": 9001},
+					},
+				},
+			},
+		},
+	}
+	services := []map[string]interface{}{
+		{
+			// A sibling Service (adopted templates ship several) may only
+			// name ports it exposes itself.
+			"metadata": map[string]interface{}{
+				"name":      "game-metrics",
+				"namespace": "default",
+				"annotations": map[string]interface{}{
+					"brain.io/port-display-name.5200": "Not my port",
+				},
+			},
+			"spec": map[string]interface{}{
+				"ports": []interface{}{
+					map[string]interface{}{"port": 9100, "name": "metrics"},
+				},
+			},
+		},
+		{
+			"metadata": map[string]interface{}{
+				"name":      "game-service",
+				"namespace": "default",
+				"annotations": map[string]interface{}{
+					"brain.io/port-display-name.5201": "  Admin console  ",
+					"brain.io/port-display-name.3001": "   ",
+				},
+			},
+			"spec": map[string]interface{}{
+				"ports": []interface{}{
+					map[string]interface{}{"port": 5200, "name": "game"},
+					map[string]interface{}{"port": 5201, "name": "admin"},
+					map[string]interface{}{"port": 3000, "name": "http"},
+					map[string]interface{}{"port": 3001, "name": "port-3001"},
+					map[string]interface{}{"port": 8080, "name": "8080"},
+					map[string]interface{}{"port": 9000},
+					map[string]interface{}{"port": 9001, "name": "http-admin"},
+				},
+			},
+		},
+	}
+	want := map[int]string{
+		5200: "game",          // meaningful Service port name fills in
+		5201: "Admin console", // annotation wins over the port name, trimmed
+		3000: "",              // generic protocol word
+		3001: "",              // blank annotation falls through to a generic port-<n> name
+		8080: "",              // all digits
+		9000: "",              // no name at all
+		9001: "http-admin",    // no prefix stripping
+	}
+
+	assertRows := func(t *testing.T, out map[string]interface{}) {
+		t.Helper()
+		status := out["status"].(map[string]interface{})
+		network := status["network"].(map[string]interface{})
+		rows := network["appListeningPorts"].([]interface{})
+		if got := len(rows); got != len(want) {
+			t.Fatalf("status.network.appListeningPorts count = %d, want %d", got, len(want))
+		}
+		for _, item := range rows {
+			row := item.(map[string]interface{})
+			port, _ := privatePortFromValue(row["port"])
+			wantName, known := want[port]
+			if !known {
+				t.Fatalf("unexpected port row %v", row)
+			}
+			got, present := row["displayName"]
+			if wantName == "" {
+				if present {
+					t.Fatalf("port %d displayName = %v, want no field", port, got)
+				}
+				continue
+			}
+			if got != wantName {
+				t.Fatalf("port %d displayName = %v, want %q", port, got, wantName)
+			}
+		}
+	}
+
+	t.Run("rows built by the transform", func(t *testing.T) {
+		assertRows(t, APWithIngressesAndServicesFromList(ap, nil, services))
+	})
+
+	t.Run("rows already projected by the adapter", func(t *testing.T) {
+		withStatus := map[string]interface{}{}
+		for k, v := range ap {
+			withStatus[k] = v
+		}
+		existingRows := []interface{}{}
+		for port := range want {
+			existingRows = append(existingRows, map[string]interface{}{
+				"port":           port,
+				"privateAddress": fmt.Sprintf("http://game-service.default.svc.cluster.local:%d", port),
+				"displayName":    "stale",
+			})
+		}
+		withStatus["status"] = map[string]interface{}{
+			"network": map[string]interface{}{"appListeningPorts": existingRows},
+		}
+		out := APWithPublicAccessSupportResourcesFromList(withStatus, nil, services, nil, nil)
+		assertRows(t, out)
+		rows := out["status"].(map[string]interface{})["network"].(map[string]interface{})["appListeningPorts"].([]interface{})
+		for _, item := range rows {
+			row := item.(map[string]interface{})
+			if _, ok := row["privateAddress"]; !ok {
+				t.Fatalf("row %v lost its privateAddress", row)
+			}
+		}
+	})
+}

@@ -134,6 +134,13 @@ spec:
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid AP direct resource request", err)
 		}
+		// A redeploy over an existing AP keeps the Port Display Names its
+		// manifest does not mention (ADR 0080); named ports in the manifest win.
+		currentServiceAnnotations, err := currentAPServiceAnnotationsByName(cfg, name, ns)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to read AP service", err)
+		}
+		orchestration.PreserveAPServicePortDisplayNames(resources.Service, currentServiceAnnotations)
 		objects := apRuntimeObjects(resources)
 		if resources.HPA != nil {
 			objects = append(objects, resources.HPA)

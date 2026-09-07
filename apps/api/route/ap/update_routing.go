@@ -104,6 +104,32 @@ func replaceAPPublicIngresses(restConfig *rest.Config, cfg *clientcmdapi.Config,
 	return k8ssvc.ApplyObjects(restConfig, objects, namespace)
 }
 
+// currentAPServiceAnnotations reads the annotations of the AP's own Service,
+// where Port Display Names live (ADR 0080). A missing Service is not an error:
+// there is nothing to preserve.
+func currentAPServiceAnnotations(cfg *clientcmdapi.Config, workload apWorkload) (map[string]string, error) {
+	return currentAPServiceAnnotationsByName(cfg, workload.Name(), workload.Namespace())
+}
+
+func currentAPServiceAnnotationsByName(cfg *clientcmdapi.Config, name, namespace string) (map[string]string, error) {
+	serviceJSON, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
+		Name:      orchestration.APServiceName(name),
+		Namespace: namespace,
+		Resource:  "services",
+	})
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var service unstructured.Unstructured
+	if err := json.Unmarshal(serviceJSON, &service.Object); err != nil {
+		return nil, err
+	}
+	return service.GetAnnotations(), nil
+}
+
 func apPublicRoutingSupportSelectors(name string, projectID string) []string {
 	return []string{
 		apPublicRoutingSupportSelector(name, projectID),

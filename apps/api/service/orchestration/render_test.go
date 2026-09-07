@@ -1422,3 +1422,50 @@ func TestRenderDBScalingOpsRequestsUseClusterRef(t *testing.T) {
 		t.Fatalf("vertical componentName = %v, want postgresql", got)
 	}
 }
+
+func TestRenderAPResourcesWritesPortDisplayNamesOnTheServiceOnly(t *testing.T) {
+	tooLong := strings.Repeat("名", MaxPortDisplayNameLength+1)
+	resources, err := RenderAPResources(APResourcesInput{
+		Image:       "game:1.0",
+		Name:        "game",
+		Namespace:   "ns-a",
+		NetworkJSON: `{"appListeningPorts":[{"port":5200,"displayName":" Game "},{"port":5201,"displayName":"` + tooLong + `"},{"port":5202,"displayName":"Game"},{"port":5203}]}`,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources must never fail on a Port Display Name, got %v", err)
+	}
+	if got := resources.Service.Annotations[BrainPortDisplayNameAnnotation(5200)]; got != "Game" {
+		t.Fatalf("port 5200 annotation = %q, want trimmed Game", got)
+	}
+	// A create drops what a PATCH would reject: over-long and duplicate names.
+	for _, port := range []int32{5201, 5202, 5203} {
+		if got, ok := resources.Service.Annotations[BrainPortDisplayNameAnnotation(port)]; ok {
+			t.Fatalf("port %d annotation = %q, want none", port, got)
+		}
+	}
+	if got := len(resources.Service.Spec.Ports); got != 4 {
+		t.Fatalf("service port count = %d, want all 4 ports kept", got)
+	}
+	desired := resources.Deployment.Annotations[APDesiredNetworkAnnotation]
+	if strings.Contains(desired, "displayName") {
+		t.Fatalf("desired network annotation must not carry Port Display Names, got %s", desired)
+	}
+	if !strings.Contains(desired, `"port":5203`) {
+		t.Fatalf("desired network annotation lost ports, got %s", desired)
+	}
+
+	unnamed, err := RenderAPResources(APResourcesInput{
+		Image:       "nginx:1.27",
+		Name:        "web",
+		Namespace:   "ns-a",
+		NetworkJSON: `{"appListeningPorts":[{"port":80}]}`,
+		ProjectID:   "project-a",
+	})
+	if err != nil {
+		t.Fatalf("RenderAPResources returned error: %v", err)
+	}
+	if len(unnamed.Service.Annotations) != 0 {
+		t.Fatalf("service annotations = %v, want none without Port Display Names", unnamed.Service.Annotations)
+	}
+}

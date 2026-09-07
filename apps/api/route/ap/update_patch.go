@@ -155,6 +155,9 @@ func apRenderInputFromWorkloadPatch(current apWorkload, raw json.RawMessage, cur
 			}
 		}
 		if networkPatch, _ := input["network"].(map[string]interface{}); networkPatch != nil {
+			if err := orchestration.ValidateAPPortDisplayNames(networkPatch); err != nil {
+				return orchestration.APResourcesInput{}, nil, err
+			}
 			network = mergeAPNetwork(network, networkPatch)
 			if normalizedPorts, err := orchestration.NormalizeAPAppListeningPortsFromNetwork(network, privatePort); err == nil && len(normalizedPorts) > 0 {
 				privatePort = normalizedPorts[0].Port
