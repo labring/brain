@@ -84,6 +84,16 @@ async function probeWebSocketUrl(url: URL, signal: AbortSignal): Promise<void> {
   });
 }
 
+export class AccessEndpointHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`Access endpoint probe returned ${status}.`);
+    this.name = "AccessEndpointHttpError";
+    this.status = status;
+  }
+}
+
 export async function probeManagedPublicUrl(input: {
   allowedDomain: string;
   deadlineAtMs: number;
@@ -113,7 +123,7 @@ export async function probeManagedPublicUrl(input: {
       continue;
     }
     if (!response.ok) {
-      throw new Error(`Access endpoint probe returned ${response.status}.`);
+      throw new AccessEndpointHttpError(response.status);
     }
     return;
   }

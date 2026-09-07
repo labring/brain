@@ -3,7 +3,10 @@ import "server-only";
 import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
-import { probeManagedPublicUrl } from "./managed-public-probe";
+import {
+  AccessEndpointHttpError,
+  probeManagedPublicUrl,
+} from "./managed-public-probe";
 import {
   apWorkloadReadinessFromProductView,
   type DeploymentResultReadiness,
@@ -18,6 +21,7 @@ import type {
 } from "./timeline";
 
 interface DeploymentResultObservation extends DeploymentResultReadiness {
+  resolvedLabel?: string;
   resolvedProtocol?: DeploymentAccessEndpointProtocol;
   resolvedUrl?: string;
 }
@@ -155,6 +159,7 @@ function applyReadinessToResultCard(
     card.resultRef.kind === "AccessEndpoint" && readiness.resolvedUrl != null
       ? {
           ...card.resultRef,
+          label: readiness.resolvedLabel ?? card.resultRef.label,
           protocol: readiness.resolvedProtocol ?? card.resultRef.protocol,
           url: readiness.resolvedUrl,
         }
@@ -162,6 +167,7 @@ function applyReadinessToResultCard(
   return {
     ...card,
     latestStatusText: readiness.latestStatusText,
+    title: readiness.resolvedLabel ?? card.title,
     resultRef,
     status: readiness.status,
   };
@@ -200,6 +206,7 @@ export function resultReadinessForPresentation(
       break;
   }
   return {
+    ...readiness,
     eventMessage: statusText,
     latestStatusText: statusText,
     status: readiness.status,
@@ -268,6 +275,41 @@ export function waitingForResultObservationStatus(
   return options.surfaceObservationError !== false && error instanceof Error
     ? `Waiting for ${resultReadinessLabel(card)} observation: ${error.message}`
     : `Waiting for ${resultReadinessLabel(card)} observation.`;
+}
+
+function canDiscoverIngressRoot(
+  ref: DeploymentResultResourceRef,
+  url: URL,
+  error: unknown
+): boolean {
+  return (
+    ref.kind === "AccessEndpoint" &&
+    ref.observer.kind === "ingress" &&
+    error instanceof AccessEndpointHttpError &&
+    error.status === 404 &&
+    url.pathname !== "/"
+  );
+}
+
+async function probeAccessEndpoint(
+  ref: Extract<DeploymentResultResourceRef, { kind: "AccessEndpoint" }>,
+  publicUrl: string,
+  options: Omit<Parameters<typeof probeManagedPublicUrl>[0], "publicUrl">
+): Promise<{ url: string; label: string }> {
+  try {
+    await probeManagedPublicUrl({ ...options, publicUrl });
+    return { url: publicUrl, label: ref.label };
+  } catch (error) {
+    // Ingress paths are routing candidates, not declared health checks.
+    // Keep the same deadline and tenant boundary when discovering the root.
+    const parsed = new URL(publicUrl);
+    if (!canDiscoverIngressRoot(ref, parsed, error)) {
+      throw error;
+    }
+    const rootUrl = new URL("/", parsed).href;
+    await probeManagedPublicUrl({ ...options, publicUrl: rootUrl });
+    return { url: rootUrl, label: "Web address" };
+  }
 }
 
 async function resultCardReadiness(input: {
@@ -347,15 +389,22 @@ async function resultCardReadiness(input: {
       ) {
         throw new Error("The access endpoint protocol is unsupported.");
       }
-      await probeManagedPublicUrl({
+      const probeOptions = {
         allowedDomain: input.allowedDomain,
         deadlineAtMs: input.deadlineAtMs ?? Date.now() + 15_000,
-        publicUrl,
         signal: input.signal,
-      });
+      };
+      const resolved = await probeAccessEndpoint(
+        resultRef,
+        publicUrl,
+        probeOptions
+      );
+      publicUrl = resolved.url;
+      const resolvedLabel = resolved.label;
       return {
-        eventMessage: `${resultRef.label} is reachable.`,
-        latestStatusText: `${resultRef.label} is reachable.`,
+        eventMessage: `${resolvedLabel} is reachable.`,
+        latestStatusText: `${resolvedLabel} is reachable.`,
+        resolvedLabel,
         resolvedProtocol,
         resolvedUrl: publicUrl,
         status: "running",
