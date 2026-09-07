@@ -27,7 +27,6 @@ export {
   entryNodeOpenDisabledReason,
 } from "./entry-node.content";
 export { useEntryNode } from "./entry-node.context";
-export { entryNodeShowsGroupHeaders } from "./entry-node.group";
 export {
   entryNodeAddresses,
   resolveEntryNodeGroupsStatus,

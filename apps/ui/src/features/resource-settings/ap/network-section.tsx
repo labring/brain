@@ -913,7 +913,7 @@ function AppListeningPortRow({
 }
 
 const PORT_DISPLAY_NAME_HINT =
-  "Shown on the Public access node above the domains that reach this port. Leave empty to fall back to the Service port's own name, or to the domain alone when it has none.";
+  "Shown on the Public access node next to the port number. Leave empty to use the Service port's name.";
 
 interface AppListeningPortNameFormProps {
   displayName: string | undefined;

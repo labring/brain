@@ -8,7 +8,6 @@ export {
   entryNodeAddressCountLabel,
   entryNodeAddresses,
   entryNodeOpenDisabledReason,
-  entryNodeShowsGroupHeaders,
   resolveEntryNodeGroupsStatus,
   resolveEntryNodeTargetStatus,
   resolveEntryNodeTargetVisualStatus,

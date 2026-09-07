@@ -116,7 +116,7 @@ _Avoid_: AP Public Access Node health, standalone public access monitor.
 
 ### AP Public Access Node
 
-A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). It groups Public Addresses by the App Listening Port they target, headed by that port's Port Display Name; a single unnamed port draws no group header. Rows show the domain, not the Public Address kind. Its header carries the address count and one Open control that opens the Default Open Port; no per-address health is aggregated there, and nothing else on the node marks the Default Open Port. Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner; selecting it opens the AP's Network Settings View.
+A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). It groups Public Addresses by the App Listening Port they target, each group headed by its port number and, when set, the Port Display Name. Rows show the domain, not the Public Address kind. Its header carries the address count and one Open control that opens the Default Open Port; no per-address health is aggregated there, and nothing else on the node marks the Default Open Port. Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner; selecting it opens the AP's Network Settings View.
 
 ### AP Network Settings
 

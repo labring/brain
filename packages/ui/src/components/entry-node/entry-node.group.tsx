@@ -15,17 +15,6 @@ function getAddressKey(
   return address.id ?? `${group.port}-${index}`;
 }
 
-/**
- * A group header is drawn whenever there is something to tell apart: more
- * than one port, or a single port that carries a name. A lone unnamed port
- * draws none, so single-port APs look exactly as before.
- */
-export function entryNodeShowsGroupHeaders(
-  groups: readonly EntryNodeGroup[]
-): boolean {
-  return groups.length > 1 || groups.some((group) => group.name !== undefined);
-}
-
 export function EntryNodeGroupList({ className }: { className?: string }) {
   const {
     state: { groups = [] },
@@ -46,8 +35,6 @@ export function EntryNodeGroupList({ className }: { className?: string }) {
     );
   }
 
-  const showHeaders = entryNodeShowsGroupHeaders(populated);
-
   return (
     <div
       className={cn(
@@ -57,24 +44,23 @@ export function EntryNodeGroupList({ className }: { className?: string }) {
       data-slot="entry-node-group-list"
     >
       {populated.map((group) => (
-        <EntryNodeGroupBlock
-          group={group}
-          key={group.port}
-          showHeader={showHeaders}
-        />
+        <EntryNodeGroupBlock group={group} key={group.port} />
       ))}
     </div>
   );
 }
 
+/**
+ * Every group is headed by its port number — written the way AP Network
+ * Settings writes it (`game · 5200`, or `5200` alone) — so a single unnamed
+ * port still tells the reader which port its domains reach.
+ */
 export function EntryNodeGroupBlock({
   className,
   group,
-  showHeader,
 }: {
   className?: string;
   group: EntryNodeGroup;
-  showHeader: boolean;
 }) {
   return (
     <div
@@ -84,19 +70,22 @@ export function EntryNodeGroupBlock({
       )}
       data-slot="entry-node-group"
     >
-      {showHeader ? (
-        <div
-          className="flex min-w-0 items-baseline gap-1.5 px-2 pt-1 pb-0.5 text-xs leading-4"
-          data-slot="entry-node-group-header"
-        >
-          {group.name === undefined ? null : (
+      <div
+        className="flex min-w-0 items-baseline gap-1.5 px-2 pt-1 pb-0.5 text-xs leading-4"
+        data-slot="entry-node-group-header"
+      >
+        {group.name === undefined ? null : (
+          <>
             <span className="min-w-0 truncate text-zinc-50">{group.name}</span>
-          )}
-          <span className="shrink-0 font-mono text-muted-foreground">
-            :{group.port}
-          </span>
-        </div>
-      ) : null}
+            <span aria-hidden className="shrink-0 text-muted-foreground">
+              ·
+            </span>
+          </>
+        )}
+        <span className="shrink-0 font-mono text-muted-foreground">
+          {group.port}
+        </span>
+      </div>
       {group.addresses.map((address, index) => {
         const rowKey = getAddressKey(group, address, index);
         return (

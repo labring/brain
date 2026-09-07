@@ -37,7 +37,6 @@ const COPY_PLATFORM_ADDRESS_RE =
   /aria-label="Copy https:\/\/hbxiix\.192\.168\.10\.189\.nip\.io\/"/;
 const COPIED_PLATFORM_ADDRESS_RE =
   /aria-label="Copied https:\/\/hbxiix\.192\.168\.10\.189\.nip\.io\/"/;
-const GROUP_HEADER_RE = /data-slot="entry-node-group-header"/;
 const GROUP_HEADER_RE_GLOBAL = /data-slot="entry-node-group-header"/g;
 const HOST_SUFFIX_RE =
   /<span [^>]*data-slot="entry-node-host-suffix"[^>]*>\.192\.168\.10\.189\.nip\.io<\/span>/;
@@ -70,7 +69,12 @@ function headerTexts(html: string): string[] {
     html.matchAll(
       /data-slot="entry-node-group-header"[^>]*>([\s\S]*?)<\/div>/g
     ),
-    (match) => (match[1] ?? "").replace(/<[^>]+>/g, "")
+    (match) =>
+      (match[1] ?? "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&middot;/g, "\u00b7")
+        .replace(/\s+/g, " ")
+        .trim()
   );
 }
 
@@ -124,12 +128,22 @@ test("EntryNode address row pins copied feedback on the copy button", () => {
   assert.match(html, COPIED_PLATFORM_ADDRESS_RE);
 });
 
-test("EntryNode draws no group header for a single unnamed port", () => {
+test("EntryNode heads a single unnamed port by its port number alone", () => {
   const html = renderGroups([{ addresses: [PLATFORM_ADDRESS], port: 8080 }]);
 
-  assert.doesNotMatch(html, GROUP_HEADER_RE);
+  assert.deepEqual(headerTexts(html), ["8080"]);
   assert.match(html, PUBLIC_ACCESS_LABEL_RE);
   assert.match(html, ONE_ADDRESS_RE);
+});
+
+test("EntryNode heads every unnamed port when there are several", () => {
+  const html = renderGroups([
+    { addresses: [WS_ADDRESS], port: 5200 },
+    { addresses: [PLATFORM_ADDRESS], port: 5201 },
+  ]);
+
+  assert.equal(html.match(GROUP_HEADER_RE_GLOBAL)?.length, 2);
+  assert.deepEqual(headerTexts(html), ["5200", "5201"]);
 });
 
 test("EntryNode draws a named header for a single named port", () => {
@@ -137,7 +151,7 @@ test("EntryNode draws a named header for a single named port", () => {
     { addresses: [PLATFORM_ADDRESS], name: "Admin console", port: 8080 },
   ]);
 
-  assert.deepEqual(headerTexts(html), ["Admin console:8080"]);
+  assert.deepEqual(headerTexts(html), ["Admin console · 8080"]);
 });
 
 test("EntryNode draws one header per port in the given order", () => {
@@ -150,7 +164,7 @@ test("EntryNode draws one header per port in the given order", () => {
   ]);
 
   assert.equal(html.match(GROUP_HEADER_RE_GLOBAL)?.length, 2);
-  assert.deepEqual(headerTexts(html), ["game:5200", ":5201"]);
+  assert.deepEqual(headerTexts(html), ["game · 5200", "5201"]);
   assert.equal(html.match(/data-slot="entry-node-address-row"/g)?.length, 3);
 });
 
