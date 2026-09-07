@@ -177,6 +177,7 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
       ],
       key: "PublicAccess:default:api",
       observedUid: "ap-uid",
+      open: { label: "Open", port: 8080, url: "https://api.example.com/" },
       ref: { kind: "PublicAccess", name: "api", namespace: "default" },
     },
   ]);
@@ -358,6 +359,169 @@ test("Public Access groups addresses whose port is not an App Listening Port und
   assert.deepEqual(
     groups.map((group) => ({ name: group.name, port: group.port })),
     [{ name: undefined, port: 9000 }]
+  );
+});
+
+function publicAccessOpen(ap: unknown) {
+  return required(
+    projectRuntimeFactsFromResources({
+      apsData: { items: [ap] },
+      namespace: "default",
+    }).publicAccessFacts[0]
+  ).open;
+}
+
+const MINIO_PORTS = [
+  { displayName: "S3 API", port: 9000 },
+  { displayName: "Console", port: 9001 },
+];
+const MINIO_ADDRESSES = [
+  {
+    host: "s3.example.com",
+    id: "pa_s3",
+    port: 9000,
+    status: "accessible",
+    type: "platform",
+    url: "https://s3.example.com/",
+  },
+  {
+    host: "console.example.com",
+    id: "pa_console",
+    port: 9001,
+    status: "accessible",
+    type: "platform",
+    url: "https://console.example.com/",
+  },
+];
+
+test("Public Access opens the stored Default Open Port through its best address", () => {
+  assert.deepEqual(
+    publicAccessOpen(
+      apWithNetwork({
+        appListeningPorts: MINIO_PORTS,
+        defaultOpenPort: 9001,
+        publicAddresses: MINIO_ADDRESSES,
+      })
+    ),
+    { label: "Open Console", port: 9001, url: "https://console.example.com/" }
+  );
+});
+
+test("Public Access opens the first declared port with an HTTP address when nothing is stored", () => {
+  assert.deepEqual(
+    publicAccessOpen(
+      apWithNetwork({
+        appListeningPorts: MINIO_PORTS,
+        publicAddresses: MINIO_ADDRESSES,
+      })
+    ),
+    { label: "Open S3 API", port: 9000, url: "https://s3.example.com/" }
+  );
+});
+
+test("Public Access ignores a stale Default Open Port and skips WS-only ports", () => {
+  assert.deepEqual(
+    publicAccessOpen(
+      apWithNetwork({
+        appListeningPorts: [
+          { displayName: "game", port: 5200 },
+          { displayName: "Admin console", port: 5201 },
+        ],
+        defaultOpenPort: 5202,
+        publicAddresses: [
+          {
+            host: "game.example.com",
+            id: "pa_game",
+            port: 5200,
+            status: "accessible",
+            type: "platform",
+            url: "wss://game.example.com/",
+          },
+          {
+            host: "admin.example.com",
+            id: "pa_admin",
+            port: 5201,
+            status: "accessible",
+            type: "platform",
+            url: "https://admin.example.com/",
+          },
+        ],
+      })
+    ),
+    {
+      label: "Open Admin console",
+      port: 5201,
+      url: "https://admin.example.com/",
+    }
+  );
+});
+
+test("Public Access prefers an accessible Custom Domain and disables Open while nothing is accessible", () => {
+  assert.equal(
+    publicAccessOpen(
+      apWithNetwork({
+        appListeningPorts: [{ displayName: "game", port: 5200 }],
+        publicAddresses: [
+          {
+            host: "game.example.com",
+            id: "pa_game",
+            port: 5200,
+            status: "accessible",
+            type: "platform",
+            url: "https://game.example.com/",
+          },
+          {
+            host: "play.example.com",
+            id: "cd_play",
+            port: 5200,
+            status: "accessible",
+            type: "custom",
+            url: "https://play.example.com/",
+          },
+        ],
+      })
+    )?.url,
+    "https://play.example.com/"
+  );
+  assert.deepEqual(
+    publicAccessOpen(
+      apWithNetwork({
+        appListeningPorts: [{ port: 3000 }],
+        publicAddresses: [
+          {
+            host: "app.example.com",
+            id: "pa_app",
+            port: 3000,
+            status: "progressing",
+            type: "platform",
+            url: "https://app.example.com/",
+          },
+        ],
+      })
+    ),
+    { disabledReason: "Not accessible yet", label: "Open", port: 3000 }
+  );
+});
+
+test("Public Access node model carries the Open target to the Entry Node", () => {
+  const facts = projectRuntimeFactsFromResources({
+    apsData: {
+      items: [
+        apWithNetwork({
+          appListeningPorts: MINIO_PORTS,
+          defaultOpenPort: 9001,
+          publicAddresses: MINIO_ADDRESSES,
+        }),
+      ],
+    },
+    namespace: "default",
+  });
+
+  assert.deepEqual(
+    projectRuntimeNodeModelsFromFacts(facts).entryModelsByKey.get(
+      "PublicAccess:default:game"
+    )?.open,
+    { label: "Open Console", port: 9001, url: "https://console.example.com/" }
   );
 });
 

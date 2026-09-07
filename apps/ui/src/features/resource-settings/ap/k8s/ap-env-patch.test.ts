@@ -749,6 +749,136 @@ test("AP network settings reject over-long and duplicate Port Display Names", ()
   );
 });
 
+const DEFAULT_OPEN_PORT_UNKNOWN_RE =
+  /Default Open Port must be one of the AP's App Listening Ports/;
+
+test("AP network settings write the Default Open Port only when the draft states or clears one", () => {
+  const ports = [
+    { displayName: "S3 API", port: 9000 },
+    { displayName: "Console", port: 9001 },
+  ];
+
+  assert.deepEqual(
+    patchOpValue(
+      patchOpsForApNetworkSettings(
+        { input: { network: { appListeningPorts: ports } } },
+        { appListeningPorts: ports, defaultOpenPort: 9001, publicAddresses: [] }
+      )[0]
+    ),
+    { appListeningPorts: ports, defaultOpenPort: 9001 }
+  );
+  assert.deepEqual(
+    patchOpValue(
+      patchOpsForApNetworkSettings(
+        { input: { network: { appListeningPorts: ports } } },
+        { appListeningPorts: ports, publicAddresses: [] }
+      )[0]
+    ),
+    { appListeningPorts: ports }
+  );
+  assert.deepEqual(
+    patchOpValue(
+      patchOpsForApNetworkSettings(
+        { input: { network: { appListeningPorts: ports } } },
+        { appListeningPorts: ports, publicAddresses: [] },
+        { currentDefaultOpenPort: 9001 }
+      )[0]
+    ),
+    { appListeningPorts: ports, defaultOpenPort: null }
+  );
+  assert.throws(
+    () =>
+      patchOpsForApNetworkSettings(
+        { input: {} },
+        { appListeningPorts: ports, defaultOpenPort: 9002, publicAddresses: [] }
+      ),
+    DEFAULT_OPEN_PORT_UNKNOWN_RE
+  );
+});
+
+test("AP public address settings patch states the Default Open Port as one field", () => {
+  const spec = {
+    input: {
+      network: {
+        appListeningPorts: [{ port: 9000 }, { port: 9001 }],
+        platformAddresses: [{ id: "pa_abc123", port: 9001 }],
+      },
+    },
+  };
+  const network = {
+    appListeningPorts: [{ port: 9000 }, { port: 9001 }],
+    publicAddresses: [{ id: "pa_abc123", port: 9001 }],
+  };
+
+  assert.deepEqual(
+    patchOpsForApPublicAddressesSettings(spec, {
+      ...network,
+      defaultOpenPort: 9001,
+    }).find((op) => op.path === "/spec/input/network/defaultOpenPort"),
+    { op: "add", path: "/spec/input/network/defaultOpenPort", value: 9001 }
+  );
+  assert.equal(
+    patchOpsForApPublicAddressesSettings(spec, network).some(
+      (op) => op.path === "/spec/input/network/defaultOpenPort"
+    ),
+    false
+  );
+  assert.deepEqual(
+    patchOpsForApPublicAddressesSettings(spec, network, {
+      currentDefaultOpenPort: 9001,
+    }).find((op) => op.path === "/spec/input/network/defaultOpenPort"),
+    { op: "add", path: "/spec/input/network/defaultOpenPort", value: null }
+  );
+});
+
+test("AP settings draft carries a Default Open Port change and clears it against the base draft", () => {
+  const ports = [{ port: 9000 }, { port: 9001 }];
+  const spec = {
+    input: {
+      image: "ghcr.io/acme/minio:latest",
+      network: { appListeningPorts: ports },
+    },
+  };
+  const base = {
+    image: "ghcr.io/acme/minio:latest",
+    network: { appListeningPorts: ports, publicAddresses: [] },
+  };
+
+  const setOps = patchOpsForApSettingsDraft(
+    spec,
+    { ...base, network: { ...base.network, defaultOpenPort: 9001 } },
+    base
+  );
+  assert.deepEqual(apMergePatchFromJsonPatchOps(setOps).spec, {
+    input: {
+      network: {
+        appListeningPorts: ports,
+        customDomains: null,
+        defaultOpenPort: 9001,
+        endpoints: null,
+        host: null,
+        platformAddresses: null,
+        port: null,
+        privatePort: null,
+        publicAddresses: null,
+      },
+    },
+  });
+
+  const clearOps = patchOpsForApSettingsDraft(spec, base, {
+    ...base,
+    network: { ...base.network, defaultOpenPort: 9001 },
+  });
+  assert.equal(
+    (
+      apMergePatchFromJsonPatchOps(clearOps).spec as {
+        input: { network: Record<string, unknown> };
+      }
+    ).input.network.defaultOpenPort,
+    null
+  );
+});
+
 test("AP public address settings patch rewrites App Listening Ports when a Port Display Name changes", () => {
   const ops = patchOpsForApPublicAddressesSettings(
     {

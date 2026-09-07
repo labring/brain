@@ -2,9 +2,13 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
+import {
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
+} from "@workspace/ui/components/dropdown-menu";
+import { entryNodeOpenDisabledReason } from "@workspace/ui/components/entry-node/entry-node";
 import { Label } from "@workspace/ui/components/label";
 import {
   Tooltip,
@@ -14,6 +18,7 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import {
   Check,
+  ExternalLink,
   Network,
   Pencil,
   Plus,
@@ -42,12 +47,15 @@ import {
   type ApNetworkVisibleDomainRows,
   type ApNetworkVisiblePublicAddressRow,
   addedAppListeningPorts,
+  apNetworkOpenByDefaultPorts,
+  apNetworkOpenTarget,
   apNetworksEqual,
   appListeningPortDisplayName,
   appListeningPortRowDetail,
   appListeningPortsFromNetwork,
   domainCountForPort,
   domainCountLabel,
+  networkDefaultOpenPort,
   PORT_DISPLAY_NAME_MAX_LENGTH,
   portDisplayNameError,
   publicAddressDefaultPort,
@@ -57,6 +65,7 @@ import {
   takenPortDisplayNames,
   visibleDomainRows,
 } from "./ap-network-model";
+import { AP_OPEN_TARGET_LABEL } from "./ap-open-target";
 import { apNetworkDraftBackingKey } from "./ap-settings-draft";
 import type {
   ApPublicAddressesSettingsSectionsProps,
@@ -368,6 +377,131 @@ function platformAddressDraftFromPort(
   };
 }
 
+const ROW_ACTIONS_MENU_TRIGGER_CLASS =
+  "bg-input/30 hover:bg-input! data-popup-open:bg-input! data-popup-open:text-blue-400";
+const ROW_ACTIONS_CHECKBOX_ITEM_CLASS =
+  "canvas-node-action-menu-item h-7 cursor-pointer rounded-md py-0 pl-2 font-normal text-sm text-zinc-200 leading-none hover:bg-white/15 hover:text-zinc-50 focus:bg-white/15 focus:text-zinc-50";
+const OPEN_BY_DEFAULT_LABEL = "Open by default";
+const DELETE_LAST_PORT_REASON = "At least one App Listening Port is required";
+const EDIT_PENDING_ADDRESS_REASON = "Domain not allocated yet";
+
+interface RowActionsMenuProps {
+  "aria-label": string;
+  children: ReactNode;
+}
+
+/**
+ * The one control every Network row carries: a ⋯ trigger opening that row's
+ * actions. Same recipe as the environment rows, so the pane reads as one.
+ */
+function RowActionsMenu({
+  "aria-label": ariaLabel,
+  children,
+}: RowActionsMenuProps) {
+  return (
+    <CanvasNode.ActionMenu
+      alignOffset={0}
+      aria-label={ariaLabel}
+      className={ROW_ACTIONS_MENU_TRIGGER_CLASS}
+      sideOffset={6}
+      triggerSize="lg"
+      triggerVariant="secondary"
+    >
+      {children}
+    </CanvasNode.ActionMenu>
+  );
+}
+
+/**
+ * The Network section's header action: opens the Default Open Port's best
+ * Public Address in a new tab, named after the port ("Open Console"). It is
+ * the only explicit indicator of the current target; greyed with a reason
+ * when nothing is accessible yet.
+ */
+export function NetworkOpenAction({ network }: { network: ApNetwork }) {
+  const target = apNetworkOpenTarget(network);
+  const label = target?.label ?? AP_OPEN_TARGET_LABEL;
+  const reason = entryNodeOpenDisabledReason(target);
+  const url = reason === undefined ? target?.url : undefined;
+
+  return (
+    <AppButton
+      aria-description={reason}
+      aria-disabled={reason === undefined ? undefined : true}
+      aria-label={label}
+      className={cn(
+        "shrink-0",
+        reason !== undefined &&
+          "cursor-not-allowed opacity-50 hover:bg-input/30"
+      )}
+      data-network-action="open"
+      nativeButton={url === undefined ? undefined : false}
+      render={
+        url === undefined ? undefined : (
+          // biome-ignore lint/a11y/useAnchorContent: Base UI merges the button children into the anchor
+          <a href={url} rel="noopener noreferrer" target="_blank" />
+        )
+      }
+      size="sm"
+      title={reason ?? label}
+      type="button"
+      variant="secondary"
+    >
+      <ExternalLink aria-hidden data-icon="inline-start" />
+      {label}
+    </AppButton>
+  );
+}
+
+interface PublicAddressRowActionsProps {
+  onDelete?: () => void | Promise<void>;
+  onEdit?: () => void;
+  pending: boolean;
+  value: string;
+}
+
+/** ⋯ menu of a Public Address row: Edit (bind a Custom Domain) and Delete. */
+function PublicAddressRowActions({
+  onDelete,
+  onEdit,
+  pending,
+  value,
+}: PublicAddressRowActionsProps) {
+  if (onEdit == null && onDelete == null) {
+    return null;
+  }
+  return (
+    <RowActionsMenu
+      aria-label={`Public Address actions for ${value === "" ? "pending domain" : value}`}
+    >
+      {onEdit == null ? null : (
+        <CanvasNode.ActionMenuItem
+          action={{
+            disabled: value === "",
+            disabledReason: EDIT_PENDING_ADDRESS_REASON,
+            onClick: onEdit,
+          }}
+          actionKey="edit"
+          icon={<Settings aria-hidden className="size-4" />}
+        >
+          Edit
+        </CanvasNode.ActionMenuItem>
+      )}
+      {onEdit == null || onDelete == null ? null : <DropdownMenuSeparator />}
+      {onDelete == null ? null : (
+        <CanvasNode.ActionMenuItem
+          action={{ loading: pending, onClick: onDelete }}
+          actionKey="delete"
+          icon={<Trash2 aria-hidden className="size-4" />}
+          tone="destructive"
+        >
+          Delete
+        </CanvasNode.ActionMenuItem>
+      )}
+    </RowActionsMenu>
+  );
+}
+
 interface PublicAddressRowProps {
   address: ApNetworkPublicAddress;
   /** Second line: `name · port` of the App Listening Port this address reaches. */
@@ -453,29 +587,13 @@ function PublicAddressRow({
             </div>
           </div>
           <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
-            {readOnly || onBindCustomDomain == null ? null : (
-              <AppIconButton
-                aria-label="Edit Public Address"
-                disabled={value === ""}
-                onClick={onBindCustomDomain}
-                size="lg"
-                type="button"
-                variant="secondary"
-              >
-                <Settings aria-hidden />
-              </AppIconButton>
-            )}
-            {readOnly || onDelete == null ? null : (
-              <AppIconButton
-                aria-label="Delete Public Address"
-                disabled={pending}
-                onClick={handleDelete}
-                size="lg"
-                type="button"
-                variant="danger"
-              >
-                <Trash2 aria-hidden />
-              </AppIconButton>
+            {readOnly ? null : (
+              <PublicAddressRowActions
+                onDelete={onDelete == null ? undefined : handleDelete}
+                onEdit={onBindCustomDomain}
+                pending={pending}
+                value={value}
+              />
             )}
           </CanvasNode.CopyableRowControl>
         </>
@@ -592,17 +710,20 @@ function CustomDomainRow({
         </div>
       </div>
       {readOnly || onUnbind == null ? null : (
-        <AppIconButton
-          aria-label="Unbind Custom Domain"
-          disabled={pending}
-          onClick={handleUnbind}
-          size="lg"
-          title="Unbind Custom Domain"
-          type="button"
-          variant="danger"
-        >
-          <Trash2 aria-hidden />
-        </AppIconButton>
+        <div className="flex shrink-0 items-center gap-2">
+          <RowActionsMenu
+            aria-label={`Custom Domain actions for ${domain.domain}`}
+          >
+            <CanvasNode.ActionMenuItem
+              action={{ loading: pending, onClick: handleUnbind }}
+              actionKey="unbind"
+              icon={<Trash2 aria-hidden className="size-4" />}
+              tone="destructive"
+            >
+              Unbind
+            </CanvasNode.ActionMenuItem>
+          </RowActionsMenu>
+        </div>
       )}
     </div>
   );
@@ -639,6 +760,77 @@ function NetworkCard({ actions, children, title }: NetworkCardProps) {
   );
 }
 
+interface AppListeningPortOpenByDefault {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void | Promise<void>;
+}
+
+interface AppListeningPortRowActionsProps {
+  canDelete: boolean;
+  onDelete?: () => void;
+  onRename?: () => void;
+  openByDefault?: AppListeningPortOpenByDefault;
+  port: number;
+}
+
+/**
+ * ⋯ menu of an App Listening Port row: Rename, the "Open by default" choice
+ * (Default Open Port, only while there is a choice), and Delete.
+ */
+function AppListeningPortRowActions({
+  canDelete,
+  onDelete,
+  onRename,
+  openByDefault,
+  port,
+}: AppListeningPortRowActionsProps) {
+  if (onRename == null && onDelete == null) {
+    return null;
+  }
+  return (
+    <RowActionsMenu aria-label={`App Listening Port ${port} actions`}>
+      {onRename == null ? null : (
+        <CanvasNode.ActionMenuItem
+          action={{ onClick: onRename }}
+          actionKey="rename"
+          icon={<Pencil aria-hidden className="size-4" />}
+        >
+          Rename
+        </CanvasNode.ActionMenuItem>
+      )}
+      {openByDefault == null ? null : (
+        <DropdownMenuCheckboxItem
+          checked={openByDefault.checked}
+          className={ROW_ACTIONS_CHECKBOX_ITEM_CLASS}
+          data-action-key="open-by-default"
+          onCheckedChange={(checked) => {
+            Promise.resolve(openByDefault.onCheckedChange(checked)).catch(
+              () => undefined
+            );
+          }}
+        >
+          {OPEN_BY_DEFAULT_LABEL}
+        </DropdownMenuCheckboxItem>
+      )}
+      {onDelete == null ? null : <DropdownMenuSeparator />}
+      {onDelete == null ? null : (
+        <CanvasNode.ActionMenuItem
+          action={{
+            disabled: !canDelete,
+            disabledReason: DELETE_LAST_PORT_REASON,
+            onClick: onDelete,
+          }}
+          actionKey="delete"
+          icon={<Trash2 aria-hidden className="size-4" />}
+          tone="destructive"
+        >
+          Delete
+        </CanvasNode.ActionMenuItem>
+      )}
+    </RowActionsMenu>
+  );
+}
+
 interface AppListeningPortRowProps {
   address: string;
   canDelete: boolean;
@@ -646,6 +838,11 @@ interface AppListeningPortRowProps {
   detail: string;
   onDelete?: () => void;
   onRename?: () => void;
+  /**
+   * The "Open by default" choice for this port; present only while at least
+   * two ports could be the Default Open Port and this is one of them.
+   */
+  openByDefault?: AppListeningPortOpenByDefault;
   port: number;
   readOnly: boolean;
   rowKey: string;
@@ -657,6 +854,7 @@ function AppListeningPortRow({
   detail,
   onDelete,
   onRename,
+  openByDefault,
   port,
   readOnly,
   rowKey,
@@ -695,34 +893,14 @@ function AppListeningPortRow({
             </div>
           </div>
           <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
-            {readOnly || onRename == null ? null : (
-              <AppIconButton
-                aria-label={`Rename App Listening Port ${port}`}
-                onClick={onRename}
-                size="lg"
-                title={`Rename App Listening Port ${port}`}
-                type="button"
-                variant="secondary"
-              >
-                <Pencil aria-hidden />
-              </AppIconButton>
-            )}
-            {readOnly || onDelete == null ? null : (
-              <AppIconButton
-                aria-label={`Delete App Listening Port ${port}`}
-                disabled={!canDelete}
-                onClick={onDelete}
-                size="lg"
-                title={
-                  canDelete
-                    ? `Delete App Listening Port ${port}`
-                    : "At least one App Listening Port is required"
-                }
-                type="button"
-                variant="danger"
-              >
-                <Trash2 aria-hidden />
-              </AppIconButton>
+            {readOnly ? null : (
+              <AppListeningPortRowActions
+                canDelete={canDelete}
+                onDelete={onDelete}
+                onRename={onRename}
+                openByDefault={openByDefault}
+                port={port}
+              />
             )}
           </CanvasNode.CopyableRowControl>
         </>
@@ -748,7 +926,7 @@ interface AppListeningPortNameFormProps {
  * Public Address editing. Done writes into the AP Settings Draft; the draft
  * footer handles Update / Discard.
  */
-function AppListeningPortNameForm({
+export function AppListeningPortNameForm({
   displayName,
   onCancel,
   onSubmit,
@@ -1528,6 +1706,10 @@ export function NetworkSettingsSection({
     ? visibleDomains.publicAddressRows
     : visibleDomains.publicAddressRows.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
   const takenNames = takenPortDisplayNames(appListeningPorts);
+  const openByDefaultPorts = canMutateNetwork
+    ? apNetworkOpenByDefaultPorts(network)
+    : [];
+  const storedDefaultOpenPort = networkDefaultOpenPort(network);
 
   const [prevPublicAddressRowCount, setPrevPublicAddressRowCount] = useState(
     visibleDomains.publicAddressRows.length
@@ -1672,6 +1854,17 @@ export function NetworkSettingsSection({
                   onRename={
                     canMutateNetwork
                       ? () => setRenamingPort(row.port)
+                      : undefined
+                  }
+                  openByDefault={
+                    openByDefaultPorts.includes(row.port)
+                      ? {
+                          checked: storedDefaultOpenPort === row.port,
+                          onCheckedChange: (checked) =>
+                            controller.setDefaultOpenPort(
+                              checked ? row.port : null
+                            ),
+                        }
                       : undefined
                   }
                   port={row.port}
@@ -1920,6 +2113,7 @@ export function useApPublicAddressesSettingsSections({
     leaveGuard,
     sections: [
       {
+        actions: <NetworkOpenAction network={networkForRender} />,
         content: (
           <>
             <NetworkSettingsSection

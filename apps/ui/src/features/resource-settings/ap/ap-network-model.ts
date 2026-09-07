@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  type ApOpenTarget,
+  type ApOpenTargetAddress,
+  apOpenTargetEligiblePorts,
+  resolveApOpenTarget,
+} from "./ap-open-target";
+
 export interface ApNetworkPublicAddress {
   domainPrefix?: string;
   host?: string;
@@ -54,6 +61,11 @@ export const PORT_DISPLAY_NAME_MAX_LENGTH = 64;
 export interface ApNetwork {
   appListeningPorts?: ApNetworkAppListeningPort[];
   customDomains?: ApNetworkCustomDomain[];
+  /**
+   * The stored Default Open Port as the API surfaced it (only when it names
+   * one of the App Listening Ports); absent means the automatic rule applies.
+   */
+  defaultOpenPort?: number;
   privateAddress?: string;
   privatePort: number;
   publicAddresses: ApNetworkPublicAddress[];
@@ -79,6 +91,7 @@ export interface ApNetworkSaveAppListeningPort {
 export interface ApNetworkSaveDraft {
   appListeningPorts: ApNetworkSaveAppListeningPort[];
   customDomains?: ApNetworkSaveCustomDomain[];
+  defaultOpenPort?: number;
   privatePort: number;
   publicAddresses: ApNetworkSavePublicAddress[];
 }
@@ -202,7 +215,142 @@ export function networkWithoutAppListeningPort(
   const next = appListeningPortsFromNetwork(network).filter(
     (row) => Math.round(row.port) !== rounded
   );
-  return networkWithAppListeningPorts(network, next);
+  const base =
+    network.defaultOpenPort !== undefined &&
+    Math.round(network.defaultOpenPort) === rounded
+      ? networkWithDefaultOpenPort(network, null)
+      : network;
+  return networkWithAppListeningPorts(base, next);
+}
+
+/**
+ * Sets (with a port) or clears (with null) the stored Default Open Port. The
+ * port must be one of the App Listening Ports; anything else clears.
+ */
+export function networkWithDefaultOpenPort(
+  network: ApNetwork,
+  port: number | null
+): ApNetwork {
+  const { defaultOpenPort: _previous, ...rest } = network;
+  if (port == null) {
+    return rest;
+  }
+  const rounded = Math.round(port);
+  const known = appListeningPortsFromNetwork(network).some(
+    (row) => Math.round(row.port) === rounded
+  );
+  return known ? { ...rest, defaultOpenPort: rounded } : rest;
+}
+
+/** The stored Default Open Port when it names one of the network's ports. */
+export function networkDefaultOpenPort(network: ApNetwork): number | undefined {
+  if (network.defaultOpenPort === undefined) {
+    return undefined;
+  }
+  const rounded = Math.round(network.defaultOpenPort);
+  return appListeningPortsFromNetwork(network).some(
+    (row) => Math.round(row.port) === rounded
+  )
+    ? rounded
+    : undefined;
+}
+
+/** The browser URL of a Public Address: its URL, else https on its host. */
+function publicAddressOpenTargetUrl(
+  address: Pick<ApNetworkPublicAddress, "host" | "url">
+): string {
+  const url = address.url?.trim() ?? "";
+  if (url !== "") {
+    return url;
+  }
+  const host = address.host?.trim() ?? "";
+  return host === "" ? "" : `https://${host}/`;
+}
+
+function openTargetAccessible(status: string | undefined): boolean {
+  return status?.trim().toLowerCase() === "accessible";
+}
+
+/**
+ * Every Public Address of the network as the Default Open Port rule sees it:
+ * Platform Addresses and Custom Domains with their port, URL, and whether
+ * routing reports them accessible.
+ */
+export function apNetworkOpenTargetAddresses(
+  network: ApNetwork
+): ApOpenTargetAddress[] {
+  const fromPublicAddresses = network.publicAddresses.map(
+    (address): ApOpenTargetAddress => {
+      const value = publicAddressOpenTargetUrl(address);
+      return {
+        accessible: openTargetAccessible(address.status),
+        kind:
+          address.type?.trim().toLowerCase() === "custom"
+            ? "custom"
+            : "platform",
+        port: address.port,
+        ...(value === "" ? {} : { url: value }),
+      };
+    }
+  );
+  const fromCustomDomains = (network.customDomains ?? []).flatMap(
+    (domain): ApOpenTargetAddress[] => {
+      const host = domain.domain.trim();
+      // A binding without a stated target port reaches the port of the
+      // Platform Address it promotes.
+      const port =
+        domain.targetPort ??
+        network.publicAddresses.find(
+          (address) =>
+            publicAddressIdValue(address) === domain.platformAddressId.trim()
+        )?.port;
+      if (port == null || host === "") {
+        return [];
+      }
+      return [
+        {
+          accessible: openTargetAccessible(domain.status),
+          kind: "custom",
+          port,
+          url: `https://${host}/`,
+        },
+      ];
+    }
+  );
+  return [...fromPublicAddresses, ...fromCustomDomains];
+}
+
+/**
+ * Ports whose row offers "Open by default": every eligible port, but only
+ * once there are at least two to choose between. With one eligible port the
+ * choice is already made and the item is hidden.
+ */
+export function apNetworkOpenByDefaultPorts(network: ApNetwork): number[] {
+  const eligible = apNetworkOpenTargetEligiblePorts(network);
+  return eligible.length > 1 ? eligible : [];
+}
+
+/** The Open target of the network, per the Default Open Port rule. */
+export function apNetworkOpenTarget(
+  network: ApNetwork
+): ApOpenTarget | undefined {
+  return resolveApOpenTarget({
+    addresses: apNetworkOpenTargetAddresses(network),
+    defaultOpenPort: networkDefaultOpenPort(network),
+    ports: appListeningPortsFromNetwork(network),
+  });
+}
+
+/**
+ * Ports a user may pick as Default Open Port. The "Open by default" menu item
+ * only appears when there are at least two, since with one the choice is
+ * already made.
+ */
+export function apNetworkOpenTargetEligiblePorts(network: ApNetwork): number[] {
+  return apOpenTargetEligiblePorts({
+    addresses: apNetworkOpenTargetAddresses(network),
+    ports: appListeningPortsFromNetwork(network),
+  });
 }
 
 /**
@@ -398,10 +546,12 @@ export function apNetworkSaveDraftFromNetwork(
     id: domain.id.trim(),
     platformAddressId: domain.platformAddressId.trim(),
   }));
+  const defaultOpenPort = networkDefaultOpenPort(network);
 
   return {
     appListeningPorts,
     ...(customDomains.length === 0 ? {} : { customDomains }),
+    ...(defaultOpenPort === undefined ? {} : { defaultOpenPort }),
     privatePort: firstPort,
     publicAddresses,
   };

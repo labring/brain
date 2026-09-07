@@ -48,6 +48,18 @@ export interface EntryNodeGroup {
   port: number;
 }
 
+/**
+ * What the header's Open control opens: the Default Open Port's best Public
+ * Address. `url` absent means the control is drawn disabled with
+ * `disabledReason` (or the default "Not accessible yet").
+ */
+export interface EntryNodeOpenTarget {
+  disabledReason?: string;
+  /** "Open <Port Display Name>", or "Open" for an unnamed port. */
+  label: string;
+  url?: string;
+}
+
 export type EntryNodeAddressKey = string;
 
 export type EntryNodeCopyAddressHandler = (
@@ -58,6 +70,8 @@ export type EntryNodeCopyAddressHandler = (
 export interface EntryNodeState {
   copiedAddressKey?: EntryNodeAddressKey | null;
   groups?: EntryNodeGroup[];
+  /** Absent when the AP has no Public Address to open. */
+  open?: EntryNodeOpenTarget;
   states: EntryNodeStates;
 }
 
@@ -90,5 +104,6 @@ export interface EntryNodeRootProps {
   interaction?: CanvasNodeInteractionState;
   onCopyAddress?: EntryNodeCopyAddressHandler;
   onExpandedChange?: (expanded: boolean) => void;
+  open?: EntryNodeOpenTarget;
   states: EntryNodeStates;
 }

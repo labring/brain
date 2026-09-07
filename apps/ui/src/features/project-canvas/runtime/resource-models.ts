@@ -141,6 +141,7 @@ function publicAccessModelFromFact(
       ...(group.name === undefined ? {} : { name: group.name }),
       port: group.port,
     })),
+    ...(fact.open === undefined ? {} : { open: fact.open }),
     resource: {
       apRef: fact.apRef.name,
       name: fact.apRef.name,

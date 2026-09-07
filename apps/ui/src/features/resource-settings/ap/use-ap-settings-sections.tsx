@@ -155,7 +155,7 @@ import {
   settingsDraftSaveFailureMessage,
   syncSettingsDraftBackingState,
 } from "./lib/settings-draft-backing";
-import { NetworkSettingsSection } from "./network-section";
+import { NetworkOpenAction, NetworkSettingsSection } from "./network-section";
 import {
   type ApConfigMapMount,
   ApSettingsDraftFooter,
@@ -2414,6 +2414,7 @@ export function useApSettingsSections({
 
   if (!environmentFocus && networkForRender != null) {
     sections.push({
+      actions: <NetworkOpenAction network={networkForRender} />,
       content: (
         <NetworkSettingsSection
           controller={networkController}

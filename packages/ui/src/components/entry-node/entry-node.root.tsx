@@ -23,6 +23,7 @@ export function EntryNodeRoot({
   interaction,
   onCopyAddress,
   onExpandedChange,
+  open,
   states,
 }: EntryNodeRootProps) {
   return (
@@ -47,6 +48,7 @@ export function EntryNodeRoot({
             state: {
               copiedAddressKey: copiedKey as EntryNodeAddressKey | null,
               groups,
+              open,
               states,
             },
           };

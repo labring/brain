@@ -77,6 +77,12 @@ interface ApNetworkAppListeningPortsPatch {
 type ApNetworkSettingsPatch = ApNetworkAppListeningPortsPatch &
   Partial<{
     customDomains: readonly NonNullable<ApNetwork["customDomains"]>[number][];
+    /**
+     * Default Open Port: a port stores it, null (or absent on a full network
+     * write) clears it. The desired network never echoes it back, so every
+     * network write states it explicitly.
+     */
+    defaultOpenPort: number | null;
     publicAddresses: readonly ApNetwork["publicAddresses"][number][];
   }>;
 
@@ -84,10 +90,18 @@ type ApPrivatePortSettingsPatch = Pick<ApNetwork, "privatePort">;
 
 type ApPublicAddressesSettingsPatch = ApNetworkAppListeningPortsPatch & {
   customDomains?: readonly NonNullable<ApNetwork["customDomains"]>[number][];
+  defaultOpenPort?: number | null;
   publicAddresses: readonly ApNetwork["publicAddresses"][number][];
 };
 
 interface ApNetworkSettingsPatchOptions {
+  /**
+   * The stored Default Open Port the AP currently reports
+   * (`status.network.defaultOpenPort`). A draft without one clears it only
+   * when this is set; otherwise the field is left out and the API preserves
+   * whatever the Service carries.
+   */
+  currentDefaultOpenPort?: number;
   dbDsnReferenceSources?: readonly ApEnvDbDsnSource[];
   envRawSource?: string;
   existingCustomDomains?: readonly ExistingCustomDomainBinding[];
@@ -653,6 +667,14 @@ function buildApNetworkInput(
     options
   );
   const networkInput: Record<string, unknown> = { appListeningPorts };
+  const defaultOpenPort = defaultOpenPortForWrite(
+    network.defaultOpenPort,
+    options.currentDefaultOpenPort,
+    appListeningPorts
+  );
+  if (defaultOpenPort !== undefined) {
+    networkInput.defaultOpenPort = defaultOpenPort;
+  }
   if (platformAddresses != null && platformAddresses.length > 0) {
     networkInput.platformAddresses = platformAddresses;
   }
@@ -682,6 +704,9 @@ function apNetworkSettingsPatchSaveDraft(
     ...(network.customDomains == null
       ? {}
       : { customDomains: [...network.customDomains] }),
+    ...(network.defaultOpenPort == null
+      ? {}
+      : { defaultOpenPort: network.defaultOpenPort }),
     privatePort:
       network.privatePort ?? network.appListeningPorts?.[0]?.port ?? Number.NaN,
     publicAddresses: [...(network.publicAddresses ?? [])],
@@ -719,6 +744,37 @@ function validatedPortDisplayName(
   }
   seenNames.set(trimmed, port);
   return trimmed;
+}
+
+/**
+ * Default Open Port as the API PATCH accepts it: a port (one of the App
+ * Listening Ports being written) stores it, null clears it, undefined leaves
+ * the field out. A draft without a port clears only when the AP currently
+ * stores one, since the desired network never echoes the value back.
+ */
+function defaultOpenPortForWrite(
+  defaultOpenPort: number | null | undefined,
+  currentDefaultOpenPort: number | undefined,
+  appListeningPorts: readonly Record<string, unknown>[]
+): number | null | undefined {
+  if (defaultOpenPort == null) {
+    return currentDefaultOpenPort === undefined ? undefined : null;
+  }
+  const port = validatedNetworkPort(defaultOpenPort, "Default Open Port");
+  if (!appListeningPorts.some((row) => row.port === port)) {
+    throw new Error(
+      "Default Open Port must be one of the AP's App Listening Ports."
+    );
+  }
+  return port;
+}
+
+/** The stored Default Open Port the live AP reports, from its status. */
+function currentDefaultOpenPortFromClaim(
+  claim: Record<string, unknown>
+): number | undefined {
+  const network = asRecord(asRecord(claim.status)?.network);
+  return portFromUnknown(network?.defaultOpenPort);
 }
 
 function normalizedAppListeningPortsForSave(
@@ -866,6 +922,12 @@ export function patchOpsForApPublicAddressesSettings(
       platformAddresses,
       options
     ) ?? [];
+  const defaultOpenPort = defaultOpenPortForWrite(
+    network.defaultOpenPort,
+    options.currentDefaultOpenPort,
+    appListeningPorts ??
+      normalizedAppListeningPortsFromInputNetwork(inputNetwork)
+  );
   const ops = [
     appListeningPorts == null
       ? null
@@ -880,6 +942,15 @@ export function patchOpsForApPublicAddressesSettings(
       platformAddresses
     ),
     networkInputFieldPatch(inputNetwork, "customDomains", customDomains),
+    defaultOpenPort === undefined
+      ? null
+      : ({
+          op: Object.hasOwn(inputNetwork, "defaultOpenPort")
+            ? "replace"
+            : "add",
+          path: "/spec/input/network/defaultOpenPort",
+          value: defaultOpenPort,
+        } satisfies K8sJsonPatchOp),
   ].filter((op): op is K8sJsonPatchOp => op != null);
   removeExistingApInputFields(
     ops,
@@ -1343,7 +1414,13 @@ function patchOpsForApSettingsDraftInput(
   ) {
     const { hasPublicAddresses, networkInput } = buildApNetworkInput(
       next.network,
-      options
+      {
+        ...options,
+        currentDefaultOpenPort:
+          options.currentDefaultOpenPort ??
+          previous.network?.defaultOpenPort ??
+          undefined,
+      }
     );
     inputPatch.network = networkInput;
     networkHasPublicAddresses = hasPublicAddresses;
@@ -1457,6 +1534,7 @@ export async function applyApNetwork(
     kubeconfig,
     claim,
     patchOpsForApNetworkSettings(spec, network, {
+      currentDefaultOpenPort: currentDefaultOpenPortFromClaim(claim),
       existingCustomDomains: options.existingCustomDomains,
       metadata: asRecord(claim.metadata),
       routingDomain: routingDomainFromKubeconfig(kubeconfig),
@@ -1488,6 +1566,7 @@ export async function applyApPublicAddresses(
     kubeconfig,
     claim,
     patchOpsForApPublicAddressesSettings(spec, network, {
+      currentDefaultOpenPort: currentDefaultOpenPortFromClaim(claim),
       existingCustomDomains: options.existingCustomDomains,
       metadata: asRecord(claim.metadata),
       routingDomain: routingDomainFromKubeconfig(kubeconfig),
@@ -1507,6 +1586,7 @@ export async function applyApSettingsDraft(
 ): Promise<void> {
   const spec = asRecord(claim.spec);
   const patch = patchOpsForApSettingsDraft(spec, next, previous, {
+    currentDefaultOpenPort: currentDefaultOpenPortFromClaim(claim),
     dbDsnReferenceSources: options.dbDsnReferenceSources,
     existingCustomDomains: options.existingCustomDomains,
     metadata: asRecord(claim.metadata),

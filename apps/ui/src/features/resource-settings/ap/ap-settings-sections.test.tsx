@@ -13,10 +13,16 @@ import {
   setActEnvironment,
 } from "@/features/project-canvas/react-test-harness";
 import { createPendingSettingsStore } from "../pending-settings-updates";
+import { useApNetworkDraftController } from "./ap-network-draft";
 import {
   apNetworkAfterDeletePublicAddress,
+  apNetworkOpenByDefaultPorts,
+  apNetworkOpenTarget,
   apNetworkSaveDraftFromNetwork,
+  apNetworksEqual,
   networkWithAppListeningPortDisplayName,
+  networkWithDefaultOpenPort,
+  networkWithoutAppListeningPort,
   visibleDomainRows,
 } from "./ap-network-model";
 import type {
@@ -36,6 +42,7 @@ import {
   useApPublicAddressesSettingsSections,
   useApSettingsSections,
 } from "./ap-settings-sections";
+import { AppListeningPortNameForm } from "./network-section";
 import {
   configFileContentPreview,
   configMapDuplicatePaths,
@@ -150,7 +157,17 @@ const MYSQL_DATABASE_URL_REFERENCE_RE = /\$\{\{mysql\.DATABASE_URL\}\}/;
 const PRIVATE_ADDRESS_RE = /Private Address/;
 const PRIVATE_ADDRESSES_CARD_RE = /Private Addresses/;
 const APP_LISTENING_PORTS_CARD_RE = /App Listening Ports/;
-const RENAME_PORT_5201_RE = /aria-label="Rename App Listening Port 5201"/;
+const RENAME_PORT_5201_RE = /aria-label="App Listening Port 5201 actions"/;
+const OPEN_ADMIN_ACTION_RE =
+  /<a(?=[^>]*aria-label="Open admin")(?=[^>]*data-network-action="open")(?=[^>]*href="https:\/\/game-admin\.example\.com\/")(?=[^>]*target="_blank")/;
+const OPEN_CONSOLE_ACTION_RE =
+  /<a(?=[^>]*aria-label="Open Console")(?=[^>]*data-network-action="open")(?=[^>]*href="https:\/\/console\.example\.com\/")/;
+const OPEN_S3_ACTION_RE =
+  /<a(?=[^>]*aria-label="Open S3 API")(?=[^>]*data-network-action="open")(?=[^>]*href="https:\/\/s3\.example\.com\/")/;
+const OPEN_CUSTOM_DOMAIN_ACTION_RE =
+  /<a(?=[^>]*data-network-action="open")(?=[^>]*href="https:\/\/www\.example\.com\/")/;
+const OPEN_DISABLED_ACTION_RE =
+  /<button(?=[^>]*aria-description="Not accessible yet")(?=[^>]*aria-disabled="true")(?=[^>]*aria-label="Open")(?=[^>]*data-network-action="open")/;
 const PORT_5200_NO_DOMAINS_RE = />5200 · 0 domains</;
 const PORT_5201_ADMIN_DETAIL_RE = />admin · 5201 · 1 domain</;
 const DOMAIN_5201_ADMIN_DETAIL_RE = />admin · 5201</;
@@ -159,7 +176,6 @@ const DOMAIN_5201_RENAMED_DETAIL_RE = />Admin console · 5201</;
 const PORT_NAME_FORM_HEADER_RE = />Port 5201</;
 const PORT_NAME_TAKEN_RE = /already used by App Listening Port 5201/;
 const KIND_LABEL_OR_PLACEHOLDER_RE = /Unnamed|Add a name|Platform Address</;
-const INVISIBLE_RE = /invisible/;
 const NETWORK_SECTION_TITLE_RE = />Network</;
 const PUBLIC_ADDRESSES_SECTION_TITLE_RE = />Public Addresses</;
 const ADD_PORT_RE = /Add Port/;
@@ -185,7 +201,8 @@ const CUSTOM_DOMAIN_CERT_DETAIL_RE = /Certificate failed/;
 const CUSTOM_DOMAIN_ROUTING_DETAIL_RE = /Routing pending/;
 const CUSTOM_DOMAIN_DETAIL_REASON_RE = /IssuerNotReady/;
 const CUSTOM_DOMAIN_DETAIL_MESSAGE_RE = /Certificate request failed/;
-const UNBIND_CUSTOM_DOMAIN_RE = /aria-label="Unbind Custom Domain"/;
+const UNBIND_CUSTOM_DOMAIN_RE =
+  /aria-label="Custom Domain actions for www\.example\.com"/;
 const COPY_PUBLIC_ADDRESS_RE = /aria-label="Copy Public Address"/;
 const PUBLIC_ADDRESS_LINK_RE = /<a [^>]*data-slot="canvas-node-row-value"/;
 const PUBLIC_ADDRESS_LINK_HREF_RE = /href="https:\/\/api\.example\.com\/"/;
@@ -200,8 +217,8 @@ const COPY_MYSQL_ENV_VALUE_RE =
 const REVEAL_MYSQL_ENV_VALUE_RE =
   /aria-label="Reveal environment variable MYSQL_DATABASE_URL"/;
 const CNAME_RE = /CNAME/;
-const EDIT_PUBLIC_ADDRESS_RE = /aria-label="Edit Public Address"/;
-const DELETE_PUBLIC_ADDRESS_RE = /aria-label="Delete Public Address"/;
+const EDIT_PUBLIC_ADDRESS_RE = /aria-label="Public Address actions for [^"]+"/;
+const DELETE_PUBLIC_ADDRESS_RE = EDIT_PUBLIC_ADDRESS_RE;
 const ADD_PUBLIC_ADDRESS_RE = /aria-label="Add Public Address"/;
 const ADD_DOMAIN_LABEL_RE = /Add Domain/;
 const VIEW_ALL_PUBLIC_ADDRESSES_RE = /aria-label="View All Public Addresses"/;
@@ -658,6 +675,7 @@ test("AP settings pane shows Custom Domain rows instead of bound Platform Addres
 
   assert.match(html, CUSTOM_DOMAIN_VALUE_RE);
   assert.match(html, CUSTOM_DOMAIN_STATUS_RE);
+  assert.match(html, OPEN_CUSTOM_DOMAIN_ACTION_RE);
   assert.doesNotMatch(html, PUBLIC_ADDRESS_VALUE_RE);
   assert.doesNotMatch(html, EDIT_PUBLIC_ADDRESS_RE);
 });
@@ -1272,6 +1290,42 @@ function typeIntoInput(input: HTMLInputElement, value: string) {
   fireEvent.keyUp(input, { key: value.at(-1) ?? "" });
 }
 
+const MINIO_NETWORK = {
+  appListeningPorts: [
+    {
+      displayName: "S3 API",
+      port: 9000,
+      privateAddress: "http://minio.default.svc:9000",
+    },
+    {
+      displayName: "Console",
+      port: 9001,
+      privateAddress: "http://minio.default.svc:9001",
+    },
+  ],
+  defaultOpenPort: 9001,
+  privateAddress: "http://minio.default.svc:9000",
+  privatePort: 9000,
+  publicAddresses: [
+    {
+      host: "s3.example.com",
+      id: "pa_s3",
+      port: 9000,
+      status: "accessible",
+      type: "platform",
+      url: "https://s3.example.com/",
+    },
+    {
+      host: "console.example.com",
+      id: "pa_console",
+      port: 9001,
+      status: "accessible",
+      type: "platform",
+      url: "https://console.example.com/",
+    },
+  ],
+};
+
 const TWO_PORT_NETWORK = {
   appListeningPorts: [
     { port: 5200, privateAddress: "http://game.default.svc:5200" },
@@ -1318,35 +1372,29 @@ test("AP settings pane lists App Listening Ports with their display names and do
   assert.doesNotMatch(html, KIND_LABEL_OR_PLACEHOLDER_RE);
 });
 
-test("AP settings pane renames an App Listening Port inline and marks the draft dirty", async () => {
+test("App Listening Port name form trims on Done and submits on Enter", async () => {
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
   try {
+    const submitted: string[] = [];
     let rendered: ReturnType<typeof render> | undefined;
     await actAndDrain(() => {
       rendered = render(
-        <TestApSettingsSections
-          cpuQuota={{ onValueChange: noop, value: 1 }}
-          env={[]}
-          image="ghcr.io/acme/api:latest"
-          memoryQuota={{ onValueChange: noop, value: 512 }}
-          network={TWO_PORT_NETWORK}
-          onEnvChange={noop}
-          onImageChange={noop}
-          onSettingsDraftCommit={noop}
+        <AppListeningPortNameForm
+          displayName="admin"
+          onCancel={noop}
+          onSubmit={(displayName) => {
+            submitted.push(displayName);
+          }}
+          port={5201}
+          takenNames={new Map([["admin", 5201]])}
         />
       );
     });
     const view = rendered;
     if (view === undefined) {
-      assert.fail("expected the pane to render");
+      assert.fail("expected the form to render");
     }
-    const update = view.getByLabelText("Update AP Settings");
-    assert.equal((update as HTMLButtonElement).disabled, true);
-
-    await actAndDrain(() => {
-      view.getByLabelText("Rename App Listening Port 5201").click();
-    });
     const input = view.getByLabelText("Name") as HTMLInputElement;
     assert.equal(input.value, "admin");
     assert.equal(input.maxLength, 64);
@@ -1358,54 +1406,47 @@ test("AP settings pane renames an App Listening Port inline and marks the draft 
     await actAndDrain(() => {
       view.getByText("Done").click();
     });
+    assert.deepEqual(submitted, ["Admin console"]);
 
-    assert.match(view.container.innerHTML, PORT_5201_RENAMED_DETAIL_RE);
-    assert.match(view.container.innerHTML, DOMAIN_5201_RENAMED_DETAIL_RE);
-    assert.equal(view.queryByLabelText("Name"), null);
-    assert.equal(
-      (view.getByLabelText("Update AP Settings") as HTMLButtonElement).disabled,
-      false
-    );
-    assert.doesNotMatch(
-      view.getByText("Unsaved changes").parentElement?.className ?? "invisible",
-      INVISIBLE_RE
-    );
-  } finally {
     await actAndDrain(() => {
-      /* settle */
+      typeIntoInput(input, "Console");
     });
+    await actAndDrain(() => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    assert.deepEqual(submitted, ["Admin console", "Console"]);
+  } finally {
     restoreActEnvironment(previousActEnvironment);
     await dom.restore();
   }
 });
 
-test("AP settings pane refuses a Port Display Name another port already uses and cancels on Escape", async () => {
+test("App Listening Port name form refuses a name another port already uses and cancels on Escape", async () => {
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
   try {
+    const submitted: string[] = [];
+    let cancelled = 0;
     let rendered: ReturnType<typeof render> | undefined;
     await actAndDrain(() => {
       rendered = render(
-        <TestApSettingsSections
-          cpuQuota={{ onValueChange: noop, value: 1 }}
-          env={[]}
-          image="ghcr.io/acme/api:latest"
-          memoryQuota={{ onValueChange: noop, value: 512 }}
-          network={TWO_PORT_NETWORK}
-          onEnvChange={noop}
-          onImageChange={noop}
-          onSettingsDraftCommit={noop}
+        <AppListeningPortNameForm
+          displayName={undefined}
+          onCancel={() => {
+            cancelled += 1;
+          }}
+          onSubmit={(displayName) => {
+            submitted.push(displayName);
+          }}
+          port={5200}
+          takenNames={new Map([["admin", 5201]])}
         />
       );
     });
     const view = rendered;
     if (view === undefined) {
-      assert.fail("expected the pane to render");
+      assert.fail("expected the form to render");
     }
-
-    await actAndDrain(() => {
-      view.getByLabelText("Rename App Listening Port 5200").click();
-    });
     const input = view.getByLabelText("Name") as HTMLInputElement;
     assert.equal(input.value, "");
     await actAndDrain(() => {
@@ -1415,21 +1456,56 @@ test("AP settings pane refuses a Port Display Name another port already uses and
       fireEvent.keyDown(input, { key: "Enter" });
     });
     assert.match(view.container.innerHTML, PORT_NAME_TAKEN_RE);
-    assert.ok(view.getByLabelText("Name"));
+    assert.deepEqual(submitted, []);
 
     await actAndDrain(() => {
       fireEvent.keyDown(view.getByLabelText("Name"), { key: "Escape" });
     });
-    assert.equal(view.queryByLabelText("Name"), null);
-    assert.match(view.container.innerHTML, PORT_5200_NO_DOMAINS_RE);
-    assert.equal(
-      (view.getByLabelText("Update AP Settings") as HTMLButtonElement).disabled,
-      true
-    );
+    assert.equal(cancelled, 1);
   } finally {
     restoreActEnvironment(previousActEnvironment);
     await dom.restore();
   }
+});
+
+test("AP network draft controller renames a port into the draft and marks it dirty", () => {
+  let committed:
+    | Parameters<typeof useApNetworkDraftController>[0]["network"]
+    | undefined;
+  function Harness() {
+    const controller = useApNetworkDraftController({
+      network: TWO_PORT_NETWORK,
+      onNetworkChange: (next) => {
+        committed = next;
+      },
+    });
+    controller.renameAppListeningPort(5201, "  Admin console  ");
+    return null;
+  }
+  renderToStaticMarkup(<Harness />);
+
+  if (committed === undefined) {
+    assert.fail("expected the controller to commit a network");
+  }
+  assert.equal(apNetworksEqual(TWO_PORT_NETWORK, committed), false);
+  assert.equal(
+    apNetworkSaveDraftFromNetwork(committed).appListeningPorts[1]?.displayName,
+    "Admin console"
+  );
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={committed}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+  assert.match(html, PORT_5201_RENAMED_DETAIL_RE);
+  assert.match(html, DOMAIN_5201_RENAMED_DETAIL_RE);
 });
 
 function TestPublicAccessNodeSettings(
@@ -1440,6 +1516,7 @@ function TestPublicAccessNodeSettings(
     <div data-slot="public-access-node-settings-test-wrapper">
       {model.sections.map((section) => (
         <ResourceSettingsSection
+          actions={section.actions}
           icon={section.icon}
           key={section.id}
           title={section.title}
@@ -1466,6 +1543,7 @@ test("Public Access Node settings view renders both Network cards under one Netw
   assert.match(html, DOMAIN_LIST_RE);
   assert.match(html, RENAME_PORT_5201_RE);
   assert.match(html, PORT_5201_ADMIN_DETAIL_RE);
+  assert.match(html, OPEN_ADMIN_ACTION_RE);
   assert.ok(
     html.indexOf("App Listening Ports") < html.indexOf("Domain List"),
     "App Listening Ports card comes first"
@@ -1498,6 +1576,157 @@ test("AP network draft carries Port Display Names into the save draft", () => {
   assert.notEqual(
     JSON.stringify(apNetworkSaveDraftFromNetwork(cleared)),
     JSON.stringify(apNetworkSaveDraftFromNetwork(renamed))
+  );
+});
+
+test("Network section header opens the Default Open Port and greys out while nothing is accessible", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/minio:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={MINIO_NETWORK}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+  assert.match(html, OPEN_CONSOLE_ACTION_RE);
+
+  const automatic = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={TWO_PORT_NETWORK}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+  assert.match(automatic, OPEN_ADMIN_ACTION_RE);
+
+  const pending = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        privatePort: 8080,
+        publicAddresses: [
+          { id: "pa_new", port: 8080, status: "progressing", type: "platform" },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+  assert.match(pending, OPEN_DISABLED_ACTION_RE);
+});
+
+test("AP network draft controller stores and clears the Default Open Port; the header follows the draft", () => {
+  const commits: Parameters<
+    typeof useApNetworkDraftController
+  >[0]["network"][] = [];
+  function Harness({ port }: { port: number | null }) {
+    const controller = useApNetworkDraftController({
+      network: MINIO_NETWORK,
+      onNetworkChange: (next) => {
+        commits.push(next);
+      },
+    });
+    controller.setDefaultOpenPort(port);
+    return null;
+  }
+  renderToStaticMarkup(<Harness port={9000} />);
+  renderToStaticMarkup(<Harness port={null} />);
+
+  const [stored, cleared] = commits;
+  if (stored === undefined || cleared === undefined) {
+    assert.fail("expected two committed networks");
+  }
+  assert.equal(stored.defaultOpenPort, 9000);
+  assert.equal(apNetworksEqual(MINIO_NETWORK, stored), false);
+  assert.equal("defaultOpenPort" in cleared, false);
+  assert.equal(apNetworksEqual(MINIO_NETWORK, cleared), false);
+
+  // Stored 9001 opens the Console; stored 9000 and the automatic rule
+  // (first declared port) both open the S3 API.
+  assert.equal(apNetworkOpenTarget(MINIO_NETWORK)?.label, "Open Console");
+  assert.equal(apNetworkOpenTarget(stored)?.label, "Open S3 API");
+  assert.equal(apNetworkOpenTarget(cleared)?.label, "Open S3 API");
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/minio:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={stored}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+    />
+  );
+  assert.match(html, OPEN_S3_ACTION_RE);
+});
+
+test("Open by default is offered only while at least two ports have HTTP addresses", () => {
+  assert.deepEqual(apNetworkOpenByDefaultPorts(MINIO_NETWORK), [9000, 9001]);
+  assert.deepEqual(apNetworkOpenByDefaultPorts(TWO_PORT_NETWORK), []);
+  assert.deepEqual(
+    apNetworkOpenByDefaultPorts({
+      ...MINIO_NETWORK,
+      publicAddresses: [
+        ...MINIO_NETWORK.publicAddresses.slice(0, 1),
+        {
+          host: "events.example.com",
+          id: "pa_events",
+          port: 9001,
+          status: "accessible",
+          type: "platform",
+          url: "wss://events.example.com/",
+        },
+      ],
+    }),
+    []
+  );
+});
+
+test("AP network draft carries the Default Open Port into the save draft and drops it with its port", () => {
+  assert.equal(
+    apNetworkSaveDraftFromNetwork(MINIO_NETWORK).defaultOpenPort,
+    9001
+  );
+  assert.equal(
+    apNetworkSaveDraftFromNetwork(
+      networkWithDefaultOpenPort(MINIO_NETWORK, 9000)
+    ).defaultOpenPort,
+    9000
+  );
+  assert.equal(
+    "defaultOpenPort" in
+      apNetworkSaveDraftFromNetwork(
+        networkWithDefaultOpenPort(MINIO_NETWORK, null)
+      ),
+    false
+  );
+  assert.equal(
+    "defaultOpenPort" in
+      apNetworkSaveDraftFromNetwork(
+        networkWithDefaultOpenPort(MINIO_NETWORK, 9002)
+      ),
+    false
+  );
+  assert.equal(
+    "defaultOpenPort" in
+      apNetworkSaveDraftFromNetwork(
+        networkWithoutAppListeningPort(MINIO_NETWORK, 9001)
+      ),
+    false
   );
 });
 

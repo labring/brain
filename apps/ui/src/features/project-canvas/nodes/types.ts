@@ -9,6 +9,7 @@ import type {
 import type {
   EntryNodeActions,
   EntryNodeGroup,
+  EntryNodeOpenTarget,
   EntryNodeStates,
 } from "@workspace/ui/components/entry-node/entry-node";
 import type { Node } from "@xyflow/react";
@@ -71,6 +72,8 @@ export interface CanvasEntryNodeData extends Record<string, unknown> {
   /** Public Addresses grouped by the App Listening Port they target. */
   groups: EntryNodeGroup[];
   layout?: CanvasNodeLayoutState;
+  /** What the header's Open control opens; absent when nothing is openable. */
+  open?: EntryNodeOpenTarget;
   resource: {
     apRef?: string;
     name: string;

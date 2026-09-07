@@ -4,6 +4,7 @@ import { Canvas } from "@workspace/ui/components/canvas/canvas";
 import type { CanvasMeta } from "@workspace/ui/components/canvas/canvas.types";
 import type {
   EntryNodeGroup,
+  EntryNodeOpenTarget,
   EntryNodeStates,
 } from "@workspace/ui/components/entry-node/entry-node";
 import { EntryNode } from "@workspace/ui/components/entry-node/entry-node";
@@ -13,6 +14,7 @@ import { memo, useMemo } from "react";
 interface CanvasEntryNodeData extends Record<string, unknown> {
   defaultExpanded: boolean;
   groups: EntryNodeGroup[];
+  open?: EntryNodeOpenTarget;
   states: EntryNodeStates;
 }
 
@@ -26,6 +28,7 @@ const PreviewCanvasEntryNode = memo(function PreviewCanvasEntryNode({
       defaultExpanded={data.defaultExpanded}
       groups={data.groups}
       interaction={{ dragging, selected }}
+      open={data.open}
       states={data.states}
     >
       <EntryNode.Content />
@@ -85,11 +88,22 @@ const twoPortGroups: EntryNodeGroup[] = [
   },
 ];
 
+const openOrders: EntryNodeOpenTarget = {
+  label: "Open",
+  url: `https://orders${PLATFORM_SUFFIX}/`,
+};
+
+const openAdminConsole: EntryNodeOpenTarget = {
+  label: "Open Admin console",
+  url: `https://game-admin${PLATFORM_SUFFIX}/`,
+};
+
 const ENTRY_NODE_CANVAS_NODES: Node<CanvasEntryNodeData, "entryNode">[] = [
   {
     data: {
       defaultExpanded: false,
       groups: singlePortGroups,
+      open: openOrders,
       states: entryNodeStates,
     },
     id: "entry-node-collapsed",
@@ -100,6 +114,7 @@ const ENTRY_NODE_CANVAS_NODES: Node<CanvasEntryNodeData, "entryNode">[] = [
     data: {
       defaultExpanded: true,
       groups: singlePortGroups,
+      open: openOrders,
       states: entryNodeStates,
     },
     id: "entry-node-expanded",
@@ -110,6 +125,7 @@ const ENTRY_NODE_CANVAS_NODES: Node<CanvasEntryNodeData, "entryNode">[] = [
     data: {
       defaultExpanded: true,
       groups: twoPortGroups,
+      open: openAdminConsole,
       states: entryNodeStates,
     },
     id: "entry-node-grouped",

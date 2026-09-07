@@ -7,6 +7,11 @@ import {
 } from "@/features/project-canvas/platform-addresses";
 import { resolveResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
 import {
+  type ApOpenTarget,
+  type ApOpenTargetAddress,
+  resolveApOpenTarget,
+} from "@/features/resource-settings/ap/ap-open-target";
+import {
   readApImage,
   readApIsPaused,
   readApReplicas,
@@ -96,6 +101,9 @@ export interface PublicAccessGroupSummary {
   port: number;
 }
 
+/** What the node's Open control opens (CONTEXT.md, Default Open Port). */
+export type PublicAccessOpenTarget = ApOpenTarget;
+
 export interface PublicAccessFact {
   apRef: CanvasLayoutResourceRef & { kind: "AP" };
   displayName: string;
@@ -103,6 +111,8 @@ export interface PublicAccessFact {
   groups: PublicAccessGroupSummary[];
   key: ProjectRuntimeFactKey;
   observedUid?: string;
+  /** Absent when no port has an HTTP Public Address. */
+  open?: PublicAccessOpenTarget;
   ref: CanvasLayoutResourceRef & { kind: "PublicAccess" };
 }
 
@@ -565,6 +575,47 @@ function appListeningPortsForAp(ap: unknown): AppListeningPortSummary[] {
   return out;
 }
 
+/** `status.network.defaultOpenPort`: the stored Default Open Port, if valid. */
+function defaultOpenPortForAp(ap: unknown): number | undefined {
+  const root = asRecord(ap) ?? {};
+  const statusNetwork = asRecord(asRecord(root.status)?.network);
+  return publicAccessTargetPort(statusNetwork?.defaultOpenPort);
+}
+
+/**
+ * The Open target of the Public Access Node: the Default Open Port rule
+ * applied to the node's own groups, so what the header opens is always one
+ * of the addresses the body lists, with the status the body shows.
+ */
+export function publicAccessOpenTargetFromGroups({
+  defaultOpenPort,
+  groups,
+  ports,
+}: {
+  defaultOpenPort?: number;
+  groups: readonly PublicAccessGroupSummary[];
+  ports: readonly AppListeningPortSummary[];
+}): PublicAccessOpenTarget | undefined {
+  const addresses = groups.flatMap((group) =>
+    group.addresses.map(
+      (address): ApOpenTargetAddress => ({
+        accessible: address.status?.tone === "accessible",
+        kind:
+          address.type?.trim().toLowerCase() === "custom"
+            ? "custom"
+            : "platform",
+        port: group.port,
+        ...(address.value === undefined ? {} : { url: address.value }),
+      })
+    )
+  );
+  return resolveApOpenTarget({
+    addresses,
+    ...(defaultOpenPort === undefined ? {} : { defaultOpenPort }),
+    ports,
+  });
+}
+
 /** The routing domain an AP's Platform Addresses hang off (`labels.region`). */
 function apRoutingDomain(ap: unknown): string | undefined {
   return nonEmptyString(metadataLabels(ap)?.region);
@@ -677,11 +728,17 @@ function publicAccessFactFromAp(
     name: apName,
     namespace,
   };
+  const ports = appListeningPortsForAp(ap);
   const groups = publicAccessGroupsFromAddresses({
     addresses: publicAddresses,
     apStatus: apStatusSummary(ap),
-    ports: appListeningPortsForAp(ap),
+    ports,
     routingDomain: apRoutingDomain(ap),
+  });
+  const open = publicAccessOpenTargetFromGroups({
+    defaultOpenPort: defaultOpenPortForAp(ap),
+    groups,
+    ports,
   });
   return {
     apRef,
@@ -690,6 +747,7 @@ function publicAccessFactFromAp(
     groups,
     key: projectRuntimeResourceKey(ref),
     ...(metadataUid(ap) === undefined ? {} : { observedUid: metadataUid(ap) }),
+    ...(open === undefined ? {} : { open }),
     ref,
   };
 }

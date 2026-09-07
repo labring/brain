@@ -6,6 +6,7 @@ import {
   EntryNodeAccess,
   EntryNodeContent,
   EntryNodeHeaderContent,
+  EntryNodeOpen,
   EntryNodeStatus,
 } from "./entry-node.content";
 import {
@@ -19,7 +20,11 @@ import { EntryNodeRoot } from "./entry-node.root";
 // biome-ignore lint/performance/noBarrelFile: compound hook re-export for `import { useEntryNode }`
 export {
   ENTRY_NODE_LABEL,
+  ENTRY_NODE_OPEN_LABEL,
+  ENTRY_NODE_OPEN_NOT_ACCESSIBLE_REASON,
+  ENTRY_NODE_OPEN_NOT_CONFIGURED_REASON,
   entryNodeAddressCountLabel,
+  entryNodeOpenDisabledReason,
 } from "./entry-node.content";
 export { useEntryNode } from "./entry-node.context";
 export { entryNodeShowsGroupHeaders } from "./entry-node.group";
@@ -37,6 +42,7 @@ export type {
   EntryNodeCopyAddressHandler,
   EntryNodeGroup,
   EntryNodeMeta,
+  EntryNodeOpenTarget,
   EntryNodeProviderProps,
   EntryNodeRootProps,
   EntryNodeState,
@@ -52,6 +58,7 @@ export const EntryNode = {
   GroupList: EntryNodeGroupList,
   HeaderContent: EntryNodeHeaderContent,
   HostText: EntryNodeHostText,
+  Open: EntryNodeOpen,
   Root: EntryNodeRoot,
   Status: EntryNodeStatus,
 } as const;
@@ -64,6 +71,7 @@ dn(EntryNodeRoot, "EntryNode.Root");
 dn(EntryNodeContent, "EntryNode.Content");
 dn(EntryNodeHeaderContent, "EntryNode.HeaderContent");
 dn(EntryNodeAccess, "EntryNode.Access");
+dn(EntryNodeOpen, "EntryNode.Open");
 dn(EntryNodeStatus, "EntryNode.Status");
 dn(EntryNodeGroupList, "EntryNode.GroupList");
 dn(EntryNodeGroupBlock, "EntryNode.Group");

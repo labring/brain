@@ -12,6 +12,7 @@ import {
   apNetworkWithAddedPublicAddress,
   networkWithAppListeningPort,
   networkWithAppListeningPortDisplayName,
+  networkWithDefaultOpenPort,
   networkWithoutAppListeningPort,
 } from "./ap-network-model";
 
@@ -37,6 +38,8 @@ export interface ApNetworkDraftController {
     port: number,
     displayName: string
   ) => void | Promise<void>;
+  /** Stores one port as Default Open Port; null returns to the automatic rule. */
+  setDefaultOpenPort: (port: number | null) => void | Promise<void>;
   unbindCustomDomain: (domain: ApNetworkCustomDomain) => void | Promise<void>;
 }
 
@@ -98,6 +101,8 @@ export function useApNetworkDraftController({
         commitNetwork(
           networkWithAppListeningPortDisplayName(network, port, displayName)
         ),
+      setDefaultOpenPort: (port: number | null) =>
+        commitNetwork(networkWithDefaultOpenPort(network, port)),
       unbindCustomDomain: (domain: ApNetworkCustomDomain) =>
         commitNetwork(apNetworkAfterUnbindCustomDomain(network, domain)),
     }),

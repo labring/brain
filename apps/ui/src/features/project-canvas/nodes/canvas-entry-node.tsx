@@ -19,7 +19,7 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
 }: NodeProps<CanvasEntryRfNode>) {
   const model =
     useProjectRuntimeNodeModel<CanvasEntryNodeData>({ data, id, type }) ?? data;
-  const { actions = {}, groups, states } = model;
+  const { actions = {}, groups, open, states } = model;
   const interaction = useProjectCanvasNodeInteraction(id);
   const expansion = useCanvasNodeExpansion({
     data,
@@ -37,6 +37,7 @@ export const CanvasEntryNode = memo(function CanvasEntryNode({
       interaction={{ ...interaction, connectable: isConnectable, dragging }}
       onCopyAddress={actions.copyAddress}
       onExpandedChange={expansion.onExpandedChange}
+      open={open}
       states={states}
     >
       <EntryNode.Content />
