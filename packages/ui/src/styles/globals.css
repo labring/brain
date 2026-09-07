@@ -300,6 +300,14 @@
     }
   }
 
+  /* Deployment Task Success Record: the check draws itself in once the
+     record lands (deployment-task-success-section.tsx). */
+  @keyframes deployment-success-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
   /* Text shimmer (ai-elements/shimmer.tsx): CSS-owned so no JS touches styles
      per frame. background-position isn't compositor-animatable — a small
      glyph repaint per frame remains, bounded to the short streaming labels —
@@ -750,6 +758,37 @@
 /* Registered via @utility (not a plain class in @layer utilities) so it can
    compose with variants; plain layered classes silently produce no CSS when
    used behind a variant prefix. */
+/* Deployment Task Success Record halo: the canvas glow's blue, screened over
+   the Timeline card so the conclusion reads as part of the canvas. */
+@utility deployment-success-halo {
+  background: radial-gradient(
+    ellipse at 50% 0%,
+    color-mix(in oklab, var(--color-canvas-glow) 55%, transparent),
+    transparent 70%
+  );
+  mix-blend-mode: screen;
+}
+
+/* The ring and check strokes start undrawn and draw in; reduced motion shows
+   them complete from the first frame. */
+@utility deployment-success-draw-ring {
+  @media (prefers-reduced-motion: no-preference) {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: deployment-success-draw 520ms var(--ease-out-strong) 60ms
+      forwards;
+  }
+}
+
+@utility deployment-success-draw-check {
+  @media (prefers-reduced-motion: no-preference) {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: deployment-success-draw 360ms var(--ease-out-strong) 320ms
+      forwards;
+  }
+}
+
 @utility project-chrome-surface {
   background-color: var(--project-chrome-surface-base);
   background-image: var(--project-chrome-surface-overlay);

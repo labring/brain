@@ -815,8 +815,14 @@ const SUCCESS_SLOT_RE = /data-slot="deployment-task-success"/;
 const SUCCESS_ENTRY_SLOT_RE = /data-slot="deployment-task-success-entry"/g;
 const SUCCESS_PRIMARY_ACTION_SLOT_RE =
   /data-slot="deployment-task-success-primary-action"/;
+// The primary address is a copy chip with one wide Open beneath it; the
+// other verified addresses follow as a quiet list.
 const FULL_WIDTH_PRIMARY_ACTION_RE =
-  /<div data-slot="deployment-task-success-primary-action"><a(?=[^>]*class="[^"]*w-full[^"]*")(?=[^>]*data-size="default")[^>]*>/;
+  /data-slot="deployment-task-success-primary-action"><a(?=[^>]*class="[^"]*w-full[^"]*")(?=[^>]*data-size="default")[^>]*>/;
+// The declared address is the element's own title and text; the scheme may be
+// wrapped for muting, the text stays the whole URL.
+const LOBBY_ADDRESS_TEXT_RE =
+  /title="https:\/\/lobby\.demo\.sealos\.run">(?:<span[^>]*>)?https:\/\/(?:<\/span>)?lobby\.demo\.sealos\.run</;
 const STEP_LABEL_RE = /Create resources/;
 const CONFETTI_CANVAS_RE =
   /<canvas(?=[^>]*pointer-events-none)(?=[^>]*absolute inset-0)[^>]*data-slot="deployment-task-success-confetti"/;
@@ -846,7 +852,7 @@ const COPY_ADDRESS_LABEL_RE = /aria-label="Copy address"/;
 const PRIMARY_LINK_RE =
   /<a href="https:\/\/web-app\.demo\.sealos\.run"[^>]*>[\s\S]*?Open<\/a>/;
 const ADDRESS_TEXT_RE =
-  /<span class="truncate font-mono[^>]*title="https:\/\/web-app\.demo\.sealos\.run"/;
+  /data-slot="deployment-task-success-entry"[^>]*title="https:\/\/web-app\.demo\.sealos\.run"/;
 
 const VERIFIED_AT = "2026-06-17T10:00:05.000Z";
 
@@ -1005,11 +1011,7 @@ test("the verified result takes the panel and keeps the process one click away",
   // own: the secondary address is only the element's own title and text node,
   // so it reads as an address to copy rather than a link to click.
   assert.equal((html.match(SUCCESS_ENTRY_SLOT_RE) ?? []).length, 2);
-  assert.ok(
-    html.includes(
-      'title="https://lobby.demo.sealos.run">https://lobby.demo.sealos.run<'
-    )
-  );
+  assert.match(html, LOBBY_ADDRESS_TEXT_RE);
   assert.equal(html.includes('href="https://lobby.demo.sealos.run"'), false);
   assert.ok(html.includes('href="https://eaglercraft.demo.sealos.run"'));
   assert.ok(html.includes('target="_blank"'));
