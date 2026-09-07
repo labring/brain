@@ -1,3 +1,4 @@
+import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -1171,7 +1172,10 @@ test("read-only network view renders addresses without mutation controls", () =>
 test("AP network preserves WebSocket and web addresses on separate ports", async () => {
   const dom = await installTestDom();
   const previous = setActEnvironment(true);
-  const view = render(
+  const consoleError = spyOn(console, "error").mockImplementation(
+    () => undefined
+  );
+  const content = (
     <TestApSettingsSections
       cpuQuota={{ onValueChange: noop, value: 1 }}
       env={[]}
@@ -1191,13 +1195,13 @@ test("AP network preserves WebSocket and web addresses on separate ports", async
         privatePort: 5200,
         publicAddresses: [
           {
-            id: "game",
+            host: "game.example.com",
             port: 5200,
             status: "accessible",
             url: "wss://game.example.com/",
           },
           {
-            id: "admin",
+            host: "game.example.com",
             port: 5201,
             status: "accessible",
             url: "https://game.example.com/",
@@ -1210,6 +1214,7 @@ test("AP network preserves WebSocket and web addresses on separate ports", async
       readOnly
     />
   );
+  const view = render(content);
   try {
     assert.ok(view.getByText("wss://game.example.com/"));
     assert.ok(view.getByText("https://game.example.com/"));
@@ -1221,7 +1226,22 @@ test("AP network preserves WebSocket and web addresses on separate ports", async
     assert.ok(
       view.container.querySelector('a[href="https://game.example.com/"]')
     );
+    const webRow = view.getByText("https://game.example.com/");
+    const socketRow = view.getByText("wss://game.example.com/");
+    view.rerender(
+      <TestApSettingsSections
+        {...content.props}
+        network={{
+          ...content.props.network,
+          publicAddresses: [...content.props.network.publicAddresses].reverse(),
+        }}
+      />
+    );
+    assert.equal(view.getByText("https://game.example.com/"), webRow);
+    assert.equal(view.getByText("wss://game.example.com/"), socketRow);
+    assert.equal(consoleError.mock.calls.length, 0);
   } finally {
+    consoleError.mockRestore();
     view.unmount();
     restoreActEnvironment(previous);
     await dom.restore();

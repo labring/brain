@@ -221,3 +221,88 @@ it("resolves and verifies an AP-backed access endpoint before marking it running
     "https://nginx.example.sealos.run/"
   );
 });
+
+it.each([
+  {
+    observer: "ingress",
+    pathStatus: 404,
+    rootStatus: 200,
+    ready: true,
+    calls: 2,
+  },
+  {
+    observer: "ingress",
+    pathStatus: 404,
+    rootStatus: 404,
+    ready: false,
+    calls: 2,
+  },
+  {
+    observer: "ingress",
+    pathStatus: 503,
+    rootStatus: 200,
+    ready: false,
+    calls: 1,
+  },
+  {
+    observer: "declared",
+    pathStatus: 404,
+    rootStatus: 200,
+    ready: false,
+    calls: 1,
+  },
+] as const)("probes a root fallback only for inferred Ingress 404s: %j", async ({
+  observer,
+  pathStatus,
+  rootStatus,
+  ready,
+  calls,
+}) => {
+  const requests: string[] = [];
+  globalThis.fetch = ((url: RequestInfo | URL) => {
+    requests.push(String(url));
+    return Promise.resolve(
+      new Response(null, {
+        status:
+          new URL(String(url)).pathname === "/api" ? pathStatus : rootStatus,
+      })
+    );
+  }) as typeof fetch;
+  const endpoint: DeploymentResultResourceCard = {
+    events: [],
+    id: "inferred-api",
+    required: true,
+    resultRef: {
+      id: "inferred-api",
+      kind: "AccessEndpoint",
+      label: "Web address /api",
+      namespace: "ns-demo",
+      observer:
+        observer === "ingress"
+          ? { kind: "ingress", name: "demo-admin" }
+          : { kind: "declared" },
+      protocol: "https",
+      url: "https://demo.example.sealos.run/api",
+    },
+    status: "creating",
+    title: "Web address /api",
+  };
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    card: endpoint,
+    kubeconfig: "kubeconfig",
+  });
+  expect(observed.running).toBe(ready);
+  expect(requests).toHaveLength(calls);
+  expect(observed.card.id).toBe(endpoint.id);
+  if (ready) {
+    expect(observed.card.title).toBe("Web address");
+    expect(observed.card.resultRef).toMatchObject({
+      label: "Web address",
+      url: "https://demo.example.sealos.run/",
+    });
+    expect(observed.eventMessage).toBe("Web address is reachable.");
+  } else {
+    expect(observed.card.resultRef).toEqual(endpoint.resultRef);
+  }
+});

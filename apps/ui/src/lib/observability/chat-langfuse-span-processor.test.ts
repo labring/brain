@@ -111,7 +111,7 @@ test("Langfuse exports error codes and metrics without remote error content", as
           stream: simulateReadableStream({
             chunks: [
               { type: "text-start" as const, id: "text-1" },
-              { type: "text-delta" as const, id: "text-1", delta: SECRET },
+              { type: "text-delta" as const, id: "text-1", delta: "Hello!" },
               { type: "text-end" as const, id: "text-1" },
               {
                 type: "finish" as const,
@@ -122,10 +122,16 @@ test("Langfuse exports error codes and metrics without remote error content", as
           }),
         }),
       }),
-      prompt: SECRET,
-      telemetry,
+      prompt: "hello from the user",
+      telemetry: { ...telemetry, recordInputs: true, recordOutputs: true },
     });
-    assert.equal(await success.text, SECRET);
+    assert.equal(await success.text, "Hello!");
+    await processor.forceFlush();
+    const capturedContent = JSON.stringify(
+      exported.map((span) => span.attributes)
+    );
+    assert.ok(capturedContent.includes("hello from the user"));
+    assert.ok(capturedContent.includes("Hello!"));
     let releaseTitle: () => void = () => undefined;
     let titleStarted: () => void = () => undefined;
     const titleGate = new Promise<void>((resolve) => {

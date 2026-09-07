@@ -44,6 +44,13 @@ are probed and gate completion. This keeps `/api`, static assets, and secondary
 admin routes from becoming deployment requirements when the primary app is
 already usable.
 
+For an inferred non-root HTTP(S) Ingress candidate returning 404, observation
+may verify `/` on the same origin. Only a successful root probe replaces the
+candidate URL and label in the running task; its card identity stays stable.
+This is endpoint discovery, not acceptance of a 404 as healthy. Root failures,
+other HTTP errors, explicit URL declarations, and AP-assigned addresses retain
+their existing gates. Completed task history is not rewritten.
+
 Some existing catalog templates use `backend-protocol: WS|WSS` as a legacy
 marker for a public WebSocket entry. Brain preserves that marker narrowly for
 compatibility and verifies one matching WS or WSS address; it is not treated as

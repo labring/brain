@@ -310,11 +310,17 @@ function publicAddressKey(
   address: ApNetworkPublicAddress,
   index: number
 ): string {
-  return (
-    address.id?.trim() ||
-    address.host?.trim().toLowerCase() ||
-    `pending-${index}`
-  );
+  const id = publicAddressIdValue(address);
+  if (id !== "") {
+    return `public-id:${id}`;
+  }
+  // Observed addresses may share a host across protocols and target ports.
+  // Keep their row identity stable when the list is reordered or filtered.
+  const url = address.url?.trim() ?? "";
+  const host = address.host?.trim().toLowerCase() ?? "";
+  return url !== "" || host !== ""
+    ? `public-endpoint:${JSON.stringify([url, host, address.port])}`
+    : `public-pending:${index}`;
 }
 
 function customDomainKey(domain: ApNetworkCustomDomain, index: number): string {
