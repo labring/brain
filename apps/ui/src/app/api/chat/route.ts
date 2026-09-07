@@ -919,8 +919,8 @@ async function runChatPipeline(input: {
           tools,
           telemetry: {
             functionId: "project-assistant-chat",
-            recordInputs: false,
-            recordOutputs: false,
+            recordInputs: true,
+            recordOutputs: true,
           },
           stopWhen: isStepCount(CHAT_MAX_STEPS),
           experimental_transform: createInjectToolDurationStreamTransform(

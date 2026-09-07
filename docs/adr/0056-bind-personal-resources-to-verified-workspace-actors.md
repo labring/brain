@@ -142,7 +142,15 @@ Client fields such as `userId`, `actorUserId`, and `githubConnectionId` may be
 tolerated for one compatibility release, but their values never influence the
 resolved actor or credential owner. Logs, telemetry, API responses, and audit
 records must not expose kubeconfig tokens, OAuth tokens, connection ciphertext,
-or conversation content.
+or other credentials. Conversation content is excluded from ordinary logs,
+audit records, and unrelated API responses.
+
+Revision (2026-09-07): configured Langfuse tracing may record Assistant
+Conversation model inputs and outputs, including chat and thread-title
+generation, for debugging. These records remain associated with the owning
+user and session; this does not grant workspace members access to another
+actor's conversation. The credential prohibition remains in force, and raw
+exception events and status messages remain excluded from the exporter.
 
 This decision revises ADR-0036's GitHub Connection owner identity and ADR-0047's
 Assistant Conversation boundary, and supplements ADR-0038 with Redeploy
