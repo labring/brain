@@ -15,6 +15,7 @@ describe("deployment timeout policy", () => {
   it("keeps shared task and direct apply budgets stable", () => {
     expect(DEPLOY_TIMEOUT_POLICY.overallMs).toBe(70 * MINUTE_MS);
     expect(DEPLOY_TIMEOUT_POLICY.gatewayCleanupMs).toBe(5000);
+    expect(DEPLOY_TIMEOUT_POLICY.skillInstallMs).toBe(30_000);
     expect(DEPLOY_TIMEOUT_POLICY.prepareMs).toBe(8 * MINUTE_MS);
     expect(DEPLOY_TIMEOUT_POLICY.applyMs).toBe(5 * MINUTE_MS);
     expect(DEPLOY_TIMEOUT_POLICY.readinessMs).toBe(10 * MINUTE_MS);

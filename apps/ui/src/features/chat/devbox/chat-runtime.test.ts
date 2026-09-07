@@ -6,8 +6,6 @@ mock.module("./lifecycle-registration", () => ({
   recordChatDevboxActivity: () => Promise.resolve(),
 }));
 
-const INSTALL_MARKER_RE = /sealos-skills-install\.marker/;
-
 const {
   bootstrapChatDevboxIfNeeded,
   getChatDevboxSkillsSnapshot,
@@ -30,6 +28,12 @@ test("background Skill warmup is shared and publishes metadata after discovery",
   const originalToken = process.env.DEVBOX_TOKEN;
   let execCalls = 0;
   let installCommand = "";
+  let emptyDiscovery = false;
+  let preparationFails = false;
+  let discoveryGate: Promise<void> | undefined;
+  let onDiscovery: (() => void) | undefined;
+  const upstreamIds: string[] = [];
+  const originalImage = process.env.DEVBOX_RUNTIME_IMAGE;
 
   process.env.DEVBOX_API_BASE_URL = "https://devbox.test";
   process.env.DEVBOX_TOKEN = "test-token";
@@ -39,6 +43,7 @@ test("background Skill warmup is shared and publishes metadata after discovery",
   ) => {
     const url = new URL(String(input));
     if (url.searchParams.has("upstreamID")) {
+      upstreamIds.push(url.searchParams.get("upstreamID") ?? "");
       return Response.json({
         data: { items: [{ name: "existing-runtime" }] },
       });
@@ -57,18 +62,28 @@ test("background Skill warmup is shared and publishes metadata after discovery",
         command?: string[];
       };
       const command = body.command?.at(-1) ?? "";
-      if (command.includes("skills@1.5.20 add")) {
+      if (command.includes("sealai-prepare-skills")) {
         installCommand = command;
+        if (preparationFails) {
+          return Response.json({
+            data: { exitCode: 1, stderr: "private raw error", stdout: "" },
+          });
+        }
       }
       if (command.includes("find ")) {
-        return Response.json({
+        onDiscovery?.();
+        const response = Response.json({
           data: {
             exitCode: 0,
             stderr: "",
-            stdout:
-              "/home/devbox/project/.agents/skills/sealos-deploy/SKILL.md\n",
+            stdout: emptyDiscovery
+              ? ""
+              : "/home/devbox/project/.agents/skills/sealos-deploy/SKILL.md\n",
           },
         });
+        return discoveryGate == null
+          ? response
+          : discoveryGate.then(() => response);
       }
       if (command.includes("cat --")) {
         return Response.json({
@@ -102,12 +117,57 @@ test("background Skill warmup is shared and publishes metadata after discovery",
       ["sealos-deploy"]
     );
     assert.ok(execCalls >= 3);
-    assert.match(installCommand, INSTALL_MARKER_RE);
-    assert.ok(
-      installCommand.indexOf('cat -- "$install_marker"') <
-        installCommand.indexOf("install_output")
+    assert.ok(installCommand.includes("/usr/local/bin/sealai-prepare-skills"));
+    assert.ok(!installCommand.includes("npx"));
+    emptyDiscovery = true;
+    await assert.rejects(warmChatDevboxSkills(options));
+    emptyDiscovery = false;
+    preparationFails = true;
+    await assert.rejects(
+      warmChatDevboxSkills(options),
+      (error: unknown) =>
+        error instanceof Error && !error.message.includes("private raw error")
     );
+    preparationFails = false;
+    assert.equal(
+      (await warmChatDevboxSkills(options))[0]?.name,
+      "sealos-deploy"
+    );
+    const previousIdentity = upstreamIds.at(-1);
+    process.env.DEVBOX_RUNTIME_IMAGE =
+      "example.test/sandbox@sha256:new-test-image";
+    assert.deepEqual(getChatDevboxSkillsSnapshot(options), []);
+    await warmChatDevboxSkills(options);
+    assert.notEqual(upstreamIds.at(-1), previousIdentity);
+
+    const { buildChatToolset } = await import("../runtime/tools");
+    const gate = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    discoveryGate = gate.promise;
+    onDiscovery = started.resolve;
+    let toolsetReady = false;
+    const toolset = buildChatToolset({
+      chatId: "skills-first-turn",
+      kubeconfig: options.kubeconfig,
+      kubernetesNamespace: options.namespace,
+      workspaceActor: "test-actor",
+      workspaceUserUid: "test-user",
+    }).then((result) => {
+      toolsetReady = true;
+      return result;
+    });
+    await started.promise;
+    assert.equal(toolsetReady, false);
+    gate.resolve();
+    const ready = await toolset;
+    assert.ok(ready.systemPrompt.includes("sealos-deploy"));
+    assert.ok(ready.tools.loadSkill);
   } finally {
+    if (originalImage === undefined) {
+      delete process.env.DEVBOX_RUNTIME_IMAGE;
+    } else {
+      process.env.DEVBOX_RUNTIME_IMAGE = originalImage;
+    }
     globalThis.fetch = originalFetch;
     if (originalBaseUrl === undefined) {
       delete process.env.DEVBOX_API_BASE_URL;

@@ -89,10 +89,6 @@ ui:
     DEVBOX_JWT_TTL_SECONDS: "14400"
     # Storage ceiling for newly created deployment runtimes; existing Devboxes are unchanged.
     DEPLOY_DEVBOX_STORAGE_LIMIT: "10Gi"
-    # Optional. Leave empty to use the unified Brain-compatible sealos-skills branch:
-    # https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy
-    # Set explicitly to another tested branch, tag, or commit when needed.
-    DEPLOY_SKILL_SOURCE: ""
 
 imagePullSecret:
   # App workload pods reference ghcr-cred when this chart creates it.

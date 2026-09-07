@@ -30,6 +30,16 @@ Reaching `completed` still requires Deployment Result Readiness (ADR 0028), and 
 
 One global Postgres NOTIFY channel replaces the in-process listener maps, so projection and timeline streams no longer assume a single server process. The payload carries only identifiers (namespace, project, task); subscribers re-read the row, and stream handlers subscribe before their bootstrap read so no update falls between snapshot and subscription. The listener holds a dedicated connection and re-bootstraps subscribers after a reconnect, because notifications during the gap are lost. Retention-purge removals are the one case where re-reading is impossible, so the purge notification's identifiers are themselves the removal event.
 
+## Amendment (2026-09-07): Image-owned managed Skills
+
+This amendment supersedes only the runtime Skill-source paragraph above. Managed Chat and Deployment Tasks now prepare Skills from the sandbox/v1 image's offline bundle. The devbox-runtime build resolves a full source commit, validates the Skill tree, and packages a versioned manifest with per-file SHA-256. codex-gateway remains unchanged. Brain neither vendors the source nor invokes a network installer in managed runtimes.
+
+The fixed local preparation entry point verifies the bundle and stages workspace Skills under a process lock. It replaces bundled names, preserves unrelated project Skills and lock files, rejects symbolic links, and restores the previous directory on a caught replacement failure. This is an operational integrity check, not an adversarial boundary against a running Agent with filesystem access; process termination between renames may leave a backup requiring recovery. No online fallback is permitted. The operation has a 30-second exec cap within the existing preparation deadline.
+
+Chat requests await successful discovery before assembling the system prompt and loadSkill tools; background warmup is only an optimization. Runtime identity includes the configured image reference and the bundled-Skills contract version. Rollouts must select immutable images; changing the contents behind the same tag is not detected. Old Chat runtimes retain their existing lifecycle and data.
+
+Nonempty legacy DEPLOY_SKILL_SOURCE is rejected and must be removed during migration. Select a tested Skill revision by building a sandbox image and setting DEVBOX_RUNTIME_IMAGE. Publish and validate that image before upgrading Brain; let active and blocked Deployment Tasks finish before switching versions. Roll back Brain and the runtime image together without deleting business resources. ADR 0042 still forbids persistence of raw AI command errors; the existing skill-install failure code remains compatible, with preparation-oriented wording.
+
 ## Considered Options
 
 - Keep launching runners as fire-and-forget promises from route handlers: rejected because a server restart leaves `running` rows orphaned forever, cancellation has no enforcement point, and a re-run can start a second concurrent runner against the same task.

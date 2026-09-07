@@ -8,9 +8,9 @@ import {
   discoverChatDevboxSkills,
 } from "@/features/chat/tool/devbox-skills";
 import {
+  assertBundledSkillsConfiguration,
   buildSealosSkillsInstallCommand,
-  getSealosSkillsSourceFromEnv,
-  SEALOS_SKILLS_CLI_VERSION,
+  SEALOS_SKILLS_RUNTIME_CONTRACT,
 } from "@/features/sealos-skills/install";
 import {
   createDevbox,
@@ -35,7 +35,7 @@ const DEVBOX_COMMAND_TIMEOUT_SECONDS = 60;
 const DEVBOX_WRITE_TIMEOUT_SECONDS = 60;
 const DEVBOX_READ_TIMEOUT_SECONDS = 60;
 const DEVBOX_WARMUP_TIMEOUT_SECONDS = 30;
-const DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS = 180;
+const DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS = 30;
 const chatDevboxSkillSnapshots = new Map<string, ChatSkillMeta[]>();
 const chatDevboxSkillWarmups = new Map<string, Promise<ChatSkillMeta[]>>();
 
@@ -79,6 +79,9 @@ export function warmChatDevboxSkills(
   const sandbox = createChatDevboxSandbox(options);
   const warmup = discoverChatDevboxSkills(sandbox)
     .then((skills) => {
+      if (skills.length === 0) {
+        throw new Error("Chat runtime has no usable Skills.");
+      }
       chatDevboxSkillSnapshots.set(cacheKey, skills);
       return skills.map((skill) => ({ ...skill }));
     })
@@ -118,7 +121,9 @@ export function hashKubeconfigForDevbox(kubeconfig: string): string {
 
 function hashRuntimeIdentity(kubeconfig: string, namespace: string): string {
   return createHash("sha256")
-    .update(`${namespace}|${hashKubeconfigForDevbox(kubeconfig)}`)
+    .update(
+      `${namespace}|${hashKubeconfigForDevbox(kubeconfig)}|${getDevboxDefaultImage() ?? "provider-default"}|${SEALOS_SKILLS_RUNTIME_CONTRACT}`
+    )
     .digest("hex")
     .slice(0, 32);
 }
@@ -128,8 +133,7 @@ function chatDevboxSkillCacheKey(options: ChatDevboxRuntimeOptions): string {
     normalizeKubeconfig(options.kubeconfig),
     options.namespace
   );
-  const skillSource = getSealosSkillsSourceFromEnv(process.env);
-  return `${runtimeHash}|${skillSource}|${SEALOS_SKILLS_CLI_VERSION}`;
+  return runtimeHash;
 }
 
 function runtimeName(runtimeHash: string): string {
@@ -307,23 +311,14 @@ async function installChatSkills(
   const result = await runDevboxCommand(
     authNamespace,
     name,
-    buildSealosSkillsInstallCommand({
-      skipIfInstallMarkerMatches: true,
-      skillSource: getSealosSkillsSourceFromEnv(process.env),
-      timeoutSeconds: DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS,
-    }),
+    buildSealosSkillsInstallCommand(),
     DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS,
     signal
   );
 
   if (result.exitCode !== 0) {
     throw new Error(
-      [
-        "Chat Devbox Sealos skills installation failed.",
-        result.stderr.trim() || result.stdout.trim(),
-      ]
-        .filter(Boolean)
-        .join(" ")
+      "Chat runtime Skill preparation failed. Check the runtime image bundle."
     );
   }
 }
@@ -334,6 +329,7 @@ async function ensureChatDevbox(
 ): Promise<{ name: string; skippedExisting: boolean }> {
   signal?.throwIfAborted();
   const kubeconfig = normalizeKubeconfig(options.kubeconfig);
+  assertBundledSkillsConfiguration(process.env);
   const authNamespace = options.namespace;
   const runtimeHash = hashRuntimeIdentity(kubeconfig, options.namespace);
   const name = runtimeName(runtimeHash);

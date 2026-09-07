@@ -14,7 +14,7 @@ const COMMON_DEPLOY_TIMEOUT_POLICY = {
   overallMs: 70 * MINUTE_MS,
   prepareMs: 8 * MINUTE_MS,
   repositoryCloneMs: 5 * MINUTE_MS,
-  skillInstallMs: 3 * MINUTE_MS,
+  skillInstallMs: 30 * SECOND_MS,
 } as const;
 
 /** Shared task infrastructure plus direct/template apply and readiness limits. */

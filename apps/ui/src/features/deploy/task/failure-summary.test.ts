@@ -103,7 +103,7 @@ describe("deploymentFailureReason", () => {
         surfacesRaw: false,
       })
     ).toBe(
-      "Deploy skill installation failed. Redeploy; if the problem continues, contact support."
+      "Runtime Skill preparation failed. Contact support to check the runtime image, then redeploy."
     );
     expect(
       deploymentFailureReason({
@@ -138,7 +138,7 @@ describe("deploymentFailureReason", () => {
       cancelled: "was cancelled",
       "deploy-configuration-invalid": "not configured correctly",
       "deploy-runtime-unavailable": "workspace did not become ready",
-      "deploy-skill-install-failed": "skill installation failed",
+      "deploy-skill-install-failed": "Skill preparation failed",
       "deployment-output-missing": "without a deployable result",
       "template-output-invalid": "invalid deployment template",
       "gateway-not-exposed": "did not expose",

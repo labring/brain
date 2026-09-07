@@ -18,7 +18,7 @@ const FAILURE_MESSAGES = {
   "build-runtime-unavailable":
     "The deployment workspace does not expose the required build service. Redeploy; if the problem continues, contact support.",
   "deploy-skill-install-failed":
-    "Deploy skill installation failed. Redeploy; if the problem continues, contact support.",
+    "Runtime Skill preparation failed. Contact support to check the runtime image, then redeploy.",
   "buildkit-start-failed":
     "BuildKit could not start. Redeploy; if the problem continues, contact support.",
   "image-build-failed":

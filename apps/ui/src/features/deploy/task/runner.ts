@@ -30,7 +30,10 @@ import {
 } from "@/features/projects/derived-project-display-name";
 import { projectResourceDisplayNames } from "@/features/resource-display-name/project-resource-display-names";
 import { uniqueResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
-import { buildSealosSkillsInstallCommand } from "@/features/sealos-skills/install";
+import {
+  assertBundledSkillsConfiguration,
+  buildSealosSkillsInstallCommand,
+} from "@/features/sealos-skills/install";
 import { resolveUserAiProxyCredentials } from "@/lib/ai-proxy/resolve-user-ai-proxy-credentials";
 import {
   BRAIN_DEPLOYMENT_KIND_LABEL,
@@ -147,7 +150,6 @@ import {
 import {
   DEPLOY_DEVBOX_RUNTIME_READY_TIMEOUT_MS,
   getDeployDevboxStorageLimitFromEnv,
-  getDeploySkillSourceFromEnv,
 } from "./runtime-config";
 import {
   CURRENT_AI_ARTIFACT_PUBLIC_PROJECTION_VERSION,
@@ -1764,13 +1766,10 @@ export function buildManagedWorkspacePurgeCommand(): string {
   ].join("\n");
 }
 
-/** Branch/tree URL for `skills add`; override via DEPLOY_SKILL_SOURCE. */
-export function buildDeploySkillInstallCommand(skillSource: string): string {
-  return buildSealosSkillsInstallCommand({
-    skipIfInstallMarkerMatches: false,
-    skillSource,
-    timeoutSeconds: DEPLOY_TIMEOUT_POLICY.skillInstallMs / 1000,
-  });
+/** Materialize the image-owned bundle after workspace preparation. */
+export function buildDeploySkillInstallCommand(): string {
+  assertBundledSkillsConfiguration(process.env);
+  return buildSealosSkillsInstallCommand();
 }
 
 function deployOutputReadScript(): string {
@@ -3157,6 +3156,13 @@ export async function ensureAiDeploymentDevbox(input: {
   task: DeployTaskRow;
   taskDeadlineAtMs: number;
 }): Promise<Awaited<ReturnType<typeof ensureDeployDevbox>>> {
+  try {
+    assertBundledSkillsConfiguration(process.env);
+  } catch (error) {
+    throw withDeployFailureDetails(error, {
+      reason: "deploy-configuration-invalid",
+    });
+  }
   // Codex loads MCP servers when its app-server starts. Write the native
   // config before the first Gateway session instead of teaching Gateway about
   // deployment-specific profiles.
@@ -4099,14 +4105,12 @@ async function runAiDeploymentTask(input: {
   if (!managedResume) {
     await recordDeployTaskEvent(input.task.id, {
       kind: "deployment_task.skill_install_started",
-      message: "Installing deploy skills into workspace.",
+      message: "Preparing bundled deploy skills in workspace.",
       phase: "prepare",
     });
     try {
       await execOrThrow({
-        command: buildDeploySkillInstallCommand(
-          getDeploySkillSourceFromEnv(process.env)
-        ),
+        command: buildDeploySkillInstallCommand(),
         deadlineAtMs: prepareDeadlineAtMs,
         namespace: input.task.namespace,
         runtimeName: runtime.name,

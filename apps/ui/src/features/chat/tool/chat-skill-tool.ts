@@ -98,7 +98,7 @@ export function createLoadSkillTool(
       );
       return {
         name: skill.name,
-        skillDirectory: skill.folderName,
+        skillDirectory: skill.skillDirectory,
         content: stripSkillFrontmatter(raw),
       };
     },
@@ -138,7 +138,7 @@ export function createLoadSkillResourceTool(
         );
         return {
           name: skill.name,
-          skillDirectory: skill.folderName,
+          skillDirectory: skill.skillDirectory,
           path: resourcePath.trim(),
           content,
         };
