@@ -6,6 +6,26 @@ import { z } from "zod";
 import { BILLING_JUDGMENT_TIMEOUT_MS } from "@/features/billing/server/judgment-budget";
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
+const actualAi = { ...(await import("ai")) };
+let forcedOutcome: "failed" | "aborted" | "unknown" | undefined;
+mock.module("ai", () => ({
+  ...actualAi,
+  streamText: (...args: Parameters<typeof actualAi.streamText>) => {
+    const result = actualAi.streamText(...args);
+    const respond = result.toUIMessageStreamResponse.bind(result);
+    result.toUIMessageStreamResponse = (options) =>
+      respond({
+        ...options,
+        onFinish: (event) =>
+          options?.onFinish?.({
+            ...event,
+            outcome: forcedOutcome ? { status: forcedOutcome } : event.outcome,
+          }),
+      });
+    return result;
+  },
+}));
+
 const actualKubeconfig = { ...(await import("@/lib/kubeconfig")) };
 const actualRequestKubeconfigAuth = {
   ...(await import("@/lib/request-kubeconfig-auth")),
@@ -37,6 +57,7 @@ type StreamMode =
   | "error"
   | "partial-abort"
   | "partial-error"
+  | "finish-then-error"
   | "partial-tool-error"
   | "success";
 type TestStreamChunk =
@@ -201,6 +222,7 @@ function streamChunksForMode(mode: StreamMode): TestStreamChunk[] {
           type: "error" as const,
         },
       ];
+    case "finish-then-error":
     case "success":
       return [
         ...textChunks,
@@ -465,6 +487,17 @@ mock.module("@/features/chat/runtime/attach-tool-duration-metrics", () => ({
 mock.module("@/features/chat/runtime/inject-tool-duration-stream", () => ({
   createInjectToolDurationStreamTransform: () => {
     transformSetup?.();
+    if (streamMode === "finish-then-error") {
+      return () =>
+        new TransformStream({
+          transform(chunk, controller) {
+            controller.enqueue(chunk);
+          },
+          flush() {
+            throw new Error("source failed after finish");
+          },
+        });
+    }
     return undefined;
   },
 }));
@@ -774,6 +807,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
 }
 
 beforeEach(() => {
+  forcedOutcome = undefined;
   activeLease = null;
   adoptionCalls = [];
   appendCalls = [];
@@ -1650,6 +1684,36 @@ test("keeps partial assistant text but does not bill an errored stream", async (
   expect(reserveCalls).toBe(1);
   expect(releaseCalls).toBe(1);
   expect(titleCalls).toBe(0);
+});
+
+for (const status of ["failed", "aborted", "unknown"] as const) {
+  test(`does not bill a successful model finish with ${status} operation outcome`, async () => {
+    forcedOutcome = status;
+    const response = await POST(
+      chatRequest(userMessage("failed-operation", "inspect the cluster"))
+    );
+    await drain(response);
+    expect(history).toHaveLength(2);
+    expect(reserveCalls).toBe(1);
+    expect(releaseCalls).toBe(1);
+    expect(titleCalls).toBe(0);
+    expect(activeLease).toBeNull();
+  });
+}
+
+test("returns the free reservation when the source fails after a successful finish", async () => {
+  streamMode = "finish-then-error";
+  const response = await POST(
+    chatRequest(userMessage("late-failure", "inspect the cluster"))
+  );
+  expect(response.status).toBe(200);
+  await expect(response.text()).rejects.toThrow("source failed after finish");
+  await waitUntil(() => activeLease == null);
+  expect(history).toHaveLength(1);
+  expect(reserveCalls).toBe(1);
+  expect(releaseCalls).toBe(1);
+  expect(titleCalls).toBe(0);
+  expect(activeLease).toBeNull();
 });
 
 test("drops partial tool input when an errored stream has durable text", async () => {

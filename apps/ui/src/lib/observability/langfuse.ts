@@ -23,7 +23,7 @@ export function initializeLangfuseTelemetry(): Promise<boolean> {
   initialization ??= Promise.resolve().then(() => {
     if (isLangfusePartiallyConfiguredFromEnv(process.env)) {
       console.warn(
-        "[observability] LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY must both be set; Chat Assistant telemetry is disabled."
+        "[observability] LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY must all be set; Chat Assistant telemetry is disabled."
       );
       return false;
     }
@@ -33,24 +33,31 @@ export function initializeLangfuseTelemetry(): Promise<boolean> {
       return false;
     }
 
+    let sdk: NodeSDK | undefined;
     try {
       const spanProcessor = new ChatLangfuseSpanProcessor({
         publicKey: config.publicKey,
         secretKey: config.secretKey,
         baseUrl: config.baseUrl,
       });
-      const sdk = new NodeSDK({ spanProcessors: [spanProcessor] });
+      sdk = new NodeSDK({ spanProcessors: [spanProcessor] });
       sdk.start();
-      langfuseSpanProcessor = spanProcessor;
       registerTelemetry(new LangfuseVercelAiSdkIntegration());
+      langfuseSpanProcessor = spanProcessor;
       console.info(
         `[observability] Chat Assistant telemetry enabled (${config.baseUrl}).`
       );
       return true;
-    } catch (error) {
+    } catch {
+      Promise.resolve()
+        .then(() => sdk?.shutdown())
+        .catch(() => {
+          console.warn(
+            "[observability] Could not shut down failed telemetry initialization."
+          );
+        });
       console.warn(
-        "[observability] Langfuse telemetry failed to initialize; continuing without telemetry:",
-        error
+        "[observability] Langfuse telemetry failed to initialize; continuing without telemetry."
       );
       return false;
     }

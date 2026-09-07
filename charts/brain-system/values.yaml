@@ -138,11 +138,11 @@ ui:
     # of SYSTEM_OPENAI_* and host CODEX_GATEWAY_OPENAI_* values.
     GITHUB_DEPLOY_OPENAI_API_KEY: ""
     GITHUB_DEPLOY_OPENAI_BASE_URL: ""
-    # Optional. When both keys are set, Brain UI exports Chat Assistant traces
-    # and GitHub Deploy Devboxes export Codex traces to Langfuse. Leave empty to disable tracing.
+    # Optional Chat Assistant telemetry. Set both keys and LANGFUSE_HOST to enable.
+    # Credentials stay in Brain UI and are never forwarded to Deploy Devboxes.
     LANGFUSE_PUBLIC_KEY: ""
     LANGFUSE_SECRET_KEY: ""
-    # Shared Langfuse instance root URL. Blank uses https://cloud.langfuse.com.
+    # Langfuse instance root URL. Blank disables telemetry; no Cloud fallback.
     # Self-hosted Langfuse is supported. Do not append /api/public/otel.
     LANGFUSE_HOST: ""
     GITHUB_OAUTH_CLIENT_ID: ""

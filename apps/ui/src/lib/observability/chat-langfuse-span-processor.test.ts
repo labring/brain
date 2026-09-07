@@ -1,5 +1,7 @@
+import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { LangfuseVercelAiSdkIntegration } from "@langfuse/vercel-ai-sdk";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import {
@@ -274,6 +276,18 @@ test("Langfuse exports error codes and metrics without remote error content", as
       )
     );
     assert.ok(exported.filter((span) => span.status.code === 2).length >= 2);
+    const onEnd = spyOn(
+      LangfuseSpanProcessor.prototype,
+      "onEnd"
+    ).mockImplementation(() => {
+      throw new Error("exporter failure");
+    });
+    try {
+      assert.doesNotThrow(() => processor.onEnd(toolSpan));
+      assert.equal(onEnd.mock.calls.length, 1);
+    } finally {
+      onEnd.mockRestore();
+    }
   } finally {
     await sdk.shutdown();
   }

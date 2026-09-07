@@ -1,4 +1,3 @@
-export const DEFAULT_LANGFUSE_HOST = "https://cloud.langfuse.com";
 const TRAILING_SLASHES = /\/+$/;
 
 export type LangfuseEnv = Record<string, string | undefined>;
@@ -21,16 +20,16 @@ export function getLangfuseConfigFromEnv(
   const publicKey = env.LANGFUSE_PUBLIC_KEY?.trim() ?? "";
   const secretKey = env.LANGFUSE_SECRET_KEY?.trim() ?? "";
 
-  if (publicKey === "" || secretKey === "") {
+  const baseUrl = env.LANGFUSE_HOST?.trim().replace(TRAILING_SLASHES, "") ?? "";
+
+  if (publicKey === "" || secretKey === "" || baseUrl === "") {
     return null;
   }
 
   return {
     publicKey,
     secretKey,
-    baseUrl:
-      env.LANGFUSE_HOST?.trim().replace(TRAILING_SLASHES, "") ||
-      DEFAULT_LANGFUSE_HOST,
+    baseUrl,
   };
 }
 
@@ -39,5 +38,9 @@ export function isLangfusePartiallyConfiguredFromEnv(
 ): boolean {
   const hasPublicKey = (env.LANGFUSE_PUBLIC_KEY?.trim() ?? "") !== "";
   const hasSecretKey = (env.LANGFUSE_SECRET_KEY?.trim() ?? "") !== "";
-  return hasPublicKey !== hasSecretKey;
+  const hasHost = (env.LANGFUSE_HOST?.trim() ?? "") !== "";
+  return (
+    (hasPublicKey || hasSecretKey || hasHost) &&
+    !(hasPublicKey && hasSecretKey && hasHost)
+  );
 }
