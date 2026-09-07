@@ -95,8 +95,28 @@ const EAGLERCRAFT: FixtureProduct = {
   workload: "eaglercraft-server",
 };
 
+/**
+ * A workspace app from the app store that declares several access endpoints:
+ * the workspace itself, an admin console under it, and a sync endpoint the
+ * desktop client reaches over WebSocket. Each is declared by the contract and
+ * probed on its own; the fixture exists so the success card's multi-address
+ * shape (primary chip plus the quiet list) can be seen live.
+ */
+const AFFINE: FixtureProduct = {
+  runner: { kind: "template" },
+  source: { kind: "template", templateName: "AFFiNE" },
+  workload: "affine",
+};
+
 function productForScenario(scenario: DeployTaskDevScenario): FixtureProduct {
-  return scenario === "succeeded-eaglercraft" ? EAGLERCRAFT : WEB_APP;
+  switch (scenario) {
+    case "succeeded-eaglercraft":
+      return EAGLERCRAFT;
+    case "succeeded-affine":
+      return AFFINE;
+    default:
+      return WEB_APP;
+  }
 }
 
 /** The one address the fixture's contract declares. */
@@ -586,6 +606,89 @@ function scenarioShape(
             ],
             resultCards(time, namespace, product, "ready")
           ),
+        ],
+      };
+    case "succeeded-affine":
+      return {
+        cancelRequestedAt: null,
+        completedAt: time.at(-30 * SECOND_MS),
+        error: null,
+        failureDetails: null,
+        phase: "completed",
+        resultUrl: publicUrl(product),
+        // Three declared endpoints, each with its own probe: two pages the
+        // user can open, and the sync endpoint the client reaches over
+        // WebSocket, which the card lists for copying only. No headline and
+        // no guidance, so the card keeps its defaults.
+        success: {
+          entries: [
+            {
+              label: "Public domain",
+              protocol: "https",
+              url: publicUrl(product),
+            },
+            {
+              label: "Admin console",
+              protocol: "https",
+              url: `${publicUrl(product)}/admin`,
+            },
+            {
+              label: "Sync (WebSocket)",
+              protocol: "wss",
+              url: `wss://sync.${product.workload}.${PUBLIC_HOST_SUFFIX}`,
+            },
+          ],
+          productName: deploymentTaskSourceSummary(product.source),
+          verification: { passed: 4, total: 4 },
+        },
+        status: "completed",
+        steps: [
+          step("prepare-template", "Prepare template", 0, "completed", [
+            event(
+              time,
+              -3 * MINUTE_MS,
+              "evt-a1",
+              "Resolved the template and its defaults."
+            ),
+          ]),
+          step(
+            "create-resources",
+            "Create resources",
+            1,
+            "completed",
+            [
+              event(
+                time,
+                -90 * SECOND_MS,
+                "evt-a2",
+                "Applying deployment artifacts."
+              ),
+              event(
+                time,
+                -45 * SECOND_MS,
+                "evt-a3",
+                "Workload has 1/1 ready replicas.",
+                { severity: "success", source: "resource-observer" }
+              ),
+            ],
+            resultCards(time, namespace, product, "ready")
+          ),
+          step("verify-access", "Verify public access", 2, "completed", [
+            event(
+              time,
+              -35 * SECOND_MS,
+              "evt-a4",
+              "Public domain and admin console respond.",
+              { severity: "success", source: "health-check" }
+            ),
+            event(
+              time,
+              -30 * SECOND_MS,
+              "evt-a5",
+              "Sync endpoint accepts WebSocket connections.",
+              { severity: "success", source: "health-check" }
+            ),
+          ]),
         ],
       };
     case "cancelled":
