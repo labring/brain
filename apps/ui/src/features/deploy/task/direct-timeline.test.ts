@@ -215,10 +215,7 @@ spec:
         ? [card.resultRef.protocol, card.resultRef.url]
         : null
     ),
-    [
-      ["https", "https://game.example.sealos.run/"],
-      ["wss", "wss://game.example.sealos.run/"],
-    ]
+    [["wss", "wss://game.example.sealos.run/"]]
   );
 });
 

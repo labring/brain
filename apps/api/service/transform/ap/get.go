@@ -48,6 +48,7 @@ func APWithPublicAccessSupportResourcesFromList(ap map[string]interface{}, ingre
 		out["status"] = status
 	}
 	mergePublicAccessSupportHealth(out, status, ingresses, certificates, issuers)
+	projectObservedNetworkProtocols(status, ingresses, services)
 	return out
 }
 
@@ -82,6 +83,7 @@ func APWithIngressesAndServicesFromList(ap map[string]interface{}, ingresses, se
 	mergePrivateNetworkStatus(ap, statusCopy, services)
 	mergePublicNetworkStatus(ap, statusCopy)
 	mergeObservedPublicAccessStatus(statusCopy, ingresses, services)
+	projectObservedNetworkProtocols(statusCopy, ingresses, services)
 	out["status"] = statusCopy
 
 	return out
@@ -282,15 +284,33 @@ func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, s
 		return
 	}
 	networkCopy := networkStatusCopy(status)
-	if len(publicAddressRowsFromValue(networkCopy["publicAddresses"])) > 0 {
-		return
-	}
+	existing := publicAddressRowsFromValue(networkCopy["publicAddresses"])
 	serviceNames, servicePorts := observedServiceLookup(services)
 	rows := observedPublicAddressRows(ingresses, serviceNames, servicePorts)
 	if len(rows) == 0 {
 		return
 	}
-	networkCopy["publicAddresses"] = rows
+	for _, row := range rows {
+		matched := false
+		for _, current := range existing {
+			currentPort, _ := privatePortFromValue(current["port"])
+			observedPort, _ := privatePortFromValue(row["port"])
+			if current["host"] == row["host"] && currentPort == observedPort {
+				matched = true
+				break
+			}
+			// A promoted platform host is the custom domain's CNAME target,
+			// not an extra public address to restore through observation.
+			if isCustomPublicAddressRow(current) && current["cnameTarget"] == row["host"] {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			existing = append(existing, row)
+		}
+	}
+	networkCopy["publicAddresses"] = existing
 	status["network"] = networkCopy
 }
 
@@ -367,7 +387,7 @@ func (ports observedServicePorts) hasPort(port int) bool {
 func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []observedIngressEndpoint {
 	endpoints := []observedIngressEndpoint{}
 	includeAllServices := len(serviceNames) == 0
-	seenHosts := map[string]bool{}
+	seenEndpoints := map[string]bool{}
 	for _, ingress := range ingresses {
 		spec, _ := ingress["spec"].(map[string]interface{})
 		if spec == nil {
@@ -388,16 +408,8 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 			if host == "" || isPlaceholderIngressHost(host) {
 				continue
 			}
-			hostKey := strings.ToLower(host)
-			if seenHosts[hostKey] {
-				continue
-			}
 			paths, _ := getSlice(rule, "http", "paths")
-			pickedFirst := false
 			for _, pathItem := range paths {
-				if pickedFirst {
-					break
-				}
 				path, _ := pathItem.(map[string]interface{})
 				if path == nil {
 					continue
@@ -412,15 +424,25 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 				if port <= 0 || !ports.hasPort(port) {
 					continue
 				}
-				pickedFirst = true
 				scheme := "http"
 				if tlsHosts[host] {
 					scheme = "https"
 				}
-				seenHosts[hostKey] = true
+				protocol := strings.ToUpper(strings.TrimSpace(getString(ingress, "metadata", "annotations", "nginx.ingress.kubernetes.io/backend-protocol")))
+				if protocol == "WS" || protocol == "WSS" {
+					scheme = "ws"
+					if tlsHosts[host] {
+						scheme = "wss"
+					}
+				}
+				key := fmt.Sprintf("%s|%s|%d", host, serviceName, port)
+				if seenEndpoints[key+"|"+scheme] {
+					continue
+				}
+				seenEndpoints[key+"|"+scheme] = true
 				endpoints = append(endpoints, observedIngressEndpoint{
 					host:       host,
-					key:        fmt.Sprintf("%s|%s|%d", host, serviceName, port),
+					key:        key,
 					port:       port,
 					scheme:     scheme,
 					serviceKey: serviceName + ":" + strconv.Itoa(port),
@@ -992,6 +1014,8 @@ func buildConnectionRows(ap map[string]interface{}, ingresses, services []map[st
 		return nil
 	}
 	externalBySvcPort := buildExternalAddressMap(ingresses, services)
+	serviceNames, servicePorts := observedServiceLookup(services)
+	endpoints := observedIngressEndpoints(ingresses, serviceNames, servicePorts)
 
 	var rows []map[string]interface{}
 	seen := make(map[string]bool)
@@ -1006,7 +1030,11 @@ func buildConnectionRows(ap map[string]interface{}, ingresses, services []map[st
 			internalName := "port-" + strconv.Itoa(port) + "-internal"
 			if !seen[internalName] {
 				seen[internalName] = true
-				internalAddr := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", svcName, svcNamespace, port)
+				scheme := privateProtocolForEndpoints(endpoints, svcName+":"+strconv.Itoa(port))
+				if scheme == "" {
+					scheme = "http"
+				}
+				internalAddr := fmt.Sprintf("%s://%s.%s.svc.cluster.local:%d", scheme, svcName, svcNamespace, port)
 				rows = append(rows, map[string]interface{}{
 					"name":    internalName,
 					"address": internalAddr,

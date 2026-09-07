@@ -194,24 +194,14 @@ function templatePublicAccessCardsFromDoc(
     }
     const webProtocol = tlsHosts.has(host) ? "https" : "http";
     const websocketProtocol = tlsHosts.has(host) ? "wss" : "ws";
-    return ingressPaths(rule).flatMap((path) => [
+    return ingressPaths(rule).map((path) =>
       ingressAccessEndpointCard({
         host,
         identity,
         path,
-        protocol: webProtocol,
-      }),
-      ...(declaresWebSocket
-        ? [
-            ingressAccessEndpointCard({
-              host,
-              identity,
-              path,
-              protocol: websocketProtocol,
-            }),
-          ]
-        : []),
-    ]);
+        protocol: declaresWebSocket ? websocketProtocol : webProtocol,
+      })
+    );
   });
 }
 

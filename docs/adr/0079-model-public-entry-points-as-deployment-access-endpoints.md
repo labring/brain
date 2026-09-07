@@ -50,6 +50,13 @@ compatibility and verifies one matching WS or WSS address; it is not treated as
 general ingress-nginx protocol semantics, and Brain never derives WebSocket
 support from TLS or a product name.
 
+A WS/WSS-marked Ingress supplies only the matching WebSocket endpoint, never
+an additional required HTTP GET endpoint. A separate HTTP Ingress on the same
+host retains its own primary path, including an admin path. AP Network projects
+the same protocol evidence by Service and backend port, preserving separate
+public addresses on a shared hostname and correcting generated URL schemes
+without changing routing health or desired configuration.
+
 Agent-managed completion accepts at most eight `accessEndpoints`, each with a
 stable id, label, and exact URL. The v1 `publicUrl` field remains an input
 compatibility adapter and becomes one HTTP endpoint when the new array is

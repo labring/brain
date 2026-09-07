@@ -76,6 +76,8 @@ An AP container port where the application accepts traffic, identified by its un
 
 A cluster-internal URL for an AP, derived from one App Listening Port. Once the port exists its Private Address is known — never model it as pending.
 
+Observed Launchpad WS/WSS Ingress markers identify WebSocket ports: their private scheme is `ws`, and their public scheme is `wss` when TLS covers the host (`ws` otherwise). HTTP ports retain HTTP/HTTPS addresses. Match evidence by Service and port; the same hostname may expose distinct protocols or ports and must not collapse those Public Addresses.
+
 ### Public Address
 
 An externally reachable URL/domain alias for an AP that declares a target port and reaches the App Listening Port for that port. Its two kinds are Platform Address and Custom Domain; editing the target port is Public Address editing, not Custom Domain Binding.
