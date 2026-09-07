@@ -131,9 +131,6 @@ function publicAccessModelFromFact(
     groups: fact.groups.map((group) => ({
       addresses: group.addresses.map((address) => ({
         host: address.host,
-        ...(address.hostSuffix === undefined
-          ? {}
-          : { hostSuffix: address.hostSuffix }),
         id: address.id,
         ...(address.status === undefined ? {} : { status: address.status }),
         ...(address.value === undefined ? {} : { value: address.value }),

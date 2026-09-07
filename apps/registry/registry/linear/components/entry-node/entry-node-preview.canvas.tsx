@@ -49,7 +49,6 @@ const singlePortGroups: EntryNodeGroup[] = [
     addresses: [
       {
         host: `orders${PLATFORM_SUFFIX}`,
-        hostSuffix: PLATFORM_SUFFIX,
         id: "public",
         status: { label: "Accessible", tone: "accessible" },
         value: `https://orders${PLATFORM_SUFFIX}/`,
@@ -64,7 +63,6 @@ const twoPortGroups: EntryNodeGroup[] = [
     addresses: [
       {
         host: `game${PLATFORM_SUFFIX}`,
-        hostSuffix: PLATFORM_SUFFIX,
         id: "game",
         status: { label: "Accessible", tone: "accessible" },
         value: `wss://game${PLATFORM_SUFFIX}/`,
@@ -77,7 +75,6 @@ const twoPortGroups: EntryNodeGroup[] = [
     addresses: [
       {
         host: `game-admin${PLATFORM_SUFFIX}`,
-        hostSuffix: PLATFORM_SUFFIX,
         id: "admin",
         status: { label: "Accessible", tone: "accessible" },
         value: `https://game-admin${PLATFORM_SUFFIX}/`,

@@ -44,48 +44,60 @@ export function EntryNodeGroupList({ className }: { className?: string }) {
       data-slot="entry-node-group-list"
     >
       {populated.map((group) => (
-        <EntryNodeGroupBlock group={group} key={group.port} />
+        <EntryNodeGroupBlock
+          group={group}
+          headed={populated.length > 1 || group.name !== undefined}
+          key={group.port}
+        />
       ))}
     </div>
   );
 }
 
 /**
- * Every group is headed by its port number — written the way AP Network
- * Settings writes it (`game · 5200`, or `5200` alone) — so a single unnamed
- * port still tells the reader which port its domains reach.
+ * A group is headed by its port — written the way AP Network Settings writes
+ * it (`game · 5200`, or `5200` alone) — except when the node has a single
+ * unnamed port: then the header would name nothing the reader lacks, and the
+ * block draws its addresses alone (`headed` false).
+ *
+ * A port with one Public Address is drawn like the Container node's Image
+ * block: header line over value line, the whole block one copy hit-area.
+ * A port with several draws the header once and gives every address its
+ * own hover and hit-area beneath it.
  */
 export function EntryNodeGroupBlock({
   className,
   group,
+  headed = true,
 }: {
   className?: string;
   group: EntryNodeGroup;
+  /** Draw the port header; false for the node's single unnamed port. */
+  headed?: boolean;
 }) {
+  const single = group.addresses.length === 1 ? group.addresses[0] : undefined;
+
+  if (single !== undefined) {
+    return (
+      <EntryNodeSingleAddressBlock
+        address={single}
+        className={className}
+        group={headed ? group : undefined}
+        rowKey={getAddressKey(group, single, 0)}
+      />
+    );
+  }
+
   return (
     <div
       className={cn(
-        "entry-node-group flex min-w-0 flex-col gap-0.5 rounded-lg bg-zinc-950/20 p-1",
+        "entry-node-group flex min-w-0 flex-col gap-1 rounded-lg bg-zinc-950/20 px-1.5",
+        headed ? "pt-2.5 pb-2" : "py-2",
         className
       )}
       data-slot="entry-node-group"
     >
-      <div
-        className="flex min-w-0 items-baseline gap-1.5 px-2 pt-1 pb-0.5 text-xs leading-4"
-        data-slot="entry-node-group-header"
-      >
-        {group.name === undefined ? null : (
-          <>
-            <span className="min-w-0 truncate text-zinc-50">{group.name}</span>
-            <span aria-hidden className="shrink-0 text-muted-foreground">
-              ·
-            </span>
-          </>
-        )}
-        <span className="shrink-0 font-mono text-muted-foreground">
-          {group.port}
-        </span>
-      </div>
+      {headed ? <EntryNodeGroupHeader className="px-1" group={group} /> : null}
       {group.addresses.map((address, index) => {
         const rowKey = getAddressKey(group, address, index);
         return (
@@ -96,36 +108,141 @@ export function EntryNodeGroupBlock({
   );
 }
 
-export function EntryNodeHostText({
+export function EntryNodeGroupHeader({
   className,
-  host,
-  hostSuffix,
-}: Pick<EntryNodeAddress, "host" | "hostSuffix"> & { className?: string }) {
-  const suffix =
-    hostSuffix !== undefined &&
-    hostSuffix !== "" &&
-    host.length > hostSuffix.length &&
-    host.endsWith(hostSuffix)
-      ? hostSuffix
-      : undefined;
-
-  if (suffix === undefined) {
-    return <span className={cn("min-w-0 truncate", className)}>{host}</span>;
-  }
-
+  group,
+}: {
+  className?: string;
+  group: Pick<EntryNodeGroup, "name" | "port">;
+}) {
   return (
-    <span className={cn("flex min-w-0 items-baseline", className)}>
-      <span className="shrink-0">{host.slice(0, -suffix.length)}</span>
-      <span
-        className="min-w-0 truncate text-muted-foreground"
-        data-slot="entry-node-host-suffix"
-      >
-        {suffix}
+    <div
+      className={cn(
+        "flex h-4 min-w-0 items-center gap-1.5 text-xs leading-4",
+        className
+      )}
+      data-slot="entry-node-group-header"
+    >
+      {group.name === undefined ? null : (
+        <>
+          <span className="min-w-0 truncate text-zinc-50">{group.name}</span>
+          <span aria-hidden className="shrink-0 text-muted-foreground">
+            ·
+          </span>
+        </>
+      )}
+      <span className="shrink-0 font-mono text-muted-foreground">
+        {group.port}
       </span>
-    </span>
+    </div>
   );
 }
 
+export function EntryNodeHostText({
+  className,
+  host,
+}: Pick<EntryNodeAddress, "host"> & { className?: string }) {
+  return <span className={cn("min-w-0 truncate", className)}>{host}</span>;
+}
+
+function addressCopyValue(address: EntryNodeAddress): string {
+  return address.value?.trim() ?? "";
+}
+
+function useCopyAddressHandler(address: EntryNodeAddress, rowKey: string) {
+  const { actions } = useEntryNode();
+  return actions.copyAddress
+    ? () => actions.copyAddress?.(address, rowKey)
+    : undefined;
+}
+
+/**
+ * The value line of one Public Address: status dot, hostname (a new-tab
+ * link when the URL is http(s)) and the copy control. Pinned to `h-6` so the
+ * hover-only copy button never dictates the line height. Must sit inside a
+ * CanvasNode.CopyableRow.
+ */
+export function EntryNodeAddressLine({
+  address,
+  className,
+  ...props
+}: {
+  address: EntryNodeAddress;
+  className?: string;
+  "data-slot"?: string;
+}) {
+  const visualStatus = resolveEntryNodeTargetVisualStatus(address.status);
+  const value = addressCopyValue(address);
+  const copyable = value !== "";
+
+  return (
+    <div
+      className={cn(
+        "entry-node-address-content pointer-events-none relative z-10 flex h-6 min-w-0 items-center gap-1.5 text-xs leading-4",
+        copyable ? "text-zinc-50" : "text-muted-foreground",
+        className
+      )}
+      {...props}
+    >
+      <CanvasNode.StatusDot size="small" status={visualStatus} />
+      <CanvasNode.CopyableRowValue
+        className="flex min-w-0 flex-1"
+        href={copyable ? value : undefined}
+      >
+        <EntryNodeHostText host={address.host} />
+      </CanvasNode.CopyableRowValue>
+      <CanvasNode.CopyableRowActions label={value} />
+    </div>
+  );
+}
+
+/**
+ * A port with exactly one Public Address: header + value, one hit-area.
+ * Without `group` the header is skipped and the value stands alone.
+ */
+export function EntryNodeSingleAddressBlock({
+  address,
+  className,
+  group,
+  rowKey,
+}: {
+  address: EntryNodeAddress;
+  className?: string;
+  group?: Pick<EntryNodeGroup, "name" | "port">;
+  rowKey: string;
+}) {
+  const value = addressCopyValue(address);
+  const copyable = value !== "";
+
+  return (
+    <CanvasNode.CopyableRow
+      className={cn(
+        "entry-node-group entry-node-group-single relative flex min-w-0 flex-col gap-1.5 rounded-lg bg-zinc-950/20 p-2.5 transition-colors",
+        className
+      )}
+      copyAriaLabel={`Copy ${value}`}
+      copyable={copyable}
+      copyValue={value}
+      data-slot="entry-node-group"
+      onCopy={useCopyAddressHandler(address, rowKey)}
+      rowKey={rowKey}
+      title={copyable ? value : undefined}
+    >
+      {group === undefined ? null : (
+        <EntryNodeGroupHeader
+          className="pointer-events-none relative z-10"
+          group={group}
+        />
+      )}
+      <EntryNodeAddressLine
+        address={address}
+        data-slot="entry-node-address-row"
+      />
+    </CanvasNode.CopyableRow>
+  );
+}
+
+/** One Public Address under a shared port header: its own hover and hit-area. */
 export function EntryNodeAddressRow({
   address,
   className,
@@ -135,43 +252,24 @@ export function EntryNodeAddressRow({
   className?: string;
   rowKey: string;
 }) {
-  const { actions } = useEntryNode();
-  const visualStatus = resolveEntryNodeTargetVisualStatus(address.status);
-  const value = address.value?.trim() ?? "";
+  const value = addressCopyValue(address);
   const copyable = value !== "";
 
   return (
     <CanvasNode.CopyableRow
       className={cn(
-        "entry-node-address-row relative flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 transition-colors",
-        copyable && "hover:bg-white/5",
+        "entry-node-address-row relative flex min-w-0 items-center rounded-md px-1 py-0.5 transition-colors",
         className
       )}
       copyAriaLabel={`Copy ${value}`}
       copyable={copyable}
       copyValue={value}
       data-slot="entry-node-address-row"
-      onCopy={
-        actions.copyAddress
-          ? () => actions.copyAddress?.(address, rowKey)
-          : undefined
-      }
+      onCopy={useCopyAddressHandler(address, rowKey)}
       rowKey={rowKey}
       title={copyable ? value : undefined}
     >
-      <div className="entry-node-address-content pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-1.5 text-xs text-zinc-50 leading-4">
-        <CanvasNode.StatusDot size="small" status={visualStatus} />
-        <CanvasNode.CopyableRowValue
-          className="flex min-w-0 flex-1"
-          href={copyable ? value : undefined}
-        >
-          <EntryNodeHostText
-            host={address.host}
-            hostSuffix={address.hostSuffix}
-          />
-        </CanvasNode.CopyableRowValue>
-        <CanvasNode.CopyableRowActions label={value} />
-      </div>
+      <EntryNodeAddressLine address={address} className="flex-1" />
     </CanvasNode.CopyableRow>
   );
 }

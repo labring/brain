@@ -29,11 +29,6 @@ export interface EntryNodeTargetStatus {
 export interface EntryNodeAddress {
   /** Hostname drawn in the row (or a placeholder such as "Pending"). */
   host: string;
-  /**
-   * Trailing part of `host` drawn de-emphasised — the platform suffix
-   * (`.sealos.run`) that every Platform Address shares.
-   */
-  hostSuffix?: string;
   id?: string;
   status?: EntryNodeTargetStatus;
   /** Full URL for copy and open; absent while the address is pending. */

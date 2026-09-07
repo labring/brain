@@ -30,7 +30,6 @@ function platformAddress(
   const host = `${prefix}${PLATFORM_SUFFIX}`;
   return {
     host,
-    hostSuffix: PLATFORM_SUFFIX,
     id,
     status,
     value: `https://${host}/`,
@@ -64,7 +63,6 @@ const pendingAddress: EntryNodeAddress = {
 
 const websocketAddress: EntryNodeAddress = {
   host: `game${PLATFORM_SUFFIX}`,
-  hostSuffix: PLATFORM_SUFFIX,
   id: "game-ws",
   status: { label: "Accessible", tone: "accessible" },
   value: `wss://game${PLATFORM_SUFFIX}/`,

@@ -306,3 +306,192 @@ it.each([
     expect(observed.card.resultRef).toEqual(endpoint.resultRef);
   }
 });
+
+it("names an AP-backed endpoint after the App Listening Port it reaches", async () => {
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+  fetcher.mockResolvedValueOnce({
+    status: {
+      network: {
+        appListeningPorts: [{ displayName: "game", port: 5200 }],
+        publicAddresses: [
+          {
+            host: "game.example.sealos.run",
+            id: "pa_game",
+            port: 5200,
+            status: "accessible",
+            type: "platform",
+            url: "https://game.example.sealos.run/",
+          },
+        ],
+      },
+    },
+  });
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    card: {
+      events: [],
+      id: "AccessEndpoint:ns-demo:public-address:pa_game",
+      required: true,
+      resultRef: {
+        id: "public-address:pa_game",
+        kind: "AccessEndpoint",
+        label: "Public address",
+        namespace: "ns-demo",
+        observer: {
+          addressId: "pa_game",
+          apName: "eaglercraft",
+          kind: "ap-public-address",
+        },
+        protocol: "https",
+      },
+      status: "creating",
+      title: "Public address",
+    },
+    deadlineAtMs: Date.now() + 10_000,
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.status).toBe("running");
+  expect(observed.card.title).toBe("game · 5200");
+  expect(observed.card.resultRef).toMatchObject({
+    label: "game · 5200",
+    url: "https://game.example.sealos.run/",
+  });
+  expect(observed.eventMessage).toBe("game · 5200 is reachable.");
+});
+
+it("names an unnamed port's endpoint by its number alone", async () => {
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+  fetcher.mockResolvedValueOnce({
+    status: {
+      network: {
+        appListeningPorts: [{ port: 8080 }],
+        publicAddresses: [
+          {
+            host: "nginx.example.sealos.run",
+            id: "pa_nginx",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://nginx.example.sealos.run/",
+          },
+        ],
+      },
+    },
+  });
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    card: {
+      events: [],
+      id: "AccessEndpoint:ns-demo:public-address:pa_nginx",
+      required: true,
+      resultRef: {
+        id: "public-address:pa_nginx",
+        kind: "AccessEndpoint",
+        label: "Public address",
+        namespace: "ns-demo",
+        observer: {
+          addressId: "pa_nginx",
+          apName: "nginx",
+          kind: "ap-public-address",
+        },
+        protocol: "https",
+      },
+      status: "creating",
+      title: "Public address",
+    },
+    deadlineAtMs: Date.now() + 10_000,
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.card.resultRef).toMatchObject({ label: "8080" });
+});
+
+it("names an Ingress endpoint through the task's AP that observed its host", async () => {
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+  // The first candidate does not know the host; the second does.
+  fetcher
+    .mockResolvedValueOnce({
+      status: { network: { appListeningPorts: [], publicAddresses: [] } },
+    })
+    .mockResolvedValueOnce({
+      status: {
+        network: {
+          appListeningPorts: [{ displayName: "Admin console", port: 3000 }],
+          publicAddresses: [
+            {
+              host: "demo.example.sealos.run",
+              id: "observed-1",
+              port: 3000,
+              status: "accessible",
+              type: "observed",
+              url: "https://demo.example.sealos.run/admin",
+            },
+          ],
+        },
+      },
+    });
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    apCandidates: [
+      { name: "sidecar", namespace: "ns-demo" },
+      { name: "demo", namespace: "ns-demo" },
+    ],
+    card: {
+      events: [],
+      id: "inferred-admin",
+      required: true,
+      resultRef: {
+        id: "inferred-admin",
+        kind: "AccessEndpoint",
+        label: "Web address /admin",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "demo-admin" },
+        protocol: "https",
+        url: "https://demo.example.sealos.run/admin",
+      },
+      status: "creating",
+      title: "Web address /admin",
+    },
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.running).toBe(true);
+  expect(observed.card.resultRef).toMatchObject({
+    label: "Admin console · 3000",
+    url: "https://demo.example.sealos.run/admin",
+  });
+});
+
+it("keeps the Ingress label when no AP of the task knows the host", async () => {
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+  fetcher.mockRejectedValueOnce(new Error("AP not found"));
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    apCandidates: [{ name: "raw-deployment", namespace: "ns-demo" }],
+    card: {
+      events: [],
+      id: "inferred-root",
+      required: true,
+      resultRef: {
+        id: "inferred-root",
+        kind: "AccessEndpoint",
+        label: "Web address",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "demo" },
+        protocol: "https",
+        url: "https://demo.example.sealos.run/",
+      },
+      status: "creating",
+      title: "Web address",
+    },
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.running).toBe(true);
+  expect(observed.card.resultRef).toMatchObject({ label: "Web address" });
+});

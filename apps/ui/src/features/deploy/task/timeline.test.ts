@@ -1048,3 +1048,65 @@ test("a long contract headline is bounded so the card stays presentable", () => 
   assert.equal(next.success?.headline?.length, 140);
   assert.ok(next.success?.headline?.endsWith("\u2026"));
 });
+
+test("the Default Open Port's address leads the success entries", () => {
+  const cardFor = (
+    id: string,
+    url: string,
+    label: string
+  ): DeploymentResultResourceCard => ({
+    events: [],
+    id: `AccessEndpoint:default:${id}`,
+    required: true,
+    resultRef: {
+      id,
+      kind: "AccessEndpoint",
+      label,
+      namespace: "default",
+      observer: { kind: "declared" },
+      protocol: "https",
+      url,
+    },
+    status: "running",
+    title: label,
+  });
+  let timeline = timelineFrame({
+    "AP:default:eaglercraft": "running",
+    "PublicAccess:default:eaglercraft:lobby": "running",
+  });
+  for (const card of [
+    cardFor("api", "https://api.example.sealos.run/", "api · 8080"),
+    cardFor("web", "https://web.example.sealos.run/", "web · 3000"),
+  ]) {
+    timeline = upsertResultResourceCard(timeline, {
+      card,
+      stepId: "create-resources",
+      updatedAt: NOW,
+    });
+  }
+
+  const urls = (primaryEntryUrl: string | null | undefined) =>
+    deploymentTaskSuccessFromTimeline(timeline, {
+      primaryEntryUrl,
+      productName: null,
+    })?.entries?.map((entry) => entry.url);
+
+  assert.deepEqual(urls("https://web.example.sealos.run/"), [
+    "https://web.example.sealos.run/",
+    "https://api.example.sealos.run/",
+  ]);
+  // The same host still names the same address once a root was discovered.
+  assert.deepEqual(urls("https://web.example.sealos.run/app"), [
+    "https://web.example.sealos.run/",
+    "https://api.example.sealos.run/",
+  ]);
+  // An unknown or absent Open URL leaves the verified order alone.
+  assert.deepEqual(urls("https://elsewhere.example.sealos.run/"), [
+    "https://api.example.sealos.run/",
+    "https://web.example.sealos.run/",
+  ]);
+  assert.deepEqual(urls(undefined), [
+    "https://api.example.sealos.run/",
+    "https://web.example.sealos.run/",
+  ]);
+});

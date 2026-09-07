@@ -192,13 +192,9 @@ test("Project Runtime parses AP Public Access as AP-bound read-side facts", () =
   ]);
 });
 
-function apWithNetwork(
-  network: Record<string, unknown>,
-  labels?: Record<string, string>
-) {
+function apWithNetwork(network: Record<string, unknown>) {
   return {
     metadata: {
-      ...(labels === undefined ? {} : { labels }),
       name: "game",
       namespace: "default",
       uid: "game-uid",
@@ -525,59 +521,50 @@ test("Public Access node model carries the Open target to the Entry Node", () =>
   );
 });
 
-test("Public Access de-emphasises the routing domain suffix of Platform Address hosts", () => {
+test("Public Access rows carry the full hostname and URL of every Public Address", () => {
   const groups = publicAccessGroups(
-    apWithNetwork(
-      {
-        appListeningPorts: [{ port: 5200 }],
-        publicAddresses: [
-          {
-            host: "abcdef.192.168.12.53.nip.io",
-            id: "pa_game",
-            port: 5200,
-            status: "accessible",
-            type: "platform",
-            url: "https://abcdef.192.168.12.53.nip.io/",
-          },
-          {
-            host: "www.example.com",
-            id: "cd_www",
-            platformAddressId: "pa_game",
-            port: 5200,
-            status: "accessible",
-            type: "custom",
-            url: "https://www.example.com/",
-          },
-          {
-            id: "pa_pending",
-            port: 5200,
-            status: "progressing",
-            type: "platform",
-          },
-        ],
-      },
-      { region: "192.168.12.53.nip.io" }
-    )
+    apWithNetwork({
+      appListeningPorts: [{ port: 5200 }],
+      publicAddresses: [
+        {
+          host: "abcdef.192.168.12.53.nip.io",
+          id: "pa_game",
+          port: 5200,
+          status: "accessible",
+          type: "platform",
+          url: "https://abcdef.192.168.12.53.nip.io/",
+        },
+        {
+          host: "www.example.com",
+          id: "cd_www",
+          platformAddressId: "pa_game",
+          port: 5200,
+          status: "accessible",
+          type: "custom",
+          url: "https://www.example.com/",
+        },
+        {
+          id: "pa_pending",
+          port: 5200,
+          status: "progressing",
+          type: "platform",
+        },
+      ],
+    })
   );
 
   assert.deepEqual(
     groups[0]?.addresses.map((address) => ({
       host: address.host,
-      hostSuffix: address.hostSuffix,
       value: address.value,
     })),
     [
       {
         host: "abcdef.192.168.12.53.nip.io",
-        hostSuffix: ".192.168.12.53.nip.io",
         value: "https://abcdef.192.168.12.53.nip.io/",
       },
-      {
-        host: "www.example.com",
-        hostSuffix: undefined,
-        value: "https://www.example.com/",
-      },
-      { host: "Pending", hostSuffix: undefined, value: undefined },
+      { host: "www.example.com", value: "https://www.example.com/" },
+      { host: "Pending", value: undefined },
     ]
   );
 });

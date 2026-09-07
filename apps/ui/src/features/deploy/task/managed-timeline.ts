@@ -88,6 +88,8 @@ export function attachManagedDeploymentTimelineSuccess(
   input: {
     accessEndpoints: readonly ManagedAccessEndpoint[];
     namespace: string;
+    /** The Default Open Port's best Public Address, when an AP declares one. */
+    primaryEntryUrl?: string | null;
     productName: string | null;
     resources: readonly ManagedResourceRef[];
     updatedAt: string;
@@ -111,6 +113,7 @@ export function attachManagedDeploymentTimelineSuccess(
     timeline
   );
   const success = deploymentTaskSuccessFromTimeline(withEvidence, {
+    primaryEntryUrl: input.primaryEntryUrl,
     productName: input.productName,
   });
   return success == null

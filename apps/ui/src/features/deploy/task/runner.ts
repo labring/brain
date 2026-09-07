@@ -131,6 +131,8 @@ import { attachManagedDeploymentTimelineSuccess } from "./managed-timeline";
 import { deployOutputProgressSummary } from "./output-progress";
 import { deploymentTaskSourceSummary } from "./projection";
 import {
+  type DeploymentResultApCandidate,
+  deploymentResultApCandidates,
   isResultReadinessTerminalError,
   observeDeploymentResultCardReadiness,
   resultReadinessLabel,
@@ -177,6 +179,7 @@ import {
   withoutSensitiveArgs,
 } from "./sensitive-inputs";
 import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
+import { resolveDeploymentSuccessOpenUrl } from "./success-open-url";
 import { templateProviderPublicAccessCards } from "./template-provider-public-access";
 import {
   appendCardEvent,
@@ -872,6 +875,7 @@ async function upsertResultTimelineCard(input: {
 
 async function observeResultCardReadiness(input: {
   allowedDomain: string;
+  apCandidates: readonly DeploymentResultApCandidate[];
   card: DeploymentResultResourceCard;
   deadlineAtMs: number;
   kubeconfig: string;
@@ -888,6 +892,7 @@ async function observeResultCardReadiness(input: {
   try {
     const observed = await observeDeploymentResultCardReadiness({
       allowedDomain: input.allowedDomain,
+      apCandidates: input.apCandidates,
       card: input.card,
       deadlineAtMs: input.deadlineAtMs,
       kubeconfig: input.kubeconfig,
@@ -941,6 +946,7 @@ async function observeResultCardReadiness(input: {
 
 async function observeResultCardBeforeDeadline(input: {
   allowedDomain: string;
+  apCandidates: readonly DeploymentResultApCandidate[];
   card: DeploymentResultResourceCard;
   deadlineAtMs: number;
   kubeconfig: string;
@@ -993,6 +999,7 @@ async function waitForRequiredResultCards(input: {
     string,
     DeploymentResultResourceCard["status"]
   >();
+  const apCandidates = deploymentResultApCandidates(input.cards);
 
   readinessLoop: while (Date.now() < deadlineAtMs) {
     // Cancel means "stop waiting" during verify (ADR 0038).
@@ -1002,6 +1009,7 @@ async function waitForRequiredResultCards(input: {
     for (const card of input.cards) {
       const observed = await observeResultCardBeforeDeadline({
         allowedDomain: input.allowedDomain,
+        apCandidates,
         card,
         deadlineAtMs,
         kubeconfig: input.kubeconfig,
@@ -2697,9 +2705,17 @@ async function completeTaskWithArtifact(input: {
   // record is attached and the Timeline keeps reporting progress (issue #160).
   // Neither an entry address nor first-use guidance is declared here, so both
   // stay absent rather than being invented from a host or a port.
+  // The record's Open control opens the Default Open Port through its best
+  // Public Address, decided once here from the AP as it stands at
+  // verification time (CONTEXT.md: Default Open Port).
+  const primaryEntryUrl = await resolveDeploymentSuccessOpenUrl({
+    candidates: deploymentResultApCandidates(resultCards),
+    kubeconfig: input.kubeconfig,
+  });
   await updateDeployTaskTimeline(input.task.id, {
     update: (timeline) => {
       const success = deploymentTaskSuccessFromTimeline(timeline, {
+        primaryEntryUrl,
         productName: deploymentTaskSourceSummary(input.task.source),
       });
       return success == null
@@ -3827,12 +3843,24 @@ async function runManagedDeploymentLifecycleCore(input: {
       // The managed gate has validated and probed every declared endpoint.
       // Project those facts into the same Timeline evidence seam used by the
       // deterministic runners before publishing a user-facing conclusion.
+      // Like the deterministic runners, the record's Open control follows the
+      // Default Open Port of the workloads the agent created, when the AP
+      // Product View can describe one of them.
+      const primaryEntryUrl = await resolveDeploymentSuccessOpenUrl({
+        candidates: completion.resources.flatMap((resource) =>
+          resource.kind === "Deployment" || resource.kind === "StatefulSet"
+            ? [{ name: resource.name, namespace: input.task.namespace }]
+            : []
+        ),
+        kubeconfig: input.kubeconfig,
+      });
       await updateDeployTaskTimeline(input.task.id, {
         update: (timeline) => {
           const updatedAt = new Date().toISOString();
           return attachManagedDeploymentTimelineSuccess(timeline, {
             accessEndpoints: completion.accessEndpoints,
             namespace: input.task.namespace,
+            primaryEntryUrl,
             productName: deploymentTaskSourceSummary(input.task.source),
             resources: completion.resources,
             updatedAt,

@@ -116,7 +116,7 @@ _Avoid_: AP Public Access Node health, standalone public access monitor.
 
 ### AP Public Access Node
 
-A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). It groups Public Addresses by the App Listening Port they target, each group headed by its port number and, when set, the Port Display Name. Rows show the domain, not the Public Address kind. Its header carries the address count and one Open control that opens the Default Open Port; no per-address health is aggregated there, and nothing else on the node marks the Default Open Port. Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner; selecting it opens the AP's Network Settings View.
+A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). It groups Public Addresses by the App Listening Port they target, each group headed by its port number and, when set, the Port Display Name; an AP whose only port has no Port Display Name draws no group header, since it would tell the reader nothing the node's addresses do not. Rows show the domain, not the Public Address kind. Its header carries the address count and one Open control that opens the Default Open Port; no per-address health is aggregated there, and nothing else on the node marks the Default Open Port. Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner; selecting it opens the AP's Network Settings View.
 
 ### AP Network Settings
 
@@ -354,7 +354,7 @@ _Avoid_: applied object, Kubernetes object.
 
 ### Deployment Access Endpoint
 
-A source-independent Deployment Result Resource describing one user-facing way to reach a deployed product. It has a stable task-local identity, explicit HTTP or WebSocket protocol, a provider observer or declared URL, and an independently verified readiness state. Docker AP addresses, Template Ingress hosts, and GitHub Agent-declared URLs all converge on this contract. The observer resolves the provider's actual address; Brain never reconstructs an address or infers WSS from HTTPS.
+A source-independent Deployment Result Resource describing one user-facing way to reach a deployed product. It has a stable task-local identity, explicit HTTP or WebSocket protocol, a provider observer or declared URL, and an independently verified readiness state. Docker AP addresses, Template Ingress hosts, and GitHub Agent-declared URLs all converge on this contract. The observer resolves the provider's actual address; Brain never reconstructs an address or infers WSS from HTTPS. Once verified, an endpoint that reaches an App Listening Port of one of the task's APs — an AP Public Address, or a Template Ingress host the AP observed — is named by that port's Port Display Name form; an Agent-declared URL keeps its declared label.
 
 _Avoid_: guessed URL, inferred socket address, source-specific public access card.
 
@@ -380,9 +380,9 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Task Success Record
 
-The conclusion a Deployment Task Timeline appends once Deployment Result Readiness is reached and every required access endpoint has passed its protocol probe. It carries only facts the deployment declared — product name, verified HTTP or WebSocket entries, first-use steps — so the Timeline never presents an address or instruction the runner cannot evidence. HTTP(S) entries can be opened and copied; WS(S) entries are copied. A verified deployment with no endpoint uses the neutral `Deployment completed` headline, while `You can start using it` is reserved for a verified actionable entry. A task with no required Deployment Result Resource publishes no record and keeps reporting progress. It is part of the task-owned timeline snapshot, not a Chat message or a toast, and its Timeline revision doubles as its identity.
+The conclusion a Deployment Task Timeline appends once Deployment Result Readiness is reached and every required access endpoint has passed its protocol probe. It carries only facts the deployment declared — product name, verified HTTP or WebSocket entries, first-use steps — so the Timeline never presents an address or instruction the runner cannot evidence. Each entry is headed the way a Public Address is shown everywhere else: the Port Display Name form of the App Listening Port it reaches (`game · 5200`, or `5200` alone for an unnamed port), as it stood at verification time; an entry no App Listening Port can be found for keeps the name its source declared. Two entries reaching the same port carry the same heading; the record stays a flat list. HTTP(S) entries can be opened and copied; WS(S) entries are copied. Its Open control opens the Default Open Port through its best Public Address as decided when the record was written — the record is a snapshot, so a later rename or Default Open Port change does not rewrite it. A verified deployment with no endpoint uses the neutral `Deployment completed` headline, while `You can start using it` is reserved for a verified actionable entry. A task with no required Deployment Result Resource publishes no record and keeps reporting progress. It is part of the task-owned timeline snapshot, not a Chat message or a toast, and its Timeline revision doubles as its identity.
 
-_Avoid_: success toast, deploy done banner, completion notification.
+_Avoid_: success toast, deploy done banner, completion notification, "Public address" as an entry heading.
 
 ### Deployment Celebration
 

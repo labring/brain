@@ -81,8 +81,6 @@ export interface DbFact {
 export interface PublicAccessAddressSummary {
   /** Hostname drawn in the row; "Pending" while the host is unallocated. */
   host: string;
-  /** The routing-domain suffix of a Platform Address host, drawn muted. */
-  hostSuffix?: string;
   id: string;
   status?: ProjectRuntimeStatusSummary;
   type?: string;
@@ -616,40 +614,16 @@ export function publicAccessOpenTargetFromGroups({
   });
 }
 
-/** The routing domain an AP's Platform Addresses hang off (`labels.region`). */
-function apRoutingDomain(ap: unknown): string | undefined {
-  return nonEmptyString(metadataLabels(ap)?.region);
-}
-
-function publicAccessHostSuffix(
-  host: string,
-  routingDomain: string | undefined
-): string | undefined {
-  if (routingDomain === undefined) {
-    return undefined;
-  }
-  const suffix = `.${routingDomain}`;
-  return host.length > suffix.length && host.endsWith(suffix)
-    ? suffix
-    : undefined;
-}
-
 function publicAccessAddressFromNetworkAddress(
   address: NetworkPublicAddress,
   index: number,
-  apStatus: ProjectRuntimeStatusSummary,
-  routingDomain: string | undefined
+  apStatus: ProjectRuntimeStatusSummary
 ): PublicAccessAddressSummary {
   const host = address.host;
   const value =
     address.url ?? (host === undefined ? undefined : `https://${host}/`);
-  const hostSuffix =
-    host === undefined
-      ? undefined
-      : publicAccessHostSuffix(host, routingDomain);
   return {
     host: host ?? "Pending",
-    ...(hostSuffix === undefined ? {} : { hostSuffix }),
     id: address.id ?? `${address.port}-${host ?? `pending-${index}`}`,
     status: publicAccessTargetStatus(address.status, apStatus),
     ...(address.type === undefined ? {} : { type: address.type }),
@@ -667,12 +641,10 @@ export function publicAccessGroupsFromAddresses({
   addresses,
   apStatus,
   ports,
-  routingDomain,
 }: {
   addresses: readonly NetworkPublicAddress[];
   apStatus: ProjectRuntimeStatusSummary;
   ports: readonly AppListeningPortSummary[];
-  routingDomain?: string;
 }): PublicAccessGroupSummary[] {
   const nameByPort = new Map<number, string>();
   for (const port of ports) {
@@ -683,14 +655,7 @@ export function publicAccessGroupsFromAddresses({
   const addressesByPort = new Map<number, PublicAccessAddressSummary[]>();
   addresses.forEach((address, index) => {
     const rows = addressesByPort.get(address.port) ?? [];
-    rows.push(
-      publicAccessAddressFromNetworkAddress(
-        address,
-        index,
-        apStatus,
-        routingDomain
-      )
-    );
+    rows.push(publicAccessAddressFromNetworkAddress(address, index, apStatus));
     addressesByPort.set(address.port, rows);
   });
   return Array.from(addressesByPort.keys())
@@ -733,7 +698,6 @@ function publicAccessFactFromAp(
     addresses: publicAddresses,
     apStatus: apStatusSummary(ap),
     ports,
-    routingDomain: apRoutingDomain(ap),
   });
   const open = publicAccessOpenTargetFromGroups({
     defaultOpenPort: defaultOpenPortForAp(ap),

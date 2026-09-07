@@ -9,7 +9,6 @@ import type { EntryNodeAddress, EntryNodeGroup } from "./entry-node.types";
 const ENTRY_STATES = { name: "hbxiix.192.168.10.189.nip.io" } as const;
 const PLATFORM_ADDRESS: EntryNodeAddress = {
   host: "hbxiix.192.168.10.189.nip.io",
-  hostSuffix: ".192.168.10.189.nip.io",
   id: "platform",
   status: { label: "Accessible", tone: "accessible" },
   value: "https://hbxiix.192.168.10.189.nip.io/",
@@ -38,9 +37,8 @@ const COPY_PLATFORM_ADDRESS_RE =
 const COPIED_PLATFORM_ADDRESS_RE =
   /aria-label="Copied https:\/\/hbxiix\.192\.168\.10\.189\.nip\.io\/"/;
 const GROUP_HEADER_RE_GLOBAL = /data-slot="entry-node-group-header"/g;
-const HOST_SUFFIX_RE =
-  /<span [^>]*data-slot="entry-node-host-suffix"[^>]*>\.192\.168\.10\.189\.nip\.io<\/span>/;
-const HOST_PREFIX_RE = />hbxiix</;
+const FULL_HOST_TEXT_RE = />hbxiix\.192\.168\.10\.189\.nip\.io</;
+const HOST_SUFFIX_SLOT_RE = /data-slot="entry-node-host-suffix"/;
 const PUBLIC_ACCESS_LABEL_RE = />Public access</;
 const ONE_ADDRESS_RE = />1 address</;
 const TWO_ADDRESSES_RE = />2 addresses</;
@@ -48,6 +46,14 @@ const NO_ADDRESSES_RE = />0 addresses</;
 const PLATFORM_ADDRESS_KIND_RE = /Platform Address/;
 const CUSTOM_DOMAIN_KIND_RE = /Custom Domain/;
 const NOT_CONFIGURED_RE = />Not configured</;
+const SINGLE_BLOCK_HITAREA_RE =
+  /data-slot="entry-node-group"><button [^>]*data-slot="canvas-node-copyable-row-hitarea"/;
+const GROUP_OPENS_WITH_HEADER_RE =
+  /data-slot="entry-node-group"><div [^>]*data-slot="entry-node-group-header"/;
+const HITAREA_RE_GLOBAL = /data-slot="canvas-node-copyable-row-hitarea"/g;
+const PORT_8080_TEXT_RE = />8080</;
+const ADDRESS_ROW_HITAREA_RE =
+  /data-slot="entry-node-address-row"><button [^>]*data-slot="canvas-node-copyable-row-hitarea"/;
 
 function renderGroups(
   groups: EntryNodeGroup[],
@@ -94,11 +100,11 @@ test("EntryNode address row renders an explicit copy button for the full URL", (
   assert.match(html, COPY_PLATFORM_ADDRESS_RE);
 });
 
-test("EntryNode address row de-emphasises the platform suffix and shows no kind label", () => {
+test("EntryNode address row draws the whole hostname in one tone and shows no kind label", () => {
   const html = renderGroups([{ addresses: [PLATFORM_ADDRESS], port: 8080 }]);
 
-  assert.match(html, HOST_PREFIX_RE);
-  assert.match(html, HOST_SUFFIX_RE);
+  assert.match(html, FULL_HOST_TEXT_RE);
+  assert.doesNotMatch(html, HOST_SUFFIX_SLOT_RE);
   assert.doesNotMatch(html, PLATFORM_ADDRESS_KIND_RE);
   assert.doesNotMatch(html, CUSTOM_DOMAIN_KIND_RE);
 });
@@ -128,12 +134,25 @@ test("EntryNode address row pins copied feedback on the copy button", () => {
   assert.match(html, COPIED_PLATFORM_ADDRESS_RE);
 });
 
-test("EntryNode heads a single unnamed port by its port number alone", () => {
+test("EntryNode draws no header for a single unnamed port", () => {
   const html = renderGroups([{ addresses: [PLATFORM_ADDRESS], port: 8080 }]);
 
-  assert.deepEqual(headerTexts(html), ["8080"]);
+  assert.deepEqual(headerTexts(html), []);
+  assert.doesNotMatch(html, PORT_8080_TEXT_RE);
   assert.match(html, PUBLIC_ACCESS_LABEL_RE);
   assert.match(html, ONE_ADDRESS_RE);
+});
+
+test("EntryNode draws no header for a single unnamed port with several addresses", () => {
+  const html = renderGroups([
+    {
+      addresses: [PLATFORM_ADDRESS, { ...PLATFORM_ADDRESS, id: "second" }],
+      port: 8080,
+    },
+  ]);
+
+  assert.deepEqual(headerTexts(html), []);
+  assert.equal(html.match(HITAREA_RE_GLOBAL)?.length, 2);
 });
 
 test("EntryNode heads every unnamed port when there are several", () => {
@@ -166,6 +185,39 @@ test("EntryNode draws one header per port in the given order", () => {
   assert.equal(html.match(GROUP_HEADER_RE_GLOBAL)?.length, 2);
   assert.deepEqual(headerTexts(html), ["game · 5200", "5201"]);
   assert.equal(html.match(/data-slot="entry-node-address-row"/g)?.length, 3);
+});
+
+test("EntryNode makes the whole block the copy hit-area when a port has one address", () => {
+  const html = renderGroups([
+    { addresses: [PLATFORM_ADDRESS], name: "game", port: 5200 },
+  ]);
+
+  assert.match(html, SINGLE_BLOCK_HITAREA_RE);
+  assert.doesNotMatch(html, ADDRESS_ROW_HITAREA_RE);
+  assert.equal(html.match(HITAREA_RE_GLOBAL)?.length, 1);
+  assert.deepEqual(headerTexts(html), ["game · 5200"]);
+});
+
+test("EntryNode single pending address draws no hit-area at all", () => {
+  const html = renderGroups([{ addresses: [PENDING_ADDRESS], port: 8080 }]);
+
+  assert.doesNotMatch(html, SINGLE_BLOCK_HITAREA_RE);
+  assert.equal(html.match(HITAREA_RE_GLOBAL), null);
+  assert.deepEqual(headerTexts(html), []);
+});
+
+test("EntryNode gives every address its own hit-area when a port has several", () => {
+  const html = renderGroups([
+    {
+      addresses: [PLATFORM_ADDRESS, { ...PLATFORM_ADDRESS, id: "second" }],
+      name: "web",
+      port: 5201,
+    },
+  ]);
+
+  assert.match(html, GROUP_OPENS_WITH_HEADER_RE);
+  assert.match(html, ADDRESS_ROW_HITAREA_RE);
+  assert.equal(html.match(HITAREA_RE_GLOBAL)?.length, 2);
 });
 
 test("EntryNode header counts every address across groups", () => {

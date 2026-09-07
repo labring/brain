@@ -10,10 +10,13 @@ import {
   EntryNodeStatus,
 } from "./entry-node.content";
 import {
+  EntryNodeAddressLine,
   EntryNodeAddressRow,
   EntryNodeGroupBlock,
+  EntryNodeGroupHeader,
   EntryNodeGroupList,
   EntryNodeHostText,
+  EntryNodeSingleAddressBlock,
 } from "./entry-node.group";
 import { EntryNodeRoot } from "./entry-node.root";
 
@@ -51,14 +54,17 @@ export type {
 } from "./entry-node.types";
 export const EntryNode = {
   Access: EntryNodeAccess,
+  AddressLine: EntryNodeAddressLine,
   AddressRow: EntryNodeAddressRow,
   Content: EntryNodeContent,
   Group: EntryNodeGroupBlock,
+  GroupHeader: EntryNodeGroupHeader,
   GroupList: EntryNodeGroupList,
   HeaderContent: EntryNodeHeaderContent,
   HostText: EntryNodeHostText,
   Open: EntryNodeOpen,
   Root: EntryNodeRoot,
+  SingleAddressBlock: EntryNodeSingleAddressBlock,
   Status: EntryNodeStatus,
 } as const;
 
@@ -74,5 +80,8 @@ dn(EntryNodeOpen, "EntryNode.Open");
 dn(EntryNodeStatus, "EntryNode.Status");
 dn(EntryNodeGroupList, "EntryNode.GroupList");
 dn(EntryNodeGroupBlock, "EntryNode.Group");
+dn(EntryNodeGroupHeader, "EntryNode.GroupHeader");
+dn(EntryNodeSingleAddressBlock, "EntryNode.SingleAddressBlock");
 dn(EntryNodeAddressRow, "EntryNode.AddressRow");
+dn(EntryNodeAddressLine, "EntryNode.AddressLine");
 dn(EntryNodeHostText, "EntryNode.HostText");

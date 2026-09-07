@@ -4,6 +4,12 @@ import { API_ROUTES } from "@workspace/api/constants";
 import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import {
+  type ApNetworkView,
+  accessEndpointLabelForPort,
+  apNetworkViewAddressForHost,
+  apNetworkViewFromProductView,
+} from "./ap-network-view";
+import {
   AccessEndpointHttpError,
   probeManagedPublicUrl,
 } from "./managed-public-probe";
@@ -36,7 +42,7 @@ function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-async function fetchApProductView(input: {
+export async function fetchApProductView(input: {
   kubeconfig: string;
   name: string;
   namespace: string;
@@ -312,8 +318,198 @@ async function probeAccessEndpoint(
   }
 }
 
+/** An AP the task created, whose Product View may know an Ingress host. */
+export interface DeploymentResultApCandidate {
+  name: string;
+  namespace: string;
+}
+
+/**
+ * The task's own workloads that the AP Product View can describe: direct APs,
+ * and template workloads the API lists as AP-like. Card order is kept, so the
+ * first workload the task declared is asked first.
+ */
+export function deploymentResultApCandidates(
+  cards: readonly DeploymentResultResourceCard[]
+): DeploymentResultApCandidate[] {
+  const candidates: DeploymentResultApCandidate[] = [];
+  const seen = new Set<string>();
+  for (const card of cards) {
+    const ref = card.resultRef;
+    if (
+      ref.kind !== "AP" &&
+      !(
+        ref.kind === "TemplateWorkload" &&
+        (ref.workloadKind === "Deployment" ||
+          ref.workloadKind === "StatefulSet")
+      )
+    ) {
+      continue;
+    }
+    const key = `${ref.namespace}/${ref.name}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    candidates.push({ name: ref.name, namespace: ref.namespace });
+  }
+  return candidates;
+}
+
+/**
+ * The label an Ingress-observed endpoint carries once verified: the Port
+ * Display Name form of the App Listening Port behind that host, read from the
+ * first candidate AP whose Product View observed the host. A host no AP
+ * claims — a template with no AP-like workload, or a view that cannot be
+ * read — keeps the label the Ingress gave it; naming is never invented here.
+ */
+async function ingressAccessEndpointPortLabel(input: {
+  candidates: readonly DeploymentResultApCandidate[];
+  host: string;
+  kubeconfig: string;
+  signal?: AbortSignal;
+}): Promise<string | undefined> {
+  for (const candidate of input.candidates) {
+    let view: ApNetworkView;
+    try {
+      view = apNetworkViewFromProductView(
+        await fetchApProductView({
+          kubeconfig: input.kubeconfig,
+          name: candidate.name,
+          namespace: candidate.namespace,
+          signal: input.signal,
+        })
+      );
+    } catch (error) {
+      if (input.signal?.aborted) {
+        throw error;
+      }
+      continue;
+    }
+    const address = apNetworkViewAddressForHost(view, input.host);
+    if (address != null) {
+      return accessEndpointLabelForPort(view, address.port);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The AP Public Address behind an endpoint, as its Product View reports it:
+ * the readiness to surface while it is not yet accessible, else the assigned
+ * URL and the App Listening Port label the verified entry will carry.
+ */
+async function apPublicAddressObservation(input: {
+  addressId: string;
+  apName: string;
+  kubeconfig: string;
+  namespace: string;
+  signal?: AbortSignal;
+}): Promise<
+  | { pending: DeploymentResultReadiness }
+  | { portLabel: string | undefined; publicUrl: string | undefined }
+> {
+  const ap = await fetchApProductView({
+    kubeconfig: input.kubeconfig,
+    name: input.apName,
+    namespace: input.namespace,
+    signal: input.signal,
+  });
+  const address = publicAddressViewFromAp({
+    ap,
+    publicAddressId: input.addressId,
+  });
+  const readiness = publicAccessReadinessFromProductView(address);
+  if (readiness.status !== "running") {
+    return { pending: readiness };
+  }
+  const view = apNetworkViewFromProductView(ap);
+  const addressPort = view.addresses.find(
+    (candidate) =>
+      candidate.id === input.addressId || candidate.host === input.addressId
+  )?.port;
+  return {
+    portLabel: accessEndpointLabelForPort(view, addressPort),
+    publicUrl: stringValue(objectValue(address)?.url) ?? undefined,
+  };
+}
+
+async function accessEndpointReadiness(
+  input: {
+    allowedDomain?: string;
+    apCandidates?: readonly DeploymentResultApCandidate[];
+    deadlineAtMs?: number;
+    kubeconfig: string;
+    signal?: AbortSignal;
+  },
+  resultRef: Extract<DeploymentResultResourceRef, { kind: "AccessEndpoint" }>
+): Promise<DeploymentResultObservation> {
+  let publicUrl = resultRef.url;
+  // The verified entry is named after the App Listening Port it reaches
+  // (Port Display Name, or the port number alone), captured here at
+  // verification time so the Success Record keeps what the user saw.
+  let portLabel: string | undefined;
+  if (resultRef.observer.kind === "ap-public-address") {
+    const observation = await apPublicAddressObservation({
+      addressId: resultRef.observer.addressId,
+      apName: resultRef.observer.apName,
+      kubeconfig: input.kubeconfig,
+      namespace: resultRef.namespace,
+      signal: input.signal,
+    });
+    if ("pending" in observation) {
+      return observation.pending;
+    }
+    publicUrl = observation.publicUrl;
+    portLabel = observation.portLabel;
+  }
+  if (publicUrl == null) {
+    throw new Error("The access endpoint URL has not been assigned yet.");
+  }
+  if (!input.allowedDomain) {
+    throw new Error("Tenant routing domain is unavailable.");
+  }
+  const parsed = new URL(publicUrl);
+  const resolvedProtocol = parsed.protocol.slice(
+    0,
+    -1
+  ) as DeploymentAccessEndpointProtocol;
+  if (!(["http", "https", "ws", "wss"] as const).includes(resolvedProtocol)) {
+    throw new Error("The access endpoint protocol is unsupported.");
+  }
+  const resolved = await probeAccessEndpoint(resultRef, publicUrl, {
+    allowedDomain: input.allowedDomain,
+    deadlineAtMs: input.deadlineAtMs ?? Date.now() + 15_000,
+    signal: input.signal,
+  });
+  publicUrl = resolved.url;
+  if (
+    portLabel === undefined &&
+    resultRef.observer.kind === "ingress" &&
+    input.apCandidates != null &&
+    input.apCandidates.length > 0
+  ) {
+    portLabel = await ingressAccessEndpointPortLabel({
+      candidates: input.apCandidates,
+      host: parsed.hostname,
+      kubeconfig: input.kubeconfig,
+      signal: input.signal,
+    });
+  }
+  const resolvedLabel = portLabel ?? resolved.label;
+  return {
+    eventMessage: `${resolvedLabel} is reachable.`,
+    latestStatusText: `${resolvedLabel} is reachable.`,
+    resolvedLabel,
+    resolvedProtocol,
+    resolvedUrl: publicUrl,
+    status: "running",
+  };
+}
+
 async function resultCardReadiness(input: {
   allowedDomain?: string;
+  apCandidates?: readonly DeploymentResultApCandidate[];
   card: DeploymentResultResourceCard;
   deadlineAtMs?: number;
   kubeconfig: string;
@@ -353,63 +549,8 @@ async function resultCardReadiness(input: {
         })
       );
     }
-    case "AccessEndpoint": {
-      let publicUrl = resultRef.url;
-      let readiness: DeploymentResultReadiness | null = null;
-      if (resultRef.observer.kind === "ap-public-address") {
-        const ap = await fetchApProductView({
-          kubeconfig: input.kubeconfig,
-          name: resultRef.observer.apName,
-          namespace: resultRef.namespace,
-          signal: input.signal,
-        });
-        const address = publicAddressViewFromAp({
-          ap,
-          publicAddressId: resultRef.observer.addressId,
-        });
-        readiness = publicAccessReadinessFromProductView(address);
-        if (readiness.status !== "running") {
-          return readiness;
-        }
-        publicUrl = stringValue(objectValue(address)?.url) ?? undefined;
-      }
-      if (publicUrl == null) {
-        throw new Error("The access endpoint URL has not been assigned yet.");
-      }
-      if (!input.allowedDomain) {
-        throw new Error("Tenant routing domain is unavailable.");
-      }
-      const parsed = new URL(publicUrl);
-      const resolvedProtocol = parsed.protocol.slice(
-        0,
-        -1
-      ) as DeploymentAccessEndpointProtocol;
-      if (
-        !(["http", "https", "ws", "wss"] as const).includes(resolvedProtocol)
-      ) {
-        throw new Error("The access endpoint protocol is unsupported.");
-      }
-      const probeOptions = {
-        allowedDomain: input.allowedDomain,
-        deadlineAtMs: input.deadlineAtMs ?? Date.now() + 15_000,
-        signal: input.signal,
-      };
-      const resolved = await probeAccessEndpoint(
-        resultRef,
-        publicUrl,
-        probeOptions
-      );
-      publicUrl = resolved.url;
-      const resolvedLabel = resolved.label;
-      return {
-        eventMessage: `${resolvedLabel} is reachable.`,
-        latestStatusText: `${resolvedLabel} is reachable.`,
-        resolvedLabel,
-        resolvedProtocol,
-        resolvedUrl: publicUrl,
-        status: "running",
-      };
-    }
+    case "AccessEndpoint":
+      return await accessEndpointReadiness(input, resultRef);
     case "TemplatePublicAccess": {
       if (!input.allowedDomain) {
         throw new Error("Tenant routing domain is unavailable.");
@@ -450,6 +591,8 @@ async function resultCardReadiness(input: {
 
 export async function observeDeploymentResultCardReadiness(input: {
   allowedDomain?: string;
+  /** APs of the same task, consulted to name an Ingress-observed endpoint. */
+  apCandidates?: readonly DeploymentResultApCandidate[];
   card: DeploymentResultResourceCard;
   deadlineAtMs?: number;
   kubeconfig: string;
