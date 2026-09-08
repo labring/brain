@@ -20,6 +20,10 @@ export function EntryNodeGroupList({ className }: { className?: string }) {
     state: { groups = [] },
   } = useEntryNode();
   const populated = groups.filter((group) => group.addresses.length > 0);
+  const addressCount = populated.reduce(
+    (count, group) => count + group.addresses.length,
+    0
+  );
 
   if (populated.length === 0) {
     return (
@@ -46,7 +50,10 @@ export function EntryNodeGroupList({ className }: { className?: string }) {
       {populated.map((group) => (
         <EntryNodeGroupBlock
           group={group}
-          headed={populated.length > 1 || group.name !== undefined}
+          headed={
+            addressCount > 1 &&
+            (populated.length > 1 || group.name !== undefined)
+          }
           key={group.port}
         />
       ))}
@@ -56,9 +63,10 @@ export function EntryNodeGroupList({ className }: { className?: string }) {
 
 /**
  * A group is headed by its port — written the way AP Network Settings writes
- * it (`game · 5200`, or `5200` alone) — except when the node has a single
- * unnamed port: then the header would name nothing the reader lacks, and the
- * block draws its addresses alone (`headed` false).
+ * it (`game · 5200`, or `5200` alone) — except when the header would name
+ * nothing the reader lacks: the node has a single Public Address, however its
+ * port is named, or a single unnamed port. Then the block draws its addresses
+ * alone (`headed` false).
  *
  * A port with one Public Address is drawn like the Container node's Image
  * block: header line over value line, the whole block one copy hit-area.

@@ -88,10 +88,17 @@ function DrawnCheck() {
 }
 
 /**
- * The primary address as a centered pill: its declared label as a muted
- * prefix, the address itself, and a copy control; click anywhere to copy.
+ * The primary address as a centered pill: its heading as a muted prefix
+ * (when `headed`), the address itself, and a copy control; click anywhere to
+ * copy.
  */
-function PrimaryEntryChip({ entry }: { entry: DeploymentTaskSuccessEntry }) {
+function PrimaryEntryChip({
+  entry,
+  headed,
+}: {
+  entry: DeploymentTaskSuccessEntry;
+  headed: boolean;
+}) {
   const [copied, copyEntry] = useCopyFeedback(entry.url);
   return (
     <button
@@ -106,9 +113,9 @@ function PrimaryEntryChip({ entry }: { entry: DeploymentTaskSuccessEntry }) {
       type="button"
     >
       <span className="truncate text-foreground">
-        {entry.label == null ? null : (
+        {headed && entry.label != null ? (
           <span className="text-muted-foreground">{entry.label} </span>
-        )}
+        ) : null}
         <AddressText url={entry.url} />
       </span>
       {copied ? (
@@ -123,8 +130,14 @@ function PrimaryEntryChip({ entry }: { entry: DeploymentTaskSuccessEntry }) {
   );
 }
 
-/** Every other verified address: a labelled line with its own copy control. */
-function SecondaryEntryRow({ entry }: { entry: DeploymentTaskSuccessEntry }) {
+/** Every other verified address: a headed line with its own copy control. */
+function SecondaryEntryRow({
+  entry,
+  headed,
+}: {
+  entry: DeploymentTaskSuccessEntry;
+  headed: boolean;
+}) {
   const [copied, copyEntry] = useCopyFeedback(entry.url);
   return (
     <div
@@ -132,14 +145,14 @@ function SecondaryEntryRow({ entry }: { entry: DeploymentTaskSuccessEntry }) {
       data-slot="deployment-task-success-entry"
     >
       <div className="flex min-w-0 flex-1 flex-col">
-        {entry.label == null ? null : (
+        {headed && entry.label != null ? (
           <span
             className="truncate text-[11px] text-muted-foreground leading-4"
             title={entry.label}
           >
             {entry.label}
           </span>
-        )}
+        ) : null}
         <span
           className="truncate font-mono text-foreground text-xs leading-4"
           title={entry.url}
@@ -186,6 +199,10 @@ export const DeploymentTaskSuccessSection = memo(
     const guidance = success.guidance ?? [];
     const primaryEntry = entries.find(isOpenableEntry);
     const secondaryEntries = entries.filter((entry) => entry !== primaryEntry);
+    // A lone entry is headed by nothing, whatever heading its source gave it,
+    // as the Public Access Node draws a lone Public Address (CONTEXT.md,
+    // Deployment Task Success Record).
+    const headed = entries.length > 1;
     const headline = success.headline ?? SUCCESS_HEADLINE_FALLBACK;
     const openLabel =
       success.openActionLabel ??
@@ -241,7 +258,7 @@ export const DeploymentTaskSuccessSection = memo(
         )}
         {primaryEntry == null ? null : (
           <>
-            <PrimaryEntryChip entry={primaryEntry} />
+            <PrimaryEntryChip entry={primaryEntry} headed={headed} />
             <div
               className={cn(RISE_CLASS, "mt-4 w-full delay-300")}
               data-slot="deployment-task-success-primary-action"
@@ -273,6 +290,7 @@ export const DeploymentTaskSuccessSection = memo(
             {secondaryEntries.map((entry, index) => (
               <SecondaryEntryRow
                 entry={entry}
+                headed={headed}
                 key={[index, entry.url].join("-")}
               />
             ))}

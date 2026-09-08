@@ -52,6 +52,7 @@ const GROUP_OPENS_WITH_HEADER_RE =
   /data-slot="entry-node-group"><div [^>]*data-slot="entry-node-group-header"/;
 const HITAREA_RE_GLOBAL = /data-slot="canvas-node-copyable-row-hitarea"/g;
 const PORT_8080_TEXT_RE = />8080</;
+const ADMIN_CONSOLE_TEXT_RE = />Admin console</;
 const ADDRESS_ROW_HITAREA_RE =
   /data-slot="entry-node-address-row"><button [^>]*data-slot="canvas-node-copyable-row-hitarea"/;
 
@@ -165,9 +166,24 @@ test("EntryNode heads every unnamed port when there are several", () => {
   assert.deepEqual(headerTexts(html), ["5200", "5201"]);
 });
 
-test("EntryNode draws a named header for a single named port", () => {
+test("EntryNode draws no header for a single named port with one address", () => {
   const html = renderGroups([
     { addresses: [PLATFORM_ADDRESS], name: "Admin console", port: 8080 },
+  ]);
+
+  assert.deepEqual(headerTexts(html), []);
+  assert.doesNotMatch(html, PORT_8080_TEXT_RE);
+  assert.doesNotMatch(html, ADMIN_CONSOLE_TEXT_RE);
+  assert.match(html, SINGLE_BLOCK_HITAREA_RE);
+});
+
+test("EntryNode draws a named header for a single named port with several addresses", () => {
+  const html = renderGroups([
+    {
+      addresses: [PLATFORM_ADDRESS, { ...PLATFORM_ADDRESS, id: "second" }],
+      name: "Admin console",
+      port: 8080,
+    },
   ]);
 
   assert.deepEqual(headerTexts(html), ["Admin console · 8080"]);
@@ -190,12 +206,13 @@ test("EntryNode draws one header per port in the given order", () => {
 test("EntryNode makes the whole block the copy hit-area when a port has one address", () => {
   const html = renderGroups([
     { addresses: [PLATFORM_ADDRESS], name: "game", port: 5200 },
+    { addresses: [WS_ADDRESS], port: 5201 },
   ]);
 
   assert.match(html, SINGLE_BLOCK_HITAREA_RE);
   assert.doesNotMatch(html, ADDRESS_ROW_HITAREA_RE);
-  assert.equal(html.match(HITAREA_RE_GLOBAL)?.length, 1);
-  assert.deepEqual(headerTexts(html), ["game · 5200"]);
+  assert.equal(html.match(HITAREA_RE_GLOBAL)?.length, 2);
+  assert.deepEqual(headerTexts(html), ["game · 5200", "5201"]);
 });
 
 test("EntryNode single pending address draws no hit-area at all", () => {

@@ -1011,6 +1011,8 @@ test("the verified result takes the panel and keeps the process one click away",
   // own: the secondary address is only the element's own title and text node,
   // so it reads as an address to copy rather than a link to click.
   assert.equal((html.match(SUCCESS_ENTRY_SLOT_RE) ?? []).length, 2);
+  // With several entries each keeps its heading.
+  assert.match(html, SERVER_ADDRESS_LABEL_RE);
   assert.match(html, LOBBY_ADDRESS_TEXT_RE);
   assert.equal(html.includes('href="https://lobby.demo.sealos.run"'), false);
   assert.ok(html.includes('href="https://eaglercraft.demo.sealos.run"'));
@@ -1076,7 +1078,8 @@ test("a verified WebSocket endpoint is copyable but is not opened as a page", ()
     })
   );
 
-  assert.match(html, GAME_SERVER_LABEL_RE);
+  // A lone entry is headed by nothing, whatever its source called it.
+  assert.doesNotMatch(html, GAME_SERVER_LABEL_RE);
   assert.match(html, GAME_SERVER_ADDRESS_RE);
   assert.equal(
     html.includes('href="wss://eaglercraft.demo.sealos.run/server"'),
@@ -1097,7 +1100,9 @@ test("the EaglerCraft fixture teaches a player how to join the server", () => {
   assert.match(html, DECLARED_HEADLINE_RE);
   assert.match(html, PRODUCT_NAME_RE);
   assert.match(html, OPEN_SERVER_RE);
-  assert.match(html, SERVER_ADDRESS_LABEL_RE);
+  // The fixture's one entry is headed by nothing, as a lone address is
+  // everywhere; its declared label is not shown.
+  assert.doesNotMatch(html, SERVER_ADDRESS_LABEL_RE);
   assert.match(html, FIXTURE_ADDRESS_RE);
   assert.match(html, MULTIPLAYER_STEP_RE);
   assert.match(html, PLAY_STEP_RE);
