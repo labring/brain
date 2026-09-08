@@ -26,7 +26,17 @@ export type DeploymentAccessEndpointProtocol = "http" | "https" | "ws" | "wss";
 export type DeploymentAccessEndpointObserver =
   | { addressId: string; apName: string; kind: "ap-public-address" }
   | { kind: "declared" }
-  | { kind: "ingress"; name: string };
+  | { kind: "ingress"; name: string }
+  /** A Template Entry (ADR 0081): the template's declared Open or Share URL. */
+  | { entry: TemplateEntryRole; kind: "template-entry" };
+
+export type TemplateEntryRole = "open" | "share";
+
+/** The Open and Share URLs a template deployment declared (ADR 0081). */
+export interface DeploymentTemplateEntryUrls {
+  open?: string;
+  share?: string;
+}
 
 export type DeploymentTimelineEventSeverity =
   | "info"
@@ -177,6 +187,13 @@ export interface DeploymentTaskSuccessSnapshot {
    * snapshot can never replay the confetti.
    */
   revision: number;
+  /**
+   * The HTTP(S) address the share strip shares (ADR 0081): the template's
+   * verified Share entry, else the Open URL as it stood when the record was
+   * written. Absent on records written before the field existed, which
+   * share their primary entry.
+   */
+  shareUrl?: string;
   verification?: DeploymentTaskSuccessVerification;
   verifiedAt: string;
 }
@@ -733,6 +750,16 @@ function accessProtocol(
   }
 }
 
+/** A share address is opened in a browser, so only HTTP(S) qualifies. */
+function successShareUrl(value: unknown): string | undefined {
+  const url = successUrl(value);
+  if (url == null) {
+    return undefined;
+  }
+  const protocol = accessProtocol(url);
+  return protocol === "http" || protocol === "https" ? url : undefined;
+}
+
 function successCount(value: unknown, max: number): number | undefined {
   return Number.isSafeInteger(value) &&
     (value as number) >= 0 &&
@@ -853,6 +880,7 @@ export function sanitizeDeploymentTaskSuccess(
   );
   const entries = successEntries(candidate.entries, contractVersion);
   const guidance = successGuidance(candidate.guidance);
+  const shareUrl = successShareUrl(candidate.shareUrl);
   const verification = successVerification(candidate.verification);
   const revision = successCount(candidate.revision, Number.MAX_SAFE_INTEGER);
   return {
@@ -865,6 +893,7 @@ export function sanitizeDeploymentTaskSuccess(
     ...(productId == null ? {} : { productId }),
     ...(productName == null ? {} : { productName }),
     revision: revision ?? fallback.revision,
+    ...(shareUrl == null ? {} : { shareUrl }),
     verifiedAt: isoTimestamp(candidate.verifiedAt) ?? fallback.verifiedAt,
     ...(verification == null ? {} : { verification }),
   };
@@ -892,6 +921,7 @@ export function deploymentTaskSuccessSignature(
     productCategories: success.productCategories ?? [],
     productId: success.productId ?? "",
     productName: success.productName ?? "",
+    shareUrl: success.shareUrl ?? "",
     verification: success.verification
       ? [success.verification.passed, success.verification.total]
       : null,
@@ -987,20 +1017,53 @@ export function prioritizeSuccessEntries<T extends { url: string }>(
   return [primary, ...entries.filter((_, position) => position !== index)];
 }
 
+/** A Template Entry card is optional evidence: verified, it enters the record. */
+function isTemplateEntryCard(card: DeploymentResultResourceCard): boolean {
+  return (
+    card.resultRef.kind === "AccessEndpoint" &&
+    card.resultRef.observer.kind === "template-entry"
+  );
+}
+
+/**
+ * The address the share strip shares: the record's own snapshot, else — for
+ * records written before the field existed — the primary HTTP(S) entry.
+ */
+export function deploymentTaskSuccessShareUrl(
+  success: Pick<DeploymentTaskSuccessSnapshot, "entries" | "shareUrl">
+): string | undefined {
+  return (
+    success.shareUrl ??
+    success.entries?.find((entry) => isHttpEntryUrl(entry.url))?.url
+  );
+}
+
 export function deploymentTaskSuccessFromTimeline(
   timeline: DeploymentTaskTimelineSnapshot,
   input: DeploymentTaskSuccessProduct & {
     /** The Default Open Port's best Public Address, when the task has one. */
     primaryEntryUrl?: string | null;
+    /**
+     * The template's declared entries (ADR 0081). A verified Open entry wins
+     * over `primaryEntryUrl`; a verified Share entry becomes the record's
+     * share address, else the Open URL is shared. An unverified entry is
+     * ignored: the record carries only addresses the probe confirmed.
+     */
+    templateEntries?: DeploymentTemplateEntryUrls | null;
   }
 ): DeploymentTaskSuccessAttachment | null {
   if (!deploymentTimelineResultReadinessReached(timeline)) {
     return null;
   }
-  const runningCards = timeline.steps
-    .flatMap((step) => step.resultCards ?? [])
-    .filter((card) => card.required && card.status === "running");
-  const endpointEntries = runningCards.flatMap((card) => {
+  const cards = timeline.steps.flatMap((step) => step.resultCards ?? []);
+  const runningCards = cards.filter(
+    (card) => card.required && card.status === "running"
+  );
+  const verifiedEndpointCards = cards.filter(
+    (card) =>
+      card.status === "running" && (card.required || isTemplateEntryCard(card))
+  );
+  const endpointEntries = verifiedEndpointCards.flatMap((card) => {
     switch (card.resultRef.kind) {
       case "AccessEndpoint":
         return card.resultRef.url == null
@@ -1018,6 +1081,12 @@ export function deploymentTaskSuccessFromTimeline(
         return [];
     }
   });
+  const verifiedUrls = new Set(endpointEntries.map((entry) => entry.url));
+  const declaredOpen = input.templateEntries?.open;
+  const openUrl =
+    declaredOpen != null && verifiedUrls.has(declaredOpen)
+      ? declaredOpen
+      : input.primaryEntryUrl;
   const uniqueEntries = prioritizeSuccessEntries(
     endpointEntries.filter(
       (entry, index) =>
@@ -1025,8 +1094,15 @@ export function deploymentTaskSuccessFromTimeline(
           (candidate) => candidate.url === entry.url
         ) === index
     ),
-    input.primaryEntryUrl
+    openUrl
   );
+  const declaredShare = input.templateEntries?.share;
+  const shareUrl =
+    declaredShare != null &&
+    verifiedUrls.has(declaredShare) &&
+    isHttpEntryUrl(declaredShare)
+      ? declaredShare
+      : deploymentTaskSuccessShareUrl({ entries: uniqueEntries });
   const success = deploymentTaskSuccessFromResultReadiness({
     productCategories: input.productCategories,
     productId: input.productId,
@@ -1040,6 +1116,7 @@ export function deploymentTaskSuccessFromTimeline(
         ...(uniqueEntries.length === 0
           ? { headline: "Deployment completed" }
           : { entries: uniqueEntries }),
+        ...(shareUrl == null ? {} : { shareUrl }),
       };
 }
 

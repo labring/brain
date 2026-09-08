@@ -552,3 +552,133 @@ it("keeps the Ingress label when no AP of the task knows the host", async () => 
   expect(observed.running).toBe(true);
   expect(observed.card.resultRef).toMatchObject({ label: "Web address" });
 });
+
+it("probes a Template Entry share address verbatim, query string included, and keeps its own label", async () => {
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+  fetcher.mockClear();
+  const host = "eagler-demo.example.sealos.run";
+  const share = `https://${host}/?server=wss://${host}/`;
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    apCandidates: [{ name: "eaglercraft", namespace: "ns-demo" }],
+    card: {
+      events: [],
+      id: "AccessEndpoint:ns-demo:template-entry:share",
+      required: false,
+      resultRef: {
+        id: "template-entry:share",
+        kind: "AccessEndpoint",
+        label: "Share address",
+        namespace: "ns-demo",
+        observer: { entry: "share", kind: "template-entry" },
+        protocol: "https",
+        url: share,
+      },
+      status: "creating",
+      title: "Share address",
+    },
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.status).toBe("running");
+  expect(probeFetch).toHaveBeenCalledTimes(1);
+  expect(String(probeFetch.mock.calls[0]?.[0])).toBe(share);
+  // A Share entry is never renamed after a port; the AP view is not even read.
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(observed.card.resultRef).toMatchObject({
+    label: "Share address",
+    url: share,
+  });
+});
+
+it("names a Template Entry Open address after the App Listening Port it reaches, without root discovery", async () => {
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+  fetcher.mockResolvedValueOnce({
+    status: {
+      network: {
+        appListeningPorts: [
+          { displayName: "game", port: 5200 },
+          { displayName: "admin", port: 5201 },
+        ],
+        publicAddresses: [
+          {
+            host: "eagler-demo.example.sealos.run",
+            id: "observed-1",
+            port: 5200,
+            status: "accessible",
+            type: "observed",
+            url: "wss://eagler-demo.example.sealos.run/",
+          },
+          {
+            host: "eagler-demo.example.sealos.run",
+            id: "observed-2",
+            port: 5201,
+            status: "accessible",
+            type: "observed",
+            url: "https://eagler-demo.example.sealos.run/admin",
+          },
+        ],
+      },
+    },
+  });
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    apCandidates: [{ name: "eaglercraft", namespace: "ns-demo" }],
+    card: {
+      events: [],
+      id: "AccessEndpoint:ns-demo:template-entry:open",
+      required: false,
+      resultRef: {
+        id: "template-entry:open",
+        kind: "AccessEndpoint",
+        label: "Web address",
+        namespace: "ns-demo",
+        observer: { entry: "open", kind: "template-entry" },
+        protocol: "https",
+        url: "https://eagler-demo.example.sealos.run/admin",
+      },
+      status: "creating",
+      title: "Web address",
+    },
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.status).toBe("running");
+  expect(observed.card.resultRef).toMatchObject({
+    label: "admin · 5201",
+    url: "https://eagler-demo.example.sealos.run/admin",
+  });
+});
+
+it("never verifies a declared Template Entry through a root it did not declare", async () => {
+  probeFetch.mockImplementationOnce(
+    async () => new Response(null, { status: 404 })
+  );
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    card: {
+      events: [],
+      id: "AccessEndpoint:ns-demo:template-entry:open",
+      required: false,
+      resultRef: {
+        id: "template-entry:open",
+        kind: "AccessEndpoint",
+        label: "Web address",
+        namespace: "ns-demo",
+        observer: { entry: "open", kind: "template-entry" },
+        protocol: "https",
+        url: "https://eagler-demo.example.sealos.run/admin",
+      },
+      status: "creating",
+      title: "Web address",
+    },
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.status).toBe("unknown");
+  expect(probeFetch).toHaveBeenCalledTimes(1);
+});

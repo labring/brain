@@ -1227,3 +1227,206 @@ metadata:
     EMPTY_TEMPLATE_RESOURCE_SET_RE
   );
 });
+
+const ENTRIES_APP_HOST_EXPRESSION = `${TEMPLATE_EXPRESSION_START} defaults.app_host }}.${TEMPLATE_EXPRESSION_START} SEALOS_CLOUD_DOMAIN }}`;
+
+const ENTRIES_TEMPLATE_HEADER = `apiVersion: app.sealos.io/v1
+kind: Template
+metadata:
+  name: eaglercraft-server
+spec:
+  title: EaglerCraft Server
+  defaults:
+    app_host:
+      type: string
+      value: eagler-demo
+    app_name:
+      type: string
+      value: eaglercraft
+  inputs: {}
+`;
+
+const ENTRIES_TEMPLATE_RESOURCES = `---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: \${{ defaults.app_name }}
+  labels:
+    app: \${{ defaults.app_name }}
+    cloud.sealos.io/app-deploy-manager: \${{ defaults.app_name }}
+spec:
+  selector:
+    matchLabels:
+      app: \${{ defaults.app_name }}
+  template:
+    metadata:
+      labels:
+        app: \${{ defaults.app_name }}
+    spec:
+      containers:
+        - name: main
+          image: ghcr.io/example/eaglercraft:latest
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: \${{ defaults.app_name }}
+  labels:
+    app: \${{ defaults.app_name }}
+spec:
+  ports:
+    - port: 5200
+      targetPort: 5200
+      name: game
+    - port: 5201
+      targetPort: 5201
+      name: admin
+  selector:
+    app: \${{ defaults.app_name }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: \${{ defaults.app_name }}
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: WS
+spec:
+  rules:
+    - host: \${{ defaults.app_host }}.\${{ SEALOS_CLOUD_DOMAIN }}
+      http:
+        paths:
+          - pathType: Prefix
+            path: /
+            backend:
+              service:
+                name: \${{ defaults.app_name }}
+                port:
+                  number: 5200
+  tls:
+    - hosts:
+        - \${{ defaults.app_host }}.\${{ SEALOS_CLOUD_DOMAIN }}
+      secretName: wildcard-cert
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: \${{ defaults.app_name }}-admin
+spec:
+  rules:
+    - host: \${{ defaults.app_host }}.\${{ SEALOS_CLOUD_DOMAIN }}
+      http:
+        paths:
+          - pathType: Prefix
+            path: /api
+            backend:
+              service:
+                name: \${{ defaults.app_name }}
+                port:
+                  number: 5201
+          - pathType: Prefix
+            path: /admin
+            backend:
+              service:
+                name: \${{ defaults.app_name }}
+                port:
+                  number: 5201
+  tls:
+    - hosts:
+        - \${{ defaults.app_host }}.\${{ SEALOS_CLOUD_DOMAIN }}
+      secretName: wildcard-cert
+`;
+
+const ENTRIES_APP_CR = `---
+apiVersion: app.sealos.io/v1
+kind: App
+metadata:
+  name: \${{ defaults.app_name }}
+spec:
+  data:
+    url: https://\${{ defaults.app_host }}.\${{ SEALOS_CLOUD_DOMAIN }}/admin
+  type: link
+`;
+
+function renderEntriesTemplate(input: {
+  entries?: string;
+  includeAppCr?: boolean;
+  serviceAnnotation?: string;
+}) {
+  const header =
+    input.entries === undefined
+      ? ENTRIES_TEMPLATE_HEADER
+      : `${ENTRIES_TEMPLATE_HEADER}  entries:\n${input.entries}\n`;
+  const resources =
+    input.serviceAnnotation === undefined
+      ? ENTRIES_TEMPLATE_RESOURCES
+      : ENTRIES_TEMPLATE_RESOURCES.replace(
+          "kind: Service\nmetadata:\n",
+          `kind: Service\nmetadata:\n  annotations:\n    ${input.serviceAnnotation}\n`
+        );
+  return renderTemplateDeploymentFromYaml({
+    instanceName: "eaglercraft",
+    namespace: "ns-demo",
+    projectId: "project-1",
+    projectName: "EaglerCraft",
+    routingDomain: "example.sealos.run",
+    templateYaml: `${header}${resources}${input.includeAppCr === false ? "" : ENTRIES_APP_CR}`,
+  });
+}
+
+function renderedServiceAnnotation(
+  rendered: ReturnType<typeof renderTemplateDeploymentFromYaml>
+): string | undefined {
+  const service = rendered.resources.find((doc) => doc.kind === "Service");
+  const annotations = service?.metadata?.annotations as
+    | Record<string, string>
+    | undefined;
+  return annotations?.["brain.io/default-open-port"];
+}
+
+test("renderTemplateDeployment renders Template Entries with the resource context and presets the Default Open Port", () => {
+  const rendered = renderEntriesTemplate({
+    entries: [
+      `    open: https://${ENTRIES_APP_HOST_EXPRESSION}/admin`,
+      `    share: https://${ENTRIES_APP_HOST_EXPRESSION}/?server=wss://${ENTRIES_APP_HOST_EXPRESSION}/`,
+    ].join("\n"),
+  });
+  assert.deepEqual(rendered.entries, {
+    open: "https://eagler-demo.example.sealos.run/admin",
+    share:
+      "https://eagler-demo.example.sealos.run/?server=wss://eagler-demo.example.sealos.run/",
+  });
+  assert.equal(renderedServiceAnnotation(rendered), "5201");
+  // The annotation ships with the applied document, not only the object.
+  const serviceYaml = rendered.dependentYamls.find((yaml) =>
+    yaml.includes("kind: Service")
+  );
+  assert.ok(serviceYaml?.includes('brain.io/default-open-port: "5201"'));
+  // Entries never leak into the Instance the template creates.
+  assert.ok(!rendered.instanceYaml.includes("entries"));
+});
+
+test("renderTemplateDeployment falls back to the App CR url for Open and never for Share", () => {
+  const rendered = renderEntriesTemplate({});
+  assert.deepEqual(rendered.entries, {
+    open: "https://eagler-demo.example.sealos.run/admin",
+  });
+  assert.equal(renderedServiceAnnotation(rendered), "5201");
+});
+
+test("renderTemplateDeployment declares no entry and writes no annotation without entries or App CR", () => {
+  const rendered = renderEntriesTemplate({ includeAppCr: false });
+  assert.equal(rendered.entries, undefined);
+  assert.equal(renderedServiceAnnotation(rendered), undefined);
+});
+
+test("renderTemplateDeployment keeps a template's own Default Open Port preset and drops an entry no Ingress serves", () => {
+  const rendered = renderEntriesTemplate({
+    entries: `    open: https://elsewhere.${TEMPLATE_EXPRESSION_START} SEALOS_CLOUD_DOMAIN }}/admin`,
+    serviceAnnotation: 'brain.io/default-open-port: "5200"',
+  });
+  // The foreign Open entry is dropped; the App CR url stands in for it.
+  assert.deepEqual(rendered.entries, {
+    open: "https://eagler-demo.example.sealos.run/admin",
+  });
+  assert.equal(renderedServiceAnnotation(rendered), "5200");
+});

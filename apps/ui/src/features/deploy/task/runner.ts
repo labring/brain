@@ -87,7 +87,10 @@ import {
 } from "./billing-failure-judgment";
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
-import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
+import {
+  resultResourceCardsFromArtifactSummary,
+  templateEntryAccessEndpointCards,
+} from "./direct-timeline";
 import { isDeployTaskAbortError } from "./engine/errors";
 import type { DeployTaskHandle } from "./engine/handle";
 import {
@@ -182,6 +185,7 @@ import {
 } from "./sensitive-inputs";
 import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
 import { resolveDeploymentSuccessOpenUrl } from "./success-open-url";
+import { templateProviderTemplateEntries } from "./template-provider-entries";
 import { templateProviderPublicAccessCards } from "./template-provider-public-access";
 import {
   appendCardEvent,
@@ -191,6 +195,7 @@ import {
   attachDeploymentTaskSuccess,
   DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentResultResourceCard,
+  type DeploymentTemplateEntryUrls,
   deploymentTaskSuccessFromTimeline,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
@@ -613,6 +618,8 @@ async function applyDeploymentArtifact(input: {
 }): Promise<{
   artifactSummary: DeployTaskArtifactSummary;
   notes: string;
+  /** Template Entries Brain rendered itself (ADR 0081). */
+  templateEntries?: DeploymentTemplateEntryUrls;
   templateProviderResources?: DeploymentTemplateInstanceArtifact["resources"];
 }> {
   if (input.artifact.kind === "template-instance-pending") {
@@ -707,6 +714,9 @@ async function applyDeploymentArtifact(input: {
         notes: `Deployed Sealos template ${applied.instanceName}.`,
       }),
       notes: `Deployed Sealos template ${applied.instanceName}.`,
+      ...(input.artifact.rendered.entries === undefined
+        ? {}
+        : { templateEntries: input.artifact.rendered.entries }),
     };
   }
 
@@ -2631,6 +2641,7 @@ async function completeTaskWithArtifact(input: {
     taskDeadlineAtMs,
   });
   let templatePublicAccessCards: DeploymentResultResourceCard[] = [];
+  let templateEntries = applied.templateEntries;
   if (applied.templateProviderResources !== undefined) {
     const discoverySignal = deploymentOperationSignal({
       deadlineAtMs: readinessDeadlineAtMs,
@@ -2645,6 +2656,16 @@ async function completeTaskWithArtifact(input: {
         resources: applied.templateProviderResources,
         signal: discoverySignal,
       });
+      // The provider rendered the documents, so the Template Entries are
+      // read back off the cluster once the Ingresses exist (ADR 0081).
+      templateEntries = await templateProviderTemplateEntries({
+        ...templateProviderEntryContext(input.artifact),
+        kubeconfig: input.kubeconfig,
+        namespace: input.task.namespace,
+        resources: applied.templateProviderResources,
+        routingDomain: apUserDomain(input.kubeconfig),
+        signal: discoverySignal,
+      });
     } catch (error) {
       throwIfDeploymentOperationAborted({
         deadlineAtMs: readinessDeadlineAtMs,
@@ -2657,9 +2678,19 @@ async function completeTaskWithArtifact(input: {
     }
   }
 
-  const resultCards = [
+  const observedCards = [
     ...resultResourceCardsFromArtifactSummary(persistedSummary),
     ...templatePublicAccessCards,
+  ];
+  const resultCards = [
+    ...observedCards,
+    ...(templateEntries === undefined
+      ? []
+      : templateEntryAccessEndpointCards({
+          entries: templateEntries,
+          existingCards: observedCards,
+          namespace: input.task.namespace,
+        })),
   ];
   for (const card of resultCards) {
     await upsertResultTimelineCard({
@@ -2716,6 +2747,7 @@ async function completeTaskWithArtifact(input: {
       const success = deploymentTaskSuccessFromTimeline(timeline, {
         primaryEntryUrl,
         ...deploymentTaskSourceProduct(input.task.source),
+        templateEntries,
       });
       return success == null
         ? timeline
@@ -2731,6 +2763,37 @@ async function completeTaskWithArtifact(input: {
     payload: { artifactSummary: persistedSummary },
     phase: "completed",
   });
+}
+
+/**
+ * What the provider-path entry read-back needs from the artifact: the
+ * template, the instance, and this run's args (a resumed `template-instance`
+ * artifact holds none — its input-bound entries then fail the Ingress-host
+ * gate and drop out, never inventing a value).
+ */
+function templateProviderEntryContext(artifact: DeploymentArtifact): {
+  args: Record<string, string>;
+  instanceName: string;
+  templateName: string;
+} {
+  switch (artifact.kind) {
+    case "template-instance-pending":
+      return {
+        args: artifact.args,
+        instanceName: artifact.instanceName,
+        templateName: artifact.templateName,
+      };
+    case "template-instance":
+      return {
+        args: {},
+        instanceName: artifact.instanceName,
+        templateName: artifact.templateName,
+      };
+    default:
+      throw new Error(
+        "Template Entries are read back only for provider-applied templates."
+      );
+  }
 }
 
 function appliedResultIdentities(

@@ -15,6 +15,7 @@ import {
   declareTimelineSteps,
   deploymentTaskSuccessFromResultReadiness,
   deploymentTaskSuccessFromTimeline,
+  deploymentTaskSuccessShareUrl,
   deploymentTaskSuccessSignature,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
@@ -850,6 +851,7 @@ test("a verified template Ingress becomes the Public domain success entry", () =
         },
       ],
       productName: "AFFiNE",
+      shareUrl: "https://affine.example.sealos.run",
       verification: { passed: 3, total: 3 },
     }
   );
@@ -899,6 +901,7 @@ test("a verified generic access endpoint becomes a v2 success entry", () => {
         },
       ],
       productName: "nginx",
+      shareUrl: "https://nginx.example.sealos.run",
       verification: { passed: 3, total: 3 },
     }
   );
@@ -1208,5 +1211,173 @@ test("product categories are part of a record's identity", () => {
   assert.equal(
     deploymentTaskSuccessSignature({ ...base, productCategories: ["game"] }),
     deploymentTaskSuccessSignature({ ...base, productCategories: ["game"] })
+  );
+});
+
+const EAGLER_HOST = "eagler-demo.example.sealos.run";
+const EAGLER_OPEN = `https://${EAGLER_HOST}/admin`;
+const EAGLER_SHARE = `https://${EAGLER_HOST}/?server=wss://${EAGLER_HOST}/`;
+
+function endpointCard(input: {
+  id: string;
+  label: string;
+  observer: DeploymentResultResourceCard["resultRef"] extends infer R
+    ? R extends { kind: "AccessEndpoint"; observer: infer O }
+      ? O
+      : never
+    : never;
+  protocol: "https" | "wss";
+  required: boolean;
+  status: "creating" | "running";
+  url: string;
+}): DeploymentResultResourceCard {
+  return {
+    events: [],
+    id: `AccessEndpoint:default:${input.id}`,
+    required: input.required,
+    resultRef: {
+      id: input.id,
+      kind: "AccessEndpoint",
+      label: input.label,
+      namespace: "default",
+      observer: input.observer,
+      protocol: input.protocol,
+      url: input.url,
+    },
+    status: input.status,
+    title: input.label,
+  };
+}
+
+function eaglercraftTimeline(shareStatus: "creating" | "running") {
+  let timeline = timelineFrame({
+    "AP:default:eaglercraft": "running",
+    "PublicAccess:default:eaglercraft:lobby": "running",
+  });
+  const cards = [
+    endpointCard({
+      id: "ingress:eaglercraft:wss:root",
+      label: "game · 5200",
+      observer: { kind: "ingress", name: "eaglercraft" },
+      protocol: "wss",
+      required: true,
+      status: "running",
+      url: `wss://${EAGLER_HOST}/`,
+    }),
+    endpointCard({
+      id: "ingress:eaglercraft-admin:https:admin",
+      label: "admin · 5201",
+      observer: { kind: "ingress", name: "eaglercraft-admin" },
+      protocol: "https",
+      required: true,
+      status: "running",
+      url: EAGLER_OPEN,
+    }),
+    endpointCard({
+      id: "template-entry:share",
+      label: "Share address",
+      observer: { entry: "share", kind: "template-entry" },
+      protocol: "https",
+      required: false,
+      status: shareStatus,
+      url: EAGLER_SHARE,
+    }),
+  ];
+  for (const card of cards) {
+    timeline = upsertResultResourceCard(timeline, {
+      card,
+      stepId: "create-resources",
+      updatedAt: NOW,
+    });
+  }
+  return timeline;
+}
+
+test("a verified Template Entry puts the Open URL first and snapshots the share address verbatim", () => {
+  const success = deploymentTaskSuccessFromTimeline(
+    eaglercraftTimeline("running"),
+    {
+      // The automatic rule would open the game root; the template's Open wins.
+      primaryEntryUrl: `https://${EAGLER_HOST}/`,
+      productName: "EaglerCraft Server",
+      templateEntries: { open: EAGLER_OPEN, share: EAGLER_SHARE },
+    }
+  );
+  assert.deepEqual(
+    success?.entries?.map((entry) => entry.url),
+    [EAGLER_OPEN, `wss://${EAGLER_HOST}/`, EAGLER_SHARE]
+  );
+  assert.equal(success?.shareUrl, EAGLER_SHARE);
+  // Optional entry evidence never inflates the verification count.
+  assert.deepEqual(success?.verification, { passed: 4, total: 4 });
+});
+
+test("an unverified Template Entry stays out of the record and the share falls back to the Open URL", () => {
+  const success = deploymentTaskSuccessFromTimeline(
+    eaglercraftTimeline("creating"),
+    {
+      primaryEntryUrl: `https://${EAGLER_HOST}/`,
+      productName: "EaglerCraft Server",
+      templateEntries: { open: EAGLER_OPEN, share: EAGLER_SHARE },
+    }
+  );
+  assert.deepEqual(
+    success?.entries?.map((entry) => entry.url),
+    [EAGLER_OPEN, `wss://${EAGLER_HOST}/`]
+  );
+  assert.equal(success?.shareUrl, EAGLER_OPEN);
+
+  // A declared Open URL the probe never confirmed leaves the automatic rule in charge.
+  const unverifiedOpen = deploymentTaskSuccessFromTimeline(
+    eaglercraftTimeline("running"),
+    {
+      primaryEntryUrl: `wss://${EAGLER_HOST}/`,
+      productName: null,
+      templateEntries: { open: `https://${EAGLER_HOST}/elsewhere` },
+    }
+  );
+  assert.equal(unverifiedOpen?.entries?.[0]?.url, `wss://${EAGLER_HOST}/`);
+  assert.equal(unverifiedOpen?.shareUrl, EAGLER_OPEN);
+});
+
+test("the share address is a snapshot the sanitizer keeps for HTTP(S) only, and old records share their primary entry", () => {
+  const fallback = { revision: 2, verifiedAt: NOW };
+  const kept = sanitizeDeploymentTaskSuccess(
+    {
+      entries: [{ protocol: "https", url: EAGLER_OPEN }],
+      shareUrl: ` ${EAGLER_SHARE} `,
+    },
+    fallback
+  );
+  assert.equal(kept?.shareUrl, EAGLER_SHARE);
+  const socket = sanitizeDeploymentTaskSuccess(
+    { shareUrl: `wss://${EAGLER_HOST}/` },
+    fallback
+  );
+  assert.equal(socket?.shareUrl, undefined);
+
+  const legacy = sanitizeDeploymentTaskSuccess(
+    {
+      contractVersion: 2,
+      entries: [
+        { protocol: "wss", url: `wss://${EAGLER_HOST}/` },
+        { protocol: "https", url: EAGLER_OPEN },
+      ],
+    },
+    fallback
+  );
+  assert.equal(legacy?.shareUrl, undefined);
+  assert.equal(
+    deploymentTaskSuccessShareUrl(legacy ?? { entries: [] }),
+    EAGLER_OPEN
+  );
+  assert.equal(deploymentTaskSuccessShareUrl({ entries: [] }), undefined);
+
+  assert.notEqual(
+    deploymentTaskSuccessSignature({ ...(kept as NonNullable<typeof kept>) }),
+    deploymentTaskSuccessSignature({
+      ...(kept as NonNullable<typeof kept>),
+      shareUrl: EAGLER_OPEN,
+    })
   );
 });

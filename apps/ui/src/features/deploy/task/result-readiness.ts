@@ -485,9 +485,15 @@ async function accessEndpointReadiness(
     signal: input.signal,
   });
   publicUrl = resolved.url;
+  // A Template Entry's Open URL is named like an Ingress host once verified:
+  // by the App Listening Port it reaches. A Share entry keeps its own label.
+  const namedByPort =
+    resultRef.observer.kind === "ingress" ||
+    (resultRef.observer.kind === "template-entry" &&
+      resultRef.observer.entry === "open");
   if (
     portLabel === undefined &&
-    resultRef.observer.kind === "ingress" &&
+    namedByPort &&
     input.apCandidates != null &&
     input.apCandidates.length > 0
   ) {
