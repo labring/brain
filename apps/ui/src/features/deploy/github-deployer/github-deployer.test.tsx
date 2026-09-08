@@ -183,11 +183,17 @@ test("GithubDeployer auto deploys a restored GitHub URL only once", async () => 
   const dom = installTestDom();
   const previousActEnvironment = setActEnvironment(true);
   let deployCalls = 0;
+  let authorizeCalls = 0;
   const onDeploy = () => {
     deployCalls += 1;
   };
   const initialProps = {
-    actions: { onDeploy },
+    actions: {
+      onAutoAuthorize: () => {
+        authorizeCalls += 1;
+      },
+      onDeploy,
+    },
     autoDeploy: true,
     initialRepoUrl: "https://github.com/acme/api",
     states: {
@@ -212,6 +218,17 @@ test("GithubDeployer auto deploys a restored GitHub URL only once", async () => 
       );
     });
     assert.equal(deployCalls, 0);
+    assert.equal(authorizeCalls, 1);
+
+    // A cancelled authorization must leave the manual button available without retrying.
+    await actAndDrain(() => {
+      rendered?.rerender(
+        <GithubDeployer.Root {...initialProps}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(authorizeCalls, 1);
 
     await actAndDrain(() => {
       rendered?.rerender(
@@ -221,6 +238,7 @@ test("GithubDeployer auto deploys a restored GitHub URL only once", async () => 
       );
     });
     assert.equal(deployCalls, 1);
+    assert.equal(authorizeCalls, 1);
 
     await actAndDrain(() => {
       rendered?.rerender(
@@ -236,6 +254,80 @@ test("GithubDeployer auto deploys a restored GitHub URL only once", async () => 
         rendered?.unmount();
       });
     }
+    restoreActEnvironment(previousActEnvironment);
+    await dom.restore();
+  }
+});
+
+test("GithubDeployer only auto-connects a valid deployment after auth readiness", async () => {
+  const dom = installTestDom();
+  const previousActEnvironment = setActEnvironment(true);
+  let authorizeCalls = 0;
+  const onAutoAuthorize = () => {
+    authorizeCalls += 1;
+  };
+  let rendered: ReturnType<typeof render> | undefined;
+  try {
+    const cases = [
+      { autoDeploy: false, initialRepoUrl: "https://github.com/acme/api" },
+      { autoDeploy: true, initialRepoUrl: "https://example.com/acme/api" },
+      { autoDeploy: true, initialRepoUrl: "" },
+      {
+        autoDeploy: true,
+        initialRepoUrl: "https://github.com/acme/api",
+        isAuthorized: true,
+      },
+      {
+        autoDeploy: true,
+        initialRepoUrl: "https://github.com/acme/api",
+        isLoading: true,
+      },
+    ];
+    for (const entry of cases) {
+      await actAndDrain(() => {
+        rendered = render(
+          <GithubDeployer.Root
+            actions={{ onAutoAuthorize }}
+            autoDeploy={entry.autoDeploy}
+            initialRepoUrl={entry.initialRepoUrl}
+            states={{
+              isAuthorized: entry.isAuthorized ?? false,
+              isLoading: entry.isLoading,
+              repos: [],
+            }}
+          >
+            <GithubDeployer.UrlInput />
+          </GithubDeployer.Root>
+        );
+      });
+      assert.equal(authorizeCalls, 0);
+      await actAndDrain(() => rendered?.unmount());
+    }
+
+    // The host withholds the automatic action until credentials and auth lookup are ready.
+    const props = {
+      autoDeploy: true,
+      initialRepoUrl: "https://github.com/acme/api",
+      states: { isAuthorized: false, repos: [] },
+    } as const;
+    await actAndDrain(() => {
+      rendered = render(
+        <GithubDeployer.Root {...props}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(authorizeCalls, 0);
+    await actAndDrain(() => {
+      rendered?.rerender(
+        <GithubDeployer.Root {...props} actions={{ onAutoAuthorize }}>
+          <GithubDeployer.UrlInput />
+        </GithubDeployer.Root>
+      );
+    });
+    assert.equal(authorizeCalls, 1);
+  } finally {
+    await actAndDrain(() => rendered?.unmount());
     restoreActEnvironment(previousActEnvironment);
     await dom.restore();
   }

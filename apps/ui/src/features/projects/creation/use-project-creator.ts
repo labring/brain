@@ -159,6 +159,8 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   });
 
   const {
+    canCheck: canCheckGithubAuth,
+    error: githubAuthError,
     disconnectGithubAuth,
     initiateGithubAuth,
     isAuthorized: githubAuthorized,
@@ -478,6 +480,10 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
   const githubDeployer = useMemo(
     () => ({
       actions: {
+        onAutoAuthorize:
+          canCheckGithubAuth && !githubAuthLoading && !githubAuthError
+            ? () => initiateGithubAuth({ automatic: true })
+            : undefined,
         onAuthorize: initiateGithubAuth,
         onDisconnect: handleGithubDisconnect,
         onDeploy: handleGithubDeploy,
@@ -497,6 +503,9 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
       },
     }),
     [
+      canCheckGithubAuth,
+      githubAuthError,
+      githubAuthLoading,
       githubDeployerLoading,
       githubReposError,
       githubRepos,
