@@ -277,7 +277,7 @@ export const DeploymentTaskSuccessSection = memo(
 
     return (
       <div
-        className="mt-4 flex flex-col"
+        className="mt-4 flex flex-col pb-2"
         data-slot="deployment-task-success"
         ref={rootRef}
       >
