@@ -69,7 +69,10 @@ export function TemplateDeploymentPane({
   const billingNotice = useDeployBillingNotice();
 
   const deploy = useCallback(
-    async (settings: TemplateDeploymentSettings) => {
+    async (
+      settings: TemplateDeploymentSettings,
+      templateCategories: string[] | undefined
+    ) => {
       setDeploying(true);
       try {
         const outcome = await runDeploymentTargetPipeline({
@@ -85,6 +88,7 @@ export function TemplateDeploymentPane({
               projectName,
               projectId,
             }),
+            templateCategories,
             templateName: settings.templateName,
           },
         });
@@ -147,9 +151,9 @@ export function TemplateDeploymentPane({
         errorMessage={templateCatalog.error?.message}
         initialSettings={initialSettings}
         loading={templateCatalog.isLoading}
-        onDeploy={(settings) => {
+        onDeploy={(settings, choice) => {
           overwriteGate.gate(() => {
-            deploy(settings).catch(() => undefined);
+            deploy(settings, choice.category).catch(() => undefined);
           });
         }}
         templateOptions={templateCatalog.templates}

@@ -7,6 +7,7 @@ import {
   attachDeploymentTaskSuccess,
   type DeploymentResultResourceCard,
   type DeploymentResultResourceRef,
+  type DeploymentTaskSuccessProduct,
   type DeploymentTaskTimelineSnapshot,
   deploymentResultResourceCardId,
   deploymentTaskSuccessFromTimeline,
@@ -85,12 +86,11 @@ export function managedDeploymentTimelineResultCards(input: {
 /** Writes managed evidence first, then derives the success claim from it. */
 export function attachManagedDeploymentTimelineSuccess(
   timeline: DeploymentTaskTimelineSnapshot,
-  input: {
+  input: DeploymentTaskSuccessProduct & {
     accessEndpoints: readonly ManagedAccessEndpoint[];
     namespace: string;
     /** The Default Open Port's best Public Address, when an AP declares one. */
     primaryEntryUrl?: string | null;
-    productName: string | null;
     resources: readonly ManagedResourceRef[];
     updatedAt: string;
   }
@@ -114,6 +114,8 @@ export function attachManagedDeploymentTimelineSuccess(
   );
   const success = deploymentTaskSuccessFromTimeline(withEvidence, {
     primaryEntryUrl: input.primaryEntryUrl,
+    productCategories: input.productCategories,
+    productId: input.productId,
     productName: input.productName,
   });
   return success == null

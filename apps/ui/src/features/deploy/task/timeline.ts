@@ -162,6 +162,13 @@ export interface DeploymentTaskSuccessSnapshot {
   /** Contract headline; wins over the UI's default "You can start using it". */
   headline?: string;
   openActionLabel?: string;
+  /**
+   * The product's catalog categories (e.g. `game`, `ai`) as snapshotted at
+   * verification time; only a template deployment declares them. The share
+   * copy reads these, never the live catalog (AIM-354).
+   */
+  productCategories?: string[];
+  /** The product's catalog identity; the template name for a template deployment. */
   productId?: string;
   productName?: string;
   /**
@@ -172,6 +179,17 @@ export interface DeploymentTaskSuccessSnapshot {
   revision: number;
   verification?: DeploymentTaskSuccessVerification;
   verifiedAt: string;
+}
+
+/**
+ * What a runner knows about the product it verified, read off the task's
+ * source. Every source has a name; a template also has its catalog name as
+ * the id and its categories. Empty or null facts are left out of the record.
+ */
+export interface DeploymentTaskSuccessProduct {
+  productCategories?: readonly string[] | null;
+  productId?: string | null;
+  productName: string | null;
 }
 
 /** What a caller may attach; the revision and stamp are owned by the timeline. */
@@ -645,17 +663,41 @@ const MAX_SUCCESS_LABEL_LENGTH = 140;
 const MAX_SUCCESS_DETAIL_LENGTH = 280;
 const MAX_SUCCESS_URL_LENGTH = 2048;
 const MAX_SUCCESS_VERIFICATION_TOTAL = 64;
+const MAX_SUCCESS_CATEGORIES = 16;
+const MAX_SUCCESS_CATEGORY_LENGTH = 64;
+const WHITESPACE_RUN_RE = /\s+/g;
 
-/** Trims to a single presentable line, or drops the value when unusable. */
+/**
+ * Folds a value onto a single presentable line — interior line breaks and
+ * runs of whitespace become one space — or drops it when unusable.
+ */
 function successText(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
-  const text = value.trim();
+  const text = value.replace(WHITESPACE_RUN_RE, " ").trim();
   if (text === "") {
     return undefined;
   }
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+/** The declared categories as a short, de-duplicated list of trimmed names. */
+function successCategories(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const categories: string[] = [];
+  for (const candidate of value) {
+    const category = successText(candidate, MAX_SUCCESS_CATEGORY_LENGTH);
+    if (category != null && !categories.includes(category)) {
+      categories.push(category);
+    }
+    if (categories.length >= MAX_SUCCESS_CATEGORIES) {
+      break;
+    }
+  }
+  return categories.length === 0 ? undefined : categories;
 }
 
 /**
@@ -803,6 +845,7 @@ export function sanitizeDeploymentTaskSuccess(
     candidate.openActionLabel,
     MAX_SUCCESS_LABEL_LENGTH
   );
+  const productCategories = successCategories(candidate.productCategories);
   const productId = successText(candidate.productId, MAX_SUCCESS_LABEL_LENGTH);
   const productName = successText(
     candidate.productName,
@@ -818,6 +861,7 @@ export function sanitizeDeploymentTaskSuccess(
     ...(headline == null ? {} : { headline }),
     ...(guidance == null || guidance.length === 0 ? {} : { guidance }),
     ...(openActionLabel == null ? {} : { openActionLabel }),
+    ...(productCategories == null ? {} : { productCategories }),
     ...(productId == null ? {} : { productId }),
     ...(productName == null ? {} : { productName }),
     revision: revision ?? fallback.revision,
@@ -845,6 +889,7 @@ export function deploymentTaskSuccessSignature(
     ]),
     headline: success.headline ?? "",
     openActionLabel: success.openActionLabel ?? "",
+    productCategories: success.productCategories ?? [],
     productId: success.productId ?? "",
     productName: success.productName ?? "",
     verification: success.verification
@@ -864,14 +909,20 @@ export function deploymentTaskSuccessSignature(
  * record and the Timeline keeps reporting progress instead of announcing a
  * result the user cannot verify (issue #160).
  */
-export function deploymentTaskSuccessFromResultReadiness(input: {
-  productName: string | null;
-  requiredRunningCards: number;
-}): DeploymentTaskSuccessAttachment | null {
+export function deploymentTaskSuccessFromResultReadiness(
+  input: DeploymentTaskSuccessProduct & {
+    requiredRunningCards: number;
+  }
+): DeploymentTaskSuccessAttachment | null {
   if (input.requiredRunningCards < 1) {
     return null;
   }
+  const productCategories = input.productCategories ?? [];
   return {
+    ...(productCategories.length === 0
+      ? {}
+      : { productCategories: [...productCategories] }),
+    ...(input.productId == null ? {} : { productId: input.productId }),
     ...(input.productName == null ? {} : { productName: input.productName }),
     verification: {
       passed: input.requiredRunningCards,
@@ -938,10 +989,9 @@ export function prioritizeSuccessEntries<T extends { url: string }>(
 
 export function deploymentTaskSuccessFromTimeline(
   timeline: DeploymentTaskTimelineSnapshot,
-  input: {
+  input: DeploymentTaskSuccessProduct & {
     /** The Default Open Port's best Public Address, when the task has one. */
     primaryEntryUrl?: string | null;
-    productName: string | null;
   }
 ): DeploymentTaskSuccessAttachment | null {
   if (!deploymentTimelineResultReadinessReached(timeline)) {
@@ -978,6 +1028,8 @@ export function deploymentTaskSuccessFromTimeline(
     input.primaryEntryUrl
   );
   const success = deploymentTaskSuccessFromResultReadiness({
+    productCategories: input.productCategories,
+    productId: input.productId,
     productName: input.productName,
     requiredRunningCards: runningCards.length,
   });

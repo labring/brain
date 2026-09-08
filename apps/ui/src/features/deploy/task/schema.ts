@@ -276,6 +276,13 @@ export interface DeploymentTaskTemplateSource {
    * the name list itself is persisted so clones know what must be re-asked.
    */
   sensitiveKeys?: string[];
+  /**
+   * The template's declared categories (its catalog `categories`, e.g.
+   * `game`, `ai`) as they stood when the task was created. Carried so the
+   * Deployment Task Success Record can snapshot them without asking the
+   * catalog again (AIM-354).
+   */
+  templateCategories?: string[];
   templateName: string;
 }
 

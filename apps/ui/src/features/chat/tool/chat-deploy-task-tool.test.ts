@@ -482,3 +482,90 @@ test("chat createDeployTask refuses behind the pre-deploy wall and never creates
   });
   assert.equal(createCalls, 0);
 });
+
+const templateSource = {
+  args: { port: "25565" },
+  kind: "template",
+  templateName: "eaglercraft-server",
+} as const;
+
+function templateCatalogItem(name: string, category: string[]) {
+  return {
+    args: [],
+    category,
+    description: `${name} template`,
+    icon: "",
+    name,
+    readme: "",
+    sourceRepos: [],
+    title: name,
+  };
+}
+
+async function createTemplateTask(
+  listTemplateCatalog: () => Promise<ReturnType<typeof templateCatalogItem>[]>
+) {
+  const sources: unknown[] = [];
+  const { createDeployTaskTools } = await import("./chat-deploy-task-tool");
+  const deployTaskTools = createDeployTaskTools(githubToolOptions(), {
+    createDeployTaskAction: (_context, input) => {
+      sources.push(input.create.source);
+      return Promise.resolve({
+        kind: "created",
+        launched: null,
+        task: { id: "task-11" } as never,
+      });
+    },
+    getDeployTaskEngineContext: () => null as never,
+    getDeployTaskSnapshot: () => Promise.resolve(null),
+    listTemplateCatalog,
+    runDeployTask: () => Promise.resolve(),
+    toDeployTaskDTO: (task: unknown) => task as never,
+  });
+  assert.ok(deployTaskTools.createDeployTask.execute);
+  const result = await deployTaskTools.createDeployTask.execute(
+    {
+      intention: "deploy the eaglercraft template",
+      source: templateSource,
+      target: { kind: "newProject", displayName: "eaglercraft" },
+    },
+    { context: {}, messages: [], toolCallId: "tool-call-11" }
+  );
+  assert.ok(result != null && "ok" in result && result.ok);
+  assert.equal(sources.length, 1);
+  return sources[0];
+}
+
+test("chat createDeployTask snapshots the template's catalog categories into the source", async () => {
+  const source = await createTemplateTask(() =>
+    Promise.resolve([
+      templateCatalogItem("memos", ["tool"]),
+      templateCatalogItem("eaglercraft-server", ["game", "tool"]),
+    ])
+  );
+  assert.deepEqual(source, {
+    ...templateSource,
+    templateCategories: ["game", "tool"],
+  });
+});
+
+test("chat createDeployTask never lets the model declare template categories", () => {
+  const parsed = createDeployTaskToolInputSchema.parse({
+    intention: "deploy the eaglercraft template",
+    source: { ...templateSource, templateCategories: ["ai"] },
+    target: { kind: "newProject" },
+  });
+  assert.equal("templateCategories" in parsed.source, false);
+});
+
+test("chat createDeployTask still creates a template task when the catalog cannot answer", async () => {
+  const unknown = await createTemplateTask(() =>
+    Promise.resolve([templateCatalogItem("memos", ["tool"])])
+  );
+  assert.deepEqual(unknown, templateSource);
+
+  const unreachable = await createTemplateTask(() =>
+    Promise.reject(new Error("TEMPLATE_PROVIDER_URL is not configured."))
+  );
+  assert.deepEqual(unreachable, templateSource);
+});

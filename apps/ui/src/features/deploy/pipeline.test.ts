@@ -191,6 +191,7 @@ test("Deployment Target pipeline creates a template Deployment Task", async () =
         projectName: "existing-project",
         projectId: "existing-uid",
       }),
+      templateCategories: ["tool"],
       templateName: "memos",
     },
   });
@@ -201,6 +202,7 @@ test("Deployment Target pipeline creates a template Deployment Task", async () =
     source: {
       args: { storage: "10" },
       kind: "template",
+      templateCategories: ["tool"],
       templateName: "memos",
     },
     target: {

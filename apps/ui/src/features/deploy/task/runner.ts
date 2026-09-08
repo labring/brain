@@ -132,7 +132,7 @@ import {
 import { probeManagedPublicUrl } from "./managed-public-probe";
 import { attachManagedDeploymentTimelineSuccess } from "./managed-timeline";
 import { deployOutputProgressSummary } from "./output-progress";
-import { deploymentTaskSourceSummary } from "./projection";
+import { deploymentTaskSourceProduct } from "./projection";
 import {
   type DeploymentResultApCandidate,
   deploymentResultApCandidates,
@@ -2715,7 +2715,7 @@ async function completeTaskWithArtifact(input: {
     update: (timeline) => {
       const success = deploymentTaskSuccessFromTimeline(timeline, {
         primaryEntryUrl,
-        productName: deploymentTaskSourceSummary(input.task.source),
+        ...deploymentTaskSourceProduct(input.task.source),
       });
       return success == null
         ? timeline
@@ -3867,7 +3867,7 @@ async function runManagedDeploymentLifecycleCore(input: {
             accessEndpoints: completion.accessEndpoints,
             namespace: input.task.namespace,
             primaryEntryUrl,
-            productName: deploymentTaskSourceSummary(input.task.source),
+            ...deploymentTaskSourceProduct(input.task.source),
             resources: completion.resources,
             updatedAt,
           });
