@@ -204,6 +204,56 @@ function apWithNetwork(network: Record<string, unknown>) {
   };
 }
 
+test("Public Access Open stays enabled while the AP is Updating when routing is accessible", () => {
+  const ap = {
+    ...apWithNetwork({
+      appListeningPorts: [{ port: 8080 }],
+      publicAddresses: [
+        {
+          host: "api.example.com",
+          id: "pa_abc123",
+          port: 8080,
+          status: "accessible",
+          type: "platform",
+          url: "https://api.example.com/",
+        },
+      ],
+    }),
+    status: {
+      network: {
+        appListeningPorts: [{ port: 8080 }],
+        publicAddresses: [
+          {
+            host: "api.example.com",
+            id: "pa_abc123",
+            port: 8080,
+            status: "accessible",
+            type: "platform",
+            url: "https://api.example.com/",
+          },
+        ],
+      },
+      phase: "Updating",
+    },
+  };
+  const fact = required(
+    projectRuntimeFactsFromResources({
+      apsData: { items: [ap] },
+      namespace: "default",
+    }).publicAccessFacts[0]
+  );
+  // The row dot shows the AP phase; routing itself is still accessible.
+  assert.deepEqual(fact.groups[0]?.addresses[0]?.status, {
+    label: "Updating",
+    tone: "updating",
+  });
+  assert.deepEqual(fact.open, {
+    label: "Open",
+    port: 8080,
+    url: "https://api.example.com/",
+  });
+});
+
 function publicAccessGroups(ap: unknown) {
   return required(
     projectRuntimeFactsFromResources({

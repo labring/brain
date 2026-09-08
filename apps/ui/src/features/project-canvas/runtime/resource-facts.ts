@@ -580,35 +580,47 @@ function defaultOpenPortForAp(ap: unknown): number | undefined {
   return publicAccessTargetPort(statusNetwork?.defaultOpenPort);
 }
 
+/** Whether routing reports a Public Address reachable (Public Access Health). */
+function publicAccessRoutingAccessible(status: string | undefined): boolean {
+  return (
+    status
+      ?.toLowerCase()
+      .replace(PUBLIC_ACCESS_STATUS_SEPARATOR_PATTERN, "-") === "accessible"
+  );
+}
+
 /**
- * The Open target of the Public Access Node: the Default Open Port rule
- * applied to the node's own groups, so what the header opens is always one
- * of the addresses the body lists, with the status the body shows.
+ * The Open target of the Public Access Node: the Default Open Port rule over
+ * the AP's own Public Addresses, so what the header opens is always one of
+ * the addresses the body lists. Whether an address can be opened is its
+ * routing health, read from the raw Public Address status: the row dots
+ * remap `accessible` to the AP's phase while it is Updating or Starting, and
+ * that remap is display-only — routing that is accessible still opens, as it
+ * does from AP Network Settings.
  */
-export function publicAccessOpenTargetFromGroups({
+export function publicAccessOpenTargetFromAddresses({
+  addresses,
   defaultOpenPort,
-  groups,
   ports,
 }: {
+  addresses: readonly NetworkPublicAddress[];
   defaultOpenPort?: number;
-  groups: readonly PublicAccessGroupSummary[];
   ports: readonly AppListeningPortSummary[];
 }): PublicAccessOpenTarget | undefined {
-  const addresses = groups.flatMap((group) =>
-    group.addresses.map(
-      (address): ApOpenTargetAddress => ({
-        accessible: address.status?.tone === "accessible",
-        kind:
-          address.type?.trim().toLowerCase() === "custom"
-            ? "custom"
-            : "platform",
-        port: group.port,
-        ...(address.value === undefined ? {} : { url: address.value }),
-      })
-    )
-  );
+  const targets = addresses.map((address): ApOpenTargetAddress => {
+    const url =
+      address.url ??
+      (address.host === undefined ? undefined : `https://${address.host}/`);
+    return {
+      accessible: publicAccessRoutingAccessible(address.status),
+      kind:
+        address.type?.trim().toLowerCase() === "custom" ? "custom" : "platform",
+      port: address.port,
+      ...(url === undefined ? {} : { url }),
+    };
+  });
   return resolveApOpenTarget({
-    addresses,
+    addresses: targets,
     ...(defaultOpenPort === undefined ? {} : { defaultOpenPort }),
     ports,
   });
@@ -699,9 +711,9 @@ function publicAccessFactFromAp(
     apStatus: apStatusSummary(ap),
     ports,
   });
-  const open = publicAccessOpenTargetFromGroups({
+  const open = publicAccessOpenTargetFromAddresses({
+    addresses: publicAddresses,
     defaultOpenPort: defaultOpenPortForAp(ap),
-    groups,
     ports,
   });
   return {
