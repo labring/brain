@@ -1112,6 +1112,236 @@ test("the EaglerCraft fixture teaches a player how to join the server", () => {
   assert.doesNotMatch(html, DECLARED_ADDRESS_RE);
 });
 
+/* -------------------------------------------------------------------------- */
+/* Share strip and Next steps trail (AIM-354)                                  */
+/* -------------------------------------------------------------------------- */
+
+const SHARE_SLOT = 'data-slot="deployment-task-success-share"';
+const NEXT_STEPS_SLOT = 'data-slot="deployment-task-success-next-steps"';
+const QR_TRIGGER_RE =
+  /<button(?=[^>]*aria-label="Show QR code")[^>]*data-slot="deployment-task-success-share-qr"/;
+const NEXT_STEPS_HEADING_RE = /Next steps/;
+const SHARE_LABEL_RE = />Share EaglerCraft Server</;
+const BARE_SHARE_LABEL_RE = />Share</;
+const PRIMARY_ACTION_SLOT =
+  'data-slot="deployment-task-success-primary-action"';
+const SUCCESS_SLOT_ALL_RE = /data-slot="deployment-task-success"/g;
+const JUST_LAUNCHED_RE = /Just launched/;
+const ADD_SERVER_STEP_RE = /Add the server in Multiplayer\./;
+const TRAIL_LIST_RE = /<ol/;
+const TRAIL_FIRST_NUMBER_RE = />1<\/span>/;
+const TRAIL_SECOND_NUMBER_RE = />2<\/span>/;
+const CARD_LIST_NUMBER_RE = />1\.<\/span>/;
+const MONO_DETAIL_RE =
+  /<span class="[^"]*font-mono[^"]*">Keep it open in another tab\.<\/span>/;
+const SHARE_CHANNELS = [
+  { href: "https://x.com/intent/post?text=", label: "Post on X" },
+  {
+    href: "https://www.linkedin.com/sharing/share-offsite/?url=",
+    label: "Share on LinkedIn",
+  },
+  {
+    href: "https://www.facebook.com/sharer/sharer.php?u=",
+    label: "Share on Facebook",
+  },
+  { href: "https://www.reddit.com/submit?url=", label: "Post on Reddit" },
+];
+
+/** The `<a>` tag carrying `label`, or null when the strip does not render it. */
+function shareLink(html: string, label: string): string | null {
+  const match = html.match(
+    new RegExp(`<a(?=[^>]*aria-label="${label}")[^>]*>`)
+  );
+  return match?.[0] ?? null;
+}
+
+/** Attribute values in static markup are HTML-escaped, so `&` reads as `&amp;`. */
+function escapeAttribute(value: string): string {
+  return value.replace(/&/g, "&amp;");
+}
+
+test("the share strip and the Next steps trail follow the card, in that order", () => {
+  const html = renderPaneContent(successSnapshot({}));
+
+  const primaryActionAt = html.indexOf(PRIMARY_ACTION_SLOT);
+  const shareAt = html.indexOf(SHARE_SLOT);
+  const nextStepsAt = html.indexOf(NEXT_STEPS_SLOT);
+  assert.ok(primaryActionAt !== -1);
+  assert.ok(shareAt !== -1);
+  assert.ok(nextStepsAt !== -1);
+  assert.ok(primaryActionAt < shareAt);
+  assert.ok(shareAt < nextStepsAt);
+  assert.ok(shareAt < html.indexOf("Next steps"));
+  // The strip names the product; the chip stays the way to copy the address.
+  assert.match(html, SHARE_LABEL_RE);
+  assert.match(html, COPY_ADDRESS_LABEL_RE);
+  assert.match(html, QR_TRIGGER_RE);
+  // The whole conclusion is one section: card, strip and trail share a root.
+  assert.equal((html.match(SUCCESS_SLOT_ALL_RE) ?? []).length, 1);
+  assert.ok(
+    html.indexOf('data-slot="deployment-task-success"') < primaryActionAt
+  );
+});
+
+test("each share channel posts the snapshotted address in a new tab without a referrer", () => {
+  const html = renderPaneContent(successSnapshot({}));
+  const url = "https://eaglercraft.demo.sealos.run";
+  const encodedUrl = encodeURIComponent(url);
+  const expectedHrefs: Record<string, string> = {
+    "Post on Reddit": `https://www.reddit.com/submit?url=${encodedUrl}&title=${encodeURIComponent(
+      "Just launched EaglerCraft Server"
+    )}`,
+    "Post on X": `https://x.com/intent/post?text=${encodeURIComponent(
+      `Just launched EaglerCraft Server 🚀 ${url}`
+    )}`,
+    "Share on Facebook": `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+    "Share on LinkedIn": `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`,
+  };
+
+  for (const { label } of SHARE_CHANNELS) {
+    const tag = shareLink(html, label);
+    assert.ok(tag, `${label} is rendered as a link`);
+    assert.ok(
+      tag.includes(`href="${escapeAttribute(expectedHrefs[label] ?? "")}"`),
+      `${label} shares the snapshotted address: ${tag}`
+    );
+    assert.ok(tag.includes('target="_blank"'), `${label} opens a new tab`);
+    assert.ok(
+      tag.includes('rel="noopener noreferrer"'),
+      `${label} sends no referrer`
+    );
+    assert.ok(tag.includes(`title="${label}"`), `${label} carries its title`);
+  }
+  // The strip draws the channels in the declared order.
+  const positions = SHARE_CHANNELS.map(({ href }) =>
+    html.indexOf(`href="${escapeAttribute(href)}`)
+  );
+  assert.deepEqual(
+    positions,
+    [...positions].sort((a, b) => a - b)
+  );
+});
+
+test("a record without a product name shares plainly and invents no name", () => {
+  const url = "https://web-app.demo.sealos.run";
+  const html = renderPaneContent(
+    successSnapshot({
+      success: {
+        contractVersion: 1,
+        entries: [{ url }],
+        revision: 3,
+        verifiedAt: VERIFIED_AT,
+      },
+    })
+  );
+
+  assert.match(html, BARE_SHARE_LABEL_RE);
+  assert.doesNotMatch(html, JUST_LAUNCHED_RE);
+  const x = shareLink(html, "Post on X");
+  assert.ok(x);
+  assert.ok(
+    x.includes(
+      `href="https://x.com/intent/post?text=${encodeURIComponent(url)}"`
+    )
+  );
+  const reddit = shareLink(html, "Post on Reddit");
+  assert.ok(reddit);
+  assert.ok(
+    reddit.includes(
+      `href="${escapeAttribute(
+        `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=web-app.demo.sealos.run`
+      )}"`
+    )
+  );
+  // No guidance was declared, so no heading is invented either.
+  assert.doesNotMatch(html, NEXT_STEPS_HEADING_RE);
+  assert.equal(html.includes(NEXT_STEPS_SLOT), false);
+});
+
+test("a record whose only entries are WebSocket addresses offers no share strip", () => {
+  const html = renderPaneContent(
+    successSnapshot({
+      success: {
+        contractVersion: 2,
+        entries: [
+          { protocol: "wss", url: "wss://eaglercraft.demo.sealos.run/server" },
+          { protocol: "ws", url: "ws://eaglercraft.demo.sealos.run/lobby" },
+        ],
+        revision: 3,
+        verifiedAt: VERIFIED_AT,
+      },
+    })
+  );
+
+  assert.equal(html.includes(SHARE_SLOT), false);
+  assert.doesNotMatch(html, QR_TRIGGER_RE);
+  for (const { label } of SHARE_CHANNELS) {
+    assert.equal(shareLink(html, label), null, `${label} is not offered`);
+  }
+});
+
+test("a record with no entry offers no share strip", () => {
+  const html = renderPaneContent(
+    successSnapshot({
+      success: {
+        contractVersion: 1,
+        headline: "Deployment completed",
+        revision: 3,
+        verifiedAt: VERIFIED_AT,
+      },
+    })
+  );
+
+  assert.match(html, SUCCESS_SLOT_RE);
+  assert.equal(html.includes(SHARE_SLOT), false);
+  assert.doesNotMatch(html, QR_TRIGGER_RE);
+  assert.equal(html.includes(NEXT_STEPS_SLOT), false);
+});
+
+test("declared steps stand under Next steps as a numbered trail, outside the card", () => {
+  const html = renderPaneContent(successSnapshot({}));
+
+  assert.match(html, NEXT_STEPS_HEADING_RE);
+  const trailAt = html.indexOf(NEXT_STEPS_SLOT);
+  assert.ok(trailAt !== -1);
+  // Every step label and detail is listed, in order, after the heading.
+  const openAt = html.indexOf("Open the client.");
+  const detailAt = html.indexOf("Keep it open in another tab.");
+  const addAt = html.indexOf("Add the server in Multiplayer.");
+  assert.ok(html.indexOf("Next steps") < openAt);
+  assert.ok(openAt < detailAt);
+  assert.ok(detailAt < addAt);
+  // The trail's own numbers, not the card's `1.` list.
+  const trail = html.slice(trailAt);
+  assert.match(trail, TRAIL_LIST_RE);
+  assert.match(trail, TRAIL_FIRST_NUMBER_RE);
+  assert.match(trail, TRAIL_SECOND_NUMBER_RE);
+  assert.doesNotMatch(trail, CARD_LIST_NUMBER_RE);
+  // The detail is monospace so an address to paste is easy to select.
+  assert.match(trail, MONO_DETAIL_RE);
+});
+
+test("declared steps stay visible even when there is nothing to share", () => {
+  const html = renderPaneContent(
+    successSnapshot({
+      success: {
+        contractVersion: 2,
+        entries: [
+          { protocol: "wss", url: "wss://eaglercraft.demo.sealos.run/server" },
+        ],
+        guidance: [{ label: "Add the server in Multiplayer." }],
+        revision: 3,
+        verifiedAt: VERIFIED_AT,
+      },
+    })
+  );
+
+  assert.equal(html.includes(SHARE_SLOT), false);
+  assert.match(html, NEXT_STEPS_HEADING_RE);
+  assert.ok(html.includes(NEXT_STEPS_SLOT));
+  assert.match(html, ADD_SERVER_STEP_RE);
+});
+
 test("a success that arrives live celebrates once and stays readable", async () => {
   resetDeploymentTaskSuccessCelebrationClaims();
   const dom = installTestDom();

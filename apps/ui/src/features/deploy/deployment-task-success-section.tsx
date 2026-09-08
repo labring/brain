@@ -6,9 +6,11 @@ import { cn } from "@workspace/ui/lib/utils";
 import { Check, Copy, ExternalLink } from "lucide-react";
 import { memo, useEffect, useRef } from "react";
 import { prefersReducedMotion } from "@/features/deploy/deployment-task-success-confetti";
+import { DeploymentTaskSuccessShareStrip } from "@/features/deploy/deployment-task-success-share";
 import type {
   DeploymentTaskSuccessEntry,
   DeploymentTaskSuccessSnapshot,
+  DeploymentTaskSuccessStep,
 } from "@/features/deploy/task/timeline";
 import { useCopyFeedback } from "@/features/deploy/use-copy-feedback";
 
@@ -177,15 +179,62 @@ function SecondaryEntryRow({
 }
 
 /**
+ * The declared first-use steps as the Timeline's numbered trail: a numbered
+ * circle per step, a hairline down to the next, the label and its optional
+ * monospace detail. Rendered only when the record declared at least one step;
+ * the sanitizer already caps the list, so the UI adds no cap of its own.
+ */
+function NextStepsTrail({ steps }: { steps: DeploymentTaskSuccessStep[] }) {
+  const last = steps.length - 1;
+  return (
+    <ol className="mt-3 flex flex-col">
+      {steps.map((step, index) => (
+        <li
+          className={cn("relative flex gap-3", index === last ? "" : "pb-4")}
+          key={[index, step.label].join("-")}
+        >
+          {index === last ? null : (
+            <span
+              aria-hidden
+              className="absolute top-6 bottom-0 left-2.5 w-px bg-border"
+            />
+          )}
+          <span
+            aria-hidden
+            className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border font-mono text-[10px] text-muted-foreground leading-none"
+          >
+            {index + 1}
+          </span>
+          <div className="flex min-w-0 flex-col gap-0.5 pt-0.5">
+            <span className="break-words text-foreground text-xs leading-4">
+              {step.label}
+            </span>
+            {step.detail == null ? null : (
+              <span className="break-words font-mono text-[11px] text-muted-foreground leading-4">
+                {step.detail}
+              </span>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
  * The verified-usable conclusion, appended after the Timeline's own steps
  * (issue #160). It exists only when Result Readiness was reached AND every
  * required entry probe passed, so nothing here re-derives success from the
  * task status: absent fields stay absent, and an address is only ever the one
  * the contract declared — the UI never builds one from a host or a port.
  *
- * Shape: the celebration (halo, drawn check, headline) leads; the primary
- * address is a copy chip under one wide Open; every other verified address
- * drops into a quiet list beneath a hairline, then the declared guidance.
+ * Shape: the card leads — the celebration (halo, drawn check, headline), the
+ * primary address as a copy chip over one wide Open, every other verified
+ * address in a quiet list beneath a hairline. Under the card sit a share strip
+ * for the primary HTTP(S) entry (AIM-354) and the declared first-use steps as
+ * a `Next steps` trail. The section owns the whole conclusion, so the arrival
+ * (scroll into view) and the section slot belong to the wrapper, and the
+ * Timeline pane keeps rendering one section (ADR-0078).
  */
 export const DeploymentTaskSuccessSection = memo(
   function DeploymentTaskSuccessSection({
@@ -228,105 +277,93 @@ export const DeploymentTaskSuccessSection = memo(
 
     return (
       <div
-        className="relative mt-4 flex flex-col items-center overflow-hidden rounded-lg border border-blue-400/20 px-4 pt-6 pb-4 text-center"
+        className="mt-4 flex flex-col"
         data-slot="deployment-task-success"
         ref={rootRef}
       >
-        <span
-          aria-hidden
-          className="deployment-success-halo fade-in pointer-events-none absolute inset-x-0 top-0 h-32 animate-in duration-500 motion-reduce:animate-none"
-        />
-        <DrawnCheck />
-        <p
-          className={cn(
-            RISE_CLASS,
-            "mt-3 font-semibold text-base text-foreground leading-6 delay-100"
-          )}
-        >
-          {headline}
-        </p>
-        {success.productName == null ? null : (
+        <div className="relative flex flex-col items-center overflow-hidden rounded-lg border border-blue-400/20 px-4 pt-6 pb-4 text-center">
+          <span
+            aria-hidden
+            className="deployment-success-halo fade-in pointer-events-none absolute inset-x-0 top-0 h-32 animate-in duration-500 motion-reduce:animate-none"
+          />
+          <DrawnCheck />
           <p
             className={cn(
               RISE_CLASS,
-              "mt-0.5 truncate text-muted-foreground text-xs leading-4 delay-150"
+              "mt-3 font-semibold text-base text-foreground leading-6 delay-100"
             )}
-            title={success.productName}
           >
-            {success.productName}
+            {headline}
           </p>
-        )}
-        {primaryEntry == null ? null : (
-          <>
-            <PrimaryEntryChip entry={primaryEntry} headed={headed} />
-            <div
-              className={cn(RISE_CLASS, "mt-4 w-full delay-300")}
-              data-slot="deployment-task-success-primary-action"
+          {success.productName == null ? null : (
+            <p
+              className={cn(
+                RISE_CLASS,
+                "mt-0.5 truncate text-muted-foreground text-xs leading-4 delay-150"
+              )}
+              title={success.productName}
             >
-              <AppButton
-                className="w-full"
-                nativeButton={false}
-                render={
-                  <a
-                    href={primaryEntry.url}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
-                    <ExternalLink aria-hidden data-icon="inline-start" />
-                    {openLabel}
-                  </a>
-                }
-              />
+              {success.productName}
+            </p>
+          )}
+          {primaryEntry == null ? null : (
+            <>
+              <PrimaryEntryChip entry={primaryEntry} headed={headed} />
+              <div
+                className={cn(RISE_CLASS, "mt-4 w-full delay-300")}
+                data-slot="deployment-task-success-primary-action"
+              >
+                <AppButton
+                  className="w-full"
+                  nativeButton={false}
+                  render={
+                    <a
+                      href={primaryEntry.url}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      <ExternalLink aria-hidden data-icon="inline-start" />
+                      {openLabel}
+                    </a>
+                  }
+                />
+              </div>
+            </>
+          )}
+          {secondaryEntries.length === 0 ? null : (
+            <div
+              className={cn(
+                RISE_CLASS,
+                "mt-4 flex w-full flex-col gap-2 border-border border-t pt-3 delay-[360ms]"
+              )}
+            >
+              {secondaryEntries.map((entry, index) => (
+                <SecondaryEntryRow
+                  entry={entry}
+                  headed={headed}
+                  key={[index, entry.url].join("-")}
+                />
+              ))}
             </div>
-          </>
-        )}
-        {secondaryEntries.length === 0 ? null : (
-          <div
-            className={cn(
-              RISE_CLASS,
-              "mt-4 flex w-full flex-col gap-2 border-border border-t pt-3 delay-[360ms]"
-            )}
-          >
-            {secondaryEntries.map((entry, index) => (
-              <SecondaryEntryRow
-                entry={entry}
-                headed={headed}
-                key={[index, entry.url].join("-")}
-              />
-            ))}
-          </div>
+          )}
+        </div>
+        {primaryEntry == null ? null : (
+          <DeploymentTaskSuccessShareStrip
+            className={cn(RISE_CLASS, "mt-2 delay-[420ms]")}
+            productName={success.productName}
+            url={primaryEntry.url}
+          />
         )}
         {guidance.length === 0 ? null : (
-          <ol
-            className={cn(
-              RISE_CLASS,
-              "mt-4 flex w-full flex-col gap-1.5 border-border border-t pt-3 text-left delay-[420ms]"
-            )}
+          <div
+            className={cn(RISE_CLASS, "mt-5 text-left delay-[480ms]")}
+            data-slot="deployment-task-success-next-steps"
           >
-            {guidance.map((step, index) => (
-              <li
-                className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-1 text-xs leading-4"
-                key={[index, step.label].join("-")}
-              >
-                <span
-                  aria-hidden
-                  className="text-muted-foreground tabular-nums"
-                >
-                  {index + 1}.
-                </span>
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="break-words text-foreground/90 leading-4">
-                    {step.label}
-                  </span>
-                  {step.detail == null ? null : (
-                    <span className="break-words font-mono text-muted-foreground text-xs leading-4">
-                      {step.detail}
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ol>
+            <p className="font-medium text-foreground text-xs leading-4">
+              Next steps
+            </p>
+            <NextStepsTrail steps={guidance} />
+          </div>
         )}
       </div>
     );
