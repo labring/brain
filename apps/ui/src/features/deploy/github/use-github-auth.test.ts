@@ -1,8 +1,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { githubDeployProjectPath } from "../github-deploy-link";
 
 import { GITHUB_APP_INSTALL_COMPLETE_MESSAGE } from "./types";
 import { githubInstallReturnPathForNavigation } from "./use-github-auth";
+
+test("OAuth completion preserves the original one-click deployment pane", () => {
+  const returnPath = githubDeployProjectPath(
+    "https://github.com/zjy365/aster",
+    "1"
+  );
+  assert.equal(
+    githubInstallReturnPathForNavigation(
+      {
+        returnPath,
+        state: "install-state",
+        type: GITHUB_APP_INSTALL_COMPLETE_MESSAGE,
+      },
+      { applyReturnPath: true }
+    ),
+    returnPath
+  );
+});
 
 test("githubInstallReturnPathForNavigation only applies targeted return paths", () => {
   const message = {
