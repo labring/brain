@@ -4,9 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS,
   DeploymentTaskSuccessQrPanel,
+  redditTitle,
   shareHost,
-  shareText,
-  shareTitle,
+  shareVoice,
+  xPostText,
 } from "./deployment-task-success-share";
 
 const URL_WITH_RESERVED = "https://demo.sealos.run/path?a=1&b=2#top";
@@ -25,30 +26,105 @@ function channel(id: string) {
   return found;
 }
 
-test("share copy reads as an announcement when the product has a name", () => {
+const URL = "https://meetinghub.sealos.run";
+
+test("the generic X post names the product and Sealos, one line at a time", () => {
   assert.equal(
-    shareText("MeetingHub", "https://meetinghub.sealos.run"),
-    "Just launched MeetingHub 🚀 https://meetinghub.sealos.run"
-  );
-  assert.equal(
-    shareTitle("MeetingHub", "https://meetinghub.sealos.run"),
-    "Just launched MeetingHub"
+    xPostText({ productName: "MeetingHub", url: URL }),
+    [
+      "Just deployed MeetingHub with Sealos.",
+      "From idea to live app.",
+      `Try it here: ${URL} @Sealos_io`,
+      "#Sealos #BuildInPublic",
+    ].join("\n")
   );
 });
 
-test("share copy invents nothing when the product has no name", () => {
+test("the X post invents no name and no number when the record has none", () => {
   assert.equal(
-    shareText(undefined, "https://meetinghub.sealos.run"),
-    "https://meetinghub.sealos.run"
+    xPostText({ url: URL }),
+    [
+      "Just deployed with Sealos.",
+      "From idea to live app.",
+      `Try it here: ${URL} @Sealos_io`,
+      "#Sealos #BuildInPublic",
+    ].join("\n")
   );
   assert.equal(
-    shareTitle(undefined, "https://meetinghub.sealos.run:8443/x"),
-    "meetinghub.sealos.run:8443"
+    xPostText({ productCategories: ["ai"], url: URL }).split("\n")[0],
+    "I just took an idea to a live app with Sealos. @Sealos_io"
+  );
+  assert.equal(xPostText({ url: URL }).includes("minute"), false);
+});
+
+test("the voice follows the hard-coded product first, then the first category", () => {
+  assert.equal(shareVoice({}), "generic");
+  assert.equal(shareVoice({ productCategories: ["game", "ai"] }), "game");
+  assert.equal(shareVoice({ productCategories: ["ai", "game"] }), "ai");
+  assert.equal(shareVoice({ productCategories: [" Game "] }), "game");
+  assert.equal(shareVoice({ productCategories: ["tool"] }), "generic");
+  assert.equal(
+    shareVoice({ productCategories: ["ai"], productId: "eaglercraft-server" }),
+    "eaglercraft"
+  );
+  assert.equal(shareVoice({ productId: "EaglerCraft-Server" }), "eaglercraft");
+  assert.equal(shareVoice({ productId: "minecraft" }), "generic");
+});
+
+test("a game server and the EaglerCraft server invite people to join", () => {
+  assert.equal(
+    xPostText({
+      productCategories: ["game"],
+      productName: "Minecraft",
+      url: URL,
+    }),
+    [
+      "My own game server is live! @Sealos_io",
+      "Deployed with Sealos.",
+      `Join here: ${URL}`,
+      "#Sealos",
+    ].join("\n")
+  );
+  assert.equal(
+    xPostText({
+      productCategories: ["game"],
+      productId: "eaglercraft-server",
+      productName: "EaglerCraft Server",
+      url: URL,
+    }),
+    [
+      "My own Eaglercraft server is live! @Sealos_io",
+      "Deployed with Sealos.",
+      `Join here: ${URL}`,
+      "#Eaglercraft #Minecraft #Sealos",
+    ].join("\n")
   );
 });
 
-test("an unparsable address falls back to the raw address for the title", () => {
-  assert.equal(shareTitle(undefined, "not a url"), "not a url");
+test("an AI app takes the idea-to-live-app voice", () => {
+  assert.equal(
+    xPostText({ productCategories: ["ai"], productName: "FastGPT", url: URL }),
+    [
+      "I just took FastGPT from idea to live app with Sealos. @Sealos_io",
+      "No complicated setup. Just deploy, share, and start building.",
+      `Try it here: ${URL}`,
+      "#AI #BuildInPublic #Sealos",
+    ].join("\n")
+  );
+});
+
+test("the Reddit title names the product when it can", () => {
+  assert.equal(
+    redditTitle("MeetingHub"),
+    "MeetingHub is live — just shipped with Sealos"
+  );
+  assert.equal(
+    redditTitle(undefined),
+    "My app is live — just shipped with Sealos"
+  );
+});
+
+test("the host falls back to the raw address when it cannot be parsed", () => {
   assert.equal(shareHost("not a url"), "not a url");
   assert.equal(shareHost("https://demo.sealos.run/path"), "demo.sealos.run");
 });
@@ -70,30 +146,31 @@ test("the four channels are declared in order with accessible labels", () => {
 
 test("every channel encodes the address so reserved characters survive", () => {
   const encodedUrl = encodeURIComponent(URL_WITH_RESERVED);
+  const subject = { productName: "My App", url: URL_WITH_RESERVED };
   assert.equal(
-    channel("x").href(URL_WITH_RESERVED, "My App"),
-    `https://x.com/intent/post?text=${encodeURIComponent(
-      `Just launched My App 🚀 ${URL_WITH_RESERVED}`
-    )}`
+    channel("x").href(subject),
+    `https://x.com/intent/post?text=${encodeURIComponent(xPostText(subject))}`
   );
+  // Line breaks reach X as %0A, so the post keeps its shape.
+  assert.ok(channel("x").href(subject).includes("%0A"));
   assert.equal(
-    channel("linkedin").href(URL_WITH_RESERVED, "My App"),
+    channel("linkedin").href(subject),
     `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`
   );
   assert.equal(
-    channel("facebook").href(URL_WITH_RESERVED, "My App"),
+    channel("facebook").href(subject),
     `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`
   );
   assert.equal(
-    channel("reddit").href(URL_WITH_RESERVED, "My App"),
+    channel("reddit").href(subject),
     `https://www.reddit.com/submit?url=${encodedUrl}&title=${encodeURIComponent(
-      "Just launched My App"
+      "My App is live — just shipped with Sealos"
     )}`
   );
   // The raw `&`, `#` and space never appear unencoded in a query value,
   // whether they come from the address or from the product name.
   for (const entry of DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS) {
-    const href = entry.href(URL_WITH_SPACE, "My App");
+    const href = entry.href({ productName: "My App", url: URL_WITH_SPACE });
     assert.equal(href.includes("#"), false, `${entry.id} encodes #`);
     assert.equal(href.includes("&b=2"), false, `${entry.id} encodes &`);
     assert.equal(href.includes(" "), false, `${entry.id} encodes spaces`);
@@ -104,12 +181,12 @@ test("every channel encodes the address so reserved characters survive", () => {
   }
 });
 
-test("without a product name Reddit titles the submission with the host", () => {
+test("without a product name Reddit still gets a title", () => {
   assert.equal(
-    channel("reddit").href("https://demo.sealos.run/x", undefined),
+    channel("reddit").href({ url: "https://demo.sealos.run/x" }),
     `https://www.reddit.com/submit?url=${encodeURIComponent(
       "https://demo.sealos.run/x"
-    )}&title=demo.sealos.run`
+    )}&title=${encodeURIComponent("My app is live — just shipped with Sealos")}`
   );
 });
 

@@ -1126,7 +1126,6 @@ const BARE_SHARE_LABEL_RE = />Share</;
 const PRIMARY_ACTION_SLOT =
   'data-slot="deployment-task-success-primary-action"';
 const SUCCESS_SLOT_ALL_RE = /data-slot="deployment-task-success"/g;
-const JUST_LAUNCHED_RE = /Just launched/;
 const ADD_SERVER_STEP_RE = /Add the server in Multiplayer\./;
 const TRAIL_LIST_RE = /<ol/;
 const TRAIL_FIRST_NUMBER_RE = />1<\/span>/;
@@ -1189,10 +1188,17 @@ test("each share channel posts the snapshotted address in a new tab without a re
   const encodedUrl = encodeURIComponent(url);
   const expectedHrefs: Record<string, string> = {
     "Post on Reddit": `https://www.reddit.com/submit?url=${encodedUrl}&title=${encodeURIComponent(
-      "Just launched EaglerCraft Server"
+      "EaglerCraft Server is live — just shipped with Sealos"
     )}`,
+    // The record names the product but declares no id or category, so the
+    // post is the generic launch in the user's voice.
     "Post on X": `https://x.com/intent/post?text=${encodeURIComponent(
-      `Just launched EaglerCraft Server 🚀 ${url}`
+      [
+        "Just deployed EaglerCraft Server with Sealos.",
+        "From idea to live app.",
+        `Try it here: ${url} @Sealos_io`,
+        "#Sealos #BuildInPublic",
+      ].join("\n")
     )}`,
     "Share on Facebook": `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
     "Share on LinkedIn": `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`,
@@ -1236,26 +1242,86 @@ test("a record without a product name shares plainly and invents no name", () =>
   );
 
   assert.match(html, BARE_SHARE_LABEL_RE);
-  assert.doesNotMatch(html, JUST_LAUNCHED_RE);
   const x = shareLink(html, "Post on X");
   assert.ok(x);
   assert.ok(
     x.includes(
-      `href="https://x.com/intent/post?text=${encodeURIComponent(url)}"`
-    )
+      `href="https://x.com/intent/post?text=${encodeURIComponent(
+        [
+          "Just deployed with Sealos.",
+          "From idea to live app.",
+          `Try it here: ${url} @Sealos_io`,
+          "#Sealos #BuildInPublic",
+        ].join("\n")
+      )}"`
+    ),
+    x
   );
   const reddit = shareLink(html, "Post on Reddit");
   assert.ok(reddit);
   assert.ok(
     reddit.includes(
       `href="${escapeAttribute(
-        `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=web-app.demo.sealos.run`
+        `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(
+          "My app is live — just shipped with Sealos"
+        )}`
       )}"`
-    )
+    ),
+    reddit
   );
   // No guidance was declared, so no heading is invented either.
   assert.doesNotMatch(html, NEXT_STEPS_HEADING_RE);
   assert.equal(html.includes(NEXT_STEPS_SLOT), false);
+});
+
+test("the X post speaks to the product the record snapshotted, not the catalog", () => {
+  const url = "https://mc.demo.sealos.run";
+  const eaglercraft = renderPaneContent(
+    successSnapshot({
+      success: {
+        contractVersion: 2,
+        entries: [{ protocol: "https", url }],
+        productCategories: ["game"],
+        productId: "eaglercraft-server",
+        productName: "EaglerCraft Server",
+        revision: 3,
+        verifiedAt: VERIFIED_AT,
+      },
+    })
+  );
+  const eaglercraftX = shareLink(eaglercraft, "Post on X");
+  assert.ok(eaglercraftX);
+  assert.ok(
+    eaglercraftX.includes(
+      encodeURIComponent("My own Eaglercraft server is live! @Sealos_io")
+    ),
+    eaglercraftX
+  );
+  assert.ok(eaglercraftX.includes(encodeURIComponent("#Eaglercraft")));
+
+  const ai = renderPaneContent(
+    successSnapshot({
+      success: {
+        contractVersion: 2,
+        entries: [{ protocol: "https", url }],
+        productCategories: ["ai"],
+        productId: "fastgpt",
+        productName: "FastGPT",
+        revision: 3,
+        verifiedAt: VERIFIED_AT,
+      },
+    })
+  );
+  const aiX = shareLink(ai, "Post on X");
+  assert.ok(aiX);
+  assert.ok(
+    aiX.includes(
+      encodeURIComponent(
+        "I just took FastGPT from idea to live app with Sealos. @Sealos_io"
+      )
+    ),
+    aiX
+  );
 });
 
 test("a record whose only entries are WebSocket addresses offers no share strip", () => {

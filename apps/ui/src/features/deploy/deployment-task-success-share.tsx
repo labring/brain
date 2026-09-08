@@ -17,15 +17,104 @@ import type { ComponentProps, ReactNode } from "react";
  *
  * What is shared is the product's own public address exactly as the record
  * snapshotted it — nothing of Brain, and no access model of its own
- * (CONTEXT.md, Deployment Task Success Record). This module is feature-local
- * on purpose: it moves to `@workspace/ui` only if a second consumer appears.
+ * (CONTEXT.md, Deployment Task Success Record). The copy speaks in the
+ * user's voice and names Sealos; it picks a voice from the facts the record
+ * snapshotted (product id and categories), never from the live catalog.
+ * This module is feature-local on purpose: it moves to `@workspace/ui` only
+ * if a second consumer appears.
  */
 
 /* ------------------------------------------------------------- pure copy */
 
-/** The post body for networks that take free text: the address alone when the product has no name. */
-export function shareText(productName: string | undefined, url: string) {
-  return productName == null ? url : `Just launched ${productName} 🚀 ${url}`;
+/** The facts a share is built from, all read off the success record. */
+export interface DeploymentTaskShareSubject {
+  /** The product's snapshotted catalog categories, e.g. `game`, `ai`. */
+  productCategories?: readonly string[];
+  /** The product's catalog identity; the template name for a template deployment. */
+  productId?: string;
+  productName?: string;
+  /** The primary HTTP(S) entry exactly as the record snapshotted it. */
+  url: string;
+}
+
+const SEALOS_X_HANDLE = "@Sealos_io";
+const EAGLERCRAFT_PRODUCT_ID = "eaglercraft-server";
+
+/**
+ * Which voice the X post speaks in. The one hard-coded product is
+ * EaglerCraft (AIM-354: a deliberate product branch, superseding #336's
+ * "no product branch"); after that only the first snapshotted category
+ * counts, and anything else is the generic launch post.
+ */
+export type DeploymentTaskShareVoice =
+  | "ai"
+  | "eaglercraft"
+  | "game"
+  | "generic";
+
+export function shareVoice(
+  subject: Pick<DeploymentTaskShareSubject, "productCategories" | "productId">
+): DeploymentTaskShareVoice {
+  if (subject.productId?.trim().toLowerCase() === EAGLERCRAFT_PRODUCT_ID) {
+    return "eaglercraft";
+  }
+  switch (subject.productCategories?.[0]?.trim().toLowerCase()) {
+    case "ai":
+      return "ai";
+    case "game":
+      return "game";
+    default:
+      return "generic";
+  }
+}
+
+/** The X post, one line per array entry; the product name is dropped, never invented. */
+export function xPostText(subject: DeploymentTaskShareSubject): string {
+  const name = subject.productName;
+  const lines = ((): string[] => {
+    switch (shareVoice(subject)) {
+      case "eaglercraft":
+        return [
+          `My own Eaglercraft server is live! ${SEALOS_X_HANDLE}`,
+          "Deployed with Sealos.",
+          `Join here: ${subject.url}`,
+          "#Eaglercraft #Minecraft #Sealos",
+        ];
+      case "game":
+        return [
+          `My own game server is live! ${SEALOS_X_HANDLE}`,
+          "Deployed with Sealos.",
+          `Join here: ${subject.url}`,
+          "#Sealos",
+        ];
+      case "ai":
+        return [
+          name == null
+            ? `I just took an idea to a live app with Sealos. ${SEALOS_X_HANDLE}`
+            : `I just took ${name} from idea to live app with Sealos. ${SEALOS_X_HANDLE}`,
+          "No complicated setup. Just deploy, share, and start building.",
+          `Try it here: ${subject.url}`,
+          "#AI #BuildInPublic #Sealos",
+        ];
+      default:
+        return [
+          name == null
+            ? "Just deployed with Sealos."
+            : `Just deployed ${name} with Sealos.`,
+          "From idea to live app.",
+          `Try it here: ${subject.url} ${SEALOS_X_HANDLE}`,
+          "#Sealos #BuildInPublic",
+        ];
+    }
+  })();
+  return lines.join("\n");
+}
+
+/** The Reddit link-post title; the post's content is the address itself. */
+export function redditTitle(productName: string | undefined): string {
+  return productName == null
+    ? "My app is live — just shipped with Sealos"
+    : `${productName} is live — just shipped with Sealos`;
 }
 
 /** The host of `url`, or `url` itself when it cannot be parsed. */
@@ -35,11 +124,6 @@ export function shareHost(url: string) {
   } catch {
     return url;
   }
-}
-
-/** The submission title for networks that take one: the host when the product has no name. */
-export function shareTitle(productName: string | undefined, url: string) {
-  return productName == null ? shareHost(url) : `Just launched ${productName}`;
 }
 
 /* --------------------------------------------------------------- channels */
@@ -81,8 +165,8 @@ function RedditIcon(props: ComponentProps<"svg">) {
 }
 
 export interface DeploymentTaskSuccessShareChannel {
-  /** The share URL for the product address and, when declared, its name. */
-  href: (url: string, productName: string | undefined) => string;
+  /** The share URL for the subject; a pure function of the record's facts. */
+  href: (subject: DeploymentTaskShareSubject) => string;
   Icon: (props: ComponentProps<"svg">) => ReactNode;
   id: "facebook" | "linkedin" | "reddit" | "x";
   /** The accessible name of the control, also its title. */
@@ -94,29 +178,29 @@ export const DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS: readonly DeploymentTaskSucc
   [
     {
       Icon: XIcon,
-      href: (url, name) =>
-        `https://x.com/intent/post?text=${encodeURIComponent(shareText(name, url))}`,
+      href: (subject) =>
+        `https://x.com/intent/post?text=${encodeURIComponent(xPostText(subject))}`,
       id: "x",
       label: "Post on X",
     },
     {
       Icon: LinkedInIcon,
-      href: (url) =>
+      href: ({ url }) =>
         `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
       id: "linkedin",
       label: "Share on LinkedIn",
     },
     {
       Icon: FacebookIcon,
-      href: (url) =>
+      href: ({ url }) =>
         `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
       id: "facebook",
       label: "Share on Facebook",
     },
     {
       Icon: RedditIcon,
-      href: (url, name) =>
-        `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(shareTitle(name, url))}`,
+      href: ({ productName, url }) =>
+        `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(redditTitle(productName))}`,
       id: "reddit",
       label: "Post on Reddit",
     },
@@ -233,13 +317,12 @@ function QrPopover({ url }: { url: string }) {
  */
 export function DeploymentTaskSuccessShareStrip({
   className,
-  productName,
-  url,
+  subject,
 }: {
   className?: string;
-  productName: string | undefined;
-  url: string;
+  subject: DeploymentTaskShareSubject;
 }) {
+  const { productName, url } = subject;
   return (
     <div
       className={cn("flex items-center justify-between pl-2", className)}
@@ -260,7 +343,7 @@ export function DeploymentTaskSuccessShareStrip({
               nativeButton={false}
               render={
                 <a
-                  href={href(url, productName)}
+                  href={href(subject)}
                   rel="noopener noreferrer"
                   target="_blank"
                 >

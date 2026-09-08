@@ -350,8 +350,12 @@ export const DeploymentTaskSuccessSection = memo(
         {primaryEntry == null ? null : (
           <DeploymentTaskSuccessShareStrip
             className={cn(RISE_CLASS, "mt-2 delay-[420ms]")}
-            productName={success.productName}
-            url={primaryEntry.url}
+            subject={{
+              productCategories: success.productCategories,
+              productId: success.productId,
+              productName: success.productName,
+              url: primaryEntry.url,
+            }}
           />
         )}
         {guidance.length === 0 ? null : (
