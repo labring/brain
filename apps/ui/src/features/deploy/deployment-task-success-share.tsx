@@ -4,6 +4,7 @@ import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Popover,
   PopoverContent,
+  PopoverTitle,
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
 import { cn } from "@workspace/ui/lib/utils";
@@ -273,7 +274,11 @@ function ScanFrame({ children }: { children: ReactNode }) {
 
 const QR_SIZE = 128;
 
-/** The popover's body: the framed QR, what a scan opens, and the host it opens. */
+/**
+ * The popover's body: the framed QR, what a scan opens, and the host it
+ * opens. What a scan opens is the popover's title, so the dialog the popover
+ * announces carries a name; the panel therefore lives inside a `Popover`.
+ */
 export function DeploymentTaskSuccessQrPanel({ url }: { url: string }) {
   return (
     <>
@@ -281,11 +286,11 @@ export function DeploymentTaskSuccessQrPanel({ url }: { url: string }) {
         <QrTile size={QR_SIZE} url={url} />
       </ScanFrame>
       <div className="flex flex-col items-center gap-0.5">
-        <span className="font-medium text-foreground text-xs leading-4">
+        <PopoverTitle className="text-foreground text-xs leading-4">
           Open on your phone
-        </span>
+        </PopoverTitle>
         <span
-          className="max-w-60 truncate font-mono text-[11px] text-muted-foreground leading-4"
+          className="max-w-60 truncate font-mono text-2xs text-muted-foreground"
           title={url}
         >
           {shareHost(url)}
@@ -344,33 +349,30 @@ export function DeploymentTaskSuccessShareStrip({
       className={cn("flex items-center justify-between pl-2", className)}
       data-slot="deployment-task-success-share"
     >
-      <span className="min-w-0 truncate text-[11px] text-muted-foreground leading-4">
+      <span className="min-w-0 truncate text-2xs text-muted-foreground">
         {productName == null ? "Share" : `Share ${productName}`}
       </span>
       <div className="flex shrink-0 items-center gap-0.5">
         <QrPopover url={url} />
         {DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS.map(
           ({ Icon, href, id, label }) => (
-            // The icon sits inside the anchor so the link carries its own
-            // content; the wrapper's children slot stays empty on purpose.
             <AppIconButton
               aria-label={label}
               key={id}
               nativeButton={false}
               render={
+                // biome-ignore lint/a11y/useAnchorContent: Base UI merges the button children into the anchor
                 <a
                   href={href(subject)}
                   rel="noopener noreferrer"
                   target="_blank"
-                >
-                  <Icon className="size-3" />
-                </a>
+                />
               }
               size="sm"
               title={label}
               variant="quiet"
             >
-              {null}
+              <Icon aria-hidden className="size-3" />
             </AppIconButton>
           )
         )}

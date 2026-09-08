@@ -149,7 +149,7 @@ function SecondaryEntryRow({
       <div className="flex min-w-0 flex-1 flex-col">
         {headed && entry.label != null ? (
           <span
-            className="truncate text-[11px] text-muted-foreground leading-4"
+            className="truncate text-2xs text-muted-foreground"
             title={entry.label}
           >
             {entry.label}
@@ -201,7 +201,7 @@ function NextStepsTrail({ steps }: { steps: DeploymentTaskSuccessStep[] }) {
           )}
           <span
             aria-hidden
-            className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border font-mono text-[11px] text-muted-foreground leading-none"
+            className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border font-mono text-2xs text-muted-foreground leading-none"
           >
             {index + 1}
           </span>
@@ -210,7 +210,7 @@ function NextStepsTrail({ steps }: { steps: DeploymentTaskSuccessStep[] }) {
               {step.label}
             </span>
             {step.detail == null ? null : (
-              <span className="break-words font-mono text-[11px] text-muted-foreground leading-4">
+              <span className="break-words font-mono text-2xs text-muted-foreground">
                 {step.detail}
               </span>
             )}

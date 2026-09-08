@@ -1122,6 +1122,7 @@ const QR_TRIGGER_RE =
   /<button(?=[^>]*aria-label="Show QR code")[^>]*data-slot="deployment-task-success-share-qr"/;
 const NEXT_STEPS_HEADING_RE = /Next steps/;
 const SHARE_LABEL_RE = />Share EaglerCraft Server</;
+const CHANNEL_ICON_RE = /<svg[^>]*aria-hidden="true"[\s\S]*<\/svg><\/a>$/;
 const BARE_SHARE_LABEL_RE = />Share</;
 const PRIMARY_ACTION_SLOT =
   'data-slot="deployment-task-success-primary-action"';
@@ -1146,10 +1147,10 @@ const SHARE_CHANNELS = [
   { href: "https://www.reddit.com/submit?url=", label: "Post on Reddit" },
 ];
 
-/** The `<a>` tag carrying `label`, or null when the strip does not render it. */
+/** The `<a>` element carrying `label`, or null when the strip does not render it. */
 function shareLink(html: string, label: string): string | null {
   const match = html.match(
-    new RegExp(`<a(?=[^>]*aria-label="${label}")[^>]*>`)
+    new RegExp(`<a(?=[^>]*aria-label="${label}")[^>]*>[\\s\\S]*?</a>`)
   );
   return match?.[0] ?? null;
 }
@@ -1219,6 +1220,11 @@ test("each share channel posts the snapshotted address in a new tab without a re
       `${label} sends no referrer`
     );
     assert.ok(tag.includes(`title="${label}"`), `${label} carries its title`);
+    assert.match(
+      tag,
+      CHANNEL_ICON_RE,
+      `${label} draws its icon inside the link`
+    );
   }
   // The strip draws the channels in the declared order.
   const positions = SHARE_CHANNELS.map(({ href }) =>

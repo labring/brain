@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Popover } from "@workspace/ui/components/popover";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS,
@@ -17,6 +18,8 @@ const PANEL_HOST_RE = />meetinghub\.sealos\.run</;
 const SVG_RE = /<svg/;
 const WHITE_TILE_RE = /bg-white/;
 const PANEL_TITLE_RE = /title="https:\/\/meetinghub\.sealos\.run\/app"/;
+const POPOVER_TITLE_RE =
+  /<[a-z0-9]+[^>]*data-slot="popover-title"[^>]*>Open on your phone</;
 
 function channel(id: string) {
   const found = DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS.find(
@@ -203,9 +206,13 @@ test("without a product name Reddit still gets a title", () => {
 
 test("the QR panel says what a scan opens and shows the host", () => {
   const html = renderToStaticMarkup(
-    <DeploymentTaskSuccessQrPanel url="https://meetinghub.sealos.run/app" />
+    <Popover>
+      <DeploymentTaskSuccessQrPanel url="https://meetinghub.sealos.run/app" />
+    </Popover>
   );
   assert.match(html, OPEN_ON_PHONE_RE);
+  // What a scan opens names the popover's dialog.
+  assert.match(html, POPOVER_TITLE_RE);
   assert.match(html, PANEL_HOST_RE);
   // The code itself is an SVG, dark on a white tile whatever the theme.
   assert.match(html, SVG_RE);
