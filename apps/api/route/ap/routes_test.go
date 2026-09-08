@@ -1793,6 +1793,61 @@ func TestAPUpdatePlanKeepsPortDisplayNamesWhenThePatchLeavesPortsAlone(t *testin
 	}
 }
 
+func TestAPUpdatePlanLeavesRoutingAloneWhenOnlyPortMetadataChanges(t *testing.T) {
+	for name, raw := range map[string]string{
+		"rename":             `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"Game"},{"port":5201}]}}}}`,
+		"default-open-port":  `{"spec":{"input":{"network":{"defaultOpenPort":5201}}}}`,
+		"clear-default-open": `{"spec":{"input":{"network":{"defaultOpenPort":null}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, nil, testTime())
+			if err != nil {
+				t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+			}
+			if plan.UpdateRouting {
+				t.Fatal("UpdateRouting = true, want the Ingresses left alone for a change that routes nothing differently")
+			}
+			foundService := false
+			for _, object := range plan.SupportObjects {
+				if _, ok := object.(*corev1.Service); ok {
+					foundService = true
+				}
+			}
+			if !foundService {
+				t.Fatalf("SupportObjects = %#v, want the Service re-applied so its annotations change", plan.SupportObjects)
+			}
+		})
+	}
+}
+
+func TestAPUpdatePlanReplacesRoutingWhenRoutingInputsChange(t *testing.T) {
+	for name, raw := range map[string]string{
+		"new-platform-address": `{"spec":{"input":{"network":{"platformAddresses":[{"id":"pa_abc123","port":5200},{"id":"pa_def456","port":5201}]}}}}`,
+		"port-list":            `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200},{"port":5201},{"port":5202}]}}}}`,
+		"custom-domain":        `{"spec":{"input":{"network":{"customDomains":[{"id":"cd_abc123","domain":"play.example.com","platformAddressId":"pa_abc123"}]}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, nil, testTime())
+			if err != nil {
+				t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+			}
+			if !plan.UpdateRouting {
+				t.Fatal("UpdateRouting = false, want routing replaced when its inputs change")
+			}
+		})
+	}
+	// An AP with no desired network on record has nothing to compare against.
+	workload := portDisplayNameTestWorkload()
+	delete(workload.Deployment.Annotations, orchestration.APDesiredNetworkAnnotation)
+	plan, err := buildAPUpdatePlan(workload, json.RawMessage(`{"spec":{"input":{"network":{"defaultOpenPort":5200}}}}`), nil, nil, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	if !plan.UpdateRouting {
+		t.Fatal("UpdateRouting = false, want routing replaced when the AP has no desired network on record")
+	}
+}
+
 func TestAPUpdatePlanRejectsInvalidPortDisplayNames(t *testing.T) {
 	tooLong := strings.Repeat("名", orchestration.MaxPortDisplayNameLength+1)
 	for name, raw := range map[string]string{

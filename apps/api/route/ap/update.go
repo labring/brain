@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -607,8 +608,43 @@ func buildAPUpdatePlan(current apWorkload, raw json.RawMessage, currentConfigMap
 		RenderInput:           renderInput,
 		Resources:             resources,
 		SupportObjects:        supportObjects,
-		UpdateRouting:         networkChanged || routingDomainChanged || strings.TrimSpace(stringFromMap(spec, "ingressAnnotations")) != "",
+		UpdateRouting:         networkChanged && apRoutingInputsChanged(current, renderInput.NetworkJSON) || routingDomainChanged || strings.TrimSpace(stringFromMap(spec, "ingressAnnotations")) != "",
 	}, nil
+}
+
+// apRoutingInputsChanged reports whether the network the patch renders
+// differs, in anything public routing is built from, from the network the
+// AP already holds. Port Display Names and the Default Open Port live on the
+// Service (ADR 0080) and route nothing, so a patch that only names ports or
+// picks the Default Open Port re-applies the Service and leaves the
+// Ingresses, certificates, and issuers alone: replacing routing deletes them
+// first, which interrupts public traffic and re-issues certificates for a
+// change that routes nothing differently. An AP without a desired network
+// on record is treated as changed, since there is nothing to compare.
+func apRoutingInputsChanged(current apWorkload, networkJSON string) bool {
+	before, ok := apRoutingNetworkInputs(current.Annotations()[orchestration.APDesiredNetworkAnnotation])
+	if !ok {
+		return true
+	}
+	after, ok := apRoutingNetworkInputs(networkJSON)
+	if !ok {
+		return true
+	}
+	return !reflect.DeepEqual(before, after)
+}
+
+// apRoutingNetworkInputs parses a network JSON down to the fields routing is
+// rendered from: the same scrub the desired-network annotation applies.
+func apRoutingNetworkInputs(networkJSON string) (map[string]interface{}, bool) {
+	trimmed := strings.TrimSpace(networkJSON)
+	if trimmed == "" {
+		return nil, false
+	}
+	var network map[string]interface{}
+	if err := json.Unmarshal([]byte(orchestration.APDesiredNetworkAnnotationValue(trimmed)), &network); err != nil || network == nil {
+		return nil, false
+	}
+	return network, true
 }
 
 func applyAPUpdatePlan(ctx context.Context, restConfig *rest.Config, cfg *clientcmdapi.Config, workload apWorkload, namespace string, plan apUpdatePlan) error {
