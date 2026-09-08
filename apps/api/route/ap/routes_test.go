@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1845,6 +1847,99 @@ func TestAPUpdatePlanReplacesRoutingWhenRoutingInputsChange(t *testing.T) {
 	}
 	if !plan.UpdateRouting {
 		t.Fatal("UpdateRouting = false, want routing replaced when the AP has no desired network on record")
+	}
+}
+
+func templateServiceForTest(name string, annotations map[string]interface{}, ports ...int) map[string]interface{} {
+	rawPorts := make([]interface{}, 0, len(ports))
+	for _, port := range ports {
+		rawPorts = append(rawPorts, map[string]interface{}{"name": "p" + strconv.Itoa(port), "port": float64(port)})
+	}
+	metadata := map[string]interface{}{"name": name, "namespace": "ns-a"}
+	if annotations != nil {
+		metadata["annotations"] = annotations
+	}
+	return map[string]interface{}{
+		"metadata": metadata,
+		"spec":     map[string]interface{}{"ports": rawPorts},
+	}
+}
+
+func TestAPUpdatePlanWritesPortMetadataToTemplateServices(t *testing.T) {
+	templateServices := []map[string]interface{}{
+		templateServiceForTest("game-svc", map[string]interface{}{
+			orchestration.BrainPortDisplayNameAnnotation(5200): "Old game name",
+			orchestration.BrainDefaultOpenPortAnnotation:       "5200",
+		}, 5200),
+		templateServiceForTest("admin-svc", nil, 5201, 9000),
+		templateServiceForTest("metrics-svc", map[string]interface{}{"other": "kept"}, 7000),
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"Game"},{"port":5201}],"defaultOpenPort":5201}}}}`), nil, apPortMetadataAnnotationsFromServices(templateServices), testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	retargetAPServiceMetadata(&plan, templateServices)
+
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*corev1.Service); ok {
+			t.Fatal("SupportObjects still carry the rendered AP Service; an adopted Template Instance must not grow a sibling Brain Service")
+		}
+	}
+	got := map[string]map[string]interface{}{}
+	for _, servicePatch := range plan.ServicePatches {
+		var patch map[string]interface{}
+		if err := json.Unmarshal(servicePatch.Patch, &patch); err != nil {
+			t.Fatalf("unmarshal patch for %s: %v", servicePatch.Name, err)
+		}
+		got[servicePatch.Name] = patch["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	}
+	want := map[string]map[string]interface{}{
+		"game-svc": {
+			orchestration.BrainPortDisplayNameAnnotation(5200): "Game",
+			orchestration.BrainDefaultOpenPortAnnotation:       nil,
+		},
+		"admin-svc": {
+			orchestration.BrainDefaultOpenPortAnnotation: "5201",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("service patches = %#v, want %#v", got, want)
+	}
+}
+
+func TestAPUpdatePlanKeepsTemplateServiceNamesWhenThePatchLeavesPortsAlone(t *testing.T) {
+	templateServices := []map[string]interface{}{
+		templateServiceForTest("game-svc", map[string]interface{}{
+			orchestration.BrainPortDisplayNameAnnotation(5200): "Game",
+		}, 5200),
+		templateServiceForTest("admin-svc", map[string]interface{}{
+			orchestration.BrainPortDisplayNameAnnotation(5201): "Admin console",
+		}, 5201),
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"platformAddresses":[{"id":"pa_abc123","port":5200},{"id":"pa_def456","port":5201}]}}}}`), nil, apPortMetadataAnnotationsFromServices(templateServices), testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	retargetAPServiceMetadata(&plan, templateServices)
+	if len(plan.ServicePatches) != 0 {
+		t.Fatalf("ServicePatches = %#v, want none: the live names already match", plan.ServicePatches)
+	}
+}
+
+func TestAPUpdatePlanAppliesItsOwnServiceWithoutTemplateServices(t *testing.T) {
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"defaultOpenPort":5201}}}}`), nil, nil, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	retargetAPServiceMetadata(&plan, nil)
+	foundService := false
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*corev1.Service); ok {
+			foundService = true
+		}
+	}
+	if !foundService || len(plan.ServicePatches) != 0 {
+		t.Fatalf("plan = %#v, want the rendered Service applied and no patches", plan)
 	}
 }
 
