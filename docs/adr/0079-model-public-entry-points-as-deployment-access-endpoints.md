@@ -1,5 +1,14 @@
 # Model Public Entry Points as Deployment Access Endpoints
 
+## Status
+
+Accepted; amended in place (the entry-path rule, below) and extended by
+ADR-0081, which adds a template-declared observer kind (Template Entries) to
+the declared-URL family. Template Entries are probed under this ADR's
+contract but are optional evidence: they do not gate completion the way an
+Agent-declared endpoint does, and CONTEXT.md's former "no Template-Instance-
+level open link" no longer holds.
+
 ## Context
 
 Deployment Tasks exposed user-facing addresses through three incompatible
