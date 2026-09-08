@@ -2,6 +2,7 @@ package ap
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"regexp"
 	"strconv"
@@ -147,10 +148,7 @@ func mergePortDisplayNames(status map[string]interface{}, services []map[string]
 			nextRows = append(nextRows, item)
 			continue
 		}
-		rowCopy := make(map[string]interface{}, len(row)+1)
-		for k, v := range row {
-			rowCopy[k] = v
-		}
+		rowCopy := maps.Clone(row)
 		delete(rowCopy, "displayName")
 		if port, ok := privatePortFromValue(row["port"]); ok {
 			if name := portDisplayNameFromServices(services, port); name != "" {
@@ -239,9 +237,9 @@ func servicePortEntries(service map[string]interface{}, port int) []map[string]i
 
 func networkStatusCopy(status map[string]interface{}) map[string]interface{} {
 	network, _ := status["network"].(map[string]interface{})
-	networkCopy := make(map[string]interface{}, len(network)+1)
-	for k, v := range network {
-		networkCopy[k] = v
+	networkCopy := maps.Clone(network)
+	if networkCopy == nil {
+		networkCopy = make(map[string]interface{})
 	}
 	return networkCopy
 }
