@@ -13,7 +13,6 @@ import type { DeployTaskRow } from "./schema";
 
 const requireModule = createRequire(import.meta.url);
 const originalFetch = globalThis.fetch;
-const PINNED_SKILL_COMMIT_SOURCE_RE = /sealos-skills\.git#[0-9a-f]{7,}/;
 const ENV_KEYS = [
   "AI_PROXY_TOKEN_NAME",
   "ASSISTANT_GATEWAY_MODEL",
@@ -22,6 +21,7 @@ const ENV_KEYS = [
   "DEV_OPENAI_API_KEY",
   "DEV_OPENAI_API_BASE_URL",
   "DEPLOY_DEVBOX_STORAGE_LIMIT",
+  "DEPLOY_SKILL_SOURCE",
   "DEVBOX_API_BASE_URL",
   "DEVBOX_TOKEN",
   "GITHUB_DEPLOY_MODEL",
@@ -56,9 +56,6 @@ const {
   managedVerificationDeadlineAt,
   resolveCodexGatewayCredentials,
 } = requireModule("./runner") as typeof import("./runner");
-const { getDeploySkillSourceFromEnv } = requireModule(
-  "./runtime-config"
-) as typeof import("./runtime-config");
 const { attachedDeployFailureReason } = requireModule(
   "./failure-details"
 ) as typeof import("./failure-details");
@@ -129,36 +126,25 @@ function devbox(name: string, phase = "Running") {
   };
 }
 
-describe("deploy skill installation", () => {
-  it("installs from the configured branch source without pinning a commit", () => {
-    const command = buildDeploySkillInstallCommand(
-      "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
-    );
-
-    expect(command).toContain(
-      "https://github.com/labring/sealos-skills/tree/brain-deploy-preview"
-    );
-    expect(command).toContain(
-      'npx --yes skills@1.5.20 add "$skill_source" --agent codex -y'
-    );
-    expect(command).not.toContain("rm -rf");
-    expect(command).not.toContain("skills-lock.json");
-    expect(command).not.toContain("required_skill_names");
-    expect(command).not.toContain("deploy-skills-revision");
-    expect(command).not.toContain("sealos-skills-install.marker");
-    expect(command).not.toMatch(PINNED_SKILL_COMMIT_SOURCE_RE);
+describe("deploy skill preparation", () => {
+  it("uses only the runtime-owned offline helper", () => {
+    delete process.env.DEPLOY_SKILL_SOURCE;
+    const command = buildDeploySkillInstallCommand();
+    expect(command).toContain("/usr/local/bin/sealai-prepare-skills");
+    expect(command).not.toContain("--init-workspace");
+    expect(command).not.toContain("npx");
+    expect(command).not.toContain("https://");
   });
 
-  it("defaults to the unified Brain deployment branch via runtime config", () => {
-    expect(getDeploySkillSourceFromEnv({})).toBe(
-      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
-    );
-    const command = buildDeploySkillInstallCommand(
-      getDeploySkillSourceFromEnv({})
-    );
-    expect(command).toContain(
-      "https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy"
-    );
+  it("rejects legacy source configuration", () => {
+    process.env.DEPLOY_SKILL_SOURCE = "https://example.test/skills";
+    try {
+      expect(() => buildDeploySkillInstallCommand()).toThrow(
+        "DEVBOX_RUNTIME_IMAGE"
+      );
+    } finally {
+      delete process.env.DEPLOY_SKILL_SOURCE;
+    }
   });
 });
 
