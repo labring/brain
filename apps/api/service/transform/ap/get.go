@@ -165,7 +165,8 @@ func mergePortDisplayNames(status map[string]interface{}, services []map[string]
 // Service as status.network.defaultOpenPort, but only when the stored value
 // names one of the AP's App Listening Ports and the annotated Service exposes
 // it. A stale or foreign value is ignored, never surfaced; the automatic rule
-// (first port with an HTTP Public Address) belongs to the UI.
+// (the first port whose HTTP Public Address enters at the root, else the first
+// with any HTTP Public Address) belongs to the UI.
 func mergeDefaultOpenPort(status map[string]interface{}, services []map[string]interface{}) {
 	network, _ := status["network"].(map[string]interface{})
 	if network == nil {

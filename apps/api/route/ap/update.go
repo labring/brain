@@ -676,6 +676,17 @@ func applyAPUpdatePlan(ctx context.Context, restConfig *rest.Config, cfg *client
 			return apUpdateInternal("failed to update AP support resources", err)
 		}
 	}
+	for _, servicePatch := range plan.ServicePatches {
+		if _, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
+			Resource:  "services",
+			Name:      servicePatch.Name,
+			Namespace: namespace,
+			PatchType: k8ssvc.PatchTypeMerge,
+			Patch:     servicePatch.Patch,
+		}); err != nil {
+			return apUpdateInternal("failed to update AP service port metadata", err)
+		}
+	}
 	if !isEmptyJSONPatchObject(plan.Patch) {
 		if _, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
 			Resource:  workload.Resource(),

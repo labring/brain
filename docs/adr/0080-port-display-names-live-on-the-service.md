@@ -93,4 +93,7 @@ optional polish (a prettier or localised name).
   annotation on the same Service, read through `status.network.defaultOpenPort`
   and written through `spec.input.network.defaultOpenPort`, preserved across
   writes that do not name it exactly as the names are. Without a stored value
-  the UI opens the first App Listening Port that has an HTTP Public Address.
+  the UI applies the automatic rule of CONTEXT.md and the ADR 0079 amendment:
+  the first App Listening Port, in declaration order, whose HTTP Public
+  Address enters at the root; with none at the root, the first that has any
+  HTTP Public Address.
