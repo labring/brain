@@ -423,6 +423,7 @@ test("AP claim settings maps desired Custom Domain Bindings into the network dra
       platformAddressId: "pa_abc123",
       status: "verifying",
       targetPort: 8080,
+      url: "https://www.example.com/",
     },
   ]);
   assert.deepEqual(settings.network?.publicAddresses, [

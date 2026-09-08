@@ -43,6 +43,8 @@ export interface ApNetworkCustomDomain {
   routing?: ApNetworkCustomDomainDetail;
   status?: string;
   targetPort?: number;
+  /** The URL the API observed for the domain, when it reported one. */
+  url?: string;
 }
 
 export interface ApNetworkAppListeningPort {
@@ -296,14 +298,13 @@ export function apNetworkOpenTargetAddresses(
   const fromCustomDomains = (network.customDomains ?? []).flatMap(
     (domain): ApOpenTargetAddress[] => {
       const host = domain.domain.trim();
+      const bound = network.publicAddresses.find(
+        (address) =>
+          publicAddressIdValue(address) === domain.platformAddressId.trim()
+      );
       // A binding without a stated target port reaches the port of the
       // Platform Address it promotes.
-      const port =
-        domain.targetPort ??
-        network.publicAddresses.find(
-          (address) =>
-            publicAddressIdValue(address) === domain.platformAddressId.trim()
-        )?.port;
+      const port = domain.targetPort ?? bound?.port;
       if (port == null || host === "") {
         return [];
       }
@@ -312,12 +313,40 @@ export function apNetworkOpenTargetAddresses(
           accessible: openTargetAccessible(domain.status),
           kind: "custom",
           port,
-          url: `https://${host}/`,
+          url: customDomainOpenTargetUrl(domain, bound, host),
         },
       ];
     }
   );
   return [...fromPublicAddresses, ...fromCustomDomains];
+}
+
+/**
+ * The URL a Custom Domain opens. It promotes one Platform Address, so it
+ * serves what that address serves: its scheme and entry path on the custom
+ * host, which keeps a `wss://` address WS (never an Open target) and a path
+ * a path. Without the bound address the API's observed URL stands, and
+ * without either the domain opens https at its root. Minting an HTTP root
+ * here would make a WS-only port eligible and prefer it over a page port.
+ */
+function customDomainOpenTargetUrl(
+  domain: Pick<ApNetworkCustomDomain, "url">,
+  bound: ApNetworkPublicAddress | undefined,
+  host: string
+): string {
+  const platformUrl =
+    bound === undefined ? "" : publicAddressOpenTargetUrl(bound);
+  if (platformUrl !== "") {
+    try {
+      const url = new URL(platformUrl);
+      url.host = host;
+      return url.toString();
+    } catch {
+      // An unparsable Platform Address URL falls through to the observed one.
+    }
+  }
+  const observed = domain.url?.trim() ?? "";
+  return observed === "" ? `https://${host}/` : observed;
 }
 
 /**

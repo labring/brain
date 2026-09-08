@@ -531,6 +531,7 @@ function customDomainReadModelPatchFromRow(
   const routing = customDomainDetailFromRecord(asRecord(row.routing));
   const status = trimStr(row.status);
   const targetPort = privatePortNum(row.port);
+  const url = trimStr(row.url);
   return {
     ...(certificate == null ? {} : { certificate }),
     ...(cnameTarget === "" ? {} : { cnameTarget }),
@@ -541,6 +542,7 @@ function customDomainReadModelPatchFromRow(
     ...(routing == null ? {} : { routing }),
     ...(status === "" ? {} : { status }),
     ...(targetPort == null ? {} : { targetPort }),
+    ...(url === "" ? {} : { url }),
   };
 }
 
