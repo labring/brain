@@ -15,10 +15,12 @@ import {
   declareTimelineSteps,
   deploymentTaskSuccessFromResultReadiness,
   deploymentTaskSuccessFromTimeline,
+  deploymentTaskSuccessSignature,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
   deploymentTimelineStepsForRunner,
   markTimelineStep,
+  sanitizeDeploymentTaskSuccess,
   upsertResultResourceCard,
 } from "./timeline";
 
@@ -667,6 +669,33 @@ test("readiness claims exactly the required resources it saw running", () => {
   );
 });
 
+test("a readiness claim carries the product's id and categories when known", () => {
+  assert.deepEqual(
+    deploymentTaskSuccessFromResultReadiness({
+      productCategories: ["game"],
+      productId: "eaglercraft-server",
+      productName: "EaglerCraft Server",
+      requiredRunningCards: 1,
+    }),
+    {
+      productCategories: ["game"],
+      productId: "eaglercraft-server",
+      productName: "EaglerCraft Server",
+      verification: { passed: 1, total: 1 },
+    }
+  );
+  // Absent facts stay absent: no empty list, no empty id.
+  assert.deepEqual(
+    deploymentTaskSuccessFromResultReadiness({
+      productCategories: [],
+      productId: null,
+      productName: "Site",
+      requiredRunningCards: 1,
+    }),
+    { productName: "Site", verification: { passed: 1, total: 1 } }
+  );
+});
+
 test("a readiness claim never drops its verification count", () => {
   const success = deploymentTaskSuccessFromResultReadiness({
     productName: null,
@@ -762,10 +791,14 @@ test("the claim published with the probe covers exactly what is on screen", () =
     .filter((card) => card.required).length;
 
   const success = deploymentTaskSuccessFromTimeline(verified, {
+    productCategories: ["game"],
+    productId: "eaglercraft-server",
     productName: "EaglerCraft Server",
   });
   assert.deepEqual(success, {
     headline: "Deployment completed",
+    productCategories: ["game"],
+    productId: "eaglercraft-server",
     productName: "EaglerCraft Server",
     verification: { passed: visibleRequiredCards, total: visibleRequiredCards },
   });
@@ -1109,4 +1142,58 @@ test("the Default Open Port's address leads the success entries", () => {
     "https://api.example.sealos.run/",
     "https://web.example.sealos.run/",
   ]);
+});
+
+test("the sanitizer keeps product categories as a short list of trimmed names", () => {
+  const fallback = { revision: 3, verifiedAt: "2026-06-17T10:00:05.000Z" };
+  const sanitized = sanitizeDeploymentTaskSuccess(
+    {
+      productCategories: [" game ", 42, "", "tool", "game"],
+      productId: "eaglercraft-server",
+      productName: "EaglerCraft Server",
+      revision: 3,
+      verifiedAt: fallback.verifiedAt,
+    },
+    fallback
+  );
+  assert.deepEqual(sanitized?.productCategories, ["game", "tool"]);
+  assert.equal(sanitized?.productId, "eaglercraft-server");
+
+  // An empty or malformed list leaves the field absent rather than empty.
+  for (const productCategories of [[], "game", null, [""]]) {
+    const record = sanitizeDeploymentTaskSuccess(
+      { productCategories, revision: 3, verifiedAt: fallback.verifiedAt },
+      fallback
+    );
+    assert.equal(record?.productCategories, undefined);
+  }
+
+  // The list is capped, so a runaway producer cannot bloat the snapshot.
+  const many = sanitizeDeploymentTaskSuccess(
+    {
+      productCategories: Array.from({ length: 40 }, (_, i) => `c${i}`),
+      revision: 3,
+      verifiedAt: fallback.verifiedAt,
+    },
+    fallback
+  );
+  assert.ok((many?.productCategories?.length ?? 0) < 40);
+});
+
+test("product categories are part of a record's identity", () => {
+  const base = {
+    contractVersion: 2,
+    productId: "eaglercraft-server",
+    productName: "EaglerCraft Server",
+    revision: 3,
+    verifiedAt: "2026-06-17T10:00:05.000Z",
+  };
+  assert.notEqual(
+    deploymentTaskSuccessSignature({ ...base, productCategories: ["game"] }),
+    deploymentTaskSuccessSignature({ ...base, productCategories: ["ai"] })
+  );
+  assert.equal(
+    deploymentTaskSuccessSignature({ ...base, productCategories: ["game"] }),
+    deploymentTaskSuccessSignature({ ...base, productCategories: ["game"] })
+  );
 });
