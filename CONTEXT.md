@@ -70,7 +70,19 @@ _Avoid_: deployment (for an image revision), AP Deployments Pane.
 
 ### App Listening Port
 
-An AP container port where the application accepts traffic, identified by its unique port number within the AP. Each App Listening Port has one Private Address and may be targeted by zero or more Public Addresses.
+An AP container port where the application accepts traffic, identified by its unique port number within the AP. Each App Listening Port has one Private Address, may be targeted by zero or more Public Addresses, and may carry a Port Display Name.
+
+### Port Display Name
+
+An optional human-readable name owned by an App Listening Port that says what the port is for (`game`, `Admin console`). A Public Address shows the Port Display Name of the port it targets and owns no name of its own; a port without one is shown by its number alone. Defaults come from the declared name of the matching Service port when that name is a purpose rather than a protocol word.
+
+_Avoid_: Public Address name, domain name label, port alias.
+
+### Default Open Port
+
+The App Listening Port that the Open control opens — on the AP Public Access Node header and in the pane header of every AP-owned Settings View — through its best Public Address: an accessible Custom Domain, else an accessible Platform Address; with neither, Open is shown disabled, with the reason. The node's control names the port ("Open <Port Display Name>"), its only marker there; the pane control reads just "Open" and names the port only on hover, since the App Listening Ports card beside it already shows the choice. A stored choice lives only on the AP's Service (annotation `brain.io/default-open-port`, next to Port Display Names), so a template can preset it; users set or clear it from the port's row in the App Listening Ports card ("Open by default"), and clearing returns to the automatic rule: the first App Listening Port, in declaration order, whose HTTP Public Address enters at the root; with none at the root, the first that has any HTTP Public Address — so a backend port routed under `/api` yields to the page port however the template ordered them. A stored port that has no HTTP Public Address is ignored, not surfaced. Ports reached only by WS/WSS Public Addresses are never chosen. Owned by one AP; there is no Project-level or Template-Instance-level open link.
+
+_Avoid_: primary entry, primary port, primary address, launch link, main domain.
 
 ### Private Address
 
@@ -80,7 +92,9 @@ Observed Launchpad WS/WSS Ingress markers identify WebSocket ports: their privat
 
 ### Public Address
 
-An externally reachable URL/domain alias for an AP that declares a target port and reaches the App Listening Port for that port. Its two kinds are Platform Address and Custom Domain; editing the target port is Public Address editing, not Custom Domain Binding.
+An externally reachable URL/domain alias for an AP that declares a target port and reaches the App Listening Port for that port. Its two kinds are Platform Address and Custom Domain; editing the target port is Public Address editing, not Custom Domain Binding. Its URL is host plus one entry path: Platform Addresses and Custom Domains that Brain creates always enter at the root, while a Public Address observed from a template's Ingress keeps that host's primary path under the same rule as a Deployment Access Endpoint — a declared root wins; otherwise, setting aside asset paths such as `/admin.css`, the path that the most other declared paths extend, with manifest order only as the tie-break — so an admin panel routed as `/api`, `/admin.css`, `/admin.js`, `/admin` opens at `/admin`, not at `/api` and not at a root it never serves. The remaining Ingress paths are routing detail, never extra Public Addresses; the path is observed, not user-editable.
+
+_Avoid_: entry path setting, default open path, per-path public address.
 
 ### Platform Address
 
@@ -102,11 +116,13 @@ _Avoid_: AP Public Access Node health, standalone public access monitor.
 
 ### AP Public Access Node
 
-A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner.
+A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). It groups Public Addresses by the App Listening Port they target, each group headed by its port number and, when set, the Port Display Name. Two cases draw no group header, since it would tell the reader nothing the node's addresses do not: an AP with a single Public Address, however its port is named, and an AP whose only port has no Port Display Name. In those cases the node names the port nowhere else; the Open control's label and AP Network Settings do. Rows show the domain, not the Public Address kind. Its header carries the address count and one Open control that opens the Default Open Port; no per-address health is aggregated there, and nothing else on the node marks the Default Open Port. Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner; selecting it opens the AP's Network Settings View.
 
 ### AP Network Settings
 
-The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings — one AP Settings Draft domain regardless of which Settings View shows it. Its public-routing section (the Domain List) lists Public Addresses with their routing state, and Public Address edits may add App Listening Ports within the same draft.
+The AP-owned settings area for App Listening Ports, Private Addresses, Public Addresses, Platform Addresses, and Custom Domain Bindings — one AP Settings Draft domain regardless of which Settings View shows it. Its port section (the App Listening Ports card) is where a Port Display Name is edited and the Default Open Port is chosen; its public-routing section (the Domain List) lists Public Addresses with their routing state and the name of the port each targets. It carries no Open control of its own — that sits in the pane header of the Settings View showing it. Public Address edits may add App Listening Ports within the same draft.
+
+_Avoid_: Private Addresses card (the card lists App Listening Ports; the Private Address is one of their attributes).
 
 ## Database
 
@@ -338,7 +354,7 @@ _Avoid_: applied object, Kubernetes object.
 
 ### Deployment Access Endpoint
 
-A source-independent Deployment Result Resource describing one user-facing way to reach a deployed product. It has a stable task-local identity, explicit HTTP or WebSocket protocol, a provider observer or declared URL, and an independently verified readiness state. Docker AP addresses, Template Ingress hosts, and GitHub Agent-declared URLs all converge on this contract. The observer resolves the provider's actual address; Brain never reconstructs an address or infers WSS from HTTPS.
+A source-independent Deployment Result Resource describing one user-facing way to reach a deployed product. It has a stable task-local identity, explicit HTTP or WebSocket protocol, a provider observer or declared URL, and an independently verified readiness state. Docker AP addresses, Template Ingress hosts, and GitHub Agent-declared URLs all converge on this contract. The observer resolves the provider's actual address; Brain never reconstructs an address or infers WSS from HTTPS. Once verified, an endpoint that reaches an App Listening Port of one of the task's APs — an AP Public Address, or a Template Ingress host the AP observed — is named by that port's Port Display Name form; an Agent-declared URL keeps its declared label.
 
 _Avoid_: guessed URL, inferred socket address, source-specific public access card.
 
@@ -364,9 +380,9 @@ A Deployment Task Timeline section for one Deployment Result Resource, presentin
 
 ### Deployment Task Success Record
 
-The conclusion a Deployment Task Timeline appends once Deployment Result Readiness is reached and every required access endpoint has passed its protocol probe. It carries only facts the deployment declared — product name, verified HTTP or WebSocket entries, first-use steps — so the Timeline never presents an address or instruction the runner cannot evidence. HTTP(S) entries can be opened and copied; WS(S) entries are copied. A verified deployment with no endpoint uses the neutral `Deployment completed` headline, while `You can start using it` is reserved for a verified actionable entry. A task with no required Deployment Result Resource publishes no record and keeps reporting progress. It is part of the task-owned timeline snapshot, not a Chat message or a toast, and its Timeline revision doubles as its identity.
+The conclusion a Deployment Task Timeline appends once Deployment Result Readiness is reached and every required access endpoint has passed its protocol probe. It carries only facts the deployment declared — product name, verified HTTP or WebSocket entries, first-use steps — so the Timeline never presents an address or instruction the runner cannot evidence. Each entry is headed the way a Public Address is shown everywhere else: the Port Display Name form of the App Listening Port it reaches (`game · 5200`, or `5200` alone for an unnamed port), as it stood at verification time; an entry no App Listening Port can be found for keeps the name its source declared. Two entries reaching the same port carry the same heading; the record stays a flat list. A record with a single entry heads it with nothing, whatever heading its source would have given it, as the node draws a lone Public Address. HTTP(S) entries can be opened and copied; WS(S) entries are copied. Its Open control opens the Default Open Port through its best Public Address as decided when the record was written — the record is a snapshot, so a later rename or Default Open Port change does not rewrite it. A verified deployment with no endpoint uses the neutral `Deployment completed` headline, while `You can start using it` is reserved for a verified actionable entry. A task with no required Deployment Result Resource publishes no record and keeps reporting progress. It is part of the task-owned timeline snapshot, not a Chat message or a toast, and its Timeline revision doubles as its identity.
 
-_Avoid_: success toast, deploy done banner, completion notification.
+_Avoid_: success toast, deploy done banner, completion notification, "Public address" as an entry heading.
 
 ### Deployment Celebration
 
@@ -488,7 +504,7 @@ _Avoid_: hidden unsupported action, missing menu item.
 
 ### Side Pane
 
-A non-modal, temporary project surface for focused work such as resource inspection, settings, or deployment flows — distinct from the persistent Project Assistant Pane. Its pinned footer carries pane-level actions chosen by the hosted surface, not by the pane; a surface without pane-level actions has none.
+A non-modal, temporary project surface for focused work such as resource inspection, settings, or deployment flows — distinct from the persistent Project Assistant Pane. Its header and its pinned footer carry pane-level actions chosen by the hosted surface, not by the pane — the header beside the title, the footer as a pinned strip; a surface without pane-level actions has none.
 
 ### Main Action Surface
 

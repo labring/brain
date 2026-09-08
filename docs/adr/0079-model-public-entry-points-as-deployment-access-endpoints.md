@@ -39,10 +39,10 @@ A template Ingress supplies host, TLS, and ordered path candidates, but those
 paths are routing implementation rather than independent user entry points.
 Brain groups candidates by hostname and endpoint role, retaining at most one
 HTTP(S) address and one WS(S) address for each host. A declared root path wins;
-a path-only app retains its first manifest-ordered path. Only retained entries
-are probed and gate completion. This keeps `/api`, static assets, and secondary
-admin routes from becoming deployment requirements when the primary app is
-already usable.
+a path-only app retains one primary path chosen by the entry-path rule below.
+Only retained entries are probed and gate completion. This keeps `/api`, static
+assets, and secondary admin routes from becoming deployment requirements when
+the primary app is already usable.
 
 For an inferred non-root HTTP(S) Ingress candidate returning 404, observation
 may verify `/` on the same origin. Only a successful root probe replaces the
@@ -108,3 +108,31 @@ using it` is reserved for results with an actionable verified entry.
   WebSocket endpoints while old deployment skills continue to work.
 - Rollback may stop writing v2 records, but readers must retain v1 and v2
   support after any v2 task has been persisted.
+
+## Amendment: the entry-path rule (2026-09)
+
+The original text let a path-only host keep "its first manifest-ordered
+path". Ingress path order carries no routing meaning, and a survey of the
+245-template catalog showed the one path-only HTTP entry in it, the
+Eaglercraft admin panel, declares `/api` first and `/admin` fifth, so the
+rule opened a 404. The rule is now:
+
+1. A declared root (`/`) wins outright.
+2. Otherwise paths whose last segment carries a short file extension
+   (`/admin.css`) step aside: they are assets routed next to a page.
+3. Among the rest, the path that the most other declared paths extend is the
+   entry (`/admin` for `/admin.css`, `/admin.js`, `/admin-i18n.js`). A tie
+   keeps manifest order.
+
+Regex paths contribute their literal head (`/admin(/|$)(.*)` is `/admin`,
+`/?(.*)` is `/`). Across the catalog the rule changes exactly one choice, the
+Eaglercraft one, and no others; a name denylist (`api`, `ws`, `auth`, ...) was
+rejected because it changed five and got four wrong.
+
+The AP read model applies the same rule to observed Public Addresses, so the
+Public Access Node, the Open control, and the Domain List agree with the
+deployment result card. Because a Public Address now carries a path, the
+automatic Default Open Port rule prefers a port whose HTTP Public Address
+enters at the root before any port that enters under a path; otherwise a
+backend port declared before the page port (`/api/v1` on Pangolin, `/mqtt`
+on EMQX) would have become the Open target.

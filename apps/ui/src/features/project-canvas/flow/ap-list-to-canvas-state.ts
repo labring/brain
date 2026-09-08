@@ -6,11 +6,6 @@ import type {
 import { apItemsFromList } from "@workspace/api/lib/ap-list";
 import type { K8sGetResponse } from "@workspace/api/schemas/k8s-get";
 import type { ContainerNodeStates } from "@workspace/ui/components/container-node/container-node";
-import type {
-  EntryNodeAccessDomain,
-  EntryNodeTarget,
-  EntryNodeTargetStatus,
-} from "@workspace/ui/components/entry-node/entry-node";
 import type { Edge, Node } from "@xyflow/react";
 
 import {
@@ -23,14 +18,8 @@ import { dbResourceToSettingsData } from "@/features/resource-settings/db/db-set
 import {
   CANVAS_CONTAINER_NODE_TYPE,
   CANVAS_DATABASE_NODE_TYPE,
-  CANVAS_ENTRY_NODE_TYPE,
 } from "../nodes/constants";
-import { publicAccessSelectionKey } from "../nodes/entry-node-selection";
 import type { CanvasDatabaseNodeData } from "../nodes/types";
-import {
-  platformAddressIdFromValue,
-  platformAddressIdsFromRows,
-} from "../platform-addresses";
 
 const FALLBACK_COLUMNS = 3;
 const FALLBACK_COL_GAP = 340;
@@ -43,9 +32,6 @@ function fallbackCanvasPosition(index: number): { x: number; y: number } {
   };
 }
 
-const ENTRY_NODE_PROTOCOL_PATTERN = /^https?:\/\//;
-const ENTRY_NODE_STATUS_SEPARATOR_PATTERN = /[\s_]+/g;
-const ENTRY_NODE_TRAILING_SLASH_PATTERN = /\/$/;
 const STATUS_TONES = new Set([
   "creating",
   "deleting",
@@ -54,17 +40,6 @@ const STATUS_TONES = new Set([
   "pending",
   "restarting",
   "running",
-  "starting",
-  "stopped",
-  "stopping",
-  "updating",
-]);
-const PUBLIC_ACCESS_BLOCKING_AP_TONES = new Set([
-  "creating",
-  "deleting",
-  "failed",
-  "pending",
-  "restarting",
   "starting",
   "stopped",
   "stopping",
@@ -149,17 +124,6 @@ function metadataUid(item: unknown): string | undefined {
   return typeof uid === "string" ? uid : undefined;
 }
 
-function metadataNamespace(item: unknown): string | undefined {
-  const namespace = asRecord(asRecord(item)?.metadata)?.namespace;
-  return typeof namespace === "string" ? namespace : undefined;
-}
-
-function nonEmptyString(input: unknown): string | undefined {
-  return typeof input === "string" && input.trim() !== ""
-    ? input.trim()
-    : undefined;
-}
-
 function containerMetricsFromTelemetry(
   telemetry: WorkloadMetricPercents | undefined
 ): ContainerNodeStates["metrics"] {
@@ -228,13 +192,6 @@ export interface DbsToCanvasStateOptions {
   gridIndexOffset?: number;
   /** Key from {@link telemetryWorkloadKey} -> latest workload metric % from telemetry. */
   metricsLookup?: Map<string, WorkloadMetricPercents>;
-  /** Used when a list item has no `metadata.namespace` (same as k8s list query). */
-  namespaceFallback?: string;
-}
-
-export interface PublicAccessToCanvasStateOptions {
-  /** Index offset for deterministic fallback placement when combining node lists. @default 0 */
-  gridIndexOffset?: number;
   /** Used when a list item has no `metadata.namespace` (same as k8s list query). */
   namespaceFallback?: string;
 }
@@ -314,331 +271,4 @@ export function dbsToCanvasState(
     };
   });
   return { nodes, edges: [] };
-}
-
-/**
- * Builds React Flow `nodes` / `edges` for AP Public Access Nodes.
- */
-export function publicAccessToCanvasState(
-  apsData: K8sGetResponse | undefined,
-  options?: PublicAccessToCanvasStateOptions
-): { edges: Edge[]; nodes: Node[] } {
-  const items = publicAccessCanvasResources(apsData, options);
-  const grid0 = options?.gridIndexOffset ?? 0;
-  const nodes: Node[] = items.map((item, i) => {
-    const stable = item.stableName;
-    const name = item.name;
-    const namespace = item.namespace;
-    const uid = item.uid;
-    const targets = item.targets;
-    const accessDomain = entryNodeAccessDomainFromTargets(targets);
-    const g = grid0 + i;
-    const apRef = item.apRef;
-    const selectionKey =
-      apRef === undefined || namespace === ""
-        ? undefined
-        : publicAccessSelectionKey({ apName: apRef, namespace });
-
-    return {
-      data: {
-        ...(accessDomain === undefined ? {} : { accessDomain }),
-        resource: {
-          ...(apRef === undefined ? {} : { apRef }),
-          name,
-          namespace,
-          ...(selectionKey === undefined ? {} : { selectionKey }),
-          ...(uid === undefined || uid === "" ? {} : { uid }),
-        },
-        states: { name },
-        targets,
-      },
-      id: `entry-${String(stable).replace(/\s+/g, "-")}`,
-      position: fallbackCanvasPosition(g),
-      type: CANVAS_ENTRY_NODE_TYPE,
-    };
-  });
-  return { nodes, edges: [] };
-}
-
-interface PublicAccessCanvasResource {
-  apRef?: string;
-  name: string;
-  namespace: string;
-  stableName: string;
-  targets: EntryNodeTarget[];
-  uid?: string;
-}
-
-interface NetworkPublicAddress {
-  cnameTarget?: string;
-  host?: string;
-  id?: string;
-  platformAddressId?: string;
-  port: number;
-  status?: string;
-  type?: string;
-  url?: string;
-}
-
-function publicAccessCanvasResources(
-  apsData: K8sGetResponse | undefined,
-  options: PublicAccessToCanvasStateOptions | undefined
-): PublicAccessCanvasResource[] {
-  const resources: PublicAccessCanvasResource[] = [];
-  for (const ap of apItemsFromList(apsData)) {
-    const publicAddresses = apNetworkPublicAddresses(ap);
-    if (publicAddresses.length === 0) {
-      continue;
-    }
-    const apName = metadataName(ap);
-    const namespace = metadataNamespace(ap) ?? options?.namespaceFallback ?? "";
-    if (apName === undefined || namespace === "") {
-      continue;
-    }
-    const apTone = apToWorkloadStates(ap).status?.tone;
-    resources.push({
-      apRef: apName,
-      name: apName,
-      namespace,
-      stableName: apName,
-      targets: entryNodeTargetsFromPublicAddresses(publicAddresses, apTone),
-    });
-  }
-  return resources;
-}
-
-function apNetworkPublicAddresses(ap: unknown): NetworkPublicAddress[] {
-  const root = asRecord(ap) ?? {};
-  const statusNetwork = asRecord(asRecord(root.status)?.network);
-  const inputNetwork = asRecord(asRecord(asRecord(root.spec)?.input)?.network);
-  const statusAddresses = normalizeNetworkPublicAddresses(
-    statusNetwork?.publicAddresses,
-    true
-  );
-  const desiredPending = normalizeDesiredPlatformAddresses(
-    inputNetwork?.platformAddresses
-  );
-  if (statusAddresses.length > 0) {
-    const observedPlatformAddresses = statusAddresses.filter(
-      isPlatformPublicAddressRow
-    );
-    const observedIds = platformAddressIdsFromRows(observedPlatformAddresses);
-    const promotedPlatformAddressIds =
-      platformAddressIdsFromCustomRows(statusAddresses);
-    return [
-      ...statusAddresses,
-      ...desiredPending.filter(
-        (address) =>
-          !isKnownPlatformAddress(
-            address,
-            observedIds,
-            promotedPlatformAddressIds
-          )
-      ),
-    ];
-  }
-  return desiredPending;
-}
-
-function isKnownPlatformAddress(
-  address: NetworkPublicAddress,
-  observedIds: ReadonlySet<string>,
-  promotedPlatformAddressIds: ReadonlySet<string>
-): boolean {
-  return (
-    address.id !== undefined &&
-    (observedIds.has(address.id) || promotedPlatformAddressIds.has(address.id))
-  );
-}
-
-function isCustomPublicAddressRow(address: NetworkPublicAddress): boolean {
-  return address.type?.trim().toLowerCase() === "custom";
-}
-
-function isPlatformPublicAddressRow(address: NetworkPublicAddress): boolean {
-  return !isCustomPublicAddressRow(address);
-}
-
-function platformAddressIdsFromCustomRows(
-  addresses: readonly NetworkPublicAddress[]
-): Set<string> {
-  const ids = new Set<string>();
-  for (const address of addresses) {
-    if (
-      isCustomPublicAddressRow(address) &&
-      address.platformAddressId !== undefined
-    ) {
-      ids.add(address.platformAddressId);
-    }
-  }
-  return ids;
-}
-
-function normalizeDesiredPlatformAddresses(
-  raw: unknown
-): NetworkPublicAddress[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  const out: NetworkPublicAddress[] = [];
-  for (const item of raw) {
-    const record = asRecord(item);
-    if (record === undefined) {
-      continue;
-    }
-    const id = platformAddressIdFromValue(record.id);
-    const port = publicAccessTargetPort(record.port);
-    if (id === undefined || port === undefined) {
-      continue;
-    }
-    out.push({ id, port, status: "progressing", type: "platform" });
-  }
-  return out;
-}
-
-function normalizeNetworkPublicAddresses(
-  raw: unknown,
-  includeObservedFields: boolean
-): NetworkPublicAddress[] {
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  const out: NetworkPublicAddress[] = [];
-  for (const item of raw) {
-    const address = networkPublicAddressFromRecord(item, includeObservedFields);
-    if (address !== undefined) {
-      out.push(address);
-    }
-  }
-  return out;
-}
-
-function networkPublicAddressFromRecord(
-  raw: unknown,
-  includeObservedFields: boolean
-): NetworkPublicAddress | undefined {
-  const record = asRecord(raw);
-  if (record === undefined) {
-    return undefined;
-  }
-  const host = nonEmptyString(record.host);
-  const id = nonEmptyString(record.id);
-  const port = publicAccessTargetPort(record.port);
-  if ((host === undefined && id === undefined) || port === undefined) {
-    return undefined;
-  }
-
-  const address: NetworkPublicAddress = {
-    ...(host === undefined ? {} : { host }),
-    ...(id === undefined ? {} : { id }),
-    port,
-  };
-  if (!includeObservedFields) {
-    return address;
-  }
-
-  const status = nonEmptyString(record.status);
-  const type = nonEmptyString(record.type);
-  const url = nonEmptyString(record.url);
-  const platformAddressId = nonEmptyString(record.platformAddressId);
-  const cnameTarget = nonEmptyString(record.cnameTarget);
-  if (status !== undefined) {
-    address.status = status;
-  }
-  if (type !== undefined) {
-    address.type = type;
-  }
-  if (url !== undefined) {
-    address.url = url;
-  }
-  if (platformAddressId !== undefined) {
-    address.platformAddressId = platformAddressId;
-  }
-  if (cnameTarget !== undefined) {
-    address.cnameTarget = cnameTarget;
-  }
-  return address;
-}
-
-function entryNodeTargetsFromPublicAddresses(
-  addresses: readonly NetworkPublicAddress[],
-  apTone: string | undefined
-): EntryNodeTarget[] {
-  return addresses.map((address, index) => {
-    const host = address.host;
-    const id = address.id ?? `${address.port}-${host ?? `pending-${index}`}`;
-    return {
-      id,
-      label: publicAddressTargetLabel(address.type),
-      status: publicAccessTargetStatus(address.status, apTone),
-      value:
-        address.url ?? (host === undefined ? "Pending" : `https://${host}/`),
-    };
-  });
-}
-
-function publicAddressTargetLabel(type: string | undefined): string {
-  switch (type?.toLowerCase()) {
-    case "platform":
-      return "Platform Address";
-    case "custom":
-    case "custom-domain":
-      return "Custom Domain";
-    default:
-      return "Public Address";
-  }
-}
-
-function entryNodeAccessDomainFromTargets(
-  targets: readonly EntryNodeTarget[]
-): EntryNodeAccessDomain | undefined {
-  const first = targets[0];
-  if (first === undefined) {
-    return undefined;
-  }
-  const value = first.value
-    .replace(ENTRY_NODE_PROTOCOL_PATTERN, "")
-    .replace(ENTRY_NODE_TRAILING_SLASH_PATTERN, "");
-  return { label: "Access domain", value };
-}
-
-function publicAccessTargetPort(input: unknown): number | undefined {
-  if (typeof input === "number" && Number.isFinite(input)) {
-    return input;
-  }
-  if (typeof input === "string") {
-    const n = Number(input);
-    return Number.isFinite(n) ? n : undefined;
-  }
-  return undefined;
-}
-
-function publicAccessTargetStatus(
-  input: unknown,
-  apTone: string | undefined
-): EntryNodeTargetStatus | undefined {
-  const status = nonEmptyString(input);
-  if (status === undefined) {
-    return { label: "Unknown", tone: "unknown" };
-  }
-  const tone = status
-    .toLowerCase()
-    .replace(ENTRY_NODE_STATUS_SEPARATOR_PATTERN, "-");
-  const normalizedApTone = apTone?.trim().toLowerCase();
-  if (
-    tone === "accessible" &&
-    normalizedApTone != null &&
-    PUBLIC_ACCESS_BLOCKING_AP_TONES.has(normalizedApTone)
-  ) {
-    return { label: titleCaseStatus(normalizedApTone), tone: normalizedApTone };
-  }
-  return { label: titleCaseStatus(tone), tone };
-}
-
-function titleCaseStatus(status: string): string {
-  return status
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

@@ -2,7 +2,8 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppIconButton } from "@workspace/ui/components/app-icon-button";
-import { Check, CheckCircle2, Copy, ExternalLink } from "lucide-react";
+import { cn } from "@workspace/ui/lib/utils";
+import { Check, Copy, ExternalLink } from "lucide-react";
 import { memo, useEffect, useRef } from "react";
 import { prefersReducedMotion } from "@/features/deploy/deployment-task-success-confetti";
 import type {
@@ -24,6 +25,10 @@ import { useCopyFeedback } from "@/features/deploy/use-copy-feedback";
 const SUCCESS_HEADLINE_FALLBACK = "You can start using it";
 const SUCCESS_OPEN_LABEL_FALLBACK = "Open";
 
+/** Entrance: each block rises in on a short stagger once the record lands. */
+const RISE_CLASS =
+  "animate-in fade-in slide-in-from-bottom-1 fill-mode-both duration-300 ease-out motion-reduce:animate-none";
+
 function isOpenableEntry(entry: DeploymentTaskSuccessEntry): boolean {
   if (entry.protocol != null) {
     return entry.protocol === "http" || entry.protocol === "https";
@@ -36,28 +41,123 @@ function isOpenableEntry(entry: DeploymentTaskSuccessEntry): boolean {
   }
 }
 
-function SuccessEntryRow({ entry }: { entry: DeploymentTaskSuccessEntry }) {
-  const [copied, copyEntry] = useCopyFeedback(entry.url);
+/** The declared URL with its scheme muted; the text stays the whole address. */
+function AddressText({ url }: { url: string }) {
+  const index = url.indexOf("://");
+  if (index === -1) {
+    return url;
+  }
+  return (
+    <>
+      <span className="text-muted-foreground">{url.slice(0, index + 3)}</span>
+      {url.slice(index + 3)}
+    </>
+  );
+}
 
+function DrawnCheck() {
+  return (
+    <svg
+      aria-hidden
+      className="size-10 text-blue-400"
+      fill="none"
+      viewBox="0 0 40 40"
+    >
+      <title>Verified</title>
+      <circle
+        className="deployment-success-draw-ring"
+        cx="20"
+        cy="20"
+        pathLength={1}
+        r="18"
+        stroke="currentColor"
+        strokeOpacity={0.35}
+        strokeWidth="1.5"
+      />
+      <path
+        className="deployment-success-draw-check"
+        d="M12.5 20.5l5 5 10-10"
+        pathLength={1}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.5"
+      />
+    </svg>
+  );
+}
+
+/**
+ * The primary address as a centered pill: its heading as a muted prefix
+ * (when `headed`), the address itself, and a copy control; click anywhere to
+ * copy.
+ */
+function PrimaryEntryChip({
+  entry,
+  headed,
+}: {
+  entry: DeploymentTaskSuccessEntry;
+  headed: boolean;
+}) {
+  const [copied, copyEntry] = useCopyFeedback(entry.url);
+  return (
+    <button
+      aria-label={copied ? "Address copied" : "Copy address"}
+      className={cn(
+        RISE_CLASS,
+        "group/chip mt-3 inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-full border border-border bg-input/30 py-1 pr-2 pl-3 font-mono text-xs leading-4 outline-none transition-colors delay-200 hover:bg-input focus-visible:ring-2 focus-visible:ring-ring/30"
+      )}
+      data-slot="deployment-task-success-entry"
+      onClick={copyEntry}
+      title={entry.url}
+      type="button"
+    >
+      <span className="truncate text-foreground">
+        {headed && entry.label != null ? (
+          <span className="text-muted-foreground">{entry.label} </span>
+        ) : null}
+        <AddressText url={entry.url} />
+      </span>
+      {copied ? (
+        <Check aria-hidden className="size-3 shrink-0 text-blue-400" />
+      ) : (
+        <Copy
+          aria-hidden
+          className="size-3 shrink-0 text-muted-foreground transition-colors group-hover/chip:text-foreground"
+        />
+      )}
+    </button>
+  );
+}
+
+/** Every other verified address: a headed line with its own copy control. */
+function SecondaryEntryRow({
+  entry,
+  headed,
+}: {
+  entry: DeploymentTaskSuccessEntry;
+  headed: boolean;
+}) {
+  const [copied, copyEntry] = useCopyFeedback(entry.url);
   return (
     <div
-      className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-input/30 px-3 py-2 transition-colors hover:bg-input"
+      className="flex min-w-0 items-center gap-1 text-left"
       data-slot="deployment-task-success-entry"
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {entry.label == null ? null : (
+      <div className="flex min-w-0 flex-1 flex-col">
+        {headed && entry.label != null ? (
           <span
-            className="truncate text-muted-foreground text-xs leading-4"
+            className="truncate text-[11px] text-muted-foreground leading-4"
             title={entry.label}
           >
             {entry.label}
           </span>
-        )}
+        ) : null}
         <span
           className="truncate font-mono text-foreground text-xs leading-4"
           title={entry.url}
         >
-          {entry.url}
+          <AddressText url={entry.url} />
         </span>
       </div>
       <AppIconButton
@@ -82,6 +182,10 @@ function SuccessEntryRow({ entry }: { entry: DeploymentTaskSuccessEntry }) {
  * required entry probe passed, so nothing here re-derives success from the
  * task status: absent fields stay absent, and an address is only ever the one
  * the contract declared — the UI never builds one from a host or a port.
+ *
+ * Shape: the celebration (halo, drawn check, headline) leads; the primary
+ * address is a copy chip under one wide Open; every other verified address
+ * drops into a quiet list beneath a hairline, then the declared guidance.
  */
 export const DeploymentTaskSuccessSection = memo(
   function DeploymentTaskSuccessSection({
@@ -94,6 +198,17 @@ export const DeploymentTaskSuccessSection = memo(
     const entries = success.entries ?? [];
     const guidance = success.guidance ?? [];
     const primaryEntry = entries.find(isOpenableEntry);
+    const secondaryEntries = entries.filter((entry) => entry !== primaryEntry);
+    // A lone entry is headed by nothing, whatever heading its source gave it,
+    // as the Public Access Node draws a lone Public Address (CONTEXT.md,
+    // Deployment Task Success Record).
+    const headed = entries.length > 1;
+    const headline = success.headline ?? SUCCESS_HEADLINE_FALLBACK;
+    const openLabel =
+      success.openActionLabel ??
+      (success.productName == null
+        ? SUCCESS_OPEN_LABEL_FALLBACK
+        : `${SUCCESS_OPEN_LABEL_FALLBACK} ${success.productName}`);
 
     // Bring the result into view when it lands: the steps above are the
     // process, this is the answer. `block: "nearest"` keeps the jump minimal
@@ -113,59 +228,81 @@ export const DeploymentTaskSuccessSection = memo(
 
     return (
       <div
-        className="relative mt-4 flex flex-col gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] p-4"
+        className="relative mt-4 flex flex-col items-center overflow-hidden rounded-lg border border-blue-400/20 px-4 pt-6 pb-4 text-center"
         data-slot="deployment-task-success"
         ref={rootRef}
       >
-        <div className="flex min-w-0 items-start gap-2.5">
-          <CheckCircle2
-            aria-hidden
-            className="mt-0.5 size-4 shrink-0 text-emerald-500"
-          />
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <p className="break-words font-medium text-foreground text-sm leading-5">
-              {success.headline ?? SUCCESS_HEADLINE_FALLBACK}
-            </p>
-            {success.productName == null ? null : (
-              <p
-                className="truncate text-muted-foreground text-xs leading-4"
-                title={success.productName}
-              >
-                {success.productName}
-              </p>
+        <span
+          aria-hidden
+          className="deployment-success-halo fade-in pointer-events-none absolute inset-x-0 top-0 h-32 animate-in duration-500 motion-reduce:animate-none"
+        />
+        <DrawnCheck />
+        <p
+          className={cn(
+            RISE_CLASS,
+            "mt-3 font-semibold text-base text-foreground leading-6 delay-100"
+          )}
+        >
+          {headline}
+        </p>
+        {success.productName == null ? null : (
+          <p
+            className={cn(
+              RISE_CLASS,
+              "mt-0.5 truncate text-muted-foreground text-xs leading-4 delay-150"
             )}
-          </div>
-        </div>
-        {entries.length === 0 ? null : (
-          <div className="flex flex-col gap-2">
-            {entries.map((entry, index) => (
-              <SuccessEntryRow
+            title={success.productName}
+          >
+            {success.productName}
+          </p>
+        )}
+        {primaryEntry == null ? null : (
+          <>
+            <PrimaryEntryChip entry={primaryEntry} headed={headed} />
+            <div
+              className={cn(RISE_CLASS, "mt-4 w-full delay-300")}
+              data-slot="deployment-task-success-primary-action"
+            >
+              <AppButton
+                className="w-full"
+                nativeButton={false}
+                render={
+                  <a
+                    href={primaryEntry.url}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink aria-hidden data-icon="inline-start" />
+                    {openLabel}
+                  </a>
+                }
+              />
+            </div>
+          </>
+        )}
+        {secondaryEntries.length === 0 ? null : (
+          <div
+            className={cn(
+              RISE_CLASS,
+              "mt-4 flex w-full flex-col gap-2 border-border border-t pt-3 delay-[360ms]"
+            )}
+          >
+            {secondaryEntries.map((entry, index) => (
+              <SecondaryEntryRow
                 entry={entry}
+                headed={headed}
                 key={[index, entry.url].join("-")}
               />
             ))}
-            {primaryEntry == null ? null : (
-              <div data-slot="deployment-task-success-primary-action">
-                <AppButton
-                  className="w-full"
-                  nativeButton={false}
-                  render={
-                    <a
-                      href={primaryEntry.url}
-                      rel="noopener noreferrer"
-                      target="_blank"
-                    >
-                      <ExternalLink aria-hidden data-icon="inline-start" />
-                      {success.openActionLabel ?? SUCCESS_OPEN_LABEL_FALLBACK}
-                    </a>
-                  }
-                />
-              </div>
-            )}
           </div>
         )}
         {guidance.length === 0 ? null : (
-          <ol className="flex flex-col gap-1.5">
+          <ol
+            className={cn(
+              RISE_CLASS,
+              "mt-4 flex w-full flex-col gap-1.5 border-border border-t pt-3 text-left delay-[420ms]"
+            )}
+          >
             {guidance.map((step, index) => (
               <li
                 className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-1 text-xs leading-4"

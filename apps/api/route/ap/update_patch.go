@@ -155,9 +155,21 @@ func apRenderInputFromWorkloadPatch(current apWorkload, raw json.RawMessage, cur
 			}
 		}
 		if networkPatch, _ := input["network"].(map[string]interface{}); networkPatch != nil {
+			if err := orchestration.ValidateAPPortDisplayNames(networkPatch); err != nil {
+				return orchestration.APResourcesInput{}, nil, err
+			}
 			network = mergeAPNetwork(network, networkPatch)
-			if normalizedPorts, err := orchestration.NormalizeAPAppListeningPortsFromNetwork(network, privatePort); err == nil && len(normalizedPorts) > 0 {
+			normalizedPorts, portsErr := orchestration.NormalizeAPAppListeningPortsFromNetwork(network, privatePort)
+			if portsErr == nil && len(normalizedPorts) > 0 {
 				privatePort = normalizedPorts[0].Port
+			}
+			// A Default Open Port must name one of the App Listening Ports
+			// after the patch (the patched list when it carries one, else the
+			// current ports); null clears, an absent key leaves it alone.
+			if portsErr == nil {
+				if err := orchestration.ValidateAPDefaultOpenPort(network, normalizedPorts); err != nil {
+					return orchestration.APResourcesInput{}, nil, err
+				}
 			}
 		}
 	}

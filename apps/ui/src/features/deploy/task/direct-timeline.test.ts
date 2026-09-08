@@ -219,6 +219,48 @@ spec:
   );
 });
 
+test("the page its assets extend wins over an earlier API route on a host without a root", () => {
+  const cards = resultResourceCardsFromArtifactSummary({
+    resourceYamls: [
+      `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eaglercraft-admin
+  namespace: ns-demo
+spec:
+  tls:
+    - hosts: [eaglercraft.example.sealos.run]
+  rules:
+    - host: eaglercraft.example.sealos.run
+      http:
+        paths:
+          - path: /api
+          - path: /admin.css
+          - path: /admin.js
+          - path: /admin-i18n.js
+          - path: /admin
+          - path: /dynmap
+`,
+    ],
+  });
+
+  assert.deepEqual(
+    cards.map((card) =>
+      card.resultRef.kind === "AccessEndpoint"
+        ? [card.resultRef.protocol, card.resultRef.url, card.resultRef.label]
+        : null
+    ),
+    [
+      [
+        "https",
+        "https://eaglercraft.example.sealos.run/admin",
+        "Web address /admin",
+      ],
+    ]
+  );
+});
+
 test("a root route wins over auxiliary routes for the same hostname", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resourceYamls: [

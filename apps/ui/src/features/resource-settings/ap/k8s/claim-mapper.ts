@@ -286,10 +286,15 @@ function apNetworkFromSpecAndStatus(
   const privateAddress =
     appListeningPorts[0]?.privateAddress ??
     trimStr(statusNetwork?.privateAddress);
+  const defaultOpenPort = apNetworkDefaultOpenPort(
+    statusNetwork,
+    appListeningPorts
+  );
   return {
     appListeningPorts,
     ...(privateAddress === "" ? {} : { privateAddress }),
     ...apNetworkCustomDomains(inputNetwork, statusNetwork),
+    ...(defaultOpenPort === undefined ? {} : { defaultOpenPort }),
     privatePort: primaryPort,
     publicAddresses: apNetworkPublicAddresses(
       metadata,
@@ -297,6 +302,22 @@ function apNetworkFromSpecAndStatus(
       statusNetwork
     ),
   };
+}
+
+/**
+ * `status.network.defaultOpenPort` — the stored Default Open Port, surfaced
+ * by the API only when it names one of the AP's ports. Re-checked here so a
+ * stale value never reaches the draft.
+ */
+function apNetworkDefaultOpenPort(
+  statusNetwork: Record<string, unknown> | undefined,
+  appListeningPorts: readonly { port: number }[]
+): number | undefined {
+  const port = privatePortNum(statusNetwork?.defaultOpenPort);
+  if (port == null) {
+    return undefined;
+  }
+  return appListeningPorts.some((row) => row.port === port) ? port : undefined;
 }
 
 function normalizeNetworkAppListeningPorts(
@@ -351,7 +372,9 @@ function normalizeAppListeningPortRows(
     }
     seen.add(port);
     const privateAddress = trimStr(row.privateAddress);
+    const displayName = trimStr(row.displayName);
     out.push({
+      ...(displayName === "" ? {} : { displayName }),
       ...(includeObservedFields && privateAddress !== ""
         ? { privateAddress }
         : {}),
@@ -508,6 +531,7 @@ function customDomainReadModelPatchFromRow(
   const routing = customDomainDetailFromRecord(asRecord(row.routing));
   const status = trimStr(row.status);
   const targetPort = privatePortNum(row.port);
+  const url = trimStr(row.url);
   return {
     ...(certificate == null ? {} : { certificate }),
     ...(cnameTarget === "" ? {} : { cnameTarget }),
@@ -518,6 +542,7 @@ function customDomainReadModelPatchFromRow(
     ...(routing == null ? {} : { routing }),
     ...(status === "" ? {} : { status }),
     ...(targetPort == null ? {} : { targetPort }),
+    ...(url === "" ? {} : { url }),
   };
 }
 

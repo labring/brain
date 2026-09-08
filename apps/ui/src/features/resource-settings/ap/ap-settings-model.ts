@@ -43,6 +43,8 @@ export interface ApSettingsRenderedSection {
 
 export interface ApSettingsSectionsModel {
   footer?: ReactNode;
+  /** The pane header's Open control (Default Open Port); absent until the network facts are known. */
+  headerActions?: ReactNode;
   leaveGuard?: SettingsLeaveGuardHandle | null;
   sections: ApSettingsRenderedSection[];
 }

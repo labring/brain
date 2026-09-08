@@ -205,6 +205,31 @@ describe("verified success fixtures (issue #160)", () => {
     expect(JSON.stringify(timeline.success)).not.toContain("wss:");
   });
 
+  test("succeeded-affine declares several verified endpoints, one of them WebSocket", () => {
+    const { timeline } = deployTaskDevMockTask("succeeded-affine", input);
+    expect(timeline.success?.productName).toBe("AFFiNE");
+    expect(timeline.success?.headline).toBeUndefined();
+    expect(timeline.success?.guidance).toBeUndefined();
+    expect(timeline.success?.entries).toEqual([
+      {
+        label: "Public domain",
+        protocol: "https",
+        url: "https://affine.mock.sealos.run",
+      },
+      {
+        label: "Admin console",
+        protocol: "https",
+        url: "https://affine.mock.sealos.run/admin",
+      },
+      {
+        label: "Sync (WebSocket)",
+        protocol: "wss",
+        url: "wss://sync.affine.mock.sealos.run",
+      },
+    ]);
+    expect(timeline.success?.verification).toEqual({ passed: 4, total: 4 });
+  });
+
   test("no other scenario claims the product is usable", () => {
     for (const scenario of DEPLOY_TASK_DEV_SCENARIOS) {
       if (scenario.startsWith("succeeded")) {

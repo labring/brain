@@ -18,6 +18,10 @@ import type { K8sJsonPatchOp } from "./http/json-patch";
 const DUPLICATE_ENV_NAME_RE = /Environment variable names must be unique/;
 const APP_LISTENING_PORT_RANGE_RE =
   /App Listening Port must be an integer from 1 through 65535/;
+const PORT_DISPLAY_NAME_LENGTH_RE =
+  /Port Display Name must be at most 64 characters/;
+const PORT_DISPLAY_NAME_UNIQUE_RE =
+  /Port Display Name “admin” is already used by App Listening Port 5200/;
 const PUBLIC_PORT_RANGE_RE =
   /Public Address target port must be an integer from 1 through 65535/;
 const PLATFORM_ADDRESS_ID_INVALID_RE =
@@ -693,6 +697,270 @@ test("AP private port settings patch does not rewrite Public Addresses", () => {
       value: [{ port: 8080 }],
     },
   ]);
+});
+
+test("AP network settings write Port Display Names on App Listening Ports", () => {
+  const ops = patchOpsForApNetworkSettings(
+    { input: { network: { appListeningPorts: [{ port: 5200 }] } } },
+    {
+      appListeningPorts: [
+        { displayName: "game", port: 5200 },
+        { displayName: "  Admin console  ", port: 5201 },
+        { displayName: "", port: 5202 },
+      ],
+      publicAddresses: [],
+    }
+  );
+
+  assert.deepEqual(patchOpValue(ops[0]), {
+    appListeningPorts: [
+      { displayName: "game", port: 5200 },
+      { displayName: "Admin console", port: 5201 },
+      { port: 5202 },
+    ],
+  });
+});
+
+test("AP network settings reject over-long and duplicate Port Display Names", () => {
+  assert.throws(
+    () =>
+      patchOpsForApNetworkSettings(
+        { input: {} },
+        {
+          appListeningPorts: [{ displayName: "x".repeat(65), port: 5200 }],
+          publicAddresses: [],
+        }
+      ),
+    PORT_DISPLAY_NAME_LENGTH_RE
+  );
+  assert.throws(
+    () =>
+      patchOpsForApNetworkSettings(
+        { input: {} },
+        {
+          appListeningPorts: [
+            { displayName: "admin", port: 5200 },
+            { displayName: " admin ", port: 5201 },
+          ],
+          publicAddresses: [],
+        }
+      ),
+    PORT_DISPLAY_NAME_UNIQUE_RE
+  );
+});
+
+const DEFAULT_OPEN_PORT_UNKNOWN_RE =
+  /Default Open Port must be one of the AP's App Listening Ports/;
+
+test("AP network settings write the Default Open Port only when the draft states or clears one", () => {
+  const ports = [
+    { displayName: "S3 API", port: 9000 },
+    { displayName: "Console", port: 9001 },
+  ];
+
+  assert.deepEqual(
+    patchOpValue(
+      patchOpsForApNetworkSettings(
+        { input: { network: { appListeningPorts: ports } } },
+        { appListeningPorts: ports, defaultOpenPort: 9001, publicAddresses: [] }
+      )[0]
+    ),
+    { appListeningPorts: ports, defaultOpenPort: 9001 }
+  );
+  assert.deepEqual(
+    patchOpValue(
+      patchOpsForApNetworkSettings(
+        { input: { network: { appListeningPorts: ports } } },
+        { appListeningPorts: ports, publicAddresses: [] }
+      )[0]
+    ),
+    { appListeningPorts: ports }
+  );
+  assert.deepEqual(
+    patchOpValue(
+      patchOpsForApNetworkSettings(
+        { input: { network: { appListeningPorts: ports } } },
+        { appListeningPorts: ports, publicAddresses: [] },
+        { currentDefaultOpenPort: 9001 }
+      )[0]
+    ),
+    { appListeningPorts: ports, defaultOpenPort: null }
+  );
+  assert.throws(
+    () =>
+      patchOpsForApNetworkSettings(
+        { input: {} },
+        { appListeningPorts: ports, defaultOpenPort: 9002, publicAddresses: [] }
+      ),
+    DEFAULT_OPEN_PORT_UNKNOWN_RE
+  );
+});
+
+test("AP public address settings patch states the Default Open Port as one field", () => {
+  const spec = {
+    input: {
+      network: {
+        appListeningPorts: [{ port: 9000 }, { port: 9001 }],
+        platformAddresses: [{ id: "pa_abc123", port: 9001 }],
+      },
+    },
+  };
+  const network = {
+    appListeningPorts: [{ port: 9000 }, { port: 9001 }],
+    publicAddresses: [{ id: "pa_abc123", port: 9001 }],
+  };
+
+  assert.deepEqual(
+    patchOpsForApPublicAddressesSettings(spec, {
+      ...network,
+      defaultOpenPort: 9001,
+    }).find((op) => op.path === "/spec/input/network/defaultOpenPort"),
+    { op: "add", path: "/spec/input/network/defaultOpenPort", value: 9001 }
+  );
+  assert.equal(
+    patchOpsForApPublicAddressesSettings(spec, network).some(
+      (op) => op.path === "/spec/input/network/defaultOpenPort"
+    ),
+    false
+  );
+  assert.deepEqual(
+    patchOpsForApPublicAddressesSettings(spec, network, {
+      currentDefaultOpenPort: 9001,
+    }).find((op) => op.path === "/spec/input/network/defaultOpenPort"),
+    { op: "add", path: "/spec/input/network/defaultOpenPort", value: null }
+  );
+});
+
+test("AP settings draft carries a Default Open Port change and clears it against the base draft", () => {
+  const ports = [{ port: 9000 }, { port: 9001 }];
+  const spec = {
+    input: {
+      image: "ghcr.io/acme/minio:latest",
+      network: { appListeningPorts: ports },
+    },
+  };
+  const base = {
+    image: "ghcr.io/acme/minio:latest",
+    network: { appListeningPorts: ports, publicAddresses: [] },
+  };
+
+  const setOps = patchOpsForApSettingsDraft(
+    spec,
+    { ...base, network: { ...base.network, defaultOpenPort: 9001 } },
+    base
+  );
+  assert.deepEqual(apMergePatchFromJsonPatchOps(setOps).spec, {
+    input: {
+      network: {
+        appListeningPorts: ports,
+        customDomains: null,
+        defaultOpenPort: 9001,
+        endpoints: null,
+        host: null,
+        platformAddresses: null,
+        port: null,
+        privatePort: null,
+        publicAddresses: null,
+      },
+    },
+  });
+
+  const clearOps = patchOpsForApSettingsDraft(spec, base, {
+    ...base,
+    network: { ...base.network, defaultOpenPort: 9001 },
+  });
+  assert.equal(
+    (
+      apMergePatchFromJsonPatchOps(clearOps).spec as {
+        input: { network: Record<string, unknown> };
+      }
+    ).input.network.defaultOpenPort,
+    null
+  );
+});
+
+test("AP public address settings patch rewrites App Listening Ports when a Port Display Name changes", () => {
+  const ops = patchOpsForApPublicAddressesSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 8080 }],
+          platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ displayName: "web", port: 8080 }],
+      publicAddresses: [{ id: "pa_abc123", port: 8080 }],
+    }
+  );
+
+  assert.deepEqual(
+    ops.find((op) => op.path === "/spec/input/network/appListeningPorts"),
+    {
+      op: "replace",
+      path: "/spec/input/network/appListeningPorts",
+      value: [{ displayName: "web", port: 8080 }],
+    }
+  );
+});
+
+test("AP public address settings patch leaves App Listening Ports alone when the draft only echoes the reported names", () => {
+  // "web" is what the API resolved (annotation or Service port name); the
+  // user only added a Public Address, so the Service keeps its own names.
+  const ops = patchOpsForApPublicAddressesSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 8080 }],
+          platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ displayName: "web", port: 8080 }],
+      publicAddresses: [
+        { id: "pa_abc123", port: 8080 },
+        { id: "pa_def456", port: 8080 },
+      ],
+    },
+    { currentAppListeningPorts: [{ displayName: "web", port: 8080 }] }
+  );
+
+  assert.equal(
+    ops.find((op) => op.path === "/spec/input/network/appListeningPorts"),
+    undefined
+  );
+  assert.ok(
+    ops.find((op) => op.path === "/spec/input/network/platformAddresses")
+  );
+});
+
+test("AP public address settings patch still rewrites App Listening Ports when a name differs from the reported one", () => {
+  const ops = patchOpsForApPublicAddressesSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 8080 }],
+          platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ displayName: "Web console", port: 8080 }],
+      publicAddresses: [{ id: "pa_abc123", port: 8080 }],
+    },
+    { currentAppListeningPorts: [{ displayName: "web", port: 8080 }] }
+  );
+
+  assert.deepEqual(
+    ops.find((op) => op.path === "/spec/input/network/appListeningPorts"),
+    {
+      op: "replace",
+      path: "/spec/input/network/appListeningPorts",
+      value: [{ displayName: "Web console", port: 8080 }],
+    }
+  );
 });
 
 test("AP network settings validate App Listening Ports", () => {

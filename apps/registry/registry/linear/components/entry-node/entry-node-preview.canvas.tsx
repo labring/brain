@@ -3,19 +3,19 @@
 import { Canvas } from "@workspace/ui/components/canvas/canvas";
 import type { CanvasMeta } from "@workspace/ui/components/canvas/canvas.types";
 import type {
-  EntryNodeAccessDomain,
+  EntryNodeGroup,
+  EntryNodeOpenTarget,
   EntryNodeStates,
-  EntryNodeTarget,
 } from "@workspace/ui/components/entry-node/entry-node";
 import { EntryNode } from "@workspace/ui/components/entry-node/entry-node";
 import type { Edge, Node, NodeProps, NodeTypes } from "@xyflow/react";
 import { memo, useMemo } from "react";
 
 interface CanvasEntryNodeData extends Record<string, unknown> {
-  accessDomain: EntryNodeAccessDomain;
   defaultExpanded: boolean;
+  groups: EntryNodeGroup[];
+  open?: EntryNodeOpenTarget;
   states: EntryNodeStates;
-  targets: EntryNodeTarget[];
 }
 
 const PreviewCanvasEntryNode = memo(function PreviewCanvasEntryNode({
@@ -25,11 +25,11 @@ const PreviewCanvasEntryNode = memo(function PreviewCanvasEntryNode({
 }: NodeProps<Node<CanvasEntryNodeData, "entryNode">>) {
   return (
     <EntryNode.Root
-      accessDomain={data.accessDomain}
       defaultExpanded={data.defaultExpanded}
+      groups={data.groups}
       interaction={{ dragging, selected }}
+      open={data.open}
       states={data.states}
-      targets={data.targets}
     >
       <EntryNode.Content />
     </EntryNode.Root>
@@ -39,29 +39,69 @@ const PreviewCanvasEntryNode = memo(function PreviewCanvasEntryNode({
 PreviewCanvasEntryNode.displayName = "PreviewCanvasEntryNode";
 
 const entryNodeStates: EntryNodeStates = {
-  name: "orders.demo.sealos.run",
+  name: "orders",
 };
 
-const accessDomain: EntryNodeAccessDomain = {
-  value: "orders.demo.sealos.run",
-};
+const PLATFORM_SUFFIX = ".demo.sealos.run";
 
-const targets: EntryNodeTarget[] = [
+const singlePortGroups: EntryNodeGroup[] = [
   {
-    id: "public",
-    label: "Platform Address",
-    status: { label: "Accessible", tone: "accessible" },
-    value: "https://orders.demo.sealos.run/",
+    addresses: [
+      {
+        host: `orders${PLATFORM_SUFFIX}`,
+        id: "public",
+        status: { label: "Accessible", tone: "accessible" },
+        value: `https://orders${PLATFORM_SUFFIX}/`,
+      },
+    ],
+    port: 3000,
   },
 ];
+
+const twoPortGroups: EntryNodeGroup[] = [
+  {
+    addresses: [
+      {
+        host: `game${PLATFORM_SUFFIX}`,
+        id: "game",
+        status: { label: "Accessible", tone: "accessible" },
+        value: `wss://game${PLATFORM_SUFFIX}/`,
+      },
+    ],
+    name: "game",
+    port: 5200,
+  },
+  {
+    addresses: [
+      {
+        host: `game-admin${PLATFORM_SUFFIX}`,
+        id: "admin",
+        status: { label: "Accessible", tone: "accessible" },
+        value: `https://game-admin${PLATFORM_SUFFIX}/`,
+      },
+    ],
+    name: "Admin console",
+    port: 5201,
+  },
+];
+
+const openOrders: EntryNodeOpenTarget = {
+  label: "Open",
+  url: `https://orders${PLATFORM_SUFFIX}/`,
+};
+
+const openAdminConsole: EntryNodeOpenTarget = {
+  label: "Open Admin console",
+  url: `https://game-admin${PLATFORM_SUFFIX}/`,
+};
 
 const ENTRY_NODE_CANVAS_NODES: Node<CanvasEntryNodeData, "entryNode">[] = [
   {
     data: {
-      accessDomain,
       defaultExpanded: false,
+      groups: singlePortGroups,
+      open: openOrders,
       states: entryNodeStates,
-      targets,
     },
     id: "entry-node-collapsed",
     position: { x: 180, y: 140 },
@@ -69,13 +109,24 @@ const ENTRY_NODE_CANVAS_NODES: Node<CanvasEntryNodeData, "entryNode">[] = [
   },
   {
     data: {
-      accessDomain,
       defaultExpanded: true,
+      groups: singlePortGroups,
+      open: openOrders,
       states: entryNodeStates,
-      targets,
     },
     id: "entry-node-expanded",
     position: { x: 560, y: 130 },
+    type: "entryNode",
+  },
+  {
+    data: {
+      defaultExpanded: true,
+      groups: twoPortGroups,
+      open: openAdminConsole,
+      states: entryNodeStates,
+    },
+    id: "entry-node-grouped",
+    position: { x: 940, y: 130 },
     type: "entryNode",
   },
 ];

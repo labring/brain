@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1465,7 +1467,7 @@ func TestAPUpdatePlanRestoresHPAOnResume(t *testing.T) {
 		},
 	}
 
-	plan, err := buildAPUpdatePlan(apWorkload{Deployment: &current}, json.RawMessage(`{"spec":{"paused":false}}`), nil, testTime())
+	plan, err := buildAPUpdatePlan(apWorkload{Deployment: &current}, json.RawMessage(`{"spec":{"paused":false}}`), nil, nil, testTime())
 	if err != nil {
 		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
 	}
@@ -1685,5 +1687,409 @@ func TestAPRenderInputFromWorkloadPatchAcceptsElasticReplicaStrategy(t *testing.
 	}
 	if got.ReplicaStrategy.Elastic == nil || got.ReplicaStrategy.Elastic.MaxReplicas != 8 {
 		t.Fatalf("elastic strategy = %#v, want maxReplicas 8", got.ReplicaStrategy.Elastic)
+	}
+}
+
+func portDisplayNameTestWorkload() apWorkload {
+	replicas := int32(1)
+	return apWorkload{Deployment: &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				orchestration.APDesiredNetworkAnnotation: `{"appListeningPorts":[{"port":5200},{"port":5201}],"platformAddresses":[{"id":"pa_abc123","port":5200}]}`,
+			},
+			Labels: map[string]string{
+				orchestration.BrainManagedByLabel:            orchestration.BrainManagedByValue,
+				orchestration.BrainProjectIDLabel:            "project-a",
+				orchestration.LaunchpadAppDeployManagerLabel: "game",
+			},
+			Name:      "game",
+			Namespace: "ns-a",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Image: "game:1.0", Name: "game", Ports: []corev1.ContainerPort{{Name: "port-5200", ContainerPort: 5200}, {Name: "port-5201", ContainerPort: 5201}}}},
+				},
+			},
+		},
+	}}
+}
+
+func TestAPUpdatePlanWritesPortDisplayNamesOnTheService(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainPortDisplayNameAnnotation(5200): "Old game name",
+		orchestration.BrainPortDisplayNameAnnotation(5201): "Admin console",
+		orchestration.BrainPortDisplayNameAnnotation(5202): "Metrics",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"  Game  "},{"port":5201},{"port":5202,"displayName":""}],"platformAddresses":[{"id":"pa_abc123","port":5200}]}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	service := plan.Resources.Service
+	if service == nil {
+		t.Fatal("expected the AP Service to be rendered")
+	}
+	if got := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(5200)]; got != "Game" {
+		t.Fatalf("port 5200 annotation = %q, want trimmed Game", got)
+	}
+	// The patch names the port list, so a port without a displayName clears
+	// its annotation, whether the key is absent or empty.
+	for _, port := range []int32{5201, 5202} {
+		if got, ok := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(port)]; ok {
+			t.Fatalf("port %d annotation = %q, want cleared (absent)", port, got)
+		}
+	}
+	foundService := false
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*corev1.Service); ok {
+			foundService = true
+		}
+	}
+	if !foundService {
+		t.Fatalf("SupportObjects = %#v, want the Service applied", plan.SupportObjects)
+	}
+
+	var patch map[string]interface{}
+	if err := json.Unmarshal(plan.Patch, &patch); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	annotations := patch["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	desired, _ := annotations[orchestration.APDesiredNetworkAnnotation].(string)
+	if strings.Contains(desired, "displayName") {
+		t.Fatalf("desired network annotation must not store Port Display Names (the Service does), got %s", desired)
+	}
+	if !strings.Contains(desired, `"pa_abc123"`) {
+		t.Fatalf("desired network annotation lost unrelated network fields, got %s", desired)
+	}
+	if got := len(service.Spec.Ports); got != 3 {
+		t.Fatalf("service port count = %d, want 3", got)
+	}
+}
+
+func TestAPUpdatePlanKeepsPortDisplayNamesWhenThePatchLeavesPortsAlone(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainPortDisplayNameAnnotation(5200): "Game",
+		orchestration.BrainPortDisplayNameAnnotation(5201): "Admin console",
+		orchestration.BrainPortDisplayNameAnnotation(9999): "Stale port no longer listened on",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"platformAddresses":[{"id":"pa_abc123","port":5200},{"id":"pa_def456","port":5201}]}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	service := plan.Resources.Service
+	if service == nil {
+		t.Fatal("expected the AP Service to be re-rendered for the network change")
+	}
+	if got := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(5200)]; got != "Game" {
+		t.Fatalf("port 5200 annotation = %q, want Game kept from the live Service", got)
+	}
+	if got := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(5201)]; got != "Admin console" {
+		t.Fatalf("port 5201 annotation = %q, want Admin console kept from the live Service", got)
+	}
+	if got, ok := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(9999)]; ok {
+		t.Fatalf("port 9999 annotation = %q, want dropped with the port", got)
+	}
+	if got := len(service.Spec.Ports); got != 2 {
+		t.Fatalf("service port count = %d, want the 2 existing ports", got)
+	}
+}
+
+func TestAPUpdatePlanLeavesRoutingAloneWhenOnlyPortMetadataChanges(t *testing.T) {
+	for name, raw := range map[string]string{
+		"rename":             `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"Game"},{"port":5201}]}}}}`,
+		"default-open-port":  `{"spec":{"input":{"network":{"defaultOpenPort":5201}}}}`,
+		"clear-default-open": `{"spec":{"input":{"network":{"defaultOpenPort":null}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, nil, testTime())
+			if err != nil {
+				t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+			}
+			if plan.UpdateRouting {
+				t.Fatal("UpdateRouting = true, want the Ingresses left alone for a change that routes nothing differently")
+			}
+			foundService := false
+			for _, object := range plan.SupportObjects {
+				if _, ok := object.(*corev1.Service); ok {
+					foundService = true
+				}
+			}
+			if !foundService {
+				t.Fatalf("SupportObjects = %#v, want the Service re-applied so its annotations change", plan.SupportObjects)
+			}
+		})
+	}
+}
+
+func TestAPUpdatePlanReplacesRoutingWhenRoutingInputsChange(t *testing.T) {
+	for name, raw := range map[string]string{
+		"new-platform-address": `{"spec":{"input":{"network":{"platformAddresses":[{"id":"pa_abc123","port":5200},{"id":"pa_def456","port":5201}]}}}}`,
+		"port-list":            `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200},{"port":5201},{"port":5202}]}}}}`,
+		"custom-domain":        `{"spec":{"input":{"network":{"customDomains":[{"id":"cd_abc123","domain":"play.example.com","platformAddressId":"pa_abc123"}]}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, nil, testTime())
+			if err != nil {
+				t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+			}
+			if !plan.UpdateRouting {
+				t.Fatal("UpdateRouting = false, want routing replaced when its inputs change")
+			}
+		})
+	}
+	// An AP with no desired network on record has nothing to compare against.
+	workload := portDisplayNameTestWorkload()
+	delete(workload.Deployment.Annotations, orchestration.APDesiredNetworkAnnotation)
+	plan, err := buildAPUpdatePlan(workload, json.RawMessage(`{"spec":{"input":{"network":{"defaultOpenPort":5200}}}}`), nil, nil, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	if !plan.UpdateRouting {
+		t.Fatal("UpdateRouting = false, want routing replaced when the AP has no desired network on record")
+	}
+}
+
+func templateServiceForTest(name string, annotations map[string]interface{}, ports ...int) map[string]interface{} {
+	rawPorts := make([]interface{}, 0, len(ports))
+	for _, port := range ports {
+		rawPorts = append(rawPorts, map[string]interface{}{"name": "p" + strconv.Itoa(port), "port": float64(port)})
+	}
+	metadata := map[string]interface{}{"name": name, "namespace": "ns-a"}
+	if annotations != nil {
+		metadata["annotations"] = annotations
+	}
+	return map[string]interface{}{
+		"metadata": metadata,
+		"spec":     map[string]interface{}{"ports": rawPorts},
+	}
+}
+
+func TestAPUpdatePlanWritesPortMetadataToTemplateServices(t *testing.T) {
+	templateServices := []map[string]interface{}{
+		templateServiceForTest("game-svc", map[string]interface{}{
+			orchestration.BrainPortDisplayNameAnnotation(5200): "Old game name",
+			orchestration.BrainDefaultOpenPortAnnotation:       "5200",
+		}, 5200),
+		templateServiceForTest("admin-svc", nil, 5201, 9000),
+		templateServiceForTest("metrics-svc", map[string]interface{}{"other": "kept"}, 7000),
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"Game"},{"port":5201}],"defaultOpenPort":5201}}}}`), nil, apPortMetadataAnnotationsFromServices(templateServices), testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	retargetAPServiceMetadata(&plan, templateServices)
+
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*corev1.Service); ok {
+			t.Fatal("SupportObjects still carry the rendered AP Service; an adopted Template Instance must not grow a sibling Brain Service")
+		}
+	}
+	got := map[string]map[string]interface{}{}
+	for _, servicePatch := range plan.ServicePatches {
+		var patch map[string]interface{}
+		if err := json.Unmarshal(servicePatch.Patch, &patch); err != nil {
+			t.Fatalf("unmarshal patch for %s: %v", servicePatch.Name, err)
+		}
+		got[servicePatch.Name] = patch["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	}
+	want := map[string]map[string]interface{}{
+		"game-svc": {
+			orchestration.BrainPortDisplayNameAnnotation(5200): "Game",
+			orchestration.BrainDefaultOpenPortAnnotation:       nil,
+		},
+		"admin-svc": {
+			orchestration.BrainDefaultOpenPortAnnotation: "5201",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("service patches = %#v, want %#v", got, want)
+	}
+}
+
+func TestAPUpdatePlanKeepsTemplateServiceNamesWhenThePatchLeavesPortsAlone(t *testing.T) {
+	templateServices := []map[string]interface{}{
+		templateServiceForTest("game-svc", map[string]interface{}{
+			orchestration.BrainPortDisplayNameAnnotation(5200): "Game",
+		}, 5200),
+		templateServiceForTest("admin-svc", map[string]interface{}{
+			orchestration.BrainPortDisplayNameAnnotation(5201): "Admin console",
+		}, 5201),
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"platformAddresses":[{"id":"pa_abc123","port":5200},{"id":"pa_def456","port":5201}]}}}}`), nil, apPortMetadataAnnotationsFromServices(templateServices), testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	retargetAPServiceMetadata(&plan, templateServices)
+	if len(plan.ServicePatches) != 0 {
+		t.Fatalf("ServicePatches = %#v, want none: the live names already match", plan.ServicePatches)
+	}
+}
+
+func TestAPUpdatePlanAppliesItsOwnServiceWithoutTemplateServices(t *testing.T) {
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"defaultOpenPort":5201}}}}`), nil, nil, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	retargetAPServiceMetadata(&plan, nil)
+	foundService := false
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*corev1.Service); ok {
+			foundService = true
+		}
+	}
+	if !foundService || len(plan.ServicePatches) != 0 {
+		t.Fatalf("plan = %#v, want the rendered Service applied and no patches", plan)
+	}
+}
+
+func TestAPUpdatePlanRejectsInvalidPortDisplayNames(t *testing.T) {
+	tooLong := strings.Repeat("名", orchestration.MaxPortDisplayNameLength+1)
+	for name, raw := range map[string]string{
+		"over-long": `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"` + tooLong + `"},{"port":5201}]}}}}`,
+		"duplicate": `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"Admin"},{"port":5201,"displayName":" Admin "}]}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, nil, testTime())
+			if err == nil {
+				t.Fatal("expected the patch to be rejected")
+			}
+			var updateErr *apUpdateError
+			if !errors.As(err, &updateErr) || updateErr.kind != apUpdateErrorBadRequest {
+				t.Fatalf("error = %v, want a bad request", err)
+			}
+			if !strings.Contains(err.Error(), "Port Display Name") {
+				t.Fatalf("error %q should name the Port Display Name rule", err.Error())
+			}
+		})
+	}
+
+	exact := strings.Repeat("名", orchestration.MaxPortDisplayNameLength)
+	if _, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"`+exact+`"},{"port":5201}]}}}}`), nil, nil, testTime()); err != nil {
+		t.Fatalf("a name of exactly %d characters must be accepted, got %v", orchestration.MaxPortDisplayNameLength, err)
+	}
+}
+
+func defaultOpenPortTestPatchAnnotations(t *testing.T, plan apUpdatePlan) map[string]interface{} {
+	t.Helper()
+	var patch map[string]interface{}
+	if err := json.Unmarshal(plan.Patch, &patch); err != nil {
+		t.Fatalf("unmarshal patch: %v", err)
+	}
+	metadata, _ := patch["metadata"].(map[string]interface{})
+	annotations, _ := metadata["annotations"].(map[string]interface{})
+	return annotations
+}
+
+func TestAPUpdatePlanWritesDefaultOpenPortOnTheService(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainDefaultOpenPortAnnotation:       "5200",
+		orchestration.BrainPortDisplayNameAnnotation(5201): "Admin console",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"defaultOpenPort":5201}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	service := plan.Resources.Service
+	if service == nil {
+		t.Fatal("expected the AP Service to be rendered")
+	}
+	if got := service.Annotations[orchestration.BrainDefaultOpenPortAnnotation]; got != "5201" {
+		t.Fatalf("default-open-port annotation = %q, want 5201", got)
+	}
+	// The patch left the port list alone, so the names ride along.
+	if got := service.Annotations[orchestration.BrainPortDisplayNameAnnotation(5201)]; got != "Admin console" {
+		t.Fatalf("port 5201 display name = %q, want preserved Admin console", got)
+	}
+	foundService := false
+	for _, object := range plan.SupportObjects {
+		if _, ok := object.(*corev1.Service); ok {
+			foundService = true
+		}
+	}
+	if !foundService {
+		t.Fatalf("SupportObjects = %#v, want the Service applied", plan.SupportObjects)
+	}
+	desired, _ := defaultOpenPortTestPatchAnnotations(t, plan)[orchestration.APDesiredNetworkAnnotation].(string)
+	if strings.Contains(desired, "defaultOpenPort") {
+		t.Fatalf("desired network annotation must not store the Default Open Port (the Service does), got %s", desired)
+	}
+	if !strings.Contains(desired, `"pa_abc123"`) {
+		t.Fatalf("desired network annotation lost unrelated network fields, got %s", desired)
+	}
+}
+
+func TestAPUpdatePlanClearsDefaultOpenPortWithNull(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainDefaultOpenPortAnnotation: "5201",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"defaultOpenPort":null}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	if got, ok := plan.Resources.Service.Annotations[orchestration.BrainDefaultOpenPortAnnotation]; ok {
+		t.Fatalf("default-open-port annotation = %q, want cleared (absent)", got)
+	}
+	desired, _ := defaultOpenPortTestPatchAnnotations(t, plan)[orchestration.APDesiredNetworkAnnotation].(string)
+	if strings.Contains(desired, "defaultOpenPort") {
+		t.Fatalf("desired network annotation must not mention the Default Open Port, got %s", desired)
+	}
+}
+
+func TestAPUpdatePlanKeepsDefaultOpenPortWhenThePatchOmitsIt(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainDefaultOpenPortAnnotation: "5201",
+	}
+	cases := map[string]string{
+		"public address change": `{"spec":{"input":{"network":{"platformAddresses":[{"id":"pa_abc123","port":5200},{"id":"pa_def456","port":5201}]}}}}`,
+		"port list re-sent":     `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200,"displayName":"Game"},{"port":5201}]}}}}`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, currentServiceAnnotations, testTime())
+			if err != nil {
+				t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+			}
+			if got := plan.Resources.Service.Annotations[orchestration.BrainDefaultOpenPortAnnotation]; got != "5201" {
+				t.Fatalf("default-open-port annotation = %q, want preserved 5201", got)
+			}
+		})
+	}
+}
+
+func TestAPUpdatePlanDropsDefaultOpenPortWithItsPort(t *testing.T) {
+	currentServiceAnnotations := map[string]string{
+		orchestration.BrainDefaultOpenPortAnnotation: "5201",
+	}
+	plan, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200}],"platformAddresses":[{"id":"pa_abc123","port":5200}]}}}}`), nil, currentServiceAnnotations, testTime())
+	if err != nil {
+		t.Fatalf("buildAPUpdatePlan returned error: %v", err)
+	}
+	if got, ok := plan.Resources.Service.Annotations[orchestration.BrainDefaultOpenPortAnnotation]; ok {
+		t.Fatalf("default-open-port annotation = %q, want dropped with port 5201", got)
+	}
+}
+
+func TestAPUpdatePlanRejectsInvalidDefaultOpenPort(t *testing.T) {
+	cases := map[string]string{
+		"not listened on":    `{"spec":{"input":{"network":{"defaultOpenPort":9999}}}}`,
+		"removed same patch": `{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200}],"defaultOpenPort":5201}}}}`,
+		"not a number":       `{"spec":{"input":{"network":{"defaultOpenPort":"console"}}}}`,
+		"out of range":       `{"spec":{"input":{"network":{"defaultOpenPort":70000}}}}`,
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(raw), nil, nil, testTime())
+			if err == nil {
+				t.Fatal("expected the patch to be rejected")
+			}
+			if !strings.Contains(err.Error(), "invalid AP update request") {
+				t.Fatalf("error = %v, want a 400 invalid AP update request", err)
+			}
+		})
+	}
+	// A port added in the same patch is a valid choice.
+	if _, err := buildAPUpdatePlan(portDisplayNameTestWorkload(), json.RawMessage(`{"spec":{"input":{"network":{"appListeningPorts":[{"port":5200},{"port":5201},{"port":5202}],"defaultOpenPort":5202}}}}`), nil, nil, testTime()); err != nil {
+		t.Fatalf("a port named in the same patch must be accepted, got %v", err)
 	}
 }

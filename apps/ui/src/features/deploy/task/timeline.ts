@@ -889,9 +889,60 @@ export function deploymentTaskSuccessFromResultReadiness(input: {
  * required result resources the user can see running, so a workload that is
  * ready while its entry probe is still pending claims nothing at all.
  */
+function entryHostname(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isHttpEntryUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Puts the entry the Open control should open first — the record's order is
+ * its priority order, so the first openable entry is the primary action. The
+ * exact URL wins; failing that, the entry on the same host (an Ingress root
+ * discovered during the probe still names the same address). An unknown URL
+ * leaves the verified order untouched.
+ */
+export function prioritizeSuccessEntries<T extends { url: string }>(
+  entries: readonly T[],
+  primaryEntryUrl: string | null | undefined
+): T[] {
+  if (primaryEntryUrl == null || primaryEntryUrl.trim() === "") {
+    return [...entries];
+  }
+  const wanted = primaryEntryUrl.trim();
+  const wantedHost = entryHostname(wanted);
+  let index = entries.findIndex((entry) => entry.url === wanted);
+  if (index < 0 && wantedHost != null) {
+    index = entries.findIndex(
+      (entry) =>
+        entryHostname(entry.url) === wantedHost && isHttpEntryUrl(entry.url)
+    );
+  }
+  if (index <= 0) {
+    return [...entries];
+  }
+  const primary = entries[index] as T;
+  return [primary, ...entries.filter((_, position) => position !== index)];
+}
+
 export function deploymentTaskSuccessFromTimeline(
   timeline: DeploymentTaskTimelineSnapshot,
-  input: { productName: string | null }
+  input: {
+    /** The Default Open Port's best Public Address, when the task has one. */
+    primaryEntryUrl?: string | null;
+    productName: string | null;
+  }
 ): DeploymentTaskSuccessAttachment | null {
   if (!deploymentTimelineResultReadinessReached(timeline)) {
     return null;
@@ -917,10 +968,14 @@ export function deploymentTaskSuccessFromTimeline(
         return [];
     }
   });
-  const uniqueEntries = endpointEntries.filter(
-    (entry, index) =>
-      endpointEntries.findIndex((candidate) => candidate.url === entry.url) ===
-      index
+  const uniqueEntries = prioritizeSuccessEntries(
+    endpointEntries.filter(
+      (entry, index) =>
+        endpointEntries.findIndex(
+          (candidate) => candidate.url === entry.url
+        ) === index
+    ),
+    input.primaryEntryUrl
   );
   const success = deploymentTaskSuccessFromResultReadiness({
     productName: input.productName,

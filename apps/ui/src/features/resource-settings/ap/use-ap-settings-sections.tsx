@@ -155,7 +155,10 @@ import {
   settingsDraftSaveFailureMessage,
   syncSettingsDraftBackingState,
 } from "./lib/settings-draft-backing";
-import { NetworkSettingsSection } from "./network-section";
+import {
+  ApSettingsOpenAction,
+  NetworkSettingsSection,
+} from "./network-section";
 import {
   type ApConfigMapMount,
   ApSettingsDraftFooter,
@@ -2168,6 +2171,16 @@ export function useApSettingsSections({
 
   const displayImage = draftImage;
   const networkForRender = settingsCommitMode ? activeDraftNetwork : network;
+  // The pane header's Open control, shown by every AP Settings View
+  // (Environment focus included). Identity-stable on the facts it shows: the
+  // settings host re-renders the pane header only when this element changes.
+  const headerActions = useMemo(
+    () =>
+      networkForRender == null ? undefined : (
+        <ApSettingsOpenAction network={networkForRender} />
+      ),
+    [networkForRender]
+  );
   const envEditorControls = readOnly ? null : (
     <div className="flex min-w-0 flex-col gap-2">
       <SlidingToggle
@@ -2450,6 +2463,7 @@ export function useApSettingsSections({
         submitLabel="Update"
       />
     ) : null,
+    headerActions,
     leaveGuard,
     sections,
   };

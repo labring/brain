@@ -44,9 +44,10 @@ function stopRowEvent(event: SyntheticEvent) {
 
 /**
  * The value text of a copyable row. An http(s) value renders as a new-tab
- * link that underlines on hover, shows the full value in a tooltip, and
- * stays isolated from the row copy hit-area and canvas drag; other values
- * render as plain text covered by the row's copy control.
+ * link that underlines on hover, shows the link target in a tooltip (the
+ * visible text may be just the host while the target carries a path such as
+ * `/admin`), and stays isolated from the row copy hit-area and canvas drag;
+ * other values render as plain text covered by the row's copy control.
  */
 export function CanvasNodeCopyableRowValue({
   children,
@@ -90,7 +91,7 @@ export function CanvasNodeCopyableRowValue({
   return (
     <Tooltip>
       <TooltipTrigger render={link} />
-      <TooltipContent>{children}</TooltipContent>
+      <TooltipContent>{openHref}</TooltipContent>
     </Tooltip>
   );
 }

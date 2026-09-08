@@ -76,13 +76,13 @@ function placedDeploymentPlaceholderNode(
 function entryNode(apName: string, position: Node["position"]): Node {
   return {
     data: {
+      groups: [],
       resource: {
         apRef: apName,
         name: `${apName}-entry`,
         namespace: "default",
       },
       states: { name: `${apName}-entry` },
-      targets: [],
     },
     id: `entry-${apName}`,
     measured: MEASURED_CARD,

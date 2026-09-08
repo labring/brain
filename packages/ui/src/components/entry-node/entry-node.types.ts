@@ -10,11 +10,6 @@ export interface EntryNodeStates {
   name: string;
 }
 
-export interface EntryNodeAccessDomain {
-  label?: string;
-  value: string;
-}
-
 export type EntryNodeTargetStatusTone =
   | "accessible"
   | "degraded"
@@ -30,29 +25,53 @@ export interface EntryNodeTargetStatus {
   visualTone?: CanvasNodeVisualStatusTone;
 }
 
-export interface EntryNodeTarget {
+/** One Public Address row: the hostname shown, the full URL copied/opened. */
+export interface EntryNodeAddress {
+  /** Hostname drawn in the row (or a placeholder such as "Pending"). */
+  host: string;
   id?: string;
-  label: string;
   status?: EntryNodeTargetStatus;
-  value: string;
+  /** Full URL for copy and open; absent while the address is pending. */
+  value?: string;
 }
 
-export type EntryNodeTargetKey = string;
+/** Public Addresses that reach one App Listening Port, headed by its name. */
+export interface EntryNodeGroup {
+  addresses: EntryNodeAddress[];
+  /** Port Display Name; absent ports are headed by their number alone. */
+  name?: string;
+  port: number;
+}
 
-export type EntryNodeCopyTargetHandler = (
-  target: EntryNodeTarget,
-  index: number
+/**
+ * What the header's Open control opens: the Default Open Port's best Public
+ * Address. `url` absent means the control is drawn disabled with
+ * `disabledReason` (or the default "Not accessible yet").
+ */
+export interface EntryNodeOpenTarget {
+  disabledReason?: string;
+  /** "Open <Port Display Name>", or "Open" for an unnamed port. */
+  label: string;
+  url?: string;
+}
+
+export type EntryNodeAddressKey = string;
+
+export type EntryNodeCopyAddressHandler = (
+  address: EntryNodeAddress,
+  key: EntryNodeAddressKey
 ) => Promise<void> | void;
 
 export interface EntryNodeState {
-  accessDomain?: EntryNodeAccessDomain;
-  copiedTargetKey?: EntryNodeTargetKey | null;
+  copiedAddressKey?: EntryNodeAddressKey | null;
+  groups?: EntryNodeGroup[];
+  /** Absent when the AP has no Public Address to open. */
+  open?: EntryNodeOpenTarget;
   states: EntryNodeStates;
-  targets?: EntryNodeTarget[];
 }
 
 export interface EntryNodeActions {
-  copyTarget?: EntryNodeCopyTargetHandler;
+  copyAddress?: EntryNodeCopyAddressHandler;
 }
 
 export interface EntryNodeMeta {
@@ -71,15 +90,15 @@ export interface EntryNodeProviderProps {
 }
 
 export interface EntryNodeRootProps {
-  accessDomain?: EntryNodeAccessDomain;
   children?: ReactNode;
+  copiedAddressKey?: EntryNodeAddressKey | null;
   copiedFeedbackMs?: number;
-  copiedTargetKey?: EntryNodeTargetKey | null;
   defaultExpanded?: boolean;
   expanded?: boolean;
+  groups?: EntryNodeGroup[];
   interaction?: CanvasNodeInteractionState;
-  onCopyTarget?: EntryNodeCopyTargetHandler;
+  onCopyAddress?: EntryNodeCopyAddressHandler;
   onExpandedChange?: (expanded: boolean) => void;
+  open?: EntryNodeOpenTarget;
   states: EntryNodeStates;
-  targets?: EntryNodeTarget[];
 }

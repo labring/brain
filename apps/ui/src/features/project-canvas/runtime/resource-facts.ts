@@ -7,6 +7,11 @@ import {
 } from "@/features/project-canvas/platform-addresses";
 import { resolveResourceDisplayName } from "@/features/resource-display-name/resource-display-name";
 import {
+  type ApOpenTarget,
+  type ApOpenTargetAddress,
+  resolveApOpenTarget,
+} from "@/features/resource-settings/ap/ap-open-target";
+import {
   readApImage,
   readApIsPaused,
   readApReplicas,
@@ -72,26 +77,41 @@ export interface DbFact {
   version?: string;
 }
 
-export interface PublicAccessTargetSummary {
+/** One Public Address as the Public Access Node shows it. */
+export interface PublicAccessAddressSummary {
+  /** Hostname drawn in the row; "Pending" while the host is unallocated. */
+  host: string;
   id: string;
-  label: string;
-  port: number;
   status?: ProjectRuntimeStatusSummary;
   type?: string;
-  value: string;
+  /** Full URL for copy and open; absent while pending. */
+  value?: string;
 }
 
+/**
+ * Public Addresses that reach one App Listening Port, headed by the port's
+ * Port Display Name as the API resolved it (ADR 0080); the UI never
+ * re-derives that fallback.
+ */
+export interface PublicAccessGroupSummary {
+  addresses: PublicAccessAddressSummary[];
+  name?: string;
+  port: number;
+}
+
+/** What the node's Open control opens (CONTEXT.md, Default Open Port). */
+export type PublicAccessOpenTarget = ApOpenTarget;
+
 export interface PublicAccessFact {
-  accessDomain?: {
-    label: "Access domain";
-    value: string;
-  };
   apRef: CanvasLayoutResourceRef & { kind: "AP" };
   displayName: string;
+  /** Ascending by port number; only ports with at least one address. */
+  groups: PublicAccessGroupSummary[];
   key: ProjectRuntimeFactKey;
   observedUid?: string;
+  /** Absent when no port has an HTTP Public Address. */
+  open?: PublicAccessOpenTarget;
   ref: CanvasLayoutResourceRef & { kind: "PublicAccess" };
-  targets: PublicAccessTargetSummary[];
 }
 
 export interface ProjectRuntimeFacts {
@@ -141,9 +161,7 @@ const DISPLAY_ENGINE_BY_KEY: Record<string, string> = {
 };
 
 const VERSION_NUMBER_PATTERN = /\d+(?:\.\d+)+/;
-const PUBLIC_ACCESS_PROTOCOL_PATTERN = /^https?:\/\//;
 const PUBLIC_ACCESS_STATUS_SEPARATOR_PATTERN = /[\s_]+/g;
-const PUBLIC_ACCESS_TRAILING_SLASH_PATTERN = /\/$/;
 
 interface NetworkPublicAddress {
   cnameTarget?: string;
@@ -495,18 +513,6 @@ function publicAddressesForAp(ap: unknown): NetworkPublicAddress[] {
   ];
 }
 
-function publicAddressTargetLabel(type: string | undefined): string {
-  switch (type?.toLowerCase()) {
-    case "platform":
-      return "Platform Address";
-    case "custom":
-    case "custom-domain":
-      return "Custom Domain";
-    default:
-      return "Public Address";
-  }
-}
-
 function titleCaseStatus(status: string): string {
   return status
     .split("-")
@@ -536,35 +542,144 @@ function publicAccessTargetStatus(
   return { label: titleCaseStatus(tone), tone };
 }
 
-function publicAccessTargetsFromAddresses(
-  addresses: readonly NetworkPublicAddress[],
-  apStatus: ProjectRuntimeStatusSummary
-): PublicAccessTargetSummary[] {
-  return addresses.map((address, index) => {
-    const host = address.host;
+interface AppListeningPortSummary {
+  displayName?: string;
+  port: number;
+}
+
+/** `status.network.appListeningPorts[]` with the API-resolved display name. */
+function appListeningPortsForAp(ap: unknown): AppListeningPortSummary[] {
+  const root = asRecord(ap) ?? {};
+  const statusNetwork = asRecord(asRecord(root.status)?.network);
+  const rows = statusNetwork?.appListeningPorts;
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+  const out: AppListeningPortSummary[] = [];
+  const seen = new Set<number>();
+  for (const item of rows) {
+    const record = asRecord(item);
+    const port = publicAccessTargetPort(record?.port);
+    if (record === undefined || port === undefined || seen.has(port)) {
+      continue;
+    }
+    seen.add(port);
+    const displayName = nonEmptyString(record.displayName);
+    out.push({
+      ...(displayName === undefined ? {} : { displayName }),
+      port,
+    });
+  }
+  return out;
+}
+
+/** `status.network.defaultOpenPort`: the stored Default Open Port, if valid. */
+function defaultOpenPortForAp(ap: unknown): number | undefined {
+  const root = asRecord(ap) ?? {};
+  const statusNetwork = asRecord(asRecord(root.status)?.network);
+  return publicAccessTargetPort(statusNetwork?.defaultOpenPort);
+}
+
+/** Whether routing reports a Public Address reachable (Public Access Health). */
+function publicAccessRoutingAccessible(status: string | undefined): boolean {
+  return (
+    status
+      ?.toLowerCase()
+      .replace(PUBLIC_ACCESS_STATUS_SEPARATOR_PATTERN, "-") === "accessible"
+  );
+}
+
+/**
+ * The Open target of the Public Access Node: the Default Open Port rule over
+ * the AP's own Public Addresses, so what the header opens is always one of
+ * the addresses the body lists. Whether an address can be opened is its
+ * routing health, read from the raw Public Address status: the row dots
+ * remap `accessible` to the AP's phase while it is Updating or Starting, and
+ * that remap is display-only — routing that is accessible still opens, as it
+ * does from AP Network Settings.
+ */
+export function publicAccessOpenTargetFromAddresses({
+  addresses,
+  defaultOpenPort,
+  ports,
+}: {
+  addresses: readonly NetworkPublicAddress[];
+  defaultOpenPort?: number;
+  ports: readonly AppListeningPortSummary[];
+}): PublicAccessOpenTarget | undefined {
+  const targets = addresses.map((address): ApOpenTargetAddress => {
+    const url =
+      address.url ??
+      (address.host === undefined ? undefined : `https://${address.host}/`);
     return {
-      id: address.id ?? `${address.port}-${host ?? `pending-${index}`}`,
-      label: publicAddressTargetLabel(address.type),
+      accessible: publicAccessRoutingAccessible(address.status),
+      kind:
+        address.type?.trim().toLowerCase() === "custom" ? "custom" : "platform",
       port: address.port,
-      status: publicAccessTargetStatus(address.status, apStatus),
-      ...(address.type === undefined ? {} : { type: address.type }),
-      value:
-        address.url ?? (host === undefined ? "Pending" : `https://${host}/`),
+      ...(url === undefined ? {} : { url }),
     };
+  });
+  return resolveApOpenTarget({
+    addresses: targets,
+    ...(defaultOpenPort === undefined ? {} : { defaultOpenPort }),
+    ports,
   });
 }
 
-function accessDomainFromTargets(
-  targets: readonly PublicAccessTargetSummary[]
-): PublicAccessFact["accessDomain"] {
-  const first = targets[0];
-  if (first === undefined) {
-    return undefined;
+function publicAccessAddressFromNetworkAddress(
+  address: NetworkPublicAddress,
+  index: number,
+  apStatus: ProjectRuntimeStatusSummary
+): PublicAccessAddressSummary {
+  const host = address.host;
+  const value =
+    address.url ?? (host === undefined ? undefined : `https://${host}/`);
+  return {
+    host: host ?? "Pending",
+    id: address.id ?? `${address.port}-${host ?? `pending-${index}`}`,
+    status: publicAccessTargetStatus(address.status, apStatus),
+    ...(address.type === undefined ? {} : { type: address.type }),
+    ...(value === undefined ? {} : { value }),
+  };
+}
+
+/**
+ * Joins an AP's Public Addresses with its App Listening Ports on `port`:
+ * one group per port that has at least one address, in port order, headed
+ * by the port's resolved display name. Addresses are never deduplicated by
+ * host — two rows may share a hostname when they target different ports.
+ */
+export function publicAccessGroupsFromAddresses({
+  addresses,
+  apStatus,
+  ports,
+}: {
+  addresses: readonly NetworkPublicAddress[];
+  apStatus: ProjectRuntimeStatusSummary;
+  ports: readonly AppListeningPortSummary[];
+}): PublicAccessGroupSummary[] {
+  const nameByPort = new Map<number, string>();
+  for (const port of ports) {
+    if (port.displayName !== undefined) {
+      nameByPort.set(port.port, port.displayName);
+    }
   }
-  const value = first.value
-    .replace(PUBLIC_ACCESS_PROTOCOL_PATTERN, "")
-    .replace(PUBLIC_ACCESS_TRAILING_SLASH_PATTERN, "");
-  return { label: "Access domain", value };
+  const addressesByPort = new Map<number, PublicAccessAddressSummary[]>();
+  addresses.forEach((address, index) => {
+    const rows = addressesByPort.get(address.port) ?? [];
+    rows.push(publicAccessAddressFromNetworkAddress(address, index, apStatus));
+    addressesByPort.set(address.port, rows);
+  });
+  return Array.from(addressesByPort.keys())
+    .sort((a, b) => a - b)
+    .map((port) => {
+      const name = nameByPort.get(port);
+      return {
+        addresses: addressesByPort.get(port) ?? [],
+        ...(name === undefined ? {} : { name }),
+        port,
+      };
+    });
 }
 
 function publicAccessFactFromAp(
@@ -590,20 +705,26 @@ function publicAccessFactFromAp(
     name: apName,
     namespace,
   };
-  const targets = publicAccessTargetsFromAddresses(
-    publicAddresses,
-    apStatusSummary(ap)
-  );
-  const accessDomain = accessDomainFromTargets(targets);
+  const ports = appListeningPortsForAp(ap);
+  const groups = publicAccessGroupsFromAddresses({
+    addresses: publicAddresses,
+    apStatus: apStatusSummary(ap),
+    ports,
+  });
+  const open = publicAccessOpenTargetFromAddresses({
+    addresses: publicAddresses,
+    defaultOpenPort: defaultOpenPortForAp(ap),
+    ports,
+  });
   return {
-    ...(accessDomain === undefined ? {} : { accessDomain }),
     apRef,
     // A Public Access node never owns a name — it shows its AP's (ADR 0066).
     displayName: apDisplayName(ap, apName),
+    groups,
     key: projectRuntimeResourceKey(ref),
     ...(metadataUid(ap) === undefined ? {} : { observedUid: metadataUid(ap) }),
+    ...(open === undefined ? {} : { open }),
     ref,
-    targets,
   };
 }
 

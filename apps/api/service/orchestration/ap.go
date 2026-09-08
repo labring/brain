@@ -177,7 +177,7 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 		annotations[BrainDisplayNameAnnotation] = displayName
 	}
 	if networkJSON := strings.TrimSpace(input.NetworkJSON); networkJSON != "" {
-		annotations[APDesiredNetworkAnnotation] = networkJSON
+		annotations[APDesiredNetworkAnnotation] = APDesiredNetworkAnnotationValue(networkJSON)
 	}
 	if envRawSource := strings.TrimSpace(input.EnvRawSource); envRawSource != "" {
 		annotations[APEnvRawSourceAnnotation] = input.EnvRawSource
@@ -252,6 +252,20 @@ func RenderAPResources(input APResourcesInput) (*APResources, error) {
 			Selector: map[string]string{LaunchpadAppLabel: name},
 			Type:     corev1.ServiceTypeClusterIP,
 		},
+	}
+	// Port Display Names live on the Service (ADR 0080). The Service is
+	// applied as a whole object, so a port without a name has no annotation
+	// after the update — that is how clearing works.
+	if portDisplayNames := APPortDisplayNameAnnotations(appListeningPorts); len(portDisplayNames) > 0 {
+		service.Annotations = portDisplayNames
+	}
+	// The Default Open Port shares that store; a manifest naming a port the
+	// AP does not listen on is dropped rather than failing the deploy.
+	if defaultOpenPort, ok := APDefaultOpenPortFromNetworkJSON(input.NetworkJSON, appListeningPorts); ok {
+		if service.Annotations == nil {
+			service.Annotations = map[string]string{}
+		}
+		service.Annotations[BrainDefaultOpenPortAnnotation] = DefaultOpenPortAnnotationValue(defaultOpenPort)
 	}
 
 	resources := &APResources{

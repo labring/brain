@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ func registerUpdate(grp huma.API) {
 		middleware.AuthInput
 		Name      string          `query:"name" required:"true" doc:"AP instance name to patch"`
 		Namespace string          `query:"namespace" doc:"Namespace (default from kubeconfig)"`
-		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the AP resource.\n\nWhat to patch:\n- spec.input.image: update the application image.\n- spec.input.command / spec.input.args: replace the container entrypoint command and arguments as whole string lists.\n- spec.input.configMaps: replace AP-managed mounted config files as a whole list.\n- spec.input.storage: replace StatefulSet-backed PVC desired sizes as a whole list. Existing storage mount paths are immutable; PVCs may expand but not shrink.\n- spec.input.network.appListeningPorts: replace App Listening Ports as one coherent Network object.\n- spec.input.network.platformAddresses: replace Public Address requests as one coherent Network object.\n- spec.input.network.customDomains: replace Custom Domain Binding requests as part of the coherent Network object.\n- Legacy spec.input.network.privatePort remains readable as a one-port fallback.\n- spec.resource.replicaStrategy.type: fixed or elastic AP replica behavior.\n- spec.resource.replicaStrategy.fixed.replicas: Fixed Replicas count, 1-20.\n- spec.resource.replicaStrategy.elastic: Elastic Scaling with minReplicas, maxReplicas, and one CPU utilization or Memory average value target.\n- Legacy spec.resource.replicas remains accepted as a Fixed Replicas fallback when replicaStrategy is absent.\n- spec.paused: when true, scale the Deployment or StatefulSet to 0 with SealOS pause annotations; false resumes using the active Fixed Replicas value.\n- spec.restartRequest: bump this integer to request a rollout (alternative: POST .../restart on the workload).\n- spec.input.env: replace the full environment variable list.\n- spec.input.probes: replace health probes (startup, liveness, readiness).\n- spec.resource.requests / spec.resource.limits: container resources.\n- spec.ingressAnnotations: add or replace Ingress annotations.\n- metadata.annotations[\"brain.io/display-name\"]: set the Resource Display Name (trimmed, 1-256 characters). A display name is only ever set, never cleared — an empty or null value is rejected. Display names must stay unique within the Project: list the Project's resources and their display names first, and never submit a name another resource already uses — a duplicate makes display-name resolution ambiguous.\n\nPatch examples:\n- Pause: {\"spec\":{\"paused\":true}}\n- Resume: {\"spec\":{\"paused\":false}}\n- Update image: {\"spec\":{\"input\":{\"image\":\"nginx:1.27\"}}}\n- Replace Launch Command: {\"spec\":{\"input\":{\"command\":[\"/app/server\"],\"args\":[\"--config\",\"/etc/app/config.yaml\"]}}}\n- Replace Config Files: {\"spec\":{\"input\":{\"configMaps\":[{\"path\":\"/etc/app/config.yaml\",\"value\":\"debug: true\"}]}}}\n- Expand StatefulSet Storage: {\"spec\":{\"input\":{\"storage\":[{\"path\":\"/data\",\"size\":\"20Gi\"}]}}}\n- Replace App Listening Ports: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":80},{\"port\":3000}]}}}}\n- Replace Network with one Public Address: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":8080}],\"platformAddresses\":[{\"id\":\"pa_abc123\",\"port\":8080}]}}}}\n- Change Fixed Replicas: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"fixed\",\"fixed\":{\"replicas\":2}}}}}\n- Change CPU Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"cpu\",\"type\":\"utilization\",\"utilizationPercent\":75}}}}}}\n- Change Memory Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"memory\",\"type\":\"averageValue\",\"averageValue\":\"512Mi\"}}}}}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Nested objects merge at the subtree you provide.\n- Arrays such as spec.input.command, spec.input.args, spec.input.configMaps, spec.input.storage, spec.input.network.appListeningPorts, spec.input.network.platformAddresses, spec.input.network.customDomains, and spec.input.env are replaced as whole lists."`
+		Body      json.RawMessage `contentType:"application/json" required:"true" doc:"JSON merge patch body applied to the AP resource.\n\nWhat to patch:\n- spec.input.image: update the application image.\n- spec.input.command / spec.input.args: replace the container entrypoint command and arguments as whole string lists.\n- spec.input.configMaps: replace AP-managed mounted config files as a whole list.\n- spec.input.storage: replace StatefulSet-backed PVC desired sizes as a whole list. Existing storage mount paths are immutable; PVCs may expand but not shrink.\n- spec.input.network.appListeningPorts: replace App Listening Ports as one coherent Network object. Each entry may carry an optional displayName (the Port Display Name: trimmed, 1-64 characters, any script, unique among the AP's ports); it is stored as a brain.io/port-display-name.<port> annotation on the AP's Service, and an empty or absent displayName clears it.\n- spec.input.network.defaultOpenPort: the Default Open Port — the App Listening Port whose best Public Address the Open control opens. An integer sets it (it must be one of the App Listening Ports after the patch), null clears it back to the automatic rule (the first port whose HTTP Public Address enters at the root, else the first with any HTTP Public Address), and an absent key leaves the stored choice alone. Stored as the brain.io/default-open-port annotation on the AP's Service.\n- spec.input.network.platformAddresses: replace Public Address requests as one coherent Network object.\n- spec.input.network.customDomains: replace Custom Domain Binding requests as part of the coherent Network object.\n- Legacy spec.input.network.privatePort remains readable as a one-port fallback.\n- spec.resource.replicaStrategy.type: fixed or elastic AP replica behavior.\n- spec.resource.replicaStrategy.fixed.replicas: Fixed Replicas count, 1-20.\n- spec.resource.replicaStrategy.elastic: Elastic Scaling with minReplicas, maxReplicas, and one CPU utilization or Memory average value target.\n- Legacy spec.resource.replicas remains accepted as a Fixed Replicas fallback when replicaStrategy is absent.\n- spec.paused: when true, scale the Deployment or StatefulSet to 0 with SealOS pause annotations; false resumes using the active Fixed Replicas value.\n- spec.restartRequest: bump this integer to request a rollout (alternative: POST .../restart on the workload).\n- spec.input.env: replace the full environment variable list.\n- spec.input.probes: replace health probes (startup, liveness, readiness).\n- spec.resource.requests / spec.resource.limits: container resources.\n- spec.ingressAnnotations: add or replace Ingress annotations.\n- metadata.annotations[\"brain.io/display-name\"]: set the Resource Display Name (trimmed, 1-256 characters). A display name is only ever set, never cleared — an empty or null value is rejected. Display names must stay unique within the Project: list the Project's resources and their display names first, and never submit a name another resource already uses — a duplicate makes display-name resolution ambiguous.\n\nPatch examples:\n- Pause: {\"spec\":{\"paused\":true}}\n- Resume: {\"spec\":{\"paused\":false}}\n- Update image: {\"spec\":{\"input\":{\"image\":\"nginx:1.27\"}}}\n- Replace Launch Command: {\"spec\":{\"input\":{\"command\":[\"/app/server\"],\"args\":[\"--config\",\"/etc/app/config.yaml\"]}}}\n- Replace Config Files: {\"spec\":{\"input\":{\"configMaps\":[{\"path\":\"/etc/app/config.yaml\",\"value\":\"debug: true\"}]}}}\n- Expand StatefulSet Storage: {\"spec\":{\"input\":{\"storage\":[{\"path\":\"/data\",\"size\":\"20Gi\"}]}}}\n- Replace App Listening Ports: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":80},{\"port\":3000}]}}}}\n- Name App Listening Ports: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":5200,\"displayName\":\"Game\"},{\"port\":5201,\"displayName\":\"Admin console\"}]}}}}\n- Replace Network with one Public Address: {\"spec\":{\"input\":{\"network\":{\"appListeningPorts\":[{\"port\":8080}],\"platformAddresses\":[{\"id\":\"pa_abc123\",\"port\":8080}]}}}}\n- Choose the Default Open Port: {\"spec\":{\"input\":{\"network\":{\"defaultOpenPort\":9001}}}}\n- Clear the Default Open Port: {\"spec\":{\"input\":{\"network\":{\"defaultOpenPort\":null}}}}\n- Change Fixed Replicas: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"fixed\",\"fixed\":{\"replicas\":2}}}}}\n- Change CPU Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"cpu\",\"type\":\"utilization\",\"utilizationPercent\":75}}}}}}\n- Change Memory Elastic Scaling: {\"spec\":{\"resource\":{\"replicaStrategy\":{\"type\":\"elastic\",\"elastic\":{\"minReplicas\":2,\"maxReplicas\":8,\"target\":{\"metric\":\"memory\",\"type\":\"averageValue\",\"averageValue\":\"512Mi\"}}}}}}\n\nPatch semantics:\n- Only the fields you send are changed.\n- Nested objects merge at the subtree you provide.\n- Arrays such as spec.input.command, spec.input.args, spec.input.configMaps, spec.input.storage, spec.input.network.appListeningPorts, spec.input.network.platformAddresses, spec.input.network.customDomains, and spec.input.env are replaced as whole lists."`
 	}
 	type updateOutput struct {
 		Body json.RawMessage
@@ -67,8 +68,19 @@ type apUpdatePlan struct {
 	Patch                 []byte
 	RenderInput           orchestration.APResourcesInput
 	Resources             *orchestration.APResources
-	SupportObjects        []runtime.Object
-	UpdateRouting         bool
+	// ServicePatches carry Port Display Names and the Default Open Port to
+	// the Services that already expose the AP's ports when the AP has no
+	// Service of its own (an adopted Template Instance); see
+	// retargetAPServiceMetadata.
+	ServicePatches []apServicePatch
+	SupportObjects []runtime.Object
+	UpdateRouting  bool
+}
+
+// apServicePatch is one JSON merge patch against a live Service.
+type apServicePatch struct {
+	Name  string
+	Patch []byte
 }
 
 type apUpdateErrorKind string
@@ -157,10 +169,15 @@ func updateAP(ctx context.Context, req apUpdateRequest) (json.RawMessage, error)
 	if err != nil {
 		return nil, apUpdateInternal("failed to read AP config maps", err)
 	}
-	plan, err := buildAPUpdatePlan(*workload, req.Body, currentConfigMaps, time.Now().UTC())
+	store, err := currentAPPortMetadataStore(cfg, *workload)
+	if err != nil {
+		return nil, apUpdateInternal("failed to read AP service", err)
+	}
+	plan, err := buildAPUpdatePlan(*workload, req.Body, currentConfigMaps, store.annotations, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
+	retargetAPServiceMetadata(&plan, store.templateServices)
 	if err := applyAPUpdatePlan(ctx, restConfig, cfg, *workload, resolved.Namespace, plan); err != nil {
 		return nil, err
 	}
@@ -214,7 +231,7 @@ func apUpdateMergePatch(workload apWorkload, raw json.RawMessage, currentConfigM
 	_, hasReplicaStrategy := resourcePatch["replicaStrategy"]
 	_, hasReplicas := resourcePatch["replicas"]
 	if _, ok := inputPatch["network"]; ok {
-		annotations[orchestration.APDesiredNetworkAnnotation] = renderInput.NetworkJSON
+		annotations[orchestration.APDesiredNetworkAnnotation] = orchestration.APDesiredNetworkAnnotationValue(renderInput.NetworkJSON)
 	}
 	if _, ok := inputPatch["storage"]; ok {
 		rawStorage, err := json.Marshal(renderInput.Storage)
@@ -525,7 +542,12 @@ func templateAPPausedReplicas(workload apWorkload) int32 {
 	return int32(replicas)
 }
 
-func buildAPUpdatePlan(current apWorkload, raw json.RawMessage, currentConfigMaps []orchestration.APConfigMapMount, now time.Time) (apUpdatePlan, error) {
+// buildAPUpdatePlan turns a product patch into the Kubernetes writes for one
+// AP update. currentServiceAnnotations are the live AP Service's annotations:
+// they keep Port Display Names alive when a network patch does not name the
+// port list, and the Default Open Port alive when it does not carry that key
+// (ADR 0080), since the Service is re-applied as a whole object.
+func buildAPUpdatePlan(current apWorkload, raw json.RawMessage, currentConfigMaps []orchestration.APConfigMapMount, currentServiceAnnotations map[string]string, now time.Time) (apUpdatePlan, error) {
 	renderInput, paused, err := apRenderInputFromWorkloadPatch(current, raw, currentConfigMaps)
 	if err != nil {
 		return apUpdatePlan{}, apUpdateBadRequest("invalid AP update request", err)
@@ -550,7 +572,19 @@ func buildAPUpdatePlan(current apWorkload, raw json.RawMessage, currentConfigMap
 	if !configMapsChanged {
 		_, configMapsChanged = inputPatch["configMap"]
 	}
-	_, networkChanged := inputPatch["network"]
+	networkPatch, networkChanged := inputPatch["network"].(map[string]interface{})
+	if !networkChanged {
+		_, networkChanged = inputPatch["network"]
+	}
+	if _, portsNamed := networkPatch["appListeningPorts"]; networkChanged && !portsNamed {
+		orchestration.PreserveAPServicePortDisplayNames(resources.Service, currentServiceAnnotations)
+	}
+	// Same store, same rule: only a patch that carries the key (a number sets,
+	// null clears) may change the Default Open Port; the port going away
+	// drops it.
+	if _, openPortNamed := networkPatch["defaultOpenPort"]; networkChanged && !openPortNamed {
+		orchestration.PreserveAPServiceDefaultOpenPort(resources.Service, currentServiceAnnotations)
+	}
 	metadataPatch, _ := apUpdateMetadataPatch(raw)
 	metadataLabels, _ := metadataPatch["labels"].(map[string]interface{})
 	_, routingDomainChanged := metadataLabels[orchestration.APRoutingDomainLabel]
@@ -586,8 +620,43 @@ func buildAPUpdatePlan(current apWorkload, raw json.RawMessage, currentConfigMap
 		RenderInput:           renderInput,
 		Resources:             resources,
 		SupportObjects:        supportObjects,
-		UpdateRouting:         networkChanged || routingDomainChanged || strings.TrimSpace(stringFromMap(spec, "ingressAnnotations")) != "",
+		UpdateRouting:         networkChanged && apRoutingInputsChanged(current, renderInput.NetworkJSON) || routingDomainChanged || strings.TrimSpace(stringFromMap(spec, "ingressAnnotations")) != "",
 	}, nil
+}
+
+// apRoutingInputsChanged reports whether the network the patch renders
+// differs, in anything public routing is built from, from the network the
+// AP already holds. Port Display Names and the Default Open Port live on the
+// Service (ADR 0080) and route nothing, so a patch that only names ports or
+// picks the Default Open Port re-applies the Service and leaves the
+// Ingresses, certificates, and issuers alone: replacing routing deletes them
+// first, which interrupts public traffic and re-issues certificates for a
+// change that routes nothing differently. An AP without a desired network
+// on record is treated as changed, since there is nothing to compare.
+func apRoutingInputsChanged(current apWorkload, networkJSON string) bool {
+	before, ok := apRoutingNetworkInputs(current.Annotations()[orchestration.APDesiredNetworkAnnotation])
+	if !ok {
+		return true
+	}
+	after, ok := apRoutingNetworkInputs(networkJSON)
+	if !ok {
+		return true
+	}
+	return !reflect.DeepEqual(before, after)
+}
+
+// apRoutingNetworkInputs parses a network JSON down to the fields routing is
+// rendered from: the same scrub the desired-network annotation applies.
+func apRoutingNetworkInputs(networkJSON string) (map[string]interface{}, bool) {
+	trimmed := strings.TrimSpace(networkJSON)
+	if trimmed == "" {
+		return nil, false
+	}
+	var network map[string]interface{}
+	if err := json.Unmarshal([]byte(orchestration.APDesiredNetworkAnnotationValue(trimmed)), &network); err != nil || network == nil {
+		return nil, false
+	}
+	return network, true
 }
 
 func applyAPUpdatePlan(ctx context.Context, restConfig *rest.Config, cfg *clientcmdapi.Config, workload apWorkload, namespace string, plan apUpdatePlan) error {
@@ -605,6 +674,17 @@ func applyAPUpdatePlan(ctx context.Context, restConfig *rest.Config, cfg *client
 	if len(plan.SupportObjects) > 0 {
 		if err := k8ssvc.ApplyObjects(restConfig, plan.SupportObjects, namespace); err != nil {
 			return apUpdateInternal("failed to update AP support resources", err)
+		}
+	}
+	for _, servicePatch := range plan.ServicePatches {
+		if _, err := k8ssvc.Patch(cfg, k8ssvc.PatchOptions{
+			Resource:  "services",
+			Name:      servicePatch.Name,
+			Namespace: namespace,
+			PatchType: k8ssvc.PatchTypeMerge,
+			Patch:     servicePatch.Patch,
+		}); err != nil {
+			return apUpdateInternal("failed to update AP service port metadata", err)
 		}
 	}
 	if !isEmptyJSONPatchObject(plan.Patch) {

@@ -1,5 +1,5 @@
 import YAML from "yaml";
-
+import { ingressEntryPath, primaryIngressPath } from "./ingress-entry-path";
 import type { DeploymentResultReadiness } from "./readiness";
 import type { DeployTaskArtifactSummary } from "./schema";
 import {
@@ -61,7 +61,6 @@ function resultCardTitle(ref: DeploymentResultResourceRef): string {
 
 const DNS_HOST_RE =
   /^(?=.{1,253}$)(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
-const INGRESS_PATH_RESERVED_CHARACTER_RE = /[?#]/;
 
 function ingressHost(value: unknown): string | null {
   const host = stringValue(value)?.toLowerCase();
@@ -113,11 +112,8 @@ function ingressPaths(rule: Record<string, unknown>): string[] {
   return [
     ...new Set(
       paths.flatMap((entry) => {
-        const path = stringValue(objectValue(entry)?.path);
-        return path?.startsWith("/") &&
-          !INGRESS_PATH_RESERVED_CHARACTER_RE.test(path)
-          ? [path]
-          : [];
+        const path = ingressEntryPath(objectValue(entry)?.path);
+        return path == null ? [] : [path];
       })
     ),
   ];
@@ -210,7 +206,7 @@ function selectPrimaryTemplatePublicAccessCards(
 ): DeploymentResultResourceCard[] {
   const cardsByRoleAndHost = new Map<
     string,
-    { card: DeploymentResultResourceCard; rootPath: boolean }
+    { cardsByPath: Map<string, DeploymentResultResourceCard>; paths: string[] }
   >();
   for (const card of cards) {
     if (
@@ -226,17 +222,23 @@ function selectPrimaryTemplatePublicAccessCards(
         ? "websocket"
         : "web";
     const key = `${role}:${url.hostname}`;
-    const rootPath = url.pathname === "/";
-    const selected = cardsByRoleAndHost.get(key);
-    // Ingress paths describe routing implementation, not a list of product
-    // entry points. Keep one primary address per host and protocol role. A
-    // declared root is the stable default; path-only apps retain their first
-    // manifest-ordered path without probing every fallback route.
-    if (selected == null || (rootPath && !selected.rootPath)) {
-      cardsByRoleAndHost.set(key, { card, rootPath });
+    const group = cardsByRoleAndHost.get(key) ?? {
+      cardsByPath: new Map<string, DeploymentResultResourceCard>(),
+      paths: [],
+    };
+    if (!group.cardsByPath.has(url.pathname)) {
+      group.cardsByPath.set(url.pathname, card);
+      group.paths.push(url.pathname);
     }
+    cardsByRoleAndHost.set(key, group);
   }
-  return [...cardsByRoleAndHost.values()].map(({ card }) => card);
+  // Ingress paths describe routing implementation, not a list of product
+  // entry points. Keep one primary address per host and protocol role, chosen
+  // by the shared entry-path rule, without probing every fallback route.
+  return [...cardsByRoleAndHost.values()].flatMap(({ cardsByPath, paths }) => {
+    const card = cardsByPath.get(primaryIngressPath(paths));
+    return card == null ? [] : [card];
+  });
 }
 
 export function templatePublicAccessCardsFromObservedIngresses(input: {
