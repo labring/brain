@@ -58,8 +58,8 @@ host (the boundary below), and every such host is a required Deployment
 Access Endpoint whose probe already gates the Success Record — so the entry's
 host is verified before the record exists. What a probe of the full URL
 would add is whether the application answers on that path or query string
-at that moment, and that is not routing health: CONTEXT.md's Public Address
-Health already says a workload 404 or 500 does not make an address
+at that moment, and that is not routing health: CONTEXT.md's AP Public
+Access Health already says a workload 404 or 500 does not make an address
 unhealthy. So the record takes the entries as declared, and a template's own
 mistake in a path is the template author's to see and fix, not a reason to
 fall back silently. The Open Entry is the record's first entry; when an
@@ -67,12 +67,16 @@ Ingress card already lists the same URL the card's entry stands (the record
 de-duplicates by full URL), else the entry is added as declared, headed by
 the App Listening Port it reaches when an AP of the task observed that
 address and by nothing otherwise. The Share Entry is not listed as an entry
-at all: it is the address the share strip shares, and only that.
+at all: it is the address the share strip shares, and only that. Only an
+HTTP(S) Share Entry is shared: a `ws://` or `wss://` address cannot be opened
+from a link or a QR code, so such a Share Entry yields to the Open URL exactly
+as if none were declared (the record's `shareUrl` is never a socket address).
 
 **Consistency with the AP.** When the Open URL — declared or from the App CR
 — can be matched to one App Listening Port of one of the deployment's APs,
 Brain writes `brain.io/default-open-port: "<port>"` onto that AP's Service
-at render time, unless the template already set it. The match: the URL host
+at render time — at read-back time for a template the provider applied —
+unless the template already set it. The match: the URL host
 equals an Ingress rule host in the rendered documents; the rule path that is
 the longest prefix of the URL path is followed to its backend Service and
 port (a named port resolved through the Service's own `spec.ports`). No
@@ -117,7 +121,7 @@ shares its primary HTTP(S) entry, as it always did.
   failed probe would silently swap the declared Open for the automatic rule
   while the Service annotation still named the declared port, and the user
   would see two different Opens with no explanation. Either way the probe
-  verifies application response on a path, which the Public Address Health
+  verifies application response on a path, which the AP Public Access Health
   definition already excludes from health; the host is verified by the
   Ingress endpoint's own required probe.
 - **List the Share Entry as a record entry** — rejected: the record's entries

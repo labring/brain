@@ -1307,6 +1307,21 @@ test("a template's Open Entry leads the record and its Share Entry is the share 
   assert.equal(success?.shareUrl, EAGLER_SHARE);
   // Declared entries are not probes; they never touch the verification count.
   assert.deepEqual(success?.verification, { passed: 4, total: 4 });
+
+  // The card's verified label stands even when the Open Entry carries none.
+  const unlabeled = deploymentTaskSuccessFromTimeline(
+    eaglercraftTimeline({ adminObserved: true }),
+    {
+      primaryEntryUrl: `https://${EAGLER_HOST}/`,
+      productName: "EaglerCraft Server",
+      templateEntries: { open: EAGLER_OPEN },
+    }
+  );
+  assert.deepEqual(unlabeled?.entries?.[0], {
+    label: "admin · 5201",
+    protocol: "https",
+    url: EAGLER_OPEN,
+  });
 });
 
 test("an Open Entry no card lists is added as declared, headed by the port it reaches", () => {

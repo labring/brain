@@ -240,6 +240,69 @@ test("templateEntryOpenPort finds nothing without a host, path, or Service match
   );
 });
 
+test("templateEntryOpenPort never falls through to a shorter rule when the longest cannot be resolved", () => {
+  const consoleRule = {
+    apiVersion: "networking.k8s.io/v1",
+    kind: "Ingress",
+    metadata: { name: "console" },
+    spec: {
+      rules: [
+        {
+          host: HOST,
+          http: {
+            paths: [
+              {
+                backend: { service: { name: "console", port: { number: 80 } } },
+                path: "/admin",
+                pathType: "Prefix",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  // `/admin` → console (Service not among the documents); `/` → eaglercraft.
+  // The root rule serves a different backend, so nothing is named.
+  assert.equal(
+    templateEntryOpenPort({
+      docs: [
+        service(),
+        consoleRule,
+        ingress("eaglercraft", [{ path: "/", port: 5200 }]),
+      ],
+      openUrl: OPEN,
+    }),
+    undefined
+  );
+  // The longest rule names a port its Service does not have: same answer.
+  assert.equal(
+    templateEntryOpenPort({
+      docs: [
+        service(),
+        ingress("eaglercraft", [
+          { path: "/", port: 5200 },
+          { path: "/admin", port: 9999 },
+        ]),
+      ],
+      openUrl: OPEN,
+    }),
+    undefined
+  );
+  // Equal-length rules still try each other: the second `/admin` resolves.
+  assert.deepEqual(
+    templateEntryOpenPort({
+      docs: [
+        service(),
+        consoleRule,
+        ingress("eaglercraft", [{ path: "/admin", port: 5201 }]),
+      ],
+      openUrl: OPEN,
+    }),
+    { port: 5201, serviceName: "eaglercraft" }
+  );
+});
+
 test("stampTemplateEntryOpenPort writes the annotation unless the template preset one", () => {
   const fresh = service();
   assert.equal(

@@ -352,7 +352,7 @@ export const DeploymentTaskSuccessSection = memo(
             </div>
           )}
         </div>
-        {primaryEntry == null || shareUrl == null ? null : (
+        {shareUrl == null ? null : (
           <DeploymentTaskSuccessShareStrip
             className={cn(RISE_CLASS, "mt-2 delay-[420ms]")}
             subject={{

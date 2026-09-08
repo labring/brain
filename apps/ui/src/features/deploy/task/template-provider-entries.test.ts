@@ -167,7 +167,7 @@ const RESOURCES = [
   { name: "eaglercraft-admin", resourceType: "ingress", uid: "4" },
 ];
 
-function readBack(args: Record<string, string>) {
+function readBack(args: Record<string, string> | undefined) {
   return templateProviderTemplateEntries({
     args,
     instanceName: "eaglercraft",
@@ -253,6 +253,19 @@ describe("templateProviderTemplateEntries", () => {
     // `${{ defaults.app_host }}` rendered empty: neither entry names an
     // Ingress host, so Open comes from the App CR and Share is absent.
     expect(entries).toEqual({ open: `https://${HOST}/admin` });
+  });
+
+  it("drops an input-bound entry instead of rendering it from the default when no args are in hand", async () => {
+    installCluster(clusterObjects());
+
+    const entries = await readBack(undefined);
+
+    // Open substitutes no input and renders; Share names `inputs.server_name`
+    // and is dropped rather than snapshotted with "Lobby".
+    expect(entries).toEqual({ open: `https://${HOST}/admin` });
+    expect(patches.map((patch) => patch.body)).toEqual([
+      { metadata: { annotations: { "brain.io/default-open-port": "5201" } } },
+    ]);
   });
 
   it("degrades to no entries when the provider source cannot be read", async () => {

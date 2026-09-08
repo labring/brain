@@ -1095,8 +1095,13 @@ export function deploymentTaskSuccessFromTimeline(
     input.templateEntries?.open,
     input.templateOpenEntryLabel
   );
+  // A URL an Ingress card already lists keeps the card's entry — its label
+  // was verified; the Open Entry is added only when no card names it.
   const declaredEntries =
-    openEntry == null ? endpointEntries : [openEntry, ...endpointEntries];
+    openEntry == null ||
+    endpointEntries.some((entry) => entry.url === openEntry.url)
+      ? endpointEntries
+      : [openEntry, ...endpointEntries];
   const uniqueEntries = prioritizeSuccessEntries(
     declaredEntries.filter(
       (entry, index) =>

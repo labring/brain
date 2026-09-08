@@ -5,6 +5,7 @@ import { fetcher } from "@workspace/api/fetch";
 import { ApiUrl } from "@workspace/api/utils";
 import {
   resolveTemplateEntryUrls,
+  type TemplateDeclaredEntries,
   type TemplateEntryUrls,
   templateAppUrlFromDocs,
   templateDeclaredEntries,
@@ -148,8 +149,42 @@ function providerInputDefaults(source: unknown): Record<string, string> {
  * Entries are advisory: any failure here degrades to no declared entry and
  * the automatic rule, never to a failed deployment.
  */
+/** Whether a declared entry substitutes a user input (`${{ inputs.* }}`). */
+function entrySubstitutesInputs(value: string): boolean {
+  return TEMPLATE_INPUT_EXPRESSION.test(value);
+}
+
+const TEMPLATE_INPUT_EXPRESSION = /\$\{\{[^}]*\binputs\./;
+
+/**
+ * The declared entries this run can render truthfully: with no args in hand
+ * (an already-created instance), an entry that substitutes an input is
+ * dropped rather than rendered from the template's default, which the user
+ * may have overridden at create time.
+ */
+function renderableDeclaredEntries(
+  declared: TemplateDeclaredEntries,
+  args: Record<string, string> | undefined
+): TemplateDeclaredEntries {
+  if (args !== undefined) {
+    return declared;
+  }
+  return {
+    ...(declared.open === undefined || entrySubstitutesInputs(declared.open)
+      ? {}
+      : { open: declared.open }),
+    ...(declared.share === undefined || entrySubstitutesInputs(declared.share)
+      ? {}
+      : { share: declared.share }),
+  };
+}
+
 export async function templateProviderTemplateEntries(input: {
-  args: Record<string, string>;
+  /**
+   * This run's create-time args, memory only. Absent for an instance created
+   * before this run; input-bound entries are then dropped, not defaulted.
+   */
+  args?: Record<string, string>;
   instanceName: string;
   kubeconfig: string;
   namespace: string;
@@ -184,7 +219,10 @@ async function resolveProviderEntries(
     encodedKubeconfig: input.kubeconfig,
     templateName: input.templateName,
   });
-  const declared = templateDeclaredEntries(source.templateYaml);
+  const declared = renderableDeclaredEntries(
+    templateDeclaredEntries(source.templateYaml),
+    input.args
+  );
   const appNames = new Set([
     ...resourceNames(input.resources, APP_RESOURCE_TYPES),
     input.instanceName,
@@ -214,7 +252,10 @@ async function resolveProviderEntries(
             ...templateInstanceDefaults(instance),
             app_name: input.instanceName,
           },
-          inputs: { ...providerInputDefaults(source.source), ...input.args },
+          inputs: {
+            ...providerInputDefaults(source.source),
+            ...(input.args ?? {}),
+          },
           namespace: input.namespace,
           routingDomain: input.routingDomain,
         });

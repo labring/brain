@@ -2770,12 +2770,14 @@ async function completeTaskWithArtifact(input: {
 
 /**
  * What the provider-path entry read-back needs from the artifact: the
- * template, the instance, and this run's args (a resumed `template-instance`
- * artifact holds none — its input-bound entries then fail the Ingress-host
- * gate and drop out, never inventing a value).
+ * template, the instance, and this run's args. An already-created
+ * `template-instance` artifact carries no args — they are never persisted
+ * (ADR 0037) — so it passes none, and the read-back drops every entry that
+ * substitutes an input rather than render it from a default the user may
+ * have overridden.
  */
 function templateProviderEntryContext(artifact: DeploymentArtifact): {
-  args: Record<string, string>;
+  args?: Record<string, string>;
   instanceName: string;
   templateName: string;
 } {
@@ -2788,7 +2790,6 @@ function templateProviderEntryContext(artifact: DeploymentArtifact): {
       };
     case "template-instance":
       return {
-        args: {},
         instanceName: artifact.instanceName,
         templateName: artifact.templateName,
       };

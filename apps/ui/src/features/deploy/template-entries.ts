@@ -271,8 +271,9 @@ function servicePortNumber(
  * The Service port the Open URL enters through: the URL host matched to an
  * Ingress rule host, the rule path that is the longest prefix of the URL
  * path, and that path's backend Service and port (a named port resolved
- * through the Service's own `spec.ports`). Nothing when no rule matches or
- * the Service is not among the documents.
+ * through the Service's own `spec.ports`). Nothing when no rule matches, or
+ * when the longest-prefix rule's Service or port cannot be resolved — a
+ * shorter rule never stands in for it.
  */
 export function templateEntryOpenPort(input: {
   docs: readonly unknown[];
@@ -292,7 +293,14 @@ export function templateEntryOpenPort(input: {
     .filter(isIngressDoc)
     .flatMap((doc) => ingressBackendsForUrl(doc, url))
     .sort((a, b) => b.pathLength - a.pathLength);
+  // Only the longest-prefix rule may name the port. A shorter rule serves a
+  // different backend; annotating it would make the AP's Open and the
+  // record's Open disagree — the very thing the annotation exists to prevent.
+  const longest = matches[0]?.pathLength;
   for (const match of matches) {
+    if (match.pathLength !== longest) {
+      break;
+    }
     const service = records.find(
       (doc) => isServiceDoc(doc) && docName(doc) === match.serviceName
     );
