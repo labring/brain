@@ -1177,7 +1177,20 @@ test("the sanitizer keeps product categories as a short list of trimmed names", 
     },
     fallback
   );
-  assert.ok((many?.productCategories?.length ?? 0) < 40);
+  assert.equal(many?.productCategories?.length, 16);
+});
+
+test("the sanitizer folds a success text onto one line", () => {
+  const fallback = { revision: 3, verifiedAt: "2026-06-17T10:00:05.000Z" };
+  const sanitized = sanitizeDeploymentTaskSuccess(
+    {
+      productName: "  Eagler\n\tCraft   Server ",
+      revision: 3,
+      verifiedAt: fallback.verifiedAt,
+    },
+    fallback
+  );
+  assert.equal(sanitized?.productName, "Eagler Craft Server");
 });
 
 test("product categories are part of a record's identity", () => {

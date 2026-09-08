@@ -665,13 +665,17 @@ const MAX_SUCCESS_URL_LENGTH = 2048;
 const MAX_SUCCESS_VERIFICATION_TOTAL = 64;
 const MAX_SUCCESS_CATEGORIES = 16;
 const MAX_SUCCESS_CATEGORY_LENGTH = 64;
+const WHITESPACE_RUN_RE = /\s+/g;
 
-/** Trims to a single presentable line, or drops the value when unusable. */
+/**
+ * Folds a value onto a single presentable line — interior line breaks and
+ * runs of whitespace become one space — or drops it when unusable.
+ */
 function successText(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
-  const text = value.trim();
+  const text = value.replace(WHITESPACE_RUN_RE, " ").trim();
   if (text === "") {
     return undefined;
   }
