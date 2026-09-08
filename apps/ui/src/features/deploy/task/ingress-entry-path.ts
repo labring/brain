@@ -8,10 +8,12 @@ const INGRESS_ASSET_PATH_RE = /\.[A-Za-z0-9]{1,5}$/;
 const TRAILING_SLASHES_RE = /\/+$/;
 
 /**
- * Reduces one Ingress rule path to the literal prefix a browser can open.
- * Regex paths (`/admin(/|$)(.*)`, `/?(.*)`) keep their literal head; a
- * fragment disqualifies the path, and a path that is not rooted contributes
- * nothing.
+ * Reduces one Ingress rule path to the literal prefix a browser can open. A
+ * literal path (`Exact` or `Prefix`) keeps its exact spelling, trailing slash
+ * included, since `/admin/` under `pathType: Exact` does not match `/admin`.
+ * Regex paths (`/admin(/|$)(.*)`, `/?(.*)`) keep their literal head with the
+ * separator before the pattern dropped; a fragment disqualifies the path, and
+ * a path that is not rooted contributes nothing.
  */
 export function ingressEntryPath(raw: unknown): string | null {
   if (typeof raw !== "string") {
@@ -24,9 +26,9 @@ export function ingressEntryPath(raw: unknown): string | null {
   const cut = path.search(INGRESS_PATH_REGEX_METACHARACTER_RE);
   if (cut >= 0) {
     path = path.slice(0, cut);
-  }
-  if (path.length > 1) {
-    path = path.replace(TRAILING_SLASHES_RE, "");
+    if (path.length > 1) {
+      path = path.replace(TRAILING_SLASHES_RE, "");
+    }
   }
   return path === "" ? "/" : path;
 }

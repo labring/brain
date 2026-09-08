@@ -350,6 +350,16 @@ func TestAPTransformRetainsPrimaryIngressPathOnObservedPublicAddress(t *testing.
 			want:  "https://app.example.com/",
 		},
 		{
+			name:  "a regex path drops the separator before its pattern",
+			paths: []interface{}{ingressPath("/api/?(.*)", "svc", 8080)},
+			want:  "https://app.example.com/api",
+		},
+		{
+			name:  "a literal path keeps its trailing slash, as an Exact route needs",
+			paths: []interface{}{ingressPath("/admin/", "svc", 8080)},
+			want:  "https://app.example.com/admin/",
+		},
+		{
 			name:  "a path with a fragment falls back to root",
 			paths: []interface{}{ingressPath("/admin#x", "svc", 8080)},
 			want:  "https://app.example.com/",

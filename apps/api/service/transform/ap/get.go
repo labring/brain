@@ -449,9 +449,12 @@ func (endpoint observedIngressEndpoint) url() string {
 }
 
 // ingressEntryPath reduces one Ingress rule path to the literal prefix a
-// browser can open. Regex paths (`/admin(/|$)(.*)`, `/?(.*)`) keep their
-// literal head; a fragment disqualifies the path, and a path that is not
-// rooted contributes nothing.
+// browser can open. A literal path (`Exact` or `Prefix`) keeps its exact
+// spelling, trailing slash included, since `/admin/` under `pathType: Exact`
+// does not match `/admin`. Regex paths (`/admin(/|$)(.*)`, `/?(.*)`) keep
+// their literal head with the separator before the pattern dropped; a
+// fragment disqualifies the path, and a path that is not rooted contributes
+// nothing.
 func ingressEntryPath(raw string) (string, bool) {
 	path := strings.TrimSpace(raw)
 	if !strings.HasPrefix(path, "/") || strings.Contains(path, "#") {
@@ -459,9 +462,9 @@ func ingressEntryPath(raw string) (string, bool) {
 	}
 	if index := strings.IndexAny(path, "()[]|*+^$?"); index >= 0 {
 		path = path[:index]
-	}
-	if len(path) > 1 {
-		path = strings.TrimRight(path, "/")
+		if len(path) > 1 {
+			path = strings.TrimRight(path, "/")
+		}
 	}
 	if path == "" {
 		path = "/"

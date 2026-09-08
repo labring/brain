@@ -6,7 +6,9 @@ test("ingressEntryPath keeps the literal head of a regex path and rejects fragme
   assert.equal(ingressEntryPath("/admin(/|$)(.*)"), "/admin");
   assert.equal(ingressEntryPath("/?(.*)"), "/");
   assert.equal(ingressEntryPath("/api/?(.*)"), "/api");
-  assert.equal(ingressEntryPath("/console/"), "/console");
+  // A literal path keeps its spelling: an Exact `/console/` is not `/console`.
+  assert.equal(ingressEntryPath("/console/"), "/console/");
+  assert.equal(ingressEntryPath("/console"), "/console");
   assert.equal(ingressEntryPath("/admin#x"), null);
   assert.equal(ingressEntryPath("admin"), null);
   assert.equal(ingressEntryPath(42), null);
