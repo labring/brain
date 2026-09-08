@@ -1249,7 +1249,7 @@ function endpointCard(input: {
   };
 }
 
-function eaglercraftTimeline(shareStatus: "creating" | "running") {
+function eaglercraftTimeline(input: { adminObserved: boolean }) {
   let timeline = timelineFrame({
     "AP:default:eaglercraft": "running",
     "PublicAccess:default:eaglercraft:lobby": "running",
@@ -1264,24 +1264,19 @@ function eaglercraftTimeline(shareStatus: "creating" | "running") {
       status: "running",
       url: `wss://${EAGLER_HOST}/`,
     }),
-    endpointCard({
-      id: "ingress:eaglercraft-admin:https:admin",
-      label: "admin · 5201",
-      observer: { kind: "ingress", name: "eaglercraft-admin" },
-      protocol: "https",
-      required: true,
-      status: "running",
-      url: EAGLER_OPEN,
-    }),
-    endpointCard({
-      id: "template-entry:share",
-      label: "Share address",
-      observer: { entry: "share", kind: "template-entry" },
-      protocol: "https",
-      required: false,
-      status: shareStatus,
-      url: EAGLER_SHARE,
-    }),
+    ...(input.adminObserved
+      ? [
+          endpointCard({
+            id: "ingress:eaglercraft-admin:https:admin",
+            label: "admin · 5201",
+            observer: { kind: "ingress", name: "eaglercraft-admin" },
+            protocol: "https",
+            required: true,
+            status: "running",
+            url: EAGLER_OPEN,
+          }),
+        ]
+      : []),
   ];
   for (const card of cards) {
     timeline = upsertResultResourceCard(timeline, {
@@ -1293,51 +1288,69 @@ function eaglercraftTimeline(shareStatus: "creating" | "running") {
   return timeline;
 }
 
-test("a verified Template Entry puts the Open URL first and snapshots the share address verbatim", () => {
+test("a template's Open Entry leads the record and its Share Entry is the share address, not an entry", () => {
   const success = deploymentTaskSuccessFromTimeline(
-    eaglercraftTimeline("running"),
+    eaglercraftTimeline({ adminObserved: true }),
     {
       // The automatic rule would open the game root; the template's Open wins.
       primaryEntryUrl: `https://${EAGLER_HOST}/`,
       productName: "EaglerCraft Server",
       templateEntries: { open: EAGLER_OPEN, share: EAGLER_SHARE },
+      templateOpenEntryLabel: "admin · 5201",
     }
   );
-  assert.deepEqual(
-    success?.entries?.map((entry) => entry.url),
-    [EAGLER_OPEN, `wss://${EAGLER_HOST}/`, EAGLER_SHARE]
-  );
+  // The Ingress card already lists the Open URL: one entry, the card's own.
+  assert.deepEqual(success?.entries, [
+    { label: "admin · 5201", protocol: "https", url: EAGLER_OPEN },
+    { label: "game · 5200", protocol: "wss", url: `wss://${EAGLER_HOST}/` },
+  ]);
   assert.equal(success?.shareUrl, EAGLER_SHARE);
-  // Optional entry evidence never inflates the verification count.
+  // Declared entries are not probes; they never touch the verification count.
   assert.deepEqual(success?.verification, { passed: 4, total: 4 });
 });
 
-test("an unverified Template Entry stays out of the record and the share falls back to the Open URL", () => {
+test("an Open Entry no card lists is added as declared, headed by the port it reaches", () => {
   const success = deploymentTaskSuccessFromTimeline(
-    eaglercraftTimeline("creating"),
-    {
-      primaryEntryUrl: `https://${EAGLER_HOST}/`,
-      productName: "EaglerCraft Server",
-      templateEntries: { open: EAGLER_OPEN, share: EAGLER_SHARE },
-    }
-  );
-  assert.deepEqual(
-    success?.entries?.map((entry) => entry.url),
-    [EAGLER_OPEN, `wss://${EAGLER_HOST}/`]
-  );
-  assert.equal(success?.shareUrl, EAGLER_OPEN);
-
-  // A declared Open URL the probe never confirmed leaves the automatic rule in charge.
-  const unverifiedOpen = deploymentTaskSuccessFromTimeline(
-    eaglercraftTimeline("running"),
+    eaglercraftTimeline({ adminObserved: false }),
     {
       primaryEntryUrl: `wss://${EAGLER_HOST}/`,
-      productName: null,
-      templateEntries: { open: `https://${EAGLER_HOST}/elsewhere` },
+      productName: "EaglerCraft Server",
+      templateEntries: { open: EAGLER_OPEN },
+      templateOpenEntryLabel: "admin · 5201",
     }
   );
-  assert.equal(unverifiedOpen?.entries?.[0]?.url, `wss://${EAGLER_HOST}/`);
-  assert.equal(unverifiedOpen?.shareUrl, EAGLER_OPEN);
+  assert.deepEqual(success?.entries, [
+    { label: "admin · 5201", protocol: "https", url: EAGLER_OPEN },
+    { label: "game · 5200", protocol: "wss", url: `wss://${EAGLER_HOST}/` },
+  ]);
+  // No Share Entry: the Open URL is what the strip shares.
+  assert.equal(success?.shareUrl, EAGLER_OPEN);
+
+  // No AP observed the address: the entry is headed by nothing, not invented.
+  const unnamed = deploymentTaskSuccessFromTimeline(
+    eaglercraftTimeline({ adminObserved: false }),
+    {
+      primaryEntryUrl: null,
+      productName: null,
+      templateEntries: { open: EAGLER_OPEN },
+    }
+  );
+  assert.deepEqual(unnamed?.entries?.[0], {
+    protocol: "https",
+    url: EAGLER_OPEN,
+  });
+});
+
+test("a WebSocket Share Entry is never the share address; the Open URL is shared instead", () => {
+  const success = deploymentTaskSuccessFromTimeline(
+    eaglercraftTimeline({ adminObserved: true }),
+    {
+      primaryEntryUrl: `https://${EAGLER_HOST}/`,
+      productName: null,
+      templateEntries: { open: EAGLER_OPEN, share: `wss://${EAGLER_HOST}/` },
+    }
+  );
+  assert.equal(success?.shareUrl, EAGLER_OPEN);
 });
 
 test("the share address is a snapshot the sanitizer keeps for HTTP(S) only, and old records share their primary entry", () => {

@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted; amended in place (the entry-path rule, below) and extended by
-ADR-0081, which adds a template-declared observer kind (Template Entries) to
-the declared-URL family. Template Entries are probed under this ADR's
-contract but are optional evidence: they do not gate completion the way an
-Agent-declared endpoint does, and CONTEXT.md's former "no Template-Instance-
-level open link" no longer holds.
+Accepted; amended in place (the entry-path rule, below). ADR-0081 adds
+Template Entries beside this contract, not inside it: a Template Entry is
+not a Deployment Access Endpoint and is not probed — its host is an Ingress
+host whose required endpoint this ADR already verifies — and it borrows only
+the naming rule for the port an entry reaches. CONTEXT.md's former "no
+Template-Instance-level open link" no longer holds.
 
 ## Context
 

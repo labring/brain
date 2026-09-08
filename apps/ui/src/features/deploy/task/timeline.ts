@@ -26,13 +26,13 @@ export type DeploymentAccessEndpointProtocol = "http" | "https" | "ws" | "wss";
 export type DeploymentAccessEndpointObserver =
   | { addressId: string; apName: string; kind: "ap-public-address" }
   | { kind: "declared" }
-  | { kind: "ingress"; name: string }
-  /** A Template Entry (ADR 0081): the template's declared Open or Share URL. */
-  | { entry: TemplateEntryRole; kind: "template-entry" };
+  | { kind: "ingress"; name: string };
 
-export type TemplateEntryRole = "open" | "share";
-
-/** The Open and Share URLs a template deployment declared (ADR 0081). */
+/**
+ * The Open and Share URLs a template deployment declared (ADR 0081). Their
+ * hosts are Ingress hosts of the same deployment — that gate is applied
+ * where the entries are resolved — so the record takes them as declared.
+ */
 export interface DeploymentTemplateEntryUrls {
   open?: string;
   share?: string;
@@ -189,7 +189,7 @@ export interface DeploymentTaskSuccessSnapshot {
   revision: number;
   /**
    * The HTTP(S) address the share strip shares (ADR 0081): the template's
-   * verified Share entry, else the Open URL as it stood when the record was
+   * declared Share Entry, else the Open URL as it stood when the record was
    * written. Absent on records written before the field existed, which
    * share their primary entry.
    */
@@ -1017,12 +1017,20 @@ export function prioritizeSuccessEntries<T extends { url: string }>(
   return [primary, ...entries.filter((_, position) => position !== index)];
 }
 
-/** A Template Entry card is optional evidence: verified, it enters the record. */
-function isTemplateEntryCard(card: DeploymentResultResourceCard): boolean {
-  return (
-    card.resultRef.kind === "AccessEndpoint" &&
-    card.resultRef.observer.kind === "template-entry"
-  );
+/**
+ * The template's Open Entry as a record entry: the declared URL, headed by
+ * the App Listening Port it reaches when one is known. A URL an Ingress card
+ * already lists keeps that card's entry instead (de-duplicated by full URL).
+ */
+function templateOpenEntry(
+  url: string | null | undefined,
+  label: string | null | undefined
+): DeploymentTaskSuccessEntry | null {
+  const protocol = url == null ? null : accessProtocol(url);
+  if (url == null || protocol == null) {
+    return null;
+  }
+  return { ...(label == null ? {} : { label }), protocol, url };
 }
 
 /**
@@ -1044,26 +1052,28 @@ export function deploymentTaskSuccessFromTimeline(
     /** The Default Open Port's best Public Address, when the task has one. */
     primaryEntryUrl?: string | null;
     /**
-     * The template's declared entries (ADR 0081). A verified Open entry wins
-     * over `primaryEntryUrl`; a verified Share entry becomes the record's
-     * share address, else the Open URL is shared. An unverified entry is
-     * ignored: the record carries only addresses the probe confirmed.
+     * The template's declared entries (ADR 0081), taken as declared: their
+     * hosts are Ingress hosts the required probes already verified. The Open
+     * Entry is the record's first entry and wins over `primaryEntryUrl`; the
+     * Share Entry becomes the record's share address and is not listed as an
+     * entry, else the Open URL is shared.
      */
     templateEntries?: DeploymentTemplateEntryUrls | null;
+    /**
+     * The Port Display Name form of the App Listening Port the Open Entry
+     * reaches, when an AP of the task observed it; absent, an Open Entry no
+     * verified card already lists is headed by nothing.
+     */
+    templateOpenEntryLabel?: string | null;
   }
 ): DeploymentTaskSuccessAttachment | null {
   if (!deploymentTimelineResultReadinessReached(timeline)) {
     return null;
   }
-  const cards = timeline.steps.flatMap((step) => step.resultCards ?? []);
-  const runningCards = cards.filter(
-    (card) => card.required && card.status === "running"
-  );
-  const verifiedEndpointCards = cards.filter(
-    (card) =>
-      card.status === "running" && (card.required || isTemplateEntryCard(card))
-  );
-  const endpointEntries = verifiedEndpointCards.flatMap((card) => {
+  const runningCards = timeline.steps
+    .flatMap((step) => step.resultCards ?? [])
+    .filter((card) => card.required && card.status === "running");
+  const endpointEntries = runningCards.flatMap((card) => {
     switch (card.resultRef.kind) {
       case "AccessEndpoint":
         return card.resultRef.url == null
@@ -1081,26 +1091,24 @@ export function deploymentTaskSuccessFromTimeline(
         return [];
     }
   });
-  const verifiedUrls = new Set(endpointEntries.map((entry) => entry.url));
-  const declaredOpen = input.templateEntries?.open;
-  const openUrl =
-    declaredOpen != null && verifiedUrls.has(declaredOpen)
-      ? declaredOpen
-      : input.primaryEntryUrl;
+  const openEntry = templateOpenEntry(
+    input.templateEntries?.open,
+    input.templateOpenEntryLabel
+  );
+  const declaredEntries =
+    openEntry == null ? endpointEntries : [openEntry, ...endpointEntries];
   const uniqueEntries = prioritizeSuccessEntries(
-    endpointEntries.filter(
+    declaredEntries.filter(
       (entry, index) =>
-        endpointEntries.findIndex(
+        declaredEntries.findIndex(
           (candidate) => candidate.url === entry.url
         ) === index
     ),
-    openUrl
+    openEntry?.url ?? input.primaryEntryUrl
   );
   const declaredShare = input.templateEntries?.share;
   const shareUrl =
-    declaredShare != null &&
-    verifiedUrls.has(declaredShare) &&
-    isHttpEntryUrl(declaredShare)
+    declaredShare != null && isHttpEntryUrl(declaredShare)
       ? declaredShare
       : deploymentTaskSuccessShareUrl({ entries: uniqueEntries });
   const success = deploymentTaskSuccessFromResultReadiness({

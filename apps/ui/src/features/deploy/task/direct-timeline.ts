@@ -5,9 +5,7 @@ import type { DeployTaskArtifactSummary } from "./schema";
 import {
   type DeploymentResultResourceCard,
   type DeploymentResultResourceRef,
-  type DeploymentTemplateEntryUrls,
   deploymentResultResourceCardId,
-  type TemplateEntryRole,
 } from "./timeline";
 
 const TEMPLATE_WORKLOAD_KIND_BY_NORMALIZED = new Map([
@@ -141,80 +139,6 @@ function ingressAccessEndpointCard(input: {
     observer: { kind: "ingress", name: input.identity.name },
     protocol: input.protocol,
     url,
-  });
-}
-
-const ACCESS_ENDPOINT_PROTOCOLS = new Set(["http", "https", "ws", "wss"]);
-
-function accessEndpointProtocol(
-  url: string
-): "http" | "https" | "ws" | "wss" | null {
-  try {
-    const protocol = new URL(url).protocol.slice(0, -1);
-    return ACCESS_ENDPOINT_PROTOCOLS.has(protocol)
-      ? (protocol as "http" | "https" | "ws" | "wss")
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function templateEntryLabel(
-  role: TemplateEntryRole,
-  protocol: "http" | "https" | "ws" | "wss"
-): string {
-  if (role === "share") {
-    return "Share address";
-  }
-  return protocol === "ws" || protocol === "wss"
-    ? "WebSocket address"
-    : "Web address";
-}
-
-/**
- * Template Entries (ADR 0081) as Deployment Access Endpoint cards: one per
- * declared URL, probed verbatim like an Agent-declared URL, query string
- * included. A URL some other card already observes (an Ingress root, say) is
- * not doubled — the record de-duplicates by full URL and the runner still
- * knows which URL is the Open one. The cards are optional: a declared entry
- * that fails its probe stays out of the record rather than failing a
- * deployment whose Ingress-derived entries already gate usability.
- */
-export function templateEntryAccessEndpointCards(input: {
-  entries: DeploymentTemplateEntryUrls;
-  existingCards: readonly DeploymentResultResourceCard[];
-  namespace: string;
-}): DeploymentResultResourceCard[] {
-  const seen = new Set(
-    input.existingCards.flatMap((card) =>
-      card.resultRef.kind === "AccessEndpoint" && card.resultRef.url != null
-        ? [card.resultRef.url]
-        : []
-    )
-  );
-  const roles: TemplateEntryRole[] = ["open", "share"];
-  return roles.flatMap((role) => {
-    const url = input.entries[role];
-    const protocol = url == null ? null : accessEndpointProtocol(url);
-    if (url == null || protocol == null || seen.has(url)) {
-      return [];
-    }
-    seen.add(url);
-    const label = templateEntryLabel(role, protocol);
-    return [
-      resultCard(
-        {
-          id: `template-entry:${role}`,
-          kind: "AccessEndpoint",
-          label,
-          namespace: input.namespace,
-          observer: { entry: role, kind: "template-entry" },
-          protocol,
-          url,
-        },
-        { required: false }
-      ),
-    ];
   });
 }
 

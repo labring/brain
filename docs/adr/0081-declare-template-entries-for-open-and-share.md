@@ -18,8 +18,9 @@ share — only the template author does.
 Two facts made the gap avoidable. 212 of the 256 catalog templates already
 apply a Sealos App CR (`app.sealos.io/v1` `App`) whose `spec.data.url` is the
 address the Sealos desktop launcher opens; Brain applied that object and never
-read it. And ADR 0079 already has a contract for a declared, probe-verified
-URL — the one GitHub Agent-declared endpoints use.
+read it. And every Ingress host of a template deployment is already a
+required Deployment Access Endpoint (ADR 0079) whose probe gates the Success
+Record — so a declared URL on one of those hosts stands on verified ground.
 
 CONTEXT.md's Default Open Port entry said "there is no Project-level or
 Template-Instance-level open link". The product owner decided on 2026-09-08
@@ -51,17 +52,22 @@ CR URLs embed a secret (`#token=…`, `/invite/<code>`) that must not be posted
 to a social network. It only ever equals `entries.share` or the resolved Open
 URL.
 
-**Verification.** A Template Entry is a Deployment Access Endpoint with a
-declared URL — ADR 0079's contract. It is probed like any HTTP or WebSocket
-endpoint, verbatim: a share URL keeps its query string, the GET is on the
-full URL, and endpoints are de-duplicated by full URL, so an Open entry that
-names the address an Ingress card already observes adds no second card. Only
-a verified entry enters the Success Record. Unlike an Agent-declared
-endpoint, a Template Entry does not gate completion: the Ingress-derived
-entries already gate usability, and a declared link that fails its probe is
-left out of the record rather than failing a deployment that works. A
-declared Open entry the probe did not confirm leaves the automatic rule in
-charge; an unconfirmed Share entry leaves the Open URL shared.
+**No probe.** A Template Entry is not a Deployment Access Endpoint and is not
+probed. It is kept only when an Ingress of the same deployment serves its
+host (the boundary below), and every such host is a required Deployment
+Access Endpoint whose probe already gates the Success Record — so the entry's
+host is verified before the record exists. What a probe of the full URL
+would add is whether the application answers on that path or query string
+at that moment, and that is not routing health: CONTEXT.md's Public Address
+Health already says a workload 404 or 500 does not make an address
+unhealthy. So the record takes the entries as declared, and a template's own
+mistake in a path is the template author's to see and fix, not a reason to
+fall back silently. The Open Entry is the record's first entry; when an
+Ingress card already lists the same URL the card's entry stands (the record
+de-duplicates by full URL), else the entry is added as declared, headed by
+the App Listening Port it reaches when an AP of the task observed that
+address and by nothing otherwise. The Share Entry is not listed as an entry
+at all: it is the address the share strip shares, and only that.
 
 **Consistency with the AP.** When the Open URL — declared or from the App CR
 — can be matched to one App Listening Port of one of the deployment's APs,
@@ -105,9 +111,19 @@ shares its primary HTTP(S) entry, as it always did.
   Share; and it cannot name a second, share-specific URL.
 - **Let Share fall back to the App CR URL** — rejected: `#token=` and
   `/invite/<code>` URLs exist in the catalog today.
-- **Make Template Entries gate completion like Agent-declared URLs** —
-  rejected for this field: 212 templates would gain a new required probe
-  overnight, and the Ingress-derived entries already prove usability.
+- **Probe each entry as a Deployment Access Endpoint** — rejected, in two
+  strengths. As a completion gate, 212 templates would gain a new required
+  probe overnight for a URL nobody has checked. As optional evidence, a
+  failed probe would silently swap the declared Open for the automatic rule
+  while the Service annotation still named the declared port, and the user
+  would see two different Opens with no explanation. Either way the probe
+  verifies application response on a path, which the Public Address Health
+  definition already excludes from health; the host is verified by the
+  Ingress endpoint's own required probe.
+- **List the Share Entry as a record entry** — rejected: the record's entries
+  are ways the user reaches the product, each headed by the port it reaches;
+  the share link is an address for other people and would be the one entry
+  with a label of its own, next to a near-duplicate of the Open URL.
 - **Name the port on the Ingress or a new CR** — rejected; ADR 0080 settled
   that port facts live on the Service.
 
@@ -117,10 +133,11 @@ shares its primary HTTP(S) entry, as it always did.
   open link: a template presets its AP's Default Open Port through its
   entries, and the store, read path, and user override stay exactly ADR
   0080's. The glossary gains Template Entry.
-- ADR 0079's "declared URL" observer family gains a template-declared kind
-  that is named like an Ingress host once verified (Open) or keeps its
-  declared label (Share); its statement that a failed required probe
-  prevents completion is unchanged, since Template Entry cards are optional.
+- ADR 0079's Deployment Access Endpoint contract is untouched: a Template
+  Entry is not an endpoint, adds no card to the Deployment Task Timeline, and
+  never counts toward the record's verification summary. The Open Entry
+  borrows only the endpoint naming rule (the Port Display Name of the App
+  Listening Port it reaches).
 - ADR 0080's note that "a template can preset" the Default Open Port now has
   a second writer: Brain itself, from the template's entries, at render or
   read-back time, and only where the template left the annotation empty.

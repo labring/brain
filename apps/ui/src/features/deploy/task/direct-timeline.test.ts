@@ -5,7 +5,6 @@ import {
   applyApReadinessToResultCard,
   apResultResourceCardsFromArtifactSummary,
   resultResourceCardsFromArtifactSummary,
-  templateEntryAccessEndpointCards,
 } from "./direct-timeline";
 
 test("direct deployment timeline creates no AP card before AP result evidence is known", () => {
@@ -424,105 +423,5 @@ test("direct deployment timeline applies AP workload readiness to the AP card", 
       status: "running",
       title: "api",
     }
-  );
-});
-
-test("Template Entries become optional declared endpoint cards, de-duplicated by full URL", () => {
-  const host = "eagler-demo.example.sealos.run";
-  const share = `https://${host}/?server=wss://${host}/`;
-  const ingressCards = resultResourceCardsFromArtifactSummary({
-    resourceYamls: [
-      `apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: eaglercraft-admin
-  namespace: ns-demo
-spec:
-  tls:
-    - hosts:
-        - ${host}
-  rules:
-    - host: ${host}
-      http:
-        paths:
-          - path: /admin
-            pathType: Prefix
-            backend:
-              service:
-                name: eaglercraft
-                port:
-                  number: 5201
-`,
-    ],
-  });
-  assert.deepEqual(
-    ingressCards.map(
-      (card) => card.resultRef.kind === "AccessEndpoint" && card.resultRef.url
-    ),
-    [`https://${host}/admin`]
-  );
-
-  const cards = templateEntryAccessEndpointCards({
-    entries: { open: `https://${host}/admin`, share },
-    existingCards: ingressCards,
-    namespace: "ns-demo",
-  });
-  // The Open URL is already observed through the Ingress; only Share is new.
-  assert.deepEqual(cards, [
-    {
-      events: [],
-      id: "AccessEndpoint:ns-demo:template-entry:share",
-      required: false,
-      resultRef: {
-        id: "template-entry:share",
-        kind: "AccessEndpoint",
-        label: "Share address",
-        namespace: "ns-demo",
-        observer: { entry: "share", kind: "template-entry" },
-        protocol: "https",
-        url: share,
-      },
-      status: "creating",
-      title: "Share address",
-    },
-  ]);
-});
-
-test("a Template Entry Open URL no card observes gets its own card, once even when Share repeats it", () => {
-  const url = "https://demo.example.sealos.run/app";
-  const cards = templateEntryAccessEndpointCards({
-    entries: { open: url, share: url },
-    existingCards: [],
-    namespace: "ns-demo",
-  });
-  assert.deepEqual(
-    cards.map((card) => [
-      card.id,
-      card.resultRef.kind === "AccessEndpoint" && card.resultRef.label,
-      card.required,
-    ]),
-    [["AccessEndpoint:ns-demo:template-entry:open", "Web address", false]]
-  );
-  assert.deepEqual(
-    templateEntryAccessEndpointCards({
-      entries: { open: "wss://demo.example.sealos.run/" },
-      existingCards: [],
-      namespace: "ns-demo",
-    }).map(
-      (card) =>
-        card.resultRef.kind === "AccessEndpoint" && [
-          card.resultRef.label,
-          card.resultRef.protocol,
-        ]
-    ),
-    [["WebSocket address", "wss"]]
-  );
-  assert.deepEqual(
-    templateEntryAccessEndpointCards({
-      entries: {},
-      existingCards: [],
-      namespace: "ns-demo",
-    }),
-    []
   );
 });

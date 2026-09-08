@@ -87,10 +87,7 @@ import {
 } from "./billing-failure-judgment";
 import { buildRuntimeContract } from "./build-runtime-contract";
 import { resolveGithubTokenForDeploymentTask } from "./credential-binding";
-import {
-  resultResourceCardsFromArtifactSummary,
-  templateEntryAccessEndpointCards,
-} from "./direct-timeline";
+import { resultResourceCardsFromArtifactSummary } from "./direct-timeline";
 import { isDeployTaskAbortError } from "./engine/errors";
 import type { DeployTaskHandle } from "./engine/handle";
 import {
@@ -137,6 +134,7 @@ import { attachManagedDeploymentTimelineSuccess } from "./managed-timeline";
 import { deployOutputProgressSummary } from "./output-progress";
 import { deploymentTaskSourceProduct } from "./projection";
 import {
+  accessEndpointPortLabelForUrl,
   type DeploymentResultApCandidate,
   deploymentResultApCandidates,
   isResultReadinessTerminalError,
@@ -2678,19 +2676,9 @@ async function completeTaskWithArtifact(input: {
     }
   }
 
-  const observedCards = [
+  const resultCards = [
     ...resultResourceCardsFromArtifactSummary(persistedSummary),
     ...templatePublicAccessCards,
-  ];
-  const resultCards = [
-    ...observedCards,
-    ...(templateEntries === undefined
-      ? []
-      : templateEntryAccessEndpointCards({
-          entries: templateEntries,
-          existingCards: observedCards,
-          namespace: input.task.namespace,
-        })),
   ];
   for (const card of resultCards) {
     await upsertResultTimelineCard({
@@ -2735,19 +2723,34 @@ async function completeTaskWithArtifact(input: {
   // record is attached and the Timeline keeps reporting progress (issue #160).
   // Neither an entry address nor first-use guidance is declared here, so both
   // stay absent rather than being invented from a host or a port.
-  // The record's Open control opens the Default Open Port through its best
-  // Public Address, decided once here from the AP as it stands at
-  // verification time (CONTEXT.md: Default Open Port).
+  // The record's Open control opens the template's Open Entry when it declared
+  // one, else the Default Open Port through its best Public Address, decided
+  // once here from the AP as it stands at verification time (CONTEXT.md:
+  // Default Open Port, Template Entry). A Template Entry is not probed: its
+  // host is an Ingress host of this deployment, already verified above, and
+  // an application's own response on a path is not routing health. The Open
+  // Entry is headed by the App Listening Port it reaches, as an Ingress host
+  // is, when an AP of the task observed that address.
+  const apCandidates = deploymentResultApCandidates(resultCards);
   const primaryEntryUrl = await resolveDeploymentSuccessOpenUrl({
-    candidates: deploymentResultApCandidates(resultCards),
+    candidates: apCandidates,
     kubeconfig: input.kubeconfig,
   });
+  const templateOpenEntryLabel =
+    templateEntries?.open === undefined
+      ? undefined
+      : await accessEndpointPortLabelForUrl({
+          candidates: apCandidates,
+          kubeconfig: input.kubeconfig,
+          url: templateEntries.open,
+        });
   await updateDeployTaskTimeline(input.task.id, {
     update: (timeline) => {
       const success = deploymentTaskSuccessFromTimeline(timeline, {
         primaryEntryUrl,
         ...deploymentTaskSourceProduct(input.task.source),
         templateEntries,
+        templateOpenEntryLabel,
       });
       return success == null
         ? timeline

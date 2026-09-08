@@ -357,15 +357,15 @@ export function deploymentResultApCandidates(
 }
 
 /**
- * The label an Ingress-observed endpoint carries once verified: the Port
- * Display Name form of the App Listening Port behind that endpoint, read
- * from the first candidate AP whose Product View observed its host. The
- * endpoint is matched by its whole URL, since one host may expose several
- * ports by protocol and path. A host no AP claims — a template with no
- * AP-like workload, or a view that cannot be read — keeps the label the
- * Ingress gave it; naming is never invented here.
+ * The label an Ingress-observed endpoint carries once verified — and the one
+ * a template's Open Entry is headed by in the Success Record: the Port
+ * Display Name form of the App Listening Port behind that URL, read from
+ * the first candidate AP whose Product View observed its host. The URL is
+ * matched whole, since one host may expose several ports by protocol and
+ * path. A host no AP claims — a template with no AP-like workload, or a view
+ * that cannot be read — yields nothing; naming is never invented here.
  */
-async function ingressAccessEndpointPortLabel(input: {
+export async function accessEndpointPortLabelForUrl(input: {
   candidates: readonly DeploymentResultApCandidate[];
   kubeconfig: string;
   signal?: AbortSignal;
@@ -485,19 +485,13 @@ async function accessEndpointReadiness(
     signal: input.signal,
   });
   publicUrl = resolved.url;
-  // A Template Entry's Open URL is named like an Ingress host once verified:
-  // by the App Listening Port it reaches. A Share entry keeps its own label.
-  const namedByPort =
-    resultRef.observer.kind === "ingress" ||
-    (resultRef.observer.kind === "template-entry" &&
-      resultRef.observer.entry === "open");
   if (
     portLabel === undefined &&
-    namedByPort &&
+    resultRef.observer.kind === "ingress" &&
     input.apCandidates != null &&
     input.apCandidates.length > 0
   ) {
-    portLabel = await ingressAccessEndpointPortLabel({
+    portLabel = await accessEndpointPortLabelForUrl({
       candidates: input.apCandidates,
       kubeconfig: input.kubeconfig,
       signal: input.signal,

@@ -81,7 +81,7 @@ export function templateDeclaredEntries(
 /**
  * A declared entry as a usable absolute URL, or nothing. The query string is
  * kept verbatim (a share link may carry one); credentials and fragments are
- * rejected because a fragment never reaches the server and cannot be probed.
+ * rejected because a fragment never reaches the server.
  */
 export function templateEntryUrl(value: unknown): string | undefined {
   const raw = stringValue(value);
