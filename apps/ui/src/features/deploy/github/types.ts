@@ -26,6 +26,7 @@ export const MAX_INSTALL_RETURN_PATH_LEN = 2048;
 
 /** Conservative namespace format accepted from the browser during install. */
 const INSTALL_NAMESPACE_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+const RETURN_PATH_SUFFIX_RE = /[?#]/;
 
 /** Max length for Kubernetes namespace names. */
 const MAX_INSTALL_NAMESPACE_LEN = 63;
@@ -38,25 +39,32 @@ export function parseInstallReturnPathParam(raw: string | null): string | null {
   if (raw == null || raw === "") {
     return null;
   }
+  const value = raw.trim();
+  if (value.length > MAX_INSTALL_RETURN_PATH_LEN || !value.startsWith("/")) {
+    return null;
+  }
   let decoded: string;
   try {
-    decoded = decodeURIComponent(raw);
+    decoded = decodeURIComponent(value);
   } catch {
     return null;
   }
-  decoded = decoded.trim();
+  const pathname = decoded.split(RETURN_PATH_SUFFIX_RE, 1)[0] ?? "";
   if (
     decoded.length > MAX_INSTALL_RETURN_PATH_LEN ||
     !decoded.startsWith("/") ||
     decoded.startsWith("//") ||
     decoded.includes("\\") ||
-    decoded.includes("://") ||
+    pathname.includes("://") ||
+    decoded.includes("\t") ||
     decoded.includes("\n") ||
     decoded.includes("\r")
   ) {
     return null;
   }
-  return decoded;
+  // JSON and URLSearchParams already decode the transport layer. Preserve query
+  // encoding: nested pane URLs must survive every OAuth callback validation.
+  return value;
 }
 
 /**
