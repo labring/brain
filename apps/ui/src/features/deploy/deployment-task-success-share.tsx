@@ -1,6 +1,6 @@
 "use client";
 
-import { appIconButtonVariants } from "@workspace/ui/components/app-icon-button";
+import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import {
   Popover,
   PopoverContent,
@@ -89,35 +89,34 @@ export interface DeploymentTaskSuccessShareChannel {
   label: string;
 }
 
-const enc = encodeURIComponent;
-
 /** The fixed share channels, in the order the strip draws them. */
 export const DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS: readonly DeploymentTaskSuccessShareChannel[] =
   [
     {
       Icon: XIcon,
       href: (url, name) =>
-        `https://x.com/intent/post?text=${enc(shareText(name, url))}`,
+        `https://x.com/intent/post?text=${encodeURIComponent(shareText(name, url))}`,
       id: "x",
       label: "Post on X",
     },
     {
       Icon: LinkedInIcon,
       href: (url) =>
-        `https://www.linkedin.com/sharing/share-offsite/?url=${enc(url)}`,
+        `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
       id: "linkedin",
       label: "Share on LinkedIn",
     },
     {
       Icon: FacebookIcon,
-      href: (url) => `https://www.facebook.com/sharer/sharer.php?u=${enc(url)}`,
+      href: (url) =>
+        `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
       id: "facebook",
       label: "Share on Facebook",
     },
     {
       Icon: RedditIcon,
       href: (url, name) =>
-        `https://www.reddit.com/submit?url=${enc(url)}&title=${enc(shareTitle(name, url))}`,
+        `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(shareTitle(name, url))}`,
       id: "reddit",
       label: "Post on Reddit",
     },
@@ -145,40 +144,28 @@ function QrTile({ size, url }: { size: number; url: string }) {
   );
 }
 
-const SCAN_CORNER = "pointer-events-none absolute size-3 border-blue-400/70";
+/** The four viewfinder corners, each a bracket drawn from two borders. */
+const SCAN_CORNERS = [
+  "top-0 left-0 rounded-tl-sm border-t border-l",
+  "top-0 right-0 rounded-tr-sm border-t border-r",
+  "bottom-0 left-0 rounded-bl-sm border-b border-l",
+  "right-0 bottom-0 rounded-br-sm border-r border-b",
+] as const;
 
 /** Viewfinder brackets around a QR: the four corners read as "scan me". */
 function ScanFrame({ children }: { children: ReactNode }) {
   return (
     <span className="relative inline-flex p-2">
-      <span
-        aria-hidden
-        className={cn(
-          SCAN_CORNER,
-          "top-0 left-0 rounded-tl-sm border-t border-l"
-        )}
-      />
-      <span
-        aria-hidden
-        className={cn(
-          SCAN_CORNER,
-          "top-0 right-0 rounded-tr-sm border-t border-r"
-        )}
-      />
-      <span
-        aria-hidden
-        className={cn(
-          SCAN_CORNER,
-          "bottom-0 left-0 rounded-bl-sm border-b border-l"
-        )}
-      />
-      <span
-        aria-hidden
-        className={cn(
-          SCAN_CORNER,
-          "right-0 bottom-0 rounded-br-sm border-r border-b"
-        )}
-      />
+      {SCAN_CORNERS.map((corner) => (
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute size-3 border-blue-400/70",
+            corner
+          )}
+          key={corner}
+        />
+      ))}
       {children}
     </span>
   );
@@ -208,23 +195,23 @@ export function DeploymentTaskSuccessQrPanel({ url }: { url: string }) {
   );
 }
 
-/** The quiet small icon control every share affordance in the strip uses, so the strip matches the card's copy controls. */
-const SHARE_CONTROL_CLASS = cn(
-  appIconButtonVariants({ size: "sm", variant: "quiet" }),
-  "inline-flex cursor-pointer items-center justify-center outline-none"
-);
-
 function QrPopover({ url }: { url: string }) {
   return (
     <Popover>
       <PopoverTrigger
-        aria-label="Show QR code"
-        className={SHARE_CONTROL_CLASS}
-        data-slot="deployment-task-success-share-qr"
-        title="Show QR code"
-      >
-        <QrCode aria-hidden className="size-3.5" />
-      </PopoverTrigger>
+        render={
+          <AppIconButton
+            aria-label="Show QR code"
+            data-slot="deployment-task-success-share-qr"
+            size="sm"
+            title="Show QR code"
+            type="button"
+            variant="quiet"
+          >
+            <QrCode aria-hidden className="size-3.5" />
+          </AppIconButton>
+        }
+      />
       <PopoverContent
         align="end"
         className="w-auto items-center gap-3 bg-popover/70 p-4 backdrop-blur-md"
@@ -240,8 +227,9 @@ function QrPopover({ url }: { url: string }) {
 
 /**
  * `Share <product>` on the left; on the right the QR trigger, then one icon
- * link per channel. Every link opens in a new tab and sends no referrer, so
- * the Brain tab stays put and shares nothing of Brain.
+ * link per channel, all drawn as the quiet small app icon button so they
+ * match the copy controls in the card. Every link opens in a new tab and
+ * sends no referrer, so the Brain tab stays put and shares nothing of Brain.
  */
 export function DeploymentTaskSuccessShareStrip({
   className,
@@ -264,17 +252,27 @@ export function DeploymentTaskSuccessShareStrip({
         <QrPopover url={url} />
         {DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS.map(
           ({ Icon, href, id, label }) => (
-            <a
+            // The icon sits inside the anchor so the link carries its own
+            // content; the wrapper's children slot stays empty on purpose.
+            <AppIconButton
               aria-label={label}
-              className={SHARE_CONTROL_CLASS}
-              href={href(url, productName)}
               key={id}
-              rel="noopener noreferrer"
-              target="_blank"
+              nativeButton={false}
+              render={
+                <a
+                  href={href(url, productName)}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  <Icon className="size-3" />
+                </a>
+              }
+              size="sm"
               title={label}
+              variant="quiet"
             >
-              <Icon className="size-3" />
-            </a>
+              {null}
+            </AppIconButton>
           )
         )}
       </div>

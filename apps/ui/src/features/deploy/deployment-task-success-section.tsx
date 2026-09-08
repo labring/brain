@@ -201,7 +201,7 @@ function NextStepsTrail({ steps }: { steps: DeploymentTaskSuccessStep[] }) {
           )}
           <span
             aria-hidden
-            className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border font-mono text-[10px] text-muted-foreground leading-none"
+            className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border font-mono text-[11px] text-muted-foreground leading-none"
           >
             {index + 1}
           </span>
@@ -359,9 +359,9 @@ export const DeploymentTaskSuccessSection = memo(
             className={cn(RISE_CLASS, "mt-5 text-left delay-[480ms]")}
             data-slot="deployment-task-success-next-steps"
           >
-            <p className="font-medium text-foreground text-xs leading-4">
+            <h4 className="font-medium text-foreground text-xs leading-4">
               Next steps
-            </p>
+            </h4>
             <NextStepsTrail steps={guidance} />
           </div>
         )}

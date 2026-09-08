@@ -10,6 +10,7 @@ import {
 } from "./deployment-task-success-share";
 
 const URL_WITH_RESERVED = "https://demo.sealos.run/path?a=1&b=2#top";
+const URL_WITH_SPACE = "https://demo.sealos.run/my page?a=1&b=2#top";
 const OPEN_ON_PHONE_RE = /Open on your phone/;
 const PANEL_HOST_RE = />meetinghub\.sealos\.run</;
 const SVG_RE = /<svg/;
@@ -89,12 +90,17 @@ test("every channel encodes the address so reserved characters survive", () => {
       "Just launched My App"
     )}`
   );
-  // The raw `&` and `#` never appear unencoded in a query value.
+  // The raw `&`, `#` and space never appear unencoded in a query value,
+  // whether they come from the address or from the product name.
   for (const entry of DEPLOYMENT_TASK_SUCCESS_SHARE_CHANNELS) {
-    const href = entry.href(URL_WITH_RESERVED, undefined);
+    const href = entry.href(URL_WITH_SPACE, "My App");
     assert.equal(href.includes("#"), false, `${entry.id} encodes #`);
     assert.equal(href.includes("&b=2"), false, `${entry.id} encodes &`);
     assert.equal(href.includes(" "), false, `${entry.id} encodes spaces`);
+    assert.ok(
+      href.includes(encodeURIComponent(URL_WITH_SPACE)),
+      `${entry.id} carries the whole address`
+    );
   }
 });
 
