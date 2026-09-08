@@ -132,7 +132,7 @@ function GithubDeployerAuthButton({ className }: { className?: string }) {
 
 function GithubDeployerUrlInput({ className }: { className?: string }) {
   const {
-    actions: { onAutoAuthorize, onDeploy, onDeployTemplate },
+    actions: { onDeploy, onDeployTemplate },
     autoDeploy,
     initialRepoUrl,
     requestDeploy,
@@ -142,7 +142,6 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
   const autoDeployStateRef = useRef<
     "cancelled" | "eligible" | "pending" | "triggered"
   >("pending");
-  const autoAuthorizeAttemptedRef = useRef(false);
   const parsedRepo = useMemo(() => parseGithubUrlToRepo(repoUrl), [repoUrl]);
   const requestedRepoUrl = useMemo(
     () => normalizeGithubRepoUrl(initialRepoUrl),
@@ -155,32 +154,6 @@ function GithubDeployerUrlInput({ className }: { className?: string }) {
   const canDeploy = Boolean(
     isAuthorized && parsedRepo && onDeploy && !isTemplateMatchingPending
   );
-
-  useEffect(() => {
-    if (
-      !autoDeploy ||
-      parsedRepo == null ||
-      requestedRepoUrl !== parsedRepo.url ||
-      deployedRepo ||
-      isAuthorized ||
-      isLoading ||
-      onAutoAuthorize == null ||
-      autoAuthorizeAttemptedRef.current
-    ) {
-      return;
-    }
-    // Closing or blocking the popup must not start another authorization loop.
-    autoAuthorizeAttemptedRef.current = true;
-    onAutoAuthorize();
-  }, [
-    autoDeploy,
-    deployedRepo,
-    isAuthorized,
-    isLoading,
-    onAutoAuthorize,
-    parsedRepo,
-    requestedRepoUrl,
-  ]);
 
   useEffect(() => {
     if (!autoDeploy || parsedRepo == null) {

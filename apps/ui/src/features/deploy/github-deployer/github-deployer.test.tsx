@@ -213,7 +213,7 @@ test("GithubDeployer auto deploys a restored GitHub URL only once", async () => 
     await actAndDrain(() => {
       rendered = render(
         <GithubDeployer.Root {...initialProps}>
-          <GithubDeployer.UrlInput />
+          <GithubDeployer.Shell />
         </GithubDeployer.Root>
       );
     });
@@ -224,7 +224,7 @@ test("GithubDeployer auto deploys a restored GitHub URL only once", async () => 
     await actAndDrain(() => {
       rendered?.rerender(
         <GithubDeployer.Root {...initialProps}>
-          <GithubDeployer.UrlInput />
+          <GithubDeployer.Shell />
         </GithubDeployer.Root>
       );
     });
@@ -233,7 +233,7 @@ test("GithubDeployer auto deploys a restored GitHub URL only once", async () => 
     await actAndDrain(() => {
       rendered?.rerender(
         <GithubDeployer.Root {...authorizedProps}>
-          <GithubDeployer.UrlInput />
+          <GithubDeployer.Shell />
         </GithubDeployer.Root>
       );
     });
@@ -243,7 +243,7 @@ test("GithubDeployer auto deploys a restored GitHub URL only once", async () => 
     await actAndDrain(() => {
       rendered?.rerender(
         <GithubDeployer.Root {...authorizedProps}>
-          <GithubDeployer.UrlInput />
+          <GithubDeployer.Shell />
         </GithubDeployer.Root>
       );
     });
@@ -296,7 +296,7 @@ test("GithubDeployer only auto-connects a valid deployment after auth readiness"
               repos: [],
             }}
           >
-            <GithubDeployer.UrlInput />
+            <GithubDeployer.Shell />
           </GithubDeployer.Root>
         );
       });
@@ -313,7 +313,7 @@ test("GithubDeployer only auto-connects a valid deployment after auth readiness"
     await actAndDrain(() => {
       rendered = render(
         <GithubDeployer.Root {...props}>
-          <GithubDeployer.UrlInput />
+          <GithubDeployer.Shell />
         </GithubDeployer.Root>
       );
     });
@@ -321,7 +321,7 @@ test("GithubDeployer only auto-connects a valid deployment after auth readiness"
     await actAndDrain(() => {
       rendered?.rerender(
         <GithubDeployer.Root {...props} actions={{ onAutoAuthorize }}>
-          <GithubDeployer.UrlInput />
+          <GithubDeployer.Shell />
         </GithubDeployer.Root>
       );
     });

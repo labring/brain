@@ -6,7 +6,9 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -15,6 +17,7 @@ import {
   findTemplateForGithubRepo,
   templateCanDeployWithDefaults,
 } from "@/features/deploy/github/github-template-match";
+import { normalizeGithubRepoUrl } from "../github-repo-url";
 import { templateSensitiveKeys } from "../template-deployer";
 import type {
   GithubDeployerActions,
@@ -50,6 +53,36 @@ export function GithubDeployerRoot({
   initialRepoUrl?: string;
   states: GithubDeployerStates;
 }) {
+  const autoAuthorizeAttemptedRef = useRef(false);
+  const { onAutoAuthorize } = actions;
+  const { deployedRepo, isAuthorized, isLoading } = states;
+  const requestedRepoUrl = normalizeGithubRepoUrl(initialRepoUrl);
+
+  useEffect(() => {
+    if (
+      !autoDeploy ||
+      requestedRepoUrl == null ||
+      deployedRepo ||
+      isAuthorized ||
+      isLoading ||
+      onAutoAuthorize == null ||
+      autoAuthorizeAttemptedRef.current
+    ) {
+      return;
+    }
+    // Root remains mounted while Shell hides the repository input before authorization.
+    // Closing or blocking the popup must not start another authorization loop.
+    autoAuthorizeAttemptedRef.current = true;
+    onAutoAuthorize();
+  }, [
+    autoDeploy,
+    deployedRepo,
+    isAuthorized,
+    isLoading,
+    onAutoAuthorize,
+    requestedRepoUrl,
+  ]);
+
   const [selectedRepoId, setSelectedRepoId] = useState(
     () => states.repos[0]?.id ?? ""
   );
