@@ -68,46 +68,62 @@ export function shareVoice(
   }
 }
 
-/** The X post, one line per array entry; the product name is dropped, never invented. */
+/**
+ * The X post in three beats separated by blank lines — the announcement,
+ * the link, the hashtags — so it scans the way posts on X usually do. The
+ * product name is dropped, never invented.
+ */
 export function xPostText(subject: DeploymentTaskShareSubject): string {
   const name = subject.productName;
-  const lines = ((): string[] => {
+  const { announcement, link, tags } = ((): {
+    announcement: [string, string];
+    link: string;
+    tags: string;
+  } => {
     switch (shareVoice(subject)) {
       case "eaglercraft":
-        return [
-          `My own Eaglercraft server is live! ${SEALOS_X_HANDLE}`,
-          "Deployed with Sealos.",
-          `Join here: ${subject.url}`,
-          "#Eaglercraft #Minecraft #Sealos",
-        ];
+        return {
+          announcement: [
+            `My own Eaglercraft server is live! ${SEALOS_X_HANDLE}`,
+            "Deployed with Sealos.",
+          ],
+          link: `Join here: ${subject.url}`,
+          tags: "#Eaglercraft #Minecraft #Sealos",
+        };
       case "game":
-        return [
-          `My own game server is live! ${SEALOS_X_HANDLE}`,
-          "Deployed with Sealos.",
-          `Join here: ${subject.url}`,
-          "#Sealos",
-        ];
+        return {
+          announcement: [
+            `My own game server is live! ${SEALOS_X_HANDLE}`,
+            "Deployed with Sealos.",
+          ],
+          link: `Join here: ${subject.url}`,
+          tags: "#Sealos",
+        };
       case "ai":
-        return [
-          name == null
-            ? `I just took an idea to a live app with Sealos. ${SEALOS_X_HANDLE}`
-            : `I just took ${name} from idea to live app with Sealos. ${SEALOS_X_HANDLE}`,
-          "No complicated setup. Just deploy, share, and start building.",
-          `Try it here: ${subject.url}`,
-          "#AI #BuildInPublic #Sealos",
-        ];
+        return {
+          announcement: [
+            name == null
+              ? `I just took an idea to a live app with Sealos. ${SEALOS_X_HANDLE}`
+              : `I just took ${name} from idea to live app with Sealos. ${SEALOS_X_HANDLE}`,
+            "No complicated setup. Just deploy, share, and start building.",
+          ],
+          link: `Try it here: ${subject.url}`,
+          tags: "#AI #BuildInPublic #Sealos",
+        };
       default:
-        return [
-          name == null
-            ? "Just deployed with Sealos."
-            : `Just deployed ${name} with Sealos.`,
-          "From idea to live app.",
-          `Try it here: ${subject.url} ${SEALOS_X_HANDLE}`,
-          "#Sealos #BuildInPublic",
-        ];
+        return {
+          announcement: [
+            name == null
+              ? `Just deployed with Sealos. ${SEALOS_X_HANDLE}`
+              : `Just deployed ${name} with Sealos. ${SEALOS_X_HANDLE}`,
+            "From idea to live app.",
+          ],
+          link: `Try it here: ${subject.url}`,
+          tags: "#Sealos #BuildInPublic",
+        };
     }
   })();
-  return lines.join("\n");
+  return [...announcement, "", link, "", tags].join("\n");
 }
 
 /** The Reddit link-post title; the post's content is the address itself. */

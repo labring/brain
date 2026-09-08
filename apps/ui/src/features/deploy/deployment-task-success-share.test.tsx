@@ -28,13 +28,15 @@ function channel(id: string) {
 
 const URL = "https://meetinghub.sealos.run";
 
-test("the generic X post names the product and Sealos, one line at a time", () => {
+test("the generic X post names the product and Sealos in three beats", () => {
   assert.equal(
     xPostText({ productName: "MeetingHub", url: URL }),
     [
-      "Just deployed MeetingHub with Sealos.",
+      "Just deployed MeetingHub with Sealos. @Sealos_io",
       "From idea to live app.",
-      `Try it here: ${URL} @Sealos_io`,
+      "",
+      `Try it here: ${URL}`,
+      "",
       "#Sealos #BuildInPublic",
     ].join("\n")
   );
@@ -44,9 +46,11 @@ test("the X post invents no name and no number when the record has none", () => 
   assert.equal(
     xPostText({ url: URL }),
     [
-      "Just deployed with Sealos.",
+      "Just deployed with Sealos. @Sealos_io",
       "From idea to live app.",
-      `Try it here: ${URL} @Sealos_io`,
+      "",
+      `Try it here: ${URL}`,
+      "",
       "#Sealos #BuildInPublic",
     ].join("\n")
   );
@@ -81,7 +85,9 @@ test("a game server and the EaglerCraft server invite people to join", () => {
     [
       "My own game server is live! @Sealos_io",
       "Deployed with Sealos.",
+      "",
       `Join here: ${URL}`,
+      "",
       "#Sealos",
     ].join("\n")
   );
@@ -95,7 +101,9 @@ test("a game server and the EaglerCraft server invite people to join", () => {
     [
       "My own Eaglercraft server is live! @Sealos_io",
       "Deployed with Sealos.",
+      "",
       `Join here: ${URL}`,
+      "",
       "#Eaglercraft #Minecraft #Sealos",
     ].join("\n")
   );
@@ -107,7 +115,9 @@ test("an AI app takes the idea-to-live-app voice", () => {
     [
       "I just took FastGPT from idea to live app with Sealos. @Sealos_io",
       "No complicated setup. Just deploy, share, and start building.",
+      "",
       `Try it here: ${URL}`,
+      "",
       "#AI #BuildInPublic #Sealos",
     ].join("\n")
   );
@@ -151,8 +161,9 @@ test("every channel encodes the address so reserved characters survive", () => {
     channel("x").href(subject),
     `https://x.com/intent/post?text=${encodeURIComponent(xPostText(subject))}`
   );
-  // Line breaks reach X as %0A, so the post keeps its shape.
-  assert.ok(channel("x").href(subject).includes("%0A"));
+  // Line breaks reach X as %0A, and the blank lines between the beats as a
+  // doubled one, so the post keeps its shape.
+  assert.ok(channel("x").href(subject).includes("%0A%0A"));
   assert.equal(
     channel("linkedin").href(subject),
     `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`

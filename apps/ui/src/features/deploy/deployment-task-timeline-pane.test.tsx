@@ -1194,9 +1194,11 @@ test("each share channel posts the snapshotted address in a new tab without a re
     // post is the generic launch in the user's voice.
     "Post on X": `https://x.com/intent/post?text=${encodeURIComponent(
       [
-        "Just deployed EaglerCraft Server with Sealos.",
+        "Just deployed EaglerCraft Server with Sealos. @Sealos_io",
         "From idea to live app.",
-        `Try it here: ${url} @Sealos_io`,
+        "",
+        `Try it here: ${url}`,
+        "",
         "#Sealos #BuildInPublic",
       ].join("\n")
     )}`,
@@ -1248,9 +1250,11 @@ test("a record without a product name shares plainly and invents no name", () =>
     x.includes(
       `href="https://x.com/intent/post?text=${encodeURIComponent(
         [
-          "Just deployed with Sealos.",
+          "Just deployed with Sealos. @Sealos_io",
           "From idea to live app.",
-          `Try it here: ${url} @Sealos_io`,
+          "",
+          `Try it here: ${url}`,
+          "",
           "#Sealos #BuildInPublic",
         ].join("\n")
       )}"`
