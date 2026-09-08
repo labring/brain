@@ -905,6 +905,64 @@ test("AP public address settings patch rewrites App Listening Ports when a Port 
   );
 });
 
+test("AP public address settings patch leaves App Listening Ports alone when the draft only echoes the reported names", () => {
+  // "web" is what the API resolved (annotation or Service port name); the
+  // user only added a Public Address, so the Service keeps its own names.
+  const ops = patchOpsForApPublicAddressesSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 8080 }],
+          platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ displayName: "web", port: 8080 }],
+      publicAddresses: [
+        { id: "pa_abc123", port: 8080 },
+        { id: "pa_def456", port: 8080 },
+      ],
+    },
+    { currentAppListeningPorts: [{ displayName: "web", port: 8080 }] }
+  );
+
+  assert.equal(
+    ops.find((op) => op.path === "/spec/input/network/appListeningPorts"),
+    undefined
+  );
+  assert.ok(
+    ops.find((op) => op.path === "/spec/input/network/platformAddresses")
+  );
+});
+
+test("AP public address settings patch still rewrites App Listening Ports when a name differs from the reported one", () => {
+  const ops = patchOpsForApPublicAddressesSettings(
+    {
+      input: {
+        network: {
+          appListeningPorts: [{ port: 8080 }],
+          platformAddresses: [{ id: "pa_abc123", port: 8080 }],
+        },
+      },
+    },
+    {
+      appListeningPorts: [{ displayName: "Web console", port: 8080 }],
+      publicAddresses: [{ id: "pa_abc123", port: 8080 }],
+    },
+    { currentAppListeningPorts: [{ displayName: "web", port: 8080 }] }
+  );
+
+  assert.deepEqual(
+    ops.find((op) => op.path === "/spec/input/network/appListeningPorts"),
+    {
+      op: "replace",
+      path: "/spec/input/network/appListeningPorts",
+      value: [{ displayName: "Web console", port: 8080 }],
+    }
+  );
+});
+
 test("AP network settings validate App Listening Ports", () => {
   for (const privatePort of [1, 65_535]) {
     assert.deepEqual(

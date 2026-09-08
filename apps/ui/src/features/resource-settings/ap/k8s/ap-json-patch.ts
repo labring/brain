@@ -96,6 +96,18 @@ type ApPublicAddressesSettingsPatch = ApNetworkAppListeningPortsPatch & {
 
 interface ApNetworkSettingsPatchOptions {
   /**
+   * The App Listening Ports the AP currently reports
+   * (`status.network.appListeningPorts`), names as the API resolved them. A
+   * draft whose port list equals this leaves `appListeningPorts` out of the
+   * patch so the API preserves the Service's Port Display Names (ADR 0080):
+   * a reported name may be a Service port-name fallback, and echoing it back
+   * would stamp it as an annotation the user never wrote.
+   */
+  currentAppListeningPorts?: readonly {
+    displayName?: string;
+    port: number;
+  }[];
+  /**
    * The stored Default Open Port the AP currently reports
    * (`status.network.defaultOpenPort`). A draft without one clears it only
    * when this is set; otherwise the field is left out and the API preserves
@@ -666,7 +678,14 @@ function buildApNetworkInput(
     platformAddresses,
     options
   );
-  const networkInput: Record<string, unknown> = { appListeningPorts };
+  // The network merges key by key on the API, so an untouched port list is
+  // left out and the Service keeps its Port Display Names (ADR 0080).
+  const networkInput: Record<string, unknown> = appListeningPortsUntouched(
+    network,
+    options
+  )
+    ? {}
+    : { appListeningPorts };
   const defaultOpenPort = defaultOpenPortForWrite(
     network.defaultOpenPort,
     options.currentDefaultOpenPort,
@@ -777,6 +796,26 @@ function currentDefaultOpenPortFromClaim(
   return portFromUnknown(network?.defaultOpenPort);
 }
 
+/** `status.network.appListeningPorts[]` as the AP reports them, names included. */
+function currentAppListeningPortsFromClaim(
+  claim: Record<string, unknown>
+): NonNullable<ApNetworkSettingsPatchOptions["currentAppListeningPorts"]> {
+  const network = asRecord(asRecord(claim.status)?.network);
+  const rows = Array.isArray(network?.appListeningPorts)
+    ? network.appListeningPorts
+    : [];
+  return rows.flatMap((row) => {
+    const record = asRecord(row);
+    const port = portFromUnknown(record?.port);
+    if (port === undefined) {
+      return [];
+    }
+    const displayName =
+      typeof record?.displayName === "string" ? record.displayName : undefined;
+    return [{ ...(displayName === undefined ? {} : { displayName }), port }];
+  });
+}
+
 function normalizedAppListeningPortsForSave(
   network: ApNetworkAppListeningPortsPatch
 ): Record<string, unknown>[] {
@@ -833,10 +872,44 @@ function normalizedAppListeningPortsFromInputNetwork(
   return legacyPort == null ? [] : [{ port: legacyPort }];
 }
 
+/**
+ * Whether the draft's App Listening Ports are exactly the ones the AP
+ * already reports. Such a save did not touch the port list, so the patch
+ * leaves it out and the API keeps the Service's names (ADR 0080).
+ */
+function appListeningPortsUntouched(
+  network: ApNetworkAppListeningPortsPatch,
+  options: ApNetworkSettingsPatchOptions
+): boolean {
+  const current = options.currentAppListeningPorts;
+  if (current == null || network.appListeningPorts == null) {
+    return false;
+  }
+  const nextPorts = normalizedAppListeningPortsForSave({
+    appListeningPorts: network.appListeningPorts,
+    privatePort:
+      network.appListeningPorts[0]?.port ??
+      portFromUnknown(network.privatePort) ??
+      80,
+  });
+  const currentPorts = current.map((row) => {
+    const displayName = appListeningPortDisplayNameValue(row);
+    return {
+      ...(displayName === undefined ? {} : { displayName }),
+      port: row.port,
+    };
+  });
+  return appListeningPortsEqual(currentPorts, nextPorts);
+}
+
 function appListeningPortsForPublicAddressPatch(
   inputNetwork: Record<string, unknown>,
-  network: ApPublicAddressesSettingsPatch
+  network: ApPublicAddressesSettingsPatch,
+  options: ApNetworkSettingsPatchOptions = {}
 ): Record<string, unknown>[] | null {
+  if (appListeningPortsUntouched(network, options)) {
+    return null;
+  }
   if (
     network.appListeningPorts != null &&
     network.appListeningPorts.length > 0
@@ -914,7 +987,8 @@ export function patchOpsForApPublicAddressesSettings(
     validatedPlatformAddresses(saveDraft.publicAddresses) ?? [];
   const appListeningPorts = appListeningPortsForPublicAddressPatch(
     inputNetwork,
-    network
+    network,
+    options
   );
   const customDomains =
     validatedCustomDomains(
@@ -1534,6 +1608,7 @@ export async function applyApNetwork(
     kubeconfig,
     claim,
     patchOpsForApNetworkSettings(spec, network, {
+      currentAppListeningPorts: currentAppListeningPortsFromClaim(claim),
       currentDefaultOpenPort: currentDefaultOpenPortFromClaim(claim),
       existingCustomDomains: options.existingCustomDomains,
       metadata: asRecord(claim.metadata),
@@ -1566,6 +1641,7 @@ export async function applyApPublicAddresses(
     kubeconfig,
     claim,
     patchOpsForApPublicAddressesSettings(spec, network, {
+      currentAppListeningPorts: currentAppListeningPortsFromClaim(claim),
       currentDefaultOpenPort: currentDefaultOpenPortFromClaim(claim),
       existingCustomDomains: options.existingCustomDomains,
       metadata: asRecord(claim.metadata),
@@ -1586,6 +1662,7 @@ export async function applyApSettingsDraft(
 ): Promise<void> {
   const spec = asRecord(claim.spec);
   const patch = patchOpsForApSettingsDraft(spec, next, previous, {
+    currentAppListeningPorts: currentAppListeningPortsFromClaim(claim),
     currentDefaultOpenPort: currentDefaultOpenPortFromClaim(claim),
     dbDsnReferenceSources: options.dbDsnReferenceSources,
     existingCustomDomains: options.existingCustomDomains,
