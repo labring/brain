@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   accessEndpointLabelForPort,
   apNetworkViewAddressForHost,
+  apNetworkViewAddressForUrl,
   apNetworkViewFromProductView,
   apNetworkViewOpenUrl,
   appListeningPortLabel,
@@ -119,6 +120,62 @@ describe("AP network view", () => {
       undefined
     );
     expect(apNetworkViewAddressForHost(parsed, "  ")).toBe(undefined);
+  });
+
+  it("finds the address an endpoint URL reaches when one host serves several ports", () => {
+    // Eaglercraft-shaped: the game socket and the admin page share a host.
+    const parsed = apNetworkViewFromProductView({
+      status: {
+        network: {
+          appListeningPorts: [
+            { displayName: "game", port: 5200 },
+            { displayName: "admin", port: 8081 },
+          ],
+          publicAddresses: [
+            {
+              host: "shared.example.com",
+              id: "observed-game",
+              port: 5200,
+              status: "accessible",
+              type: "observed",
+              url: "wss://shared.example.com/",
+            },
+            {
+              host: "shared.example.com",
+              id: "observed-admin",
+              port: 8081,
+              status: "accessible",
+              type: "observed",
+              url: "https://shared.example.com/admin",
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      apNetworkViewAddressForUrl(parsed, "https://shared.example.com/admin")
+        ?.port
+    ).toBe(8081);
+    expect(
+      apNetworkViewAddressForUrl(parsed, "https://SHARED.example.com/admin/")
+        ?.port
+    ).toBe(8081);
+    expect(
+      apNetworkViewAddressForUrl(parsed, "wss://shared.example.com/")?.port
+    ).toBe(5200);
+    // Same scheme, unknown path: the scheme still picks the row.
+    expect(
+      apNetworkViewAddressForUrl(parsed, "https://shared.example.com/other")
+        ?.port
+    ).toBe(8081);
+    // Unknown scheme falls back to the host alone.
+    expect(
+      apNetworkViewAddressForUrl(parsed, "http://shared.example.com/")?.port
+    ).toBe(5200);
+    expect(apNetworkViewAddressForUrl(parsed, "https://nobody.example/")).toBe(
+      undefined
+    );
+    expect(apNetworkViewAddressForUrl(parsed, "not a url")).toBe(undefined);
   });
 
   it("opens the stored Default Open Port through its Custom Domain", () => {

@@ -6,7 +6,7 @@ import { ApiUrl } from "@workspace/api/utils";
 import {
   type ApNetworkView,
   accessEndpointLabelForPort,
-  apNetworkViewAddressForHost,
+  apNetworkViewAddressForUrl,
   apNetworkViewFromProductView,
 } from "./ap-network-view";
 import {
@@ -358,16 +358,18 @@ export function deploymentResultApCandidates(
 
 /**
  * The label an Ingress-observed endpoint carries once verified: the Port
- * Display Name form of the App Listening Port behind that host, read from the
- * first candidate AP whose Product View observed the host. A host no AP
- * claims — a template with no AP-like workload, or a view that cannot be
- * read — keeps the label the Ingress gave it; naming is never invented here.
+ * Display Name form of the App Listening Port behind that endpoint, read
+ * from the first candidate AP whose Product View observed its host. The
+ * endpoint is matched by its whole URL, since one host may expose several
+ * ports by protocol and path. A host no AP claims — a template with no
+ * AP-like workload, or a view that cannot be read — keeps the label the
+ * Ingress gave it; naming is never invented here.
  */
 async function ingressAccessEndpointPortLabel(input: {
   candidates: readonly DeploymentResultApCandidate[];
-  host: string;
   kubeconfig: string;
   signal?: AbortSignal;
+  url: string;
 }): Promise<string | undefined> {
   for (const candidate of input.candidates) {
     let view: ApNetworkView;
@@ -386,7 +388,7 @@ async function ingressAccessEndpointPortLabel(input: {
       }
       continue;
     }
-    const address = apNetworkViewAddressForHost(view, input.host);
+    const address = apNetworkViewAddressForUrl(view, input.url);
     if (address != null) {
       return accessEndpointLabelForPort(view, address.port);
     }
@@ -491,9 +493,9 @@ async function accessEndpointReadiness(
   ) {
     portLabel = await ingressAccessEndpointPortLabel({
       candidates: input.apCandidates,
-      host: parsed.hostname,
       kubeconfig: input.kubeconfig,
       signal: input.signal,
+      url: publicUrl,
     });
   }
   const resolvedLabel = portLabel ?? resolved.label;

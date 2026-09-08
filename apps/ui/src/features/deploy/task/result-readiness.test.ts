@@ -466,6 +466,63 @@ it("names an Ingress endpoint through the task's AP that observed its host", asy
   });
 });
 
+it("heads a same-host Ingress endpoint by the port its URL reaches, not the first row for the host", async () => {
+  globalThis.fetch = probeFetch as unknown as typeof fetch;
+  fetcher.mockResolvedValueOnce({
+    status: {
+      network: {
+        appListeningPorts: [
+          { displayName: "game", port: 5200 },
+          { displayName: "admin", port: 8081 },
+        ],
+        publicAddresses: [
+          {
+            host: "demo.example.sealos.run",
+            id: "observed-game",
+            port: 5200,
+            status: "accessible",
+            type: "observed",
+            url: "wss://demo.example.sealos.run/",
+          },
+          {
+            host: "demo.example.sealos.run",
+            id: "observed-admin",
+            port: 8081,
+            status: "accessible",
+            type: "observed",
+            url: "https://demo.example.sealos.run/admin",
+          },
+        ],
+      },
+    },
+  });
+
+  const observed = await observeDeploymentResultCardReadiness({
+    allowedDomain: "example.sealos.run",
+    apCandidates: [{ name: "demo", namespace: "ns-demo" }],
+    card: {
+      events: [],
+      id: "inferred-admin",
+      required: true,
+      resultRef: {
+        id: "inferred-admin",
+        kind: "AccessEndpoint",
+        label: "Web address /admin",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "demo-admin" },
+        protocol: "https",
+        url: "https://demo.example.sealos.run/admin",
+      },
+      status: "creating",
+      title: "Web address /admin",
+    },
+    kubeconfig: "kubeconfig",
+  });
+
+  expect(observed.running).toBe(true);
+  expect(observed.card.resultRef).toMatchObject({ label: "admin · 8081" });
+});
+
 it("keeps the Ingress label when no AP of the task knows the host", async () => {
   globalThis.fetch = probeFetch as unknown as typeof fetch;
   fetcher.mockRejectedValueOnce(new Error("AP not found"));

@@ -165,6 +165,60 @@ export function apNetworkViewAddressForHost(
     : view.addresses.find((address) => address.host === wanted);
 }
 
+const TRAILING_SLASHES_RE = /\/+$/;
+
+interface ParsedEndpointUrl {
+  host: string;
+  path: string;
+  scheme: string;
+}
+
+function parseEndpointUrl(raw: string | undefined): ParsedEndpointUrl | null {
+  const value = raw?.trim() ?? "";
+  if (value === "") {
+    return null;
+  }
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(TRAILING_SLASHES_RE, "");
+    return {
+      host: url.hostname.toLowerCase(),
+      path: path === "" ? "/" : path,
+      scheme: url.protocol.slice(0, -1).toLowerCase(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The address row an endpoint URL reaches. One hostname may expose several
+ * Public Addresses that differ by protocol or path and target different
+ * App Listening Ports (ADR 0079: a `wss://` game port beside an `https://`
+ * admin path), so the URL is matched whole first — scheme, host, and entry
+ * path — then by scheme and host, and only then by host alone.
+ */
+export function apNetworkViewAddressForUrl(
+  view: ApNetworkView,
+  url: string
+): ApNetworkViewAddress | undefined {
+  const wanted = parseEndpointUrl(url);
+  if (wanted === null) {
+    return undefined;
+  }
+  const candidates = view.addresses
+    .filter((address) => address.host === wanted.host)
+    .map((address) => ({ address, parsed: parseEndpointUrl(address.url) }));
+  const exact = candidates.find(
+    ({ parsed }) =>
+      parsed?.scheme === wanted.scheme && parsed.path === wanted.path
+  );
+  const sameScheme = candidates.find(
+    ({ parsed }) => parsed?.scheme === wanted.scheme
+  );
+  return (exact ?? sameScheme ?? candidates[0])?.address;
+}
+
 /**
  * The URL the Open control would open for this AP right now: the Default
  * Open Port rule over the same view the Public Access Node reads. Observed
