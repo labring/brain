@@ -19,9 +19,11 @@ export function assertBundledSkillsConfiguration(
 }
 
 /** Offline preparation is owned by the runtime image; never invoke npx here. */
-export function buildSealosSkillsInstallCommand(
-  initializeWorkspace = false
-): string {
+export function buildSealosSkillsInstallCommand({
+  initializeWorkspace = false,
+}: {
+  initializeWorkspace?: boolean;
+} = {}): string {
   return [
     "set -euo pipefail",
     "test -x /usr/local/bin/sealai-prepare-skills",

@@ -38,6 +38,7 @@ const DEVBOX_WARMUP_TIMEOUT_SECONDS = 30;
 const DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS = 30;
 const chatDevboxSkillSnapshots = new Map<string, ChatSkillMeta[]>();
 const chatDevboxSkillWarmups = new Map<string, Promise<ChatSkillMeta[]>>();
+const chatDevboxPreparedSkills = new Map<string, string>();
 
 export interface ChatDevboxRuntimeOptions {
   kubeconfig: string;
@@ -70,7 +71,12 @@ export function getChatDevboxSkillsSnapshot(
 export function warmChatDevboxSkills(
   options: ChatDevboxRuntimeOptions
 ): Promise<ChatSkillMeta[]> {
+  assertBundledSkillsConfiguration(process.env);
   const cacheKey = chatDevboxSkillCacheKey(options);
+  const snapshot = chatDevboxSkillSnapshots.get(cacheKey);
+  if (snapshot != null) {
+    return Promise.resolve(snapshot.map((skill) => ({ ...skill })));
+  }
   const existing = chatDevboxSkillWarmups.get(cacheKey);
   if (existing != null) {
     return existing;
@@ -304,14 +310,26 @@ async function assertDevboxKubectlReady(
 }
 
 async function installChatSkills(
-  authNamespace: string,
+  options: ChatDevboxRuntimeOptions,
   name: string,
+  creationTimestamp: string | null | undefined,
   signal?: AbortSignal
 ): Promise<void> {
+  const cacheKey = chatDevboxSkillCacheKey(options);
+  // Names may be reused after deletion; only cache a known runtime generation.
+  const generation = creationTimestamp ? `${name}|${creationTimestamp}` : null;
+  if (
+    generation != null &&
+    chatDevboxPreparedSkills.get(cacheKey) === generation
+  ) {
+    return;
+  }
+  chatDevboxPreparedSkills.delete(cacheKey);
+  chatDevboxSkillSnapshots.delete(cacheKey);
   const result = await runDevboxCommand(
-    authNamespace,
+    options.namespace,
     name,
-    buildSealosSkillsInstallCommand(true),
+    buildSealosSkillsInstallCommand({ initializeWorkspace: true }),
     DEVBOX_SKILL_INSTALL_TIMEOUT_SECONDS,
     signal
   );
@@ -320,6 +338,9 @@ async function installChatSkills(
     throw new Error(
       "Chat runtime Skill preparation failed. Check the runtime image bundle."
     );
+  }
+  if (generation != null) {
+    chatDevboxPreparedSkills.set(cacheKey, generation);
   }
 }
 
@@ -349,7 +370,11 @@ async function ensureChatDevbox(
   const existing = (await listDevboxes(authNamespace, upstreamID, signal)).data
     .items[0];
   if (existing != null) {
-    await ensureRunningDevbox(authNamespace, existing.name, signal);
+    const info = await ensureRunningDevbox(
+      authNamespace,
+      existing.name,
+      signal
+    );
     await refreshLease(authNamespace, existing.name, pauseAt, signal);
     await assertDevboxKubectlReady(
       authNamespace,
@@ -357,7 +382,12 @@ async function ensureChatDevbox(
       options.namespace,
       signal
     );
-    await installChatSkills(authNamespace, existing.name, signal);
+    await installChatSkills(
+      options,
+      existing.name,
+      info.creationTimestamp,
+      signal
+    );
     return { name: existing.name, skippedExisting: true };
   }
 
@@ -384,14 +414,14 @@ async function ensureChatDevbox(
     signal
   );
 
-  await waitForRunningDevbox(authNamespace, name, signal);
+  const info = await waitForRunningDevbox(authNamespace, name, signal);
   await assertDevboxKubectlReady(
     authNamespace,
     name,
     options.namespace,
     signal
   );
-  await installChatSkills(authNamespace, name, signal);
+  await installChatSkills(options, name, info.creationTimestamp, signal);
   return { name, skippedExisting: false };
 }
 

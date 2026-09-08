@@ -130,6 +130,7 @@ describe("deploy skill preparation", () => {
     delete process.env.DEPLOY_SKILL_SOURCE;
     const command = buildDeploySkillInstallCommand();
     expect(command).toContain("/usr/local/bin/sealai-prepare-skills");
+    expect(command).not.toContain("--init-workspace");
     expect(command).not.toContain("npx");
     expect(command).not.toContain("https://");
   });
