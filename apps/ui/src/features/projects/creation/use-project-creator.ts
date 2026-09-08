@@ -17,11 +17,16 @@ import { useGithubAuth } from "@/features/deploy/github/use-github-auth";
 import { useGithubRepos } from "@/features/deploy/github/use-github-repos";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
 import {
+  type DeploymentTarget,
   type DeploymentTargetPipelineOutcome,
+  type DeploymentTargetPipelineRequest,
   newProjectDeploymentTarget,
   runDeploymentTargetPipeline,
 } from "@/features/deploy/pipeline";
-import type { TemplateDeploymentSettings } from "@/features/deploy/template-deployer";
+import type {
+  TemplateDeploymentChoice,
+  TemplateDeploymentSettings,
+} from "@/features/deploy/template-deployer";
 import { useDeploymentTargetAdapters } from "@/features/deploy/use-deployment-target-adapters";
 import { useTemplateCatalog } from "@/features/deploy/use-template-catalog";
 import { requestAssistantDraftThread } from "@/features/panes/layout-store";
@@ -122,6 +127,28 @@ export interface UseProjectCreatorOptions {
   ) => void | Promise<void>;
 }
 
+/**
+ * The create request a new-project template deploy sends, from either the
+ * Template method or a GitHub template recommendation. The chosen catalog
+ * item's categories ride along so the task source — and the Deployment Task
+ * Success Record written from it — snapshot them (AIM-354), exactly as the
+ * in-project template panes do; a catalog item without categories declares
+ * none.
+ */
+export function newProjectTemplateRequest(
+  settings: TemplateDeploymentSettings,
+  template: Pick<TemplateDeploymentChoice, "category">,
+  target: DeploymentTarget
+): Extract<DeploymentTargetPipelineRequest, { kind: "template" }> {
+  return {
+    args: settings.args,
+    kind: "template",
+    sensitiveKeys: settings.sensitiveKeys,
+    target,
+    templateCategories: template.category,
+    templateName: settings.templateName,
+  };
+}
 export function useProjectCreator(options?: UseProjectCreatorOptions): {
   creatorRootProps: CreatorRootPropsForCreationPane;
   creatorResetKey: number;
@@ -342,13 +369,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
           const outcome = await trackDeploymentCreateOnSuccess(
             "template",
             () =>
-              runDeployment({
-                args: settings.args,
-                kind: "template",
-                sensitiveKeys: settings.sensitiveKeys,
-                target: newProjectDeploymentTarget(description),
-                templateName: settings.templateName,
-              }),
+              runDeployment(
+                newProjectTemplateRequest(
+                  settings,
+                  choice,
+                  newProjectDeploymentTarget(description)
+                )
+              ),
             { template_name: settings.templateName }
           );
           if (outcome.kind !== "template") {
@@ -447,13 +474,13 @@ export function useProjectCreator(options?: UseProjectCreatorOptions): {
         const outcome = await trackDeploymentCreateOnSuccess(
           "template",
           () =>
-            runDeployment({
-              args: input.settings.args,
-              kind: "template",
-              sensitiveKeys: input.settings.sensitiveKeys,
-              target: newProjectDeploymentTarget(),
-              templateName: input.settings.templateName,
-            }),
+            runDeployment(
+              newProjectTemplateRequest(
+                input.settings,
+                input.template,
+                newProjectDeploymentTarget()
+              )
+            ),
           { template_name: input.settings.templateName }
         );
         if (outcome.kind !== "template") {
