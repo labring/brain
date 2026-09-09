@@ -12,6 +12,8 @@ import type { ChatPaidSource, ChatWallCause } from "./persistence/types";
 export interface ChatBillingInterruption {
   /** The paid source the refusal named, else the pane's own; null when neither is known. */
   paidSource: ChatPaidSource | null;
+  /** The balance refusal as a non-owner hears it (ADR-0082): the ask, no top-up. */
+  wall?: "owner-balance";
 }
 
 export interface ChatBillingCopy {
@@ -55,8 +57,14 @@ export function chatBillingInterruptionFromError(
   if (typeof code !== "string" || !BILLING_REFUSAL_CODES.has(code)) {
     return null;
   }
+  const ownerWall =
+    typeof detail === "object" &&
+    detail != null &&
+    (detail as { wall?: unknown }).wall === "owner-balance"
+      ? ({ wall: "owner-balance" } as const)
+      : {};
   if (code === "account_balance_exhausted") {
-    return { paidSource: "balance" };
+    return { paidSource: "balance", ...ownerWall };
   }
   if (code === "ai_credits_exhausted") {
     return { paidSource: "ai-credits" };
@@ -71,7 +79,7 @@ export function chatBillingInterruptionFromError(
     typeof detail === "object" && detail != null
       ? paidSourceFrom((detail as { paidSource?: unknown }).paidSource)
       : null;
-  return { paidSource: named ?? knownPaidSource };
+  return { paidSource: named ?? knownPaidSource, ...ownerWall };
 }
 
 /**
@@ -113,8 +121,15 @@ export function chatBillingWallCopy(cause: ChatWallCause): ChatBillingCopy {
 
 /** The billing-ized error card's copy; an unknown source never claims one. */
 export function chatBillingInterruptionCopy(
-  paidSource: ChatPaidSource | null
+  paidSource: ChatPaidSource | null,
+  wall?: "owner-balance"
 ): ChatBillingCopy {
+  if (paidSource === "balance" && wall === "owner-balance") {
+    return {
+      body: `The reply stopped because the owner's account balance can't cover AI usage. ${MEMBER_ACCOUNT_DEBT_VOICE.ask}`,
+      title: `Message not sent — ${MEMBER_ACCOUNT_DEBT_VOICE.title.replace("Workspace suspended — ", "")}`,
+    };
+  }
   if (paidSource === "ai-credits") {
     return {
       body: "The reply stopped because this workspace's AI Credits ran out. Upgrade the plan to continue.",

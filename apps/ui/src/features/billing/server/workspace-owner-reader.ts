@@ -50,10 +50,10 @@ export async function readWorkspaceOwnerStanding(
   ) {
     return UNKNOWN_WORKSPACE_OWNER_STANDING;
   }
-  const url = new URL(API_ROUTES.k8s.get, base);
-  url.searchParams.set("kind", "namespaces");
-  url.searchParams.set("name", namespace);
   try {
+    const url = new URL(API_ROUTES.k8s.get, base);
+    url.searchParams.set("kind", "namespaces");
+    url.searchParams.set("name", namespace);
     const response = await fetchNamespace(url, {
       headers: {
         Accept: "application/json",

@@ -292,7 +292,7 @@ describe("debtSuspendsWorkspace", () => {
 });
 
 describe("judgeWorkspaceBillingStanding for a Workspace Actor who is not the Owner (ADR-0082)", () => {
-  it("does not read a member's own empty wallet as the workspace's debt", () => {
+  it("does not read a member's own empty Account Balance as the workspace's debt", () => {
     const standing = judgeWorkspaceBillingStanding({
       account: DEBT_ACCOUNT,
       credits: NO_CREDITS,

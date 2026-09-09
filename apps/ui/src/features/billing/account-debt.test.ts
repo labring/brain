@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { accountDebtByOwner } from "./account-debt";
 
-test("the Owner's own empty wallet is the workspace's debt", () => {
+test("the Owner's own empty Account Balance is the workspace's debt", () => {
   assert.equal(
     accountDebtByOwner({
       money: true,
@@ -13,7 +13,7 @@ test("the Owner's own empty wallet is the workspace's debt", () => {
   );
 });
 
-test("a member's empty wallet says nothing about a workspace they do not own", () => {
+test("a member's empty Account Balance says nothing about a workspace they do not own", () => {
   assert.equal(
     accountDebtByOwner({
       money: true,
@@ -53,7 +53,7 @@ test("an unknown owner without a mark is unknown debt, not the caller's balance"
       money: true,
       owner: { isOwner: null, platformDebt: false },
     }),
-    false
+    null
   );
 });
 

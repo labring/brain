@@ -58,7 +58,7 @@ const MOCK_WORKSPACES = {
 /**
  * Scenarios whose *caller's* account sits in debt (deductions outrun the
  * balance). `payg-member` is the false alarm ADR-0082 removes: a member
- * with an empty wallet inside a workspace someone else funds.
+ * with an empty Account Balance inside a workspace someone else funds.
  */
 const DEBT_SCENARIOS = new Set<BillingDevScenario>([
   "payg-debt",
@@ -73,9 +73,9 @@ const DEBT_SCENARIOS = new Set<BillingDevScenario>([
 /**
  * Member of another account's PAYG workspace (ADR-0082): the caller is not
  * the Workspace Owner, so their own balance decides nothing. `payg-member`
- * has the Owner in good standing (and the member's own wallet empty);
+ * has the Owner in good standing (and the member's own Account Balance empty);
  * `payg-member-owner-debt` has the platform's suspension mark on the
- * namespace (and the member's own wallet full).
+ * namespace (and the member's own Account Balance positive).
  */
 export const MEMBER_SCENARIOS = new Set<BillingDevScenario>([
   "payg-member",

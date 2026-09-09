@@ -389,7 +389,7 @@ export function BillingPlan({
   const credentialsReady =
     appToken.trim() !== "" && kubeconfig.trim() !== "" && workspace !== "";
   // The Account Balance and Gift Credit blocks are the Workspace Owner's
-  // facts (ADR-0082): a member's own wallet is not this workspace's, so the
+  // facts (ADR-0082): a member's own Account Balance is not this workspace's, so the
   // blocks stay hidden until the viewer is proven to be the Owner.
   const owner = useWorkspaceOwnerStanding();
   const viewerIsOwner = owner.data?.isOwner === true;

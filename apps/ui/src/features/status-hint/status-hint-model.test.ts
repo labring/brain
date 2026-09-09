@@ -219,7 +219,7 @@ test("a PAYG workspace the platform marks suspended is Account Debt, money reads
   );
 });
 
-test("a member's own empty wallet is not the workspace's Account Debt (ADR-0082)", () => {
+test("a member's own empty Account Balance is not the workspace's Account Debt (ADR-0082)", () => {
   const evaluation = evaluateStatusHints({
     ...QUIET,
     availableBalanceMicroUnits: 0,

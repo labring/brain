@@ -40,7 +40,7 @@ describe("deploymentBillingInterruption", () => {
         reason: "balance-exhausted",
       })
     ).toEqual({
-      body: "The owner's account balance ran out while this deployment was running, and the workspace is suspended. Ask the workspace owner to top up, then redeploy.",
+      body: "The owner's account balance ran out while this deployment was running, and the workspace is suspended. Ask the workspace owner to top up. Then redeploy.",
       icon: "wallet",
       title: "Workspace suspended — owner's balance in debt",
     });

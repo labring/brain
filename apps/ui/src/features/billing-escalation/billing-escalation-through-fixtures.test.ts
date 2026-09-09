@@ -82,6 +82,7 @@ async function escalationFor(scenario: BillingDevScenario) {
   });
   const selection = selectBillingEscalation({
     accountDebt,
+    isOwner: owner.isOwner,
     items,
     readIds: new Set(),
   });

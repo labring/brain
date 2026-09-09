@@ -57,10 +57,15 @@ function platform(
 
 function select(
   items: readonly AppNotification[],
-  options: { accountDebt?: boolean | null; readIds?: Iterable<string> } = {}
+  options: {
+    accountDebt?: boolean | null;
+    isOwner?: boolean | null;
+    readIds?: Iterable<string>;
+  } = {}
 ) {
   return selectBillingEscalation({
     accountDebt: options.accountDebt === undefined ? true : options.accountDebt,
+    isOwner: options.isOwner === undefined ? true : options.isOwner,
     items,
     readIds: new Set(options.readIds ?? []),
   });
@@ -106,6 +111,10 @@ test("the account ladder is announced only while Account Debt holds, and never w
   const debt = platform("debt-choice-debtperiod");
   assert.equal(select([debt], { accountDebt: true })?.announced.id, debt.id);
   assert.equal(select([debt], { accountDebt: false }), null);
+  // The account ladder is the Owner's alone (ADR-0082): a member in an
+  // Owner-suspended workspace is never offered its top-up rungs.
+  assert.equal(select([debt], { isOwner: false }), null);
+  assert.equal(select([debt], { isOwner: null }), null);
   assert.equal(select([debt], { accountDebt: null }), null);
 });
 

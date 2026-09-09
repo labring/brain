@@ -99,6 +99,7 @@ let billingStanding = {
   aiCredits: null as { totalMicroUnits: number; usedMicroUnits: number } | null,
   availableBalanceMicroUnits: null as number | null,
   fullQuota: null,
+  isOwner: true as boolean | null,
   paidSource: null as "ai-credits" | "balance" | null,
   quotaKnown: false,
 };
@@ -819,6 +820,7 @@ beforeEach(() => {
     aiCredits: null,
     availableBalanceMicroUnits: null,
     fullQuota: null,
+    isOwner: true,
     paidSource: null,
     quotaKnown: false,
   };
@@ -2139,6 +2141,31 @@ test("an open paid workspace streams with its paid source in the headers; unknow
   expect(unknown.status).toBe(200);
   expect(unknown.headers.get("X-Chat-Paid-Source")).toBe("");
   await drain(unknown);
+});
+
+test("a member of an Owner-suspended PAYG workspace is walled as owner-balance and told the ask, not a top-up (ADR-0082)", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: true,
+    availableBalanceMicroUnits: 50_000_000,
+    isOwner: false,
+    paidSource: "balance",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-member-walled", "deploy something"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(await response.json()).toEqual({
+    code: "account_balance_exhausted",
+    detail: { wall: "owner-balance" },
+    error:
+      "The workspace owner's account balance can't cover AI usage. Ask the workspace owner to top up.",
+  });
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+  expect(response.headers.get("X-Chat-Wall")).toBe("owner-balance");
 });
 
 test("a free turn never consults the paid wall — the standing read beside the trial judgment is ignored", async () => {

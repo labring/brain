@@ -111,7 +111,7 @@ describe("workspace billing standing through the billing fixtures", () => {
     );
   });
 
-  it("payg-member does not read the member's own empty wallet as the workspace's debt (ADR-0082)", async () => {
+  it("payg-member does not read the member's own empty Account Balance as the workspace's debt (ADR-0082)", async () => {
     const standing = await read("payg-member");
     expect(standing.isOwner).toBe(false);
     expect(standing.availableBalanceMicroUnits).toBeLessThan(0);
@@ -119,7 +119,7 @@ describe("workspace billing standing through the billing fixtures", () => {
     expect(debtSuspendsWorkspace(standing)).toBe(false);
   });
 
-  it("payg-member-owner-debt voices the Owner's suspension to a member whose own wallet is full", async () => {
+  it("payg-member-owner-debt voices the Owner's suspension to a member whose own Account Balance is positive", async () => {
     const standing = await read("payg-member-owner-debt");
     expect(standing.isOwner).toBe(false);
     expect(standing.availableBalanceMicroUnits).toBeGreaterThan(0);

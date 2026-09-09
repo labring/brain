@@ -83,7 +83,7 @@ export function deploymentBillingInterruption(
       (evidence.owner === false || evidence.owner === null)
     ) {
       return {
-        body: "The owner's account balance ran out while this deployment was running, and the workspace is suspended. Ask the workspace owner to top up, then redeploy.",
+        body: `The owner's account balance ran out while this deployment was running, and the workspace is suspended. ${MEMBER_ACCOUNT_DEBT_VOICE.ask} Then redeploy.`,
         icon: "wallet",
         title: MEMBER_ACCOUNT_DEBT_VOICE.title,
       };

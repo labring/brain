@@ -48,7 +48,7 @@ export function accountDebtSuspends(input: {
  * Account Debt as the Workspace Owner's fact (ADR-0082). The platform's own
  * suspension mark on the namespace is debt for every Workspace Actor; the
  * caller's own balance (`money`, from `accountDebtFromMoney`) speaks only
- * when the caller is proven to be the Owner — a member's wallet is a
+ * when the caller is proven to be the Owner — a member's Account Balance is a
  * different account's fact. A readable namespace with no mark clears the
  * debt for a non-owner; an unknown owner with no mark stays unknown, never
  * assumed. Shared by the client inputs and the server-side standing so the
@@ -66,7 +66,11 @@ export function accountDebtByOwner(input: {
   if (input.owner.isOwner === true) {
     return input.money;
   }
-  return input.owner.platformDebt === false ? false : null;
+  // A proven non-owner with no mark stands clear; an unknown owner might be
+  // the Owner whose early warning nobody read, so the fact stays unknown.
+  return input.owner.isOwner === false && input.owner.platformDebt === false
+    ? false
+    : null;
 }
 
 /**

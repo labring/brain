@@ -258,7 +258,10 @@ export function ChatBillingCardSlot({
       ) : null}
       {card === "billing-error" ? (
         <BillingErrorCard
-          copy={chatBillingInterruptionCopy(interruption?.paidSource ?? null)}
+          copy={chatBillingInterruptionCopy(
+            interruption?.paidSource ?? null,
+            interruption?.wall
+          )}
           onNavigateToBilling={onNavigateToBilling}
         />
       ) : null}

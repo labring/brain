@@ -811,7 +811,7 @@ test("Account Balance composes cash and usable credits without a Gift chip", asy
 test("a member of someone else's workspace never sees the Account Balance block (ADR-0082)", async () => {
   // The balance is the Workspace Owner's fact; a viewer not proven to be the
   // Owner gets neither the figure nor the Gift chip, whatever their own
-  // wallet says.
+  // Account Balance says.
   await withTestDom(async (act) => {
     const { rendered, restore } = await renderPlanPage(act, (pathname) =>
       jsonFixtureResponse(

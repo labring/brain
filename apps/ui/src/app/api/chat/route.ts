@@ -10,6 +10,7 @@ import {
   type UIMessageStreamOnFinishCallback,
 } from "ai";
 import { after } from "next/server";
+import { MEMBER_ACCOUNT_DEBT_VOICE } from "@/features/billing/account-debt";
 import { workspaceResourceQuotaSnapshotSchema } from "@/features/billing/workspace-resource-quota";
 import {
   type ChatBillingMode,
@@ -59,6 +60,8 @@ import {
   type VerifiedAssistantConversationActor,
 } from "@/features/chat/persistence/types";
 import {
+  type AiProxyRefusalVoice,
+  aiProxyBillingRefusedBody,
   chatStreamErrorText,
   isAiProxyBillingRefusal,
 } from "@/features/chat/runtime/ai-proxy-billing-refusal";
@@ -133,6 +136,21 @@ function chatBillingHeaders(state: FreeTierState): Record<string, string> {
 }
 
 /** The paid wall's refusal (design spec row E3; allowance causes ADR-0073). */
+/**
+ * What a mid-turn aiproxy refusal names: the paid source, and — when the
+ * balance is a Workspace Owner's the actor is not proven to be — the
+ * owner-balance wall, so the pane's card asks instead of offering a top-up.
+ */
+function aiProxyRefusalVoice(
+  state: FreeTierState,
+  isOwner: boolean | null
+): AiProxyRefusalVoice {
+  const paidSource = state.paidSource ?? null;
+  return paidSource === "balance" && isOwner !== true
+    ? { paidSource, wall: "owner-balance" }
+    : { paidSource };
+}
+
 function paidWallResponse(state: FreeTierState): Response {
   let body: ChatApiErrorBody;
   if (state.wall === "allowance-trial" || state.wall === "allowance-plan") {
@@ -146,6 +164,14 @@ function paidWallResponse(state: FreeTierState): Response {
       code: "ai_credits_exhausted",
       error:
         "This workspace's AI Credits are used up. Upgrade the plan to keep chatting with the assistant.",
+    };
+  } else if (state.wall === "owner-balance") {
+    // The debt is the Workspace Owner's (ADR-0082): a non-owner is told the
+    // truth and the ask, never a top-up they cannot perform.
+    body = {
+      code: "account_balance_exhausted",
+      detail: { wall: "owner-balance" },
+      error: `The workspace owner's account balance can't cover AI usage. ${MEMBER_ACCOUNT_DEBT_VOICE.ask}`,
     };
   } else {
     body = {
@@ -662,6 +688,8 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
       billing: ChatBillingMode;
       /** Post-turn posture for the `X-Chat-*` response headers. */
       clientFreeTier: FreeTierState;
+      /** The Workspace Owner verdict (ADR-0082) for a mid-turn refusal's voice. */
+      isOwner: boolean | null;
       reserved: boolean;
       response?: never;
     }
@@ -677,6 +705,7 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
     return {
       billing: "user",
       clientFreeTier: walled,
+      isOwner: await judgment.isOwner(),
       reserved: false,
     };
   }
@@ -694,6 +723,7 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
         freeTierPostureAfterTurn(freeTier, systemModelConfigured, trial),
         judgment
       ),
+      isOwner: await judgment.isOwner(),
       reserved: true,
     };
   }
@@ -717,6 +747,7 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
   return {
     billing: "user",
     clientFreeTier: walled,
+    isOwner: await judgment.isOwner(),
     reserved: false,
   };
 }
@@ -754,8 +785,11 @@ async function runChatPipeline(input: {
     if (settled.response != null) {
       return settled.response;
     }
-    const { billing, clientFreeTier } = settled;
+    const { billing, clientFreeTier, isOwner } = settled;
     ownedFreeTurnReservation = settled.reserved;
+    // A mid-turn balance refusal speaks to a member without a top-up
+    // (ADR-0082): the refusal bodies carry the Owner verdict's voice.
+    const refusalVoice = aiProxyRefusalVoice(clientFreeTier, isOwner);
 
     // Adopt before the thread ensure: continuing a legacy crName-keyed
     // conversation must find the re-keyed row instead of refusing its id.
@@ -826,7 +860,7 @@ async function runChatPipeline(input: {
           "ai_proxy_billing_refused",
           "The AI proxy refused this turn for billing reasons.",
           openAi.status,
-          { paidSource: clientFreeTier.paidSource ?? null }
+          aiProxyBillingRefusedBody(refusalVoice).detail
         );
       }
       return jsonError(
@@ -970,8 +1004,7 @@ async function runChatPipeline(input: {
           headers: responseHeaders,
           // A mid-stream aiproxy billing refusal reaches the pane classified;
           // every other error stays masked.
-          onError: (error) =>
-            chatStreamErrorText(error, clientFreeTier.paidSource ?? null),
+          onError: (error) => chatStreamErrorText(error, refusalVoice),
           onFinish: (event) => {
             if (finishCalled) {
               return;

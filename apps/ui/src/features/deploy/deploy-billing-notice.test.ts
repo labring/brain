@@ -377,13 +377,13 @@ test("the billing fixtures notice exactly the scenarios the banner lights for de
   );
 });
 
-test("a member of a PAYG workspace is noticed on the Owner's debt with the ask and no CTA, never on their own wallet (ADR-0082)", async () => {
-  // The member's own wallet is empty here; the Owner is fine.
+test("a member of a PAYG workspace is noticed on the Owner's debt with the ask and no CTA, never on their own Account Balance (ADR-0082)", async () => {
+  // The member's own Account Balance is empty here; the Owner is fine.
   assert.equal(
     resolveDeployBillingNotice(await inputsFor("payg-member")),
     null
   );
-  // The member's own wallet is full here; the platform marks the Owner's debt.
+  // The member's own Account Balance is positive here; the platform marks the Owner's debt.
   const notice = resolveDeployBillingNotice(
     await inputsFor("payg-member-owner-debt")
   );

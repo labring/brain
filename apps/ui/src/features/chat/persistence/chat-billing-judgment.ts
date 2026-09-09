@@ -40,6 +40,12 @@ export interface ChatBillingActor {
 
 export interface ChatBillingJudgment {
   /**
+   * Whether the actor is the Workspace Owner (ADR-0082), from the same
+   * standing read — so a mid-turn balance refusal can speak to a member
+   * without a top-up. Null while unknown.
+   */
+  isOwner: () => Promise<boolean | null>;
+  /**
    * The Paid Chat Wall (design spec row E3) from the standing read that
    * left beside the trial judgment. Unknown standing fails open.
    */
@@ -91,6 +97,7 @@ export async function judgeChatBilling(
       ? await judgeTrial(reads)
       : "not-trial";
   return {
+    isOwner: async () => (await standing).isOwner,
     paidWall: async () => paidChatWall(await standing, trial),
     snapshot,
     systemModelConfigured,

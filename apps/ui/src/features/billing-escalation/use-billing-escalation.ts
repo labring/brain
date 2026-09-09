@@ -49,10 +49,11 @@ export function useBillingEscalation(): BillingEscalationSlot {
     () =>
       selectBillingEscalation({
         accountDebt,
+        isOwner: inputs.owner?.isOwner ?? null,
         items: feed.items,
         readIds: feed.readIds,
       }),
-    [accountDebt, feed.items, feed.readIds]
+    [accountDebt, feed.items, feed.readIds, inputs.owner]
   );
   const context = useMemo(() => ({ subscription }), [subscription]);
   const stage = useMemo(
