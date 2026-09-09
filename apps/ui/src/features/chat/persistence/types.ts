@@ -92,7 +92,33 @@ export type ChatPaidSource = "ai-credits" | "balance";
 export type ChatWallCause =
   | ChatPaidSource
   | "allowance-trial"
-  | "allowance-plan";
+  | "allowance-plan"
+  /** The balance wall as a non-owner sees it: the Owner's debt, no top-up (ADR-0082). */
+  | "owner-balance";
+
+/**
+ * Every wall cause the server may name, as the wire (`X-Chat-Wall` header
+ * and session bootstrap) spells it. The bootstrap schema and the header
+ * decoder both read from this list so a cause added on the server can never
+ * reach the pane as "no wall".
+ */
+export const CHAT_WALL_CAUSES = [
+  "ai-credits",
+  "balance",
+  "allowance-trial",
+  "allowance-plan",
+  "owner-balance",
+] as const satisfies readonly ChatWallCause[];
+
+/** Decodes an `X-Chat-Wall` header value; anything not a wall cause is no wall. */
+export function chatWallCauseFromHeader(
+  value: string | null
+): ChatWallCause | null {
+  return value != null &&
+    (CHAT_WALL_CAUSES as readonly string[]).includes(value)
+    ? (value as ChatWallCause)
+    : null;
+}
 
 /**
  * Read-side snapshot of a workspace's Chat Billing Posture, seeded into the

@@ -35,7 +35,10 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { accountDebtFromMoney } from "@/features/billing/account-debt";
+import {
+  accountDebtFromMoney,
+  MEMBER_ACCOUNT_DEBT_VOICE,
+} from "@/features/billing/account-debt";
 import {
   type AiCredits,
   aiCreditsPercentUsed,
@@ -278,6 +281,22 @@ const ACCOUNT_DEBT_WARNING_COPY: Partial<
   },
 };
 
+// The same ladder as a Workspace Actor not proven to be the Owner hears it
+// (ADR-0082): the debt is the Owner's account, so the copy names it as such
+// and asks instead of pointing at a top-up the viewer cannot perform.
+const MEMBER_ACCOUNT_DEBT_WARNING_COPY: Partial<
+  Record<SubscriptionWarningStage, { description: string; title: string }>
+> = {
+  "deletion-imminent": {
+    description: `All resources will be permanently deleted soon. ${MEMBER_ACCOUNT_DEBT_VOICE.ask}`,
+    title: "Workspace scheduled for deletion",
+  },
+  expired: {
+    description: MEMBER_ACCOUNT_DEBT_VOICE.description,
+    title: MEMBER_ACCOUNT_DEBT_VOICE.title,
+  },
+};
+
 // Severity escalates with the deletion countdown: a pending cancellation is
 // still a caution (amber), while an expired or deletion-bound workspace is
 // destructive (red). The semantic color stays on the icon and title only —
@@ -290,8 +309,10 @@ const SUBSCRIPTION_WARNING_TONES: Record<SubscriptionWarningStage, string> = {
 
 function SubscriptionWarningBanner({
   current,
+  viewerIsOwner,
 }: {
   current: BillingPlanSnapshot["current"];
+  viewerIsOwner: boolean;
 }) {
   const topUpUrl = useSealosDesktopUrl("system-costcenter");
   const stage = current.warningStage;
@@ -299,8 +320,12 @@ function SubscriptionWarningBanner({
     return null;
   }
 
+  // Account Debt is the Workspace Owner's fact (ADR-0082): the top-up voice
+  // belongs to a viewer proven to be the Owner; anyone else gets the ask.
   const accountDebtCopy = current.isPayg
-    ? ACCOUNT_DEBT_WARNING_COPY[stage]
+    ? (viewerIsOwner
+        ? ACCOUNT_DEBT_WARNING_COPY
+        : MEMBER_ACCOUNT_DEBT_WARNING_COPY)[stage]
     : undefined;
   if (accountDebtCopy != null) {
     return (
@@ -314,7 +339,7 @@ function SubscriptionWarningBanner({
         <TriangleAlert aria-hidden />
         <AlertTitle>{accountDebtCopy.title}</AlertTitle>
         <AlertDescription>{accountDebtCopy.description}</AlertDescription>
-        {topUpUrl == null ? null : (
+        {topUpUrl == null || !viewerIsOwner ? null : (
           <AlertAction className="static col-start-2 row-start-3 mt-2 flex flex-wrap gap-2 justify-self-start">
             <AppButton
               nativeButton={false}
@@ -460,6 +485,7 @@ function BillingPlanNotices({
   pendingUpgrade,
   pendingUpgradePlanAvailable,
   transactionAvailability,
+  viewerIsOwner,
 }: {
   current: BillingPlanSnapshot["current"];
   invoiceCancellationPending: boolean;
@@ -468,6 +494,7 @@ function BillingPlanNotices({
   pendingUpgrade: BillingPlanSnapshot["pendingUpgrade"];
   pendingUpgradePlanAvailable: boolean;
   transactionAvailability: BillingPlanSnapshot["availability"]["transaction"];
+  viewerIsOwner: boolean;
 }) {
   const isFreePlan = current.planName.trim().toLowerCase() === "free";
 
@@ -484,7 +511,10 @@ function BillingPlanNotices({
         </Alert>
       ) : null}
 
-      <SubscriptionWarningBanner current={current} />
+      <SubscriptionWarningBanner
+        current={current}
+        viewerIsOwner={viewerIsOwner}
+      />
 
       {transactionAvailability === "unavailable" ? (
         <Alert>
@@ -999,6 +1029,8 @@ interface BillingPlanSurfaceProps {
   onManageCard?: () => void;
   onPlanChange?: (planId: string | null) => void;
   snapshot: BillingPlanSnapshot;
+  /** Whether the viewer is proven to be the Workspace Owner (ADR-0082); unknown reads as not. */
+  viewerIsOwner?: boolean;
 }
 
 export function BillingPlanSurface({
@@ -1013,6 +1045,7 @@ export function BillingPlanSurface({
   onManageCard,
   onPlanChange,
   snapshot,
+  viewerIsOwner = false,
 }: BillingPlanSurfaceProps) {
   const { current } = snapshot;
   const pendingUpgradePlanAvailable =
@@ -1078,7 +1111,9 @@ export function BillingPlanSurface({
           ) : null}
         </div>
       </section>
-      <BillingBalanceSection balance={balance} variant="card" />
+      {balance == null ? null : (
+        <BillingBalanceSection balance={balance} variant="card" />
+      )}
     </div>
   ) : (
     <section
@@ -1163,13 +1198,16 @@ export function BillingPlanSurface({
         pendingUpgrade={snapshot.pendingUpgrade}
         pendingUpgradePlanAvailable={pendingUpgradePlanAvailable}
         transactionAvailability={snapshot.availability.transaction}
+        viewerIsOwner={viewerIsOwner}
       />
 
       {planSummary}
 
       {credits}
 
-      {current.isPayg ? null : <BillingBalanceSection balance={balance} />}
+      {current.isPayg || balance == null ? null : (
+        <BillingBalanceSection balance={balance} />
+      )}
 
       <BillingPaymentMethod
         availability={snapshot.availability.card}

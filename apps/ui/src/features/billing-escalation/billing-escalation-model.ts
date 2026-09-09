@@ -49,6 +49,13 @@ export interface BillingEscalationSelectionInput {
    * verdict; null while unknown, which drops the account ladder (fail quiet).
    */
   accountDebt: boolean | null;
+  /**
+   * Whether the viewer is the Workspace Owner (ADR-0082). The account
+   * ladder is the Owner's to climb — its rungs offer a top-up only the
+   * Owner can perform — so anyone not proven to be the Owner is never
+   * announced it; the status hint carries the member's voice.
+   */
+  isOwner: boolean | null;
   items: readonly AppNotification[];
   /** Optimistic session reads layered over the items' own unread state. */
   readIds: ReadonlySet<string>;
@@ -103,7 +110,10 @@ function candidateOf(
   if (ladder == null || CR_OVERRIDES[item.crName ?? ""] == null) {
     return null;
   }
-  if (ladder === "account" && input.accountDebt !== true) {
+  if (
+    ladder === "account" &&
+    (input.accountDebt !== true || input.isOwner !== true)
+  ) {
     return null;
   }
   return { item, ladder };

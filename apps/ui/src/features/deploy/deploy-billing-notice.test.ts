@@ -11,6 +11,7 @@ import { loadWorkspaceQuotaUsage } from "@/features/billing/billing-usage-data";
 import type { BillingDevScenario } from "@/features/billing/dev-mock-cookie";
 import type { WorkspaceBillingStanding } from "@/features/billing/server/billing-standing-core";
 import { scenarioTestFetch } from "@/features/billing/server/dev-fixtures/scenario-test-fetch";
+import { loadWorkspaceOwnerStanding } from "@/features/billing/workspace-owner-data";
 import type { StatusHintInputs } from "@/features/status-hint/status-hint-model";
 
 import {
@@ -55,6 +56,7 @@ const QUIET: StatusHintInputs = {
   availableBalanceMicroUnits: 50_000_000,
   lifetimeDeductionMicroUnits: 23_450_000,
   now: NOW,
+  owner: { isOwner: true, platformDebt: false },
   quota: [
     { label: "CPU", percentUsed: 37.5, type: "cpu" },
     { label: "Storage", percentUsed: 60, type: "storage" },
@@ -69,6 +71,7 @@ const QUIET_STANDING: WorkspaceBillingStanding = {
   availableBalanceMicroUnits: 50_000_000,
   fullQuota: null,
   fullUniversalQuota: null,
+  isOwner: true,
   paidSource: "balance",
   paymentDue: false,
   paymentDueRecovery: null,
@@ -83,17 +86,19 @@ async function inputsFor(
     ...CREDENTIALS,
     namespace: `${CREDENTIALS.namespace}-deploy-${scenario}`,
   };
-  const [subscription, balance, credits, quota] = await Promise.all([
+  const [subscription, balance, credits, quota, owner] = await Promise.all([
     loadWorkspaceSubscriptionSummary(CREDENTIALS, { fetch }),
     loadAccountBalanceTerms(CREDENTIALS, fetch),
     loadAccountCredits(CREDENTIALS, fetch),
     loadWorkspaceQuotaUsage(quotaCredentials, fetch),
+    loadWorkspaceOwnerStanding(CREDENTIALS, fetch),
   ]);
   return {
     availableBalanceMicroUnits:
       balance.cashMicroUnits + credits.usableMicroUnits,
     lifetimeDeductionMicroUnits: balance.lifetimeDeductionMicroUnits,
     now: NOW,
+    owner,
     quota,
     subscription,
   };
@@ -155,7 +160,7 @@ test("a payment-due subscription is noticed with its recovery voice (ADR-0070)",
     paymentDueRecovery: "renew",
   });
   assert.equal(renew?.kind, "payment-due");
-  assert.equal(renew?.cta.label, "Renew plan");
+  assert.equal(renew?.cta?.label, "Renew plan");
   // An expired Free plan is not a renewal target: its voice upgrades.
   const resubscribe = deployBillingNoticeFromStanding({
     ...QUIET_STANDING,
@@ -163,7 +168,7 @@ test("a payment-due subscription is noticed with its recovery voice (ADR-0070)",
     paymentDue: true,
     paymentDueRecovery: "resubscribe",
   });
-  assert.equal(resubscribe?.cta.label, "Upgrade plan");
+  assert.equal(resubscribe?.cta?.label, "Upgrade plan");
   // Payment-due outranks a full quota, mirroring the banner's severity.
   assert.equal(
     deployBillingNoticeFromStanding({
@@ -299,11 +304,12 @@ test("a subscribed workspace is never noticed on its account's debt", () => {
   );
 });
 
-test("a PAYG workspace the platform reports in DEBT is Account Debt, not payment-due", () => {
+test("a PAYG workspace the platform marks suspended is Account Debt, not payment-due", () => {
   assert.equal(
     resolveDeployBillingNotice({
       ...QUIET,
-      subscription: { ...PAYG, lifecycle: "payment-due" },
+      owner: { isOwner: true, platformDebt: true },
+      subscription: PAYG,
     })?.kind,
     "balance"
   );
@@ -371,14 +377,40 @@ test("the billing fixtures notice exactly the scenarios the banner lights for de
   );
 });
 
+test("a member of a PAYG workspace is noticed on the Owner's debt with the ask and no CTA, never on their own Account Balance (ADR-0082)", async () => {
+  // The member's own Account Balance is empty here; the Owner is fine.
+  assert.equal(
+    resolveDeployBillingNotice(await inputsFor("payg-member")),
+    null
+  );
+  // The member's own Account Balance is positive here; the platform marks the Owner's debt.
+  const notice = resolveDeployBillingNotice(
+    await inputsFor("payg-member-owner-debt")
+  );
+  assert.deepEqual(notice, {
+    body: "The owner's account balance is in debt, so deployments will fail. Ask the workspace owner to top up.",
+    kind: "balance",
+    title: "Workspace suspended — owner's balance in debt",
+  });
+  // The server-side standing speaks the same line to the assistant's tool.
+  assert.deepEqual(
+    deployBillingNoticeFromStanding({
+      ...QUIET_STANDING,
+      accountDebt: true,
+      isOwner: false,
+    }),
+    notice
+  );
+});
+
 test("the dev tweak's forced options each render a real card, and anything else none", () => {
   assert.equal(forcedDeployBillingNotice("balance")?.kind, "balance");
   assert.equal(
-    forcedDeployBillingNotice("payment-due-renew")?.cta.label,
+    forcedDeployBillingNotice("payment-due-renew")?.cta?.label,
     "Renew plan"
   );
   assert.equal(
-    forcedDeployBillingNotice("payment-due-resubscribe")?.cta.label,
+    forcedDeployBillingNotice("payment-due-resubscribe")?.cta?.label,
     "Upgrade plan"
   );
   assert.equal(forcedDeployBillingNotice("quota")?.title, "CPU quota is full");

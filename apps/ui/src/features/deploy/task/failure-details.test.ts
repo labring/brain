@@ -206,7 +206,7 @@ describe("billing evidence in failure details (catalog E1/E2)", () => {
     ).toEqual({
       billingEvidence: DEBT_EVIDENCE,
       failureMessage:
-        "Deployment stopped — the account balance is exhausted and the workspace is suspended. Top up, then redeploy.",
+        "Deployment stopped — the workspace owner's account balance is exhausted and the workspace is suspended. Redeploy once the balance is topped up.",
       reason: "balance-exhausted",
     });
   });

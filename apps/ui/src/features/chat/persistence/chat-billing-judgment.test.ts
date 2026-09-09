@@ -13,6 +13,7 @@ const OPEN_PAYG: WorkspaceBillingStanding = {
   availableBalanceMicroUnits: 50_000_000,
   fullQuota: null,
   fullUniversalQuota: null,
+  isOwner: true,
   paidSource: "balance",
   paymentDue: false,
   paymentDueRecovery: null,
@@ -29,6 +30,8 @@ const ZERO_ALLOWANCE: WorkspaceBillingStanding = {
 const ACTOR = {
   accountUserId: "user-1",
   cookieHeader: null,
+  crName: "alice-cr",
+  encodedKubeconfig: "encoded-kubeconfig",
   namespace: "ns-test",
   userUid: "uid-1",
 };

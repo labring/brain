@@ -98,7 +98,7 @@ export function StatusHintBannerView({
       <span className="hidden min-w-0 max-w-lg truncate text-muted-foreground lg:inline">
         {hint.description}
       </span>
-      <StatusHintCtaChip cta={hint.cta} />
+      {hint.cta == null ? null : <StatusHintCtaChip cta={hint.cta} />}
       {hint.secondaryCta == null ? null : (
         <StatusHintCtaChip cta={hint.secondaryCta} quiet />
       )}

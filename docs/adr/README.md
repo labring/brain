@@ -53,6 +53,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0079 — Model Public Entry Points as Deployment Access Endpoints](0079-model-public-entry-points-as-deployment-access-endpoints.md) *(revises ADR-0078's address and success-copy contract)*
 - [0080 — Port Display Names Live on the Service, Not the Ingress](0080-port-display-names-live-on-the-service.md) *(extends ADR-0066's annotation pattern to App Listening Ports; carves out a read-time fallback exception; complements ADR-0079's Deployment Access Endpoint labels)*
 - [0081 — Declare Template Entries for Open and Share](0081-declare-template-entries-for-open-and-share.md) *(declares Open and Share beside ADR-0079's endpoints, unprobed on an Ingress host they verify; adds a Brain-side writer for ADR-0080's Default Open Port store; revises CONTEXT.md's "no Template-Instance-level open link")*
+- [0082 — Judge Account Debt by the Workspace Owner, Not the Workspace Actor](0082-judge-account-debt-by-the-workspace-owner.md) *(re-scopes ADR-0068's debt input to the Workspace Owner via the namespace's platform marks; keeps ADR-0060's token claims; introduces Workspace Owner in CONTEXT.md)*
 
 ## Conventions
 

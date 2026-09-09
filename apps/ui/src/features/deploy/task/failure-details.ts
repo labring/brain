@@ -87,6 +87,11 @@ export function deployBillingEvidence(
         | null,
       checkedAt: record.checkedAt,
       kind: "account-debt",
+      ...(record.owner === true ||
+      record.owner === false ||
+      record.owner === null
+        ? { owner: record.owner }
+        : {}),
     };
   }
   if (
@@ -122,6 +127,14 @@ const MICRO_UNITS_PER_CURRENCY_UNIT = 1_000_000;
 /** The billing check's lines for the Deployment Failure Detail (never raw upstream text). */
 function billingEvidenceLines(evidence: DeployBillingEvidence): string[] {
   if (evidence.kind === "account-debt") {
+    // A non-owner's own balance never entered the verdict (ADR-0082): the
+    // platform's mark on the namespace did, so the detail says that.
+    if (evidence.owner === false || evidence.owner === null) {
+      return [
+        "Billing check: the platform marks this workspace suspended for the owner's account debt",
+        `Checked at: ${evidence.checkedAt}`,
+      ];
+    }
     const available =
       evidence.availableBalanceMicroUnits == null
         ? "reported in debt by the platform"

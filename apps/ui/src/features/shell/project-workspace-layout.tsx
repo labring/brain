@@ -65,7 +65,7 @@ import {
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   type ChatPaidSource,
-  type ChatWallCause,
+  chatWallCauseFromHeader,
   type FreeTierState,
   SELECTED_CONTEXT_PART_TYPE,
   type SelectedContextReference,
@@ -898,12 +898,6 @@ function chatPaidSourceHeader(value: string | null): ChatPaidSource | null {
   return value === "ai-credits" || value === "balance" ? value : null;
 }
 
-function chatWallCauseHeader(value: string | null): ChatWallCause | null {
-  return value === "allowance-plan" || value === "allowance-trial"
-    ? value
-    : chatPaidSourceHeader(value);
-}
-
 function ProjectAssistantChatPane() {
   const projectId = useProjectId();
   const namespaceRaw = useAtomValue(namespaceAtom);
@@ -988,7 +982,7 @@ function ProjectAssistantChatPane() {
     // The paid wall rides the same header set (row E3): a 402 that slipped
     // past the panel's pre-check locks the composer here.
     const paidSource = chatPaidSourceHeader(headers.get("X-Chat-Paid-Source"));
-    const wall = chatWallCauseHeader(headers.get("X-Chat-Wall"));
+    const wall = chatWallCauseFromHeader(headers.get("X-Chat-Wall"));
     setFreeTier((prev) => {
       if (Number.isFinite(remaining) && Number.isFinite(limit)) {
         return { billing: billingHeader, limit, paidSource, remaining, wall };

@@ -58,6 +58,7 @@ import {
 import { submitCancellationSurvey } from "@/features/billing/cancellation-survey/client";
 import { EMPTY_CANCELLATION_SURVEY_ANSWERS } from "@/features/billing/cancellation-survey/reasons";
 import type { BillingCurrency } from "@/features/billing/config-core";
+import { useWorkspaceOwnerStanding } from "@/features/billing/use-workspace-owner-standing";
 import {
   type FreeChatTurnsUsage,
   fetchFreeChatTurnsUsage,
@@ -91,6 +92,8 @@ interface BillingPlanWorkflowProps {
   schedulePoll?: (callback: () => void, delay: number) => () => void;
   snapshot: BillingPlanSnapshot;
   stripeReturn?: BillingStripeReturn | null;
+  /** Whether the viewer is proven to be the Workspace Owner (ADR-0082). */
+  viewerIsOwner?: boolean;
 }
 
 function currentUrlWithout(parameters: readonly string[]): string {
@@ -121,6 +124,7 @@ export function BillingPlanWorkflow({
   schedulePoll,
   snapshot,
   stripeReturn = null,
+  viewerIsOwner = false,
 }: BillingPlanWorkflowProps) {
   const stripeAcknowledgedKeyRef = useRef<string | null>(null);
   const stripeRefreshRef = useRef<{
@@ -245,6 +249,7 @@ export function BillingPlanWorkflow({
         onManageCard={onManageCard}
         onPlanChange={handlePlanChange}
         snapshot={snapshot}
+        viewerIsOwner={viewerIsOwner}
       />
       <BillingPlanChangeDialog
         credentials={credentials}
@@ -387,6 +392,11 @@ export function BillingPlan({
     useState(false);
   const credentialsReady =
     appToken.trim() !== "" && kubeconfig.trim() !== "" && workspace !== "";
+  // The Account Balance and Gift Credit blocks are the Workspace Owner's
+  // facts (ADR-0082): a member's own Account Balance is not this workspace's, so the
+  // blocks stay hidden until the viewer is proven to be the Owner.
+  const owner = useWorkspaceOwnerStanding();
+  const viewerIsOwner = owner.data?.isOwner === true;
   const {
     data: balance,
     error: balanceError,
@@ -700,16 +710,18 @@ export function BillingPlan({
     <BillingPlanWorkflow
       actionPending={actionPending}
       balance={
-        <div aria-live="polite">
-          {accountBalanceContent({
-            balance,
-            credentialsReady,
-            error: balanceError,
-            giftCredits,
-            isLoading: balanceLoading,
-            payg: snapshot.current.isPayg,
-          })}
-        </div>
+        viewerIsOwner ? (
+          <div aria-live="polite">
+            {accountBalanceContent({
+              balance,
+              credentialsReady,
+              error: balanceError,
+              giftCredits,
+              isLoading: balanceLoading,
+              payg: snapshot.current.isPayg,
+            })}
+          </div>
+        ) : null
       }
       cardManagementPending={cardManagementPending}
       credentials={{ appToken, kubeconfig }}
@@ -734,6 +746,7 @@ export function BillingPlan({
       replaceUrl={replaceUrl}
       snapshot={snapshot}
       stripeReturn={stripeReturn}
+      viewerIsOwner={viewerIsOwner}
     />
   );
 }

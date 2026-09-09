@@ -11,6 +11,7 @@ import { planUpgradeCeiling } from "@/features/billing/billing-plan-catalog";
 import { loadBillingPlans } from "@/features/billing/billing-plan-data";
 import { accountCreditsSwrKey } from "@/features/billing/billing-subscription-settlement";
 import { loadWorkspaceQuotaData } from "@/features/billing/billing-usage-data";
+import { useWorkspaceOwnerStanding } from "@/features/billing/use-workspace-owner-standing";
 import { observeWorkspaceQuotaSnapshotForInbox } from "@/features/notifications/quota-observation";
 import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
@@ -58,6 +59,11 @@ export function useStatusHintInputs(): StatusHintInputs {
   const credentialKey = kubeconfigCredentialKey(kubeconfig);
 
   const subscription = useWorkspaceSubscriptionSummary({
+    refreshInterval: STATUS_HINT_REFRESH_INTERVAL_MS,
+  });
+  // Whose account the balance below belongs to (ADR-0082): the platform's
+  // mark on the namespace and the Owner verdict, judged on the server.
+  const owner = useWorkspaceOwnerStanding({
     refreshInterval: STATUS_HINT_REFRESH_INTERVAL_MS,
   });
   const swrOptions = {
@@ -135,6 +141,7 @@ export function useStatusHintInputs(): StatusHintInputs {
   const quotaRows = quota.data?.rows;
   const subscriptionSummary = subscription.data;
   const planCatalog = plans.data;
+  const ownerStanding = owner.data;
   return useMemo(
     () => ({
       availableBalanceMicroUnits:
@@ -144,6 +151,7 @@ export function useStatusHintInputs(): StatusHintInputs {
       lifetimeDeductionMicroUnits:
         balanceTerms?.lifetimeDeductionMicroUnits ?? null,
       now,
+      owner: ownerStanding ?? null,
       planCeiling: planCeilingFrom(subscriptionSummary, planCatalog),
       quota: quotaRows ?? null,
       subscription: subscriptionSummary ?? null,
@@ -151,6 +159,7 @@ export function useStatusHintInputs(): StatusHintInputs {
     [
       balanceTerms,
       now,
+      ownerStanding,
       planCatalog,
       quotaRows,
       subscriptionSummary,

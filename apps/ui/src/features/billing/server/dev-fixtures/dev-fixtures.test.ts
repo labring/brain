@@ -18,6 +18,7 @@ import {
   BILLING_DEV_SCENARIOS,
   formatBillingDevMockCookie,
 } from "../../dev-mock-cookie";
+import { parseWorkspaceOwnerStanding } from "../../workspace-owner";
 import { BILLING_ROUTES } from "../billing-route-table";
 import { judgeWorkspaceBillingStanding } from "../billing-standing-core";
 import { billingDevMockResponse, freeChatTurnsFixture } from "./index";
@@ -83,6 +84,8 @@ const CREDITLESS_SCENARIOS = new Set([
   "payg-debt",
   "payg-debt-deletion",
   "payg-debt-final",
+  "payg-member",
+  "payg-member-owner-debt",
 ]);
 
 function loadPlanForScenario(scenario: string) {
@@ -130,6 +133,9 @@ test("the free scenarios' standing grants no AI allowance — the fact the allow
     return judgeWorkspaceBillingStanding({
       account: await read("/account/v1alpha1/account"),
       credits: await read("/payment/v1alpha1/credits/info"),
+      owner: parseWorkspaceOwnerStanding(
+        await read(BILLING_ROUTES.workspaceOwner.upstreamPathname)
+      ),
       quota: await read("/account/v1alpha1/workspace/get-resource-quota"),
       subscription: await read("/account/v1alpha1/workspace-subscription/info"),
     });

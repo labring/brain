@@ -35,12 +35,24 @@ export function isAiProxyBillingRefusal(input: {
   return AI_PROXY_BILLING_REFUSAL_MESSAGE.test(body);
 }
 
+/**
+ * What a refusal body names: the paid source the pane's card speaks to,
+ * and the owner-balance wall when the balance is a Workspace Owner's the
+ * actor is not proven to be (ADR-0082) — the card then asks, no top-up.
+ */
+export interface AiProxyRefusalVoice {
+  paidSource: ChatPaidSource | null;
+  wall?: "owner-balance";
+}
+
 export function aiProxyBillingRefusedBody(
-  paidSource: ChatPaidSource | null
+  voice: AiProxyRefusalVoice | ChatPaidSource | null
 ): ChatApiErrorBody {
+  const detail: AiProxyRefusalVoice =
+    typeof voice === "object" && voice != null ? voice : { paidSource: voice };
   return {
     code: "ai_proxy_billing_refused",
-    detail: { paidSource },
+    detail,
     error: AI_PROXY_BILLING_REFUSED_MESSAGE,
   };
 }
@@ -53,7 +65,7 @@ export function aiProxyBillingRefusedBody(
  */
 export function chatStreamErrorText(
   error: unknown,
-  paidSource: ChatPaidSource | null
+  voice: AiProxyRefusalVoice | ChatPaidSource | null
 ): string {
   if (
     APICallError.isInstance(error) &&
@@ -62,7 +74,7 @@ export function chatStreamErrorText(
       status: error.statusCode,
     })
   ) {
-    return JSON.stringify(aiProxyBillingRefusedBody(paidSource));
+    return JSON.stringify(aiProxyBillingRefusedBody(voice));
   }
   return MASKED_STREAM_ERROR_TEXT;
 }

@@ -66,6 +66,7 @@ const INPUTS: StatusHintInputs = {
   availableBalanceMicroUnits: 5_000_000,
   lifetimeDeductionMicroUnits: 1_000_000,
   now: new Date(T0 * 1000),
+  owner: { isOwner: true, platformDebt: false },
   quota: null,
   subscription: null,
 };

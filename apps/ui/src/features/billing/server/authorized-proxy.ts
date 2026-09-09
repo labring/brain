@@ -81,6 +81,8 @@ function isBindingFailure(
 export type BillingActorAuthorization =
   | {
       ok: true;
+      /** The verified app-token `userCrName` (ADR-0082's Owner comparison). */
+      crName: string;
       encodedKubeconfig: string;
       /** The workspace the actor was verified in — the only one a write may name. */
       namespace: string;
@@ -122,6 +124,7 @@ export async function authorizeBillingActor(
     return { ok: false, response: authenticationRequired() };
   }
   return {
+    crName: authorization.actorBinding.crName,
     encodedKubeconfig,
     namespace: authorization.namespace,
     ok: true,

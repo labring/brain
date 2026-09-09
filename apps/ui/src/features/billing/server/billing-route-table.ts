@@ -109,6 +109,12 @@ export const BILLING_ROUTES = {
     apiPath: "/api/billing/workspace-consumption",
     upstreamPathname: "/account/v1alpha1/costs/workspace/consumption",
   },
+  // Brain's own read (ADR-0082): the Workspace Owner standing off the
+  // namespace, judged with the verified crName — no account-service upstream.
+  workspaceOwner: {
+    apiPath: "/api/billing/workspace-owner",
+    upstreamPathname: "brain:workspace/owner",
+  },
   workspaceQuota: {
     apiPath: "/api/billing/workspace-quota",
     upstreamPathname: "/account/v1alpha1/workspace/get-resource-quota",

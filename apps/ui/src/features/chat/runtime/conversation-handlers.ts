@@ -5,7 +5,10 @@ import {
   authorizePersonalResourceRequest,
   supersededBindingResponse,
 } from "@/lib/personal-resource-http";
-import type { VerifyKubeconfigNamespace } from "@/lib/request-kubeconfig-auth";
+import {
+  encodedKubeconfigFromRequest,
+  type VerifyKubeconfigNamespace,
+} from "@/lib/request-kubeconfig-auth";
 import { verifiedPersonalResourceActor } from "@/lib/verified-personal-actor";
 import type { FreeTierState } from "../persistence/types";
 import {
@@ -49,6 +52,8 @@ export interface AssistantConversationHandlerDependencies {
   resolveFreeTier: (input: {
     actor: VerifiedAssistantConversationActor;
     cookieHeader: string | null;
+    /** The request kubeconfig, URL-encoded — the Owner read needs it (ADR-0082). */
+    encodedKubeconfig: string;
   }) => Promise<FreeTierState>;
   verify?: VerifyKubeconfigNamespace;
 }
@@ -171,6 +176,7 @@ export function createAssistantConversationHandlers(
           dependencies.resolveFreeTier({
             actor: authorization.actor,
             cookieHeader: request.headers.get("cookie"),
+            encodedKubeconfig: encodedKubeconfigFromRequest(request),
           }),
         ]);
         return Response.json({ ...payload, freeTier });

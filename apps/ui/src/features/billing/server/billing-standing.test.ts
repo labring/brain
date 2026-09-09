@@ -4,13 +4,15 @@ import {
   BILLING_DEV_MOCK_COOKIE,
   type BillingDevScenario,
 } from "@/features/billing/dev-mock-cookie";
-
+import { parseWorkspaceOwnerStanding } from "@/features/billing/workspace-owner";
 import { debtSuspendsWorkspace } from "./billing-standing-core";
 import {
   type BillingPayloadFetch,
   readWorkspaceBillingStanding,
 } from "./billing-standing-reader";
+
 import { billingDevMockResponse } from "./dev-fixtures";
+import { WORKSPACE_OWNER_FIXTURE_PATHNAME } from "./dev-fixtures/pathnames";
 
 /**
  * Pins the standing judgment to the billing Dev Mock scenarios through the
@@ -21,7 +23,7 @@ import { billingDevMockResponse } from "./dev-fixtures";
 
 function fixtureFetch(scenario: BillingDevScenario): BillingPayloadFetch {
   return async (pathname, body) => {
-    const request = new Request(`http://brain.internal${pathname}`, {
+    const request = new Request("http://brain.internal/billing-dev-mock", {
       body: JSON.stringify(body),
       headers: { cookie: `${BILLING_DEV_MOCK_COOKIE}=${scenario}` },
       method: "POST",
@@ -35,9 +37,16 @@ function fixtureFetch(scenario: BillingDevScenario): BillingPayloadFetch {
 }
 
 function read(scenario: BillingDevScenario) {
+  const fetchPayload = fixtureFetch(scenario);
   return readWorkspaceBillingStanding(
     { regionDomain: "mock.sealos.run", workspace: "ns-test" },
-    fixtureFetch(scenario)
+    fetchPayload,
+    async () =>
+      parseWorkspaceOwnerStanding(
+        await fetchPayload(WORKSPACE_OWNER_FIXTURE_PATHNAME, {
+          workspace: "ns-test",
+        })
+      )
   );
 }
 
@@ -102,12 +111,30 @@ describe("workspace billing standing through the billing fixtures", () => {
     );
   });
 
+  it("payg-member does not read the member's own empty Account Balance as the workspace's debt (ADR-0082)", async () => {
+    const standing = await read("payg-member");
+    expect(standing.isOwner).toBe(false);
+    expect(standing.availableBalanceMicroUnits).toBeLessThan(0);
+    expect(standing.accountDebt).toBe(false);
+    expect(debtSuspendsWorkspace(standing)).toBe(false);
+  });
+
+  it("payg-member-owner-debt voices the Owner's suspension to a member whose own Account Balance is positive", async () => {
+    const standing = await read("payg-member-owner-debt");
+    expect(standing.isOwner).toBe(false);
+    expect(standing.availableBalanceMicroUnits).toBeGreaterThan(0);
+    expect(standing.accountDebt).toBe(true);
+    expect(debtSuspendsWorkspace(standing)).toBe(true);
+  });
+
   it("a fetcher that throws leaves every fact unknown instead of failing", async () => {
     const standing = await readWorkspaceBillingStanding(
       { regionDomain: "mock.sealos.run", workspace: "ns-test" },
-      () => Promise.reject(new Error("upstream down"))
+      () => Promise.reject(new Error("upstream down")),
+      () => Promise.reject(new Error("cluster down"))
     );
     expect(standing.accountDebt).toBeNull();
+    expect(standing.isOwner).toBeNull();
     expect(standing.paidSource).toBeNull();
     expect(standing.quotaKnown).toBe(false);
   });

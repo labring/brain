@@ -1,6 +1,8 @@
 import {
+  accountDebtByOwner,
   accountDebtFromMoney,
   accountDebtSuspends,
+  MEMBER_ACCOUNT_DEBT_VOICE,
 } from "@/features/billing/account-debt";
 import {
   type BillingCta,
@@ -19,6 +21,7 @@ import {
   quotaResourceNoun,
   UNIVERSAL_DEPLOYABLE_QUOTA_TYPES,
 } from "@/features/billing/billing-usage-data";
+import type { WorkspaceOwnerStanding } from "@/features/billing/workspace-owner";
 import type { NotificationCTA } from "@/features/shell/app-sidebar-notifications-model";
 import { DAY_MS } from "@/lib/time";
 
@@ -38,8 +41,12 @@ export type StatusHintId =
 export type StatusHintTone = BillingSurfaceTone;
 
 export interface StatusHint {
-  /** The fix, deep-linking to the page that solves the problem. */
-  cta: NotificationCTA;
+  /**
+   * The fix, deep-linking to the page that solves the problem. Absent when
+   * the viewer cannot apply it — a member told of the Owner's debt gets
+   * the ask, not a Top up (ADR-0082).
+   */
+  cta?: NotificationCTA;
   description: string;
   /** Critical, blocking, system-condition hints get no close button. */
   dismissible: boolean;
@@ -62,6 +69,12 @@ export interface StatusHintInputs {
   /** Lifetime deductions — zero means the account has never been billed. */
   lifetimeDeductionMicroUnits: number | null;
   now: Date;
+  /**
+   * The Workspace Owner standing (ADR-0082): whether the viewer is the
+   * Owner and whether the platform has marked the workspace suspended for
+   * debt. Null while unread — the balance above is then a stranger's fact.
+   */
+  owner: WorkspaceOwnerStanding | null;
   /**
    * Whether the current plan tops the catalog (no upgrade target) — the one
    * fact that demotes a quota hint's plan CTA; absent or null while unknown.
@@ -176,28 +189,38 @@ const ACCOUNT_DEBT_HINT: StatusHint = {
   tone: "destructive",
 };
 
+/** The same state voiced to a Workspace Actor who is not the Owner (ADR-0082). */
+const MEMBER_ACCOUNT_DEBT_HINT: StatusHint = {
+  description: MEMBER_ACCOUNT_DEBT_VOICE.description,
+  dismissible: false,
+  id: "account-debt",
+  title: MEMBER_ACCOUNT_DEBT_VOICE.title,
+  tone: "destructive",
+};
+
 /**
  * Whether Account Debt suspends this workspace — the state, shared with the
  * Deploy Billing Notice so the banner and the notice can never disagree.
- * The platform's debt pipeline stops only Pay-As-You-Go workspaces (a
- * subscribed workspace's resources ride its plan, and its zero balance must
- * not be voiced as debt — ADR-0068), and its state machine skips accounts
- * that have never been billed, so the state holds only where the platform
- * would actually suspend. The PAYG gate itself is `accountDebtSuspends`,
- * the one function the server-side standing also judges by (ADR-0070).
+ * The debt is the Workspace Owner's (ADR-0082): the platform's suspension
+ * mark on the namespace speaks for everyone, and the viewer's own balance
+ * speaks only when the viewer is the Owner. The platform's debt pipeline
+ * stops only Pay-As-You-Go workspaces (a subscribed workspace's resources
+ * ride its plan, and its zero balance must not be voiced as debt —
+ * ADR-0068), and its state machine skips accounts that have never been
+ * billed, so the state holds only where the platform would actually
+ * suspend. The PAYG gate itself is `accountDebtSuspends`, the one function
+ * the server-side standing also judges by (ADR-0070).
  */
 export function accountDebtHolds(
   inputs: Pick<
     StatusHintInputs,
     | "availableBalanceMicroUnits"
     | "lifetimeDeductionMicroUnits"
+    | "owner"
     | "subscription"
   >
 ): boolean | null {
-  const { subscription } = inputs;
-  // A PAYG workspace the platform already reports in DEBT is the fact itself.
-  const platformReported =
-    subscription?.isPayg === true && subscription.lifecycle === "payment-due";
+  const { owner, subscription } = inputs;
   const money =
     inputs.availableBalanceMicroUnits == null ||
     inputs.lifetimeDeductionMicroUnits == null
@@ -207,9 +230,17 @@ export function accountDebtHolds(
           lifetimeDeductionMicroUnits: inputs.lifetimeDeductionMicroUnits,
         });
   return accountDebtSuspends({
-    accountDebt: platformReported ? true : money,
+    accountDebt: owner == null ? null : accountDebtByOwner({ money, owner }),
     isPayg: subscription == null ? null : subscription.isPayg,
   });
+}
+
+/**
+ * The Account Debt hint for the viewer: the Owner keeps the top-up voice;
+ * anyone not proven to be the Owner gets the ask (ADR-0082).
+ */
+function accountDebtHint(owner: WorkspaceOwnerStanding | null): StatusHint {
+  return owner?.isOwner === true ? ACCOUNT_DEBT_HINT : MEMBER_ACCOUNT_DEBT_HINT;
 }
 
 function quotaFullHint(
@@ -293,7 +324,7 @@ export function evaluateStatusHints(
   const debt = accountDebtHolds(inputs);
   let accountDebt: StatusHint | null | undefined;
   if (debt != null) {
-    accountDebt = debt ? ACCOUNT_DEBT_HINT : null;
+    accountDebt = debt ? accountDebtHint(inputs.owner) : null;
   }
   const outcomes: Record<StatusHintId, StatusHint | null | undefined> = {
     "account-debt": accountDebt,

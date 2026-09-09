@@ -680,9 +680,15 @@ The Billing Region this Brain deployment belongs to. It is a deployment-declared
 
 _Avoid_: first region, default region, regions[0].
 
+### Workspace Owner
+
+The account that holds a workspace: the one whose Account Balance a Pay-As-You-Go workspace's metered usage settles against and whose Account Debt suspends it. Every workspace has exactly one; everyone else acting in it holds a workspace role (manager, developer) and is a Workspace Actor there, never its Owner. Account Balance, Gift Credit, and Account Debt are the Owner's facts, so a billing warning voiced inside a workspace judges the Owner's account, not the acting user's — a member's own balance says nothing about the workspace's standing, and the fix a member is shown can never be "top up", since only the Owner can.
+
+_Avoid_: creator, admin, namespace owner, payer, current user (for the workspace's account).
+
 ### Account Balance
 
-The user's account-level funds held by account-service, presented as the available amount: balance minus accumulated deductions, plus every usable credit — Gift Credit and any plan-granted credit alike — the same formula the platform's own debt pipeline judges an account by, so the number a user sees and the number that suspends them never disagree. Account Balance is a composite: prepaid cash (the rechargeable part, able to offset subscription charges) plus promotional credit that is not cash. It is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. It is not a Free Chat Turns count, a quota, or an entitlement counter.
+An account's funds held by account-service, presented as the available amount: balance minus accumulated deductions, plus every usable credit — Gift Credit and any plan-granted credit alike — the same formula the platform's own debt pipeline judges an account by, so the number a user sees and the number that suspends them never disagree. Account Balance is a composite: prepaid cash (the rechargeable part, able to offset subscription charges) plus promotional credit that is not cash. It is account-scoped, not per-workspace, and read-only in Brain — recharging it is not a Brain capability. Inside a workspace, the balance that matters is the Workspace Owner's; the acting user's own balance is a different account's fact and decides nothing about that workspace. It is not a Free Chat Turns count, a quota, or an entitlement counter.
 
 _Avoid_: credits, wallet, free balance, top-up balance.
 
@@ -772,7 +778,7 @@ _Avoid_: PAYG plan, pay-as-you-go plan, free mode, plan named "PAYG".
 
 ### Account Debt
 
-The state of an Account Balance that has fallen to or below zero — the platform's debt pipeline treats only a strictly positive available amount as in good standing: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. An account that has never been billed is exempt: with zero lifetime deductions the platform's debt pipeline skips it, so a fresh zero-balance account stays in good standing and is never in Account Debt. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing, and because the platform suspends only PAYG workspaces for it, the warning is voiced only on a Pay-As-You-Go workspace — a subscribed workspace's zero balance is not spoken of as debt.
+The state of an Account Balance that has fallen to or below zero — the platform's debt pipeline treats only a strictly positive available amount as in good standing: the platform suspends the account's PAYG workspaces and, if the debt persists, deletes their resources through its own escalating debt pipeline — separate from the Deletion Countdown, which belongs to Workspace Subscription expiry. An account that has never been billed is exempt: with zero lifetime deductions the platform's debt pipeline skips it, so a fresh zero-balance account stays in good standing and is never in Account Debt. The platform reports it on a PAYG workspace as a debt status with no subscription and no timestamps, so no suspension or deletion date can be stated for it. Recovery is restoring the Account Balance (a Desktop top-up), never a subscription action — an Account Debt warning must not speak of a subscription expiring or renewing, and because the platform suspends only PAYG workspaces for it, the warning is voiced only on a Pay-As-You-Go workspace — a subscribed workspace's zero balance is not spoken of as debt. The account judged is the Workspace Owner's: a member's own debt is not this workspace's Account Debt, and the Owner's debt is, whoever is looking.
 
 _Avoid_: subscription expired / plan expired (for a PAYG workspace), payment due (user-facing), negative balance (as the state's name), arrears.
 

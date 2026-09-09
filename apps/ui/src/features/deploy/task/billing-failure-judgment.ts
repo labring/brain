@@ -18,6 +18,10 @@ import type { DeployTaskFailureReason } from "./schema";
 export interface DeployBillingActor {
   /** Cookie header of the launching request — carries the billing Dev Mock in dev/demo. */
   cookieHeader?: string | null;
+  /** The verified app-token `userCrName` — the Workspace Owner comparison (ADR-0082). */
+  crName: string | null;
+  /** The launching request's kubeconfig, URL-encoded — reads the namespace's platform marks. */
+  encodedKubeconfig?: string | null;
   userId: string | null;
   userUid: string;
 }
@@ -37,6 +41,8 @@ export async function judgeDeployBillingFailure(input: {
   try {
     const standing = await judgeWorkspaceBillingStandingForActor({
       cookieHeader: input.actor.cookieHeader,
+      crName: input.actor.crName,
+      encodedKubeconfig: input.actor.encodedKubeconfig ?? null,
       userId: input.actor.userId,
       userUid: input.actor.userUid,
       workspace: input.namespace,

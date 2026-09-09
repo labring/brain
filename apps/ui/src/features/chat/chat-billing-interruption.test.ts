@@ -90,9 +90,34 @@ describe("copy forks by Chat Billing Mode", () => {
       cta: { destination: "top-up", label: "Top up balance" },
       title: "Account balance in debt",
     });
-    expect(chatBillingInterruptionCopy("balance").cta.label).toBe(
+    expect(chatBillingInterruptionCopy("balance").cta?.label).toBe(
       "Top up balance"
     );
+  });
+
+  it("reads the owner-balance wall off a refusal and speaks the ask, no top-up (ADR-0082)", () => {
+    const refused = new Error(
+      JSON.stringify({
+        code: "ai_proxy_billing_refused",
+        detail: { paidSource: "balance", wall: "owner-balance" },
+        error: "refused",
+      })
+    );
+    expect(chatBillingInterruptionFromError(refused, null)).toEqual({
+      paidSource: "balance",
+      wall: "owner-balance",
+    });
+    expect(chatBillingInterruptionCopy("balance", "owner-balance")).toEqual({
+      body: "The reply stopped because the owner's account balance can't cover AI usage. Ask the workspace owner to top up.",
+      title: "Message not sent — owner's balance in debt",
+    });
+  });
+
+  it("tells a non-owner the Owner's balance is in debt, with the ask and no top-up (ADR-0082)", () => {
+    expect(chatBillingWallCopy("owner-balance")).toEqual({
+      body: "Chat is paused because the owner's account balance can't cover AI usage. Ask the workspace owner to top up.",
+      title: "Workspace suspended — owner's balance in debt",
+    });
   });
 
   it("speaks the allowance causes truthfully, both pointing at the plan (ADR-0073)", () => {

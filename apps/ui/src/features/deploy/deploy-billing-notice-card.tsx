@@ -43,7 +43,7 @@ export function DeployBillingNoticeCard({
     <BillingCalloutCard
       action={
         <span className="flex flex-wrap items-center gap-2">
-          <BillingCalloutLink cta={notice.cta} />
+          {notice.cta == null ? null : <BillingCalloutLink cta={notice.cta} />}
           {notice.secondaryCta == null ? null : (
             <BillingCalloutSecondaryLink cta={notice.secondaryCta} />
           )}

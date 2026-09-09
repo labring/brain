@@ -9,6 +9,8 @@ import {
 } from "@/features/dev-mock/server/resolve";
 import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
+import { WORKSPACE_OWNER_FIXTURE_PATHNAME } from "./pathnames";
+
 /**
  * Billing dev-mock fixtures (dev and demo builds only, permanent dev
  * infrastructure — `NEXT_PUBLIC_DEV_TWEAKS=1` marks a demo image).
@@ -53,11 +55,43 @@ const MOCK_WORKSPACES = {
   pro: "ns-mock-pro",
 } as const;
 
-/** Scenarios whose account sits in debt (deductions outrun the balance). */
+/**
+ * Scenarios whose *caller's* account sits in debt (deductions outrun the
+ * balance). `payg-member` is the false alarm ADR-0082 removes: a member
+ * with an empty Account Balance inside a workspace someone else funds.
+ */
 const DEBT_SCENARIOS = new Set<BillingDevScenario>([
   "payg-debt",
   "payg-debt-deletion",
   "payg-debt-final",
+  "payg-member",
+  "payment-due",
+  "payment-due-deletion",
+  "payment-due-final",
+]);
+
+/**
+ * Member of another account's PAYG workspace (ADR-0082): the caller is not
+ * the Workspace Owner, so their own balance decides nothing. `payg-member`
+ * has the Owner in good standing (and the member's own Account Balance empty);
+ * `payg-member-owner-debt` has the platform's suspension mark on the
+ * namespace (and the member's own Account Balance positive).
+ */
+export const MEMBER_SCENARIOS = new Set<BillingDevScenario>([
+  "payg-member",
+  "payg-member-owner-debt",
+]);
+
+/**
+ * Scenarios whose namespace carries the platform's `debt.sealos/status`
+ * suspension mark — the debt ladder past its first rung, every payment-due
+ * rung (the subscription pipeline writes the same mark), and the member
+ * scene that voices the Owner's debt.
+ */
+const PLATFORM_SUSPENDED_SCENARIOS = new Set<BillingDevScenario>([
+  "payg-debt-deletion",
+  "payg-debt-final",
+  "payg-member-owner-debt",
   "payment-due",
   "payment-due-deletion",
   "payment-due-final",
@@ -69,6 +103,7 @@ export const PAYG_SCENARIOS = new Set<BillingDevScenario>([
   "payg-debt",
   "payg-debt-deletion",
   "payg-debt-final",
+  ...MEMBER_SCENARIOS,
 ]);
 
 /** Scenarios with no saved card: PAYG modes and never-paid Free plans. */
@@ -150,7 +185,7 @@ function subscriptionPayload(
   scenario: BillingDevScenario,
   workspace: string
 ): Record<string, unknown> {
-  if (scenario === "payg") {
+  if (scenario === "payg" || MEMBER_SCENARIOS.has(scenario)) {
     // The upstream embeds a nil subscription and serializes only the type.
     return { type: "PAYG" };
   }
@@ -605,6 +640,15 @@ function appCostsPayload(context: FixtureContext): unknown {
 }
 
 const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
+  // Brain's own read (ADR-0082): the Workspace Owner standing off the
+  // namespace's platform marks, answered under a Brain dispatch key.
+  [WORKSPACE_OWNER_FIXTURE_PATHNAME]: ({ scenario }) =>
+    scenario === "status-unknown"
+      ? { isOwner: null, platformDebt: null }
+      : {
+          isOwner: !MEMBER_SCENARIOS.has(scenario),
+          platformDebt: PLATFORM_SUSPENDED_SCENARIOS.has(scenario),
+        },
   "/account/v1alpha1/account": ({ scenario }) => ({
     account: DEBT_SCENARIOS.has(scenario)
       ? { Balance: 5_000_000, DeductionBalance: 11_320_000 }

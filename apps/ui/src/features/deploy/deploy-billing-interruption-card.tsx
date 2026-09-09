@@ -26,7 +26,9 @@ export function DeploymentBillingInterruptionCard({
     <BillingCalloutCard
       action={
         <span className="flex flex-wrap items-center gap-2">
-          <BillingCalloutLink cta={interruption.cta} />
+          {interruption.cta == null ? null : (
+            <BillingCalloutLink cta={interruption.cta} />
+          )}
           {interruption.secondaryCta == null ? null : (
             <BillingCalloutSecondaryLink cta={interruption.secondaryCta} />
           )}

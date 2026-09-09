@@ -1,10 +1,16 @@
 import {
+  UNKNOWN_WORKSPACE_OWNER_STANDING,
+  type WorkspaceOwnerStanding,
+} from "@/features/billing/workspace-owner";
+
+import {
   judgeWorkspaceBillingStanding,
   type WorkspaceBillingStanding,
 } from "./billing-standing-core";
 
 /**
- * Reads the four account-service bodies a billing standing is judged from.
+ * Reads the four account-service bodies a billing standing is judged from,
+ * plus the Workspace Owner standing off the namespace (ADR-0082).
  * The fetcher is injected: production signs an internal JWT per call
  * (ADR-0060), dev/demo answers from the billing Dev Mock's fixtures, tests
  * hand in either. A read that fails, times out, or is not configured
@@ -25,6 +31,9 @@ export type BillingPayloadFetch = (
   body: Record<string, unknown>
 ) => Promise<unknown>;
 
+/** Reads the Workspace Owner standing; resolves unknown on any failure. */
+export type WorkspaceOwnerStandingRead = () => Promise<WorkspaceOwnerStanding>;
+
 export interface ReadWorkspaceBillingStandingInput {
   regionDomain: string;
   workspace: string;
@@ -38,12 +47,24 @@ async function quietly(read: Promise<unknown>): Promise<unknown> {
   }
 }
 
+async function quietlyOwner(
+  read: WorkspaceOwnerStandingRead
+): Promise<WorkspaceOwnerStanding> {
+  try {
+    return await read();
+  } catch {
+    return UNKNOWN_WORKSPACE_OWNER_STANDING;
+  }
+}
+
 export async function readWorkspaceBillingStanding(
   input: ReadWorkspaceBillingStandingInput,
-  fetchPayload: BillingPayloadFetch
+  fetchPayload: BillingPayloadFetch,
+  readOwner: WorkspaceOwnerStandingRead
 ): Promise<WorkspaceBillingStanding> {
   const workspace = input.workspace.trim();
-  const [account, credits, quota, subscription] = await Promise.all([
+  const [owner, account, credits, quota, subscription] = await Promise.all([
+    quietlyOwner(readOwner),
     quietly(fetchPayload(ACCOUNT_PATHNAME, {})),
     quietly(fetchPayload(CREDITS_INFO_PATHNAME, {})),
     quietly(fetchPayload(RESOURCE_QUOTA_PATHNAME, { workspace })),
@@ -57,6 +78,7 @@ export async function readWorkspaceBillingStanding(
   return judgeWorkspaceBillingStanding({
     account,
     credits,
+    owner,
     quota,
     subscription,
   });

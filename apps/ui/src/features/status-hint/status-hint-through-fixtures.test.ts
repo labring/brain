@@ -10,6 +10,7 @@ import {
   type BillingDevScenario,
 } from "@/features/billing/dev-mock-cookie";
 import { scenarioTestFetch } from "@/features/billing/server/dev-fixtures/scenario-test-fetch";
+import { loadWorkspaceOwnerStanding } from "@/features/billing/workspace-owner-data";
 
 import {
   evaluateStatusHints,
@@ -39,17 +40,19 @@ async function hintFor(scenario: BillingDevScenario) {
     ...CREDENTIALS,
     namespace: `${CREDENTIALS.namespace}-status-${scenario}`,
   };
-  const [subscription, balance, credits, quota] = await Promise.all([
+  const [subscription, balance, credits, quota, owner] = await Promise.all([
     loadWorkspaceSubscriptionSummary(CREDENTIALS, { fetch }),
     loadAccountBalanceTerms(CREDENTIALS, fetch),
     loadAccountCredits(CREDENTIALS, fetch),
     loadWorkspaceQuotaUsage(quotaCredentials, fetch),
+    loadWorkspaceOwnerStanding(CREDENTIALS, fetch),
   ]);
   const evaluation = evaluateStatusHints({
     availableBalanceMicroUnits:
       balance.cashMicroUnits + credits.usableMicroUnits,
     lifetimeDeductionMicroUnits: balance.lifetimeDeductionMicroUnits,
     now: new Date(),
+    owner,
     quota,
     subscription,
   });
@@ -76,6 +79,8 @@ const EXPECTED: Record<BillingDevScenario, StatusHintId | null> = {
   "payg-debt": "account-debt",
   "payg-debt-deletion": "account-debt",
   "payg-debt-final": "account-debt",
+  "payg-member": null,
+  "payg-member-owner-debt": "account-debt",
   "payment-due": "payment-due",
   "payment-due-deletion": "payment-due",
   "payment-due-final": "payment-due",
@@ -135,5 +140,5 @@ test("free-expiring sits inside the three-day trial notice", async () => {
   const { hint } = await hintFor("free-expiring");
   assert.equal(hint?.title, "Free trial ends in 3 days");
   assert.equal(hint?.tone, "info");
-  assert.equal(hint?.cta.href, "/billing?mode=upgrade");
+  assert.equal(hint?.cta?.href, "/billing?mode=upgrade");
 });
