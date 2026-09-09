@@ -6,11 +6,17 @@ import { z } from "zod";
 import { BILLING_JUDGMENT_TIMEOUT_MS } from "@/features/billing/server/judgment-budget";
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
+const devboxApproval = {
+  bash: "user-approval",
+  edit: "user-approval",
+  write: "user-approval",
+} as const;
 const actualAi = { ...(await import("ai")) };
 let forcedOutcome: "failed" | "aborted" | "unknown" | undefined;
 mock.module("ai", () => ({
   ...actualAi,
   streamText: (...args: Parameters<typeof actualAi.streamText>) => {
+    expect(args[0].toolApproval).toEqual(devboxApproval);
     const result = actualAi.streamText(...args);
     const respond = result.toUIMessageStreamResponse.bind(result);
     result.toUIMessageStreamResponse = (options) =>
@@ -527,6 +533,7 @@ mock.module("@/features/chat/runtime/tools", () => ({
     }
     return Promise.resolve({
       systemPrompt: "Test system prompt",
+      toolApproval: devboxApproval,
       tools: { getDeployTaskStatus: serverTool, navigateApp: clientTool },
     });
   },
