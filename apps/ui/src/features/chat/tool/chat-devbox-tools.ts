@@ -109,7 +109,6 @@ export function createChatDevboxTools(options: CreateChatDevboxToolsOptions) {
   const write = tool({
     description: `Create or replace a UTF-8 file under ${CHAT_DEVBOX_WORKSPACE}, up to 50 KiB. Parent directories are created. Symlinks and hard links are rejected; replacement is atomic. Use edit for precise changes.`,
     inputSchema: writeInputSchema,
-    needsApproval: true,
     execute: (input, executionOptions) =>
       executeRemote(
         lazySandbox,
@@ -121,7 +120,6 @@ export function createChatDevboxTools(options: CreateChatDevboxToolsOptions) {
   const edit = tool({
     description: `Apply up to 32 exact, unique, non-overlapping replacements under ${CHAT_DEVBOX_WORKSPACE}. Both original and resulting files must fit 50 KiB. Symlinks and hard links are rejected. BOM and line endings are preserved.`,
     inputSchema: editInputSchema,
-    needsApproval: true,
     execute: (input, executionOptions) =>
       executeRemote(
         lazySandbox,
@@ -131,9 +129,8 @@ export function createChatDevboxTools(options: CreateChatDevboxToolsOptions) {
       ),
   });
   const bash = tool({
-    description: `Run an approved bash command starting in ${CHAT_DEVBOX_WORKSPACE}, with normal bash login-shell semantics. Use product tools first. Each output stream keeps at most its last 2000 lines and 50 KiB inside the Devbox. Timeout includes waiting for other tools in this Devbox; background descendants are stopped when the call ends.`,
+    description: `Run a bash command starting in ${CHAT_DEVBOX_WORKSPACE}, with normal bash login-shell semantics. Use product tools first. Each output stream keeps at most its last 2000 lines and 50 KiB inside the Devbox. Timeout includes waiting for other tools in this Devbox; background descendants are stopped when the call ends.`,
     inputSchema: bashInputSchema,
-    needsApproval: true,
     execute: (input, executionOptions) =>
       executeRemote(
         lazySandbox,

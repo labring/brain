@@ -48,11 +48,7 @@ const emitGenUISpec = tool({
 
 export interface ChatToolset {
   systemPrompt: string;
-  toolApproval: {
-    bash: "user-approval";
-    edit: "user-approval";
-    write: "user-approval";
-  };
+  toolApproval: typeof CHAT_TOOL_APPROVAL;
   tools: ToolSet;
 }
 

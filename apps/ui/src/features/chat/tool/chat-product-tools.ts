@@ -361,14 +361,12 @@ export function createChatProductTools(options: {
 
   const writeProductResource = tool({
     description: [
-      "Apply a confirmed Brain AP/DB product write through the direct product API.",
-      "This tool always requests browser UI approval before execution; call it only when the user has asked to apply the exact intended change.",
-      "If approval is missing, call draftProductResourceChange or ask for confirmation instead.",
+      "Apply a user-requested Brain AP/DB product write through the direct product API.",
+      "Call when the user has asked to apply the intended change; execute without an additional approval step.",
       "Public address/domain changes belong in the AP network intent.",
       "`name` must be the Kubernetes metadata.name — never a Resource Display Name; resolve display names via readProductResource first.",
     ].join(" "),
     inputSchema: productWriteInputSchema,
-    needsApproval: true,
     execute: (input) => {
       logChatToolIntention("writeProductResource", input.intention);
       return executeConfirmedProductWrite({

@@ -993,3 +993,48 @@ test("an empty or foreign X-Chat-Wall header is no wall", () => {
   assert.equal(chatWallCauseFromHeader(""), null);
   assert.equal(chatWallCauseFromHeader("plan"), null);
 });
+
+test("new user turns cancel legacy bash approvals without mutating stored input", () => {
+  const message: UIMessage = {
+    id: "minecraft-logs",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-bash",
+        toolCallId: "logs-call",
+        state: "approval-requested",
+        input: {
+          command: "kubectl -n ns-admin logs minecraft-tlkjdu-0 --tail=120",
+        },
+        approval: { id: "logs-approval" },
+      },
+    ],
+  };
+  assert.equal(
+    buildRecoveredAssistantMessageForInterruptedTools(message),
+    undefined
+  );
+  const recovered = buildRecoveredAssistantMessageForInterruptedTools(
+    message,
+    true
+  );
+  assert.ok(recovered);
+  assert.deepEqual(recovered.parts[0], {
+    ...message.parts[0],
+    state: "output-denied",
+    approval: {
+      id: "logs-approval",
+      approved: false,
+      reason: "Cancelled because the user sent a new message.",
+    },
+  });
+  assert.ok(message.parts[0]);
+  assert.equal(
+    isToolUIPart(message.parts[0]) && message.parts[0].state,
+    "approval-requested"
+  );
+  assert.equal(
+    buildRecoveredAssistantMessageForInterruptedTools(recovered, true),
+    undefined
+  );
+});

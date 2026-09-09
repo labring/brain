@@ -266,7 +266,7 @@ test("runtime lock coordinates toolsets and bash without blocking other actors",
   assert.equal(await readFile(path.join(root, "file"), "utf8"), "write");
 });
 
-test("schemas reject invalid inputs before exec and mutations require approval", async () => {
+test("schemas reject invalid inputs before exec without requesting approval", async () => {
   const toolkit = tools("schemas");
   const before = calls;
   for (const input of [
@@ -293,7 +293,7 @@ test("schemas reject invalid inputs before exec and mutations require approval",
   }
   assert.equal(calls, before);
   for (const name of ["write", "edit", "bash"] as const) {
-    assert.equal(toolkit[name].needsApproval, true);
+    assert.equal(Reflect.get(toolkit[name], "needsApproval"), undefined);
   }
   assert.equal(Reflect.get(toolkit.read, "needsApproval"), undefined);
   const controller = new AbortController();

@@ -1048,7 +1048,8 @@ const INTERRUPTED_TOOL_RECOVERY_ERROR =
  * The recovery never retries an approved side effect.
  */
 export function buildRecoveredAssistantMessageForInterruptedTools(
-  message: UIMessage
+  message: UIMessage,
+  cancelPendingApprovals = false
 ): UIMessage | undefined {
   if (message.role !== "assistant") {
     return undefined;
@@ -1056,6 +1057,24 @@ export function buildRecoveredAssistantMessageForInterruptedTools(
 
   let recovered = false;
   const parts = message.parts.map((part): UIMessagePart => {
+    if (
+      cancelPendingApprovals &&
+      isToolUIPart(part) &&
+      part.providerExecuted !== true &&
+      part.state === "approval-requested"
+    ) {
+      recovered = true;
+      return {
+        ...part,
+        state: "output-denied",
+        approval: {
+          ...part.approval,
+          approved: false,
+          reason: "Cancelled because the user sent a new message.",
+        },
+      } as UIMessagePart;
+    }
+
     if (
       isToolUIPart(part) &&
       part.providerExecuted !== true &&

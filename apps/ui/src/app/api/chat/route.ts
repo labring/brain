@@ -336,14 +336,17 @@ type PreparedIncomingChatMessage =
 
 function interruptedToolRecoveries(
   history: UIMessage[],
-  excludedMessageId?: string
+  excludedMessageId?: string,
+  cancelPendingApprovals = false
 ): PendingAssistantReplacement[] {
   return history.flatMap((storedMessage) => {
     if (storedMessage.id === excludedMessageId) {
       return [];
     }
-    const replacement =
-      buildRecoveredAssistantMessageForInterruptedTools(storedMessage);
+    const replacement = buildRecoveredAssistantMessageForInterruptedTools(
+      storedMessage,
+      cancelPendingApprovals
+    );
     return replacement == null
       ? []
       : [{ expected: storedMessage, replacement }];
@@ -385,7 +388,7 @@ function prepareIncomingChatMessage(
   }
 
   if (message.role === "user") {
-    const recoveries = interruptedToolRecoveries(history);
+    const recoveries = interruptedToolRecoveries(history, undefined, true);
     const conflict = incompleteToolHistoryResponse(
       projectAssistantReplacements(history, recoveries)
     );
