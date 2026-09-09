@@ -24,11 +24,15 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import { memo, type ReactNode, useState } from "react";
-
 import {
   formatToolDurationMs,
   readDurationMsFromToolMetadata,
 } from "./chat.tool-metrics";
+import {
+  bashInputSchema,
+  editInputSchema,
+  writeInputSchema,
+} from "./tool/devbox-tool-input";
 
 /** A `ToolUIPart` from the AI SDK, narrowed for our renderer. */
 export type ChatToolPart = UIMessage["parts"][number] & {
@@ -308,7 +312,7 @@ function readDevboxWriteApproval(
   intention: string | undefined
 ): DevboxApprovalInput | null {
   if (
-    (type !== "tool-write" && type !== "tool-writeFile") ||
+    type !== "tool-write" ||
     typeof value.path !== "string" ||
     typeof value.content !== "string"
   ) {
@@ -359,7 +363,16 @@ export function devboxApprovalInput(
   type: string,
   input: unknown
 ): DevboxApprovalInput | null {
-  if (input == null || typeof input !== "object") {
+  const schemas: Record<
+    string,
+    typeof bashInputSchema | typeof writeInputSchema | typeof editInputSchema
+  > = {
+    "tool-bash": bashInputSchema,
+    "tool-write": writeInputSchema,
+    "tool-edit": editInputSchema,
+  };
+  const schema = schemas[type];
+  if (schema === undefined || !schema.safeParse(input).success) {
     return null;
   }
   const value = input as {
@@ -628,6 +641,39 @@ function ChatToolApprovalCard({
         input={devboxInput}
         onRespond={onRespond}
       />
+    );
+  }
+  if (
+    ["tool-bash", "tool-write", "tool-edit", "tool-writeFile"].includes(
+      approval.type
+    )
+  ) {
+    return (
+      <div
+        className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3"
+        data-slot="chat-tool-approval-invalid"
+      >
+        <p className="text-foreground text-xs">
+          Cannot verify this operation. Reject it and request a new proposal.
+        </p>
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs">
+          {JSON.stringify(approval.input, null, 2)}
+        </pre>
+        <AppButton
+          onClick={() =>
+            onRespond?.({
+              approved: false,
+              id: approval.id,
+              reason: "Operation input could not be verified.",
+            })
+          }
+          size="sm"
+          type="button"
+          variant="quiet"
+        >
+          Deny
+        </AppButton>
+      </div>
     );
   }
   return (

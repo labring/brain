@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  ChatToolGroup,
   devboxApprovalInput,
   projectDeletionApprovalInput,
 } from "./chat.tool-group";
@@ -84,4 +87,36 @@ test("Devbox approval rejects malformed or unrelated inputs", () => {
     }),
     null
   );
+});
+
+test("invalid and legacy Devbox approvals render Deny without Approve", () => {
+  for (const type of [
+    "tool-bash",
+    "tool-write",
+    "tool-edit",
+    "tool-writeFile",
+  ] as const) {
+    const html = renderToStaticMarkup(
+      createElement(ChatToolGroup, {
+        partKeyPrefix: "invalid-approval",
+        parts: [
+          {
+            type,
+            state: "approval-requested",
+            toolCallId: "invalid",
+            approval: { id: "approval-1" },
+            input: {
+              intention: "review malformed operation",
+              path: "config",
+              content: "legacy",
+              edits: [],
+            },
+          },
+        ],
+      })
+    );
+    assert.ok(html.includes('data-slot="chat-tool-approval-invalid"'));
+    assert.ok(html.includes("Deny"));
+    assert.equal(html.includes(">Approve<"), false);
+  }
 });
