@@ -11,6 +11,7 @@ import {
   templateDeclaredEntries,
   templateEntryOpenPort,
   templateIngressHostsFromDocs,
+  templateIngressServiceNamesFromDocs,
   templateInstanceDefaults,
 } from "@/features/deploy/template-entries";
 import {
@@ -71,8 +72,21 @@ async function getObject(input: {
     if (input.signal?.aborted) {
       throw error;
     }
+    // An absent object is an answer (the App CR is looked up by a guessed
+    // name); any other failure is a degraded read worth a trace.
+    if (!isNotFoundError(error)) {
+      console.warn(
+        `[deploy-task] Could not read ${input.kind}/${input.name} in ${input.namespace} for template entries.`,
+        error
+      );
+    }
     return null;
   }
+}
+
+/** `fetcher` throws `API <status>: …` for a non-OK response. */
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("API 404");
 }
 
 async function getObjects(input: {
@@ -217,6 +231,7 @@ async function resolveProviderEntries(
   };
   const source = await getTemplateSource({
     encodedKubeconfig: input.kubeconfig,
+    signal: input.signal,
     templateName: input.templateName,
   });
   const declared = renderableDeclaredEntries(
@@ -227,22 +242,29 @@ async function resolveProviderEntries(
     ...resourceNames(input.resources, APP_RESOURCE_TYPES),
     input.instanceName,
   ]);
-  const [ingresses, services, apps, instance] = await Promise.all([
+  const [ingresses, apps, instance] = await Promise.all([
     getObjects({
       ...read,
       kind: "ingresses",
       names: resourceNames(input.resources, INGRESS_RESOURCE_TYPES),
-    }),
-    getObjects({
-      ...read,
-      kind: "services",
-      names: resourceNames(input.resources, SERVICE_RESOURCE_TYPES),
     }),
     getObjects({ ...read, kind: "apps", names: [...appNames] }),
     declared.open === undefined && declared.share === undefined
       ? Promise.resolve(null)
       : getObject({ ...read, kind: "instances", name: input.instanceName }),
   ]);
+  // The provider's summary often lists Ingresses and no Service, so the
+  // Services are the ones the Ingress backends name, plus any it did list.
+  const services = await getObjects({
+    ...read,
+    kind: "services",
+    names: [
+      ...new Set([
+        ...templateIngressServiceNamesFromDocs(ingresses),
+        ...resourceNames(input.resources, SERVICE_RESOURCE_TYPES),
+      ]),
+    ],
+  });
   const rendered =
     declared.open === undefined && declared.share === undefined
       ? {}
@@ -272,12 +294,24 @@ async function resolveProviderEntries(
         objectValue(candidate.metadata)?.name === target?.serviceName
     );
     if (target !== undefined && service !== undefined) {
-      await presetDefaultOpenPort({
-        ...read,
-        port: target.port,
-        service,
-        serviceName: target.serviceName,
-      });
+      // The annotation is bookkeeping for the AP's Open control; a failed
+      // PATCH must not erase the entries the reads already resolved.
+      try {
+        await presetDefaultOpenPort({
+          ...read,
+          port: target.port,
+          service,
+          serviceName: target.serviceName,
+        });
+      } catch (error) {
+        if (input.signal?.aborted) {
+          throw error;
+        }
+        console.warn(
+          `[deploy-task] Could not preset the Default Open Port on Service ${target.serviceName} for instance ${input.instanceName}.`,
+          error
+        );
+      }
     }
   }
   return entries.open === undefined && entries.share === undefined

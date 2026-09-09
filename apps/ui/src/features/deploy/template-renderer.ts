@@ -20,6 +20,7 @@ import {
   type TemplateEntryUrls,
   templateDeclaredEntries,
 } from "./template-entries";
+import { templateHeaderFromInlineYaml } from "./template-inline-yaml";
 import type {
   TemplateDefaultValue,
   TemplateSourceInput,
@@ -1630,32 +1631,6 @@ function normalizeTemplateInputs(value: unknown): TemplateSourceInput[] {
   return Object.entries(record).map(([key, item]) =>
     templateInputFromRecord(key, asRecord(item) ?? {})
   );
-}
-
-export function templateHeaderFromInlineYaml(yaml: string): {
-  headerYaml: string;
-  resourceSourceOffset: number;
-} {
-  const marker = /^---[\t ]*(?:#.*)?\r?$/gm;
-  const firstMarker = marker.exec(yaml);
-  if (firstMarker == null) {
-    return { headerYaml: yaml, resourceSourceOffset: yaml.length };
-  }
-  const resourceMarker =
-    yaml.slice(0, firstMarker.index).trim() === ""
-      ? marker.exec(yaml)
-      : firstMarker;
-  if (resourceMarker == null) {
-    return { headerYaml: yaml, resourceSourceOffset: yaml.length };
-  }
-  const resourceSourceOffset =
-    resourceMarker.index +
-    resourceMarker[0].length +
-    (yaml[resourceMarker.index + resourceMarker[0].length] === "\n" ? 1 : 0);
-  return {
-    headerYaml: yaml.slice(0, resourceMarker.index),
-    resourceSourceOffset,
-  };
 }
 
 export function templateSourceFromInlineYaml(yaml: string): {

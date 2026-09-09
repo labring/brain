@@ -1,5 +1,7 @@
+import YAML from "yaml";
 import { BRAIN_DEFAULT_OPEN_PORT_ANNOTATION } from "@/lib/brain-labels";
 import { ingressEntryPath } from "./task/ingress-entry-path";
+import { templateHeaderFromInlineYaml } from "./template-inline-yaml";
 
 /**
  * Template Entries (ADR 0081): the `spec.entries` a Sealos Template may
@@ -15,9 +17,13 @@ import { ingressEntryPath } from "./task/ingress-entry-path";
  *   automatic Default Open Port rule takes over downstream.
  * - Share: the declared `entries.share` only. It never falls back to the App
  *   CR URL, which may embed a secret (`#token=`, `/invite/<code>`); the
- *   record falls back to the Open URL instead.
+ *   record falls back to the Open URL instead, and never to one that
+ *   carries a fragment.
  * - An entry is kept only when an Ingress of the same deployment serves its
  *   host: Brain never surfaces an address the deployment did not create.
+ * - Credentials disqualify any entry. A fragment disqualifies Share only: it
+ *   never reaches the server, but a desktop-launcher Open URL (`#token=`)
+ *   legitimately carries one.
  */
 
 export interface TemplateDeclaredEntries {
@@ -64,11 +70,20 @@ function portNumber(value: unknown): number | undefined {
     : undefined;
 }
 
-/** The raw `spec.entries` strings of a Template object, before rendering. */
+/**
+ * The raw `spec.entries` strings of a Template, before rendering. The
+ * provider hands the template back either as the inline YAML string or as
+ * the parsed Template object; both shapes are read, so `spec.entries` is
+ * never dropped by a shape mismatch.
+ */
 export function templateDeclaredEntries(
   templateYaml: unknown
 ): TemplateDeclaredEntries {
-  const spec = objectValue(objectValue(templateYaml)?.spec);
+  const template =
+    typeof templateYaml === "string"
+      ? templateObjectFromInlineYaml(templateYaml)
+      : objectValue(templateYaml);
+  const spec = objectValue(template?.spec);
   const entries = objectValue(spec?.entries);
   const open = stringValue(entries?.open);
   const share = stringValue(entries?.share);
@@ -78,12 +93,34 @@ export function templateDeclaredEntries(
   };
 }
 
+/** The leading Template document of an inline template, or nothing. */
+function templateObjectFromInlineYaml(
+  yaml: string
+): Record<string, unknown> | null {
+  try {
+    const document = YAML.parseDocument(
+      templateHeaderFromInlineYaml(yaml).headerYaml
+    );
+    return document.errors.length > 0 ? null : objectValue(document.toJS());
+  } catch {
+    return null;
+  }
+}
+
+/** Which Template Entry a URL is read as; the fragment rule differs. */
+export type TemplateEntryRole = "open" | "share";
+
 /**
  * A declared entry as a usable absolute URL, or nothing. The query string is
- * kept verbatim (a share link may carry one); credentials and fragments are
- * rejected because a fragment never reaches the server.
+ * kept verbatim (a share link may carry one) and credentials are rejected
+ * for either role. A fragment never reaches the server, so it disqualifies
+ * a Share URL; an Open URL may carry one — the Sealos desktop launcher
+ * addresses the App CR presets Open with (`#token=…`) do.
  */
-export function templateEntryUrl(value: unknown): string | undefined {
+export function templateEntryUrl(
+  value: unknown,
+  role: TemplateEntryRole
+): string | undefined {
   const raw = stringValue(value);
   if (raw === undefined || raw.length > MAX_ENTRY_URL_LENGTH) {
     return undefined;
@@ -94,7 +131,7 @@ export function templateEntryUrl(value: unknown): string | undefined {
       !ENTRY_PROTOCOLS.has(url.protocol) ||
       url.username !== "" ||
       url.password !== "" ||
-      url.hash !== "" ||
+      (role === "share" && url.hash !== "") ||
       url.hostname === ""
     ) {
       return undefined;
@@ -169,6 +206,37 @@ export function templateIngressHostsFromDocs(
 }
 
 /**
+ * Every Service an Ingress rule of the deployment routes to, by name. The
+ * provider's resource summary often lists the Ingresses and no Service, so
+ * the read-back path fetches the Services the Ingress backends name.
+ */
+export function templateIngressServiceNamesFromDocs(
+  docs: readonly unknown[]
+): Set<string> {
+  const names = new Set<string>();
+  for (const value of docs) {
+    const doc = objectValue(value);
+    if (doc == null || !isIngressDoc(doc)) {
+      continue;
+    }
+    const rules = objectValue(doc.spec)?.rules;
+    for (const rule of Array.isArray(rules) ? rules : []) {
+      const paths = objectValue(objectValue(rule)?.http)?.paths;
+      for (const path of Array.isArray(paths) ? paths : []) {
+        const service = objectValue(
+          objectValue(objectValue(path)?.backend)?.service
+        );
+        const name = stringValue(service?.name);
+        if (name !== undefined) {
+          names.add(name);
+        }
+      }
+    }
+  }
+  return names;
+}
+
+/**
  * The Open and Share URLs a deployment declares. `hosts` — the Ingress hosts
  * of the same deployment — gates both: an entry no Ingress serves is dropped.
  */
@@ -177,16 +245,20 @@ export function resolveTemplateEntryUrls(input: {
   declared: TemplateDeclaredEntries;
   hosts: ReadonlySet<string>;
 }): TemplateEntryUrls {
-  const served = (candidate: string | undefined): string | undefined => {
-    const url = templateEntryUrl(candidate);
+  const served = (
+    candidate: string | undefined,
+    role: TemplateEntryRole
+  ): string | undefined => {
+    const url = templateEntryUrl(candidate, role);
     if (url === undefined) {
       return undefined;
     }
     const host = entryHostname(url);
     return host !== undefined && input.hosts.has(host) ? url : undefined;
   };
-  const open = served(input.declared.open) ?? served(input.appUrl);
-  const share = served(input.declared.share);
+  const open =
+    served(input.declared.open, "open") ?? served(input.appUrl, "open");
+  const share = served(input.declared.share, "share");
   return {
     ...(open === undefined ? {} : { open }),
     ...(share === undefined ? {} : { share }),

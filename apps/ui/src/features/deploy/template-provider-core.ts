@@ -333,6 +333,8 @@ export async function listTemplateCatalog(input?: {
 export async function getTemplateSource(input: {
   encodedKubeconfig: string;
   language?: string;
+  /** Bounds the provider fetch to the caller's budget (a readiness deadline). */
+  signal?: AbortSignal;
   templateName: string;
 }): Promise<TemplateSourcePayload> {
   const response = await fetch(
@@ -346,6 +348,7 @@ export async function getTemplateSource(input: {
         Authorization: headerSafeEncodedKubeconfig(input.encodedKubeconfig),
       },
       method: "GET",
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
     }
   );
   const body = await readJsonResponse(response);

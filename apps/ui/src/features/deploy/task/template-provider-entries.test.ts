@@ -42,7 +42,10 @@ const patches: RecordedPatch[] = [];
 let providerSource: () => Promise<Response> = () =>
   Promise.resolve(new Response(null, { status: 500 }));
 
-function installCluster(objects: Record<string, Record<string, unknown>>) {
+function installCluster(
+  objects: Record<string, Record<string, unknown>>,
+  options: { patchStatus?: number } = {}
+) {
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith("/api/getTemplateSource")) {
@@ -54,7 +57,11 @@ function installCluster(objects: Record<string, Record<string, unknown>>) {
         body: JSON.parse(String(init?.body ?? "null")),
         query,
       });
-      return Promise.resolve(Response.json({}));
+      return Promise.resolve(
+        options.patchStatus === undefined
+          ? Response.json({})
+          : new Response("forbidden", { status: options.patchStatus })
+      );
     }
     if (url.pathname.endsWith("/api/k8s/v1alpha1/get")) {
       const object = objects[query.kind ?? ""]?.[query.name ?? ""];
@@ -160,12 +167,27 @@ function clusterObjects(input: { preset?: string } = {}) {
   } as Record<string, Record<string, unknown>>;
 }
 
+// As the provider summarizes a catalog deployment: the workload and its
+// Ingresses, no Service. The Service is reached through the Ingress backends.
 const RESOURCES = [
-  { name: "eaglercraft", resourceType: "deployment", uid: "1" },
-  { name: "eaglercraft", resourceType: "service", uid: "2" },
+  { name: "eaglercraft", resourceType: "StatefulSet", uid: "1" },
   { name: "eaglercraft", resourceType: "ingress", uid: "3" },
-  { name: "eaglercraft-admin", resourceType: "ingress", uid: "4" },
+  { name: "eaglercraft-admin", resourceType: "Ingress", uid: "4" },
 ];
+
+function providerSourceResponse(templateYaml: unknown) {
+  return Response.json({
+    code: 200,
+    data: {
+      appYaml: "kind: Deployment",
+      source: {
+        defaults: {},
+        inputs: [{ default: "Lobby", key: "server_name" }],
+      },
+      templateYaml,
+    },
+  });
+}
 
 function readBack(args: Record<string, string> | undefined) {
   return templateProviderTemplateEntries({
@@ -184,19 +206,7 @@ describe("templateProviderTemplateEntries", () => {
     process.env.TEMPLATE_PROVIDER_URL = "https://provider.test";
     patches.length = 0;
     providerSource = () =>
-      Promise.resolve(
-        Response.json({
-          code: 200,
-          data: {
-            appYaml: "kind: Deployment",
-            source: {
-              defaults: {},
-              inputs: [{ default: "Lobby", key: "server_name" }],
-            },
-            templateYaml: TEMPLATE_YAML,
-          },
-        })
-      );
+      Promise.resolve(providerSourceResponse(TEMPLATE_YAML));
   });
 
   afterEach(() => {
@@ -274,5 +284,79 @@ describe("templateProviderTemplateEntries", () => {
 
     await expect(readBack({})).resolves.toBeUndefined();
     expect(patches).toEqual([]);
+  });
+
+  it("reads the entries off an inline YAML template source as well as a parsed one", async () => {
+    providerSource = () =>
+      Promise.resolve(
+        providerSourceResponse(
+          [
+            "apiVersion: app.sealos.io/v1",
+            "kind: Template",
+            "metadata:",
+            "  name: eaglercraft-server",
+            "spec:",
+            "  entries:",
+            `    open: https://${APP_HOST_EXPRESSION}/admin`,
+            "---",
+            "apiVersion: v1",
+            "kind: Service",
+          ].join("\n")
+        )
+      );
+    installCluster(clusterObjects());
+
+    const entries = await readBack({});
+
+    expect(entries).toEqual({ open: `https://${HOST}/admin` });
+    expect(patches.map((patch) => patch.body)).toEqual([
+      { metadata: { annotations: { "brain.io/default-open-port": "5201" } } },
+    ]);
+  });
+
+  it("keeps the resolved entries when the Default Open Port PATCH fails", async () => {
+    installCluster(clusterObjects(), { patchStatus: 403 });
+    const warn = console.warn;
+    const warnings: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+    try {
+      const entries = await readBack({ server_name: "My Server" });
+
+      expect(entries).toEqual({
+        open: `https://${HOST}/admin`,
+        share: `https://${HOST}/?server=wss://${HOST}/&name=My Server`,
+      });
+      expect(patches).toHaveLength(1);
+      expect(String(warnings[0]?.[0])).toContain("Default Open Port");
+    } finally {
+      console.warn = warn;
+    }
+  });
+
+  it("presets the Open Entry's App CR launcher URL and leaves Share empty", async () => {
+    providerSource = () =>
+      Promise.resolve(
+        providerSourceResponse({ ...TEMPLATE_YAML, spec: { title: "x" } })
+      );
+    const objects = clusterObjects();
+    objects.apps = {
+      eaglercraft: {
+        apiVersion: "app.sealos.io/v1",
+        kind: "App",
+        metadata: { name: "eaglercraft" },
+        spec: { data: { url: `https://${HOST}/#token=abc` } },
+      },
+    };
+    installCluster(objects);
+
+    const entries = await readBack({});
+
+    expect(entries).toEqual({ open: `https://${HOST}/#token=abc` });
+    // The fragment is client-side: the root rule's port is preset.
+    expect(patches.map((patch) => patch.body)).toEqual([
+      { metadata: { annotations: { "brain.io/default-open-port": "5200" } } },
+    ]);
   });
 });

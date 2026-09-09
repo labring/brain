@@ -195,8 +195,10 @@ function parseEndpointUrl(raw: string | undefined): ParsedEndpointUrl | null {
  * The address row an endpoint URL reaches. One hostname may expose several
  * Public Addresses that differ by protocol or path and target different
  * App Listening Ports (ADR 0079: a `wss://` game port beside an `https://`
- * admin path), so the URL is matched whole first — scheme, host, and entry
- * path — then by scheme and host, and only then by host alone.
+ * admin path), so the URL is matched whole — scheme, host, and entry path —
+ * and nothing looser: an entry is headed by the port its address reaches,
+ * else by nothing (CONTEXT.md: Deployment Task Success Record), so a
+ * same-host row for another port must never stand in.
  */
 export function apNetworkViewAddressForUrl(
   view: ApNetworkView,
@@ -206,17 +208,14 @@ export function apNetworkViewAddressForUrl(
   if (wanted === null) {
     return undefined;
   }
-  const candidates = view.addresses
-    .filter((address) => address.host === wanted.host)
-    .map((address) => ({ address, parsed: parseEndpointUrl(address.url) }));
-  const exact = candidates.find(
-    ({ parsed }) =>
-      parsed?.scheme === wanted.scheme && parsed.path === wanted.path
-  );
-  const sameScheme = candidates.find(
-    ({ parsed }) => parsed?.scheme === wanted.scheme
-  );
-  return (exact ?? sameScheme ?? candidates[0])?.address;
+  return view.addresses.find((address) => {
+    const parsed = parseEndpointUrl(address.url);
+    return (
+      address.host === wanted.host &&
+      parsed?.scheme === wanted.scheme &&
+      parsed.path === wanted.path
+    );
+  });
 }
 
 /**

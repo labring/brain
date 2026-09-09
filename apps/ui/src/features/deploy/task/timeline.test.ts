@@ -1409,3 +1409,123 @@ test("the share address is a snapshot the sanitizer keeps for HTTP(S) only, and 
     })
   );
 });
+
+function httpsRootTimeline(rootUrl: string) {
+  return upsertResultResourceCard(
+    timelineFrame({
+      "AP:default:eaglercraft": "running",
+      "PublicAccess:default:eaglercraft:lobby": "running",
+    }),
+    {
+      card: endpointCard({
+        id: "ingress:eaglercraft:https:root",
+        label: "web · 8080",
+        observer: { kind: "ingress", name: "eaglercraft" },
+        protocol: "https",
+        required: true,
+        status: "running",
+        url: rootUrl,
+      }),
+      stepId: "create-resources",
+      updatedAt: NOW,
+    }
+  );
+}
+
+test("an Open Entry is de-duplicated with an Ingress card by canonical URL, not spelling", () => {
+  // The App CR keeps `https://host`; the card writes `https://host/`.
+  for (const spelling of [
+    `https://${EAGLER_HOST}`,
+    `https://${EAGLER_HOST.toUpperCase()}:443/`,
+  ]) {
+    const success = deploymentTaskSuccessFromTimeline(
+      httpsRootTimeline(`https://${EAGLER_HOST}/`),
+      {
+        primaryEntryUrl: null,
+        productName: null,
+        templateEntries: { open: spelling },
+      }
+    );
+    assert.deepEqual(success?.entries, [
+      {
+        label: "web · 8080",
+        protocol: "https",
+        url: `https://${EAGLER_HOST}/`,
+      },
+    ]);
+    assert.equal(success?.shareUrl, `https://${EAGLER_HOST}/`);
+  }
+  // A different path, query, or fragment is another address.
+  for (const other of [
+    `https://${EAGLER_HOST}/admin`,
+    `https://${EAGLER_HOST}/?server=x`,
+    `https://${EAGLER_HOST}/#token=abc`,
+  ]) {
+    const success = deploymentTaskSuccessFromTimeline(
+      httpsRootTimeline(`https://${EAGLER_HOST}/`),
+      {
+        primaryEntryUrl: null,
+        productName: null,
+        templateEntries: { open: other },
+      }
+    );
+    assert.equal(success?.entries?.length, 2);
+    assert.equal(success?.entries?.[0]?.url, other);
+  }
+});
+
+test("a fragment-bearing Open Entry is opened as declared and never shared", () => {
+  const launcher = `https://${EAGLER_HOST}/#token=abc`;
+  // With a verified HTTP(S) root beside it, the strip shares the root.
+  const withRoot = deploymentTaskSuccessFromTimeline(
+    httpsRootTimeline(`https://${EAGLER_HOST}/`),
+    {
+      primaryEntryUrl: `https://${EAGLER_HOST}/`,
+      productName: null,
+      templateEntries: { open: launcher },
+    }
+  );
+  assert.equal(withRoot?.entries?.[0]?.url, launcher);
+  assert.equal(withRoot?.shareUrl, `https://${EAGLER_HOST}/`);
+  // With only a socket beside it, nothing is shared.
+  const socketOnly = deploymentTaskSuccessFromTimeline(
+    eaglercraftTimeline({ adminObserved: false }),
+    {
+      primaryEntryUrl: null,
+      productName: null,
+      templateEntries: { open: launcher },
+    }
+  );
+  assert.deepEqual(socketOnly?.entries?.[0], {
+    protocol: "https",
+    url: launcher,
+  });
+  assert.equal(socketOnly?.shareUrl, undefined);
+  // A declared Share with a fragment is not a share address either.
+  const declared = deploymentTaskSuccessFromTimeline(
+    eaglercraftTimeline({ adminObserved: true }),
+    {
+      primaryEntryUrl: null,
+      productName: null,
+      templateEntries: { open: EAGLER_OPEN, share: launcher },
+    }
+  );
+  assert.equal(declared?.shareUrl, EAGLER_OPEN);
+
+  // The sanitizer keeps such an entry on read-back and never shares it.
+  const fallback = { revision: 2, verifiedAt: NOW };
+  const kept = sanitizeDeploymentTaskSuccess(
+    {
+      contractVersion: 2,
+      entries: [{ protocol: "https", url: launcher }],
+      shareUrl: launcher,
+    },
+    fallback
+  );
+  assert.deepEqual(kept?.entries, [{ protocol: "https", url: launcher }]);
+  assert.equal(kept?.shareUrl, undefined);
+  assert.equal(
+    deploymentTaskSuccessShareUrl(kept ?? { entries: [] }),
+    undefined
+  );
+});

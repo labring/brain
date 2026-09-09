@@ -725,12 +725,18 @@ function successUrl(value: unknown): string | undefined {
   return successText(value, MAX_SUCCESS_URL_LENGTH);
 }
 
+/**
+ * The protocol of an entry URL, or nothing for one the record may not carry.
+ * Credentials are rejected; a fragment is not — a template's Open Entry may
+ * be a desktop-launcher URL (`#token=…`), which the Open control opens as
+ * declared. What may be *shared* is decided separately (`successShareUrl`).
+ */
 function accessProtocol(
   value: string
 ): DeploymentAccessEndpointProtocol | undefined {
   try {
     const url = new URL(value);
-    if (url.username !== "" || url.password !== "" || url.hash !== "") {
+    if (url.username !== "" || url.password !== "") {
       return undefined;
     }
     switch (url.protocol) {
@@ -750,14 +756,13 @@ function accessProtocol(
   }
 }
 
-/** A share address is opened in a browser, so only HTTP(S) qualifies. */
+/**
+ * A share address is opened in a browser, so only HTTP(S) qualifies — and
+ * never a URL with a fragment, which may embed a secret (ADR 0081).
+ */
 function successShareUrl(value: unknown): string | undefined {
   const url = successUrl(value);
-  if (url == null) {
-    return undefined;
-  }
-  const protocol = accessProtocol(url);
-  return protocol === "http" || protocol === "https" ? url : undefined;
+  return url != null && isShareableEntryUrl(url) ? url : undefined;
 }
 
 function successCount(value: unknown, max: number): number | undefined {
@@ -988,6 +993,45 @@ function isHttpEntryUrl(url: string): boolean {
 }
 
 /**
+ * Whether an entry may be the share address: HTTP(S) with no fragment. A
+ * fragment-bearing Open (an App CR `#token=` launcher URL) is opened, never
+ * shared — Share falls past it to the next verified HTTP(S) entry.
+ */
+function isShareableEntryUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      parsed.hash === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One address, one spelling: an Ingress card writes a root as
+ * `https://host/` while a declared entry may keep `https://host`. Host is
+ * case-insensitive and a default port is implicit; path, query, and fragment
+ * stay distinct — `/admin` and `/`, `/?server=…` and `/`, `/#token=…` and
+ * `/` are different addresses.
+ */
+function canonicalEntryUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.hostname.toLowerCase()}${
+      parsed.port === "" ? "" : `:${parsed.port}`
+    }${parsed.pathname === "" ? "/" : parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return url;
+  }
+}
+
+function sameEntryUrl(left: string, right: string): boolean {
+  return canonicalEntryUrl(left) === canonicalEntryUrl(right);
+}
+
+/**
  * Puts the entry the Open control should open first — the record's order is
  * its priority order, so the first openable entry is the primary action. The
  * exact URL wins; failing that, the entry on the same host (an Ingress root
@@ -1020,7 +1064,8 @@ export function prioritizeSuccessEntries<T extends { url: string }>(
 /**
  * The template's Open Entry as a record entry: the declared URL, headed by
  * the App Listening Port it reaches when one is known. A URL an Ingress card
- * already lists keeps that card's entry instead (de-duplicated by full URL).
+ * already lists keeps that card's entry instead (de-duplicated by canonical
+ * URL, so `https://host` and `https://host/` are one address).
  */
 function templateOpenEntry(
   url: string | null | undefined,
@@ -1042,7 +1087,7 @@ export function deploymentTaskSuccessShareUrl(
 ): string | undefined {
   return (
     success.shareUrl ??
-    success.entries?.find((entry) => isHttpEntryUrl(entry.url))?.url
+    success.entries?.find((entry) => isShareableEntryUrl(entry.url))?.url
   );
 }
 
@@ -1099,21 +1144,21 @@ export function deploymentTaskSuccessFromTimeline(
   // was verified; the Open Entry is added only when no card names it.
   const declaredEntries =
     openEntry == null ||
-    endpointEntries.some((entry) => entry.url === openEntry.url)
+    endpointEntries.some((entry) => sameEntryUrl(entry.url, openEntry.url))
       ? endpointEntries
       : [openEntry, ...endpointEntries];
   const uniqueEntries = prioritizeSuccessEntries(
     declaredEntries.filter(
       (entry, index) =>
-        declaredEntries.findIndex(
-          (candidate) => candidate.url === entry.url
+        declaredEntries.findIndex((candidate) =>
+          sameEntryUrl(candidate.url, entry.url)
         ) === index
     ),
     openEntry?.url ?? input.primaryEntryUrl
   );
   const declaredShare = input.templateEntries?.share;
   const shareUrl =
-    declaredShare != null && isHttpEntryUrl(declaredShare)
+    declaredShare != null && isShareableEntryUrl(declaredShare)
       ? declaredShare
       : deploymentTaskSuccessShareUrl({ entries: uniqueEntries });
   const success = deploymentTaskSuccessFromResultReadiness({

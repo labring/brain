@@ -9,6 +9,7 @@ import {
   templateEntryOpenPort,
   templateEntryUrl,
   templateIngressHostsFromDocs,
+  templateIngressServiceNamesFromDocs,
   templateInstanceDefaults,
 } from "./template-entries";
 
@@ -99,14 +100,53 @@ test("templateDeclaredEntries reads spec.entries strings and ignores the rest", 
   assert.deepEqual(templateDeclaredEntries(null), {});
 });
 
-test("templateEntryUrl keeps a query string verbatim and rejects secrets and fragments", () => {
-  assert.equal(templateEntryUrl(SHARE), SHARE);
-  assert.equal(templateEntryUrl(`wss://${HOST}/`), `wss://${HOST}/`);
-  assert.equal(templateEntryUrl(`https://${HOST}/#token=abc`), undefined);
-  assert.equal(templateEntryUrl(`https://user:pw@${HOST}/`), undefined);
-  assert.equal(templateEntryUrl("ftp://example.com/"), undefined);
-  assert.equal(templateEntryUrl("/admin"), undefined);
-  assert.equal(templateEntryUrl(""), undefined);
+test("templateDeclaredEntries reads the inline YAML string the provider may hand back", () => {
+  const inline = [
+    "apiVersion: app.sealos.io/v1",
+    "kind: Template",
+    "metadata:",
+    "  name: eaglercraft-server",
+    "spec:",
+    "  entries:",
+    `    open: https://${APP_HOST_EXPRESSION}.example.sealos.run/admin`,
+    `    share: "https://${APP_HOST_EXPRESSION}.example.sealos.run/?server=wss://x/"`,
+    "---",
+    "apiVersion: v1",
+    "kind: Service",
+    `${TEMPLATE_EXPRESSION_START} if(inputs.x) }}`,
+    "---",
+  ].join("\n");
+  assert.deepEqual(templateDeclaredEntries(inline), {
+    open: `https://${APP_HOST_EXPRESSION}.example.sealos.run/admin`,
+    share: `https://${APP_HOST_EXPRESSION}.example.sealos.run/?server=wss://x/`,
+  });
+  // A header without entries, and one that is not YAML at all.
+  assert.deepEqual(
+    templateDeclaredEntries("apiVersion: app.sealos.io/v1\nkind: Template\n"),
+    {}
+  );
+  assert.deepEqual(templateDeclaredEntries("spec: [unterminated"), {});
+  assert.deepEqual(templateDeclaredEntries(""), {});
+});
+
+test("templateEntryUrl keeps a query string verbatim and rejects secrets; a fragment disqualifies Share only", () => {
+  assert.equal(templateEntryUrl(SHARE, "share"), SHARE);
+  assert.equal(templateEntryUrl(`wss://${HOST}/`, "open"), `wss://${HOST}/`);
+  // A desktop-launcher URL opens as declared; it is never shared.
+  assert.equal(
+    templateEntryUrl(`https://${HOST}/#token=abc`, "open"),
+    `https://${HOST}/#token=abc`
+  );
+  assert.equal(
+    templateEntryUrl(`https://${HOST}/#token=abc`, "share"),
+    undefined
+  );
+  for (const role of ["open", "share"] as const) {
+    assert.equal(templateEntryUrl(`https://user:pw@${HOST}/`, role), undefined);
+    assert.equal(templateEntryUrl("ftp://example.com/", role), undefined);
+    assert.equal(templateEntryUrl("/admin", role), undefined);
+    assert.equal(templateEntryUrl("", role), undefined);
+  }
 });
 
 test("templateAppUrlFromDocs reads the Sealos App CR url", () => {
@@ -123,6 +163,32 @@ test("templateIngressHostsFromDocs lists every Ingress rule host", () => {
     [...templateIngressHostsFromDocs(eaglercraftDocs())],
     [HOST]
   );
+});
+
+test("templateIngressServiceNamesFromDocs names the Services the Ingress backends route to", () => {
+  const console = {
+    apiVersion: "networking.k8s.io/v1",
+    kind: "Ingress",
+    metadata: { name: "console" },
+    spec: {
+      rules: [
+        {
+          host: HOST,
+          http: {
+            paths: [
+              { backend: { service: { name: "console" } }, path: "/console" },
+              { backend: { resource: { name: "bucket" } }, path: "/static" },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  assert.deepEqual(
+    [...templateIngressServiceNamesFromDocs([...eaglercraftDocs(), console])],
+    ["eaglercraft", "console"]
+  );
+  assert.deepEqual([...templateIngressServiceNamesFromDocs([service()])], []);
 });
 
 test("Open falls back to the App CR url; Share never does", () => {
@@ -147,14 +213,26 @@ test("Open falls back to the App CR url; Share never does", () => {
     }),
     { open: OPEN, share: SHARE }
   );
-  // A fragment-bearing App CR url is not a probeable entry at all.
+  // A fragment-bearing App CR url is the desktop launcher's: it presets
+  // Open as declared, and Share — which never takes the App CR — stays out.
   assert.deepEqual(
     resolveTemplateEntryUrls({
       appUrl: `https://${HOST}/#token=abc`,
       declared: {},
       hosts,
     }),
-    {}
+    { open: `https://${HOST}/#token=abc` }
+  );
+  // A declared Share with a fragment is dropped; a declared Open keeps it.
+  assert.deepEqual(
+    resolveTemplateEntryUrls({
+      declared: {
+        open: `https://${HOST}/#token=abc`,
+        share: `https://${HOST}/#token=abc`,
+      },
+      hosts,
+    }),
+    { open: `https://${HOST}/#token=abc` }
   );
 });
 

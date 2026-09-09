@@ -47,10 +47,12 @@ chain: the declared `entries.open`; else the template's App CR
 
 **Share** is the URL the Success Record's share strip shares. Its fallback:
 the declared `entries.share`; else the Open URL, which is what the strip
-shared before. Share never falls back to the App CR URL on its own: some App
-CR URLs embed a secret (`#token=…`, `/invite/<code>`) that must not be posted
-to a social network. It only ever equals `entries.share` or the resolved Open
-URL.
+shared before — unless that Open URL carries a fragment, in which case the
+strip falls past it to the record's next verified HTTP(S) entry, or shares
+nothing. Share never falls back to the App CR URL on its own: some App CR
+URLs embed a secret (`#token=…`, `/invite/<code>`) that must not be posted
+to a social network. It only ever equals `entries.share`, a fragment-free
+resolved Open URL, or a verified entry.
 
 **No probe.** A Template Entry is not a Deployment Access Endpoint and is not
 probed. It is kept only when an Ingress of the same deployment serves its
@@ -88,7 +90,10 @@ Access Node's Open and the record's Open agree.
 serves its host. Brain never surfaces an address the deployment did not
 create, and — for a provider-applied template whose defaults Brain re-reads
 off the Instance CR — an unresolved expression can never leak into a URL.
-Credentials and fragments disqualify an entry outright.
+Credentials disqualify an entry outright. A fragment disqualifies Share
+only: it never reaches the server, so a share link with one is broken, but
+the desktop-launcher URLs the App CR presets Open with (`#token=…`) carry
+one legitimately and are opened as declared.
 
 **Where it runs.** Brain renders some templates itself and defers others to
 the template provider. In Brain's renderer the rules run over the documents
