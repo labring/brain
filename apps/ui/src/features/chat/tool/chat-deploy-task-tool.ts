@@ -40,9 +40,11 @@ import {
   toDeployTaskDTO,
 } from "@/features/deploy/task/service";
 import {
+  type DeploymentTaskSource,
   type DeploymentTaskTarget,
   submitDeployTaskInputSchema,
 } from "@/features/deploy/task/types";
+import { listTemplateCatalog } from "@/features/deploy/template-provider-core";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
 
 const GITHUB_CONNECTION_REQUIRED_ERROR =
@@ -108,6 +110,7 @@ export function createDeployTaskTools(
     getDeployTaskSnapshot?: typeof getDeployTaskSnapshot;
     getDeployTaskTimelineSnapshot?: typeof getDeployTaskTimelineSnapshot;
     judgeWorkspaceBillingStandingForActor?: typeof judgeWorkspaceBillingStandingForActor;
+    listTemplateCatalog?: typeof listTemplateCatalog;
     runDeployTask?: typeof runDeployTask;
     submitDeployTaskInputAction?: typeof submitDeployTaskInputAction;
     toDeployTaskDTO?: typeof toDeployTaskDTO;
@@ -134,6 +137,34 @@ export function createDeployTaskTools(
   const adoptLegacyGithubConnection =
     dependencies.adoptLegacyGithubConnectionForOwner ??
     adoptLegacyGithubConnectionForOwner;
+
+  const readCatalog = dependencies.listTemplateCatalog ?? listTemplateCatalog;
+  /**
+   * A template source snapshots the catalog's declared categories into the
+   * task so the Deployment Task Success Record can speak to a game or an AI
+   * app later (AIM-354). The model is never trusted to copy them: they are
+   * read off the catalog by template name here, the way the panes read them
+   * off the chosen catalog item. An unreachable catalog or an unknown name
+   * leaves the source as declared — the deploy itself does not depend on it.
+   */
+  async function withTemplateCategories(
+    source: DeploymentTaskSource
+  ): Promise<DeploymentTaskSource> {
+    if (source.kind !== "template") {
+      return source;
+    }
+    try {
+      const catalog = await readCatalog();
+      const categories = catalog.find(
+        (item) => item.name === source.templateName
+      )?.category;
+      return categories == null || categories.length === 0
+        ? source
+        : { ...source, templateCategories: [...categories] };
+    } catch {
+      return source;
+    }
+  }
 
   const judgeStanding =
     dependencies.judgeWorkspaceBillingStandingForActor ??
@@ -241,6 +272,7 @@ export function createDeployTaskTools(
         credentialBinding = bindingResolution.credentialBinding;
       }
 
+      const source = await withTemplateCategories(input.source);
       const result = await createTask(engineContext(), {
         create: {
           ...(credentialBinding == null ? {} : { credentialBinding }),
@@ -248,8 +280,8 @@ export function createDeployTaskTools(
           creatingActor: actionActor,
           namespace,
           prompt: input.prompt,
-          runner: defaultRunnerForSource(input.source),
-          source: input.source,
+          runner: defaultRunnerForSource(source),
+          source,
           target,
         },
         resolveTarget: resolveDeployTaskTargetForCreate,
@@ -263,7 +295,7 @@ export function createDeployTaskTools(
             // persists a stripped copy, so sensitive values reach the
             // runner only through this in-memory hand-off (ADR 0037).
             sourceArgValues:
-              input.source.kind === "template" ? input.source.args : undefined,
+              source.kind === "template" ? source.args : undefined,
             taskId: task.id,
           }),
       });

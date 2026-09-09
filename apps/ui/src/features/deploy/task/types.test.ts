@@ -77,3 +77,34 @@ test("deployment creation rejects inconsistent GitHub repository fields", () => 
     assert.equal(parsed.success, false, JSON.stringify(repo));
   }
 });
+
+test("a template source keeps the template's categories, trimmed and capped", () => {
+  const parsed = createDeployTaskInputSchema.parse({
+    namespace: "shared-workspace",
+    runner: { kind: "template" },
+    source: {
+      kind: "template",
+      templateCategories: [" game ", "tool"],
+      templateName: "eaglercraft-server",
+    },
+    target: { kind: "newProject" },
+  });
+  assert.equal(parsed.source.kind, "template");
+  if (parsed.source.kind !== "template") {
+    return;
+  }
+  assert.deepEqual(parsed.source.templateCategories, ["game", "tool"]);
+
+  const uncategorised = createDeployTaskInputSchema.parse({
+    namespace: "shared-workspace",
+    runner: { kind: "template" },
+    source: { kind: "template", templateName: "memos" },
+    target: { kind: "newProject" },
+  });
+  assert.equal(
+    uncategorised.source.kind === "template"
+      ? uncategorised.source.templateCategories
+      : "wrong kind",
+    undefined
+  );
+});

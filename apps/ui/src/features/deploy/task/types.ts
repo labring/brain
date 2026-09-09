@@ -97,6 +97,10 @@ export const deploymentTaskSourceSchema = z
         .array(z.string().trim().min(1).max(256))
         .max(64)
         .optional(),
+      templateCategories: z
+        .array(z.string().trim().min(1).max(64))
+        .max(16)
+        .optional(),
       templateName: z.string().trim().min(1).max(256),
     }),
     z.object({

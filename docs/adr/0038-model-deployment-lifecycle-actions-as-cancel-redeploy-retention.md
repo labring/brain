@@ -48,7 +48,11 @@ The original decision put cancel and redeploy actions on dock chips as well as t
 - **Dismiss (✕) is a terminal-only action.** It appears only for terminal statuses (`failed`, `completed`, `cancelled`). In-progress statuses (`queued`, `running`, `applying`, and `blocked`, which keeps its dock attention indefinitely) show no ✕. This removes a real defect: because dismissal is keyed to the projection version (`updatedAt`), pressing ✕ on a running task recorded a version that the next projection update immediately superseded, so the chip reappeared — a control that looked actionable but was a no-op mid-deploy.
 - **No confirmation dialog on dismiss.** With dismiss restricted to terminal states, the accidental-loss risk is limited to a failed chip whose task is still retained and recoverable via the deploy pane; a blocking modal is heavier than the cost warrants. A non-blocking Undo affordance was considered and also declined for v1.
 
-To stop an in-progress deployment the user cancels it in the pane; it then becomes `cancelled` and rides the brief dismissible completion notice. This keeps the invariant that a still-running deployment cannot be hidden from the dock.
+To stop an in-progress deployment the user cancels it in the pane; it then becomes `cancelled` and remains in the dock until the user dismisses it. This keeps the invariant that a still-running deployment cannot be hidden from the dock while giving every terminal outcome the same explicit acknowledgement model.
+
+## Amendment (2026-09-04): Terminal dock chips persist until dismissal
+
+The earlier decision made `completed` and `cancelled` chips six-second notices. In practice this removed the only immediate re-entry affordance before users had time to inspect the final Timeline result. Completed, cancelled, and failed chips now remain visible until the user explicitly dismisses them or a Redeploy supersedes the predecessor. The existing per-task-and-version dismissal remains the only dock suppression mechanism; there is no terminal notice timer.
 
 ## Amendment (2026-07-10): Failure cleanup only for provably this-run partial applies
 

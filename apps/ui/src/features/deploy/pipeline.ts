@@ -42,6 +42,8 @@ export type DeploymentTargetPipelineRequest =
       /** Arg keys whose values must never be persisted (ADR 0037). */
       sensitiveKeys?: string[];
       target: DeploymentTarget;
+      /** The template's catalog categories, snapshotted into the task source. */
+      templateCategories?: string[];
       templateName: string;
     };
 
@@ -246,6 +248,10 @@ function deploymentTaskForRequest(
           request.sensitiveKeys.length === 0
             ? {}
             : { sensitiveKeys: request.sensitiveKeys }),
+          ...(request.templateCategories == null ||
+          request.templateCategories.length === 0
+            ? {}
+            : { templateCategories: request.templateCategories }),
           templateName,
         },
       };

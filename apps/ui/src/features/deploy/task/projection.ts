@@ -11,6 +11,7 @@ import type {
   DeployTaskPhase,
   DeployTaskStatus,
 } from "./schema";
+import type { DeploymentTaskSuccessProduct } from "./timeline";
 
 export const DEPLOYMENT_TASK_PROJECTION_COMPLETED_GRACE_MS = 60_000;
 
@@ -158,6 +159,27 @@ function truncateSummary(value: string, maxLength: number): string {
     return trimmed;
   }
   return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+/**
+ * What a Deployment Task Success Record may say about the product it
+ * verified, read off the task's source: the display name every source has,
+ * plus the template's catalog name and categories when the source is a
+ * template. Nothing is invented for the other sources.
+ */
+export function deploymentTaskSourceProduct(
+  source: DeploymentTaskSource
+): DeploymentTaskSuccessProduct {
+  const productName = deploymentTaskSourceSummary(source);
+  if (source.kind !== "template") {
+    return { productName };
+  }
+  const categories = source.templateCategories ?? [];
+  return {
+    ...(categories.length === 0 ? {} : { productCategories: [...categories] }),
+    productId: source.templateName,
+    productName,
+  };
 }
 
 export function deploymentTaskSourceSummary(

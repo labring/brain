@@ -368,13 +368,13 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         await applyApPublicAddresses(kc, body, network, {
           existingCustomDomains,
         });
-        toast.success("Public addresses applied.");
+        toast.success("Network applied.");
         await revalidateAfterApMutation();
       } catch (e) {
         setLocalOverride(null);
         toastErrorDetail(
-          "Public addresses update failed.",
-          settingsDraftSaveFailureMessage(e, "Public addresses update failed.")
+          "Network update failed.",
+          settingsDraftSaveFailureMessage(e, "Network update failed.")
         );
         throw e;
       }

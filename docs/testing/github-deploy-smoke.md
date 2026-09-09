@@ -57,7 +57,8 @@ Success requires all of the following:
 - the created task uses the AI runner;
 - `status` is `completed`;
 - `phase` is `completed`;
-- any reported public result URL returns HTTP 2xx.
+- every reported public result URL returns a successful application response;
+  the status code and response body are not application-health assertions.
 
 In the Agent-managed state machine, `completed/completed` is only written after
 the task's `deployment_completed` MCP call is accepted. The public DTO does not

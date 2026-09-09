@@ -46,6 +46,9 @@ import {
   editRedeploySurfaceKind,
   useRedeployOverwriteGate,
 } from "@/features/deploy/deployment-task-redeploy";
+import { useDeploymentTaskSuccessCelebration } from "@/features/deploy/deployment-task-success-celebration";
+import { DeploymentTaskSuccessConfetti } from "@/features/deploy/deployment-task-success-confetti";
+import { DeploymentTaskSuccessSection } from "@/features/deploy/deployment-task-success-section";
 import { deploymentFailureTechnicalDetail } from "@/features/deploy/task/failure-details";
 import {
   deploymentTaskShortCode,
@@ -79,6 +82,7 @@ import type {
 } from "@/features/deploy/task/types";
 import { useDeploymentTaskActions } from "@/features/deploy/task/use-deployment-task-actions";
 import { useDeploymentTaskTimeline } from "@/features/deploy/task/use-deployment-task-timeline";
+import { useCopyFeedback } from "@/features/deploy/use-copy-feedback";
 import { useStatusHintInputs } from "@/features/status-hint/use-status-hint-inputs";
 
 interface DeploymentTaskTimelinePaneProps {
@@ -476,6 +480,12 @@ function resultResourceKindLabel(ref: DeploymentResultResourceRef): string {
       return "DB";
     case "PublicAccess":
       return "Public access";
+    case "AccessEndpoint":
+      return ref.protocol.toUpperCase();
+    case "TemplatePublicAccess":
+      return "Public domain";
+    case "KubernetesWorkload":
+      return ref.workloadKind || "Workload";
     case "TemplateWorkload":
       return ref.workloadKind || "Workload";
     default:
@@ -1078,39 +1088,8 @@ function timelineTaskStatusLabel(snapshot: DeploymentTaskTimelineSnapshotDTO) {
   }`;
 }
 
-const TASK_ID_COPIED_FEEDBACK_MS = 2000;
-
 function TimelineTaskIdRow({ taskId }: { taskId: string }) {
-  const [copied, setCopied] = useState(false);
-  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (resetTimerRef.current !== null) {
-        clearTimeout(resetTimerRef.current);
-      }
-    },
-    []
-  );
-
-  const copyTaskId = useCallback(() => {
-    if (typeof navigator === "undefined" || navigator.clipboard == null) {
-      return;
-    }
-    navigator.clipboard
-      .writeText(taskId)
-      .then(() => {
-        setCopied(true);
-        if (resetTimerRef.current !== null) {
-          clearTimeout(resetTimerRef.current);
-        }
-        resetTimerRef.current = setTimeout(() => {
-          resetTimerRef.current = null;
-          setCopied(false);
-        }, TASK_ID_COPIED_FEEDBACK_MS);
-      })
-      .catch(() => undefined);
-  }, [taskId]);
+  const [copied, copyTaskId] = useCopyFeedback(taskId);
 
   return (
     <div
@@ -1210,6 +1189,10 @@ const TimelineSteps = memo(function TimelineSteps({
   );
 });
 
+/**
+ * The Timeline surface: declared steps, then — once the runner has verified
+ * the product is usable — the success conclusion.
+ */
 export function DeploymentTaskTimelinePaneContent({
   kubeconfig,
   namespace,
@@ -1219,7 +1202,19 @@ export function DeploymentTaskTimelinePaneContent({
   namespace: string;
   snapshot: DeploymentTaskTimelineSnapshotDTO;
 }) {
-  if (snapshot.timeline.steps.length === 0) {
+  // Only the runner may claim success (Result Readiness + every required entry
+  // probe passed); the status check is a belt for a persisted or hand-built
+  // snapshot, so a non-completed task can never show the card.
+  const success =
+    snapshot.timeline.status === "completed"
+      ? (snapshot.timeline.success ?? null)
+      : null;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const celebrating = useDeploymentTaskSuccessCelebration({
+    successRevision: success?.revision ?? null,
+    taskId: snapshot.task.id,
+  });
+  if (snapshot.timeline.steps.length === 0 && success == null) {
     return <EmptyState>No timeline steps have been declared yet.</EmptyState>;
   }
   const failureDetail = deploymentFailureTechnicalDetail({
@@ -1230,6 +1225,20 @@ export function DeploymentTaskTimelinePaneContent({
     runner: snapshot.task.runner,
     status: snapshot.task.status,
   });
+  const steps = (
+    <TimelineSteps
+      blockingInputs={snapshot.task.blockingInputs}
+      failureDetail={failureDetail}
+      failureDetails={snapshot.task.failureDetails}
+      kubeconfig={kubeconfig}
+      namespace={namespace}
+      plan={snapshot.task.artifactSummary.deploymentPlan}
+      status={snapshot.task.status}
+      steps={snapshot.timeline.steps}
+      taskId={snapshot.task.id}
+    />
+  );
+  const hasSteps = snapshot.timeline.steps.length > 0;
   return (
     <div
       className="relative overflow-hidden rounded-lg bg-white/[0.05] px-4 py-4"
@@ -1237,6 +1246,7 @@ export function DeploymentTaskTimelinePaneContent({
     >
       <TimelineBorderBeam />
       <div className="pointer-events-none absolute inset-px rounded-[calc(var(--radius-lg)-1px)] border" />
+      <DeploymentTaskSuccessConfetti active={celebrating} />
       <div className="mb-2.5 flex items-center gap-2 text-foreground">
         <Rocket aria-hidden className="size-4 text-foreground" />
         <h3 className="font-medium text-sm leading-5">Deployment Timeline</h3>
@@ -1246,17 +1256,38 @@ export function DeploymentTaskTimelinePaneContent({
         <TaskStatusDot status={snapshot.timeline.status} />
         <span className="capitalize">{timelineTaskStatusLabel(snapshot)}</span>
       </div>
-      <TimelineSteps
-        blockingInputs={snapshot.task.blockingInputs}
-        failureDetail={failureDetail}
-        failureDetails={snapshot.task.failureDetails}
-        kubeconfig={kubeconfig}
-        namespace={namespace}
-        plan={snapshot.task.artifactSummary.deploymentPlan}
-        status={snapshot.task.status}
-        steps={snapshot.timeline.steps}
-        taskId={snapshot.task.id}
-      />
+      {hasSteps && success == null ? steps : null}
+      {hasSteps && success != null ? (
+        // The process recedes, the result takes the panel. `keepMounted` so
+        // collapsing hides the steps without destroying them: they stay
+        // readable to a screen reader and one click away for everyone else.
+        <Collapsible
+          className="flex flex-col"
+          onOpenChange={setDetailsOpen}
+          open={detailsOpen}
+        >
+          <CollapsibleTrigger
+            className="group/timeline-details flex w-full cursor-pointer items-center justify-between gap-3 rounded-md text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+            type="button"
+          >
+            <span className="min-w-0 truncate text-muted-foreground text-sm leading-5">
+              {detailsOpen
+                ? "Hide deployment details"
+                : "View deployment details"}
+            </span>
+            <ChevronDown
+              aria-hidden
+              className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/timeline-details:rotate-180"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-3 outline-none" keepMounted>
+            {steps}
+          </CollapsibleContent>
+        </Collapsible>
+      ) : null}
+      {success == null ? null : (
+        <DeploymentTaskSuccessSection success={success} />
+      )}
     </div>
   );
 }
@@ -1507,6 +1538,7 @@ export function DeploymentTaskTimelinePane({
       title={identity?.title ?? "Deployment Timeline"}
     >
       <DeploymentTaskTimelineBody
+        key={taskId}
         kubeconfig={kubeconfig}
         namespace={namespace}
         onEditRedeploy={onEditRedeploy}

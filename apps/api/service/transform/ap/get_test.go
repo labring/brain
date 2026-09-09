@@ -197,7 +197,7 @@ func TestAPTransformProjectsObservedPublicAccessFromIngressService(t *testing.T)
 	}
 }
 
-func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T) {
+func TestAPTransformPreservesDifferentPortsOnTheSameIngressHost(t *testing.T) {
 	paths := []interface{}{
 		ingressPath("/", "eaglercraft-server-service", 5201),
 		ingressPath("/api", "eaglercraft-server-service", 5201),
@@ -271,8 +271,8 @@ func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T)
 	status := out["status"].(map[string]interface{})
 	network := status["network"].(map[string]interface{})
 	addresses := network["publicAddresses"].([]map[string]interface{})
-	if got := len(addresses); got != 1 {
-		t.Fatalf("status.network.publicAddresses count = %d, want 1", got)
+	if got := len(addresses); got != 2 {
+		t.Fatalf("status.network.publicAddresses count = %d, want 2", got)
 	}
 	row := addresses[0]
 	if got := row["host"]; got != "eaglercraft-kjmioxdq.staging-usw-1.sealos.io" {
@@ -284,29 +284,152 @@ func TestAPTransformProjectsOneObservedPublicAddressPerIngressHost(t *testing.T)
 	if got := row["port"]; got != 5201 {
 		t.Fatalf("observed public address port = %v, want 5201", got)
 	}
+	// The port-5200 backend is reached only through /dynmap, so its address
+	// keeps that path rather than pointing at a root the port never serves.
+	dynmap := addresses[1]
+	if got := dynmap["port"]; got != 5200 {
+		t.Fatalf("second observed public address port = %v, want 5200", got)
+	}
+	if got := dynmap["url"]; got != "https://eaglercraft-kjmioxdq.staging-usw-1.sealos.io/dynmap" {
+		t.Fatalf("second observed public address url = %v, want https://eaglercraft-kjmioxdq.staging-usw-1.sealos.io/dynmap", got)
+	}
 	variables := status["variables"].([]map[string]interface{})
 	externalCount := 0
 	internalCount := 0
 	for _, item := range variables {
 		variable := item
 		name, _ := variable["name"].(string)
-		if name == "port-5200-external" {
-			t.Fatalf("port-5200-external must not be projected from an ingress that routes only port 5201")
-		}
 		switch name {
 		case "port-5200-internal":
 			internalCount++
 		case "port-5201-internal":
 			internalCount++
-		case "port-5201-external":
+		case "port-5201-external", "port-5200-external":
 			externalCount++
+			want := "https://eaglercraft-kjmioxdq.staging-usw-1.sealos.io/"
+			if name == "port-5200-external" {
+				want += "dynmap"
+			}
+			if got := variable["value"]; got != want {
+				t.Fatalf("%s value = %v, want %s", name, got, want)
+			}
 		}
 	}
 	if got := internalCount; got != 2 {
 		t.Fatalf("internal variable count = %d, want 2", got)
 	}
-	if got := externalCount; got != 1 {
-		t.Fatalf("external variable count = %d, want 1", got)
+	if got := externalCount; got != 2 {
+		t.Fatalf("external variable count = %d, want 2", got)
+	}
+}
+
+func TestAPTransformRetainsPrimaryIngressPathOnObservedPublicAddress(t *testing.T) {
+	cases := []struct {
+		name  string
+		paths []interface{}
+		want  string
+	}{
+		{
+			name:  "path-only host keeps its first declared path",
+			paths: []interface{}{ingressPath("/admin", "svc", 8080), ingressPath("/api", "svc", 8080)},
+			want:  "https://app.example.com/admin",
+		},
+		{
+			name:  "a root declared after a sub-path still wins",
+			paths: []interface{}{ingressPath("/admin", "svc", 8080), ingressPath("/", "svc", 8080)},
+			want:  "https://app.example.com/",
+		},
+		{
+			name:  "a regex path keeps its literal head",
+			paths: []interface{}{ingressPath("/admin(/|$)(.*)", "svc", 8080)},
+			want:  "https://app.example.com/admin",
+		},
+		{
+			name:  "a regex catch-all path is the root",
+			paths: []interface{}{ingressPath("/?(.*)", "svc", 8080)},
+			want:  "https://app.example.com/",
+		},
+		{
+			name:  "a regex path drops the separator before its pattern",
+			paths: []interface{}{ingressPath("/api/?(.*)", "svc", 8080)},
+			want:  "https://app.example.com/api",
+		},
+		{
+			name:  "a literal path keeps its trailing slash, as an Exact route needs",
+			paths: []interface{}{ingressPath("/admin/", "svc", 8080)},
+			want:  "https://app.example.com/admin/",
+		},
+		{
+			name:  "a path with a fragment falls back to root",
+			paths: []interface{}{ingressPath("/admin#x", "svc", 8080)},
+			want:  "https://app.example.com/",
+		},
+		{
+			name: "the page its assets extend wins over an earlier API route",
+			paths: []interface{}{
+				ingressPath("/api", "svc", 8080),
+				ingressPath("/admin.css", "svc", 8080),
+				ingressPath("/admin.js", "svc", 8080),
+				ingressPath("/admin-i18n.js", "svc", 8080),
+				ingressPath("/admin", "svc", 8080),
+				ingressPath("/dynmap", "svc", 8080),
+			},
+			want: "https://app.example.com/admin",
+		},
+		{
+			name:  "asset-only paths still yield the first asset rather than a root the port never serves",
+			paths: []interface{}{ingressPath("/app.js", "svc", 8080), ingressPath("/app.css", "svc", 8080)},
+			want:  "https://app.example.com/app.js",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := APWithIngressesAndServicesFromList(
+				map[string]interface{}{
+					"metadata": map[string]interface{}{"name": "app", "namespace": "default"},
+					"spec": map[string]interface{}{
+						"input": map[string]interface{}{
+							"network": map[string]interface{}{
+								"appListeningPorts": []interface{}{map[string]interface{}{"port": 8080}},
+							},
+						},
+					},
+				},
+				[]map[string]interface{}{
+					{
+						"metadata": map[string]interface{}{"name": "app-public", "namespace": "default"},
+						"spec": map[string]interface{}{
+							"rules": []interface{}{
+								map[string]interface{}{
+									"host": "app.example.com",
+									"http": map[string]interface{}{"paths": tc.paths},
+								},
+							},
+							"tls": []interface{}{
+								map[string]interface{}{"hosts": []interface{}{"app.example.com"}},
+							},
+						},
+					},
+				},
+				[]map[string]interface{}{
+					{
+						"metadata": map[string]interface{}{"name": "svc", "namespace": "default"},
+						"spec": map[string]interface{}{
+							"ports": []interface{}{map[string]interface{}{"port": 8080}},
+						},
+					},
+				},
+			)
+			status := out["status"].(map[string]interface{})
+			network := status["network"].(map[string]interface{})
+			addresses := network["publicAddresses"].([]map[string]interface{})
+			if got := len(addresses); got != 1 {
+				t.Fatalf("status.network.publicAddresses count = %d, want 1", got)
+			}
+			if got := addresses[0]["url"]; got != tc.want {
+				t.Fatalf("observed public address url = %v, want %s", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -1376,4 +1499,225 @@ func assertBlockedCustomDomainPublicNetworkAddress(t *testing.T, addresses []map
 		return
 	}
 	t.Fatalf("missing blocked custom domain address for id %s", id)
+}
+
+func TestAPTransformResolvesPortDisplayNamesFromServices(t *testing.T) {
+	ap := map[string]interface{}{
+		"metadata": map[string]interface{}{"name": "game", "namespace": "default"},
+		"spec": map[string]interface{}{
+			"input": map[string]interface{}{
+				"network": map[string]interface{}{
+					"appListeningPorts": []interface{}{
+						map[string]interface{}{"port": 5200},
+						map[string]interface{}{"port": 5201},
+						map[string]interface{}{"port": 3000},
+						map[string]interface{}{"port": 3001},
+						map[string]interface{}{"port": 8080},
+						map[string]interface{}{"port": 9000},
+						map[string]interface{}{"port": 9001},
+					},
+				},
+			},
+		},
+	}
+	services := []map[string]interface{}{
+		{
+			// A sibling Service (adopted templates ship several) may only
+			// name ports it exposes itself.
+			"metadata": map[string]interface{}{
+				"name":      "game-metrics",
+				"namespace": "default",
+				"annotations": map[string]interface{}{
+					"brain.io/port-display-name.5200": "Not my port",
+				},
+			},
+			"spec": map[string]interface{}{
+				"ports": []interface{}{
+					map[string]interface{}{"port": 9100, "name": "metrics"},
+				},
+			},
+		},
+		{
+			"metadata": map[string]interface{}{
+				"name":      "game-service",
+				"namespace": "default",
+				"annotations": map[string]interface{}{
+					"brain.io/port-display-name.5201": "  Admin console  ",
+					"brain.io/port-display-name.3001": "   ",
+				},
+			},
+			"spec": map[string]interface{}{
+				"ports": []interface{}{
+					map[string]interface{}{"port": 5200, "name": "game"},
+					map[string]interface{}{"port": 5201, "name": "admin"},
+					map[string]interface{}{"port": 3000, "name": "http"},
+					map[string]interface{}{"port": 3001, "name": "port-3001"},
+					map[string]interface{}{"port": 8080, "name": "8080"},
+					map[string]interface{}{"port": 9000},
+					map[string]interface{}{"port": 9001, "name": "http-admin"},
+				},
+			},
+		},
+	}
+	want := map[int]string{
+		5200: "game",          // meaningful Service port name fills in
+		5201: "Admin console", // annotation wins over the port name, trimmed
+		3000: "",              // generic protocol word
+		3001: "",              // blank annotation falls through to a generic port-<n> name
+		8080: "",              // all digits
+		9000: "",              // no name at all
+		9001: "http-admin",    // no prefix stripping
+	}
+
+	assertRows := func(t *testing.T, out map[string]interface{}) {
+		t.Helper()
+		status := out["status"].(map[string]interface{})
+		network := status["network"].(map[string]interface{})
+		rows := network["appListeningPorts"].([]interface{})
+		if got := len(rows); got != len(want) {
+			t.Fatalf("status.network.appListeningPorts count = %d, want %d", got, len(want))
+		}
+		for _, item := range rows {
+			row := item.(map[string]interface{})
+			port, _ := privatePortFromValue(row["port"])
+			wantName, known := want[port]
+			if !known {
+				t.Fatalf("unexpected port row %v", row)
+			}
+			got, present := row["displayName"]
+			if wantName == "" {
+				if present {
+					t.Fatalf("port %d displayName = %v, want no field", port, got)
+				}
+				continue
+			}
+			if got != wantName {
+				t.Fatalf("port %d displayName = %v, want %q", port, got, wantName)
+			}
+		}
+	}
+
+	t.Run("rows built by the transform", func(t *testing.T) {
+		assertRows(t, APWithIngressesAndServicesFromList(ap, nil, services))
+	})
+
+	t.Run("rows already projected by the adapter", func(t *testing.T) {
+		withStatus := map[string]interface{}{}
+		for k, v := range ap {
+			withStatus[k] = v
+		}
+		existingRows := []interface{}{}
+		for port := range want {
+			existingRows = append(existingRows, map[string]interface{}{
+				"port":           port,
+				"privateAddress": fmt.Sprintf("http://game-service.default.svc.cluster.local:%d", port),
+				"displayName":    "stale",
+			})
+		}
+		withStatus["status"] = map[string]interface{}{
+			"network": map[string]interface{}{"appListeningPorts": existingRows},
+		}
+		out := APWithPublicAccessSupportResourcesFromList(withStatus, nil, services, nil, nil)
+		assertRows(t, out)
+		rows := out["status"].(map[string]interface{})["network"].(map[string]interface{})["appListeningPorts"].([]interface{})
+		for _, item := range rows {
+			row := item.(map[string]interface{})
+			if _, ok := row["privateAddress"]; !ok {
+				t.Fatalf("row %v lost its privateAddress", row)
+			}
+		}
+	})
+}
+
+func TestAPTransformSurfacesDefaultOpenPortFromTheService(t *testing.T) {
+	apWithPorts := func(ports ...int) map[string]interface{} {
+		rows := make([]interface{}, 0, len(ports))
+		for _, port := range ports {
+			rows = append(rows, map[string]interface{}{"port": port})
+		}
+		return map[string]interface{}{
+			"metadata": map[string]interface{}{"name": "minio", "namespace": "default"},
+			"spec": map[string]interface{}{
+				"input": map[string]interface{}{
+					"network": map[string]interface{}{"appListeningPorts": rows},
+				},
+			},
+		}
+	}
+	service := func(name string, annotation string, ports ...int) map[string]interface{} {
+		rows := make([]interface{}, 0, len(ports))
+		for _, port := range ports {
+			rows = append(rows, map[string]interface{}{"port": port})
+		}
+		annotations := map[string]interface{}{}
+		if annotation != "" {
+			annotations["brain.io/default-open-port"] = annotation
+		}
+		return map[string]interface{}{
+			"metadata": map[string]interface{}{"name": name, "namespace": "default", "annotations": annotations},
+			"spec":     map[string]interface{}{"ports": rows},
+		}
+	}
+	readDefaultOpenPort := func(t *testing.T, out map[string]interface{}) (int, bool) {
+		t.Helper()
+		status := out["status"].(map[string]interface{})
+		network := status["network"].(map[string]interface{})
+		raw, present := network["defaultOpenPort"]
+		if !present {
+			return 0, false
+		}
+		port, ok := privatePortFromValue(raw)
+		if !ok {
+			t.Fatalf("status.network.defaultOpenPort = %v, want a port number", raw)
+		}
+		return port, true
+	}
+
+	t.Run("stored on the AP's Service", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{service("minio-service", "9001", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); !ok || port != 9001 {
+			t.Fatalf("defaultOpenPort = %d (%v), want 9001", port, ok)
+		}
+	})
+	t.Run("template-preset annotation with padding", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{service("minio-service", " 9001 ", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); !ok || port != 9001 {
+			t.Fatalf("defaultOpenPort = %d (%v), want 9001", port, ok)
+		}
+	})
+	t.Run("stale port is ignored", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000), nil, []map[string]interface{}{service("minio-service", "9001", 9000)})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want no field for a port the AP no longer listens on", port)
+		}
+	})
+	t.Run("sibling service naming a port it does not expose", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{
+			service("minio-metrics", "9001", 9100),
+			service("minio-service", "", 9000, 9001),
+		})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want no field when only a foreign Service names it", port)
+		}
+	})
+	t.Run("missing", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{service("minio-service", "", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want no field without an annotation", port)
+		}
+	})
+	t.Run("unparseable", func(t *testing.T) {
+		out := APWithIngressesAndServicesFromList(apWithPorts(9000, 9001), nil, []map[string]interface{}{service("minio-service", "console", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want no field for an unparseable annotation", port)
+		}
+	})
+	t.Run("a stale spec-side value never leaks through", func(t *testing.T) {
+		ap := apWithPorts(9000, 9001)
+		ap["status"] = map[string]interface{}{"network": map[string]interface{}{"defaultOpenPort": 9000}}
+		out := APWithIngressesAndServicesFromList(ap, nil, []map[string]interface{}{service("minio-service", "", 9000, 9001)})
+		if port, ok := readDefaultOpenPort(t, out); ok {
+			t.Fatalf("defaultOpenPort = %d, want the Service to be the only source", port)
+		}
+	})
 }

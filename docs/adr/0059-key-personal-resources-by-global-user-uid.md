@@ -191,11 +191,13 @@ Personal-resource ownership survives kubeconfig rotation (as before), and now
 also region moves and account merges; support attribution can run on the
 global uid. Free Chat Turns remain a namespace-shared allowance.
 
-Identifiers may be recorded; credentials and content may not. `userUid` and
+Identifiers may be recorded; credentials may not. `userUid` and
 `crName` are permitted in logs, telemetry, audit records, and API responses.
-ADR-0056's prohibition list is unchanged and extends to the app token:
-kubeconfig bearer tokens, app tokens, OAuth tokens, connection ciphertext, and
-conversation content never appear in any of those channels.
+ADR-0056's credential prohibition extends to the app token: kubeconfig bearer
+tokens, app tokens, OAuth tokens, and connection ciphertext never appear in any
+of those channels. Conversation content follows ADR-0056's 2026-09-07 revision:
+configured Langfuse tracing may record chat and thread-title model inputs and
+outputs; ordinary logs, audit records, and unrelated API responses may not.
 
 Personal APIs keep failing closed, and ADR-0056's distinct error conditions
 are preserved. After re-key, rows carry only the uid key: no degraded path may

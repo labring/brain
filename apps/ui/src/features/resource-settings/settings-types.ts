@@ -49,6 +49,8 @@ export interface SettingsRenderedSection {
 export interface SettingsViewModel {
   closeAriaLabel?: string;
   footer?: ReactNode;
+  /** Pane-level actions for the Side Pane header (the AP Open control). */
+  headerActions?: ReactNode;
   icon?: ReactNode;
   leaveGuard?: SettingsLeaveGuardHandle | null;
   resolvedView: string;

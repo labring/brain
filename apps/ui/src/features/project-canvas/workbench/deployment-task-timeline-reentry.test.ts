@@ -163,7 +163,7 @@ test("dock chip fit is zero for an empty dock", () => {
   assert.equal(fitDeploymentTaskDockChipCount(1000, 0), 0);
 });
 
-test("deployment task dock does not show completed tasks during projection grace", () => {
+test("deployment task dock keeps completed tasks across projection grace", () => {
   const completedAt = NOW.toISOString();
   const completedTask = task({
     artifactSummary: {
@@ -187,7 +187,7 @@ test("deployment task dock does not show completed tasks during projection grace
     now: NOW,
     tasks: [completedTask],
   });
-  assert.equal(duringGrace.tasks.length, 0);
+  assert.equal(duringGrace.tasks.length, 1);
 
   const afterGrace = selectDeploymentTaskDock({
     activeTaskId: null,
@@ -195,10 +195,10 @@ test("deployment task dock does not show completed tasks during projection grace
     now: new Date("2026-06-17T10:06:00.000Z"),
     tasks: [completedTask],
   });
-  assert.equal(afterGrace.tasks.length, 0);
+  assert.equal(afterGrace.tasks.length, 1);
 });
 
-test("deployment task dock shows completed tasks only as current-session notices", () => {
+test("deployment task dock keeps completed tasks until dismissed", () => {
   const completedTask = task({
     artifactSummary: {
       resources: [
@@ -216,23 +216,23 @@ test("deployment task dock shows completed tasks only as current-session notices
     status: "completed",
   });
 
-  const withoutNotice = selectDeploymentTaskDock({
+  const visible = selectDeploymentTaskDock({
     activeTaskId: null,
     dismissedTaskUpdatedAtById: new Map(),
     now: NOW,
     tasks: [completedTask],
   });
-  assert.equal(withoutNotice.tasks.length, 0);
+  assert.equal(visible.tasks.length, 1);
 
-  const withNotice = selectDeploymentTaskDock({
+  const dismissed = selectDeploymentTaskDock({
     activeTaskId: null,
-    completedNoticeTaskIds: new Set(["task-completed"]),
-    dismissedTaskUpdatedAtById: new Map(),
+    dismissedTaskUpdatedAtById: new Map([
+      ["task-completed", completedTask.updatedAt],
+    ]),
     now: NOW,
     tasks: [completedTask],
   });
-  assert.equal(withNotice.tasks.length, 1);
-  assert.equal(withNotice.tasks[0]?.task.id, "task-completed");
+  assert.equal(dismissed.tasks.length, 0);
 });
 
 test("deployment task dock hides a failed task superseded by a redeploy", () => {
@@ -257,24 +257,26 @@ test("deployment task dock hides a failed task superseded by a redeploy", () => 
   );
 });
 
-test("deployment task dock shows cancelled tasks only as brief notices", () => {
-  const silent = selectDeploymentTaskDock({
+test("deployment task dock keeps cancelled tasks until dismissed", () => {
+  const cancelledTask = task({ id: "task-cancelled", status: "cancelled" });
+  const visible = selectDeploymentTaskDock({
     activeTaskId: null,
     dismissedTaskUpdatedAtById: new Map(),
     now: NOW,
-    tasks: [task({ id: "task-cancelled", status: "cancelled" })],
-  });
-  assert.equal(silent.tasks.length, 0);
-
-  const noticed = selectDeploymentTaskDock({
-    activeTaskId: null,
-    completedNoticeTaskIds: new Set(["task-cancelled"]),
-    dismissedTaskUpdatedAtById: new Map(),
-    now: NOW,
-    tasks: [task({ id: "task-cancelled", status: "cancelled" })],
+    tasks: [cancelledTask],
   });
   assert.deepEqual(
-    noticed.tasks.map((item) => item.task.id),
+    visible.tasks.map((item) => item.task.id),
     ["task-cancelled"]
   );
+
+  const dismissed = selectDeploymentTaskDock({
+    activeTaskId: null,
+    dismissedTaskUpdatedAtById: new Map([
+      ["task-cancelled", cancelledTask.updatedAt],
+    ]),
+    now: NOW,
+    tasks: [cancelledTask],
+  });
+  assert.equal(dismissed.tasks.length, 0);
 });

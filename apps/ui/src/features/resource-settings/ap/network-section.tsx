@@ -2,9 +2,13 @@
 
 import { AppButton } from "@workspace/ui/components/app-button";
 import { AppDialog } from "@workspace/ui/components/app-dialog";
-import { AppIconButton } from "@workspace/ui/components/app-icon-button";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { CanvasNode } from "@workspace/ui/components/canvas-node/canvas-node";
+import {
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
+} from "@workspace/ui/components/dropdown-menu";
+import { entryNodeOpenDisabledReason } from "@workspace/ui/components/entry-node/entry-node";
 import { Label } from "@workspace/ui/components/label";
 import {
   Tooltip,
@@ -12,7 +16,17 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
-import { Network, Plus, Save, Settings, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ExternalLink,
+  Network,
+  Pencil,
+  Plus,
+  Save,
+  Settings,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import type { SettingsLeaveGuardHandle } from "../settings-leave-guard";
@@ -33,14 +47,25 @@ import {
   type ApNetworkVisibleDomainRows,
   type ApNetworkVisiblePublicAddressRow,
   addedAppListeningPorts,
+  apNetworkOpenByDefaultPorts,
+  apNetworkOpenTarget,
   apNetworksEqual,
+  appListeningPortDisplayName,
+  appListeningPortRowDetail,
   appListeningPortsFromNetwork,
+  domainCountForPort,
+  domainCountLabel,
+  networkDefaultOpenPort,
+  PORT_DISPLAY_NAME_MAX_LENGTH,
+  portDisplayNameError,
   publicAddressDefaultPort,
   publicAddressDisplayName,
   publicAddressesTargetingPort,
   publicAddressIdValue,
+  takenPortDisplayNames,
   visibleDomainRows,
 } from "./ap-network-model";
+import { AP_OPEN_TARGET_LABEL } from "./ap-open-target";
 import { apNetworkDraftBackingKey } from "./ap-settings-draft";
 import type {
   ApPublicAddressesSettingsSectionsProps,
@@ -77,7 +102,9 @@ interface NetworkSettingsSectionProps {
 const PUBLIC_ADDRESS_VISIBLE_COUNT = 3;
 const PUBLIC_ADDRESS_DRAFT_DOMAINS = ["network"] as const;
 const PUBLIC_ADDRESS_SUBMIT_CONFLICT_MESSAGE =
-  "Public Address configuration changed since you started editing.";
+  "Network configuration changed since you started editing.";
+
+const BROWSER_ADDRESS_PATTERN = /^https?:\/\//;
 
 function publicAddressValue(address: ApNetworkPublicAddress): string {
   return address.url?.trim() || address.host?.trim() || "";
@@ -114,7 +141,7 @@ function publicAddressReadinessKey(value: string): string {
   }
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    if (!["http:", "https:", "ws:", "wss:"].includes(parsed.protocol)) {
       return "";
     }
     return parsed.href;
@@ -308,11 +335,17 @@ function publicAddressKey(
   address: ApNetworkPublicAddress,
   index: number
 ): string {
-  return (
-    address.id?.trim() ||
-    address.host?.trim().toLowerCase() ||
-    `pending-${index}`
-  );
+  const id = publicAddressIdValue(address);
+  if (id !== "") {
+    return `public-id:${id}`;
+  }
+  // Observed addresses may share a host across protocols and target ports.
+  // Keep their row identity stable when the list is reordered or filtered.
+  const url = address.url?.trim() ?? "";
+  const host = address.host?.trim().toLowerCase() ?? "";
+  return url !== "" || host !== ""
+    ? `public-endpoint:${JSON.stringify([url, host, address.port])}`
+    : `public-pending:${index}`;
 }
 
 function customDomainKey(domain: ApNetworkCustomDomain, index: number): string {
@@ -344,8 +377,138 @@ function platformAddressDraftFromPort(
   };
 }
 
+const ROW_ACTIONS_MENU_TRIGGER_CLASS =
+  "bg-input/30 hover:bg-input! data-popup-open:bg-input! data-popup-open:text-blue-400";
+const ROW_ACTIONS_CHECKBOX_ITEM_CLASS =
+  "canvas-node-action-menu-item h-7 cursor-pointer rounded-md py-0 pl-2 font-normal text-sm text-zinc-200 leading-none hover:bg-white/15 hover:text-zinc-50 focus:bg-white/15 focus:text-zinc-50";
+const OPEN_BY_DEFAULT_LABEL = "Open by default";
+const DELETE_LAST_PORT_REASON = "At least one App Listening Port is required";
+const EDIT_PENDING_ADDRESS_REASON = "Domain not allocated yet";
+
+interface RowActionsMenuProps {
+  "aria-label": string;
+  children: ReactNode;
+}
+
+/**
+ * The one control every Network row carries: a ⋯ trigger opening that row's
+ * actions. Same recipe as the environment rows, so the pane reads as one.
+ */
+function RowActionsMenu({
+  "aria-label": ariaLabel,
+  children,
+}: RowActionsMenuProps) {
+  return (
+    <CanvasNode.ActionMenu
+      alignOffset={0}
+      aria-label={ariaLabel}
+      className={ROW_ACTIONS_MENU_TRIGGER_CLASS}
+      sideOffset={6}
+      triggerSize="lg"
+      triggerVariant="secondary"
+    >
+      {children}
+    </CanvasNode.ActionMenu>
+  );
+}
+
+/**
+ * The AP Settings pane's header action: opens the Default Open Port's best
+ * Public Address in a new tab. Reads just "Open" — the App Listening Ports
+ * card beside it already shows which port that is — and names the port only
+ * on hover and to assistive tech ("Open Console"). Greyed with a reason when
+ * nothing is accessible yet.
+ */
+export function ApSettingsOpenAction({ network }: { network: ApNetwork }) {
+  const target = apNetworkOpenTarget(network);
+  const label = target?.label ?? AP_OPEN_TARGET_LABEL;
+  const reason = entryNodeOpenDisabledReason(target);
+  const url = reason === undefined ? target?.url : undefined;
+
+  return (
+    <AppButton
+      aria-description={reason}
+      aria-disabled={reason === undefined ? undefined : true}
+      aria-label={label}
+      // Header-weight, like the pane's close control: quiet, the same height,
+      // muted until hovered.
+      className={cn(
+        "h-8 shrink-0 px-2 text-muted-foreground text-sm hover:text-foreground [&_svg:not([class*='size-'])]:size-4",
+        reason !== undefined &&
+          "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-muted-foreground"
+      )}
+      data-settings-action="open"
+      nativeButton={url === undefined ? undefined : false}
+      render={
+        url === undefined ? undefined : (
+          // biome-ignore lint/a11y/useAnchorContent: Base UI merges the button children into the anchor
+          <a href={url} rel="noopener noreferrer" target="_blank" />
+        )
+      }
+      size="sm"
+      title={reason ?? label}
+      type="button"
+      variant="quiet"
+    >
+      <ExternalLink aria-hidden data-icon="inline-start" />
+      {AP_OPEN_TARGET_LABEL}
+    </AppButton>
+  );
+}
+
+interface PublicAddressRowActionsProps {
+  onDelete?: () => void | Promise<void>;
+  onEdit?: () => void;
+  pending: boolean;
+  value: string;
+}
+
+/** ⋯ menu of a Public Address row: Edit (bind a Custom Domain) and Delete. */
+function PublicAddressRowActions({
+  onDelete,
+  onEdit,
+  pending,
+  value,
+}: PublicAddressRowActionsProps) {
+  if (onEdit == null && onDelete == null) {
+    return null;
+  }
+  return (
+    <RowActionsMenu
+      aria-label={`Public Address actions for ${value === "" ? "pending domain" : value}`}
+    >
+      {onEdit == null ? null : (
+        <CanvasNode.ActionMenuItem
+          action={{
+            disabled: value === "",
+            disabledReason: EDIT_PENDING_ADDRESS_REASON,
+            onClick: onEdit,
+          }}
+          actionKey="edit"
+          icon={<Settings aria-hidden className="size-4" />}
+        >
+          Edit
+        </CanvasNode.ActionMenuItem>
+      )}
+      {onEdit == null || onDelete == null ? null : <DropdownMenuSeparator />}
+      {onDelete == null ? null : (
+        <CanvasNode.ActionMenuItem
+          action={{ loading: pending, onClick: onDelete }}
+          actionKey="delete"
+          icon={<Trash2 aria-hidden className="size-4" />}
+          tone="destructive"
+        >
+          Delete
+        </CanvasNode.ActionMenuItem>
+      )}
+    </RowActionsMenu>
+  );
+}
+
 interface PublicAddressRowProps {
   address: ApNetworkPublicAddress;
+  /** Second line: `name · port` of the App Listening Port this address reaches. */
+  detail: string;
   onBindCustomDomain?: () => void;
   onDelete?: () => void | Promise<void>;
   readOnly: boolean;
@@ -354,6 +517,7 @@ interface PublicAddressRowProps {
 
 function PublicAddressRow({
   address,
+  detail,
   onBindCustomDomain,
   onDelete,
   readOnly,
@@ -406,7 +570,13 @@ function PublicAddressRow({
                 />
               </span>
               <CanvasNode.CopyableRowValue
-                href={publicAddressReadinessURLForAddress(address)}
+                href={
+                  BROWSER_ADDRESS_PATTERN.test(
+                    publicAddressReadinessURLForAddress(address)
+                  )
+                    ? publicAddressReadinessURLForAddress(address)
+                    : undefined
+                }
               >
                 {value === "" ? "Pending domain" : value}
               </CanvasNode.CopyableRowValue>
@@ -416,33 +586,17 @@ function PublicAddressRow({
               aria-hidden={rowCopyable ? true : undefined}
               className="min-w-0 truncate text-muted-foreground text-sm leading-5"
             >
-              {address.port}
+              {detail}
             </div>
           </div>
           <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
-            {readOnly || onBindCustomDomain == null ? null : (
-              <AppIconButton
-                aria-label="Edit Public Address"
-                disabled={value === ""}
-                onClick={onBindCustomDomain}
-                size="lg"
-                type="button"
-                variant="secondary"
-              >
-                <Settings aria-hidden />
-              </AppIconButton>
-            )}
-            {readOnly || onDelete == null ? null : (
-              <AppIconButton
-                aria-label="Delete Public Address"
-                disabled={pending}
-                onClick={handleDelete}
-                size="lg"
-                type="button"
-                variant="danger"
-              >
-                <Trash2 aria-hidden />
-              </AppIconButton>
+            {readOnly ? null : (
+              <PublicAddressRowActions
+                onDelete={onDelete == null ? undefined : handleDelete}
+                onEdit={onBindCustomDomain}
+                pending={pending}
+                value={value}
+              />
             )}
           </CanvasNode.CopyableRowControl>
         </>
@@ -452,6 +606,8 @@ function PublicAddressRow({
 }
 
 interface CustomDomainRowProps {
+  /** Second line when the target port is known: `name · port`. */
+  detail?: string;
   domain: ApNetworkCustomDomain;
   onUnbind?: () => void | Promise<void>;
   readOnly: boolean;
@@ -516,7 +672,12 @@ function CustomDomainStatusTooltip({
   );
 }
 
-function CustomDomainRow({ domain, onUnbind, readOnly }: CustomDomainRowProps) {
+function CustomDomainRow({
+  detail,
+  domain,
+  onUnbind,
+  readOnly,
+}: CustomDomainRowProps) {
   const [pending, setPending] = useState(false);
   const handleUnbind = async () => {
     if (onUnbind == null) {
@@ -529,12 +690,11 @@ function CustomDomainRow({ domain, onUnbind, readOnly }: CustomDomainRowProps) {
       setPending(false);
     }
   };
-  const targetPort = domain.targetPort ?? undefined;
   const targetText =
     domain.cnameTarget == null || domain.cnameTarget.trim() === ""
       ? domain.platformAddressId
       : domain.cnameTarget.trim();
-  const detailText = targetPort == null ? targetText : String(targetPort);
+  const detailText = detail ?? targetText;
   const statusAriaLabel = customDomainStatusAriaLabel(domain);
 
   return (
@@ -553,17 +713,20 @@ function CustomDomainRow({ domain, onUnbind, readOnly }: CustomDomainRowProps) {
         </div>
       </div>
       {readOnly || onUnbind == null ? null : (
-        <AppIconButton
-          aria-label="Unbind Custom Domain"
-          disabled={pending}
-          onClick={handleUnbind}
-          size="lg"
-          title="Unbind Custom Domain"
-          type="button"
-          variant="danger"
-        >
-          <Trash2 aria-hidden />
-        </AppIconButton>
+        <div className="flex shrink-0 items-center gap-2">
+          <RowActionsMenu
+            aria-label={`Custom Domain actions for ${domain.domain}`}
+          >
+            <CanvasNode.ActionMenuItem
+              action={{ loading: pending, onClick: handleUnbind }}
+              actionKey="unbind"
+              icon={<Trash2 aria-hidden className="size-4" />}
+              tone="destructive"
+            >
+              Unbind
+            </CanvasNode.ActionMenuItem>
+          </RowActionsMenu>
+        </div>
       )}
     </div>
   );
@@ -600,30 +763,106 @@ function NetworkCard({ actions, children, title }: NetworkCardProps) {
   );
 }
 
-interface PrivateAddressRowProps {
-  address: string;
-  affectedPublicAddressCount: number;
+interface AppListeningPortOpenByDefault {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void | Promise<void>;
+}
+
+interface AppListeningPortRowActionsProps {
   canDelete: boolean;
   onDelete?: () => void;
+  onRename?: () => void;
+  openByDefault?: AppListeningPortOpenByDefault;
+  port: number;
+}
+
+/**
+ * ⋯ menu of an App Listening Port row: Rename, the "Open by default" choice
+ * (Default Open Port, only while there is a choice), and Delete.
+ */
+function AppListeningPortRowActions({
+  canDelete,
+  onDelete,
+  onRename,
+  openByDefault,
+  port,
+}: AppListeningPortRowActionsProps) {
+  if (onRename == null && onDelete == null) {
+    return null;
+  }
+  return (
+    <RowActionsMenu aria-label={`App Listening Port ${port} actions`}>
+      {onRename == null ? null : (
+        <CanvasNode.ActionMenuItem
+          action={{ onClick: onRename }}
+          actionKey="rename"
+          icon={<Pencil aria-hidden className="size-4" />}
+        >
+          Rename
+        </CanvasNode.ActionMenuItem>
+      )}
+      {openByDefault == null ? null : (
+        <DropdownMenuCheckboxItem
+          checked={openByDefault.checked}
+          className={ROW_ACTIONS_CHECKBOX_ITEM_CLASS}
+          data-action-key="open-by-default"
+          onCheckedChange={(checked) => {
+            Promise.resolve(openByDefault.onCheckedChange(checked)).catch(
+              () => undefined
+            );
+          }}
+        >
+          {OPEN_BY_DEFAULT_LABEL}
+        </DropdownMenuCheckboxItem>
+      )}
+      {onDelete == null ? null : <DropdownMenuSeparator />}
+      {onDelete == null ? null : (
+        <CanvasNode.ActionMenuItem
+          action={{
+            disabled: !canDelete,
+            disabledReason: DELETE_LAST_PORT_REASON,
+            onClick: onDelete,
+          }}
+          actionKey="delete"
+          icon={<Trash2 aria-hidden className="size-4" />}
+          tone="destructive"
+        >
+          Delete
+        </CanvasNode.ActionMenuItem>
+      )}
+    </RowActionsMenu>
+  );
+}
+
+interface AppListeningPortRowProps {
+  address: string;
+  canDelete: boolean;
+  /** Second line: `name · port · N domains`. */
+  detail: string;
+  onDelete?: () => void;
+  onRename?: () => void;
+  /**
+   * The "Open by default" choice for this port; present only while at least
+   * two ports could be the Default Open Port and this is one of them.
+   */
+  openByDefault?: AppListeningPortOpenByDefault;
   port: number;
   readOnly: boolean;
   rowKey: string;
 }
 
-function PrivateAddressRow({
-  affectedPublicAddressCount,
+function AppListeningPortRow({
   address,
   canDelete,
+  detail,
   onDelete,
+  onRename,
+  openByDefault,
   port,
   readOnly,
   rowKey,
-}: PrivateAddressRowProps) {
+}: AppListeningPortRowProps) {
   const copyable = address.trim() !== "";
-  const countLabel =
-    affectedPublicAddressCount === 1
-      ? "1 Public Address"
-      : `${affectedPublicAddressCount} Public Addresses`;
 
   return (
     <CanvasNode.CopyableRow
@@ -652,33 +891,116 @@ function PrivateAddressRow({
               </span>
               <CanvasNode.CopyableRowIndicator className="text-muted-foreground" />
             </div>
-            <div className="flex min-w-0 items-center gap-2 text-muted-foreground text-sm leading-5">
-              <span className="shrink-0 tabular-nums">{port}</span>
-              <span className="min-w-0 truncate">{countLabel}</span>
+            <div className="min-w-0 truncate text-muted-foreground text-sm leading-5">
+              {detail}
             </div>
           </div>
           <CanvasNode.CopyableRowControl className="relative z-20 flex shrink-0 items-center gap-2">
-            {readOnly || onDelete == null ? null : (
-              <AppIconButton
-                aria-label={`Delete App Listening Port ${port}`}
-                disabled={!canDelete}
-                onClick={onDelete}
-                size="lg"
-                title={
-                  canDelete
-                    ? `Delete App Listening Port ${port}`
-                    : "At least one App Listening Port is required"
-                }
-                type="button"
-                variant="danger"
-              >
-                <Trash2 aria-hidden />
-              </AppIconButton>
+            {readOnly ? null : (
+              <AppListeningPortRowActions
+                canDelete={canDelete}
+                onDelete={onDelete}
+                onRename={onRename}
+                openByDefault={openByDefault}
+                port={port}
+              />
             )}
           </CanvasNode.CopyableRowControl>
         </>
       )}
     </CanvasNode.CopyableRow>
+  );
+}
+
+const PORT_DISPLAY_NAME_HINT =
+  "Shown on the Public access node next to the port number. Leave empty to use the Service port's name.";
+
+interface AppListeningPortNameFormProps {
+  displayName: string | undefined;
+  onCancel: () => void;
+  onSubmit: (displayName: string) => void | Promise<void>;
+  port: number;
+  /** Names the AP's other ports carry, keyed by name → port. */
+  takenNames: ReadonlyMap<string, number>;
+}
+
+/**
+ * Row-swap form for one port's Port Display Name — the same pattern as
+ * Public Address editing. Done writes into the AP Settings Draft; the draft
+ * footer handles Update / Discard.
+ */
+export function AppListeningPortNameForm({
+  displayName,
+  onCancel,
+  onSubmit,
+  port,
+  takenNames,
+}: AppListeningPortNameFormProps) {
+  const inputId = useId();
+  const [draft, setDraft] = useState(displayName ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    const message = portDisplayNameError(draft, port, takenNames);
+    if (message !== undefined) {
+      setError(message);
+      return;
+    }
+    await onSubmit(draft.trim());
+  };
+
+  return (
+    <div
+      className="grid min-w-0 gap-4 rounded-lg border border-border border-dashed bg-transparent p-2.5"
+      data-slot="app-listening-port-name-form"
+    >
+      <div className="min-w-0 truncate text-foreground text-sm leading-5">
+        Port {port}
+      </div>
+      <AppInputField
+        autoFocus
+        description={PORT_DISPLAY_NAME_HINT}
+        error={error}
+        id={inputId}
+        label="Name"
+        maxLength={PORT_DISPLAY_NAME_MAX_LENGTH}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError(null);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            handleSubmit().catch(() => undefined);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+        placeholder="e.g. Admin console"
+        value={draft}
+      />
+      <div className="flex min-w-0 justify-end gap-2">
+        <AppButton
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          onClick={onCancel}
+          type="button"
+          variant="quiet"
+        >
+          <X aria-hidden data-icon="inline-start" />
+          Cancel
+        </AppButton>
+        <AppButton
+          className="h-9 rounded-lg bg-white/5 px-4 text-primary text-sm hover:bg-input"
+          onClick={handleSubmit}
+          type="button"
+          variant="quiet"
+        >
+          <Check aria-hidden data-icon="inline-start" />
+          Done
+        </AppButton>
+      </div>
+    </div>
   );
 }
 
@@ -1165,6 +1487,8 @@ interface DomainListSectionProps {
   canMutateNetwork: boolean;
   defaultPort: number;
   expandedCnameRowKeys: ReadonlySet<string>;
+  /** The network the rows come from; names each row's target port. */
+  network: ApNetwork;
   onAddPublicAddress: (
     address: ApNetworkPublicAddressDraft,
     customDomain?: ApNetworkCustomDomain
@@ -1199,6 +1523,7 @@ function DomainListSection({
   canMutateNetwork,
   defaultPort,
   expandedCnameRowKeys,
+  network,
   onAddPublicAddress,
   onBindAddress,
   onCancelBindAddress,
@@ -1268,6 +1593,11 @@ function DomainListSection({
               );
               return (
                 <CustomDomainRow
+                  detail={
+                    domain.targetPort == null
+                      ? undefined
+                      : appListeningPortRowDetail(network, domain.targetPort)
+                  }
                   domain={displayDomain}
                   key={customDomainKey(domain, index)}
                   onUnbind={
@@ -1314,6 +1644,7 @@ function DomainListSection({
               ) : (
                 <PublicAddressRow
                   address={displayAddress}
+                  detail={appListeningPortRowDetail(network, address.port)}
                   key={key}
                   onBindCustomDomain={
                     canMutateNetwork ? () => onOpenBindAddress(key) : undefined
@@ -1371,11 +1702,17 @@ export function NetworkSettingsSection({
   >(() => new Set());
   const [deletePortTarget, setDeletePortTarget] =
     useState<DeletePortDialogTarget | null>(null);
+  const [renamingPort, setRenamingPort] = useState<number | null>(null);
   const visibleDomains = visibleDomainRows(network);
   const canMutateNetwork = controller.canMutate;
   const visiblePublicAddressRows = showAllPublicAddresses
     ? visibleDomains.publicAddressRows
     : visibleDomains.publicAddressRows.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
+  const takenNames = takenPortDisplayNames(appListeningPorts);
+  const openByDefaultPorts = canMutateNetwork
+    ? apNetworkOpenByDefaultPorts(network)
+    : [];
+  const storedDefaultOpenPort = networkDefaultOpenPort(network);
 
   const [prevPublicAddressRowCount, setPrevPublicAddressRowCount] = useState(
     visibleDomains.publicAddressRows.length
@@ -1395,6 +1732,14 @@ export function NetworkSettingsSection({
 
   const handleAddAppListeningPort = async (port: number) => {
     await controller.addAppListeningPort(port);
+  };
+
+  const handleRenameAppListeningPort = async (
+    port: number,
+    displayName: string
+  ) => {
+    await controller.renameAppListeningPort(port, displayName);
+    setRenamingPort(null);
   };
 
   const commitDeleteAppListeningPort = async (port: number) => {
@@ -1459,7 +1804,7 @@ export function NetworkSettingsSection({
 
   return (
     <>
-      <NetworkCard title="Private Addresses">
+      <NetworkCard title="App Listening Ports">
         {readOnly ? null : (
           <AppButton
             aria-label="Add App Listening Port"
@@ -1482,24 +1827,55 @@ export function NetworkSettingsSection({
         ) : null}
         <CanvasNode.CopyFeedbackScope>
           <div className="grid gap-2">
-            {appListeningPorts.map((row) => (
-              <PrivateAddressRow
-                address={row.privateAddress ?? ""}
-                affectedPublicAddressCount={
-                  publicAddressesTargetingPort(network, row.port).length
-                }
-                canDelete={appListeningPorts.length > 1}
-                key={`private-${row.port}`}
-                onDelete={
-                  canMutateNetwork
-                    ? () => handleDeleteAppListeningPort(row.port)
-                    : undefined
-                }
-                port={row.port}
-                readOnly={readOnly}
-                rowKey={`private-${row.port}`}
-              />
-            ))}
+            {appListeningPorts.map((row) =>
+              renamingPort === row.port ? (
+                <AppListeningPortNameForm
+                  displayName={appListeningPortDisplayName(network, row.port)}
+                  key={`private-${row.port}`}
+                  onCancel={() => setRenamingPort(null)}
+                  onSubmit={(displayName) =>
+                    handleRenameAppListeningPort(row.port, displayName)
+                  }
+                  port={row.port}
+                  takenNames={takenNames}
+                />
+              ) : (
+                <AppListeningPortRow
+                  address={row.privateAddress ?? ""}
+                  canDelete={appListeningPorts.length > 1}
+                  detail={appListeningPortRowDetail(
+                    network,
+                    row.port,
+                    domainCountLabel(domainCountForPort(network, row.port))
+                  )}
+                  key={`private-${row.port}`}
+                  onDelete={
+                    canMutateNetwork
+                      ? () => handleDeleteAppListeningPort(row.port)
+                      : undefined
+                  }
+                  onRename={
+                    canMutateNetwork
+                      ? () => setRenamingPort(row.port)
+                      : undefined
+                  }
+                  openByDefault={
+                    openByDefaultPorts.includes(row.port)
+                      ? {
+                          checked: storedDefaultOpenPort === row.port,
+                          onCheckedChange: (checked) =>
+                            controller.setDefaultOpenPort(
+                              checked ? row.port : null
+                            ),
+                        }
+                      : undefined
+                  }
+                  port={row.port}
+                  readOnly={readOnly}
+                  rowKey={`private-${row.port}`}
+                />
+              )
+            )}
           </div>
         </CanvasNode.CopyFeedbackScope>
       </NetworkCard>
@@ -1509,6 +1885,7 @@ export function NetworkSettingsSection({
         canMutateNetwork={canMutateNetwork}
         defaultPort={publicAddressDefaultPort(network)}
         expandedCnameRowKeys={expandedCnameRowKeys}
+        network={network}
         onAddPublicAddress={handleAddPublicAddress}
         onBindAddress={handleBindCustomDomain}
         onCancelAddPublicAddress={handleCancelAddPublicAddress}
@@ -1557,12 +1934,7 @@ export function useApPublicAddressesSettingsSections({
   const commitMode = onNetworkDraftCommit != null && readOnly !== true;
   const [draftNetwork, setDraftNetwork] = useState(network);
   const [savePending, setSavePending] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [portNotice, setPortNotice] = useState<string | null>(null);
-  const [showAllPublicAddresses, setShowAllPublicAddresses] = useState(false);
-  const [expandedCnameRowKeys, setExpandedCnameRowKeys] = useState<
-    ReadonlySet<string>
-  >(() => new Set());
 
   useEffect(() => {
     if (commitMode) {
@@ -1613,27 +1985,17 @@ export function useApPublicAddressesSettingsSections({
   ]);
 
   const networkForRender = commitMode ? draftNetwork : network;
-  const visibleDomains = visibleDomainRows(networkForRender);
-  const visiblePublicAddressRows = showAllPublicAddresses
-    ? visibleDomains.publicAddressRows
-    : visibleDomains.publicAddressRows.slice(0, PUBLIC_ADDRESS_VISIBLE_COUNT);
+  // Identity-stable on the facts it shows: the settings host re-renders the
+  // pane header only when this element changes.
+  const headerActions = useMemo(
+    () => <ApSettingsOpenAction network={networkForRender} />,
+    [networkForRender]
+  );
   const networkDirty = publicAddressNetworkDirty(
     networkBackingState.base,
     draftNetwork
   );
   const canSave = commitMode && networkDirty && !savePending;
-
-  const [prevPublicAddressRowCount, setPrevPublicAddressRowCount] = useState(
-    visibleDomains.publicAddressRows.length
-  );
-  if (prevPublicAddressRowCount !== visibleDomains.publicAddressRows.length) {
-    setPrevPublicAddressRowCount(visibleDomains.publicAddressRows.length);
-    if (
-      visibleDomains.publicAddressRows.length <= PUBLIC_ADDRESS_VISIBLE_COUNT
-    ) {
-      setShowAllPublicAddresses(false);
-    }
-  }
 
   const resetNetworkDraft = useCallback(() => {
     applyNetworkDraftToLocalState(networkBackingState.base);
@@ -1661,7 +2023,7 @@ export function useApPublicAddressesSettingsSections({
 
   const saveNetworkDraft = useCallback(async () => {
     if (!canSave || onNetworkDraftCommit == null) {
-      throw new Error("Public Address draft cannot be saved yet.");
+      throw new Error("Network draft cannot be saved yet.");
     }
     const draft = draftNetwork;
     const prepared = prepareSettingsDraftSubmit(networkBackingState, {
@@ -1697,7 +2059,7 @@ export function useApPublicAddressesSettingsSections({
         failSettingsDraftSave(
           current,
           error,
-          "Could not save public addresses."
+          "Could not save Network settings."
         )
       );
       throw error;
@@ -1718,7 +2080,7 @@ export function useApPublicAddressesSettingsSections({
     (next: ApNetwork) => {
       const addedPorts = addedAppListeningPorts(networkForRender, next);
       if (addedPorts.length > 0) {
-        setPortNotice(`Port ${addedPorts[0]} added to Private Addresses.`);
+        setPortNotice(`Port ${addedPorts[0]} added to App Listening Ports.`);
       }
       setDraftNetwork(next);
     },
@@ -1729,7 +2091,6 @@ export function useApPublicAddressesSettingsSections({
     onNetworkChange: commitMode ? applyPublicAddressDraftNetwork : undefined,
     readOnly,
   });
-  const canMutateNetwork = controller.canMutate;
 
   const leaveGuard: SettingsLeaveGuardHandle | null =
     commitMode && networkDirty
@@ -1742,71 +2103,34 @@ export function useApPublicAddressesSettingsSections({
         }
       : null;
 
-  const handleOpenBindAddress = (rowKey: string) => {
-    setExpandedCnameRowKeys((current) => new Set(current).add(rowKey));
-  };
-
-  const handleCancelBindAddress = (rowKey: string) => {
-    setExpandedCnameRowKeys((current) => {
-      const next = new Set(current);
-      next.delete(rowKey);
-      return next;
-    });
-  };
-
-  const handleBindCustomDomain = async (
-    rowKey: string,
-    row: ApNetworkVisiblePublicAddressRow,
-    port: number,
-    domain?: ApNetworkCustomDomain
-  ) => {
-    await controller.bindCustomDomain(row, port, domain);
-    handleCancelBindAddress(rowKey);
-  };
-
   return {
     footer: commitMode ? (
       <ApSettingsDraftFooter
         canSave={canSave}
         conflictMessage={networkBackingState.submitConflictMessage}
         dirty={networkDirty}
-        discardAriaLabel="Discard Public Address changes"
+        discardAriaLabel="Discard Network changes"
         onCancel={resetNetworkDraft}
         onKeepEditing={keepEditingNetworkDraft}
         onReload={reloadNetworkDraft}
         onSave={handleSaveNetworkDraft}
         pending={savePending}
         saveFailureMessage={networkBackingState.saveFailureMessage}
-        submitAriaLabel="Update Public Address settings"
+        submitAriaLabel="Update Network settings"
       />
     ) : null,
+    headerActions,
     leaveGuard,
     sections: [
       {
         content: (
           <>
-            <DomainListSection
-              addOpen={addOpen}
-              canMutateNetwork={canMutateNetwork}
-              defaultPort={networkForRender.privatePort}
-              expandedCnameRowKeys={expandedCnameRowKeys}
-              onAddPublicAddress={controller.addPublicAddress}
-              onBindAddress={handleBindCustomDomain}
-              onCancelAddPublicAddress={() => setAddOpen(false)}
-              onCancelBindAddress={handleCancelBindAddress}
-              onCollapsePublicAddresses={() => setShowAllPublicAddresses(false)}
-              onDeletePublicAddress={controller.deletePublicAddress}
-              onOpenAddPublicAddress={() => setAddOpen(true)}
-              onOpenBindAddress={handleOpenBindAddress}
-              onShowAllPublicAddresses={() => setShowAllPublicAddresses(true)}
-              onUnbindCustomDomain={controller.unbindCustomDomain}
+            <NetworkSettingsSection
+              controller={controller}
+              onCustomDomainCnameVerify={onCustomDomainCnameVerify}
               platformAddressDraftContext={networkPlatformAddressDraftContext}
               publicAddressReadiness={publicAddressReadiness}
               readOnly={readOnly}
-              showAllPublicAddresses={showAllPublicAddresses}
-              verify={onCustomDomainCnameVerify}
-              visibleDomainRows={visibleDomains}
-              visiblePublicAddressRows={visiblePublicAddressRows}
             />
             {portNotice == null ? null : (
               <p className="text-muted-foreground text-sm" role="status">
@@ -1816,8 +2140,8 @@ export function useApPublicAddressesSettingsSections({
           </>
         ),
         icon: Network,
-        id: "public-addresses",
-        title: "Public Addresses",
+        id: "network",
+        title: "Network",
       },
     ],
   };

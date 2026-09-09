@@ -80,6 +80,35 @@ describe("managed deployment Brain verification", () => {
     expect(result.violations).toContain("Deployment/web is not ready");
   });
 
+  it("does not wait for Deployment Available replicas after Ready replicas converge", () => {
+    const deployment = observation("Deployment", "web");
+    if (deployment.snapshot == null) {
+      throw new Error("deployment observation fixture is empty");
+    }
+    deployment.snapshot.status = {
+      availableReplicas: 0,
+      observedGeneration: 1,
+      readyReplicas: 1,
+    };
+
+    expect(
+      verifyManagedWorkloadReadiness({
+        observations: [deployment],
+        workloads: [deployment.resource],
+      })
+    ).toEqual({ ok: true, violations: [] });
+  });
+
+  it("accepts a non-suspended CronJob as runtime evidence", () => {
+    const cronJob = observation("CronJob", "cleanup");
+    expect(
+      verifyManagedWorkloadReadiness({
+        observations: [cronJob],
+        workloads: [cronJob.resource],
+      })
+    ).toEqual({ ok: true, violations: [] });
+  });
+
   it("requires the Pod Ready condition instead of accepting Running phase", () => {
     const pod = observation("Pod", "web-pod");
     if (pod.snapshot == null) {
@@ -107,8 +136,19 @@ describe("managed deployment Brain verification", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.violations).toContain(
-      "no reported runtime workload is Ready"
+      "no reported runtime or public entry is Ready"
     );
+  });
+
+  it("accepts a ready public entry as result evidence", () => {
+    const service = observation("Service", "web");
+    expect(
+      verifyManagedWorkloadReadiness({
+        observations: [service],
+        publicEntryReady: true,
+        workloads: [service.resource],
+      })
+    ).toEqual({ ok: true, violations: [] });
   });
 
   it("builds only targeted, bounded Kubernetes verification commands", () => {

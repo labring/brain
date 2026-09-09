@@ -55,6 +55,8 @@ export interface GithubDeployerStates {
 export interface GithubDeployerActions {
   /** Invoked when the user connects or reconfigures workspace GitHub access. */
   onAuthorize?: () => void;
+  /** Starts authorization for a restored one-click deployment, once auth status is known. */
+  onAutoAuthorize?: () => void;
   /** Invoked when Deploy is pressed with the selected repo. */
   onDeploy?: (repo: GithubDeployerRepo) => void | Promise<void>;
   /** Invoked when the user accepts a matched app-store template recommendation. */
@@ -69,6 +71,7 @@ export interface GithubDeployerActions {
 
 export interface GithubDeployerResolvedActions {
   onAuthorize?: () => void;
+  onAutoAuthorize?: () => void;
   onDeploy?: (repo: GithubDeployerRepo) => void | Promise<void>;
   onDeployTemplate?: GithubDeployerActions["onDeployTemplate"];
   onDisconnect?: () => void;

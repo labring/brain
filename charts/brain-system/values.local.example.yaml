@@ -67,12 +67,12 @@ ui:
     SYSTEM_OPENAI_API_KEY: "REPLACE_ME_OPENAI_COMPATIBLE_KEY"
     SYSTEM_OPENAI_API_BASE_URL: "https://api.openai.com/v1"
     FREE_CHAT_TURNS: "5"
-    # Optional. When both keys are set, GitHub Deploy Devboxes export Codex
-    # traces to Langfuse. Leave empty to disable tracing.
+    # Optional Chat Assistant telemetry. Set both keys and LANGFUSE_HOST to enable.
+    # Credentials stay in Brain UI and are never forwarded to Deploy Devboxes.
     LANGFUSE_PUBLIC_KEY: ""
     LANGFUSE_SECRET_KEY: ""
-    # Optional. Langfuse base URL. Blank uses the gateway default
-    # (https://cloud.langfuse.com). Do not append /api/public/otel.
+    # Langfuse instance root URL. Blank disables telemetry; no Cloud fallback.
+    # Self-hosted Langfuse is supported. Do not append /api/public/otel.
     LANGFUSE_HOST: ""
     # User-billed turns use the Sealos AI proxy.
     # Later Chat Agent turns use the caller's Sealos AI Proxy.
@@ -89,10 +89,6 @@ ui:
     DEVBOX_JWT_TTL_SECONDS: "14400"
     # Storage ceiling for newly created deployment runtimes; existing Devboxes are unchanged.
     DEPLOY_DEVBOX_STORAGE_LIMIT: "10Gi"
-    # Optional. Leave empty to use the unified Brain-compatible sealos-skills branch:
-    # https://github.com/labring/sealos-skills.git#codex/unify-main-brain-deploy
-    # Set explicitly to another tested branch, tag, or commit when needed.
-    DEPLOY_SKILL_SOURCE: ""
 
 imagePullSecret:
   # App workload pods reference ghcr-cred when this chart creates it.

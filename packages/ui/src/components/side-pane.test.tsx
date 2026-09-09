@@ -39,6 +39,9 @@ const SCROLL_CONTENT_RE =
 const TITLE_RE = /Details/;
 const TITLE_ROW_GAP_RE = /flex min-h-7 min-w-0 items-center gap-2"/;
 const CLOSED_SLIDE_FULL_RE = /project-surface-slide-x-full/;
+const HEADER_ACTIONS_RE = /side-pane-header-actions/;
+const HEADER_ACTIONS_CONTENT_RE =
+  /side-pane-header-actions"><button type="button">Open</;
 
 function indexOfOrThrow(source: string, needle: string) {
   const index = source.indexOf(needle);
@@ -75,6 +78,32 @@ test("side pane renders shared chrome, accessibility labels, and motion-safe cla
   assert.match(html, MOTION_REDUCE_TRANSITION_RE);
   assert.match(html, SCROLL_BEFORE_CONTENT_GAP_RE);
   assert.match(html, TITLE_ROW_GAP_RE);
+});
+
+test("side pane header actions render between the title block and the close control", () => {
+  const html = renderToStaticMarkup(
+    <SidePane
+      closeAriaLabel="Close details"
+      headerActions={<button type="button">Open</button>}
+      onClose={noop}
+      title="Details"
+    >
+      <p>Pane body</p>
+    </SidePane>
+  );
+
+  const title = indexOfOrThrow(html, ">Details<");
+  const actions = indexOfOrThrow(html, 'data-slot="side-pane-header-actions"');
+  const close = indexOfOrThrow(html, 'aria-label="Close details"');
+  assert.ok(title < actions && actions < close);
+  assert.match(html, HEADER_ACTIONS_CONTENT_RE);
+
+  const bare = renderToStaticMarkup(
+    <SidePane onClose={noop} title="Details">
+      <p>Pane body</p>
+    </SidePane>
+  );
+  assert.doesNotMatch(bare, HEADER_ACTIONS_RE);
 });
 
 test("side pane keeps shared header outside the edge-aligned scroll body", () => {

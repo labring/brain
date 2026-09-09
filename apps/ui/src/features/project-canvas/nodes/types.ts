@@ -7,10 +7,10 @@ import type {
   DatabaseNodeStates,
 } from "@workspace/ui/components/database-node/database-node";
 import type {
-  EntryNodeAccessDomain,
   EntryNodeActions,
+  EntryNodeGroup,
+  EntryNodeOpenTarget,
   EntryNodeStates,
-  EntryNodeTarget,
 } from "@workspace/ui/components/entry-node/entry-node";
 import type { Node } from "@xyflow/react";
 import type {
@@ -68,9 +68,12 @@ export type CanvasDatabaseRfNode = Node<
 >;
 
 export interface CanvasEntryNodeData extends Record<string, unknown> {
-  accessDomain?: EntryNodeAccessDomain;
   actions?: EntryNodeActions;
+  /** Public Addresses grouped by the App Listening Port they target. */
+  groups: EntryNodeGroup[];
   layout?: CanvasNodeLayoutState;
+  /** What the header's Open control opens; absent when nothing is openable. */
+  open?: EntryNodeOpenTarget;
   resource: {
     apRef?: string;
     name: string;
@@ -79,7 +82,6 @@ export interface CanvasEntryNodeData extends Record<string, unknown> {
     uid?: string;
   };
   states: EntryNodeStates;
-  targets: EntryNodeTarget[];
 }
 
 export type CanvasEntryRfNode = Node<

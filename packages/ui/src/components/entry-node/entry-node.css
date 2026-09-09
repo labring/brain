@@ -1,4 +1,4 @@
-.entry-node-target-row,
 .entry-node-target-empty {
-  min-height: calc(var(--spacing) * 18);
+  /* Matches a single-address group: p-2.5 + header 16px + gap 6px + value 24px. */
+  min-height: calc(var(--spacing) * 16.5);
 }

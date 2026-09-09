@@ -84,7 +84,7 @@ export function createLoadSkillTool(
     inputSchema: loadSkillInputSchema,
     execute: async (
       { intention, name },
-      executionOptions?: ToolExecutionOptions
+      executionOptions?: ToolExecutionOptions<unknown>
     ) => {
       logChatToolIntention("loadSkill", intention);
       const key = name.trim().toLowerCase();
@@ -98,7 +98,7 @@ export function createLoadSkillTool(
       );
       return {
         name: skill.name,
-        skillDirectory: skill.folderName,
+        skillDirectory: skill.skillDirectory,
         content: stripSkillFrontmatter(raw),
       };
     },
@@ -114,7 +114,7 @@ export function createLoadSkillResourceTool(
     inputSchema: loadSkillResourceInputSchema,
     execute: async (
       { intention, name, path: resourcePath },
-      executionOptions?: ToolExecutionOptions
+      executionOptions?: ToolExecutionOptions<unknown>
     ) => {
       logChatToolIntention("loadSkillResource", intention);
       const key = name.trim().toLowerCase();
@@ -138,7 +138,7 @@ export function createLoadSkillResourceTool(
         );
         return {
           name: skill.name,
-          skillDirectory: skill.folderName,
+          skillDirectory: skill.skillDirectory,
           path: resourcePath.trim(),
           content,
         };

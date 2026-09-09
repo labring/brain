@@ -1,10 +1,11 @@
 "use client";
 
 import type {
-  EntryNodeAccessDomain,
+  EntryNodeAddress,
+  EntryNodeAddressKey,
+  EntryNodeGroup,
+  EntryNodeOpenTarget,
   EntryNodeStates,
-  EntryNodeTarget,
-  EntryNodeTargetKey,
 } from "@workspace/ui/components/entry-node/entry-node";
 import { EntryNode } from "@workspace/ui/components/entry-node/entry-node";
 import { Preview, PreviewWrapper } from "@workspace/ui/components/preview";
@@ -12,70 +13,143 @@ import type { ReactNode } from "react";
 
 import { EntryNodeCanvasHero } from "./entry-node-preview.canvas";
 
+const PLATFORM_SUFFIX = ".demo.sealos.run";
+
 const entryNodeStates: EntryNodeStates = {
-  name: "orders.demo.sealos.run",
+  name: "orders",
 };
 
-const accessDomain: EntryNodeAccessDomain = {
-  value: "orders.demo.sealos.run",
+function platformAddress(
+  id: string,
+  prefix: string,
+  status: EntryNodeAddress["status"] = {
+    label: "Accessible",
+    tone: "accessible",
+  }
+): EntryNodeAddress {
+  const host = `${prefix}${PLATFORM_SUFFIX}`;
+  return {
+    host,
+    id,
+    status,
+    value: `https://${host}/`,
+  };
+}
+
+const accessibleAddress = platformAddress("public", "orders");
+
+const customDomainAddress: EntryNodeAddress = {
+  host: "orders.example.com",
+  id: "custom",
+  status: { label: "Verifying", tone: "verifying" },
+  value: "https://orders.example.com/",
 };
 
-const accessibleTarget: EntryNodeTarget = {
-  id: "public",
-  label: "Platform Address",
-  status: { label: "Accessible", tone: "accessible" },
-  value: "https://orders.demo.sealos.run/",
-};
+const progressingAddress = platformAddress("progressing", "orders-preview", {
+  label: "Progressing",
+  tone: "progressing",
+});
 
-const secondAccessibleTarget: EntryNodeTarget = {
-  id: "public-secondary",
-  label: "Platform Address",
-  status: { label: "Accessible", tone: "accessible" },
-  value: "https://api.orders.demo.sealos.run/",
-};
+const failedAddress = platformAddress("failed", "orders-failed", {
+  label: "Inaccessible",
+  tone: "inaccessible",
+});
 
-const progressingTarget: EntryNodeTarget = {
-  id: "progressing",
-  label: "Platform Address",
+const pendingAddress: EntryNodeAddress = {
+  host: "Pending",
+  id: "pending",
   status: { label: "Progressing", tone: "progressing" },
-  value: "https://orders-preview.demo.sealos.run/",
 };
 
-const failedTarget: EntryNodeTarget = {
-  id: "failed",
-  label: "Platform Address",
-  status: { label: "Inaccessible", tone: "inaccessible" },
-  value: "https://orders-failed.demo.sealos.run/",
-};
-
-const longAccessDomain: EntryNodeAccessDomain = {
-  value:
-    "orders-public-domain-with-a-very-long-entry-node-name.demo.sealos.run",
-};
-
-const longTarget: EntryNodeTarget = {
-  id: "long-target",
-  label: "Platform Address",
+const websocketAddress: EntryNodeAddress = {
+  host: `game${PLATFORM_SUFFIX}`,
+  id: "game-ws",
   status: { label: "Accessible", tone: "accessible" },
-  value:
-    "https://orders-public-domain-with-a-very-long-target-value.demo.sealos.run/",
+  value: `wss://game${PLATFORM_SUFFIX}/`,
 };
 
-const aggregateSamples: {
-  title: string;
-  targets: EntryNodeTarget[];
-}[] = [
-  { title: "Not configured", targets: [] },
-  { title: "Accessible", targets: [accessibleTarget, secondAccessibleTarget] },
+const longAddress = platformAddress(
+  "long-target",
+  "orders-public-domain-with-a-very-long-target-value"
+);
+
+/** Single unnamed port: no group header, exactly as before. */
+const singlePortGroups: EntryNodeGroup[] = [
+  { addresses: [accessibleAddress], port: 3000 },
+];
+
+/** Two named ports (eaglercraft: game 5200 / admin 5201). */
+const twoPortGroups: EntryNodeGroup[] = [
+  { addresses: [websocketAddress], name: "game", port: 5200 },
   {
-    title: "Progressing",
-    targets: [progressingTarget, { ...progressingTarget, id: "progressing-2" }],
+    addresses: [platformAddress("admin", "game-admin")],
+    name: "Admin console",
+    port: 5201,
   },
-  { title: "Degraded", targets: [accessibleTarget, failedTarget] },
-  { title: "Inaccessible", targets: [failedTarget] },
+];
+
+/** Two addresses on one port: a Platform Address and its Custom Domain. */
+const sharedPortGroups: EntryNodeGroup[] = [
   {
-    title: "Missing status",
-    targets: [{ id: "missing", label: "Platform Address", value: "Pending" }],
+    addresses: [accessibleAddress, customDomainAddress],
+    name: "web",
+    port: 3000,
+  },
+];
+
+/** Two ports where only one carries a name: the other is headed by `:port`. */
+const unnamedPortGroups: EntryNodeGroup[] = [
+  {
+    addresses: [platformAddress("api", "orders-api")],
+    name: "API",
+    port: 9000,
+  },
+  { addresses: [platformAddress("console", "orders-console")], port: 9001 },
+];
+
+/** Open control: what the header opens for the single-port sample. */
+const openOrders: EntryNodeOpenTarget = {
+  label: "Open",
+  url: accessibleAddress.value,
+};
+
+/** Two named ports: the stored Default Open Port is the admin console. */
+const openAdminConsole: EntryNodeOpenTarget = {
+  label: "Open Admin console",
+  url: `https://game-admin${PLATFORM_SUFFIX}/`,
+};
+
+/** The Custom Domain is preferred once it is accessible. */
+const openWeb: EntryNodeOpenTarget = {
+  label: "Open web",
+  url: accessibleAddress.value,
+};
+
+const openSamples: {
+  groups: EntryNodeGroup[];
+  open?: EntryNodeOpenTarget;
+  title: string;
+}[] = [
+  { groups: [], title: "Not configured" },
+  {
+    groups: singlePortGroups,
+    open: openOrders,
+    title: "Openable (unnamed port)",
+  },
+  {
+    groups: twoPortGroups,
+    open: openAdminConsole,
+    title: "Openable (named port)",
+  },
+  {
+    groups: [{ addresses: [progressingAddress], port: 3000 }],
+    open: { label: "Open" },
+    title: "Not accessible yet",
+  },
+  {
+    groups: [{ addresses: [failedAddress], name: "web", port: 3000 }],
+    open: { label: "Open web" },
+    title: "Inaccessible",
   },
 ];
 
@@ -89,28 +163,28 @@ function PreviewSurface({ children }: { children: ReactNode }) {
 }
 
 function EntryNodeSample({
-  access = accessDomain,
-  copiedTargetKey,
+  copiedAddressKey,
   defaultExpanded = false,
   dragging,
+  groups = singlePortGroups,
+  open = openOrders,
   selected,
-  targets = [accessibleTarget],
 }: {
-  access?: EntryNodeAccessDomain;
-  copiedTargetKey?: EntryNodeTargetKey | null;
+  copiedAddressKey?: EntryNodeAddressKey | null;
   defaultExpanded?: boolean;
   dragging?: boolean;
+  groups?: EntryNodeGroup[];
+  open?: EntryNodeOpenTarget;
   selected?: boolean;
-  targets?: EntryNodeTarget[];
 }) {
   return (
     <EntryNode.Root
-      accessDomain={access}
-      copiedTargetKey={copiedTargetKey}
+      copiedAddressKey={copiedAddressKey}
       defaultExpanded={defaultExpanded}
+      groups={groups}
       interaction={{ dragging, selected }}
+      open={open}
       states={entryNodeStates}
-      targets={targets}
     >
       <EntryNode.Content />
     </EntryNode.Root>
@@ -138,7 +212,7 @@ export default function EntryNodePreview() {
           <EntryNodeSample selected />
         </PreviewSurface>
       </Preview>
-      <Preview title="Expanded one target">
+      <Preview title="Single port (no header)">
         <PreviewSurface>
           <EntryNodeSample defaultExpanded />
         </PreviewSurface>
@@ -148,38 +222,68 @@ export default function EntryNodePreview() {
           <EntryNodeSample defaultExpanded selected />
         </PreviewSurface>
       </Preview>
-      <Preview title="Expanded two targets">
+      <Preview title="Two named ports">
         <PreviewSurface>
           <EntryNodeSample
             defaultExpanded
-            targets={[accessibleTarget, secondAccessibleTarget]}
+            groups={twoPortGroups}
+            open={openAdminConsole}
           />
         </PreviewSurface>
       </Preview>
-      <Preview title="Scrollable targets">
+      <Preview title="Two addresses on one port">
         <PreviewSurface>
           <EntryNodeSample
             defaultExpanded
-            targets={[
-              accessibleTarget,
-              secondAccessibleTarget,
-              progressingTarget,
-              failedTarget,
+            groups={sharedPortGroups}
+            open={openWeb}
+          />
+        </PreviewSurface>
+      </Preview>
+      <Preview title="Unnamed port beside a named one">
+        <PreviewSurface>
+          <EntryNodeSample
+            defaultExpanded
+            groups={unnamedPortGroups}
+            open={{
+              label: "Open API",
+              url: `https://orders-api${PLATFORM_SUFFIX}/`,
+            }}
+          />
+        </PreviewSurface>
+      </Preview>
+      <Preview title="Pending address">
+        <PreviewSurface>
+          <EntryNodeSample
+            defaultExpanded
+            groups={[{ addresses: [pendingAddress], port: 3000 }]}
+            open={{ label: "Open" }}
+          />
+        </PreviewSurface>
+      </Preview>
+      <Preview title="Scrollable groups">
+        <PreviewSurface>
+          <EntryNodeSample
+            defaultExpanded
+            groups={[
+              ...twoPortGroups,
+              { addresses: [progressingAddress, failedAddress], port: 5202 },
             ]}
           />
         </PreviewSurface>
       </Preview>
-      <Preview title="Empty targets">
+      <Preview title="Empty groups">
         <PreviewSurface>
-          <EntryNodeSample defaultExpanded targets={[]} />
+          <EntryNodeSample defaultExpanded groups={[]} />
         </PreviewSurface>
       </Preview>
       <Preview title="Copied feedback">
         <PreviewSurface>
           <EntryNodeSample
-            copiedTargetKey="public"
+            copiedAddressKey="public"
             defaultExpanded
-            targets={[accessibleTarget, secondAccessibleTarget]}
+            groups={sharedPortGroups}
+            open={openWeb}
           />
         </PreviewSurface>
       </Preview>
@@ -191,18 +295,27 @@ export default function EntryNodePreview() {
       <Preview title="Long values">
         <PreviewSurface>
           <EntryNodeSample
-            access={longAccessDomain}
             defaultExpanded
-            targets={[longTarget]}
+            groups={[
+              {
+                addresses: [longAddress],
+                name: "A very long Port Display Name for a console",
+                port: 8080,
+              },
+            ]}
+            open={{
+              label: "Open A very long Port Display Name for a console",
+              url: longAddress.value,
+            }}
           />
         </PreviewSurface>
       </Preview>
-      <Preview containerClassName="lg:col-span-2" title="Aggregate status">
+      <Preview containerClassName="lg:col-span-2" title="Open control">
         <PreviewSurface>
           <div className="flex flex-wrap items-start gap-3">
-            {aggregateSamples.map((sample) => (
+            {openSamples.map((sample) => (
               <div className="flex flex-col gap-2" key={sample.title}>
-                <EntryNodeSample targets={sample.targets} />
+                <EntryNodeSample groups={sample.groups} open={sample.open} />
                 <span className="text-muted-foreground text-xs">
                   {sample.title}
                 </span>

@@ -37,7 +37,7 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0063 — Derive Resource-Deletion Dates Client-Side from Subscription Expiry](0063-derive-resource-deletion-dates-client-side.md)
 - [0064 — Pin the Current Billing Region by Deployment-Declared Domain](0064-pin-the-current-billing-region-by-deployment-declared-domain.md)
 - [0065 — Gate Free Chat Turns on the Active Free Trial](0065-gate-free-chat-turns-on-the-active-free-trial-and-block-on-exhaustion.md) *(replaces the deleted ADR-0033; exhaustion behavior revised by ADR-0069)*
-- [0066 — Give Canvas Resources Editable Display Names Stored on the Resource](0066-store-resource-display-names-in-annotations.md)
+- [0066 — Give Canvas Resources Editable Display Names Stored on the Resource](0066-store-resource-display-names-in-annotations.md) *(Port Display Names reuse its storage pattern with an argued read-time fallback exception, ADR-0080)*
 - [0067 — Store Notifications Hybrid: Read Platform CRs Live, Keep Brain's Own in App Postgres](0067-store-notifications-hybrid-cr-read-proxy-and-brain-postgres.md) *(workspace quota observations now read through Brain's billing proxy; the client-report trust boundary stands)*
 - [0068 — Judge Billing Interruptions from billing standing, after a deployment fails and before a paid chat turn starts](0068-judge-billing-interruptions-from-billing-standing.md) *(extends ADR-0042 and ADR-0065; paid handoff extended by ADR-0069; pre-deploy seam softened by ADR-0070; "no platform signal" premise narrowed and the no-actor chokepoint closed by ADR-0072; Paid Chat Wall cause extended by ADR-0073)*
 - [0069 — Separate platform AI credentials and hand off exhausted Free Chat Turns](0069-separate-platform-ai-credentials-and-hand-off-free-chat.md) *(revises ADR-0065 and extends ADR-0068; exhaustion consequence revised by ADR-0073)*
@@ -49,6 +49,9 @@ One line per decision; the linked record is authoritative. When adding an ADR, t
 - [0075 — Adopt External Template Instances as Brain Projects](0075-adopt-external-template-instances-as-brain-projects.md)
 - [0076 — Scope Assistant Conversations to Brain Projects](0076-scope-assistant-conversations-to-brain-projects.md) *(revised by ADR-0077; message-level Context remains governed by ADR-0044)*
 - [0077 — Allow Workspace-Scoped Assistant Conversations](0077-allow-workspace-scoped-assistant-conversations.md) *(revises ADR-0076; message-level Context remains governed by ADR-0044)*
+- [0078 — Conclude Deployment Tasks with an Evidence-Gated Success Record](0078-conclude-deployment-tasks-with-an-evidence-gated-success-record.md) *(extends ADR-0028 with the conclusion that timeline was missing; the failure counterpart is ADR-0042)*
+- [0079 — Model Public Entry Points as Deployment Access Endpoints](0079-model-public-entry-points-as-deployment-access-endpoints.md) *(revises ADR-0078's address and success-copy contract)*
+- [0080 — Port Display Names Live on the Service, Not the Ingress](0080-port-display-names-live-on-the-service.md) *(extends ADR-0066's annotation pattern to App Listening Ports; carves out a read-time fallback exception; complements ADR-0079's Deployment Access Endpoint labels)*
 
 ## Conventions
 

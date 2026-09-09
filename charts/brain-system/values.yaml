@@ -138,12 +138,12 @@ ui:
     # of SYSTEM_OPENAI_* and host CODEX_GATEWAY_OPENAI_* values.
     GITHUB_DEPLOY_OPENAI_API_KEY: ""
     GITHUB_DEPLOY_OPENAI_BASE_URL: ""
-    # Optional. When both keys are set, GitHub Deploy Devboxes export Codex
-    # traces to Langfuse. Leave empty to disable tracing.
+    # Optional Chat Assistant telemetry. Set both keys and LANGFUSE_HOST to enable.
+    # Credentials stay in Brain UI and are never forwarded to Deploy Devboxes.
     LANGFUSE_PUBLIC_KEY: ""
     LANGFUSE_SECRET_KEY: ""
-    # Optional. Langfuse base URL. Blank uses the gateway default
-    # (https://cloud.langfuse.com). Do not append /api/public/otel.
+    # Langfuse instance root URL. Blank disables telemetry; no Cloud fallback.
+    # Self-hosted Langfuse is supported. Do not append /api/public/otel.
     LANGFUSE_HOST: ""
     GITHUB_OAUTH_CLIENT_ID: ""
     GITHUB_OAUTH_CLIENT_SECRET: ""
@@ -169,9 +169,6 @@ ui:
     # public URL + /api/deploy-agent/mcp/v1; set explicitly when the UI is
     # not publicly reachable from deployment Devboxes.
     DEPLOY_AGENT_MCP_URL: ""
-    # Optional. Leave empty to use the unified Brain sealos-skills branch. Set this to a
-    # branch, tag, or commit ref when selecting another tested Skill source.
-    DEPLOY_SKILL_SOURCE: ""
   resources:
     requests:
       cpu: 500m

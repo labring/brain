@@ -2,7 +2,9 @@ package ap
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -48,6 +50,7 @@ func APWithPublicAccessSupportResourcesFromList(ap map[string]interface{}, ingre
 		out["status"] = status
 	}
 	mergePublicAccessSupportHealth(out, status, ingresses, certificates, issuers)
+	projectObservedNetworkProtocols(status, ingresses, services)
 	return out
 }
 
@@ -80,8 +83,11 @@ func APWithIngressesAndServicesFromList(ap map[string]interface{}, ingresses, se
 		delete(statusCopy, "variables")
 	}
 	mergePrivateNetworkStatus(ap, statusCopy, services)
+	mergePortDisplayNames(statusCopy, services)
+	mergeDefaultOpenPort(statusCopy, services)
 	mergePublicNetworkStatus(ap, statusCopy)
 	mergeObservedPublicAccessStatus(statusCopy, ingresses, services)
+	projectObservedNetworkProtocols(statusCopy, ingresses, services)
 	out["status"] = statusCopy
 
 	return out
@@ -119,11 +125,122 @@ func mergePrivateNetworkStatus(ap map[string]interface{}, status map[string]inte
 	status["network"] = networkCopy
 }
 
+// genericServicePortNamePattern matches Service port names that describe a
+// protocol or repeat the number rather than a purpose; such a name is not a
+// Port Display Name (ADR 0080). No prefix stripping: "http-admin" stays.
+var genericServicePortNamePattern = regexp.MustCompile(`^(?i:https?|web|tcp|udp|grpc|ws|port-\d+|\d+)$`)
+
+// mergePortDisplayNames resolves the Port Display Name of every App
+// Listening Port row from the AP's Services (ADR 0080): the
+// brain.io/port-display-name.<port> annotation wins; else the Service port's
+// declared name unless it is generic; else the row carries no displayName.
+func mergePortDisplayNames(status map[string]interface{}, services []map[string]interface{}) {
+	network, _ := status["network"].(map[string]interface{})
+	rows, _ := network["appListeningPorts"].([]interface{})
+	if len(rows) == 0 {
+		return
+	}
+	networkCopy := networkStatusCopy(status)
+	nextRows := make([]interface{}, 0, len(rows))
+	for _, item := range rows {
+		row, _ := item.(map[string]interface{})
+		if row == nil {
+			nextRows = append(nextRows, item)
+			continue
+		}
+		rowCopy := maps.Clone(row)
+		delete(rowCopy, "displayName")
+		if port, ok := privatePortFromValue(row["port"]); ok {
+			if name := portDisplayNameFromServices(services, port); name != "" {
+				rowCopy["displayName"] = name
+			}
+		}
+		nextRows = append(nextRows, rowCopy)
+	}
+	networkCopy["appListeningPorts"] = nextRows
+	status["network"] = networkCopy
+}
+
+// mergeDefaultOpenPort surfaces the Default Open Port stored on the AP's
+// Service as status.network.defaultOpenPort, but only when the stored value
+// names one of the AP's App Listening Ports and the annotated Service exposes
+// it. A stale or foreign value is ignored, never surfaced; the automatic rule
+// (the first port whose HTTP Public Address enters at the root, else the first
+// with any HTTP Public Address) belongs to the UI.
+func mergeDefaultOpenPort(status map[string]interface{}, services []map[string]interface{}) {
+	network, _ := status["network"].(map[string]interface{})
+	if network == nil {
+		return
+	}
+	networkCopy := networkStatusCopy(status)
+	delete(networkCopy, "defaultOpenPort")
+	rows, _ := network["appListeningPorts"].([]interface{})
+	listening := map[int]bool{}
+	for _, item := range rows {
+		row, _ := item.(map[string]interface{})
+		if port, ok := privatePortFromValue(row["port"]); ok {
+			listening[port] = true
+		}
+	}
+	for _, service := range services {
+		annotations := map[string]string{
+			orchestration.BrainDefaultOpenPortAnnotation: getString(service, "metadata", "annotations", orchestration.BrainDefaultOpenPortAnnotation),
+		}
+		port, ok := orchestration.DefaultOpenPortFromAnnotations(annotations)
+		if !ok || !listening[int(port)] || !serviceExposesPort(service, int(port)) {
+			continue
+		}
+		networkCopy["defaultOpenPort"] = int(port)
+		break
+	}
+	status["network"] = networkCopy
+}
+
+func portDisplayNameFromServices(services []map[string]interface{}, port int) string {
+	annotationKey := orchestration.BrainPortDisplayNameAnnotation(int32(port))
+	for _, service := range services {
+		if !serviceExposesPort(service, port) {
+			continue
+		}
+		if name := strings.TrimSpace(getString(service, "metadata", "annotations", annotationKey)); name != "" {
+			return name
+		}
+	}
+	for _, service := range services {
+		for _, portMap := range servicePortEntries(service, port) {
+			name := strings.TrimSpace(getString(portMap, "name"))
+			if name != "" && !genericServicePortNamePattern.MatchString(name) {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
+func serviceExposesPort(service map[string]interface{}, port int) bool {
+	return len(servicePortEntries(service, port)) > 0
+}
+
+func servicePortEntries(service map[string]interface{}, port int) []map[string]interface{} {
+	rawPorts, _ := getSlice(service, "spec", "ports")
+	out := []map[string]interface{}{}
+	for _, item := range rawPorts {
+		portMap, _ := item.(map[string]interface{})
+		if portMap == nil {
+			continue
+		}
+		if servicePort, ok := privatePortFromValue(portMap["port"]); ok && servicePort == port {
+			out = append(out, portMap)
+		}
+	}
+	return out
+}
+
 func networkStatusCopy(status map[string]interface{}) map[string]interface{} {
 	network, _ := status["network"].(map[string]interface{})
-	networkCopy := make(map[string]interface{}, len(network)+1)
-	for k, v := range network {
-		networkCopy[k] = v
+	networkCopy := maps.Clone(network)
+	if networkCopy == nil {
+		networkCopy = make(map[string]interface{})
 	}
 	return networkCopy
 }
@@ -282,15 +399,33 @@ func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, s
 		return
 	}
 	networkCopy := networkStatusCopy(status)
-	if len(publicAddressRowsFromValue(networkCopy["publicAddresses"])) > 0 {
-		return
-	}
+	existing := publicAddressRowsFromValue(networkCopy["publicAddresses"])
 	serviceNames, servicePorts := observedServiceLookup(services)
 	rows := observedPublicAddressRows(ingresses, serviceNames, servicePorts)
 	if len(rows) == 0 {
 		return
 	}
-	networkCopy["publicAddresses"] = rows
+	for _, row := range rows {
+		matched := false
+		for _, current := range existing {
+			currentPort, _ := privatePortFromValue(current["port"])
+			observedPort, _ := privatePortFromValue(row["port"])
+			if current["host"] == row["host"] && currentPort == observedPort {
+				matched = true
+				break
+			}
+			// A promoted platform host is the custom domain's CNAME target,
+			// not an extra public address to restore through observation.
+			if isCustomPublicAddressRow(current) && current["cnameTarget"] == row["host"] {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			existing = append(existing, row)
+		}
+	}
+	networkCopy["publicAddresses"] = existing
 	status["network"] = networkCopy
 }
 
@@ -302,9 +437,102 @@ type observedServicePorts struct {
 type observedIngressEndpoint struct {
 	host       string
 	key        string
+	paths      []string
 	port       int
 	scheme     string
 	serviceKey string
+}
+
+// url renders the endpoint's user-facing address: scheme, host, and the
+// primary Ingress path retained for that host, service, and port.
+func (endpoint observedIngressEndpoint) url() string {
+	return fmt.Sprintf("%s://%s%s", endpoint.scheme, endpoint.host, primaryIngressPath(endpoint.paths))
+}
+
+// ingressEntryPath reduces one Ingress rule path to the literal prefix a
+// browser can open. A literal path (`Exact` or `Prefix`) keeps its exact
+// spelling, trailing slash included, since `/admin/` under `pathType: Exact`
+// does not match `/admin`. Regex paths (`/admin(/|$)(.*)`, `/?(.*)`) keep
+// their literal head with the separator before the pattern dropped; a
+// fragment disqualifies the path, and a path that is not rooted contributes
+// nothing.
+func ingressEntryPath(raw string) (string, bool) {
+	path := strings.TrimSpace(raw)
+	if !strings.HasPrefix(path, "/") || strings.Contains(path, "#") {
+		return "", false
+	}
+	if index := strings.IndexAny(path, "()[]|*+^$?"); index >= 0 {
+		path = path[:index]
+		if len(path) > 1 {
+			path = strings.TrimRight(path, "/")
+		}
+	}
+	if path == "" {
+		path = "/"
+	}
+	return path, true
+}
+
+// ingressAssetPathRE marks a path whose last segment carries a short file
+// extension (`/admin.css`, `/favicon.ico`): a static asset routed next to a
+// page, never the page itself.
+var ingressAssetPathRE = regexp.MustCompile(`\.[A-Za-z0-9]{1,5}$`)
+
+func isIngressAssetPath(path string) bool {
+	last := path[strings.LastIndex(path, "/")+1:]
+	return ingressAssetPathRE.MatchString(last)
+}
+
+// primaryIngressPath picks the one path an Ingress rule set offers as the
+// product's entry (ADR 0079, amended): a declared root wins outright.
+// Otherwise asset paths step aside and the remaining path that the most
+// other declared paths extend is the page (`/admin` for `/admin.css`,
+// `/admin.js`, ...); a tie keeps manifest order. Ingress path order carries
+// no routing meaning, so it is only ever the last resort.
+func primaryIngressPath(paths []string) string {
+	if len(paths) == 0 {
+		return "/"
+	}
+	pages := []string{}
+	for _, path := range paths {
+		if path == "/" {
+			return "/"
+		}
+		if !isIngressAssetPath(path) {
+			pages = append(pages, path)
+		}
+	}
+	if len(pages) == 0 {
+		pages = paths
+	}
+	best, bestScore := pages[0], -1
+	for _, candidate := range pages {
+		score := 0
+		for _, other := range paths {
+			if other != candidate && strings.HasPrefix(other, candidate) {
+				score++
+			}
+		}
+		if score > bestScore {
+			best, bestScore = candidate, score
+		}
+	}
+	return best
+}
+
+// retainIngressPath records one declared path on an endpoint, in manifest
+// order and without duplicates; primaryIngressPath decides among them later.
+func retainIngressPath(endpoint *observedIngressEndpoint, raw string) {
+	path, ok := ingressEntryPath(raw)
+	if !ok {
+		return
+	}
+	for _, existing := range endpoint.paths {
+		if existing == path {
+			return
+		}
+	}
+	endpoint.paths = append(endpoint.paths, path)
 }
 
 func observedServiceLookup(services []map[string]interface{}) (map[string]bool, map[string]observedServicePorts) {
@@ -367,7 +595,7 @@ func (ports observedServicePorts) hasPort(port int) bool {
 func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []observedIngressEndpoint {
 	endpoints := []observedIngressEndpoint{}
 	includeAllServices := len(serviceNames) == 0
-	seenHosts := map[string]bool{}
+	seenEndpoints := map[string]int{}
 	for _, ingress := range ingresses {
 		spec, _ := ingress["spec"].(map[string]interface{})
 		if spec == nil {
@@ -388,16 +616,8 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 			if host == "" || isPlaceholderIngressHost(host) {
 				continue
 			}
-			hostKey := strings.ToLower(host)
-			if seenHosts[hostKey] {
-				continue
-			}
 			paths, _ := getSlice(rule, "http", "paths")
-			pickedFirst := false
 			for _, pathItem := range paths {
-				if pickedFirst {
-					break
-				}
 				path, _ := pathItem.(map[string]interface{})
 				if path == nil {
 					continue
@@ -412,19 +632,32 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 				if port <= 0 || !ports.hasPort(port) {
 					continue
 				}
-				pickedFirst = true
 				scheme := "http"
 				if tlsHosts[host] {
 					scheme = "https"
 				}
-				seenHosts[hostKey] = true
-				endpoints = append(endpoints, observedIngressEndpoint{
+				protocol := strings.ToUpper(strings.TrimSpace(getString(ingress, "metadata", "annotations", "nginx.ingress.kubernetes.io/backend-protocol")))
+				if protocol == "WS" || protocol == "WSS" {
+					scheme = "ws"
+					if tlsHosts[host] {
+						scheme = "wss"
+					}
+				}
+				key := fmt.Sprintf("%s|%s|%d", host, serviceName, port)
+				if index, seen := seenEndpoints[key+"|"+scheme]; seen {
+					retainIngressPath(&endpoints[index], getString(path, "path"))
+					continue
+				}
+				endpoint := observedIngressEndpoint{
 					host:       host,
-					key:        fmt.Sprintf("%s|%s|%d", host, serviceName, port),
+					key:        key,
 					port:       port,
 					scheme:     scheme,
 					serviceKey: serviceName + ":" + strconv.Itoa(port),
-				})
+				}
+				retainIngressPath(&endpoint, getString(path, "path"))
+				seenEndpoints[key+"|"+scheme] = len(endpoints)
+				endpoints = append(endpoints, endpoint)
 			}
 		}
 	}
@@ -440,7 +673,7 @@ func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames 
 			"port":   endpoint.port,
 			"status": "accessible",
 			"type":   "observed",
-			"url":    fmt.Sprintf("%s://%s/", endpoint.scheme, endpoint.host),
+			"url":    endpoint.url(),
 		})
 	}
 	return rows
@@ -992,6 +1225,8 @@ func buildConnectionRows(ap map[string]interface{}, ingresses, services []map[st
 		return nil
 	}
 	externalBySvcPort := buildExternalAddressMap(ingresses, services)
+	serviceNames, servicePorts := observedServiceLookup(services)
+	endpoints := observedIngressEndpoints(ingresses, serviceNames, servicePorts)
 
 	var rows []map[string]interface{}
 	seen := make(map[string]bool)
@@ -1006,7 +1241,11 @@ func buildConnectionRows(ap map[string]interface{}, ingresses, services []map[st
 			internalName := "port-" + strconv.Itoa(port) + "-internal"
 			if !seen[internalName] {
 				seen[internalName] = true
-				internalAddr := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", svcName, svcNamespace, port)
+				scheme := privateProtocolForEndpoints(endpoints, svcName+":"+strconv.Itoa(port))
+				if scheme == "" {
+					scheme = "http"
+				}
+				internalAddr := fmt.Sprintf("%s://%s.%s.svc.cluster.local:%d", scheme, svcName, svcNamespace, port)
 				rows = append(rows, map[string]interface{}{
 					"name":    internalName,
 					"address": internalAddr,
@@ -1140,9 +1379,8 @@ func buildExternalAddressMap(ingresses, services []map[string]interface{}) map[s
 	result := make(map[string]string)
 	serviceNames, servicePorts := observedServiceLookup(services)
 	for _, endpoint := range observedIngressEndpoints(ingresses, serviceNames, servicePorts) {
-		addr := fmt.Sprintf("%s://%s/", endpoint.scheme, endpoint.host)
 		if _, exists := result[endpoint.serviceKey]; !exists {
-			result[endpoint.serviceKey] = addr
+			result[endpoint.serviceKey] = endpoint.url()
 		}
 	}
 	return result

@@ -56,9 +56,13 @@ test("Skill reads forward the AI SDK abort signal to the Devbox sandbox", async 
 
   const loadSkill = createLoadSkillTool([skill], sandbox);
   const loadResource = createLoadSkillResourceTool([skill], sandbox);
-  await getExecute(loadSkill)(
+  const loaded = await getExecute(loadSkill)(
     { intention: "test skill loading", name: "sealos-deploy" },
     { abortSignal: controller.signal }
+  );
+  assert.equal(
+    Reflect.get(loaded as object, "skillDirectory"),
+    skill.skillDirectory
   );
   await getExecute(loadResource)(
     {

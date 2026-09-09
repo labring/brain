@@ -43,8 +43,12 @@ function settingsChromeModelsEqual(
   if (left == null || right == null) {
     return false;
   }
+  // Header actions are compared by element identity: their provider memoises
+  // them on the facts they show (an Open target changes as Public Addresses
+  // become accessible), so a new element means new facts.
   return (
     left.closeAriaLabel === right.closeAriaLabel &&
+    left.headerActions === right.headerActions &&
     left.resolvedView === right.resolvedView &&
     left.subtitle === right.subtitle &&
     left.title === right.title
@@ -100,6 +104,7 @@ export function SettingsHost({
             ? null
             : {
                 closeAriaLabel: model.closeAriaLabel,
+                headerActions: model.headerActions,
                 icon: model.icon,
                 resolvedView: model.resolvedView,
                 subtitle: model.subtitle,
@@ -141,6 +146,7 @@ export function SettingsHost({
   return (
     <SidePane
       closeAriaLabel={model?.closeAriaLabel ?? "Close settings"}
+      headerActions={model?.headerActions}
       icon={model?.icon}
       label="Settings pane"
       onClose={onClose}

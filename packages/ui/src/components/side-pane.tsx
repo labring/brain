@@ -53,6 +53,8 @@ export interface SidePaneProps {
   children: ReactNode;
   className?: string;
   closeAriaLabel?: string;
+  /** Pane-level actions the hosted surface places in the header, between the title block and the close control. */
+  headerActions?: ReactNode;
   headerClassName?: string;
   icon?: ReactNode;
   label?: string;
@@ -70,6 +72,7 @@ export function SidePane({
   children,
   className,
   closeAriaLabel = "Close side pane",
+  headerActions,
   headerClassName,
   icon,
   label,
@@ -189,16 +192,26 @@ export function SidePane({
                 </p>
               )}
             </div>
-            <AppIconButton
-              aria-label={closeAriaLabel}
-              className="shrink-0 self-start"
-              onClick={onClose}
-              size="md"
-              type="button"
-              variant="quiet"
-            >
-              <X aria-hidden className="size-4" />
-            </AppIconButton>
+            <div className="flex shrink-0 items-center gap-1 self-start">
+              {headerActions == null ? null : (
+                <div
+                  className="flex items-center gap-1"
+                  data-slot="side-pane-header-actions"
+                >
+                  {headerActions}
+                </div>
+              )}
+              <AppIconButton
+                aria-label={closeAriaLabel}
+                className="shrink-0"
+                onClick={onClose}
+                size="md"
+                type="button"
+                variant="quiet"
+              >
+                <X aria-hidden className="size-4" />
+              </AppIconButton>
+            </div>
           </header>
           <div
             className="scrollbar-chat-thin min-h-0 flex-1 overflow-y-auto"

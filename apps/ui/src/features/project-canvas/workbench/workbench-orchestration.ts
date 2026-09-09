@@ -2,7 +2,6 @@ import type { Node } from "@xyflow/react";
 import type { DeploymentTaskProjection } from "@/features/deploy/task/projection";
 import type { ProjectCanvasSelection } from "@/features/panes/canvas-selection";
 import type { ProjectSideSurfaceEntry } from "@/features/panes/surface-state";
-import { DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS } from "@/features/project-canvas/workbench/deployment-task-timeline-reentry";
 
 type DeploymentTaskTimelineEntry = Extract<
   ProjectSideSurfaceEntry,
@@ -12,7 +11,7 @@ type DeploymentTaskTimelineEntry = Extract<
 /**
  * The workbench's orchestration core: decision logic as pure transitions,
  * `(state, event) → (nextState, effects)`. The React hook is the effect
- * boundary — it reads route snapshots, resource facts, and clock inputs,
+ * boundary — it reads route snapshots and resource facts,
  * submits events, and executes the returned effect plans. Session-local
  * orchestration state lives only here and changes only by committing
  * transition results.
@@ -20,14 +19,9 @@ type DeploymentTaskTimelineEntry = Extract<
 export interface WorkbenchOrchestrationState {
   /** Last committed covered state, so a covered→uncovered edge is detectable. */
   canvasCovered: boolean;
-  completedNoticeExpiresAtByTaskId: ReadonlyMap<string, number>;
   dismissedDeploymentTaskUpdatedAtById: ReadonlyMap<string, string>;
   localCanvasStackOrderByRef: ReadonlyMap<string, number>;
   manuallyClosedDeploymentTaskTimelineTaskIds: ReadonlySet<string>;
-  previousDeploymentTaskStatusById: ReadonlyMap<
-    string,
-    DeploymentTaskProjection["status"]
-  >;
   sideViewportFocusRequestSeq: number;
 }
 
@@ -43,18 +37,11 @@ export type WorkbenchOrchestrationEvent =
   | {
       activeTimelineTaskId: string | null;
       kind: "deploymentTaskDismissRequested";
-      now: number;
       task: DeploymentTaskProjection;
     }
   | {
       dismissedTaskUpdatedAtById: ReadonlyMap<string, string>;
       kind: "deploymentTaskDockDismissalsReloaded";
-    }
-  | {
-      kind: "deploymentTasksArrived";
-      now: number;
-      pageVisible: boolean;
-      tasks: readonly DeploymentTaskProjection[];
     }
   | { kind: "deploymentTaskTimelineManuallyClosed"; taskId: string }
   | {
@@ -68,7 +55,6 @@ export type WorkbenchOrchestrationEvent =
       kind: "deployTaskCreatedEventReceived";
       workbenchProjectId: string;
     }
-  | { kind: "noticeExpiryDue"; now: number }
   | {
       dismissedTaskUpdatedAtById: ReadonlyMap<string, string>;
       kind: "workbenchIdentityChanged";
@@ -87,60 +73,11 @@ export type WorkbenchOrchestrationEffect =
       dismissedTaskUpdatedAtById: ReadonlyMap<string, string>;
       kind: "persistDeploymentTaskDockDismissals";
     }
-  | { delayMs: number | null; kind: "rescheduleNoticeExpiry" }
   | { kind: "revalidateResourceSnapshot" };
 
 export interface WorkbenchOrchestrationTransition {
   effects: readonly WorkbenchOrchestrationEffect[];
   state: WorkbenchOrchestrationState;
-}
-
-const DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES = new Set<
-  DeploymentTaskProjection["status"]
->(["applying", "blocked", "queued", "running"]);
-
-function deploymentTaskCanStartCompletionNotice(
-  previousStatus: DeploymentTaskProjection["status"] | undefined
-): boolean {
-  return (
-    previousStatus !== undefined &&
-    DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_SOURCE_STATUSES.has(previousStatus)
-  );
-}
-
-function pruneExpiredCompletionNotices(
-  notices: ReadonlyMap<string, number>,
-  now: number
-): ReadonlyMap<string, number> {
-  let changed = false;
-  const next = new Map<string, number>();
-  for (const [taskId, expiresAt] of notices) {
-    if (expiresAt <= now) {
-      changed = true;
-      continue;
-    }
-    next.set(taskId, expiresAt);
-  }
-  return changed ? next : notices;
-}
-
-/**
- * The next expiry check for the live notices: the soonest expiry plus a small
- * slop so the check runs strictly after it, or a cancel when none remain.
- */
-function rescheduleNoticeExpiry(
-  notices: ReadonlyMap<string, number>,
-  now: number
-): WorkbenchOrchestrationEffect {
-  let nextDelay: number | undefined;
-  for (const expiresAt of notices.values()) {
-    const delay = Math.max(0, expiresAt - now);
-    nextDelay = nextDelay === undefined ? delay : Math.min(nextDelay, delay);
-  }
-  return {
-    delayMs: nextDelay === undefined ? null : nextDelay + 25,
-    kind: "rescheduleNoticeExpiry",
-  };
 }
 
 function openTimelineTransition(
@@ -229,12 +166,6 @@ function deploymentTaskDismissRequested(
       kind: "persistDeploymentTaskDockDismissals",
     });
   }
-  if (next.completedNoticeExpiresAtByTaskId.has(event.task.id)) {
-    const notices = new Map(next.completedNoticeExpiresAtByTaskId);
-    notices.delete(event.task.id);
-    next = { ...next, completedNoticeExpiresAtByTaskId: notices };
-    effects.push(rescheduleNoticeExpiry(notices, event.now));
-  }
   // The active chip is the open timeline pane's handle, so the dismissal
   // alone cannot remove it; close the pane so the dismissal takes visible
   // effect (CONTEXT.md: Deployment Task Dock Dismissal).
@@ -242,43 +173,6 @@ function deploymentTaskDismissRequested(
     effects.push({ kind: "closeSideSurface" });
   }
   return { effects, state: next };
-}
-
-function deploymentTasksArrived(
-  state: WorkbenchOrchestrationState,
-  event: Extract<
-    WorkbenchOrchestrationEvent,
-    { kind: "deploymentTasksArrived" }
-  >
-): WorkbenchOrchestrationTransition {
-  const previousStatusById = state.previousDeploymentTaskStatusById;
-  const nextStatusById = new Map<string, DeploymentTaskProjection["status"]>();
-  const completedNoticeTaskIds: string[] = [];
-  for (const task of event.tasks) {
-    nextStatusById.set(task.id, task.status);
-    if (
-      (task.status === "completed" || task.status === "cancelled") &&
-      deploymentTaskCanStartCompletionNotice(previousStatusById.get(task.id))
-    ) {
-      completedNoticeTaskIds.push(task.id);
-    }
-  }
-  const next = {
-    ...state,
-    previousDeploymentTaskStatusById: nextStatusById,
-  };
-  if (completedNoticeTaskIds.length === 0 || !event.pageVisible) {
-    return { effects: [], state: next };
-  }
-  const expiresAt = event.now + DEPLOYMENT_TASK_DOCK_COMPLETION_NOTICE_MS;
-  const notices = new Map(state.completedNoticeExpiresAtByTaskId);
-  for (const taskId of completedNoticeTaskIds) {
-    notices.set(taskId, expiresAt);
-  }
-  return {
-    effects: [rescheduleNoticeExpiry(notices, event.now)],
-    state: { ...next, completedNoticeExpiresAtByTaskId: notices },
-  };
 }
 
 function deploymentTaskTimelineManuallyClosed(
@@ -343,37 +237,18 @@ function deployTaskCreatedEventReceived(
   };
 }
 
-function noticeExpiryDue(
-  state: WorkbenchOrchestrationState,
-  now: number
-): WorkbenchOrchestrationTransition {
-  const pruned = pruneExpiredCompletionNotices(
-    state.completedNoticeExpiresAtByTaskId,
-    now
-  );
-  if (pruned === state.completedNoticeExpiresAtByTaskId) {
-    return { effects: [], state };
-  }
-  return {
-    effects: [rescheduleNoticeExpiry(pruned, now)],
-    state: { ...state, completedNoticeExpiresAtByTaskId: pruned },
-  };
-}
-
 function workbenchIdentityChanged(
   state: WorkbenchOrchestrationState,
   dismissedTaskUpdatedAtById: ReadonlyMap<string, string>
 ): WorkbenchOrchestrationTransition {
   return {
-    effects: [{ delayMs: null, kind: "rescheduleNoticeExpiry" }],
+    effects: [],
     state: {
       ...state,
       canvasCovered: false,
-      completedNoticeExpiresAtByTaskId: new Map(),
       dismissedDeploymentTaskUpdatedAtById: dismissedTaskUpdatedAtById,
       localCanvasStackOrderByRef: new Map(),
       manuallyClosedDeploymentTaskTimelineTaskIds: new Set(),
-      previousDeploymentTaskStatusById: new Map(),
       sideViewportFocusRequestSeq: 0,
     },
   };
@@ -403,9 +278,6 @@ export function transitionWorkbenchOrchestration(
         },
       };
     }
-    case "deploymentTasksArrived": {
-      return deploymentTasksArrived(state, event);
-    }
     case "deploymentTaskTimelineManuallyClosed": {
       return deploymentTaskTimelineManuallyClosed(state, event.taskId);
     }
@@ -423,9 +295,6 @@ export function transitionWorkbenchOrchestration(
     }
     case "deployTaskCreatedEventReceived": {
       return deployTaskCreatedEventReceived(state, event);
-    }
-    case "noticeExpiryDue": {
-      return noticeExpiryDue(state, event.now);
     }
     case "workbenchIdentityChanged": {
       return workbenchIdentityChanged(state, event.dismissedTaskUpdatedAtById);
@@ -451,12 +320,10 @@ export function createWorkbenchOrchestrationStore(initial?: {
 }): WorkbenchOrchestrationStore {
   let state: WorkbenchOrchestrationState = {
     canvasCovered: false,
-    completedNoticeExpiresAtByTaskId: new Map(),
     dismissedDeploymentTaskUpdatedAtById:
       initial?.dismissedTaskUpdatedAtById ?? new Map(),
     localCanvasStackOrderByRef: new Map(),
     manuallyClosedDeploymentTaskTimelineTaskIds: new Set(),
-    previousDeploymentTaskStatusById: new Map(),
     sideViewportFocusRequestSeq: 0,
   };
   const listeners = new Set<() => void>();

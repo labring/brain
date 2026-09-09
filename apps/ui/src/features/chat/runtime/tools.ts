@@ -6,7 +6,7 @@ import {
   executeEmitGenUISpec,
   genUISpecInputSchema,
 } from "@/features/chat/agui/gen-ui-tool";
-import { getChatDevboxSkillsSnapshot } from "@/features/chat/devbox/chat-runtime";
+import { warmChatDevboxSkills } from "@/features/chat/devbox/chat-runtime";
 import type { AssistantContextPayload } from "@/features/chat/persistence/types";
 import { createChatBashTool } from "@/features/chat/tool/chat-bash-tool";
 import { createSearchDeployCatalogTool } from "@/features/chat/tool/chat-deploy-catalog-tool";
@@ -54,8 +54,8 @@ export interface ChatToolset {
  * Assemble the per-request tool registry + system prompt.
  *
  * - Skill index drives both the `loadSkill` tool and the discovery prompt addendum.
- * - The shared Chat Devbox remains lazy; Skill metadata comes from the
- *   background warmup cache and never blocks the chat stream preflight.
+ * - Await shared Devbox preparation/discovery before the model starts;
+ *   page-load background warmup is only a latency optimization.
  */
 export async function buildChatToolset({
   billingActor,
@@ -79,7 +79,7 @@ export async function buildChatToolset({
     kubeconfig,
     namespace: kubernetesNamespace,
   });
-  const skillIndex = getChatDevboxSkillsSnapshot({
+  const skillIndex = await warmChatDevboxSkills({
     kubeconfig,
     namespace: kubernetesNamespace,
   });

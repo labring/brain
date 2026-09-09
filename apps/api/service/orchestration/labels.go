@@ -3,6 +3,7 @@ package orchestration
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -18,6 +19,16 @@ const (
 	// BrainDisplayNameAnnotation stores the Resource Display Name (ADR 0066);
 	// display-only, never a selector or identity.
 	BrainDisplayNameAnnotation = "brain.io/display-name"
+	// BrainPortDisplayNameAnnotationPrefix prefixes the per-port Port Display
+	// Name annotations on an AP's Service (ADR 0080): the full key is
+	// "brain.io/port-display-name.<port number>". Display-only, like the
+	// Resource Display Name.
+	BrainPortDisplayNameAnnotationPrefix = "brain.io/port-display-name."
+	// BrainDefaultOpenPortAnnotation stores the Default Open Port on an AP's
+	// Service (ADR 0080's store): the App Listening Port number whose best
+	// Public Address the Open control opens. Display-only; a value naming a
+	// port the AP no longer listens on is ignored at read time.
+	BrainDefaultOpenPortAnnotation = "brain.io/default-open-port"
 
 	APDesiredNetworkAnnotation    = "brain.io/ap-desired-network"
 	APConfigMapChecksumAnnotation = "brain.io/ap-config-checksum"
@@ -97,6 +108,53 @@ func DisplayNameAnnotationCreateValue(raw string) string {
 		return ""
 	}
 	return trimmed
+}
+
+// BrainPortDisplayNameAnnotation returns the Service annotation key that
+// stores the Port Display Name of one App Listening Port (ADR 0080).
+func BrainPortDisplayNameAnnotation(port int32) string {
+	return BrainPortDisplayNameAnnotationPrefix + strconv.FormatInt(int64(port), 10)
+}
+
+// MaxPortDisplayNameLength bounds a stored Port Display Name (ADR 0080:
+// "trimmed, 1–64 characters, any script"), counted in Unicode code points.
+const MaxPortDisplayNameLength = 64
+
+// PortDisplayNameValue validates one Port Display Name value from a product
+// manifest or merge patch (ADR 0080). Unlike a Resource Display Name, an empty
+// or null value is valid: it means "no name" and clears the port's annotation.
+// An over-long value is rejected instead of truncated; the PATCH route
+// surfaces that error while the create path drops the name.
+func PortDisplayNameValue(raw interface{}) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", errors.New("a Port Display Name must be a string")
+	}
+	trimmed := strings.TrimSpace(value)
+	if utf8.RuneCountInString(trimmed) > MaxPortDisplayNameLength {
+		return "", fmt.Errorf("a Port Display Name is at most %d characters", MaxPortDisplayNameLength)
+	}
+	return trimmed, nil
+}
+
+// DefaultOpenPortValue reads one Default Open Port value from a product
+// manifest or merge patch. A nil value is valid and means "no stored choice"
+// (present is false); anything else must be a port number from 1 through
+// 65535, read with the same leniency as an App Listening Port's "port" (a
+// numeric string is accepted). Whether the port is one of the AP's App
+// Listening Ports is checked by the caller against the normalized port list.
+func DefaultOpenPortValue(raw interface{}) (port int32, present bool, err error) {
+	if raw == nil {
+		return 0, false, nil
+	}
+	port, ok := APPortFromInterface(raw)
+	if !ok {
+		return 0, true, errors.New("defaultOpenPort must be an App Listening Port number from 1 through 65535")
+	}
+	return port, true, nil
 }
 
 func brainLabels(projectID, deploymentKind, deploymentName string) map[string]string {

@@ -6,6 +6,7 @@ import {
   deploymentTaskCanvasTopologyChanged,
   deploymentTaskCanvasTopologySignature,
   deploymentTaskProjectionIsVisible,
+  deploymentTaskSourceProduct,
   nextDeploymentTaskProjectionVisibilityChangeMs,
   replaceDeploymentTaskProjections,
   selectCanvasDeploymentTaskProjections,
@@ -750,4 +751,34 @@ test("a failed task's projection carries its Deployment Failure Reason for the d
     NOW
   );
   assert.equal(running?.failureReason, null);
+});
+
+test("a template source names its product by template name and categories", () => {
+  assert.deepEqual(
+    deploymentTaskSourceProduct({
+      kind: "template",
+      templateCategories: ["game"],
+      templateName: "eaglercraft-server",
+    }),
+    {
+      productCategories: ["game"],
+      productId: "eaglercraft-server",
+      productName: "eaglercraft-server",
+    }
+  );
+  // A template without categories still has an id; nothing is invented.
+  assert.deepEqual(
+    deploymentTaskSourceProduct({ kind: "template", templateName: "memos" }),
+    { productId: "memos", productName: "memos" }
+  );
+});
+
+test("a non-template source has a product name and nothing else", () => {
+  assert.deepEqual(
+    deploymentTaskSourceProduct({
+      kind: "docker",
+      settings: { image: "nginx:latest" },
+    }),
+    { productName: "nginx:latest" }
+  );
 });

@@ -43,7 +43,7 @@ export interface UseGithubAuthResult {
   disconnectGithubAuth: () => Promise<void>;
   error: Error | undefined;
   githubLogin: string | undefined;
-  initiateGithubAuth: () => void;
+  initiateGithubAuth: (options?: { automatic?: boolean }) => void;
   isAuthorized: boolean;
   isLoading: boolean;
   mutate: () => Promise<unknown>;
@@ -303,67 +303,78 @@ export function useGithubAuth(options?: {
     };
   }, [canCheck, handleInstallComplete]);
 
-  const initiateGithubAuth = useCallback(() => {
-    const next = `${window.location.pathname}${window.location.search}`;
-    const normalizedNamespace = parseInstallNamespaceParam(namespace);
-    const openPopup = () => {
-      const popup = window.open(
-        "about:blank",
-        GITHUB_APP_INSTALL_POPUP_NAME,
-        centeredPopupFeatures()
-      );
-      if (!popup) {
-        return null;
-      }
-      popup.focus();
-      return popup;
-    };
+  const initiateGithubAuth = useCallback(
+    (options?: { automatic?: boolean }) => {
+      const next = `${window.location.pathname}${window.location.search}`;
+      const normalizedNamespace = parseInstallNamespaceParam(namespace);
+      const openPopup = () => {
+        const popup = window.open(
+          "about:blank",
+          GITHUB_APP_INSTALL_POPUP_NAME,
+          centeredPopupFeatures()
+        );
+        if (!popup) {
+          return null;
+        }
+        popup.focus();
+        return popup;
+      };
 
-    let closePoll: number | undefined;
-    const cleanup = () => {
-      if (closePoll !== undefined) {
-        window.clearInterval(closePoll);
-        closePoll = undefined;
-      }
-      if (installCleanupRef.current === cleanup) {
-        installCleanupRef.current = null;
-      }
-      pendingInstallStateRef.current = null;
-    };
-    installCleanupRef.current = cleanup;
+      let closePoll: number | undefined;
+      const cleanup = () => {
+        if (closePoll !== undefined) {
+          window.clearInterval(closePoll);
+          closePoll = undefined;
+        }
+        if (installCleanupRef.current === cleanup) {
+          installCleanupRef.current = null;
+        }
+        pendingInstallStateRef.current = null;
+      };
+      installCleanupRef.current = cleanup;
 
-    const start = async (popup: Window | null) => {
-      if (kubeconfig.trim() === "" || normalizedNamespace == null) {
-        throw new Error("GitHub authorization requires workspace credentials.");
-      }
-      const { authorizeUrl, state } = await createOAuthSession(
-        { appToken, kubeconfig, namespace: normalizedNamespace },
-        next
-      );
-      pendingInstallStateRef.current = state;
-      handledInstallStatesRef.current.delete(state);
-      if (popup == null) {
-        window.location.assign(authorizeUrl);
+      const start = async (popup: Window | null) => {
+        if (kubeconfig.trim() === "" || normalizedNamespace == null) {
+          throw new Error(
+            "GitHub authorization requires workspace credentials."
+          );
+        }
+        const { authorizeUrl, state } = await createOAuthSession(
+          { appToken, kubeconfig, namespace: normalizedNamespace },
+          next
+        );
+        pendingInstallStateRef.current = state;
+        handledInstallStatesRef.current.delete(state);
+        if (popup == null) {
+          window.location.assign(authorizeUrl);
+          return;
+        }
+        popup.location.replace(authorizeUrl);
+        closePoll = window.setInterval(() => {
+          if (popup.closed) {
+            cleanup();
+            refreshConnection();
+          }
+        }, 1000);
+      };
+
+      const popup = openPopup();
+      // An automatic effect has no user activation. Keep the manual Connect button
+      // available if blocked, rather than navigating an embedded Brain to GitHub.
+      if (popup == null && options?.automatic) {
+        cleanup();
         return;
       }
-      popup.location.replace(authorizeUrl);
-      closePoll = window.setInterval(() => {
-        if (popup.closed) {
-          cleanup();
-          refreshConnection();
-        }
-      }, 1000);
-    };
-
-    const popup = openPopup();
-    start(popup).catch((startError: unknown) => {
-      popup?.close();
-      console.error(
-        "[github-auth] failed to create OAuth session:",
-        startError
-      );
-    });
-  }, [appToken, kubeconfig, namespace, refreshConnection]);
+      start(popup).catch((startError: unknown) => {
+        popup?.close();
+        console.error(
+          "[github-auth] failed to create OAuth session:",
+          startError
+        );
+      });
+    },
+    [appToken, kubeconfig, namespace, refreshConnection]
+  );
 
   const disconnectGithubAuth = useCallback(async () => {
     if (!canCheck) {

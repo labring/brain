@@ -9,11 +9,20 @@ import {
   deploymentFailureMessage,
   isDeployTaskFailureReason,
 } from "./failure-summary";
-import type { DeploymentTaskProjection } from "./projection";
-import type { DeployTaskStatus } from "./schema";
 import {
+  type DeploymentTaskProjection,
+  deploymentTaskSourceSummary,
+} from "./projection";
+import type {
+  DeploymentTaskRunner,
+  DeploymentTaskSource,
+  DeployTaskStatus,
+} from "./schema";
+import {
+  attachDeploymentTaskSuccess,
   DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentResultResourceCard,
+  type DeploymentTaskSuccessAttachment,
   type DeploymentTaskTimelineSnapshot,
   type DeploymentTimelineEvent,
   type DeploymentTimelineStep,
@@ -27,8 +36,9 @@ import type {
 } from "./types";
 
 /**
- * Deployment Task Timeline dev fixtures: one AI-runner task per scenario,
- * deploying `acme/web-app` into the open Project. The timeline route and its
+ * Deployment Task Timeline dev fixtures: one task per scenario deploying
+ * `acme/web-app` with the AI runner, plus a template-installed game server for
+ * the verified-success shape (issue #160). The timeline route and its
  * SSE stream answer for the fixture task id; the task list and projection
  * stream answer with the fixture alone so the Deployment Task Dock shows
  * its chip. Timestamps are relative to the request so completion windows
@@ -37,8 +47,82 @@ import type {
  */
 
 const SECOND_MS = 1000;
-const PROJECT_NAME = "web-app";
-const REPO = "acme/web-app";
+const PUBLIC_HOST_SUFFIX = "mock.sealos.run";
+const WEB_APP_DATABASE = "pg-main";
+
+/**
+ * What a scenario deploys. Every scenario shares one task skeleton — one
+ * workload, one public address — so the product is threaded through the
+ * builders instead of forked per scenario. The EaglerCraft product exists to
+ * give the success card real first-use content (#160), not to model a second
+ * deployment path.
+ */
+interface FixtureProduct {
+  /** Set when the deployment also stands up a database. */
+  database?: string;
+  /** The runner that owns the task; its kind decides the step set. */
+  runner: DeploymentTaskRunner;
+  /** Source identity — also the success card's product name, as in the runner. */
+  source: DeploymentTaskSource;
+  /** Kubernetes name of the workload, its project and its public host. */
+  workload: string;
+}
+
+const WEB_APP: FixtureProduct = {
+  database: WEB_APP_DATABASE,
+  runner: { kind: "ai", runtimeProvider: "devbox" },
+  source: {
+    branch: "main",
+    kind: "github",
+    repo: {
+      fullName: "acme/web-app",
+      name: "web-app",
+      url: "https://github.com/acme/web-app",
+    },
+  },
+  workload: "web-app",
+};
+
+/**
+ * A game server installed from the app store: no repository, no database, and
+ * a first-use path that is not simply "click the link" — the player connects
+ * to this address from a client somewhere else. That is what the success
+ * contract's guidance exists for.
+ */
+const EAGLERCRAFT: FixtureProduct = {
+  runner: { kind: "template" },
+  source: { kind: "template", templateName: "EaglerCraft Server" },
+  workload: "eaglercraft-server",
+};
+
+/**
+ * A workspace app from the app store that declares several access endpoints:
+ * the workspace itself, an admin console under it, and a sync endpoint the
+ * desktop client reaches over WebSocket. Each is declared by the contract and
+ * probed on its own; the fixture exists so the success card's multi-address
+ * shape (primary chip plus the quiet list) can be seen live.
+ */
+const AFFINE: FixtureProduct = {
+  runner: { kind: "template" },
+  source: { kind: "template", templateName: "AFFiNE" },
+  workload: "affine",
+};
+
+function productForScenario(scenario: DeployTaskDevScenario): FixtureProduct {
+  switch (scenario) {
+    case "succeeded-eaglercraft":
+      return EAGLERCRAFT;
+    case "succeeded-affine":
+      return AFFINE;
+    default:
+      return WEB_APP;
+  }
+}
+
+/** The one address the fixture's contract declares. */
+function publicUrl(product: FixtureProduct): string {
+  return `https://${product.workload}.${PUBLIC_HOST_SUFFIX}`;
+}
 
 interface FixtureClock {
   at(offsetMs: number): string;
@@ -86,9 +170,33 @@ function step(
 function resultCards(
   time: FixtureClock,
   namespace: string,
+  product: FixtureProduct,
   phase: "creating" | "ready"
 ): DeploymentResultResourceCard[] {
   const ready = phase === "ready";
+  const workload = product.workload;
+  // Typed on its own so the literal's narrow fields survive being spread into
+  // the list conditionally — a bare inline spread would widen them to string.
+  const database: DeploymentResultResourceCard | null =
+    product.database == null
+      ? null
+      : {
+          events: [
+            event(
+              time,
+              -50 * SECOND_MS,
+              "evt-db",
+              "Database cluster is ready.",
+              { severity: "success", source: "resource-observer" }
+            ),
+          ],
+          id: `DB:${namespace}:${product.database}`,
+          latestStatusText: "Ready",
+          required: true,
+          resultRef: { kind: "DB", name: product.database, namespace },
+          status: "running",
+          title: product.database,
+        };
   return [
     {
       events: [
@@ -105,27 +213,14 @@ function resultCards(
           }
         ),
       ],
-      id: `AP:${namespace}:${PROJECT_NAME}`,
+      id: `AP:${namespace}:${workload}`,
       latestStatusText: ready ? "1/1 replicas ready" : "0/1 replicas ready",
       required: true,
-      resultRef: { kind: "AP", name: PROJECT_NAME, namespace },
+      resultRef: { kind: "AP", name: workload, namespace },
       status: ready ? "running" : "creating",
-      title: PROJECT_NAME,
+      title: workload,
     },
-    {
-      events: [
-        event(time, -50 * SECOND_MS, "evt-db", "Database cluster is ready.", {
-          severity: "success",
-          source: "resource-observer",
-        }),
-      ],
-      id: `DB:${namespace}:pg-main`,
-      latestStatusText: "Ready",
-      required: true,
-      resultRef: { kind: "DB", name: "pg-main", namespace },
-      status: "running",
-      title: "pg-main",
-    },
+    ...(database == null ? [] : [database]),
     {
       events: ready
         ? [
@@ -141,11 +236,11 @@ function resultCards(
             ),
           ]
         : [],
-      id: `PublicAccess:${namespace}:${PROJECT_NAME}:pa_web`,
+      id: `PublicAccess:${namespace}:${workload}:pa_web`,
       ...(ready ? { latestStatusText: "accessible" } : {}),
       required: false,
       resultRef: {
-        apName: PROJECT_NAME,
+        apName: workload,
         id: "pa_web",
         kind: "PublicAccess",
         namespace,
@@ -165,13 +260,20 @@ interface ScenarioShape {
   resultUrl: string | null;
   status: DeployTaskStatus;
   steps: DeploymentTimelineStep[];
+  /** Appended after the steps, so its revision is always the later one. */
+  success?: DeploymentTaskSuccessAttachment;
 }
 
 function scenarioShape(
   scenario: DeployTaskDevScenario,
   time: FixtureClock,
-  namespace: string
+  namespace: string,
+  product: FixtureProduct
 ): ScenarioShape {
+  const repoSummary =
+    product.source.kind === "github"
+      ? `${product.source.repo.fullName}@${product.source.branch ?? "main"}`
+      : deploymentTaskSourceSummary(product.source);
   const prepare = step(
     "prepare-workspace",
     "Prepare workspace",
@@ -180,7 +282,7 @@ function scenarioShape(
     [event(time, -4 * MINUTE_MS, "evt-1", "Runtime workspace is ready.")]
   );
   const analyze = step("analyze-source", "Analyze repository", 1, "completed", [
-    event(time, -3.5 * MINUTE_MS, "evt-2", `Cloned ${REPO}@main.`),
+    event(time, -3.5 * MINUTE_MS, "evt-2", `Cloned ${repoSummary}.`),
     event(
       time,
       -3 * MINUTE_MS,
@@ -229,7 +331,7 @@ function scenarioShape(
                 "Applying deployment artifacts."
               ),
             ],
-            resultCards(time, namespace, "creating")
+            resultCards(time, namespace, product, "creating")
           ),
         ],
       };
@@ -386,7 +488,15 @@ function scenarioShape(
         error: null,
         failureDetails: null,
         phase: "completed",
-        resultUrl: "https://web-app.mock.sealos.run",
+        resultUrl: publicUrl(product),
+        // Exactly what the AI runner declares once its readiness gate passes:
+        // the probed public address and the checks behind it. No headline and
+        // no guidance, so the card falls back (#160).
+        success: {
+          entries: [{ label: "Public address", url: publicUrl(product) }],
+          productName: deploymentTaskSourceSummary(product.source),
+          verification: { passed: 3, total: 3 },
+        },
         status: "completed",
         steps: [
           prepare,
@@ -414,8 +524,171 @@ function scenarioShape(
                 }
               ),
             ],
-            resultCards(time, namespace, "ready")
+            resultCards(time, namespace, product, "ready")
           ),
+        ],
+      };
+    case "succeeded-eaglercraft":
+      return {
+        cancelRequestedAt: null,
+        completedAt: time.at(-30 * SECOND_MS),
+        error: null,
+        failureDetails: null,
+        phase: "completed",
+        resultUrl: publicUrl(product),
+        // The same record with the fields a product contract is allowed to
+        // declare: how to reach the server, and what to do with it. The
+        // address appears once, as declared — no protocol is derived here.
+        success: {
+          entries: [{ label: "Server address", url: publicUrl(product) }],
+          guidance: [
+            {
+              detail: "Keep it open in another tab.",
+              label: "Open the EaglerCraft client in your browser.",
+            },
+            { label: "Go to Multiplayer and add a server." },
+            { detail: publicUrl(product), label: "Paste the server address." },
+            { label: "Join the server and start playing." },
+          ],
+          headline: "Your server is online",
+          openActionLabel: "Open server",
+          productName: deploymentTaskSourceSummary(product.source),
+          verification: { passed: 2, total: 2 },
+        },
+        status: "completed",
+        steps: [
+          step("prepare-template", "Prepare template", 0, "completed", [
+            event(
+              time,
+              -3 * MINUTE_MS,
+              "evt-e1",
+              "Resolved the template and its defaults."
+            ),
+            event(
+              time,
+              -2 * MINUTE_MS,
+              "evt-e2",
+              "Applied the instance configuration."
+            ),
+          ]),
+          step(
+            "create-resources",
+            "Create resources",
+            1,
+            "completed",
+            [
+              event(
+                time,
+                -90 * SECOND_MS,
+                "evt-e3",
+                "Applying deployment artifacts."
+              ),
+              event(
+                time,
+                -45 * SECOND_MS,
+                "evt-e4",
+                "Workload has 1/1 ready replicas.",
+                {
+                  severity: "success",
+                  source: "resource-observer",
+                }
+              ),
+              event(
+                time,
+                -30 * SECOND_MS,
+                "evt-e5",
+                "Public Address is accessible.",
+                {
+                  severity: "success",
+                  source: "health-check",
+                }
+              ),
+            ],
+            resultCards(time, namespace, product, "ready")
+          ),
+        ],
+      };
+    case "succeeded-affine":
+      return {
+        cancelRequestedAt: null,
+        completedAt: time.at(-30 * SECOND_MS),
+        error: null,
+        failureDetails: null,
+        phase: "completed",
+        resultUrl: publicUrl(product),
+        // Three declared endpoints, each with its own probe: two pages the
+        // user can open, and the sync endpoint the client reaches over
+        // WebSocket, which the card lists for copying only. No headline and
+        // no guidance, so the card keeps its defaults.
+        success: {
+          entries: [
+            {
+              label: "Public domain",
+              protocol: "https",
+              url: publicUrl(product),
+            },
+            {
+              label: "Admin console",
+              protocol: "https",
+              url: `${publicUrl(product)}/admin`,
+            },
+            {
+              label: "Sync (WebSocket)",
+              protocol: "wss",
+              url: `wss://sync.${product.workload}.${PUBLIC_HOST_SUFFIX}`,
+            },
+          ],
+          productName: deploymentTaskSourceSummary(product.source),
+          verification: { passed: 4, total: 4 },
+        },
+        status: "completed",
+        steps: [
+          step("prepare-template", "Prepare template", 0, "completed", [
+            event(
+              time,
+              -3 * MINUTE_MS,
+              "evt-a1",
+              "Resolved the template and its defaults."
+            ),
+          ]),
+          step(
+            "create-resources",
+            "Create resources",
+            1,
+            "completed",
+            [
+              event(
+                time,
+                -90 * SECOND_MS,
+                "evt-a2",
+                "Applying deployment artifacts."
+              ),
+              event(
+                time,
+                -45 * SECOND_MS,
+                "evt-a3",
+                "Workload has 1/1 ready replicas.",
+                { severity: "success", source: "resource-observer" }
+              ),
+            ],
+            resultCards(time, namespace, product, "ready")
+          ),
+          step("verify-access", "Verify public access", 2, "completed", [
+            event(
+              time,
+              -35 * SECOND_MS,
+              "evt-a4",
+              "Public domain and admin console respond.",
+              { severity: "success", source: "health-check" }
+            ),
+            event(
+              time,
+              -30 * SECOND_MS,
+              "evt-a5",
+              "Sync endpoint accepts WebSocket connections.",
+              { severity: "success", source: "health-check" }
+            ),
+          ]),
         ],
       };
     case "cancelled":
@@ -443,31 +716,54 @@ function scenarioShape(
   }
 }
 
-const RESOURCE_SLOTS = (namespace: string) => ({
+/** The devbox runtime belongs to the AI runner alone; other runners have none. */
+function runtimeStateFor(
+  runner: DeploymentTaskRunner,
+  completedAt: string | null
+): string | null {
+  if (runner.kind !== "ai") {
+    return null;
+  }
+  return completedAt == null ? "Running" : "Stopped";
+}
+
+const RESOURCE_SLOTS = (namespace: string, product: FixtureProduct) => ({
   resources: [
     {
       apiVersion: "apps/v1",
       kind: "Deployment",
-      name: PROJECT_NAME,
+      name: product.workload,
       namespace,
     },
-    {
-      apiVersion: "apps.kubeblocks.io/v1alpha1",
-      kind: "Cluster",
-      name: "pg-main",
-      namespace,
-    },
+    ...(product.database == null
+      ? []
+      : [
+          {
+            apiVersion: "apps.kubeblocks.io/v1alpha1",
+            kind: "Cluster",
+            name: product.database,
+            namespace,
+          },
+        ]),
   ],
   slots: [
     {
       anchor: true,
-      expectedRef: { kind: "AP" as const, name: PROJECT_NAME, namespace },
+      expectedRef: { kind: "AP" as const, name: product.workload, namespace },
       id: "slot-ap",
     },
-    {
-      expectedRef: { kind: "DB" as const, name: "pg-main", namespace },
-      id: "slot-db",
-    },
+    ...(product.database == null
+      ? []
+      : [
+          {
+            expectedRef: {
+              kind: "DB" as const,
+              name: product.database,
+              namespace,
+            },
+            id: "slot-db",
+          },
+        ]),
   ],
 });
 
@@ -476,9 +772,10 @@ export function deployTaskDevMockTask(
   input: { namespace: string; nowMs: number; projectId: string | null }
 ): DeploymentTaskTimelineSnapshotDTO {
   const time = clock(input.nowMs);
-  const shape = scenarioShape(scenario, time, input.namespace);
+  const product = productForScenario(scenario);
+  const shape = scenarioShape(scenario, time, input.namespace, product);
   const taskId = deployTaskDevMockTaskId(scenario);
-  const facts = RESOURCE_SLOTS(input.namespace);
+  const facts = RESOURCE_SLOTS(input.namespace, product);
   const timeline: DeploymentTaskTimelineSnapshot = {
     revision: shape.steps.length,
     status: shape.status,
@@ -486,6 +783,15 @@ export function deployTaskDevMockTask(
     taskId,
     updatedAt: time.at(-30 * SECOND_MS),
   };
+  // Success is appended the way the runner appends it — after the steps, so
+  // its revision is the later one and the celebration key stays stable.
+  const snapshotTimeline =
+    shape.success == null
+      ? timeline
+      : attachDeploymentTaskSuccess(timeline, {
+          success: shape.success,
+          updatedAt: time.at(-30 * SECOND_MS),
+        });
   const task: DeployTaskDTO = {
     artifactSummary: {
       resources: facts.resources,
@@ -516,9 +822,12 @@ export function deployTaskDevMockTask(
         : [],
     cancelRequestedAt: shape.cancelRequestedAt,
     canvasProjection: {
-      edges: [{ sourceSlotId: "slot-ap", targetSlotId: "slot-db" }],
+      edges:
+        product.database == null
+          ? []
+          : [{ sourceSlotId: "slot-ap", targetSlotId: "slot-db" }],
       slots: facts.slots,
-      ...(scenario === "succeeded"
+      ...(shape.status === "completed"
         ? {
             resultMappings: facts.slots.map((slot) => ({
               actualRef: slot.expectedRef,
@@ -541,33 +850,26 @@ export function deployTaskDevMockTask(
     phase: shape.phase,
     previewUrl: null,
     projectId: input.projectId,
-    projectName: PROJECT_NAME,
+    projectName: product.workload,
     resultUrl: shape.resultUrl,
     retriedFromTaskId: null,
-    runner: { kind: "ai", runtimeProvider: "devbox" },
-    runtimeName: "devbox-web-app",
-    runtimeProvider: "devbox",
-    runtimeState: shape.completedAt == null ? "Running" : "Stopped",
-    source: {
-      branch: "main",
-      kind: "github",
-      repo: {
-        fullName: REPO,
-        name: PROJECT_NAME,
-        url: `https://github.com/${REPO}`,
-      },
-    },
+    runner: product.runner,
+    runtimeName:
+      product.runner.kind === "ai" ? `devbox-${product.workload}` : null,
+    runtimeProvider: product.runner.kind === "ai" ? "devbox" : null,
+    runtimeState: runtimeStateFor(product.runner, shape.completedAt),
+    source: product.source,
     startedAt: time.at(-4.5 * MINUTE_MS),
     status: shape.status,
     target:
       input.projectId == null
-        ? { displayName: PROJECT_NAME, kind: "newProject" }
+        ? { displayName: product.workload, kind: "newProject" }
         : {
             kind: "existingProject",
             projectId: input.projectId,
-            projectName: PROJECT_NAME,
+            projectName: product.workload,
           },
-    timelineSnapshot: timeline,
+    timelineSnapshot: snapshotTimeline,
     updatedAt: time.at(-30 * SECOND_MS),
   };
   const events: DeployTaskEventDTO[] = shape.steps.flatMap((entry) =>
@@ -581,7 +883,7 @@ export function deployTaskDevMockTask(
       taskId,
     }))
   );
-  return { events, task, timeline };
+  return { events, task, timeline: snapshotTimeline };
 }
 
 export function deployTaskDevMockProjection(
@@ -595,9 +897,9 @@ export function deployTaskDevMockProjection(
     canvasProjection: task.canvasProjection,
     completedAt: task.completedAt,
     display: {
-      resultSummary: PROJECT_NAME,
-      sourceKind: "github",
-      sourceSummary: `${REPO}@main`,
+      resultSummary: task.projectName ?? task.id,
+      sourceKind: task.source.kind,
+      sourceSummary: deploymentTaskSourceSummary(task.source),
     },
     failureReason:
       task.status === "failed" &&

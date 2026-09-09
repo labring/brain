@@ -13,6 +13,8 @@ export const DEPLOY_TASK_DEV_SCENARIOS = [
   "failed-balance",
   "failed-quota",
   "succeeded",
+  "succeeded-eaglercraft",
+  "succeeded-affine",
   "cancelled",
 ] as const;
 

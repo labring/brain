@@ -217,6 +217,7 @@ export function GitHubDeploymentPane({
               projectName: currentProject.resourceName,
               projectId: projectIdTrimmed,
             }),
+            templateCategories: template.category,
             templateName: settings.templateName,
           },
         });
