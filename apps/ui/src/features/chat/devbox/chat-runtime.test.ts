@@ -179,14 +179,10 @@ test("background Skill warmup is shared and publishes metadata after discovery",
     const ready = await toolset;
     assert.ok(ready.systemPrompt.includes("sealos-deploy"));
     assert.ok(ready.tools.loadSkill);
-    assert.deepEqual(ready.toolApproval, {
-      bash: "user-approval",
-      edit: "user-approval",
-      write: "user-approval",
-    });
-    for (const name of Object.keys(ready.toolApproval)) {
+    assert.equal(ready.toolApproval(), "not-applicable");
+    for (const name of ["bash", "edit", "write"]) {
       assert.ok(ready.tools[name]);
-      assert.equal(ready.tools[name]?.needsApproval, true);
+      assert.notEqual(ready.tools[name]?.needsApproval, true);
     }
     assert.equal(Reflect.has(ready.tools, "writeFile"), false);
 
