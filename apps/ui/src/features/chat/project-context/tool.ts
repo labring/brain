@@ -7,6 +7,7 @@ import {
   chatToolIntentionField,
   logChatToolIntention,
 } from "@/features/chat/tool/chat-tool-intention";
+import { TemplateReadmePayloadTooLargeError } from "@/features/deploy/template-provider-core";
 import { readProjectTemplateReadme } from "./readme";
 
 export const readTemplateReadmeInputSchema = z
@@ -63,7 +64,22 @@ export function createTemplateReadmeTools(
             signal: execution.abortSignal,
             templateName: input.templateName,
           });
-        } catch {
+        } catch (error) {
+          if (
+            execution.abortSignal?.aborted ||
+            (error instanceof Error && error.name === "AbortError")
+          ) {
+            throw error;
+          }
+          if (error instanceof Error && error.name === "TimeoutError") {
+            return {
+              ok: false as const,
+              error: "Template README retrieval timed out. You can retry.",
+            };
+          }
+          if (error instanceof TemplateReadmePayloadTooLargeError) {
+            return { ok: false as const, error: error.message };
+          }
           return {
             ok: false as const,
             error:

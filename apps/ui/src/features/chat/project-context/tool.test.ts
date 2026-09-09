@@ -97,3 +97,54 @@ test("provider failure becomes an ordinary result without internal error details
     error: "Template README could not be loaded. Continue with other tools.",
   });
 });
+
+test("user cancellation propagates instead of becoming a provider failure", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  for (const [error, signal] of [
+    [new DOMException("Stopped", "AbortError"), undefined],
+    [new Error("custom cancellation reason"), controller.signal],
+  ] as const) {
+    const tools = createTemplateReadmeTools(options, () =>
+      Promise.reject(error)
+    );
+    await assert.rejects(
+      async () =>
+        tools.readTemplateReadme?.execute?.(
+          { intention: "Read usage" },
+          {
+            context: {},
+            messages: [],
+            toolCallId: "cancel",
+            abortSignal: signal,
+          }
+        ),
+      (caught) => caught === error
+    );
+  }
+});
+
+test("timeout and oversized payload return distinct actionable results", async () => {
+  const { TemplateReadmePayloadTooLargeError } = await import(
+    "@/features/deploy/template-provider-core"
+  );
+  for (const [error, expected] of [
+    [
+      new DOMException("Timed out", "TimeoutError"),
+      "Template README retrieval timed out. You can retry.",
+    ],
+    [
+      new TemplateReadmePayloadTooLargeError(),
+      "Template Provider response exceeds 2 MiB (including YAML and README).",
+    ],
+  ] as const) {
+    const tools = createTemplateReadmeTools(options, () =>
+      Promise.reject(error)
+    );
+    const result = await tools.readTemplateReadme?.execute?.(
+      { intention: "Read usage" },
+      { context: {}, messages: [], toolCallId: "failure" }
+    );
+    assert.deepEqual(result, { ok: false, error: expected });
+  }
+});

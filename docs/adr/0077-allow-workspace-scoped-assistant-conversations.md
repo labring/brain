@@ -68,8 +68,11 @@ returns names for selection. Workspace Chat does not expose this reader.
 The reader calls the existing Template Provider `getTemplateSource` endpoint
 with `includeReadme=true`. Only README text reaches the model, with a 32,000
 character limit and explicit truncation. A 15-second request budget and a 2 MiB
-provider response limit bound retrieval. Missing documentation or provider
-failure returns a tool result and does not prevent other Chat work.
+limit on the entire provider JSON response (including YAML, source metadata,
+and README) bound retrieval. An oversized response returns an explicit error,
+even when its README is short. User cancellation propagates; a retrieval timeout
+returns a retryable timeout result. Missing documentation or provider failure
+returns a tool result and does not prevent other Chat work.
 
 README is current provider documentation, not proof of the deployed revision
 or live resource state. It cannot override Chat instructions or authorize

@@ -5,9 +5,9 @@ import {
   getTemplateReadme,
   getTemplateSource,
   listTemplateCatalog,
+  TemplateReadmePayloadTooLargeError,
 } from "./template-provider-core";
 
-const TOO_LARGE_RE = /too large/;
 const ABORTED_RE = /aborted/;
 
 const originalFetch = globalThis.fetch;
@@ -534,14 +534,16 @@ test("getTemplateReadme bounds the provider response and propagates cancellation
   process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
   globalThis.fetch = (() =>
     Promise.resolve(
-      new Response("x".repeat(2 * 1024 * 1024 + 1))
+      jsonResponse({
+        data: { readmeContent: "short", appYaml: "x".repeat(2 * 1024 * 1024) },
+      })
     )) as unknown as typeof fetch;
   await assert.rejects(
     getTemplateReadme({
       encodedKubeconfig: "credential",
       templateName: "memos",
     }),
-    TOO_LARGE_RE
+    TemplateReadmePayloadTooLargeError
   );
   const controller = new AbortController();
   controller.abort();
@@ -557,4 +559,34 @@ test("getTemplateReadme bounds the provider response and propagates cancellation
     }),
     ABORTED_RE
   );
+});
+
+test("README timeout during body reading preserves timeout identity", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
+  const originalTimeout = AbortSignal.timeout;
+  const controller = new AbortController();
+  AbortSignal.timeout = () => controller.signal;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream({
+          pull(stream) {
+            controller.abort(new DOMException("Timed out", "TimeoutError"));
+            stream.error(new DOMException("Body aborted", "AbortError"));
+          },
+        })
+      )
+    )) as unknown as typeof fetch;
+  try {
+    await assert.rejects(
+      getTemplateReadme({
+        encodedKubeconfig: "credential",
+        templateName: "memos",
+      }),
+      (error: unknown) =>
+        error instanceof Error && error.name === "TimeoutError"
+    );
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+  }
 });
