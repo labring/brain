@@ -7,6 +7,7 @@ import {
   type AssistantSessionPayload,
   type AssistantThreadDTO,
   assistantThreadDTOSchema,
+  CHAT_WALL_CAUSES,
 } from "./types";
 
 const uiMessageSchema = z
@@ -18,15 +19,7 @@ const uiMessageSchema = z
   .passthrough() as unknown as z.ZodType<UIMessage>;
 
 const paidSourceSchema = z.enum(["ai-credits", "balance"]).nullable();
-const wallCauseSchema = z
-  .enum([
-    "ai-credits",
-    "balance",
-    "allowance-trial",
-    "allowance-plan",
-    "owner-balance",
-  ])
-  .nullable();
+const wallCauseSchema = z.enum(CHAT_WALL_CAUSES).nullable();
 const freeTierSchema = z.object({
   billing: z.enum(["free", "user"]),
   remaining: z.number(),

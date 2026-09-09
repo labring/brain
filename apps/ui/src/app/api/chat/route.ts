@@ -716,14 +716,17 @@ async function settleTurnBillingPosture(actor: ChatBillingActor): Promise<
     // wall it, so headers and bootstrap agree and the pane locks the moment
     // the allowance is spent (ADR-0073) — not one refused send later. Any
     // earlier free turn keeps its `free` posture and never awaits the
-    // standing.
+    // standing — so the Owner verdict (ADR-0082) is taken only once the
+    // posture is `user` and the wall has already settled that read; before
+    // that it stays unknown, which never assumes the Owner.
+    const postTurn = await withPaidChatWall(
+      freeTierPostureAfterTurn(freeTier, systemModelConfigured, trial),
+      judgment
+    );
     return {
       billing: "free",
-      clientFreeTier: await withPaidChatWall(
-        freeTierPostureAfterTurn(freeTier, systemModelConfigured, trial),
-        judgment
-      ),
-      isOwner: await judgment.isOwner(),
+      clientFreeTier: postTurn,
+      isOwner: postTurn.billing === "user" ? await judgment.isOwner() : null,
       reserved: true,
     };
   }

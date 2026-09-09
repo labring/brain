@@ -7,6 +7,8 @@ import {
   buildAssistantContinuationFromPending,
   buildRecoveredAssistantMessageForIncompleteClientTools,
   buildRecoveredAssistantMessageForInterruptedTools,
+  CHAT_WALL_CAUSES,
+  chatWallCauseFromHeader,
   findPendingApprovalMessageForResponse,
   findPendingAssistantMessageForContinuation,
   hasClientToolResultContinuation,
@@ -974,4 +976,20 @@ test("legacy recovery is a no-op for users and unknown incomplete tools", () => 
     ),
     undefined
   );
+});
+
+test("every wall cause the server names survives the X-Chat-Wall header round-trip", () => {
+  // ADR-0082: the member's balance wall (`owner-balance`) must lock the pane
+  // exactly like the Owner's; a cause the decoder does not know reads as
+  // "no wall" and the member would see a bare failed send.
+  for (const cause of CHAT_WALL_CAUSES) {
+    assert.equal(chatWallCauseFromHeader(cause), cause);
+  }
+  assert.equal(chatWallCauseFromHeader("owner-balance"), "owner-balance");
+});
+
+test("an empty or foreign X-Chat-Wall header is no wall", () => {
+  assert.equal(chatWallCauseFromHeader(null), null);
+  assert.equal(chatWallCauseFromHeader(""), null);
+  assert.equal(chatWallCauseFromHeader("plan"), null);
 });

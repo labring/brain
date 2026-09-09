@@ -103,6 +103,8 @@ let billingStanding = {
   paidSource: null as "ai-credits" | "balance" | null,
   quotaKnown: false,
 };
+/** When set, the standing read hangs: only a path that awaits it can stall. */
+let standingNeverSettles = false;
 let standingCalls: {
   userId: string | null;
   userUid: string;
@@ -334,7 +336,11 @@ mock.module("@/features/billing/server/billing-standing", () => ({
       userUid: input.userUid,
       workspace: input.workspace,
     });
-    return Promise.resolve({ ...billingStanding });
+    return standingNeverSettles
+      ? new Promise(() => {
+          // Hangs on purpose: a free turn must not await this read.
+        })
+      : Promise.resolve({ ...billingStanding });
   },
 }));
 mock.module("@/features/chat/persistence/free-tier", () => ({
@@ -825,6 +831,7 @@ beforeEach(() => {
     quotaKnown: false,
   };
   standingCalls = [];
+  standingNeverSettles = false;
   denyReservation = null;
   releaseCalls = 0;
   reserveCalls = 0;
@@ -2183,6 +2190,24 @@ test("a free turn never consults the paid wall — the standing read beside the 
   expect(response.headers.get("X-Chat-Billing")).toBe("free");
   expect(response.headers.get("X-Chat-Wall")).toBe("");
   expect(response.headers.get("X-Chat-Paid-Source")).toBe("");
+  expect(standingCalls).toHaveLength(1);
+  await drain(response);
+});
+
+test("a free turn with turns to spare streams while the standing read is still pending", async () => {
+  // ADR-0068/0082: an earlier free turn never awaits the standing — not for
+  // the wall and not for the Owner verdict — so a slow namespace or account
+  // read cannot hold up a free reply.
+  freeTierSnapshot = { limit: 5, remaining: 2, used: 3 };
+  trialJudgment = "trial";
+  standingNeverSettles = true;
+
+  const response = await POST(
+    chatRequest(userMessage("user-free-pending-standing", "hi"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("free");
+  expect(response.headers.get("X-Chat-Wall")).toBe("");
   expect(standingCalls).toHaveLength(1);
   await drain(response);
 });

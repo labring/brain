@@ -80,6 +80,25 @@ test("a resumed or normal mark is not debt", () => {
   }
 });
 
+test("a mark the allowlist does not name is not read as debt", () => {
+  // Deliberate (ADR-0082): a false debt alarm is the fault being removed, so
+  // an unrecognised `debt.sealos/status` stays silent until it is added to
+  // DEBT_SUSPENDED_STATUSES.
+  for (const status of ["", "Unknown", "Paused", "suspend"]) {
+    assert.deepEqual(
+      workspaceOwnerStandingFromNamespace(
+        namespace({
+          annotations: { "debt.sealos/status": status },
+          labels: { "user.sealos.io/owner": "alice" },
+        }),
+        "bob"
+      ),
+      { isOwner: false, platformDebt: false },
+      JSON.stringify(status)
+    );
+  }
+});
+
 test("a namespace without an owner label leaves ownership unknown, never assumed", () => {
   assert.deepEqual(
     workspaceOwnerStandingFromNamespace(namespace({}), "alice"),

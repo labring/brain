@@ -17,6 +17,11 @@ export const DEBT_STATUS_ANNOTATION = "debt.sealos/status";
  * plug (`controllers/pkg/types/debt.go`; the resources monitor and the
  * account service's `isDebtSuspendedNamespaceStatus` treat this set as
  * suspended). `Normal`, `Resume`, and `ResumeCompleted` are good standing.
+ *
+ * Deliberately an allowlist: a mark this set does not name is read as not
+ * suspended, never as debt, because a false debt alarm is the very fault
+ * ADR-0082 removes. A suspension status the platform adds later must be
+ * added here (and to the test beside it) before Brain will voice it.
  */
 const DEBT_SUSPENDED_STATUSES: ReadonlySet<string> = new Set([
   "Suspend",
