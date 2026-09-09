@@ -2,7 +2,76 @@
 
 All notable changes to Brain are documented in this file.
 
-## Unreleased
+## [2.0.13] - 2026-09-09
+
+### Added
+
+- Let a Sealos Template declare Template Entries: `spec.entries.open` is
+  what the Open control opens after a template deployment and
+  `spec.entries.share` is what the Success Record's share strip copies,
+  shows as a QR code and posts. Both are full URLs rendered with the
+  template's own `${{ }}` substitution. Open falls back to the template's
+  Sealos App CR `spec.data.url`, then to the automatic Default Open Port
+  rule; Share falls back to the Open URL only, never to the App CR url.
+  The record takes the entries as declared; when the Open URL matches an
+  Ingress host and a Service port, Brain presets
+  `brain.io/default-open-port` on that Service so the AP Public Access
+  Node's Open and the record's Open agree. Records snapshot their share
+  address as `shareUrl`; older records keep loading unchanged (ADR-0081).
+- Gave Chat Pi-style Devbox file tools — read, write, edit and list
+  confined to the Devbox workspace, with atomic writes, serialized
+  execution, and input, output and timeout limits — in place of the
+  single bash tool. Chat tools execute directly within the user's
+  requested scope, and a new user message cancels any pending approvals
+  left in stored history so older conversations continue without running
+  their abandoned calls.
+
+### Fixed
+
+- Judged Account Debt by the Workspace Owner instead of the calling
+  Workspace Actor. Brain reads the workspace Namespace with the request
+  kubeconfig and takes the platform's own marks: `debt.sealos/status` is
+  the suspension verdict for everyone, and `user.sealos.io/owner`
+  compared with the verified app-token `userCrName` decides whether the
+  caller is the Owner. In a shared Pay-As-You-Go workspace a member with
+  an empty wallet is no longer told the workspace is suspended, and the
+  Owner's debt no longer reaches a member as a bare deployment stall. A
+  non-owner sees the truth and the ask — no amount, no owner name, no Top
+  up CTA — at every seam (status hint, Deploy Billing Notice, Paid Chat
+  Wall with the new `owner-balance` cause, terminal-failure callout,
+  assistant deploy refusal, Billing Escalation Dialog), and the Plan
+  view hides Account Balance and Gift Credit for anyone not proven to be
+  the Owner. An unreadable namespace or a missing label leaves ownership
+  unknown and the balance path closed (ADR-0082).
+
+### Upgrade Notes
+
+- No new environment variables, runtime images, or database migrations
+  are required.
+
+## [2.0.12] - 2026-09-08
+
+### Added
+
+- Showed an evidence-gated Deployment Task Success Record on the timeline
+  with verified access endpoints, a primary action and a deployment
+  celebration, plus a share strip (QR and social sharing) and a separate
+  Next steps trail.
+- Grouped Public Access endpoints, with port display names and a Default
+  Open Port. Endpoint readiness checks preserve exact paths and verify
+  declared semantics.
+- Connected GitHub automatically when one-click deployment needs it.
+- Added workspace-scoped assistant context to Chat and kept attached
+  context implicit.
+- Prepared bundled Skills in managed Chat and Deployment runtimes before
+  agent startup and awaited discovery.
+
+### Changed
+
+- Upgraded Chat to AI SDK v7 and added Langfuse tracing across streamed
+  turns.
+- Announced critical Account Debt escalations once and loaded workspace
+  quota through Brain API.
 
 ### Fixed
 
@@ -16,6 +85,12 @@ All notable changes to Brain are documented in this file.
 
 ### Upgrade Notes
 
+- Publish and validate an immutable sandbox/v1 image containing the
+  offline Skills bundle, then set `DEVBOX_RUNTIME_IMAGE` before upgrading
+  Brain. Remove nonempty `DEPLOY_SKILL_SOURCE` overrides; they are now
+  rejected. Let active and blocked Deployment Tasks finish before
+  switching versions, and roll back Brain and the runtime image together
+  if needed (ADR-0037).
 - Revoke any Langfuse key pair previously forwarded to Deploy Devboxes and set
   a fresh pair only in Brain UI before enabling Chat tracing. Existing Devboxes
   retain their old environment; this code change cannot revoke those keys.
