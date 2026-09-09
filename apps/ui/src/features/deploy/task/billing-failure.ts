@@ -117,6 +117,7 @@ export function resolveBillingFailureOverride(input: {
         availableBalanceMicroUnits: standing.availableBalanceMicroUnits,
         checkedAt: input.now.toISOString(),
         kind: "account-debt",
+        owner: standing.isOwner,
       },
       reason: "balance-exhausted",
       // An apply-time denial the platform explained itself (the debt

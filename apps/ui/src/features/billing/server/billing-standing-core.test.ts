@@ -17,6 +17,8 @@ const PAYG = { subscription: { type: "PAYG" } };
 const HOBBY = {
   subscription: { PlanName: "Hobby", Status: "NORMAL", type: "SUBSCRIPTION" },
 };
+const OWNER = { isOwner: true, platformDebt: false };
+const MEMBER = { isOwner: false, platformDebt: false };
 
 function quota(input: {
   aiHard?: number;
@@ -46,6 +48,7 @@ function quota(input: {
 describe("judgeWorkspaceBillingStanding", () => {
   it("reads a healthy PAYG workspace as open, paid from the balance", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: HEALTHY_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({}),
@@ -57,6 +60,7 @@ describe("judgeWorkspaceBillingStanding", () => {
       availableBalanceMicroUnits: 104_550_000,
       fullQuota: null,
       fullUniversalQuota: null,
+      isOwner: true,
       paidSource: "balance",
       paymentDue: false,
       paymentDueRecovery: null,
@@ -66,6 +70,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 
   it("judges Account Debt by the platform's formula: cash minus deductions plus usable credits", () => {
     const covered = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: DEBT_ACCOUNT,
       credits: { credits: { credits: 7_000_000, deductionCredits: 0 } },
       quota: quota({}),
@@ -75,6 +80,7 @@ describe("judgeWorkspaceBillingStanding", () => {
     expect(covered.availableBalanceMicroUnits).toBe(680_000);
 
     const inDebt = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: DEBT_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({}),
@@ -86,6 +92,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 
   it("treats a PAYG workspace the platform already reports in DEBT as Account Debt even when the money reads failed", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: null,
       credits: null,
       quota: null,
@@ -97,6 +104,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 
   it("keeps a never-billed zero-balance account in good standing — the platform's state machine skips it", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: { account: { Balance: 0, DeductionBalance: 0 } },
       credits: NO_CREDITS,
       quota: quota({}),
@@ -109,6 +117,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 
   it("leaves Account Debt unknown while either money read is missing", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: DEBT_ACCOUNT,
       credits: null,
       quota: quota({}),
@@ -119,6 +128,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 
   it("reads a subscribed workspace's AI Credits and pays from them", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: HEALTHY_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({ aiHard: 3_000_000, aiUsed: 1_200_000 }),
@@ -133,6 +143,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 
   it("reads a zero AI allowance as a fact — the production Free plan's quota shape (ADR-0073)", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: HEALTHY_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({ aiHard: 0, aiUsed: 0 }),
@@ -156,6 +167,7 @@ describe("judgeWorkspaceBillingStanding", () => {
     // namespace; its absence means the annotation and the subscription record
     // disagree, and aiproxy would charge the balance instead.
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: HEALTHY_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({}),
@@ -168,6 +180,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 
   it("reads a DELETED subscription record as Pay-As-You-Go", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: DEBT_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({}),
@@ -186,6 +199,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 
   it("names the first deployable quota that is full and ignores traffic", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: HEALTHY_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({ storageUsed: "20Gi" }),
@@ -203,6 +217,7 @@ describe("judgeWorkspaceBillingStanding", () => {
       judgeWorkspaceBillingStanding({
         account: null,
         credits: null,
+        owner: { isOwner: null, platformDebt: null },
         quota: null,
         subscription: null,
       })
@@ -214,6 +229,7 @@ describe("judgeWorkspaceBillingStanding", () => {
 describe("debtSuspendsWorkspace", () => {
   it("suspends a PAYG workspace in Account Debt", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: DEBT_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({}),
@@ -229,6 +245,7 @@ describe("debtSuspendsWorkspace", () => {
     // $1 gift credit has expired sits at exactly 0 available and must keep
     // deploying.
     const zeroBalance = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: {
         account: { Balance: 11_320_000, DeductionBalance: 11_320_000 },
       },
@@ -240,6 +257,7 @@ describe("debtSuspendsWorkspace", () => {
     expect(debtSuspendsWorkspace(zeroBalance)).toBe(false);
 
     const inDebt = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: DEBT_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({ aiHard: 3_000_000 }),
@@ -250,6 +268,7 @@ describe("debtSuspendsWorkspace", () => {
 
   it("keeps a payment-due subscription out of Account Debt's wall — that is the Deletion Countdown's voice", () => {
     const standing = judgeWorkspaceBillingStanding({
+      owner: OWNER,
       account: DEBT_ACCOUNT,
       credits: NO_CREDITS,
       quota: quota({ aiHard: 3_000_000 }),
@@ -269,5 +288,57 @@ describe("debtSuspendsWorkspace", () => {
     expect(
       debtSuspendsWorkspace({ accountDebt: null, paidSource: "balance" })
     ).toBeNull();
+  });
+});
+
+describe("judgeWorkspaceBillingStanding for a Workspace Actor who is not the Owner (ADR-0082)", () => {
+  it("does not read a member's own empty wallet as the workspace's debt", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: DEBT_ACCOUNT,
+      credits: NO_CREDITS,
+      owner: MEMBER,
+      quota: quota({}),
+      subscription: PAYG,
+    });
+    expect(standing.accountDebt).toBe(false);
+    expect(standing.isOwner).toBe(false);
+    expect(debtSuspendsWorkspace(standing)).toBe(false);
+  });
+
+  it("voices the Owner's debt to a member from the platform's mark, money regardless", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: HEALTHY_ACCOUNT,
+      credits: NO_CREDITS,
+      owner: { isOwner: false, platformDebt: true },
+      quota: quota({}),
+      subscription: PAYG,
+    });
+    expect(standing.accountDebt).toBe(true);
+    expect(debtSuspendsWorkspace(standing)).toBe(true);
+  });
+
+  it("never assumes the caller is the Owner: an unread namespace leaves debt unknown", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: DEBT_ACCOUNT,
+      credits: NO_CREDITS,
+      owner: { isOwner: null, platformDebt: null },
+      quota: quota({}),
+      subscription: PAYG,
+    });
+    expect(standing.accountDebt).toBeNull();
+    expect(standing.isOwner).toBeNull();
+    expect(debtSuspendsWorkspace(standing)).toBeNull();
+  });
+
+  it("the Owner's balance stays the early warning before the platform writes its mark", () => {
+    const standing = judgeWorkspaceBillingStanding({
+      account: DEBT_ACCOUNT,
+      credits: NO_CREDITS,
+      owner: OWNER,
+      quota: quota({}),
+      subscription: PAYG,
+    });
+    expect(standing.accountDebt).toBe(true);
+    expect(standing.isOwner).toBe(true);
   });
 });

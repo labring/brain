@@ -92,7 +92,9 @@ export type ChatPaidSource = "ai-credits" | "balance";
 export type ChatWallCause =
   | ChatPaidSource
   | "allowance-trial"
-  | "allowance-plan";
+  | "allowance-plan"
+  /** The balance wall as a non-owner sees it: the Owner's debt, no top-up (ADR-0082). */
+  | "owner-balance";
 
 /**
  * Read-side snapshot of a workspace's Chat Billing Posture, seeded into the

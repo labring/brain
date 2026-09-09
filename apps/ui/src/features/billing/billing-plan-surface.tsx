@@ -1078,7 +1078,9 @@ export function BillingPlanSurface({
           ) : null}
         </div>
       </section>
-      <BillingBalanceSection balance={balance} variant="card" />
+      {balance == null ? null : (
+        <BillingBalanceSection balance={balance} variant="card" />
+      )}
     </div>
   ) : (
     <section
@@ -1169,7 +1171,9 @@ export function BillingPlanSurface({
 
       {credits}
 
-      {current.isPayg ? null : <BillingBalanceSection balance={balance} />}
+      {current.isPayg || balance == null ? null : (
+        <BillingBalanceSection balance={balance} />
+      )}
 
       <BillingPaymentMethod
         availability={snapshot.availability.card}

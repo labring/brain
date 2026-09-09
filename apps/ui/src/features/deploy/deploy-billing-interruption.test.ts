@@ -28,6 +28,36 @@ describe("deploymentBillingInterruption", () => {
     });
   });
 
+  it("tells a non-owner the Owner's balance ran out, with the ask and no top-up (ADR-0082)", () => {
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          availableBalanceMicroUnits: 50_000_000,
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "account-debt",
+          owner: false,
+        },
+        reason: "balance-exhausted",
+      })
+    ).toEqual({
+      body: "The owner's account balance ran out while this deployment was running, and the workspace is suspended. Ask the workspace owner to top up, then redeploy.",
+      icon: "wallet",
+      title: "Workspace suspended — owner's balance in debt",
+    });
+    // An unknown owner is never assumed to be the Owner.
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          availableBalanceMicroUnits: null,
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "account-debt",
+          owner: null,
+        },
+        reason: "balance-exhausted",
+      })?.cta
+    ).toBeUndefined();
+  });
+
   it("names the full quota when the evidence carries it, and stays generic otherwise", () => {
     expect(
       deploymentBillingInterruption({
@@ -63,7 +93,7 @@ describe("deploymentBillingInterruption", () => {
       deploymentBillingInterruption(
         { reason: "quota-exceeded" },
         { payg: true }
-      )?.cta.label
+      )?.cta?.label
     ).toBe("Subscribe");
     expect(
       deploymentBillingInterruption(

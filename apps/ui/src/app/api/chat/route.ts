@@ -746,6 +746,8 @@ async function runChatPipeline(input: {
     const settled = await settleTurnBillingPosture({
       accountUserId: actor.accountUserId ?? null,
       cookieHeader: input.cookieHeader,
+      crName: actor.legacyWorkspaceActor,
+      encodedKubeconfig,
       namespace: owner.namespace,
       userUid: owner.userUid,
     });
@@ -794,6 +796,8 @@ async function runChatPipeline(input: {
       assistantContext,
       billingActor: {
         cookieHeader: input.cookieHeader,
+        crName: actor.legacyWorkspaceActor,
+        encodedKubeconfig,
         userId: actor.accountUserId ?? null,
         userUid: owner.userUid,
       },

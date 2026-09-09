@@ -178,6 +178,8 @@ export function createDeployTaskTools(
     try {
       const standing = await judgeStanding({
         cookieHeader: actor.cookieHeader,
+        crName: actor.crName,
+        encodedKubeconfig: actor.encodedKubeconfig ?? null,
         userId: actor.userId,
         userUid: actor.userUid,
         workspace: namespace,

@@ -1,3 +1,5 @@
+import { MEMBER_ACCOUNT_DEBT_VOICE } from "@/features/billing/account-debt";
+
 import type { ChatBillingDestination } from "./chat-billing-cards";
 import type { ChatPaidSource, ChatWallCause } from "./persistence/types";
 
@@ -14,7 +16,8 @@ export interface ChatBillingInterruption {
 
 export interface ChatBillingCopy {
   body: string;
-  cta: { destination: ChatBillingDestination; label: string };
+  /** The fix; absent when the viewer cannot apply it (a member told of the Owner's debt, ADR-0082). */
+  cta?: { destination: ChatBillingDestination; label: string };
   title: string;
 }
 
@@ -93,6 +96,12 @@ export function chatBillingWallCopy(cause: ChatWallCause): ChatBillingCopy {
       body: "This workspace's AI Credits have dropped below the minimum a reply needs. Upgrade the plan to keep chatting.",
       cta: { destination: "upgrade", label: "Upgrade plan" },
       title: "AI Credits used up",
+    };
+  }
+  if (cause === "owner-balance") {
+    return {
+      body: `Chat is paused because the owner's account balance can't cover AI usage. ${MEMBER_ACCOUNT_DEBT_VOICE.ask}`,
+      title: MEMBER_ACCOUNT_DEBT_VOICE.title,
     };
   }
   return {

@@ -448,6 +448,8 @@ const PLAN_PAGE_RESPONSES: Record<string, unknown> = {
   "/api/billing/account": {
     account: { Balance: 4_200_000, DeductionBalance: 1_200_000 },
   },
+  // The viewer is the Workspace Owner (ADR-0082): the balance blocks show.
+  "/api/billing/workspace-owner": { isOwner: true, platformDebt: false },
   // A paid plan's own grant: the aggregate feeds the available total while
   // the zero KYC pair keeps the Gift chip away.
   "/api/billing/credits": {
@@ -806,6 +808,35 @@ test("Account Balance composes cash and usable credits without a Gift chip", asy
   });
 });
 
+test("a member of someone else's workspace never sees the Account Balance block (ADR-0082)", async () => {
+  // The balance is the Workspace Owner's fact; a viewer not proven to be the
+  // Owner gets neither the figure nor the Gift chip, whatever their own
+  // wallet says.
+  await withTestDom(async (act) => {
+    const { rendered, restore } = await renderPlanPage(act, (pathname) =>
+      jsonFixtureResponse(
+        {
+          ...PLAN_PAGE_RESPONSES,
+          "/api/billing/workspace-owner": {
+            isOwner: false,
+            platformDebt: false,
+          },
+        },
+        pathname
+      )
+    );
+
+    try {
+      const text = rendered?.container.textContent ?? "";
+      assert.ok(text.includes("Current Workspace Plan"));
+      assert.equal(text.includes("Account Balance"), false);
+      assert.equal(text.includes("$4.80"), false);
+    } finally {
+      await restore();
+    }
+  });
+});
+
 test("a failed credits request never voices Account Debt on cash alone", async () => {
   // Cash-only ≤ 0 while credits are unknown: unseen credits could still
   // cover the account, so the figure stays unvoiced instead of going red.
@@ -1079,7 +1110,9 @@ test("Cancel Plan runs the survey: cancel first, survey second, confirmation in 
 
       await act(() => {
         fireEvent.click(
-          within(dialog).getByRole("checkbox", { name: "The cost is too high" })
+          within(dialog).getByRole("checkbox", {
+            name: "The cost is too high",
+          })
         );
       });
       await act(() => {
@@ -1352,7 +1385,9 @@ test("a failed refresh after a confirmed cancel still records the survey and con
       const dialog = await openCancelSurvey(act, rendered);
       await act(() => {
         fireEvent.click(
-          within(dialog).getByRole("checkbox", { name: "The cost is too high" })
+          within(dialog).getByRole("checkbox", {
+            name: "The cost is too high",
+          })
         );
       });
       await act(() => {

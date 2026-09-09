@@ -135,16 +135,19 @@ function PaidWallCard({
   copy: ChatBillingCopy;
   onNavigateToBilling: (destination: ChatBillingDestination) => void;
 }) {
+  const { cta } = copy;
   return (
     <BillingCalloutCard
       action={
-        <AppButton
-          onClick={() => onNavigateToBilling(copy.cta.destination)}
-          size="sm"
-          variant="chip"
-        >
-          {copy.cta.label}
-        </AppButton>
+        cta == null ? null : (
+          <AppButton
+            onClick={() => onNavigateToBilling(cta.destination)}
+            size="sm"
+            variant="chip"
+          >
+            {cta.label}
+          </AppButton>
+        )
       }
       body={copy.body}
       className="rounded-xl p-3"
@@ -168,16 +171,19 @@ function BillingErrorCard({
   copy: ChatBillingCopy;
   onNavigateToBilling: (destination: ChatBillingDestination) => void;
 }) {
+  const { cta } = copy;
   return (
     <BillingCalloutCard
       action={
-        <AppButton
-          onClick={() => onNavigateToBilling(copy.cta.destination)}
-          size="sm"
-          variant="chip"
-        >
-          {copy.cta.label}
-        </AppButton>
+        cta == null ? null : (
+          <AppButton
+            onClick={() => onNavigateToBilling(cta.destination)}
+            size="sm"
+            variant="chip"
+          >
+            {cta.label}
+          </AppButton>
+        )
       }
       body={copy.body}
       className="rounded-xl p-3"

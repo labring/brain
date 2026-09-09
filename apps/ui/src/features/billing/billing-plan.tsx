@@ -58,6 +58,7 @@ import {
 import { submitCancellationSurvey } from "@/features/billing/cancellation-survey/client";
 import { EMPTY_CANCELLATION_SURVEY_ANSWERS } from "@/features/billing/cancellation-survey/reasons";
 import type { BillingCurrency } from "@/features/billing/config-core";
+import { useWorkspaceOwnerStanding } from "@/features/billing/use-workspace-owner-standing";
 import {
   type FreeChatTurnsUsage,
   fetchFreeChatTurnsUsage,
@@ -387,6 +388,11 @@ export function BillingPlan({
     useState(false);
   const credentialsReady =
     appToken.trim() !== "" && kubeconfig.trim() !== "" && workspace !== "";
+  // The Account Balance and Gift Credit blocks are the Workspace Owner's
+  // facts (ADR-0082): a member's own wallet is not this workspace's, so the
+  // blocks stay hidden until the viewer is proven to be the Owner.
+  const owner = useWorkspaceOwnerStanding();
+  const viewerIsOwner = owner.data?.isOwner === true;
   const {
     data: balance,
     error: balanceError,
@@ -700,16 +706,18 @@ export function BillingPlan({
     <BillingPlanWorkflow
       actionPending={actionPending}
       balance={
-        <div aria-live="polite">
-          {accountBalanceContent({
-            balance,
-            credentialsReady,
-            error: balanceError,
-            giftCredits,
-            isLoading: balanceLoading,
-            payg: snapshot.current.isPayg,
-          })}
-        </div>
+        viewerIsOwner ? (
+          <div aria-live="polite">
+            {accountBalanceContent({
+              balance,
+              credentialsReady,
+              error: balanceError,
+              giftCredits,
+              isLoading: balanceLoading,
+              payg: snapshot.current.isPayg,
+            })}
+          </div>
+        ) : null
       }
       cardManagementPending={cardManagementPending}
       credentials={{ appToken, kubeconfig }}

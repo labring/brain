@@ -30,6 +30,10 @@ export interface ChatBillingActor {
   accountUserId: string | null;
   /** Cookie header of the request — carries the billing Dev Mock in dev/demo. */
   cookieHeader?: string | null;
+  /** The verified app-token `userCrName` — the Workspace Owner comparison (ADR-0082). */
+  crName: string | null;
+  /** The request kubeconfig, URL-encoded — reads the namespace's platform marks. */
+  encodedKubeconfig?: string | null;
   namespace: string;
   userUid: string;
 }
@@ -68,6 +72,8 @@ export async function judgeChatBilling(
   )();
   const reads = {
     cookieHeader: actor.cookieHeader,
+    crName: actor.crName,
+    encodedKubeconfig: actor.encodedKubeconfig ?? null,
     signal: AbortSignal.timeout(BILLING_JUDGMENT_TIMEOUT_MS),
     userId: actor.accountUserId,
     userUid: actor.userUid,

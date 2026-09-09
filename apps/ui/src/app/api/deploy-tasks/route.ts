@@ -143,6 +143,8 @@ async function resolveCredentialBinding(input: {
   const marketingConsentSubject = authorization.actorBinding.userUid;
   const billingActor: DeployBillingActor = {
     cookieHeader: input.cookieHeader,
+    crName: authorization.actorBinding.crName,
+    encodedKubeconfig: input.encodedKubeconfig,
     userId: authorization.actorBinding.userId,
     userUid: authorization.actorBinding.userUid,
   };

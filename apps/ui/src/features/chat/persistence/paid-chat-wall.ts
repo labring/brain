@@ -8,8 +8,11 @@ import type { ChatPaidSource, FreeTierState } from "./types";
  * Turns gate is (ADR-0065): on the server, before the turn, from the
  * workspace's billing standing. A subscribed workspace spends AI Credits and
  * is walled when its allowance is spent; a PAYG workspace spends the Account
- * Balance and is walled in Account Debt. A low-but-positive balance never
- * walls — that voice belongs to notifications. Unknown standing fails open.
+ * Balance and is walled in Account Debt — the Workspace Owner's debt
+ * (ADR-0082): a viewer not proven to be the Owner is walled as
+ * `owner-balance`, told the truth without a top-up. A low-but-positive
+ * balance never walls — that voice belongs to notifications. Unknown
+ * standing fails open.
  *
  * A subscribed workspace whose plan grants no AI Credits at all
  * (`total = 0` — the production Free plan, and any workspace upstream never
@@ -34,9 +37,12 @@ export function paidChatWall(
 ): PaidChatWall {
   const paidSource: ChatPaidSource | null = standing.paidSource;
   if (paidSource === "balance") {
+    if (standing.accountDebt !== true) {
+      return { paidSource, wall: null };
+    }
     return {
       paidSource,
-      wall: standing.accountDebt === true ? "balance" : null,
+      wall: standing.isOwner === true ? "balance" : "owner-balance",
     };
   }
   if (paidSource === "ai-credits") {

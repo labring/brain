@@ -54,6 +54,8 @@ async function billingActorFor(
   }
   return {
     cookieHeader: request.headers.get("cookie"),
+    crName: authorization.actorBinding.crName,
+    encodedKubeconfig: input.encodedKubeconfig,
     userId: authorization.actorBinding.userId,
     userUid: authorization.actorBinding.userUid,
   };

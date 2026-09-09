@@ -16,6 +16,7 @@ function standing(
     availableBalanceMicroUnits: 50_000_000,
     fullQuota: null,
     fullUniversalQuota: null,
+    isOwner: true,
     paidSource: "balance",
     paymentDue: false,
     paymentDueRecovery: null,
@@ -30,6 +31,15 @@ describe("paidChatWall", () => {
       paidSource: "balance",
       wall: "balance",
     });
+  });
+
+  it("walls a viewer not proven to be the Owner as owner-balance — the truth without a top-up (ADR-0082)", () => {
+    expect(
+      paidChatWall(standing({ accountDebt: true, isOwner: false }), "not-trial")
+    ).toEqual({ paidSource: "balance", wall: "owner-balance" });
+    expect(
+      paidChatWall(standing({ accountDebt: true, isOwner: null }), "not-trial")
+    ).toEqual({ paidSource: "balance", wall: "owner-balance" });
   });
 
   it("leaves a low-but-positive PAYG balance open — the $5 tier belongs to notifications", () => {
