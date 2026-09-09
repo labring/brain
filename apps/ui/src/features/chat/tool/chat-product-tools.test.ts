@@ -117,13 +117,16 @@ test("product draft schema stays a top-level object for OpenAI function paramete
   assert.equal(shape?.type, "object");
 });
 
-test("product write tool requires AI SDK approval before execution", () => {
+test("product write tool executes without mandatory approval", () => {
   const tools = createChatProductTools({
     kubeconfig: "kc",
     kubernetesNamespace: "ns",
   });
 
-  assert.equal(Reflect.get(tools.writeProductResource, "needsApproval"), true);
+  assert.equal(
+    Reflect.get(tools.writeProductResource, "needsApproval"),
+    undefined
+  );
 });
 
 test("confirmed product write refuses to call Brain API until confirmed true", async () => {

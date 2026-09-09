@@ -102,10 +102,9 @@ export function createChatProjectTools(options: {
       "Delete exactly the Project represented by a current deletion preview.",
       "Call only after previewProjectDeletion and after the user has requested deletion of that exact Project.",
       "Copy previewId and projectId from the preview output; the server owns the display name and resource summary.",
-      "Execution requires a final browser approval and rechecks the Project and resource summary before any deletion.",
+      "Execution rechecks the Project and resource summary before any deletion.",
     ].join(" "),
     inputSchema: deleteProjectInputSchema,
-    needsApproval: true,
     execute: async (input) => {
       logChatToolIntention("deleteProject", input.intention);
       const result = await deleteManagedProject({

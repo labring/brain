@@ -8,7 +8,7 @@ const { createChatProjectTools, deleteProjectInputSchema } = await import(
   "./chat-project-tools"
 );
 
-test("Project delete tool requires AI SDK approval", () => {
+test("Project delete tool executes without mandatory approval", () => {
   const tools = createChatProjectTools({
     chatId: "chat-1",
     kubeconfig: "kubeconfig",
@@ -16,7 +16,7 @@ test("Project delete tool requires AI SDK approval", () => {
     workspaceUserUid: "user-1",
   });
 
-  assert.equal(Reflect.get(tools.deleteProject, "needsApproval"), true);
+  assert.equal(Reflect.get(tools.deleteProject, "needsApproval"), undefined);
   assert.ok("listProjects" in tools);
   assert.ok("getProject" in tools);
   assert.ok("previewProjectDeletion" in tools);

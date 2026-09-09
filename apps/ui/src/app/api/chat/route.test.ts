@@ -6,17 +6,14 @@ import { z } from "zod";
 import { BILLING_JUDGMENT_TIMEOUT_MS } from "@/features/billing/server/judgment-budget";
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
-const devboxApproval = {
-  bash: "user-approval",
-  edit: "user-approval",
-  write: "user-approval",
-} as const;
+import { CHAT_TOOL_APPROVAL } from "@/features/chat/runtime/tool-approval";
+
 const actualAi = { ...(await import("ai")) };
 let forcedOutcome: "failed" | "aborted" | "unknown" | undefined;
 mock.module("ai", () => ({
   ...actualAi,
   streamText: (...args: Parameters<typeof actualAi.streamText>) => {
-    expect(args[0].toolApproval).toEqual(devboxApproval);
+    expect(args[0].toolApproval).toEqual(CHAT_TOOL_APPROVAL);
     const result = actualAi.streamText(...args);
     const respond = result.toUIMessageStreamResponse.bind(result);
     result.toUIMessageStreamResponse = (options) =>
@@ -533,7 +530,7 @@ mock.module("@/features/chat/runtime/tools", () => ({
     }
     return Promise.resolve({
       systemPrompt: "Test system prompt",
-      toolApproval: devboxApproval,
+      toolApproval: CHAT_TOOL_APPROVAL,
       tools: { getDeployTaskStatus: serverTool, navigateApp: clientTool },
     });
   },
@@ -1520,21 +1517,26 @@ test("recovers an old incomplete server tool before processing a new user turn",
   );
 });
 
-test("rejects a new user turn with actionable guidance while approval is pending", async () => {
+test("new user messages cancel pending approvals and reach the model", async () => {
   history = [pendingApprovalMessage()];
-
   const response = await POST(
     chatRequest(userMessage("user-before-approval", "continue anyway"))
   );
-
-  expect(response.status).toBe(409);
-  expect(await response.json()).toEqual({
-    code: "tool_approval_pending",
-    error:
-      "A tool approval is pending. Approve or deny it before sending a new message.",
-  });
-  expect(replaceCalls).toBe(0);
-  expect(modelCalls).toBe(0);
+  expect(response.status).toBe(200);
+  await drain(response);
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      state: "output-denied",
+      approval: {
+        id: "approval-write",
+        approved: false,
+        reason: "Cancelled because the user sent a new message.",
+      },
+    })
+  );
+  expect(JSON.stringify(modelPrompts[0])).toContain("continue anyway");
 });
 
 test("rejects unrecoverable incomplete tool history with actionable guidance", async () => {
