@@ -1,100 +1,99 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { convertToModelMessages } from "ai";
 
 mock.module("server-only", () => ({}));
-
-const { createProjectContextTools, discoverProjectContextInputSchema } =
+const { createTemplateReadmeTools, readTemplateReadmeInputSchema } =
   await import("./tool");
+const options = {
+  assistantContext: { kind: "project" as const, projectId: "project-a" },
+  kubeconfig: "verified kubeconfig",
+  kubernetesNamespace: "ns-a",
+};
 
-test("registers discovery only for Project scope and binds verified scope outside model input", async () => {
-  const workspaceTools = createProjectContextTools({
-    assistantContext: { kind: "workspace" },
-    kubeconfig: "verified-kubeconfig",
-    kubernetesNamespace: "ns-a",
-    workspaceActor: "workspace-actor-a",
-  });
-  assert.deepEqual(workspaceTools, {});
-
-  assert.equal(
-    discoverProjectContextInputSchema.safeParse({
-      intention: "inspect the current Project",
-      limit: 10,
-      projectId: "forged-project",
-    }).success,
-    false
+test("only Project chats get the README tool; the model cannot choose scope or URL", () => {
+  assert.deepEqual(
+    createTemplateReadmeTools({
+      ...options,
+      assistantContext: { kind: "workspace" },
+    }),
+    {}
   );
-
-  let received: unknown;
-  const tools = createProjectContextTools(
-    {
-      assistantContext: { kind: "project", projectId: "project-a" },
-      kubeconfig: "verified-kubeconfig",
-      kubernetesNamespace: "ns-a",
-      workspaceActor: "workspace-actor-a",
-    },
-    {
-      buildProjectContextIndex: (input) => {
-        received = input;
-        return Promise.resolve({
-          activeDeploymentTasks: { items: [], truncated: false },
-          contents: { items: [], truncated: false },
-          deploymentHistory: { items: [], truncated: false },
-          project: {
-            capabilities: [
-              "discoverResources",
-              "discoverDeployments",
-              "discoverContents",
-            ],
-            displayName: "Project A",
-            ref: { id: "project-a", kind: "Project", namespace: "ns-a" },
-          },
-          resources: { items: [], truncated: false },
-          version: 1,
-        });
-      },
-    }
-  );
-
-  const result = await tools.discoverProjectContext?.execute?.(
-    { intention: "inspect the current Project", limit: 10 },
-    { messages: [], toolCallId: "call-1" }
-  );
-  assert.equal((result as { ok?: boolean } | undefined)?.ok, true);
-  assert.deepEqual(received, {
-    kubeconfig: "verified-kubeconfig",
-    limit: 10,
-    namespace: "ns-a",
-    projectId: "project-a",
-    workspaceActor: "workspace-actor-a",
-  });
+  for (const extra of [
+    { projectId: "foreign" },
+    { namespace: "foreign" },
+    { url: "https://example.com" },
+  ]) {
+    assert.equal(
+      readTemplateReadmeInputSchema.safeParse({
+        intention: "Read usage",
+        ...extra,
+      }).success,
+      false
+    );
+  }
 });
 
-test("does not disclose internal discovery failures", async () => {
-  const tools = createProjectContextTools(
-    {
-      assistantContext: { kind: "project", projectId: "project-a" },
-      kubeconfig: "verified-kubeconfig",
-      kubernetesNamespace: "ns-a",
-      workspaceActor: "workspace-actor-a",
-    },
-    {
-      buildProjectContextIndex: () =>
-        Promise.reject(new Error("sensitive internal detail")),
-    }
-  );
-
-  const result = await tools.discoverProjectContext?.execute?.(
-    { intention: "inspect the current Project" },
-    { messages: [], toolCallId: "call-2" }
-  );
-
-  assert.deepEqual(result, {
-    error: "Project context is unavailable.",
-    ok: false,
+test("README text reaches model context through the normal tool result", async () => {
+  let received: unknown;
+  const signal = new AbortController().signal;
+  const tools = createTemplateReadmeTools(options, (request) => {
+    received = request;
+    return Promise.resolve({
+      ok: true as const,
+      templateName: "memos",
+      content: "Create your first note.",
+      truncated: false,
+      trust: "external-documentation" as const,
+    });
   });
-  assert.equal(
-    JSON.stringify(result).includes("sensitive internal detail"),
-    false
+  const tool = tools.readTemplateReadme;
+  assert.ok(tool?.execute);
+  const args = { intention: "Read usage", language: "zh" as const };
+  const output = await tool.execute(args, {
+    context: {},
+    messages: [],
+    toolCallId: "read-1",
+    abortSignal: signal,
+  });
+  assert.deepEqual(received, {
+    encodedKubeconfig: "verified%20kubeconfig",
+    namespace: "ns-a",
+    projectId: "project-a",
+    language: "zh",
+    templateName: undefined,
+    signal,
+  });
+  const messages = await convertToModelMessages([
+    {
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-readTemplateReadme",
+          toolCallId: "read-1",
+          state: "output-available",
+          input: args,
+          output,
+        },
+      ],
+    },
+  ]);
+  assert.ok(JSON.stringify(messages).includes("Create your first note."));
+  assert.equal(typeof tool.description, "string");
+  assert.ok(String(tool.description).includes("external documentation"));
+});
+
+test("provider failure becomes an ordinary result without internal error details", async () => {
+  const tools = createTemplateReadmeTools(options, () =>
+    Promise.reject(new Error("private-token"))
   );
+  const result = await tools.readTemplateReadme?.execute?.(
+    { intention: "Read usage" },
+    { context: {}, messages: [], toolCallId: "read-2" }
+  );
+  assert.deepEqual(result, {
+    ok: false,
+    error: "Template README could not be loaded. Continue with other tools.",
+  });
 });

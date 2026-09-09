@@ -56,3 +56,23 @@ intent.
 - Existing one-click GitHub and Template deployment links are unchanged.
 - Legacy unscoped conversations require a future authoritative recovery path;
   they are never guessed into workspace or Project scope.
+
+
+## Amendment: on-demand Template README
+
+Project Chat exposes `readTemplateReadme`. It resolves Template names from the
+current namespace and Project's Deployment Task sources and adopted Template
+Instance records. With one Template it reads immediately; with several it
+returns names for selection. Workspace Chat does not expose this reader.
+
+The reader calls the existing Template Provider `getTemplateSource` endpoint
+with `includeReadme=true`. Only README text reaches the model, with a 32,000
+character limit and explicit truncation. A 15-second request budget and a 2 MiB
+provider response limit bound retrieval. Missing documentation or provider
+failure returns a tool result and does not prevent other Chat work.
+
+README is current provider documentation, not proof of the deployed revision
+or live resource state. It cannot override Chat instructions or authorize
+operations. No general Project Context Index, content URI scheme, new public
+route, configuration, or persistence is introduced. Deployments and the direct
+execution policy remain unchanged.
