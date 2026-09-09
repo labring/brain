@@ -57,3 +57,10 @@ export function managedTemplateDeploymentLabels(
     [BRAIN_DEPLOYMENT_KIND_LABEL]: "template",
   };
 }
+
+/**
+ * Default Open Port (ADR 0080's store, ADR 0081's template preset): the App
+ * Listening Port whose best Public Address the Open control opens, stored on
+ * the AP's Service next to the Port Display Names. Display-only bookkeeping.
+ */
+export const BRAIN_DEFAULT_OPEN_PORT_ANNOTATION = "brain.io/default-open-port";

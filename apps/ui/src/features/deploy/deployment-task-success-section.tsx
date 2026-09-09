@@ -7,10 +7,11 @@ import { Check, Copy, ExternalLink } from "lucide-react";
 import { memo, useEffect, useRef } from "react";
 import { prefersReducedMotion } from "@/features/deploy/deployment-task-success-confetti";
 import { DeploymentTaskSuccessShareStrip } from "@/features/deploy/deployment-task-success-share";
-import type {
-  DeploymentTaskSuccessEntry,
-  DeploymentTaskSuccessSnapshot,
-  DeploymentTaskSuccessStep,
+import {
+  type DeploymentTaskSuccessEntry,
+  type DeploymentTaskSuccessSnapshot,
+  type DeploymentTaskSuccessStep,
+  deploymentTaskSuccessShareUrl,
 } from "@/features/deploy/task/timeline";
 import { useCopyFeedback } from "@/features/deploy/use-copy-feedback";
 
@@ -248,6 +249,10 @@ export const DeploymentTaskSuccessSection = memo(
     const guidance = success.guidance ?? [];
     const primaryEntry = entries.find(isOpenableEntry);
     const secondaryEntries = entries.filter((entry) => entry !== primaryEntry);
+    // What the strip shares: the record's snapshotted share address (a
+    // template's Share entry, else the Open URL at verification time), with
+    // the primary entry standing in for records written before it existed.
+    const shareUrl = deploymentTaskSuccessShareUrl(success);
     // A lone entry is headed by nothing, whatever heading its source gave it,
     // as the Public Access Node draws a lone Public Address (CONTEXT.md,
     // Deployment Task Success Record).
@@ -347,14 +352,14 @@ export const DeploymentTaskSuccessSection = memo(
             </div>
           )}
         </div>
-        {primaryEntry == null ? null : (
+        {shareUrl == null ? null : (
           <DeploymentTaskSuccessShareStrip
             className={cn(RISE_CLASS, "mt-2 delay-[420ms]")}
             subject={{
               productCategories: success.productCategories,
               productId: success.productId,
               productName: success.productName,
-              url: primaryEntry.url,
+              url: shareUrl,
             }}
           />
         )}

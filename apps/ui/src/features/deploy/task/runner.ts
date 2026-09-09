@@ -134,6 +134,7 @@ import { attachManagedDeploymentTimelineSuccess } from "./managed-timeline";
 import { deployOutputProgressSummary } from "./output-progress";
 import { deploymentTaskSourceProduct } from "./projection";
 import {
+  accessEndpointPortLabelForUrl,
   type DeploymentResultApCandidate,
   deploymentResultApCandidates,
   isResultReadinessTerminalError,
@@ -182,6 +183,7 @@ import {
 } from "./sensitive-inputs";
 import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
 import { resolveDeploymentSuccessOpenUrl } from "./success-open-url";
+import { templateProviderTemplateEntries } from "./template-provider-entries";
 import { templateProviderPublicAccessCards } from "./template-provider-public-access";
 import {
   appendCardEvent,
@@ -191,6 +193,7 @@ import {
   attachDeploymentTaskSuccess,
   DEPLOYMENT_TASK_TERMINAL_FAILURE_EVENT_KEY,
   type DeploymentResultResourceCard,
+  type DeploymentTemplateEntryUrls,
   deploymentTaskSuccessFromTimeline,
   deploymentTimelineFailureStepId,
   deploymentTimelineResultReadinessReached,
@@ -613,6 +616,8 @@ async function applyDeploymentArtifact(input: {
 }): Promise<{
   artifactSummary: DeployTaskArtifactSummary;
   notes: string;
+  /** Template Entries Brain rendered itself (ADR 0081). */
+  templateEntries?: DeploymentTemplateEntryUrls;
   templateProviderResources?: DeploymentTemplateInstanceArtifact["resources"];
 }> {
   if (input.artifact.kind === "template-instance-pending") {
@@ -707,6 +712,9 @@ async function applyDeploymentArtifact(input: {
         notes: `Deployed Sealos template ${applied.instanceName}.`,
       }),
       notes: `Deployed Sealos template ${applied.instanceName}.`,
+      ...(input.artifact.rendered.entries === undefined
+        ? {}
+        : { templateEntries: input.artifact.rendered.entries }),
     };
   }
 
@@ -2631,6 +2639,7 @@ async function completeTaskWithArtifact(input: {
     taskDeadlineAtMs,
   });
   let templatePublicAccessCards: DeploymentResultResourceCard[] = [];
+  let templateEntries = applied.templateEntries;
   if (applied.templateProviderResources !== undefined) {
     const discoverySignal = deploymentOperationSignal({
       deadlineAtMs: readinessDeadlineAtMs,
@@ -2643,6 +2652,16 @@ async function completeTaskWithArtifact(input: {
         kubeconfig: input.kubeconfig,
         namespace: input.task.namespace,
         resources: applied.templateProviderResources,
+        signal: discoverySignal,
+      });
+      // The provider rendered the documents, so the Template Entries are
+      // read back off the cluster once the Ingresses exist (ADR 0081).
+      templateEntries = await templateProviderTemplateEntries({
+        ...templateProviderEntryContext(input.artifact),
+        kubeconfig: input.kubeconfig,
+        namespace: input.task.namespace,
+        resources: applied.templateProviderResources,
+        routingDomain: apUserDomain(input.kubeconfig),
         signal: discoverySignal,
       });
     } catch (error) {
@@ -2704,18 +2723,34 @@ async function completeTaskWithArtifact(input: {
   // record is attached and the Timeline keeps reporting progress (issue #160).
   // Neither an entry address nor first-use guidance is declared here, so both
   // stay absent rather than being invented from a host or a port.
-  // The record's Open control opens the Default Open Port through its best
-  // Public Address, decided once here from the AP as it stands at
-  // verification time (CONTEXT.md: Default Open Port).
+  // The record's Open control opens the template's Open Entry when it declared
+  // one, else the Default Open Port through its best Public Address, decided
+  // once here from the AP as it stands at verification time (CONTEXT.md:
+  // Default Open Port, Template Entry). A Template Entry is not probed: its
+  // host is an Ingress host of this deployment, already verified above, and
+  // an application's own response on a path is not routing health. The Open
+  // Entry is headed by the App Listening Port it reaches, as an Ingress host
+  // is, when an AP of the task observed that address.
+  const apCandidates = deploymentResultApCandidates(resultCards);
   const primaryEntryUrl = await resolveDeploymentSuccessOpenUrl({
-    candidates: deploymentResultApCandidates(resultCards),
+    candidates: apCandidates,
     kubeconfig: input.kubeconfig,
   });
+  const templateOpenEntryLabel =
+    templateEntries?.open === undefined
+      ? undefined
+      : await accessEndpointPortLabelForUrl({
+          candidates: apCandidates,
+          kubeconfig: input.kubeconfig,
+          url: templateEntries.open,
+        });
   await updateDeployTaskTimeline(input.task.id, {
     update: (timeline) => {
       const success = deploymentTaskSuccessFromTimeline(timeline, {
         primaryEntryUrl,
         ...deploymentTaskSourceProduct(input.task.source),
+        templateEntries,
+        templateOpenEntryLabel,
       });
       return success == null
         ? timeline
@@ -2731,6 +2766,38 @@ async function completeTaskWithArtifact(input: {
     payload: { artifactSummary: persistedSummary },
     phase: "completed",
   });
+}
+
+/**
+ * What the provider-path entry read-back needs from the artifact: the
+ * template, the instance, and this run's args. An already-created
+ * `template-instance` artifact carries no args — they are never persisted
+ * (ADR 0037) — so it passes none, and the read-back drops every entry that
+ * substitutes an input rather than render it from a default the user may
+ * have overridden.
+ */
+function templateProviderEntryContext(artifact: DeploymentArtifact): {
+  args?: Record<string, string>;
+  instanceName: string;
+  templateName: string;
+} {
+  switch (artifact.kind) {
+    case "template-instance-pending":
+      return {
+        args: artifact.args,
+        instanceName: artifact.instanceName,
+        templateName: artifact.templateName,
+      };
+    case "template-instance":
+      return {
+        instanceName: artifact.instanceName,
+        templateName: artifact.templateName,
+      };
+    default:
+      throw new Error(
+        "Template Entries are read back only for provider-applied templates."
+      );
+  }
 }
 
 function appliedResultIdentities(

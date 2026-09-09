@@ -1,5 +1,12 @@
 # Port Display Names Live on the Service, Not the Ingress
 
+## Status
+
+Accepted. ADR-0081 adds a second writer for the Default Open Port store
+named under Consequences: Brain itself presets `brain.io/default-open-port`
+from a template's Template Entries (or its App CR url) at render or
+read-back time, only where the template left the annotation empty.
+
 An AP with several App Listening Ports (game 5200 / admin 5201, login 3001 /
 admin 3002, S3 API 9000 / console 9001) gets one Public Address per port, and
 the AP Public Access Node showed those as rows that differed only in hostname.

@@ -1,5 +1,14 @@
 # Model Public Entry Points as Deployment Access Endpoints
 
+## Status
+
+Accepted; amended in place (the entry-path rule, below). ADR-0081 adds
+Template Entries beside this contract, not inside it: a Template Entry is
+not a Deployment Access Endpoint and is not probed — its host is an Ingress
+host whose required endpoint this ADR already verifies — and it borrows only
+the naming rule for the port an entry reaches. CONTEXT.md's former "no
+Template-Instance-level open link" no longer holds.
+
 ## Context
 
 Deployment Tasks exposed user-facing addresses through three incompatible
