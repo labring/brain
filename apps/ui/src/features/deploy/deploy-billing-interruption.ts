@@ -74,14 +74,18 @@ export function deploymentBillingInterruption(
   }
   if (details.reason === "balance-exhausted") {
     const evidence = deployBillingEvidence(details.billingEvidence);
-    // The debt is the Workspace Owner's (ADR-0082): an actor not proven to
-    // be the Owner is told the truth and the ask, never a top-up. Records
-    // from before the field existed were judged on the actor's own balance
-    // and keep the Owner voice.
-    if (
+    // The debt is the Workspace Owner's (ADR-0082): only a viewer the
+    // evidence proves to be the Owner is offered the top-up. Records from
+    // before the `owner` field existed were judged on the actor's own
+    // balance and keep the Owner voice; a record with no evidence at all
+    // (the reverse-check never ran) leaves the Owner unknown, and an
+    // unknown owner is told the truth and the ask, never a top-up they may
+    // be unable to perform.
+    const ownerVoice =
       evidence?.kind === "account-debt" &&
-      (evidence.owner === false || evidence.owner === null)
-    ) {
+      evidence.owner !== false &&
+      evidence.owner !== null;
+    if (!ownerVoice) {
       return {
         body: `The owner's account balance ran out while this deployment was running, and the workspace is suspended. ${MEMBER_ACCOUNT_DEBT_VOICE.ask} Then redeploy.`,
         icon: "wallet",

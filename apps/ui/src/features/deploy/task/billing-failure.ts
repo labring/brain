@@ -126,6 +126,23 @@ export function resolveBillingFailureOverride(input: {
       supersedesRunnerError: reason !== "balance-exhausted",
     };
   }
+  // The debt webhook already denied the apply for the balance: that is the
+  // platform's own verdict on the Workspace Owner's account, proven at the
+  // apply boundary whether or not the standing can re-prove it (an
+  // unreadable namespace leaves the Owner unknown). The evidence still
+  // carries the Owner verdict so the callout can pick its voice (ADR-0082).
+  if (reason === "balance-exhausted") {
+    return {
+      billingEvidence: {
+        availableBalanceMicroUnits: standing.availableBalanceMicroUnits,
+        checkedAt: input.now.toISOString(),
+        kind: "account-debt",
+        owner: standing.isOwner,
+      },
+      reason: "balance-exhausted",
+      supersedesRunnerError: false,
+    };
+  }
   // A payment-due Workspace Subscription suspends its workspace the same
   // way: whatever the run tripped on afterwards, the platform had already
   // pulled the plug — so the suspension outranks any not-elsewhere-proven

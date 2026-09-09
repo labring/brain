@@ -859,12 +859,15 @@ async function runChatPipeline(input: {
           status: openAi.status,
         })
       ) {
-        return jsonError(
-          "ai_proxy_billing_refused",
-          "The AI proxy refused this turn for billing reasons.",
-          openAi.status,
-          aiProxyBillingRefusedBody(refusalVoice).detail
-        );
+        // The refusal carries the same `X-Chat-*` set as the paid wall, so
+        // a member's owner-balance wall locks the composer by header too.
+        return Response.json(aiProxyBillingRefusedBody(refusalVoice), {
+          headers: chatBillingHeaders({
+            ...clientFreeTier,
+            wall: refusalVoice.wall ?? clientFreeTier.wall,
+          }),
+          status: openAi.status,
+        });
       }
       return jsonError(
         "ai_connection_unavailable",

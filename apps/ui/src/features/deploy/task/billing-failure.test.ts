@@ -350,4 +350,38 @@ describe("apply-boundary billing denials meeting the standing reverse-check", ()
       supersedesRunnerError: false,
     });
   });
+
+  it("still attaches the Owner verdict to a webhook-proven balance denial the standing cannot re-prove (ADR-0082)", () => {
+    // The webhook already named the Owner's debt at the apply boundary; an
+    // unreadable namespace only leaves the Owner unknown, and the callout
+    // needs that verdict to pick its voice rather than default to a top-up.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "balance-exhausted",
+        standing: standing({
+          accountDebt: null,
+          availableBalanceMicroUnits: null,
+          isOwner: null,
+        }),
+      })
+    ).toEqual({
+      billingEvidence: {
+        availableBalanceMicroUnits: null,
+        checkedAt: "2026-08-28T10:00:00.000Z",
+        kind: "account-debt",
+        owner: null,
+      },
+      reason: "balance-exhausted",
+      supersedesRunnerError: false,
+    });
+    // A proven member with money of their own is still told it is the Owner's debt.
+    expect(
+      resolveBillingFailureOverride({
+        now: CHECKED_AT,
+        reason: "balance-exhausted",
+        standing: standing({ accountDebt: false, isOwner: false }),
+      })?.billingEvidence
+    ).toMatchObject({ kind: "account-debt", owner: false });
+  });
 });

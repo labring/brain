@@ -90,7 +90,10 @@ describe("judgeWorkspaceBillingStanding", () => {
     expect(inDebt.availableBalanceMicroUnits).toBe(-6_320_000);
   });
 
-  it("treats a PAYG workspace the platform already reports in DEBT as Account Debt even when the money reads failed", () => {
+  it("never reads Account Debt off the PAYG subscription record's DEBT status — the namespace marks alone judge it (ADR-0082)", () => {
+    // The client-side `accountDebtHolds` reads only the Owner standing and
+    // the money; a server-only third input would let the walls name a debt
+    // the banner stays quiet about.
     const standing = judgeWorkspaceBillingStanding({
       owner: OWNER,
       account: null,
@@ -98,8 +101,18 @@ describe("judgeWorkspaceBillingStanding", () => {
       quota: null,
       subscription: { subscription: { Status: "DEBT", type: "PAYG" } },
     });
-    expect(standing.accountDebt).toBe(true);
+    expect(standing.accountDebt).toBeNull();
+    expect(standing.paidSource).toBe("balance");
     expect(standing.availableBalanceMicroUnits).toBeNull();
+    expect(
+      judgeWorkspaceBillingStanding({
+        owner: { isOwner: false, platformDebt: true },
+        account: null,
+        credits: null,
+        quota: null,
+        subscription: { subscription: { Status: "DEBT", type: "PAYG" } },
+      }).accountDebt
+    ).toBe(true);
   });
 
   it("keeps a never-billed zero-balance account in good standing — the platform's state machine skips it", () => {

@@ -2235,6 +2235,35 @@ test("aiproxy refusing the token request for balance reads as a billing refusal,
     detail: { paidSource: "balance" },
     error: "The AI proxy refused this turn for billing reasons.",
   });
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+});
+
+test("aiproxy refusing a member's token request names the owner-balance wall in the body and the header (ADR-0082)", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    isOwner: false,
+    paidSource: "balance",
+  };
+  connectionRefusal = {
+    message:
+      '{"type":"group_balance_not_enough","message":"group `ns` balance not enough"}',
+    status: 403,
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-member-refused", "deploy something"))
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({
+    code: "ai_proxy_billing_refused",
+    detail: { paidSource: "balance", wall: "owner-balance" },
+    error: "The AI proxy refused this turn for billing reasons.",
+  });
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+  expect(response.headers.get("X-Chat-Wall")).toBe("owner-balance");
 });
 
 test("enabled telemetry waits for title completion even when after starts early", async () => {

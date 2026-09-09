@@ -92,6 +92,8 @@ interface BillingPlanWorkflowProps {
   schedulePoll?: (callback: () => void, delay: number) => () => void;
   snapshot: BillingPlanSnapshot;
   stripeReturn?: BillingStripeReturn | null;
+  /** Whether the viewer is proven to be the Workspace Owner (ADR-0082). */
+  viewerIsOwner?: boolean;
 }
 
 function currentUrlWithout(parameters: readonly string[]): string {
@@ -122,6 +124,7 @@ export function BillingPlanWorkflow({
   schedulePoll,
   snapshot,
   stripeReturn = null,
+  viewerIsOwner = false,
 }: BillingPlanWorkflowProps) {
   const stripeAcknowledgedKeyRef = useRef<string | null>(null);
   const stripeRefreshRef = useRef<{
@@ -246,6 +249,7 @@ export function BillingPlanWorkflow({
         onManageCard={onManageCard}
         onPlanChange={handlePlanChange}
         snapshot={snapshot}
+        viewerIsOwner={viewerIsOwner}
       />
       <BillingPlanChangeDialog
         credentials={credentials}
@@ -742,6 +746,7 @@ export function BillingPlan({
       replaceUrl={replaceUrl}
       snapshot={snapshot}
       stripeReturn={stripeReturn}
+      viewerIsOwner={viewerIsOwner}
     />
   );
 }

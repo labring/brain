@@ -58,6 +58,31 @@ describe("deploymentBillingInterruption", () => {
     ).toBeUndefined();
   });
 
+  it("never offers a top-up without evidence proving the viewer is the Owner (ADR-0082)", () => {
+    // A webhook-classified denial whose reverse-check never ran (no actor,
+    // a thrown read) has no evidence at all: the Owner is unknown, and the
+    // callout asks instead of telling a member to top up.
+    const noEvidence = deploymentBillingInterruption({
+      reason: "balance-exhausted",
+    });
+    expect(noEvidence?.title).toBe(
+      "Workspace suspended — owner's balance in debt"
+    );
+    expect(noEvidence?.cta).toBeUndefined();
+    // A proven Owner keeps the top-up.
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          availableBalanceMicroUnits: -6_320_000,
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "account-debt",
+          owner: true,
+        },
+        reason: "balance-exhausted",
+      })?.cta?.label
+    ).toBe("Top up balance");
+  });
+
   it("names the full quota when the evidence carries it, and stays generic otherwise", () => {
     expect(
       deploymentBillingInterruption({

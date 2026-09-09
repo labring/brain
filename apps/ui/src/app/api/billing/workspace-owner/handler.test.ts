@@ -40,11 +40,14 @@ test("workspace owner route judges the namespace against the verified crName, ne
     isOwner: true,
     platformDebt: false,
   });
-  assert.deepEqual(read, {
+  const { signal, ...readInput } = read as { signal?: unknown };
+  assert.deepEqual(readInput, {
     crName: "alice-cr",
     encodedKubeconfig: "encoded-kubeconfig",
     namespace: "ns-alice",
   });
+  // The read runs under the shared billing judgment budget, never open-ended.
+  assert.ok(signal instanceof AbortSignal);
 });
 
 test("workspace owner route answers 401 without a proven binding", async () => {

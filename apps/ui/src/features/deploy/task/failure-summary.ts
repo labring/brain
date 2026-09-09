@@ -39,7 +39,7 @@ const FAILURE_MESSAGES = {
   "quota-exceeded":
     "The namespace does not have enough quota for this deployment. Free resources or increase quota, then redeploy.",
   "balance-exhausted":
-    "Deployment stopped — the account balance is exhausted and the workspace is suspended. Top up, then redeploy.",
+    "Deployment stopped — the workspace owner's account balance is exhausted and the workspace is suspended. Redeploy once the balance is topped up.",
   "subscription-expired":
     "Deployment stopped — the workspace is suspended under an expired subscription. Restore a plan in Billing, then redeploy.",
   "readiness-timeout":

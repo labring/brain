@@ -160,13 +160,11 @@ function usableCreditMicroUnits(credits: unknown): number | null {
 }
 
 function subscriptionFacts(subscription: unknown): {
-  inDebt: boolean;
   paidSource: WorkspaceAiPaidSource | null;
   paymentDue: boolean | null;
   paymentDueRecovery: RecoveryVoice | null;
 } {
   const unknown = {
-    inDebt: false,
     paidSource: null,
     paymentDue: null,
     paymentDueRecovery: null,
@@ -195,9 +193,6 @@ function subscriptionFacts(subscription: unknown): {
     paymentDueRecovery = freePlan ? "resubscribe" : "renew";
   }
   return {
-    // A PAYG workspace the platform reports on the debt ladder is Account
-    // Debt by definition — no timestamps, no subscription (CONTEXT.md).
-    inDebt: payg && status.startsWith("DEBT"),
     paidSource: payg ? "balance" : "ai-credits",
     paymentDue,
     paymentDueRecovery,
@@ -249,9 +244,13 @@ export function judgeWorkspaceBillingStanding(
           availableBalanceMicroUnits: available,
           lifetimeDeductionMicroUnits: terms.lifetimeDeductionMicroUnits,
         });
-  const accountDebt = facts.inDebt
-    ? true
-    : accountDebtByOwner({ money, owner: payloads.owner });
+  // Account Debt is judged from the namespace's platform marks and the
+  // Owner's own money alone (ADR-0082) — the same inputs the client-side
+  // `accountDebtHolds` reads, so no seam can name a debt another stays
+  // quiet about. The PAYG subscription record's DEBT status is not a third
+  // input: the platform's production PAYG payload carries no status, and a
+  // server-only reading of it would let the walls and the banner disagree.
+  const accountDebt = accountDebtByOwner({ money, owner: payloads.owner });
   const rows = workspaceQuotaRowsFromPayload(payloads.quota);
   const fullRow = rows == null ? null : firstFullQuotaRow(rows);
   const universalRow = rows == null ? null : firstDoomingQuotaRow(rows);
