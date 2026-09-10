@@ -79,9 +79,9 @@ All notable changes to Brain are documented in this file.
   outcomes, including a source-stream failure after the model finishes.
 - Keep telemetry initialization, context and export failures from failing or
   replaying Chat work. Langfuse requires an explicit host and both keys.
-- Keep Chat Langfuse credentials in Brain UI instead of forwarding them to new
-  Deploy Devboxes. This disables Codex Langfuse export in those Devboxes without
-  changing deployment model credentials or execution.
+- Restore forwarding of `LANGFUSE_*` into newly created GitHub Deploy Devboxes
+  so Codex can export traces again. Chat Assistant tracing in Brain UI is
+  unchanged.
 
 ### Upgrade Notes
 
@@ -91,11 +91,11 @@ All notable changes to Brain are documented in this file.
   rejected. Let active and blocked Deployment Tasks finish before
   switching versions, and roll back Brain and the runtime image together
   if needed (ADR-0037).
-- Revoke any Langfuse key pair previously forwarded to Deploy Devboxes and set
-  a fresh pair only in Brain UI before enabling Chat tracing. Existing Devboxes
-  retain their old environment; this code change cannot revoke those keys.
-- No new environment variables are required. A blank `LANGFUSE_HOST` disables
-  Chat tracing; Langfuse Cloud requires an explicit `https://cloud.langfuse.com`.
+- No new environment variables. Optional `LANGFUSE_PUBLIC_KEY`,
+  `LANGFUSE_SECRET_KEY`, and `LANGFUSE_HOST` enable Chat Assistant tracing in
+  Brain UI and are forwarded into newly created GitHub Deploy Devboxes. A blank
+  `LANGFUSE_HOST` still disables tracing. Only **new** Devboxes pick this up;
+  already-running Deploy Devboxes keep their old environment until recreated.
 
 ## [2.0.11] - 2026-09-03
 

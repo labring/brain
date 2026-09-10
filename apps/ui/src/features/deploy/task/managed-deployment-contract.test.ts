@@ -4,10 +4,30 @@ import {
   buildAtomicStdinWriteCommand,
   buildCodexMcpConfig,
   buildCodexMcpConfigWriteCommand,
+  buildManagedDeploymentLabelsFile,
+  buildManagedDeploymentLabelsWriteCommand,
   CODEX_MCP_TOKEN_ENV,
+  MANAGED_DEPLOYMENT_LABELS_MAX_BYTES,
+  MANAGED_DEPLOYMENT_LABELS_PATH,
   MANAGED_INPUT_VALUES_MAX_BYTES,
   managedDeploymentCompletedInputSchema,
+  managedDeploymentRegionEnv,
 } from "./managed-deployment-contract";
+
+function kubeconfigWithServer(server: string): string {
+  return [
+    "apiVersion: v1",
+    "current-context: ctx",
+    "clusters:",
+    "  - name: cluster",
+    "    cluster:",
+    `      server: ${server}`,
+    "contexts:",
+    "  - name: ctx",
+    "    context:",
+    "      cluster: cluster",
+  ].join("\n");
+}
 
 describe("managed deployment atomic input write", () => {
   it("writes sensitive JSON from stdin without embedding it in the command", () => {
@@ -54,6 +74,84 @@ describe("managed deployment atomic input write", () => {
         path: "/run/sealai/deployment/inputs.json",
       })
     ).toThrow("positive integer");
+  });
+});
+
+describe("managed deployment labels file", () => {
+  const labels = {
+    "brain.io/managed-by": "brain",
+    "brain.io/project-id": "project-1",
+    "brain.io/deployment-kind": "template",
+  };
+
+  it("serializes labels as newline-terminated JSON that round-trips", () => {
+    const contents = buildManagedDeploymentLabelsFile(labels);
+
+    expect(contents.endsWith("\n")).toBe(true);
+    expect(JSON.parse(contents)).toEqual(labels);
+  });
+
+  it("rejects empty label sets", () => {
+    expect(() => buildManagedDeploymentLabelsFile({})).toThrow(
+      "must not be empty"
+    );
+  });
+
+  it("rejects label sets over the byte limit", () => {
+    expect(() =>
+      buildManagedDeploymentLabelsFile({
+        big: "x".repeat(MANAGED_DEPLOYMENT_LABELS_MAX_BYTES),
+      })
+    ).toThrow("exceed their byte limit");
+  });
+
+  it("writes the labels file atomically under the fixed input root", () => {
+    const command = buildManagedDeploymentLabelsWriteCommand();
+
+    expect(MANAGED_DEPLOYMENT_LABELS_PATH).toBe(
+      "/run/sealai/deployment/labels.json"
+    );
+    expect(command).toContain('cat > "$tmp"');
+    expect(command).toContain("/run/sealai/deployment/labels.json");
+    expect(command).toContain(`-le ${MANAGED_DEPLOYMENT_LABELS_MAX_BYTES}`);
+    expect(command).toContain("chmod 0600");
+    expect(command).not.toContain("brain.io");
+    expect(command).not.toContain("project-1");
+  });
+});
+
+describe("managed deployment region env", () => {
+  it("derives the region and Template API URL from the kubeconfig server host", () => {
+    expect(
+      managedDeploymentRegionEnv(
+        kubeconfigWithServer("https://usw-1.sealos.io:6443")
+      )
+    ).toEqual({
+      SEALOS_REGION: "https://usw-1.sealos.io",
+      SEALAI_TEMPLATE_API_URL: "https://template.usw-1.sealos.io",
+    });
+  });
+
+  it("yields no region for in-cluster kubeconfig servers", () => {
+    expect(
+      managedDeploymentRegionEnv(
+        kubeconfigWithServer("https://kubernetes.default.svc")
+      )
+    ).toEqual({});
+    expect(
+      managedDeploymentRegionEnv(
+        kubeconfigWithServer("https://kubernetes.default.svc.cluster.local:443")
+      )
+    ).toEqual({});
+  });
+
+  it("returns no env for empty or invalid kubeconfigs", () => {
+    expect(managedDeploymentRegionEnv("")).toEqual({});
+    expect(managedDeploymentRegionEnv("   ")).toEqual({});
+    expect(managedDeploymentRegionEnv("not: [valid")).toEqual({});
+    expect(managedDeploymentRegionEnv("apiVersion: v1\nclusters: []")).toEqual(
+      {}
+    );
   });
 });
 

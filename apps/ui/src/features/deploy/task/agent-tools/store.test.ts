@@ -283,6 +283,56 @@ describe("deployment Agent durable tool inbox", () => {
     expect(exhausted?.attempt).toBe(3);
   });
 
+  it("reports the last retried error code when claims are exhausted", async () => {
+    const { task } = await activeMcpTask("agent-exhausted-with-code-task");
+    await store.enqueueAgentToolCall({
+      callId: "call-exhausted-code",
+      request: { sha256: "d".repeat(64) },
+      task,
+      toolName: "template_ready",
+    });
+    const claim = () =>
+      store.claimNextAgentToolCall({
+        claimOwner: "proc-1:3",
+        leaseEpoch: task.leaseEpoch,
+        taskId: task.id,
+      });
+    const retry = (errorCode: string) =>
+      store.retryAgentToolCall({
+        callId: "call-exhausted-code",
+        claimOwner: "proc-1:3",
+        errorCode,
+        taskId: task.id,
+      });
+
+    expect((await claim())?.attempt).toBe(1);
+    expect(await retry("agent_tool_failed")).toBe(true);
+    const second = await claim();
+    expect(second?.state).toBe("running");
+    expect(second?.errorCode).toBe("agent_tool_failed");
+    expect(await retry("agent_tool_failed")).toBe(true);
+    const exhausted = await claim();
+
+    expect(exhausted?.state).toBe("failed");
+    expect(exhausted?.errorCode).toBe("claim_exhausted:agent_tool_failed");
+    expect(exhausted?.attempt).toBe(3);
+    expect(await claim()).toBeNull();
+    const result = await store.waitForAgentToolCall({
+      callId: "call-exhausted-code",
+      taskId: task.id,
+      timeoutMs: 100,
+    });
+    expect(result.errorCode).toBe("claim_exhausted:agent_tool_failed");
+  });
+
+  it("formats the exhausted code with and without a prior error", () => {
+    expect(store.agentControlClaimExhaustedCode(null)).toBe("claim_exhausted");
+    expect(store.agentControlClaimExhaustedCode("")).toBe("claim_exhausted");
+    expect(
+      store.agentControlClaimExhaustedCode("template_digest_mismatch")
+    ).toBe("claim_exhausted:template_digest_mismatch");
+  });
+
   it("resolves only for the current claim owner", async () => {
     const { task } = await activeMcpTask("agent-failover-fence-task");
     const now = new Date();

@@ -47,7 +47,16 @@ test("managed gateway turns use the MCP control contract for every resume mode",
     assert.ok(prompt.includes("sole execution owner"));
     assert.ok(prompt.includes("kubectl apply"));
     assert.ok(prompt.includes("actual workload resource references"));
-    assert.ok(prompt.includes("SEALAI_DEPLOY_LABELS_JSON"));
+    assert.ok(prompt.includes("SEALAI_DEPLOY_LABELS_PATH"));
+    assert.ok(!prompt.includes("SEALAI_DEPLOY_LABELS_JSON"));
+    assert.ok(prompt.includes("SEALOS_REGION"));
+    assert.ok(prompt.includes("SEALAI_TEMPLATE_API_URL"));
+    assert.ok(prompt.includes("$KUBECONFIG"));
+    assert.ok(
+      prompt.includes(
+        "/home/devbox/project/.agents/skills/sealos-deploy/SKILL.md"
+      )
+    );
     assert.ok(prompt.includes("pass them to the Template API as extraLabels"));
     assert.ok(
       prompt.includes(
