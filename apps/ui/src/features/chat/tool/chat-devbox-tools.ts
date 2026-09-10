@@ -129,7 +129,7 @@ export function createChatDevboxTools(options: CreateChatDevboxToolsOptions) {
       ),
   });
   const bash = tool({
-    description: `Run a bash command starting in ${CHAT_DEVBOX_WORKSPACE}, with normal bash login-shell semantics. Use product tools first. Each output stream keeps at most its last 2000 lines and 50 KiB inside the Devbox. Timeout includes waiting for other tools in this Devbox; background descendants are stopped when the call ends.`,
+    description: `Run a command in the Devbox execution sandbox, starting in ${CHAT_DEVBOX_WORKSPACE} with bash login-shell semantics. This directory is not the user's deployed application or repository. Use product tools first. Each output stream keeps at most its last 2000 lines and 50 KiB inside the Devbox. Timeout includes waiting for other tools in this Devbox; background descendants are stopped when the call ends.`,
     inputSchema: bashInputSchema,
     execute: (input, executionOptions) =>
       executeRemote(

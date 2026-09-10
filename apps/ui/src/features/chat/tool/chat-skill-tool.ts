@@ -58,17 +58,14 @@ export function buildChatSkillsDiscoveryPrompt(
   entries: ChatSkillMeta[]
 ): string {
   if (entries.length === 0) {
-    return [
-      "## Skills (on-demand)",
-      "There are no user-facing Sealos skills installed in the Chat Devbox. Each skill is a folder containing `SKILL.md` with YAML frontmatter (`name`, `description`). When skills exist and the user’s task matches one, call `loadSkill` with that skill’s `name`; use `loadSkillResource` for referenced files inside that skill directory.",
-    ].join("\n");
+    return ["## Skills (on-demand)", "No skills are available."].join("\n");
   }
   const bullets = entries
     .map((s) => `- **${s.name}**: ${s.description}`)
     .join("\n");
   return [
     "## Skills (on-demand)",
-    "When the user's task matches a skill description, call `loadSkill` with that skill's `name` to load its full instructions. If those instructions reference modules, references, knowledge, templates, schemas, assets, or scripts needed for the current task, call `loadSkillResource` with their relative path. Do not invent skill content without loading.",
+    "Load a matching skill with `loadSkill` before following its instructions. Use `loadSkillResource` for referenced files needed by the task.",
     "",
     "Available skills:",
     bullets,
