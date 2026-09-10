@@ -138,13 +138,13 @@ ui:
     # of SYSTEM_OPENAI_* and host CODEX_GATEWAY_OPENAI_* values.
     GITHUB_DEPLOY_OPENAI_API_KEY: ""
     GITHUB_DEPLOY_OPENAI_BASE_URL: ""
-    # Optional Chat Assistant telemetry. Set both keys and LANGFUSE_HOST to enable.
+    # Optional Chat Assistant telemetry. Set both keys and LANGFUSE_BASE_URL to enable.
     # Also forwarded into newly created GitHub Deploy Devboxes for Codex traces.
     LANGFUSE_PUBLIC_KEY: ""
     LANGFUSE_SECRET_KEY: ""
     # Langfuse instance root URL. Blank disables telemetry; no Cloud fallback.
     # Self-hosted Langfuse is supported. Do not append /api/public/otel.
-    LANGFUSE_HOST: ""
+    LANGFUSE_BASE_URL: ""
     GITHUB_OAUTH_CLIENT_ID: ""
     GITHUB_OAUTH_CLIENT_SECRET: ""
     GITHUB_USER_TOKEN_ENCRYPTION_KEY: ""

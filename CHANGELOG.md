@@ -2,6 +2,15 @@
 
 All notable changes to Brain are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Rename the Langfuse endpoint environment variable to `LANGFUSE_BASE_URL`
+  for Chat Assistant tracing and newly created GitHub Deploy Devboxes.
+  Deployments must rename `LANGFUSE_HOST`; the old name is no longer read or
+  forwarded. Recreate existing Devboxes to apply the updated environment.
+
 ## [2.0.14] - 2026-09-10
 
 ### Added
