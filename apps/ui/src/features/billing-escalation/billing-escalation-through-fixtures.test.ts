@@ -12,6 +12,7 @@ import {
 } from "@/features/billing/dev-mock-cookie";
 import { notificationDevMockResponse } from "@/features/billing/server/dev-fixtures/notifications";
 import { scenarioTestFetch } from "@/features/billing/server/dev-fixtures/scenario-test-fetch";
+import { loadWorkspaceOwnerStanding } from "@/features/billing/workspace-owner-data";
 import {
   isGiftOnlyNewcomer,
   mergeNotificationFeed,
@@ -55,13 +56,14 @@ function feedRequest(scenario: string): Request {
 
 async function escalationFor(scenario: BillingDevScenario) {
   const fetch = scenarioTestFetch(scenario);
-  const [subscription, balance, credits, hasToppedUp, response] =
+  const [subscription, balance, credits, hasToppedUp, response, owner] =
     await Promise.all([
       loadWorkspaceSubscriptionSummary(CREDENTIALS, { fetch }),
       loadAccountBalanceTerms(CREDENTIALS, fetch),
       loadAccountCredits(CREDENTIALS, fetch),
       loadHasToppedUp(CREDENTIALS, fetch),
       notificationDevMockResponse("feed", feedRequest(scenario)),
+      loadWorkspaceOwnerStanding(CREDENTIALS, fetch),
     ]);
   assert.ok(response, `${scenario}: the mock answers the feed`);
   const feed = notificationFeedResponseSchema.parse(await response.json());
@@ -75,10 +77,12 @@ async function escalationFor(scenario: BillingDevScenario) {
     availableBalanceMicroUnits:
       balance.cashMicroUnits + credits.usableMicroUnits,
     lifetimeDeductionMicroUnits: balance.lifetimeDeductionMicroUnits,
+    owner,
     subscription,
   });
   const selection = selectBillingEscalation({
     accountDebt,
+    isOwner: owner.isOwner,
     items,
     readIds: new Set(),
   });
@@ -112,6 +116,8 @@ const EXPECTED: Record<BillingDevScenario, string | null> = {
   "payg-debt": "debt-choice-debtperiod",
   "payg-debt-deletion": "debt-choice-debtdeletionperiod",
   "payg-debt-final": "debt-choice-finaldeletionperiod",
+  "payg-member": null,
+  "payg-member-owner-debt": null,
   "payment-due": "workspace-debt-debt",
   "payment-due-deletion": "workspace-debt-debtpredeletion",
   "payment-due-final": "workspace-debt-debtfinaldeletion",

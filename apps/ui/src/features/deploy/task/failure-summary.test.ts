@@ -194,7 +194,7 @@ describe("deploymentFailureReason", () => {
 describe("billing interruption vocabulary (catalog E1/E2)", () => {
   it("names an exhausted balance and its suspension in the reason message", () => {
     expect(deploymentFailureMessage("balance-exhausted")).toBe(
-      "Deployment stopped — the account balance is exhausted and the workspace is suspended. Top up, then redeploy."
+      "Deployment stopped — the workspace owner's account balance is exhausted and the workspace is suspended. Redeploy once the balance is topped up."
     );
   });
 

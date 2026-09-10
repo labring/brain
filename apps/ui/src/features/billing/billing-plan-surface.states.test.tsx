@@ -29,6 +29,10 @@ const EXPIRED_WARNING_TITLE_PATTERN = /Your subscription has expired/;
 const UNDATED_GRACE_FALLBACK_PATTERN = /the grace period ends/;
 const ACCOUNT_DEBT_TITLE_PATTERN = /Your account balance is in debt/;
 const ACCOUNT_DEBT_TOP_UP_PATTERN = /Top up your balance/;
+const MEMBER_ACCOUNT_DEBT_TITLE_PATTERN =
+  /Workspace suspended — owner's balance in debt/;
+const MEMBER_ACCOUNT_DEBT_ASK_PATTERN = /Ask the workspace owner to top up/;
+const DESKTOP_TOP_UP_PATTERN = /Top up in Sealos Desktop/;
 const PLAN_EXPIRED_BADGE_PATTERN = /Plan Expired/;
 const FREE_EXPIRED_TITLE_PATTERN = /Your Free plan has expired/;
 const FREE_EXPIRED_UPGRADE_PATTERN = /Upgrade to a paid plan to avoid loss/;
@@ -48,7 +52,8 @@ function loadSnapshotForScenario(scenario: string) {
 
 async function renderScenario(
   scenario: string,
-  run: (rendered: ReturnType<typeof render>) => void | Promise<void>
+  run: (rendered: ReturnType<typeof render>) => void | Promise<void>,
+  options: { viewerIsOwner?: boolean } = {}
 ) {
   const snapshot = await loadSnapshotForScenario(scenario);
   await withTestDom(async (act) => {
@@ -63,6 +68,7 @@ async function renderScenario(
             onLifecycleAction={() => undefined}
             onPlanChange={() => undefined}
             snapshot={snapshot}
+            viewerIsOwner={options.viewerIsOwner ?? true}
           />
         );
       });
@@ -142,6 +148,23 @@ test("payg-debt speaks Account Debt, not subscription expiry", async () => {
     assert.doesNotMatch(text, UNDATED_GRACE_FALLBACK_PATTERN);
     assert.ok(rendered.queryByRole("button", { name: "Subscribe Plan" }));
   });
+});
+
+// ADR-0082: the debt is the Workspace Owner's; a viewer not proven to be the
+// Owner is told so and asked, never pointed at a top-up they cannot perform.
+test("payg-debt tells a viewer not proven to be the Owner about the owner's debt, without a top-up", async () => {
+  await renderScenario(
+    "payg-debt",
+    (rendered) => {
+      const text = rendered.container.textContent ?? "";
+      assert.match(text, MEMBER_ACCOUNT_DEBT_TITLE_PATTERN);
+      assert.match(text, MEMBER_ACCOUNT_DEBT_ASK_PATTERN);
+      assert.doesNotMatch(text, ACCOUNT_DEBT_TITLE_PATTERN);
+      assert.doesNotMatch(text, ACCOUNT_DEBT_TOP_UP_PATTERN);
+      assert.doesNotMatch(text, DESKTOP_TOP_UP_PATTERN);
+    },
+    { viewerIsOwner: false }
+  );
 });
 
 // AIM-255: the header's Renewal Time reads the same period-end field as the

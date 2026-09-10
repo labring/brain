@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  accountDebtByOwner,
   accountDebtFromMoney,
   accountDebtSuspends,
 } from "@/features/billing/account-debt";
@@ -11,6 +12,7 @@ import {
   type QuotaFullnessRow,
   workspaceQuotaRowsFromPayload,
 } from "@/features/billing/billing-usage-data";
+import type { WorkspaceOwnerStanding } from "@/features/billing/workspace-owner";
 
 /**
  * A workspace's billing standing as the platform judges it, read from the
@@ -33,8 +35,10 @@ export interface WorkspaceAiCredits {
 
 export interface WorkspaceBillingStanding {
   /**
-   * Available amount ≤ 0 on an ever-billed account (the platform's debt
-   * formula, which skips never-billed accounts); null while unknown.
+   * Whether the Workspace Owner's account is in Account Debt (ADR-0082):
+   * the platform's suspension mark on the namespace, or — for the Owner
+   * alone — available amount ≤ 0 on an ever-billed account (the platform's
+   * debt formula, which skips never-billed accounts); null while unknown.
    */
   accountDebt: boolean | null;
   /** The subscription's AI Credits; null on PAYG or while unknown. */
@@ -49,6 +53,11 @@ export interface WorkspaceBillingStanding {
    * or unread.
    */
   fullUniversalQuota: QuotaFullnessRow | null;
+  /**
+   * Whether the actor is the Workspace Owner; null while unknown. Every
+   * seam forks its debt voice on this — only the Owner is told to top up.
+   */
+  isOwner: boolean | null;
   /** What paid AI usage spends; null while the subscription type is unknown. */
   paidSource: WorkspaceAiPaidSource | null;
   /**
@@ -72,6 +81,7 @@ export const UNKNOWN_BILLING_STANDING: WorkspaceBillingStanding = {
   availableBalanceMicroUnits: null,
   fullQuota: null,
   fullUniversalQuota: null,
+  isOwner: null,
   paidSource: null,
   paymentDue: null,
   paymentDueRecovery: null,
@@ -83,6 +93,8 @@ export interface WorkspaceBillingPayloads {
   account: unknown;
   /** `/payment/v1alpha1/credits/info` body, or null. */
   credits: unknown;
+  /** The Workspace Owner standing read off the namespace (ADR-0082). */
+  owner: WorkspaceOwnerStanding;
   /** `/account/v1alpha1/workspace/get-resource-quota` body, or null. */
   quota: unknown;
   /** `/account/v1alpha1/workspace-subscription/info` body, or null. */
@@ -148,13 +160,11 @@ function usableCreditMicroUnits(credits: unknown): number | null {
 }
 
 function subscriptionFacts(subscription: unknown): {
-  inDebt: boolean;
   paidSource: WorkspaceAiPaidSource | null;
   paymentDue: boolean | null;
   paymentDueRecovery: RecoveryVoice | null;
 } {
   const unknown = {
-    inDebt: false,
     paidSource: null,
     paymentDue: null,
     paymentDueRecovery: null,
@@ -183,9 +193,6 @@ function subscriptionFacts(subscription: unknown): {
     paymentDueRecovery = freePlan ? "resubscribe" : "renew";
   }
   return {
-    // A PAYG workspace the platform reports on the debt ladder is Account
-    // Debt by definition — no timestamps, no subscription (CONTEXT.md).
-    inDebt: payg && status.startsWith("DEBT"),
     paidSource: payg ? "balance" : "ai-credits",
     paymentDue,
     paymentDueRecovery,
@@ -228,15 +235,22 @@ export function judgeWorkspaceBillingStanding(
   const available =
     terms == null || credits == null ? null : terms.cashMicroUnits + credits;
   const facts = subscriptionFacts(payloads.subscription);
-  let accountDebt: boolean | null = null;
-  if (facts.inDebt) {
-    accountDebt = true;
-  } else if (available != null && terms != null) {
-    accountDebt = accountDebtFromMoney({
-      availableBalanceMicroUnits: available,
-      lifetimeDeductionMicroUnits: terms.lifetimeDeductionMicroUnits,
-    });
-  }
+  // The caller's own balance is a fact about the caller's account; whether
+  // it is the workspace's account is the Owner question (ADR-0082).
+  const money =
+    available == null || terms == null
+      ? null
+      : accountDebtFromMoney({
+          availableBalanceMicroUnits: available,
+          lifetimeDeductionMicroUnits: terms.lifetimeDeductionMicroUnits,
+        });
+  // Account Debt is judged from the namespace's platform marks and the
+  // Owner's own money alone (ADR-0082) — the same inputs the client-side
+  // `accountDebtHolds` reads, so no seam can name a debt another stays
+  // quiet about. The PAYG subscription record's DEBT status is not a third
+  // input: the platform's production PAYG payload carries no status, and a
+  // server-only reading of it would let the walls and the banner disagree.
+  const accountDebt = accountDebtByOwner({ money, owner: payloads.owner });
   const rows = workspaceQuotaRowsFromPayload(payloads.quota);
   const fullRow = rows == null ? null : firstFullQuotaRow(rows);
   const universalRow = rows == null ? null : firstDoomingQuotaRow(rows);
@@ -263,6 +277,7 @@ export function judgeWorkspaceBillingStanding(
             percentUsed: universalRow.percentUsed,
             type: universalRow.type,
           },
+    isOwner: payloads.owner.isOwner,
     paidSource: facts.paidSource,
     paymentDue: facts.paymentDue,
     paymentDueRecovery: facts.paymentDueRecovery,

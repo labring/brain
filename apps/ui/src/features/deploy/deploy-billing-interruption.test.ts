@@ -28,6 +28,61 @@ describe("deploymentBillingInterruption", () => {
     });
   });
 
+  it("tells a non-owner the Owner's balance ran out, with the ask and no top-up (ADR-0082)", () => {
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          availableBalanceMicroUnits: 50_000_000,
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "account-debt",
+          owner: false,
+        },
+        reason: "balance-exhausted",
+      })
+    ).toEqual({
+      body: "The owner's account balance ran out while this deployment was running, and the workspace is suspended. Ask the workspace owner to top up. Then redeploy.",
+      icon: "wallet",
+      title: "Workspace suspended — owner's balance in debt",
+    });
+    // An unknown owner is never assumed to be the Owner.
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          availableBalanceMicroUnits: null,
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "account-debt",
+          owner: null,
+        },
+        reason: "balance-exhausted",
+      })?.cta
+    ).toBeUndefined();
+  });
+
+  it("never offers a top-up without evidence proving the viewer is the Owner (ADR-0082)", () => {
+    // A webhook-classified denial whose reverse-check never ran (no actor,
+    // a thrown read) has no evidence at all: the Owner is unknown, and the
+    // callout asks instead of telling a member to top up.
+    const noEvidence = deploymentBillingInterruption({
+      reason: "balance-exhausted",
+    });
+    expect(noEvidence?.title).toBe(
+      "Workspace suspended — owner's balance in debt"
+    );
+    expect(noEvidence?.cta).toBeUndefined();
+    // A proven Owner keeps the top-up.
+    expect(
+      deploymentBillingInterruption({
+        billingEvidence: {
+          availableBalanceMicroUnits: -6_320_000,
+          checkedAt: "2026-08-28T10:00:00.000Z",
+          kind: "account-debt",
+          owner: true,
+        },
+        reason: "balance-exhausted",
+      })?.cta?.label
+    ).toBe("Top up balance");
+  });
+
   it("names the full quota when the evidence carries it, and stays generic otherwise", () => {
     expect(
       deploymentBillingInterruption({
@@ -63,7 +118,7 @@ describe("deploymentBillingInterruption", () => {
       deploymentBillingInterruption(
         { reason: "quota-exceeded" },
         { payg: true }
-      )?.cta.label
+      )?.cta?.label
     ).toBe("Subscribe");
     expect(
       deploymentBillingInterruption(

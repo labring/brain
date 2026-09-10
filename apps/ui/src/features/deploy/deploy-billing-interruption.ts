@@ -1,3 +1,4 @@
+import { MEMBER_ACCOUNT_DEBT_VOICE } from "@/features/billing/account-debt";
 import {
   type BillingCta,
   type QuotaCtaContext,
@@ -17,7 +18,8 @@ import type { DeployTaskFailureDetails } from "./task/schema";
  */
 export interface DeploymentBillingInterruption {
   body: string;
-  cta: BillingCta;
+  /** The fix; absent when the viewer cannot apply it (a member told of the Owner's debt, ADR-0082). */
+  cta?: BillingCta;
   icon: "alert" | "wallet";
   /** The quiet second way out beside a plan-first quota CTA. */
   secondaryCta?: { href: string; label: string };
@@ -71,6 +73,25 @@ export function deploymentBillingInterruption(
     return null;
   }
   if (details.reason === "balance-exhausted") {
+    const evidence = deployBillingEvidence(details.billingEvidence);
+    // The debt is the Workspace Owner's (ADR-0082): only a viewer the
+    // evidence proves to be the Owner is offered the top-up. Records from
+    // before the `owner` field existed were judged on the actor's own
+    // balance and keep the Owner voice; a record with no evidence at all
+    // (the reverse-check never ran) leaves the Owner unknown, and an
+    // unknown owner is told the truth and the ask, never a top-up they may
+    // be unable to perform.
+    const ownerVoice =
+      evidence?.kind === "account-debt" &&
+      evidence.owner !== false &&
+      evidence.owner !== null;
+    if (!ownerVoice) {
+      return {
+        body: `The owner's account balance ran out while this deployment was running, and the workspace is suspended. ${MEMBER_ACCOUNT_DEBT_VOICE.ask} Then redeploy.`,
+        icon: "wallet",
+        title: MEMBER_ACCOUNT_DEBT_VOICE.title,
+      };
+    }
     return {
       body: "Your account balance ran out while this deployment was running, and pay-as-you-go workspaces are suspended. Top up to lift the suspension, then redeploy.",
       cta: {

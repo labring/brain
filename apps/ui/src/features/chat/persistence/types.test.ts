@@ -7,6 +7,8 @@ import {
   buildAssistantContinuationFromPending,
   buildRecoveredAssistantMessageForIncompleteClientTools,
   buildRecoveredAssistantMessageForInterruptedTools,
+  CHAT_WALL_CAUSES,
+  chatWallCauseFromHeader,
   findPendingApprovalMessageForResponse,
   findPendingAssistantMessageForContinuation,
   hasClientToolResultContinuation,
@@ -972,6 +974,67 @@ test("legacy recovery is a no-op for users and unknown incomplete tools", () => 
     buildRecoveredAssistantMessageForIncompleteClientTools(
       pendingClientToolMessage("tool-notWhitelisted")
     ),
+    undefined
+  );
+});
+
+test("every wall cause the server names survives the X-Chat-Wall header round-trip", () => {
+  // ADR-0082: the member's balance wall (`owner-balance`) must lock the pane
+  // exactly like the Owner's; a cause the decoder does not know reads as
+  // "no wall" and the member would see a bare failed send.
+  for (const cause of CHAT_WALL_CAUSES) {
+    assert.equal(chatWallCauseFromHeader(cause), cause);
+  }
+  assert.equal(chatWallCauseFromHeader("owner-balance"), "owner-balance");
+});
+
+test("an empty or foreign X-Chat-Wall header is no wall", () => {
+  assert.equal(chatWallCauseFromHeader(null), null);
+  assert.equal(chatWallCauseFromHeader(""), null);
+  assert.equal(chatWallCauseFromHeader("plan"), null);
+});
+
+test("new user turns cancel legacy bash approvals without mutating stored input", () => {
+  const message: UIMessage = {
+    id: "minecraft-logs",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-bash",
+        toolCallId: "logs-call",
+        state: "approval-requested",
+        input: {
+          command: "kubectl -n ns-admin logs minecraft-tlkjdu-0 --tail=120",
+        },
+        approval: { id: "logs-approval" },
+      },
+    ],
+  };
+  assert.equal(
+    buildRecoveredAssistantMessageForInterruptedTools(message),
+    undefined
+  );
+  const recovered = buildRecoveredAssistantMessageForInterruptedTools(
+    message,
+    true
+  );
+  assert.ok(recovered);
+  assert.deepEqual(recovered.parts[0], {
+    ...message.parts[0],
+    state: "output-denied",
+    approval: {
+      id: "logs-approval",
+      approved: false,
+      reason: "Cancelled because the user sent a new message.",
+    },
+  });
+  assert.ok(message.parts[0]);
+  assert.equal(
+    isToolUIPart(message.parts[0]) && message.parts[0].state,
+    "approval-requested"
+  );
+  assert.equal(
+    buildRecoveredAssistantMessageForInterruptedTools(recovered, true),
     undefined
   );
 });

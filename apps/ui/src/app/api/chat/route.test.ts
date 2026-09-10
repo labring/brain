@@ -6,11 +6,14 @@ import { z } from "zod";
 import { BILLING_JUDGMENT_TIMEOUT_MS } from "@/features/billing/server/judgment-budget";
 import type { WorkspaceResourceQuotaSnapshot } from "@/features/billing/workspace-resource-quota";
 
+import { CHAT_TOOL_APPROVAL } from "@/features/chat/runtime/tool-approval";
+
 const actualAi = { ...(await import("ai")) };
 let forcedOutcome: "failed" | "aborted" | "unknown" | undefined;
 mock.module("ai", () => ({
   ...actualAi,
   streamText: (...args: Parameters<typeof actualAi.streamText>) => {
+    expect(args[0].toolApproval).toEqual(CHAT_TOOL_APPROVAL);
     const result = actualAi.streamText(...args);
     const respond = result.toUIMessageStreamResponse.bind(result);
     result.toUIMessageStreamResponse = (options) =>
@@ -99,9 +102,12 @@ let billingStanding = {
   aiCredits: null as { totalMicroUnits: number; usedMicroUnits: number } | null,
   availableBalanceMicroUnits: null as number | null,
   fullQuota: null,
+  isOwner: true as boolean | null,
   paidSource: null as "ai-credits" | "balance" | null,
   quotaKnown: false,
 };
+/** When set, the standing read hangs: only a path that awaits it can stall. */
+let standingNeverSettles = false;
 let standingCalls: {
   userId: string | null;
   userUid: string;
@@ -333,7 +339,11 @@ mock.module("@/features/billing/server/billing-standing", () => ({
       userUid: input.userUid,
       workspace: input.workspace,
     });
-    return Promise.resolve({ ...billingStanding });
+    return standingNeverSettles
+      ? new Promise(() => {
+          // Hangs on purpose: a free turn must not await this read.
+        })
+      : Promise.resolve({ ...billingStanding });
   },
 }));
 mock.module("@/features/chat/persistence/free-tier", () => ({
@@ -520,6 +530,7 @@ mock.module("@/features/chat/runtime/tools", () => ({
     }
     return Promise.resolve({
       systemPrompt: "Test system prompt",
+      toolApproval: CHAT_TOOL_APPROVAL,
       tools: { getDeployTaskStatus: serverTool, navigateApp: clientTool },
     });
   },
@@ -819,10 +830,12 @@ beforeEach(() => {
     aiCredits: null,
     availableBalanceMicroUnits: null,
     fullQuota: null,
+    isOwner: true,
     paidSource: null,
     quotaKnown: false,
   };
   standingCalls = [];
+  standingNeverSettles = false;
   denyReservation = null;
   releaseCalls = 0;
   reserveCalls = 0;
@@ -1504,21 +1517,26 @@ test("recovers an old incomplete server tool before processing a new user turn",
   );
 });
 
-test("rejects a new user turn with actionable guidance while approval is pending", async () => {
+test("new user messages cancel pending approvals and reach the model", async () => {
   history = [pendingApprovalMessage()];
-
   const response = await POST(
     chatRequest(userMessage("user-before-approval", "continue anyway"))
   );
-
-  expect(response.status).toBe(409);
-  expect(await response.json()).toEqual({
-    code: "tool_approval_pending",
-    error:
-      "A tool approval is pending. Approve or deny it before sending a new message.",
-  });
-  expect(replaceCalls).toBe(0);
-  expect(modelCalls).toBe(0);
+  expect(response.status).toBe(200);
+  await drain(response);
+  expect(replaceCalls).toBe(1);
+  expect(modelCalls).toBe(1);
+  expect(history[0]?.parts).toContainEqual(
+    expect.objectContaining({
+      state: "output-denied",
+      approval: {
+        id: "approval-write",
+        approved: false,
+        reason: "Cancelled because the user sent a new message.",
+      },
+    })
+  );
+  expect(JSON.stringify(modelPrompts[0])).toContain("continue anyway");
 });
 
 test("rejects unrecoverable incomplete tool history with actionable guidance", async () => {
@@ -2141,6 +2159,31 @@ test("an open paid workspace streams with its paid source in the headers; unknow
   await drain(unknown);
 });
 
+test("a member of an Owner-suspended PAYG workspace is walled as owner-balance and told the ask, not a top-up (ADR-0082)", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: true,
+    availableBalanceMicroUnits: 50_000_000,
+    isOwner: false,
+    paidSource: "balance",
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-member-walled", "deploy something"))
+  );
+
+  expect(response.status).toBe(402);
+  expect(await response.json()).toEqual({
+    code: "account_balance_exhausted",
+    detail: { wall: "owner-balance" },
+    error:
+      "The workspace owner's account balance can't cover AI usage. Ask the workspace owner to top up.",
+  });
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+  expect(response.headers.get("X-Chat-Wall")).toBe("owner-balance");
+});
+
 test("a free turn never consults the paid wall — the standing read beside the trial judgment is ignored", async () => {
   // ADR-0068: the standing reads leave with the trial judgment under one
   // budget, so they happen; only a `user` posture looks at the answer.
@@ -2156,6 +2199,24 @@ test("a free turn never consults the paid wall — the standing read beside the 
   expect(response.headers.get("X-Chat-Billing")).toBe("free");
   expect(response.headers.get("X-Chat-Wall")).toBe("");
   expect(response.headers.get("X-Chat-Paid-Source")).toBe("");
+  expect(standingCalls).toHaveLength(1);
+  await drain(response);
+});
+
+test("a free turn with turns to spare streams while the standing read is still pending", async () => {
+  // ADR-0068/0082: an earlier free turn never awaits the standing — not for
+  // the wall and not for the Owner verdict — so a slow namespace or account
+  // read cannot hold up a free reply.
+  freeTierSnapshot = { limit: 5, remaining: 2, used: 3 };
+  trialJudgment = "trial";
+  standingNeverSettles = true;
+
+  const response = await POST(
+    chatRequest(userMessage("user-free-pending-standing", "hi"))
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("X-Chat-Billing")).toBe("free");
+  expect(response.headers.get("X-Chat-Wall")).toBe("");
   expect(standingCalls).toHaveLength(1);
   await drain(response);
 });
@@ -2183,6 +2244,35 @@ test("aiproxy refusing the token request for balance reads as a billing refusal,
     detail: { paidSource: "balance" },
     error: "The AI proxy refused this turn for billing reasons.",
   });
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+});
+
+test("aiproxy refusing a member's token request names the owner-balance wall in the body and the header (ADR-0082)", async () => {
+  trialJudgment = "not-trial";
+  billingStanding = {
+    ...billingStanding,
+    accountDebt: false,
+    isOwner: false,
+    paidSource: "balance",
+  };
+  connectionRefusal = {
+    message:
+      '{"type":"group_balance_not_enough","message":"group `ns` balance not enough"}',
+    status: 403,
+  };
+
+  const response = await POST(
+    chatRequest(userMessage("user-member-refused", "deploy something"))
+  );
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({
+    code: "ai_proxy_billing_refused",
+    detail: { paidSource: "balance", wall: "owner-balance" },
+    error: "The AI proxy refused this turn for billing reasons.",
+  });
+  expect(response.headers.get("X-Chat-Paid-Source")).toBe("balance");
+  expect(response.headers.get("X-Chat-Wall")).toBe("owner-balance");
 });
 
 test("enabled telemetry waits for title completion even when after starts early", async () => {

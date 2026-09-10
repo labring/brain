@@ -1,3 +1,4 @@
+import { MEMBER_ACCOUNT_DEBT_VOICE } from "@/features/billing/account-debt";
 import {
   type BillingCta,
   quotaCtaFor,
@@ -34,7 +35,8 @@ import {
  */
 export interface DeployBillingNotice {
   body: string;
-  cta: BillingCta;
+  /** The fix; absent when the viewer cannot apply it (a member told of the Owner's debt, ADR-0082). */
+  cta?: BillingCta;
   kind: "balance" | "payment-due" | "quota";
   /** The quiet second way out beside a plan-first quota CTA. */
   secondaryCta?: { href: string; label: string };
@@ -44,6 +46,8 @@ export interface DeployBillingNotice {
 export interface DeployBillingNoticeFacts {
   debtSuspended: boolean | null;
   full: QuotaFullnessRow | null;
+  /** Whether the viewer is the Workspace Owner; only `true` earns the top-up voice. */
+  isOwner: boolean | null;
   payg: boolean | null;
   /** How payment-due recovery speaks; false when not payment-due, null unknown. */
   paymentDue: RecoveryVoice | false | null;
@@ -72,6 +76,13 @@ export function noticeFor(
     };
   }
   if (facts.debtSuspended === true) {
+    if (facts.isOwner !== true) {
+      return {
+        body: `The owner's account balance is in debt, so deployments will fail. ${MEMBER_ACCOUNT_DEBT_VOICE.ask}`,
+        kind: "balance",
+        title: MEMBER_ACCOUNT_DEBT_VOICE.title,
+      };
+    }
     return {
       body: "Pay-as-you-go workspaces are suspended, so deployments will fail. Top up your balance to restore them.",
       cta: {
@@ -123,6 +134,7 @@ export function resolveDeployBillingNotice(
       inputs.quota == null
         ? null
         : firstDoomingQuotaRow(inputs.quota, options.paneConsumes ?? []),
+    isOwner: inputs.owner?.isOwner ?? null,
     paymentDue: paymentDueVoice(inputs.subscription),
     payg: inputs.subscription?.isPayg ?? null,
     planCeiling: inputs.planCeiling ?? null,
@@ -150,6 +162,7 @@ export function deployBillingNoticeFromStanding(
   return noticeFor({
     debtSuspended: debtSuspendsWorkspace(standing),
     full: standing.fullUniversalQuota,
+    isOwner: standing.isOwner,
     paymentDue: standingPaymentDueVoice(standing),
     payg:
       standing.paidSource == null ? null : standing.paidSource === "balance",

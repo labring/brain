@@ -436,7 +436,12 @@ test("chat createDeployTask refuses behind the pre-deploy wall and never creates
   const deployTaskTools = createDeployTaskTools(
     {
       ...githubToolOptions(),
-      billingActor: { userId: "user-alice", userUid: "uid-alice" },
+      billingActor: {
+        crName: "alice-cr",
+        encodedKubeconfig: "encoded-kubeconfig",
+        userId: "user-alice",
+        userUid: "uid-alice",
+      },
     },
     {
       adoptLegacyGithubConnectionForOwner: () =>
@@ -455,6 +460,7 @@ test("chat createDeployTask refuses behind the pre-deploy wall and never creates
           availableBalanceMicroUnits: -6_320_000,
           fullQuota: null,
           fullUniversalQuota: null,
+          isOwner: true,
           paidSource: "balance",
           paymentDue: false,
           paymentDueRecovery: null,

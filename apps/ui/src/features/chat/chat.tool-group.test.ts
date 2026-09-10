@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { projectDeletionApprovalInput } from "./chat.tool-group";
+import {
+  ChatToolGroup,
+  devboxApprovalInput,
+  projectDeletionApprovalInput,
+} from "./chat.tool-group";
 
 test("Project deletion approval exposes the exact preview target", () => {
   assert.deepEqual(
@@ -17,4 +23,100 @@ test("Project deletion approval exposes the exact preview target", () => {
 test("Project deletion approval rejects malformed tool input", () => {
   assert.equal(projectDeletionApprovalInput({}), null);
   assert.equal(projectDeletionApprovalInput({ projectId: "" }), null);
+});
+
+test("Devbox approval exposes the exact bash command", () => {
+  assert.deepEqual(
+    devboxApprovalInput("tool-bash", {
+      command: "kubectl rollout restart deploy/api",
+      intention: "restart the selected API deployment",
+      timeoutSeconds: 20,
+    }),
+    {
+      command: "kubectl rollout restart deploy/api",
+      intention: "restart the selected API deployment",
+      kind: "bash",
+      timeoutSeconds: 20,
+    }
+  );
+});
+
+test("Devbox approval exposes the exact file target and content", () => {
+  assert.deepEqual(
+    devboxApprovalInput("tool-write", {
+      content: "server-port=25565\n",
+      intention: "prepare the reviewed server configuration",
+      path: "/tmp/server.properties",
+    }),
+    {
+      content: "server-port=25565\n",
+      intention: "prepare the reviewed server configuration",
+      kind: "write",
+      path: "/tmp/server.properties",
+    }
+  );
+});
+
+test("Devbox approval exposes every exact edit replacement", () => {
+  assert.deepEqual(
+    devboxApprovalInput("tool-edit", {
+      edits: [
+        { newText: "new port", oldText: "old port" },
+        { newText: "enabled", oldText: "disabled" },
+      ],
+      intention: "apply the reviewed configuration edits",
+      path: "config/app.conf",
+    }),
+    {
+      edits: [
+        { newText: "new port", oldText: "old port" },
+        { newText: "enabled", oldText: "disabled" },
+      ],
+      intention: "apply the reviewed configuration edits",
+      kind: "edit",
+      path: "config/app.conf",
+    }
+  );
+});
+
+test("Devbox approval rejects malformed or unrelated inputs", () => {
+  assert.equal(devboxApprovalInput("tool-bash", {}), null);
+  assert.equal(
+    devboxApprovalInput("tool-writeProductResource", {
+      command: "true",
+    }),
+    null
+  );
+});
+
+test("invalid and legacy Devbox approvals render Deny without Approve", () => {
+  for (const type of [
+    "tool-bash",
+    "tool-write",
+    "tool-edit",
+    "tool-writeFile",
+  ] as const) {
+    const html = renderToStaticMarkup(
+      createElement(ChatToolGroup, {
+        partKeyPrefix: "invalid-approval",
+        parts: [
+          {
+            type,
+            state: "approval-requested",
+            toolCallId: "invalid",
+            approval: { id: "approval-1" },
+            input: {
+              intention: "review malformed operation",
+              path: "config",
+              content: "legacy",
+              edits: [],
+            },
+          },
+        ],
+      })
+    );
+    assert.ok(html.includes('data-slot="chat-tool-approval-invalid"'));
+    assert.ok(html.includes("Deny"));
+    assert.equal(html.includes(">Approve<"), false);
+  }
 });

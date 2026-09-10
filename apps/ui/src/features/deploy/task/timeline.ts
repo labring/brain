@@ -28,6 +28,16 @@ export type DeploymentAccessEndpointObserver =
   | { kind: "declared" }
   | { kind: "ingress"; name: string };
 
+/**
+ * The Open and Share URLs a template deployment declared (ADR 0081). Their
+ * hosts are Ingress hosts of the same deployment — that gate is applied
+ * where the entries are resolved — so the record takes them as declared.
+ */
+export interface DeploymentTemplateEntryUrls {
+  open?: string;
+  share?: string;
+}
+
 export type DeploymentTimelineEventSeverity =
   | "info"
   | "success"
@@ -177,6 +187,13 @@ export interface DeploymentTaskSuccessSnapshot {
    * snapshot can never replay the confetti.
    */
   revision: number;
+  /**
+   * The HTTP(S) address the share strip shares (ADR 0081): the template's
+   * declared Share Entry, else the Open URL as it stood when the record was
+   * written. Absent on records written before the field existed, which
+   * share their primary entry.
+   */
+  shareUrl?: string;
   verification?: DeploymentTaskSuccessVerification;
   verifiedAt: string;
 }
@@ -708,12 +725,18 @@ function successUrl(value: unknown): string | undefined {
   return successText(value, MAX_SUCCESS_URL_LENGTH);
 }
 
+/**
+ * The protocol of an entry URL, or nothing for one the record may not carry.
+ * Credentials are rejected; a fragment is not — a template's Open Entry may
+ * be a desktop-launcher URL (`#token=…`), which the Open control opens as
+ * declared. What may be *shared* is decided separately (`successShareUrl`).
+ */
 function accessProtocol(
   value: string
 ): DeploymentAccessEndpointProtocol | undefined {
   try {
     const url = new URL(value);
-    if (url.username !== "" || url.password !== "" || url.hash !== "") {
+    if (url.username !== "" || url.password !== "") {
       return undefined;
     }
     switch (url.protocol) {
@@ -731,6 +754,15 @@ function accessProtocol(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A share address is opened in a browser, so only HTTP(S) qualifies — and
+ * never a URL with a fragment, which may embed a secret (ADR 0081).
+ */
+function successShareUrl(value: unknown): string | undefined {
+  const url = successUrl(value);
+  return url != null && isShareableEntryUrl(url) ? url : undefined;
 }
 
 function successCount(value: unknown, max: number): number | undefined {
@@ -853,6 +885,7 @@ export function sanitizeDeploymentTaskSuccess(
   );
   const entries = successEntries(candidate.entries, contractVersion);
   const guidance = successGuidance(candidate.guidance);
+  const shareUrl = successShareUrl(candidate.shareUrl);
   const verification = successVerification(candidate.verification);
   const revision = successCount(candidate.revision, Number.MAX_SAFE_INTEGER);
   return {
@@ -865,6 +898,7 @@ export function sanitizeDeploymentTaskSuccess(
     ...(productId == null ? {} : { productId }),
     ...(productName == null ? {} : { productName }),
     revision: revision ?? fallback.revision,
+    ...(shareUrl == null ? {} : { shareUrl }),
     verifiedAt: isoTimestamp(candidate.verifiedAt) ?? fallback.verifiedAt,
     ...(verification == null ? {} : { verification }),
   };
@@ -892,6 +926,7 @@ export function deploymentTaskSuccessSignature(
     productCategories: success.productCategories ?? [],
     productId: success.productId ?? "",
     productName: success.productName ?? "",
+    shareUrl: success.shareUrl ?? "",
     verification: success.verification
       ? [success.verification.passed, success.verification.total]
       : null,
@@ -958,6 +993,45 @@ function isHttpEntryUrl(url: string): boolean {
 }
 
 /**
+ * Whether an entry may be the share address: HTTP(S) with no fragment. A
+ * fragment-bearing Open (an App CR `#token=` launcher URL) is opened, never
+ * shared — Share falls past it to the next verified HTTP(S) entry.
+ */
+function isShareableEntryUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      parsed.hash === ""
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One address, one spelling: an Ingress card writes a root as
+ * `https://host/` while a declared entry may keep `https://host`. Host is
+ * case-insensitive and a default port is implicit; path, query, and fragment
+ * stay distinct — `/admin` and `/`, `/?server=…` and `/`, `/#token=…` and
+ * `/` are different addresses.
+ */
+function canonicalEntryUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.hostname.toLowerCase()}${
+      parsed.port === "" ? "" : `:${parsed.port}`
+    }${parsed.pathname === "" ? "/" : parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return url;
+  }
+}
+
+function sameEntryUrl(left: string, right: string): boolean {
+  return canonicalEntryUrl(left) === canonicalEntryUrl(right);
+}
+
+/**
  * Puts the entry the Open control should open first — the record's order is
  * its priority order, so the first openable entry is the primary action. The
  * exact URL wins; failing that, the entry on the same host (an Ingress root
@@ -987,11 +1061,55 @@ export function prioritizeSuccessEntries<T extends { url: string }>(
   return [primary, ...entries.filter((_, position) => position !== index)];
 }
 
+/**
+ * The template's Open Entry as a record entry: the declared URL, headed by
+ * the App Listening Port it reaches when one is known. A URL an Ingress card
+ * already lists keeps that card's entry instead (de-duplicated by canonical
+ * URL, so `https://host` and `https://host/` are one address).
+ */
+function templateOpenEntry(
+  url: string | null | undefined,
+  label: string | null | undefined
+): DeploymentTaskSuccessEntry | null {
+  const protocol = url == null ? null : accessProtocol(url);
+  if (url == null || protocol == null) {
+    return null;
+  }
+  return { ...(label == null ? {} : { label }), protocol, url };
+}
+
+/**
+ * The address the share strip shares: the record's own snapshot, else — for
+ * records written before the field existed — the primary HTTP(S) entry.
+ */
+export function deploymentTaskSuccessShareUrl(
+  success: Pick<DeploymentTaskSuccessSnapshot, "entries" | "shareUrl">
+): string | undefined {
+  return (
+    success.shareUrl ??
+    success.entries?.find((entry) => isShareableEntryUrl(entry.url))?.url
+  );
+}
+
 export function deploymentTaskSuccessFromTimeline(
   timeline: DeploymentTaskTimelineSnapshot,
   input: DeploymentTaskSuccessProduct & {
     /** The Default Open Port's best Public Address, when the task has one. */
     primaryEntryUrl?: string | null;
+    /**
+     * The template's declared entries (ADR 0081), taken as declared: their
+     * hosts are Ingress hosts the required probes already verified. The Open
+     * Entry is the record's first entry and wins over `primaryEntryUrl`; the
+     * Share Entry becomes the record's share address and is not listed as an
+     * entry, else the Open URL is shared.
+     */
+    templateEntries?: DeploymentTemplateEntryUrls | null;
+    /**
+     * The Port Display Name form of the App Listening Port the Open Entry
+     * reaches, when an AP of the task observed it; absent, an Open Entry no
+     * verified card already lists is headed by nothing.
+     */
+    templateOpenEntryLabel?: string | null;
   }
 ): DeploymentTaskSuccessAttachment | null {
   if (!deploymentTimelineResultReadinessReached(timeline)) {
@@ -1018,15 +1136,31 @@ export function deploymentTaskSuccessFromTimeline(
         return [];
     }
   });
+  const openEntry = templateOpenEntry(
+    input.templateEntries?.open,
+    input.templateOpenEntryLabel
+  );
+  // A URL an Ingress card already lists keeps the card's entry — its label
+  // was verified; the Open Entry is added only when no card names it.
+  const declaredEntries =
+    openEntry == null ||
+    endpointEntries.some((entry) => sameEntryUrl(entry.url, openEntry.url))
+      ? endpointEntries
+      : [openEntry, ...endpointEntries];
   const uniqueEntries = prioritizeSuccessEntries(
-    endpointEntries.filter(
+    declaredEntries.filter(
       (entry, index) =>
-        endpointEntries.findIndex(
-          (candidate) => candidate.url === entry.url
+        declaredEntries.findIndex((candidate) =>
+          sameEntryUrl(candidate.url, entry.url)
         ) === index
     ),
-    input.primaryEntryUrl
+    openEntry?.url ?? input.primaryEntryUrl
   );
+  const declaredShare = input.templateEntries?.share;
+  const shareUrl =
+    declaredShare != null && isShareableEntryUrl(declaredShare)
+      ? declaredShare
+      : deploymentTaskSuccessShareUrl({ entries: uniqueEntries });
   const success = deploymentTaskSuccessFromResultReadiness({
     productCategories: input.productCategories,
     productId: input.productId,
@@ -1040,6 +1174,7 @@ export function deploymentTaskSuccessFromTimeline(
         ...(uniqueEntries.length === 0
           ? { headline: "Deployment completed" }
           : { entries: uniqueEntries }),
+        ...(shareUrl == null ? {} : { shareUrl }),
       };
 }
 

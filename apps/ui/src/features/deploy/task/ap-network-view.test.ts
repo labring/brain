@@ -163,15 +163,18 @@ describe("AP network view", () => {
     expect(
       apNetworkViewAddressForUrl(parsed, "wss://shared.example.com/")?.port
     ).toBe(5200);
-    // Same scheme, unknown path: the scheme still picks the row.
+    // Same host, another path or scheme: no row reaches that address, so a
+    // Success Record entry for it is headed by nothing rather than by the
+    // wrong port.
     expect(
       apNetworkViewAddressForUrl(parsed, "https://shared.example.com/other")
-        ?.port
-    ).toBe(8081);
-    // Unknown scheme falls back to the host alone.
+    ).toBe(undefined);
     expect(
-      apNetworkViewAddressForUrl(parsed, "http://shared.example.com/")?.port
-    ).toBe(5200);
+      apNetworkViewAddressForUrl(parsed, "https://shared.example.com/")
+    ).toBe(undefined);
+    expect(
+      apNetworkViewAddressForUrl(parsed, "http://shared.example.com/")
+    ).toBe(undefined);
     expect(apNetworkViewAddressForUrl(parsed, "https://nobody.example/")).toBe(
       undefined
     );

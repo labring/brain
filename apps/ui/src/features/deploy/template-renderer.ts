@@ -14,6 +14,13 @@ import {
   LAUNCHPAD_APP_LABEL,
   LAUNCHPAD_TEMPLATE_SOURCE_LABEL,
 } from "@/lib/brain-labels";
+import {
+  applyTemplateEntries,
+  type TemplateDeclaredEntries,
+  type TemplateEntryUrls,
+  templateDeclaredEntries,
+} from "./template-entries";
+import { templateHeaderFromInlineYaml } from "./template-inline-yaml";
 import type {
   TemplateDefaultValue,
   TemplateSourceInput,
@@ -72,6 +79,12 @@ export interface RenderTemplateDeploymentInput {
 
 export interface RenderedTemplateDeployment {
   dependentYamls: string[];
+  /**
+   * Template Entries (ADR 0081): the rendered Open and Share URLs the
+   * template declared, the App CR URL standing in for an absent Open.
+   * Absent when the template declares neither.
+   */
+  entries?: TemplateEntryUrls;
   instanceName: string;
   instanceYaml: string;
   resources: TemplateK8sObject[];
@@ -1620,32 +1633,6 @@ function normalizeTemplateInputs(value: unknown): TemplateSourceInput[] {
   );
 }
 
-export function templateHeaderFromInlineYaml(yaml: string): {
-  headerYaml: string;
-  resourceSourceOffset: number;
-} {
-  const marker = /^---[\t ]*(?:#.*)?\r?$/gm;
-  const firstMarker = marker.exec(yaml);
-  if (firstMarker == null) {
-    return { headerYaml: yaml, resourceSourceOffset: yaml.length };
-  }
-  const resourceMarker =
-    yaml.slice(0, firstMarker.index).trim() === ""
-      ? marker.exec(yaml)
-      : firstMarker;
-  if (resourceMarker == null) {
-    return { headerYaml: yaml, resourceSourceOffset: yaml.length };
-  }
-  const resourceSourceOffset =
-    resourceMarker.index +
-    resourceMarker[0].length +
-    (yaml[resourceMarker.index + resourceMarker[0].length] === "\n" ? 1 : 0);
-  return {
-    headerYaml: yaml.slice(0, resourceMarker.index),
-    resourceSourceOffset,
-  };
-}
-
 export function templateSourceFromInlineYaml(yaml: string): {
   source: TemplateSourcePayload;
   templateName: string;
@@ -1804,11 +1791,20 @@ export function renderTemplateDeployment(
   ensureMetadata(instanceResource).name = input.instanceName;
   ensureLabels(ensureMetadata(instanceResource))[OWNER_REFERENCES_LABEL] =
     OWNER_REFERENCES_READY_VALUE;
+  // Template Entries render with the same context as every resource, and the
+  // Open URL presets the Default Open Port on the Service it enters through —
+  // before the documents are dumped, so the annotation ships with the apply.
+  const entries = applyTemplateEntries({
+    declared: templateDeclaredEntries(input.source.templateYaml),
+    docs: resources,
+    render: (value) => renderTemplateString(value, context),
+  });
   const dependents = resources.filter(
     (resource) => resource !== instanceResource
   );
   return {
     dependentYamls: dependents.map(dumpObject),
+    ...(entries === undefined ? {} : { entries }),
     instanceName: input.instanceName,
     instanceYaml: dumpObject(instanceResource),
     resources,
@@ -1821,6 +1817,37 @@ export function renderTemplateDeployment(
             submittedInputKeys: input.identityInputKeys,
           }),
         }),
+  };
+}
+
+/**
+ * Renders declared Template Entries outside a full render — for a template
+ * the provider applied, whose resolved defaults Brain reads back off the
+ * Instance CR and whose inputs it holds in memory. The evaluation context is
+ * the renderer's own, so an entry substitutes exactly as a resource would.
+ */
+export function renderTemplateEntryExpressions(input: {
+  certSecretName?: string;
+  declared: TemplateDeclaredEntries;
+  defaults: Record<string, string>;
+  inputs: Record<string, string>;
+  namespace: string;
+  platformValues?: Record<string, string>;
+  routingDomain?: string;
+}): TemplateDeclaredEntries {
+  const context: EvaluationContext = {
+    ...templatePlatformContext(input),
+    defaults: input.defaults,
+    inputs: input.inputs,
+  };
+  const render = (value: string) => renderTemplateString(value, context);
+  return {
+    ...(input.declared.open === undefined
+      ? {}
+      : { open: render(input.declared.open) }),
+    ...(input.declared.share === undefined
+      ? {}
+      : { share: render(input.declared.share) }),
   };
 }
 

@@ -41,10 +41,12 @@ const handlers = createAssistantConversationHandlers({
   freeTurnsUsage: getFreeTierSnapshot,
   list: listThreadsForOwner,
   read: (owner, chatId) => loadMessagesForOwner(chatId, owner),
-  resolveFreeTier: ({ actor, cookieHeader }) =>
+  resolveFreeTier: ({ actor, cookieHeader, encodedKubeconfig }) =>
     resolveFreeTierPosture({
       accountUserId: actor.accountUserId ?? null,
       cookieHeader,
+      crName: actor.legacyWorkspaceActor,
+      encodedKubeconfig,
       namespace: actor.owner.namespace,
       userUid: actor.owner.userUid,
     }),

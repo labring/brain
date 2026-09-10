@@ -15,6 +15,7 @@ const FORCED_FACTS = {
   balance: {
     debtSuspended: true,
     full: null,
+    isOwner: true,
     paymentDue: false,
     payg: true,
     planCeiling: null,
@@ -22,6 +23,7 @@ const FORCED_FACTS = {
   "payment-due-renew": {
     debtSuspended: false,
     full: null,
+    isOwner: true,
     paymentDue: "renew",
     payg: false,
     planCeiling: null,
@@ -29,6 +31,7 @@ const FORCED_FACTS = {
   "payment-due-resubscribe": {
     debtSuspended: false,
     full: null,
+    isOwner: true,
     paymentDue: "resubscribe",
     payg: false,
     planCeiling: null,
@@ -38,6 +41,7 @@ const FORCED_FACTS = {
   quota: {
     debtSuspended: false,
     full: { label: "CPU", percentUsed: 100, type: "cpu" },
+    isOwner: true,
     paymentDue: false,
     payg: false,
     planCeiling: false,

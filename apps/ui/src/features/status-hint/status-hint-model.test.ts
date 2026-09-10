@@ -11,6 +11,9 @@ import {
 } from "./status-hint-model";
 
 const NOW = new Date("2026-08-25T12:00:00Z");
+const OWNER = { isOwner: true, platformDebt: false } as const;
+const MEMBER = { isOwner: false, platformDebt: false } as const;
+const MEMBER_OWNER_DEBT = { isOwner: false, platformDebt: true } as const;
 
 function subscription(
   overrides: Partial<WorkspaceSubscriptionSummary>
@@ -33,6 +36,7 @@ const QUIET: StatusHintInputs = {
   availableBalanceMicroUnits: 50_000_000,
   lifetimeDeductionMicroUnits: 23_450_000,
   now: NOW,
+  owner: OWNER,
   quota: [
     { label: "CPU", percentUsed: 37.5, type: "cpu" },
     { label: "Memory", percentUsed: 75, type: "memory" },
@@ -201,18 +205,62 @@ test("an unknown lifetime deduction leaves Account Debt unsettled", () => {
   assert.ok(!evaluation.settled.includes("account-debt"));
 });
 
-test("a PAYG workspace reported in debt is Account Debt, not payment-due", () => {
-  // The platform reports it as a DEBT status with no subscription and no
-  // timestamps — CONTEXT.md: never voice it as a subscription expiring.
+test("a PAYG workspace the platform marks suspended is Account Debt, money reads regardless", () => {
+  // The platform's `debt.sealos/status` mark on the namespace is the
+  // verdict itself (ADR-0082) — never voiced as a subscription expiring.
   assert.deepEqual(
     ids({
       ...QUIET,
       availableBalanceMicroUnits: null,
-      subscription: subscription({
-        ...PAYG,
-        lifecycle: "payment-due",
-        warningStage: "expired",
-      }),
+      owner: { isOwner: true, platformDebt: true },
+      subscription: subscription(PAYG),
+    }),
+    ["account-debt"]
+  );
+});
+
+test("a member's own empty Account Balance is not the workspace's Account Debt (ADR-0082)", () => {
+  const evaluation = evaluateStatusHints({
+    ...QUIET,
+    availableBalanceMicroUnits: 0,
+    owner: MEMBER,
+    subscription: subscription(PAYG),
+  });
+  assert.deepEqual(evaluation.hints, []);
+  assert.ok(evaluation.settled.includes("account-debt"));
+});
+
+test("a member is told of the Owner's debt with the ask and no Top up (ADR-0082)", () => {
+  const [hint] = evaluateStatusHints({
+    ...QUIET,
+    owner: MEMBER_OWNER_DEBT,
+    subscription: subscription(PAYG),
+  }).hints;
+  assert.deepEqual(hint, {
+    description:
+      "The owner's account balance is in debt. Ask the workspace owner to top up.",
+    dismissible: false,
+    id: "account-debt",
+    title: "Workspace suspended — owner's balance in debt",
+    tone: "destructive",
+  });
+});
+
+test("an unknown Owner never lets the viewer's balance speak, and leaves Account Debt unsettled", () => {
+  const evaluation = evaluateStatusHints({
+    ...QUIET,
+    availableBalanceMicroUnits: 0,
+    owner: null,
+    subscription: subscription(PAYG),
+  });
+  assert.deepEqual(evaluation.hints, []);
+  assert.ok(!evaluation.settled.includes("account-debt"));
+  // The platform's mark still speaks when the read answered but named no owner.
+  assert.deepEqual(
+    ids({
+      ...QUIET,
+      owner: { isOwner: null, platformDebt: true },
+      subscription: subscription(PAYG),
     }),
     ["account-debt"]
   );
@@ -371,6 +419,7 @@ test("unknown inputs neither light a state nor settle it", () => {
     availableBalanceMicroUnits: null,
     lifetimeDeductionMicroUnits: null,
     now: NOW,
+    owner: null,
     quota: null,
     subscription: null,
   });
@@ -384,6 +433,7 @@ test("unknown inputs neither light a state nor settle it", () => {
       availableBalanceMicroUnits: null,
       lifetimeDeductionMicroUnits: null,
       now: NOW,
+      owner: null,
       quota: null,
       subscription: subscription({}),
     }).settled,
@@ -395,6 +445,7 @@ test("unknown inputs neither light a state nor settle it", () => {
       availableBalanceMicroUnits: null,
       lifetimeDeductionMicroUnits: null,
       now: NOW,
+      owner: OWNER,
       quota: null,
       subscription: subscription(PAYG),
     }).settled,

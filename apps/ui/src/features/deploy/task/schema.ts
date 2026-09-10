@@ -219,6 +219,12 @@ export type DeployBillingEvidence =
       availableBalanceMicroUnits: number | null;
       checkedAt: string;
       kind: "account-debt";
+      /**
+       * Whether the launching actor was the Workspace Owner (ADR-0082);
+       * null when unknown. Absent on records from before the field
+       * existed, which were judged on the actor's own balance.
+       */
+      owner?: boolean | null;
     }
   | {
       kind: "quota-full";

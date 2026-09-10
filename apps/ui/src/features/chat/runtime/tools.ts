@@ -8,9 +8,9 @@ import {
 } from "@/features/chat/agui/gen-ui-tool";
 import { warmChatDevboxSkills } from "@/features/chat/devbox/chat-runtime";
 import type { AssistantContextPayload } from "@/features/chat/persistence/types";
-import { createChatBashTool } from "@/features/chat/tool/chat-bash-tool";
 import { createSearchDeployCatalogTool } from "@/features/chat/tool/chat-deploy-catalog-tool";
 import { createDeployTaskTools } from "@/features/chat/tool/chat-deploy-task-tool";
+import { createChatDevboxTools } from "@/features/chat/tool/chat-devbox-tools";
 import { navigateAppTool } from "@/features/chat/tool/chat-navigate-app-tool";
 import { openProjectSurfaceTool } from "@/features/chat/tool/chat-open-project-surface-tool";
 import { createChatProductTools } from "@/features/chat/tool/chat-product-tools";
@@ -30,6 +30,7 @@ import { readApiOpenApiDocsTool } from "@/features/chat/tool/read-api-openapi-do
 import type { DeployBillingActor } from "@/features/deploy/task/billing-failure-judgment";
 
 import { CHAT_BASE_SYSTEM_PROMPT } from "./model";
+import { CHAT_TOOL_APPROVAL } from "./tool-approval";
 import { buildAssistantWorkspaceContextPrompt } from "./workspace-context-prompt";
 
 const emitGenUISpecInputSchema = genUISpecInputSchema.extend({
@@ -47,6 +48,7 @@ const emitGenUISpec = tool({
 
 export interface ChatToolset {
   systemPrompt: string;
+  toolApproval: typeof CHAT_TOOL_APPROVAL;
   tools: ToolSet;
 }
 
@@ -75,7 +77,7 @@ export async function buildChatToolset({
   workspaceUserUid: string;
   assistantContext?: AssistantContextPayload;
 }): Promise<ChatToolset> {
-  const { tools: bashTools, lazySandbox } = await createChatBashTool({
+  const { tools: devboxTools, lazySandbox } = createChatDevboxTools({
     kubeconfig,
     namespace: kubernetesNamespace,
   });
@@ -115,7 +117,7 @@ export async function buildChatToolset({
     sliceOpenApiDocs: sliceOpenApiDocsTool,
     loadSkill: createLoadSkillTool(skillIndex, lazySandbox),
     loadSkillResource: createLoadSkillResourceTool(skillIndex, lazySandbox),
-    ...bashTools,
+    ...devboxTools,
   } as unknown as ToolSet;
 
   const workspaceBlock = buildAssistantWorkspaceContextPrompt({
@@ -131,5 +133,5 @@ export async function buildChatToolset({
 
   const systemPrompt = systemPromptParts.join("\n\n");
 
-  return { tools, systemPrompt };
+  return { toolApproval: CHAT_TOOL_APPROVAL, tools, systemPrompt };
 }

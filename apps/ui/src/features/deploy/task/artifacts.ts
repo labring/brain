@@ -2,13 +2,13 @@ import YAML from "yaml";
 
 import { childResourceName } from "@/features/deploy/project-child-resource-name";
 import { joinKubeYamlDocuments } from "@/features/deploy/render-yaml-template";
+import { templateHeaderFromInlineYaml } from "@/features/deploy/template-inline-yaml";
 import {
   evaluateTemplateCondition,
   type RenderedTemplateDeployment,
   renderTemplateDeploymentFromYaml,
   resolveTemplateDeclarationState,
   type TemplateEvaluationContext,
-  templateHeaderFromInlineYaml,
   templateSourceFromInlineYaml,
 } from "@/features/deploy/template-renderer";
 

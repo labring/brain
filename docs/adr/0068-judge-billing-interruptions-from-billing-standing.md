@@ -40,3 +40,8 @@ Two divergences between Brain's re-implemented judgment and the platform's own d
 - **Both debt formulas replicate the platform's never-billed guard.** Upstream skips accounts with zero lifetime deductions (`DeductionBalance == 0`), so a fresh zero-balance account — e.g. a new user whose free-plan gift was withheld — stays in good standing and is never suspended. Brain's `available <= 0` check now applies only to accounts that have ever been billed, in the client inputs and the server standing alike; without this, Brain declared a debt the platform never enters.
 
 The zero-inclusive threshold itself is confirmed correct: upstream treats only a strictly positive available amount (`Balance − DeductionBalance + UsableCredits > 0`) as good standing, so exactly zero on an ever-billed account is DebtPeriod and suspension.
+
+## Addendum (2026-09-09): the standing is the Workspace Owner's, not the caller's
+
+The judgment above reads the *caller's* account (ADR-0060 signs every read with the Workspace Actor's own uid) and treats it as the workspace's standing. In a shared Pay-As-You-Go workspace that is the wrong account: the platform settles and suspends a workspace against its Workspace Owner's balance alone, and a member's own balance decides nothing there. ADR-0082 re-scopes the debt input — the `debt.sealos/status` namespace annotation carries the platform's verdict for everyone, and the available-balance formula runs only when the caller is the Owner (`user.sealos.io/owner` label equals the verified `userCrName`). The "platform-reported PAYG debt" path named in `accountDebtHolds` is also corrected there: `/workspace-subscription/info` returns no status for a PAYG workspace, so that path never fired on a real one.
+
