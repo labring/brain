@@ -935,7 +935,8 @@ async function runChatPipeline(input: {
     const response = await withLangfuseChatTrace({
       chatId,
       chatTurnId,
-      userId: owner.userUid,
+      // Group telemetry by the verified workspace, matching Devbox scope.
+      userId: owner.namespace,
       callback: (trace) => {
         if (isLangfuseTelemetryEnabled()) {
           try {
