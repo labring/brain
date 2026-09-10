@@ -33,13 +33,13 @@ const {
 
 test("failed integration registration disables telemetry and shuts down the SDK", async () => {
   const previous = {
-    LANGFUSE_HOST: process.env.LANGFUSE_HOST,
+    LANGFUSE_BASE_URL: process.env.LANGFUSE_BASE_URL,
     LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY,
     LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,
   };
   try {
     Object.assign(process.env, {
-      LANGFUSE_HOST: "https://langfuse.example.test",
+      LANGFUSE_BASE_URL: "https://langfuse.example.test",
       LANGFUSE_PUBLIC_KEY: "pk-test",
       LANGFUSE_SECRET_KEY: "sk-test",
     });

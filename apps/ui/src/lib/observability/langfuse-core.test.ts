@@ -15,12 +15,23 @@ test("disables Langfuse when credentials are absent or incomplete", () => {
   );
 });
 
+test("does not accept the removed host environment variable", () => {
+  assert.equal(
+    getLangfuseConfigFromEnv({
+      LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+      LANGFUSE_SECRET_KEY: "sk-lf-test",
+      LANGFUSE_HOST: "https://langfuse.example.test",
+    }),
+    null
+  );
+});
+
 test("trims credentials and requires an explicit host", () => {
   assert.deepEqual(
     getLangfuseConfigFromEnv({
       LANGFUSE_PUBLIC_KEY: " pk-lf-test ",
       LANGFUSE_SECRET_KEY: " sk-lf-test ",
-      LANGFUSE_HOST: " https://langfuse.example.test/// ",
+      LANGFUSE_BASE_URL: " https://langfuse.example.test/// ",
     }),
     {
       publicKey: "pk-lf-test",
@@ -32,7 +43,7 @@ test("trims credentials and requires an explicit host", () => {
     getLangfuseConfigFromEnv({
       LANGFUSE_PUBLIC_KEY: "pk-lf-test",
       LANGFUSE_SECRET_KEY: "sk-lf-test",
-      LANGFUSE_HOST: "   ",
+      LANGFUSE_BASE_URL: "   ",
     }),
     null
   );
@@ -43,7 +54,7 @@ for (const host of [undefined, "", "   "]) {
     const env = {
       LANGFUSE_PUBLIC_KEY: "pk-test",
       LANGFUSE_SECRET_KEY: "sk-test",
-      LANGFUSE_HOST: host,
+      LANGFUSE_BASE_URL: host,
     };
     assert.equal(getLangfuseConfigFromEnv(env), null);
   });
@@ -54,7 +65,7 @@ test("allows explicitly configured Langfuse Cloud", () => {
     getLangfuseConfigFromEnv({
       LANGFUSE_PUBLIC_KEY: "pk-test",
       LANGFUSE_SECRET_KEY: "sk-test",
-      LANGFUSE_HOST: "https://cloud.langfuse.com",
+      LANGFUSE_BASE_URL: "https://cloud.langfuse.com",
     })?.baseUrl,
     "https://cloud.langfuse.com"
   );

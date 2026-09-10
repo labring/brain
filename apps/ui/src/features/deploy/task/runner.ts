@@ -1116,15 +1116,15 @@ export function buildCodexGatewayEnv(
 
   const langfusePublicKey = compactEnvValue(process.env.LANGFUSE_PUBLIC_KEY);
   const langfuseSecretKey = compactEnvValue(process.env.LANGFUSE_SECRET_KEY);
-  const langfuseHost = compactEnvValue(process.env.LANGFUSE_HOST);
+  const langfuseBaseUrl = compactEnvValue(process.env.LANGFUSE_BASE_URL);
   if (langfusePublicKey != null) {
     env.LANGFUSE_PUBLIC_KEY = langfusePublicKey;
   }
   if (langfuseSecretKey != null) {
     env.LANGFUSE_SECRET_KEY = langfuseSecretKey;
   }
-  if (langfuseHost != null) {
-    env.LANGFUSE_HOST = langfuseHost;
+  if (langfuseBaseUrl != null) {
+    env.LANGFUSE_BASE_URL = langfuseBaseUrl;
   }
 
   return env;

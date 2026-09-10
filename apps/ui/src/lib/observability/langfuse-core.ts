@@ -20,7 +20,8 @@ export function getLangfuseConfigFromEnv(
   const publicKey = env.LANGFUSE_PUBLIC_KEY?.trim() ?? "";
   const secretKey = env.LANGFUSE_SECRET_KEY?.trim() ?? "";
 
-  const baseUrl = env.LANGFUSE_HOST?.trim().replace(TRAILING_SLASHES, "") ?? "";
+  const baseUrl =
+    env.LANGFUSE_BASE_URL?.trim().replace(TRAILING_SLASHES, "") ?? "";
 
   if (publicKey === "" || secretKey === "" || baseUrl === "") {
     return null;

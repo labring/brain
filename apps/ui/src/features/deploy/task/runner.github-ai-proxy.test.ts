@@ -27,7 +27,7 @@ const ENV_KEYS = [
   "GITHUB_DEPLOY_MODEL",
   "GITHUB_DEPLOY_OPENAI_API_KEY",
   "GITHUB_DEPLOY_OPENAI_BASE_URL",
-  "LANGFUSE_HOST",
+  "LANGFUSE_BASE_URL",
   "LANGFUSE_PUBLIC_KEY",
   "LANGFUSE_SECRET_KEY",
   "SYSTEM_OPENAI_API_KEY",
@@ -244,7 +244,7 @@ describe("deployment AI Proxy credentials", () => {
       "https://brain.test/api/deploy-agent/mcp/v1";
     delete process.env.GITHUB_DEPLOY_OPENAI_API_KEY;
     delete process.env.GITHUB_DEPLOY_OPENAI_BASE_URL;
-    delete process.env.LANGFUSE_HOST;
+    delete process.env.LANGFUSE_BASE_URL;
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
   });
@@ -386,15 +386,32 @@ describe("deployment AI Proxy credentials", () => {
   it("forwards trimmed LANGFUSE_* values when they are set", () => {
     process.env.LANGFUSE_PUBLIC_KEY = "  pk-lf-test  ";
     process.env.LANGFUSE_SECRET_KEY = " sk-lf-test ";
-    process.env.LANGFUSE_HOST = " https://langfuse.example.com ";
+    process.env.LANGFUSE_BASE_URL = " https://langfuse.example.com ";
     expect(buildCodexGatewayEnv(RESOLVED_GATEWAY_CREDENTIALS)).toEqual({
       CODEX_GATEWAY_MODEL: "deploy-model",
       CODEX_GATEWAY_OPENAI_API_KEY: "resolved-key",
       CODEX_GATEWAY_OPENAI_BASE_URL: "https://resolved.example/v1",
       LANGFUSE_PUBLIC_KEY: "pk-lf-test",
       LANGFUSE_SECRET_KEY: "sk-lf-test",
-      LANGFUSE_HOST: "https://langfuse.example.com",
+      LANGFUSE_BASE_URL: "https://langfuse.example.com",
     });
+  });
+
+  it("does not forward the removed Langfuse host variable", () => {
+    const previous = process.env.LANGFUSE_HOST;
+    try {
+      process.env.LANGFUSE_HOST = "https://old-langfuse.example.com";
+      delete process.env.LANGFUSE_BASE_URL;
+      const env = buildCodexGatewayEnv(RESOLVED_GATEWAY_CREDENTIALS);
+      expect(env.LANGFUSE_HOST).toBeUndefined();
+      expect(env.LANGFUSE_BASE_URL).toBeUndefined();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.LANGFUSE_HOST;
+      } else {
+        process.env.LANGFUSE_HOST = previous;
+      }
+    }
   });
 
   it("uses GITHUB_DEPLOY_OPENAI_* when both are set", () => {
