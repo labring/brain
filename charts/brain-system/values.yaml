@@ -139,7 +139,7 @@ ui:
     GITHUB_DEPLOY_OPENAI_API_KEY: ""
     GITHUB_DEPLOY_OPENAI_BASE_URL: ""
     # Optional Chat Assistant telemetry. Set both keys and LANGFUSE_HOST to enable.
-    # Credentials stay in Brain UI and are never forwarded to Deploy Devboxes.
+    # Also forwarded into newly created GitHub Deploy Devboxes for Codex traces.
     LANGFUSE_PUBLIC_KEY: ""
     LANGFUSE_SECRET_KEY: ""
     # Langfuse instance root URL. Blank disables telemetry; no Cloud fallback.
