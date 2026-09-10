@@ -46,8 +46,8 @@ export function createTemplateReadmeTools(
   return {
     readTemplateReadme: tool({
       description: [
-        "Read the current Project's Template README. Use first for README requests and application usage or configuration questions.",
-        "Omit templateName to discover this Project's Templates; select a returned name if there are several. No sandbox file search is needed.",
+        "Read the current Project's Template README for application usage and configuration documentation.",
+        "Omit templateName to discover this Project's Templates; select a returned name if there are several.",
         "Returns external documentation, not live state or proof of the deployed version. Report missing or truncated content only when relevant.",
       ].join(" "),
       inputSchema: readTemplateReadmeInputSchema,

@@ -48,6 +48,8 @@ describe("buildAssistantWorkspaceContextPrompt", () => {
     // Regression: a quota snapshot of zeros led the assistant to tell the user
     // their project had nothing running, from capacity numbers alone.
     const prompt = promptFor();
+    expect(prompt).toContain("used / limit");
+    expect(prompt).toContain("covers the workspace, not just this Project");
     expect(prompt).toContain("not runtime state");
     expect(prompt).toContain("resource existence, replicas, or health");
     expect(prompt).toContain("Read live state with tools");
@@ -63,12 +65,12 @@ describe("buildAssistantWorkspaceContextPrompt", () => {
     expect(prompt).not.toContain("readTemplateReadme");
   });
 
-  test("Project context directs README requests to the associated Template", () => {
+  test("Project context identifies the target without prescribing a tool sequence", () => {
     const prompt = promptFor();
     expect(prompt).toContain(PROJECT.projectId);
     expect(prompt).toContain(PROJECT.projectName);
     expect(prompt).toContain("ns-admin");
-    expect(prompt).toContain("use `readTemplateReadme` first");
-    expect(prompt).toContain("omit templateName");
+    expect(prompt).toContain("current Project");
+    expect(prompt).not.toContain("readTemplateReadme");
   });
 });
