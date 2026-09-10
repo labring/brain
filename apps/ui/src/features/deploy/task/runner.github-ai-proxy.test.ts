@@ -398,6 +398,7 @@ describe("deployment AI Proxy credentials", () => {
   });
 
   it("does not forward the removed Langfuse host variable", () => {
+    /* eslint-disable turbo/no-undeclared-env-vars -- Regression test intentionally sets the removed variable, which must stay out of turbo.json. */
     const previous = process.env.LANGFUSE_HOST;
     try {
       process.env.LANGFUSE_HOST = "https://old-langfuse.example.com";
@@ -412,6 +413,7 @@ describe("deployment AI Proxy credentials", () => {
         process.env.LANGFUSE_HOST = previous;
       }
     }
+    /* eslint-enable turbo/no-undeclared-env-vars */
   });
 
   it("uses GITHUB_DEPLOY_OPENAI_* when both are set", () => {
