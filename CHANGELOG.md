@@ -2,6 +2,37 @@
 
 All notable changes to Brain are documented in this file.
 
+## [2.0.14] - 2026-09-10
+
+### Added
+
+- Let the Project Assistant read a Project's Template README to answer usage
+  and configuration questions. Resolve templates from project-scoped deployment
+  sources and adopted instances, with selection when several templates exist.
+  README retrieval supports cancellation, timeouts and response limits. (#339)
+
+### Changed
+
+- Clarify Chat instructions around Sealos capabilities, workspace context and
+  user intent. Group Chat Langfuse traces by verified workspace namespace. (#339)
+
+### Fixed
+
+- Harden managed deployment setup by writing ownership labels to an atomic JSON
+  file, preserving the runtime-owned kubeconfig path and deriving Sealos region
+  settings from the request kubeconfig. Handle repeated tool calls, retry errors,
+  cancellation and supersession consistently. (#341)
+- Restore trimmed `LANGFUSE_*` forwarding into newly created GitHub Deploy
+  Devboxes so Codex tracing can resume. (#341)
+
+### Upgrade Notes
+
+- No database migrations or new operator-configured environment variables are
+  required. Template README retrieval requires support from the Template Provider
+  and a recorded Template source in the Project.
+- Existing Deploy Devboxes retain their environment until recreated; only new
+  Devboxes receive the restored Langfuse settings.
+
 ## [2.0.13] - 2026-09-09
 
 ### Added
