@@ -413,3 +413,94 @@ export async function deployTemplateInstance(input: {
   }
   return payload;
 }
+
+export class TemplateReadmePayloadTooLargeError extends Error {
+  constructor() {
+    super(
+      "Template Provider response exceeds 2 MiB (including YAML and README)."
+    );
+    this.name = "TemplateReadmePayloadTooLargeError";
+  }
+}
+
+/** Reuse the provider's README retrieval and cache; never fetch a model-supplied URL. */
+export async function getTemplateReadme(input: {
+  encodedKubeconfig: string;
+  language?: string;
+  signal?: AbortSignal;
+  templateName: string;
+}): Promise<{ content: string; truncated: boolean }> {
+  const timeout = AbortSignal.timeout(15_000);
+  const signal = input.signal
+    ? AbortSignal.any([input.signal, timeout])
+    : timeout;
+  try {
+    const response = await fetch(
+      providerUrl("/api/getTemplateSource", {
+        includeReadme: "true",
+        locale: input.language ?? "en",
+        templateName: input.templateName,
+      }),
+      {
+        headers: {
+          Authorization: headerSafeEncodedKubeconfig(input.encodedKubeconfig),
+        },
+        redirect: "error",
+        signal,
+        cache: "no-store",
+      }
+    );
+    if (!(response.ok && response.body)) {
+      await response.body?.cancel();
+      throw new Error("Template README is unavailable.");
+    }
+    // The endpoint also returns template YAML. Bound the entire response before parsing it.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    let bytes = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          break;
+        }
+        bytes += chunk.value.byteLength;
+        if (bytes > 2 * 1024 * 1024) {
+          throw new TemplateReadmePayloadTooLargeError();
+        }
+        text += decoder.decode(chunk.value, { stream: true });
+      }
+      text += decoder.decode();
+    } finally {
+      await reader.cancel();
+      reader.releaseLock();
+    }
+    const body: unknown = JSON.parse(text);
+    const wrapped = objectValue(body);
+    if (
+      wrapped?.code !== undefined &&
+      wrapped.code !== 200 &&
+      wrapped.code !== 20_000
+    ) {
+      throw new Error("Template README is unavailable.");
+    }
+    const data = objectValue(wrapped?.data ?? body);
+    if (typeof data?.readmeContent !== "string") {
+      throw new Error("Template provider returned no README.");
+    }
+    const content = data.readmeContent;
+    return {
+      content: content.slice(0, 32_000),
+      truncated: content.length > 32_000,
+    };
+  } catch (error) {
+    if (input.signal?.aborted) {
+      throw error;
+    }
+    if (timeout.aborted) {
+      throw timeout.reason;
+    }
+    throw error;
+  }
+}

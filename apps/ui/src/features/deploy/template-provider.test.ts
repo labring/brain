@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import {
   deployTemplateInstance,
+  getTemplateReadme,
   getTemplateSource,
   listTemplateCatalog,
+  TemplateReadmePayloadTooLargeError,
 } from "./template-provider-core";
+
+const ABORTED_RE = /aborted/;
 
 const originalFetch = globalThis.fetch;
 const originalProviderUrl = process.env.TEMPLATE_PROVIDER_URL;
@@ -454,4 +458,135 @@ test("deployTemplateInstance prefers the provider Kubernetes diagnostic", async 
       return true;
     }
   );
+});
+
+test("getTemplateReadme requests provider README and returns only bounded documentation", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
+  let requestUrl = "";
+  let options: RequestInit | undefined;
+  globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) => {
+    requestUrl = String(url);
+    options = init;
+    return Promise.resolve(
+      jsonResponse({
+        code: 200,
+        data: {
+          readmeContent: "x".repeat(32_001),
+          appYaml: "private-manifest",
+          source: { token: "private-token" },
+        },
+      })
+    );
+  }) as unknown as typeof fetch;
+  const result = await getTemplateReadme({
+    encodedKubeconfig: "credential",
+    language: "zh",
+    templateName: "memos",
+  });
+  assert.equal(
+    requestUrl,
+    "https://template.example.com/api/getTemplateSource?includeReadme=true&locale=zh&templateName=memos"
+  );
+  assert.equal(options?.redirect, "error");
+  assert.ok(options?.signal);
+  assert.deepEqual(result, { content: "x".repeat(32_000), truncated: true });
+});
+
+test("getTemplateReadme handles disabled README, provider errors, and malformed responses", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
+  for (const body of [
+    { code: 500, data: { readmeContent: "not a result" } },
+    { code: 200, data: {} },
+  ]) {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse(body))) as unknown as typeof fetch;
+    await assert.rejects(
+      getTemplateReadme({
+        encodedKubeconfig: "credential",
+        templateName: "memos",
+      })
+    );
+  }
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      jsonResponse({ code: 200, data: { readmeContent: "" } })
+    )) as unknown as typeof fetch;
+  assert.deepEqual(
+    await getTemplateReadme({
+      encodedKubeconfig: "credential",
+      templateName: "memos",
+    }),
+    { content: "", truncated: false }
+  );
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response("unavailable", { status: 503 })
+    )) as unknown as typeof fetch;
+  await assert.rejects(
+    getTemplateReadme({
+      encodedKubeconfig: "credential",
+      templateName: "memos",
+    })
+  );
+});
+
+test("getTemplateReadme bounds the provider response and propagates cancellation", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      jsonResponse({
+        data: { readmeContent: "short", appYaml: "x".repeat(2 * 1024 * 1024) },
+      })
+    )) as unknown as typeof fetch;
+  await assert.rejects(
+    getTemplateReadme({
+      encodedKubeconfig: "credential",
+      templateName: "memos",
+    }),
+    TemplateReadmePayloadTooLargeError
+  );
+  const controller = new AbortController();
+  controller.abort();
+  globalThis.fetch = ((_url: unknown, init?: RequestInit) => {
+    assert.equal(init?.signal?.aborted, true);
+    return Promise.reject(new Error("aborted"));
+  }) as unknown as typeof fetch;
+  await assert.rejects(
+    getTemplateReadme({
+      encodedKubeconfig: "credential",
+      templateName: "memos",
+      signal: controller.signal,
+    }),
+    ABORTED_RE
+  );
+});
+
+test("README timeout during body reading preserves timeout identity", async () => {
+  process.env.TEMPLATE_PROVIDER_URL = "https://template.example.com";
+  const originalTimeout = AbortSignal.timeout;
+  const controller = new AbortController();
+  AbortSignal.timeout = () => controller.signal;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream({
+          pull(stream) {
+            controller.abort(new DOMException("Timed out", "TimeoutError"));
+            stream.error(new DOMException("Body aborted", "AbortError"));
+          },
+        })
+      )
+    )) as unknown as typeof fetch;
+  try {
+    await assert.rejects(
+      getTemplateReadme({
+        encodedKubeconfig: "credential",
+        templateName: "memos",
+      }),
+      (error: unknown) =>
+        error instanceof Error && error.name === "TimeoutError"
+    );
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+  }
 });

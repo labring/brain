@@ -38,9 +38,9 @@ describe("buildAssistantWorkspaceContextPrompt", () => {
 
   test("forbids reciting the blocks or announcing that one was absent", () => {
     const prompt = promptFor();
-    expect(prompt).toContain("## Attached context blocks");
-    expect(prompt).toContain("Do not describe, enumerate, or summarize");
-    expect(prompt).toContain("was absent or empty");
+    expect(prompt).toContain("## Attached context");
+    expect(prompt).toContain("Do not recite it");
+    expect(prompt).toContain("announce missing blocks");
     expect(prompt).toContain("ask which resource is meant");
   });
 
@@ -48,19 +48,29 @@ describe("buildAssistantWorkspaceContextPrompt", () => {
     // Regression: a quota snapshot of zeros led the assistant to tell the user
     // their project had nothing running, from capacity numbers alone.
     const prompt = promptFor();
+    expect(prompt).toContain("used / limit");
+    expect(prompt).toContain("covers the workspace, not just this Project");
     expect(prompt).toContain("not runtime state");
-    expect(prompt).toContain(
-      "Never infer whether resources exist or are running"
-    );
-    expect(prompt).toContain("read live state with tools");
+    expect(prompt).toContain("resource existence, replicas, or health");
+    expect(prompt).toContain("Read live state with tools");
   });
 
   test("keeps the presentation rules when no project is active", () => {
     // A workspace-scoped chat still gets the quota block, so the rules cannot
     // live behind the project branch.
     const prompt = promptFor({ assistantContext: { kind: "workspace" } });
-    expect(prompt).toContain("No Brain Project is active");
-    expect(prompt).toContain("## Attached context blocks");
+    expect(prompt).toContain("No Project is active");
+    expect(prompt).toContain("## Attached context");
     expect(prompt).toContain("<workspace_resource_context");
+    expect(prompt).not.toContain("readTemplateReadme");
+  });
+
+  test("Project context identifies the target without prescribing a tool sequence", () => {
+    const prompt = promptFor();
+    expect(prompt).toContain(PROJECT.projectId);
+    expect(prompt).toContain(PROJECT.projectName);
+    expect(prompt).toContain("ns-admin");
+    expect(prompt).toContain("current Project");
+    expect(prompt).not.toContain("readTemplateReadme");
   });
 });

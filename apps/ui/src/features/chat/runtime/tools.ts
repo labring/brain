@@ -8,6 +8,7 @@ import {
 } from "@/features/chat/agui/gen-ui-tool";
 import { warmChatDevboxSkills } from "@/features/chat/devbox/chat-runtime";
 import type { AssistantContextPayload } from "@/features/chat/persistence/types";
+import { createTemplateReadmeTools } from "@/features/chat/project-context/tool";
 import { createSearchDeployCatalogTool } from "@/features/chat/tool/chat-deploy-catalog-tool";
 import { createDeployTaskTools } from "@/features/chat/tool/chat-deploy-task-tool";
 import { createChatDevboxTools } from "@/features/chat/tool/chat-devbox-tools";
@@ -105,6 +106,11 @@ export async function buildChatToolset({
   });
 
   const tools = {
+    ...createTemplateReadmeTools({
+      assistantContext,
+      kubeconfig,
+      kubernetesNamespace,
+    }),
     ...deployTaskTools,
     ...productTools,
     ...projectTools,
