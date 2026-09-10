@@ -235,6 +235,7 @@ export function createDeployTaskTools(
     description: [
       "Create a long-running Deployment Task in SealAI.",
       "Use this when the user asks to deploy a Docker image, a database, a template, a GitHub repository, or a prompt.",
+      "Resolve the intended application and source before calling this tool. An unmatched application name or unavailable template catalog is not a request for a prompt deployment; ask the user to clarify first. Use a prompt source only for user-provided requirements or an approach the user has agreed to.",
       "GitHub repository deployments require the user to connect GitHub in Settings. If no connection is available, report that requirement instead of retrying the repository as a prompt or Docker source.",
       "The task resolves or creates its target Project, runs the server-selected Deployment Runner, applies artifacts, and reports progress separately.",
       "Do not provide a runner; Docker and database sources use the Direct Runner, template sources use the Template Runner, and GitHub or prompt sources use the AI Runner.",

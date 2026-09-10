@@ -14,12 +14,11 @@ import {
 } from "@/features/deploy/template-provider-core";
 
 /**
- * Returned when the template provider is unset or unreachable. The model must
- * degrade to a `github`/`prompt` source instead of failing the whole turn, so
- * this is a tool-level result rather than a thrown error.
+ * Provider failures do not establish whether a template exists and must not
+ * authorize switching deployment sources.
  */
 export const DEPLOY_CATALOG_UNAVAILABLE_ERROR =
-  "Template catalog is unavailable; fall back to a prompt source.";
+  "Template catalog is unavailable; template availability is unknown. Explain the lookup failure and ask the user how to proceed. Do not infer a prompt deployment from this failure.";
 
 const SCORE_EXACT_NAME = 100;
 const SCORE_NAME_TOKEN = 60;
@@ -160,7 +159,7 @@ export function buildSearchDeployCatalogDescription(): string {
     "Search the Sealos template catalog for a curated deployment template.",
     "Call this before choosing a Deployment Source whenever the user asks to deploy, install, or run a named application.",
     "Returns ranked candidates with the exact `templateName` to pass to `createDeployTask` as a `template` source, plus the arguments that template requires.",
-    "An empty match list means no curated template exists; fall back to a `github` source when the user named a repository, otherwise a `prompt` source.",
+    "Search uses literal name, title, repository, and description matching; an empty list does not prove that no template exists. Try a likely spelling or alias when useful. If the intended application is still uncertain, ask the user to clarify or provide its repository/image before creating a Project or Deployment Task. Never turn an unmatched application name into a `prompt` deployment.",
   ].join(" ");
 }
 
