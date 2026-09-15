@@ -4,11 +4,10 @@ import { isValidElement, type ReactNode } from "react";
 
 mock.module("server-only", () => ({}));
 
-const {
-  default: AuthBootstrap,
-  DevboxBootstrap,
-  SealosSdkBootstrap,
-} = await import("@/features/shell/auth-bootstrap");
+const { SessionBootstrap } = await import(
+  "@/features/session/session-bootstrap"
+);
+const { DevboxBootstrap } = await import("@/features/shell/devbox-bootstrap");
 const { default: ProjectWorkspaceLayout } = await import(
   "@/features/shell/project-workspace-layout"
 );
@@ -43,11 +42,10 @@ function mountedComponents(
   );
 }
 
-test("billing layout keeps one tab shell and shared auth chrome across tabs", () => {
+test("billing layout keeps one tab shell and the session bootstrap across tabs", () => {
   const mounted = mountedComponents(BillingLayout({ children: null }));
 
-  assert.ok(mounted.has(AuthBootstrap), "AuthBootstrap is mounted");
-  assert.ok(mounted.has(SealosSdkBootstrap), "SealosSdkBootstrap is mounted");
+  assert.ok(mounted.has(SessionBootstrap), "SessionBootstrap is mounted");
   assert.ok(mounted.has(BillingTabShell), "BillingTabShell is mounted");
   assert.equal(
     mounted.has(DevboxBootstrap),

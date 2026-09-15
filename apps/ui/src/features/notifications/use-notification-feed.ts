@@ -6,13 +6,14 @@ import {
   NOTIFICATION_CR_REFRESH_INTERVAL_MS,
   useNotificationCRList,
 } from "@workspace/api/hooks";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-
 import { loadAccountCredits } from "@/features/billing/account-credits";
 import { loadHasToppedUp } from "@/features/billing/account-top-up";
+import { SESSION_SWR_KEYS } from "@/features/session/swr-keys";
+import { useSessionCredentials } from "@/features/session/use-session-credentials";
 import {
   type AppNotification,
   countUnreadNotifications,
@@ -20,7 +21,6 @@ import {
 } from "@/features/shell/app-sidebar-notifications-model";
 import { notificationReadIdsAtom } from "@/features/shell/app-sidebar-notifications-store";
 import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
-import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 import {
   fetchNotificationFeed,
@@ -57,20 +57,20 @@ export interface NotificationFeed {
  * fixture CRs replace the cluster poll.
  */
 export function useNotificationFeed(): NotificationFeed {
-  const appToken = useAtomValue(appTokenAtom).trim();
-  const kubeconfig = useAtomValue(kubeconfigAtom).trim();
-  const namespace = useAtomValue(namespaceAtom).trim();
+  const credentials = useSessionCredentials();
+  const {
+    appToken,
+    kubeconfig,
+    namespace,
+    ready: credentialsReady,
+  } = credentials;
   const [readIds, setReadIds] = useAtom(notificationReadIdsAtom);
   const { data: subscription } = useWorkspaceSubscriptionSummary();
 
-  const credentialsReady =
-    appToken !== "" && kubeconfig !== "" && namespace !== "";
   const credentialKey = kubeconfigCredentialKey(kubeconfig);
 
   const brainFeed = useSWR(
-    credentialsReady
-      ? (["notifications-feed", namespace, credentialKey, appToken] as const)
-      : null,
+    credentialsReady ? SESSION_SWR_KEYS.notificationsFeed(credentials) : null,
     () => fetchNotificationFeed({ appToken, kubeconfig, namespace }),
     {
       refreshInterval: NOTIFICATION_CR_REFRESH_INTERVAL_MS,
@@ -135,7 +135,7 @@ export function useNotificationFeed(): NotificationFeed {
   // for the session.
   const credits = useSWR(
     credentialsReady
-      ? (["notifications-credits", credentialKey, appToken] as const)
+      ? SESSION_SWR_KEYS.notificationsCredits(credentials)
       : null,
     () => loadAccountCredits({ appToken, kubeconfig }),
     {
@@ -147,7 +147,7 @@ export function useNotificationFeed(): NotificationFeed {
   );
   const toppedUp = useSWR(
     credentialsReady
-      ? (["notifications-topped-up", credentialKey, appToken] as const)
+      ? SESSION_SWR_KEYS.notificationsToppedUp(credentials)
       : null,
     () => loadHasToppedUp({ appToken, kubeconfig }),
     { revalidateOnFocus: false, shouldRetryOnError: false }

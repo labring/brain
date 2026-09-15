@@ -20,11 +20,9 @@ import type {
 } from "@/features/projects/explorer/project-explorer.types";
 import {
   appTokenAtom,
-  desktopUserAvatarAtom,
-  desktopUserIdAtom,
-  desktopUserNameAtom,
   kubeconfigAtom,
   namespaceAtom,
+  sessionUserAtom,
 } from "@/lib/auth-store";
 
 const projects: ProjectExplorerProject[] = [
@@ -177,9 +175,13 @@ function hydrateAccountAtoms(workspace: string) {
   store.set(appTokenAtom, "desktop-app-token");
   store.set(kubeconfigAtom, "apiVersion: v1");
   store.set(namespaceAtom, workspace);
-  store.set(desktopUserIdAtom, ACCOUNT_USER.id);
-  store.set(desktopUserNameAtom, ACCOUNT_USER.name);
-  store.set(desktopUserAvatarAtom, "");
+  store.set(sessionUserAtom, {
+    avatar: "",
+    crName: "ada",
+    name: ACCOUNT_USER.name,
+    userId: ACCOUNT_USER.id,
+    userUid: "user-uid-ada",
+  });
 }
 
 mock.module("next/navigation", () => ({

@@ -7,7 +7,6 @@ import {
   type DevMockResolution,
   resolveDevMock,
 } from "@/features/dev-mock/server/resolve";
-import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
 
 import { WORKSPACE_OWNER_FIXTURE_PATHNAME } from "./pathnames";
 
@@ -165,16 +164,8 @@ function daysFromNow(days: number): string {
   return new Date(Date.now() + days * DAY_IN_MILLISECONDS).toISOString();
 }
 
-function defaultWorkspace(): string {
-  try {
-    const decoded = decodeURIComponent(
-      process.env.NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG ?? ""
-    ).trim();
-    return namespaceFromKubeconfigText(decoded) ?? "ns-mock";
-  } catch {
-    return "ns-mock";
-  }
-}
+/** The workspace fixtures address when the request names none. */
+const DEFAULT_MOCK_WORKSPACE = "ns-mock";
 
 const MOCK_INVOICE_INFO = {
   ID: "inv-mock-1",
@@ -1016,7 +1007,7 @@ export function resolveBillingDevMock(
 export function billingDevMockWorkspace(requested: unknown): string {
   return typeof requested === "string" && requested.trim() !== ""
     ? requested
-    : defaultWorkspace();
+    : DEFAULT_MOCK_WORKSPACE;
 }
 
 export async function billingDevMockResponse(

@@ -7,7 +7,6 @@ import {
   updateProjectNavigationPreferences,
 } from "@/lib/project-persistence/navigation-preferences";
 import { authorizeRequestNamespace } from "@/lib/request-kubeconfig-auth";
-import { hasDevCredentialBypass } from "@/lib/server-credentials";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,10 +26,6 @@ async function authorizeNamespace(
   request: Request,
   namespace: string
 ): Promise<Response | null> {
-  if (hasDevCredentialBypass()) {
-    return null;
-  }
-
   const authorization = await authorizeRequestNamespace(request, {
     namespace,
     subject: "Project navigation preferences",

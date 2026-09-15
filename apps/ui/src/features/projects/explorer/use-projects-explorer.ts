@@ -88,7 +88,7 @@ export function projectHistoryErrorEmptyState(error: unknown):
   if (message.startsWith("API 401:")) {
     return {
       description:
-        "Project history is waiting for workspace credentials. Open Brain inside Sealos Desktop or configure NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG for local development.",
+        "Project history is waiting for workspace credentials. Open Brain inside Sealos Desktop, or set DEV_GLOBAL_TOKEN for local development.",
       title: "Workspace credentials unavailable",
     };
   }
