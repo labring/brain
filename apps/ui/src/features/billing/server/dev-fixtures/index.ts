@@ -8,6 +8,7 @@ import {
   resolveDevMock,
 } from "@/features/dev-mock/server/resolve";
 
+import { workspacePlanNameFromSubscription } from "../../workspace-plan-name";
 import { WORKSPACE_OWNER_FIXTURE_PATHNAME } from "./pathnames";
 
 /**
@@ -649,13 +650,12 @@ const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
   }) => {
     const plans: Record<string, string | null> = {};
     for (const workspace of searchParams.getAll("workspace")) {
-      const subscription = subscriptionPayload(scenario, workspace);
       plans[workspace] =
-        workspace === PAYG_SWITCHER_WORKSPACE ||
-        subscription.type === "PAYG" ||
-        subscription.Status === "DELETED"
+        workspace === PAYG_SWITCHER_WORKSPACE
           ? null
-          : String(subscription.PlanName);
+          : workspacePlanNameFromSubscription({
+              subscription: subscriptionPayload(scenario, workspace),
+            });
     }
     return { plans };
   },

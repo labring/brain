@@ -31,7 +31,6 @@ import {
   workspaceSwitchUrl,
 } from "@/features/workspace/workspace-switch-core";
 import {
-  embeddingOrigin,
   isSwitchAvailable,
   navigateTopWindow,
 } from "@/features/workspace/workspace-switch-environment";
@@ -39,6 +38,16 @@ import { currentWorkspaceAtom, desktopDomainAtom } from "@/lib/auth-store";
 
 export const SWITCH_UNAVAILABLE_NOTICE =
   "Switching happens in Sealos Desktop. Open Brain from Desktop to switch.";
+export const SWITCH_PENDING_NOTICE =
+  "Waiting for Sealos Desktop to answer before switching.";
+
+/** Why the "Switch to" rows are disabled, or null when they are live. */
+type SwitchBlock = "outside-desktop" | "desktop-pending" | null;
+
+const SWITCH_BLOCK_NOTICE: Record<NonNullable<SwitchBlock>, string> = {
+  "desktop-pending": SWITCH_PENDING_NOTICE,
+  "outside-desktop": SWITCH_UNAVAILABLE_NOTICE,
+};
 
 const HINT_TEXT_CLASS: Record<WorkspaceSwitcherHint["tone"], string> = {
   danger: "text-red-400",
@@ -113,22 +122,23 @@ function WorkspaceSwitcherMenuRow({
  * Billing — those stay in the account popover.
  */
 function WorkspaceSwitcherMenu({
-  canSwitch,
   current,
   currentBadge,
   onClose,
   onSwitch,
   others,
   plans,
+  switchBlock,
 }: {
-  canSwitch: boolean;
   current: SessionWorkspace;
   currentBadge: WorkspaceSwitcherBadge | null;
   onClose: () => void;
   onSwitch: (workspace: SessionWorkspace) => void;
   others: SessionWorkspace[];
   plans: Record<string, string | null> | undefined;
+  switchBlock: SwitchBlock;
 }) {
+  const canSwitch = switchBlock == null;
   return (
     <div className="flex flex-col gap-2">
       <div
@@ -179,12 +189,12 @@ function WorkspaceSwitcherMenu({
                 <PlanSlot badge={badgeFromPlan(plans, workspace)} />
               </button>
             ))}
-            {canSwitch ? null : (
+            {switchBlock == null ? null : (
               <p
                 className="px-1.5 pt-1 text-muted-foreground text-xs"
                 data-slot="app-sidebar-workspace-switch-notice"
               >
-                {SWITCH_UNAVAILABLE_NOTICE}
+                {SWITCH_BLOCK_NOTICE[switchBlock]}
               </p>
             )}
           </div>
@@ -222,8 +232,9 @@ function WorkspaceSwitcherMenu({
  * opens. When the subscription needs attention the row grows a second line
  * with the hint (the account row carries none of this). In the Collapsed
  * rail only the avatar remains and still opens the popover, to the right.
- * Choosing another Workspace hands the top window to Desktop's deep link;
- * outside the Desktop iframe those rows are disabled with a notice.
+ * Choosing another Workspace hands the top window to Desktop's deep link
+ * built from the SDK host config's cloud domain; outside the Desktop
+ * iframe (or before Desktop answered) those rows are disabled with a notice.
  */
 export function AppSidebarWorkspaceSwitcher() {
   const { state } = useSidebar();
@@ -253,9 +264,13 @@ export function AppSidebarWorkspaceSwitcher() {
   // rail's clipping, so the popover anchors the w-9 icon slot.
   const iconSlotRef = useRef<HTMLSpanElement>(null);
 
-  const cloudDomain =
-    desktopDomain.trim() === "" ? (embeddingOrigin() ?? "") : desktopDomain;
-  const canSwitch = isSwitchAvailable() && cloudDomain !== "";
+  const cloudDomain = desktopDomain.trim();
+  let switchBlock: SwitchBlock = null;
+  if (!isSwitchAvailable()) {
+    switchBlock = "outside-desktop";
+  } else if (cloudDomain === "") {
+    switchBlock = "desktop-pending";
+  }
   const handleSwitch = useCallback(
     (workspace: SessionWorkspace) => {
       const url = workspaceSwitchUrl({
@@ -352,13 +367,13 @@ export function AppSidebarWorkspaceSwitcher() {
         sideOffset={6}
       >
         <WorkspaceSwitcherMenu
-          canSwitch={canSwitch}
           current={current}
           currentBadge={badge}
           onClose={close}
           onSwitch={handleSwitch}
           others={others}
           plans={plans}
+          switchBlock={switchBlock}
         />
       </PopoverContent>
     </Popover>

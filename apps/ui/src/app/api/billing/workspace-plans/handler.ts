@@ -1,10 +1,9 @@
-import { z } from "zod";
-import { isDeletedSubscriptionRecord } from "@/features/billing/billing-plan-data";
 import {
   type AuthorizeWorkspaceActor,
   authorizeBillingActor,
 } from "@/features/billing/server/authorized-proxy";
 import { BILLING_JUDGMENT_TIMEOUT_MS } from "@/features/billing/server/judgment-budget";
+import { workspacePlanNameFromSubscription } from "@/features/billing/workspace-plan-name";
 import type { AccountServiceClient } from "@/lib/account-service/client-core";
 
 /**
@@ -23,15 +22,12 @@ import type { AccountServiceClient } from "@/lib/account-service/client-core";
 
 const SUBSCRIPTION_INFO_PATHNAME =
   "/account/v1alpha1/workspace-subscription/info";
+/**
+ * One read per Workspace fans out to account-service; the cap keeps a
+ * pathological list from turning one Switcher open into hundreds of
+ * upstream calls. Desktop's own Workspace limit sits far below it.
+ */
 const MAX_WORKSPACES_PER_READ = 50;
-
-const workspacePlanSubscriptionSchema = z.object({
-  subscription: z.object({
-    PlanName: z.string().optional(),
-    Status: z.string().optional(),
-    type: z.string().optional(),
-  }),
-});
 
 export interface WorkspacePlansHandlerDependencies {
   authorizeWorkspaceActor: AuthorizeWorkspaceActor;
@@ -46,23 +42,6 @@ function requestedWorkspaces(request: Request): string[] {
     .map((workspace) => workspace.trim())
     .filter((workspace) => workspace !== "");
   return [...new Set(workspaces)].slice(0, MAX_WORKSPACES_PER_READ);
-}
-
-function planNameFromPayload(payload: unknown): string | null {
-  const parsed = workspacePlanSubscriptionSchema.safeParse(payload);
-  if (!parsed.success) {
-    return null;
-  }
-  const { PlanName, Status, type } = parsed.data.subscription;
-  const planName = PlanName?.trim() ?? "";
-  if (
-    type === "PAYG" ||
-    planName === "" ||
-    isDeletedSubscriptionRecord(Status ?? "")
-  ) {
-    return null;
-  }
-  return planName;
 }
 
 export function createWorkspacePlansHandler(
@@ -106,7 +85,7 @@ export function createWorkspacePlansHandler(
           await response.body?.cancel();
           return null;
         }
-        return planNameFromPayload(await response.json());
+        return workspacePlanNameFromSubscription(await response.json());
       } catch {
         return null;
       }

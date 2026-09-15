@@ -2,7 +2,7 @@
 
 import { useAtomValue } from "jotai";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useProjectId } from "@/features/panes/use-project-id";
@@ -20,13 +20,19 @@ export const PROJECT_NOT_IN_WORKSPACE_NOTICE =
  * route with the Project list and say so. Renders nothing. The Projects
  * Dev Mock's fixture rows are not real Projects, so the guard stands down
  * while it is on.
+ *
+ * The list is an SWR cache that does not revalidate on focus, so a Project
+ * created in another tab is absent from it until something refreshes. A
+ * first "leave" verdict therefore revalidates once and only acts if the
+ * fresh list still lacks the Project — a real Project is never bounced by
+ * a stale cache.
  */
 export function ProjectWorkspaceGuard() {
   const projectId = useProjectId();
   const router = useRouter();
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const namespace = useAtomValue(namespaceAtom);
-  const { devMockActive, projectsLoaded, states } =
+  const { devMockActive, projectsLoaded, refreshProjects, states } =
     useProjectsExplorerReadModel({ kubeconfig, ns: namespace });
   const decision = devMockActive
     ? "stay"
@@ -35,14 +41,29 @@ export function ProjectWorkspaceGuard() {
         projectId,
         projectIds: states.projects.map((project) => project.id),
       });
+  // The Project id whose absence a revalidation has confirmed.
+  const [verifiedMissing, setVerifiedMissing] = useState<string | null>(null);
 
   useEffect(() => {
     if (decision !== "leave") {
       return;
     }
+    if (verifiedMissing !== projectId) {
+      let cancelled = false;
+      refreshProjects()
+        .catch(() => undefined)
+        .then(() => {
+          if (!cancelled) {
+            setVerifiedMissing(projectId);
+          }
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     router.replace("/project");
     toast(PROJECT_NOT_IN_WORKSPACE_NOTICE);
-  }, [decision, router]);
+  }, [decision, projectId, refreshProjects, router, verifiedMissing]);
 
   return null;
 }

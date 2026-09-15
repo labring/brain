@@ -290,7 +290,7 @@ const BRAND_SWAP_TRANSITION =
 const BRAND_SWAP_TRANSITION_REDUCED =
   "transition-opacity duration-200 ease-out-strong";
 const LOGO_REST = "opacity-100";
-const LOGO_REST_MOTION = "scale-100 blur-[0px]";
+const LOGO_REST_MOTION = "scale-100 blur-none";
 const LOGO_SWAPPED =
   "group-focus-visible/brand:opacity-0 [[data-slot=sidebar-container]:hover_&]:opacity-0";
 const LOGO_SWAPPED_MOTION =
@@ -300,7 +300,7 @@ const GLYPH_REST_MOTION = "scale-80 blur-[2px]";
 const GLYPH_SWAPPED =
   "group-focus-visible/brand:opacity-100 [[data-slot=sidebar-container]:hover_&]:opacity-100";
 const GLYPH_SWAPPED_MOTION =
-  "group-focus-visible/brand:scale-100 group-focus-visible/brand:blur-[0px] [[data-slot=sidebar-container]:hover_&]:scale-100 [[data-slot=sidebar-container]:hover_&]:blur-[0px]";
+  "group-focus-visible/brand:scale-100 group-focus-visible/brand:blur-none [[data-slot=sidebar-container]:hover_&]:scale-100 [[data-slot=sidebar-container]:hover_&]:blur-none";
 
 function AppSidebarHeader() {
   const { setOpen, state } = useSidebar();

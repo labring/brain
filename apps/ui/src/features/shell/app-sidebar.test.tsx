@@ -297,7 +297,6 @@ mock.module("@/features/projects/explorer/use-projects-explorer", () => ({
 }));
 
 mock.module("@/features/workspace/workspace-switch-environment", () => ({
-  embeddingOrigin: () => null,
   isSwitchAvailable: () => switchEnvironment.inIframe,
   navigateTopWindow: (url: string) => {
     switchEnvironment.navigations.push(url);
@@ -911,6 +910,35 @@ test("outside the Desktop iframe the Switch to rows are disabled with a notice; 
     },
     true,
     () => hydrateAccountAtoms("ws-switcher-standalone")
+  );
+});
+
+test("inside Desktop, the rows wait for the host config's domain instead of guessing one", async () => {
+  billing.subscription = proSubscription();
+  await withSidebar(
+    async () => {
+      const popover = await openWorkspaceSwitcher();
+      const rows = [
+        ...popover.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="app-sidebar-workspace-switch"]'
+        ),
+      ];
+      assert.equal(
+        rows.every((row) => row.disabled),
+        true
+      );
+      assert.equal(
+        popover
+          .querySelector('[data-slot="app-sidebar-workspace-switch-notice"]')
+          ?.textContent?.includes("Waiting for Sealos Desktop"),
+        true
+      );
+    },
+    true,
+    () => {
+      hydrateAccountAtoms("ws-switcher-no-domain");
+      getDefaultStore().set(desktopDomainAtom, "");
+    }
   );
 });
 
