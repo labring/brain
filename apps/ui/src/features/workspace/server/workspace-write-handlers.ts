@@ -7,8 +7,8 @@ import type { DesktopCallResult } from "@/features/session/server/desktop-client
 
 import { WORKSPACE_ERROR_CODES } from "../workspace-errors";
 import {
+  WORKSPACE_WRITE_OK,
   type WorkspaceInviteLinkResponse,
-  type WorkspaceWriteResponse,
   workspaceDeleteRequestSchema,
   workspaceInviteLinkRequestSchema,
   workspaceMemberAliasRequestSchema,
@@ -42,8 +42,6 @@ import {
  */
 
 type WorkspaceRouteHandler = (request: Request) => Promise<Response>;
-
-const WRITE_OK: WorkspaceWriteResponse = { ok: true };
 
 function createWorkspaceWriteHandler<TBody, TData>(
   entry: WorkspaceRouteEntry,
@@ -91,7 +89,7 @@ export function createWorkspaceRenameHandler(
     workspaceRenameRequestSchema,
     (desktop, token, body) =>
       desktop.namespaceRename(token, body.uid, body.name),
-    () => WRITE_OK,
+    () => WORKSPACE_WRITE_OK,
     dependencies
   );
 }
@@ -104,7 +102,7 @@ export function createWorkspaceDeleteHandler(
     WORKSPACE_ROUTES.delete,
     workspaceDeleteRequestSchema,
     (desktop, token, body) => desktop.namespaceDelete(token, body.uid),
-    () => WRITE_OK,
+    () => WORKSPACE_WRITE_OK,
     dependencies
   );
 }
@@ -135,7 +133,7 @@ export function createWorkspaceMemberRemoveHandler(
     workspaceMemberRemoveRequestSchema,
     (desktop, token, body) =>
       desktop.namespaceRemoveUser(token, body.uid, body.crUid),
-    () => WRITE_OK,
+    () => WORKSPACE_WRITE_OK,
     dependencies
   );
 }
@@ -149,7 +147,7 @@ export function createWorkspaceMemberRoleHandler(
     workspaceMemberRoleRequestSchema,
     (desktop, token, body) =>
       desktop.namespaceModifyRole(token, body.uid, body.crUid, body.role),
-    () => WRITE_OK,
+    () => WORKSPACE_WRITE_OK,
     dependencies
   );
 }
@@ -163,7 +161,7 @@ export function createWorkspaceMemberAliasHandler(
     workspaceMemberAliasRequestSchema,
     (desktop, token, body) =>
       desktop.namespaceSetAlias(token, body.uid, body.crUid, body.alias),
-    () => WRITE_OK,
+    () => WORKSPACE_WRITE_OK,
     dependencies
   );
 }
@@ -177,7 +175,7 @@ export function createWorkspaceTransferHandler(
     workspaceTransferRequestSchema,
     (desktop, token, body) =>
       desktop.namespaceAbdicate(token, body.uid, body.crUid),
-    () => WRITE_OK,
+    () => WORKSPACE_WRITE_OK,
     dependencies
   );
 }

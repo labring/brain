@@ -37,6 +37,11 @@ export const workspaceMemberSchema = z.object({
 
 export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
 
+/** What a member is called on screen: the nickname, or the CR name without one. */
+export function memberDisplayName(member: WorkspaceMember): string {
+  return member.nickname.trim() === "" ? member.crName : member.nickname;
+}
+
 export const workspaceDetailsResponseSchema = z.object({
   members: z.array(workspaceMemberSchema),
   /**

@@ -161,19 +161,26 @@ export function WorkspaceArea() {
   // A Workspace the actor just deleted or left (spec §D.8): the page is
   // already on its way to the current one, so the list's re-read finding
   // the uid gone is no surprise and earns no notice or second navigation.
+  // The mark is spent the one time it is met, so a later visit to that uid
+  // (Back, a stale link) gets the ordinary fallback and notice.
   const departedUid = useRef<string | null>(null);
   const currentUid = current?.uid ?? null;
   const handleGone = useCallback(
     (goneUid: string) => {
-      departedUid.current = goneUid;
-      if (currentUid != null) {
-        router.replace(`/workspace/${currentUid}`);
+      if (currentUid == null) {
+        return;
       }
+      departedUid.current = goneUid;
+      router.replace(`/workspace/${currentUid}`);
     },
     [currentUid, router]
   );
   useEffect(() => {
-    if (redirectTo == null || (uid != null && departedUid.current === uid)) {
+    if (redirectTo == null) {
+      return;
+    }
+    if (uid != null && departedUid.current === uid) {
+      departedUid.current = null;
       return;
     }
     router.replace(redirectTo);

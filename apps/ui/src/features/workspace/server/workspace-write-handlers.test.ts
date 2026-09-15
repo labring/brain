@@ -8,6 +8,7 @@ import {
   WORKSPACE_NAME_MAX_LENGTH,
 } from "../workspace-write-schema";
 import type { WorkspaceRouteDependencies } from "./workspace-route-context";
+import type { WorkspaceRouteEntry } from "./workspace-route-table";
 
 mock.module("server-only", () => ({}));
 const {
@@ -47,7 +48,7 @@ type HandlerFactory = (dependencies: WorkspaceRouteDependencies) => Handler;
 const ROUTES: {
   create: HandlerFactory;
   desktopBody: unknown;
-  entry: { apiPath: string; desktopPath: string };
+  entry: WorkspaceRouteEntry;
   invalidBodies: unknown[];
   name: string;
   validBody: unknown;

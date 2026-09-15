@@ -4,7 +4,7 @@ import { desktopOrigin } from "./workspace-switch-core";
  * The Workspace Invite Link (spec §B.2, §F): Brain's route answers only the
  * code; the page appends it to Desktop's landing page,
  * `https://<Desktop origin>/WorkspaceInvite/?code=<code>`, the same link
- * Desktop's own Team Center hands out. The invitee accepts there; Brain
+ * Desktop's own workspace management hands out. The invitee accepts there; Brain
  * does nothing more and sees the new member on its next read.
  */
 

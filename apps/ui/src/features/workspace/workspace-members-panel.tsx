@@ -24,7 +24,10 @@ import { useState } from "react";
 import type { SessionWorkspace } from "@/features/session/session-schema";
 
 import type { WorkspaceActions } from "./use-workspace-actions";
-import type { WorkspaceMember } from "./workspace-details-schema";
+import {
+  memberDisplayName,
+  type WorkspaceMember,
+} from "./workspace-details-schema";
 import {
   ASSIGNABLE_ROLES,
   gateMemberActions,
@@ -74,12 +77,8 @@ export function formatJoinedDate(iso: string): string {
   });
 }
 
-function memberName(member: WorkspaceMember): string {
-  return member.nickname.trim() === "" ? member.crName : member.nickname;
-}
-
 function MemberAvatar({ member }: { member: WorkspaceMember }) {
-  const name = memberName(member);
+  const name = memberDisplayName(member);
   return (
     <Avatar className="size-8 text-sm" size="default">
       {member.avatarUrl === "" ? null : (
@@ -103,7 +102,7 @@ function RoleCell({
     // Choosing takes effect at once (spec §D.7); the table re-reads after.
     return (
       <AppSelect
-        aria-label={`Role of ${memberName(member)}`}
+        aria-label={`Role of ${memberDisplayName(member)}`}
         disabled={actions.pending}
         onValueChange={(next) => {
           const role = assignableRoleSchema.safeParse(next);
@@ -140,7 +139,7 @@ function MemberRow({
   member: WorkspaceMember;
   showActions: boolean;
 }) {
-  const name = memberName(member);
+  const name = memberDisplayName(member);
   return (
     <TableRow
       className="group/row"

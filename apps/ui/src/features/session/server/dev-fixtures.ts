@@ -11,8 +11,8 @@ import {
   gateWorkspaceActions,
 } from "@/features/workspace/workspace-gating-core";
 import {
+  WORKSPACE_WRITE_OK,
   type WorkspaceInviteLinkResponse,
-  type WorkspaceWriteResponse,
   workspaceDeleteRequestSchema,
   workspaceInviteLinkRequestSchema,
   workspaceMemberAliasRequestSchema,
@@ -331,8 +331,6 @@ async function detailsFixture(
   return mockJson(details);
 }
 
-const WRITE_OK: WorkspaceWriteResponse = { ok: true };
-
 type WriteOutcome =
   | { kind: "ok"; body?: unknown }
   | { kind: "error"; code: string; status: number };
@@ -350,7 +348,7 @@ const NOT_FOUND: WriteOutcome = {
 
 function outcomeResponse(outcome: WriteOutcome): Response {
   return outcome.kind === "ok"
-    ? mockJson(outcome.body ?? WRITE_OK)
+    ? mockJson(outcome.body ?? WORKSPACE_WRITE_OK)
     : mockJson({ error: outcome.code }, outcome.status);
 }
 
@@ -501,7 +499,7 @@ const WORKSPACE_FIXTURES: Record<
     (scenario, state, body) => {
       const actor = actorIn(scenario, body.uid);
       if (actor == null) {
-        return FORBIDDEN;
+        return NOT_FOUND;
       }
       const target = membersOf(state, body.uid).find(
         (member) => member.crUid === body.crUid
@@ -544,7 +542,7 @@ const WORKSPACE_FIXTURES: Record<
     (scenario, state, body) => {
       const actor = actorIn(scenario, body.uid);
       if (actor == null) {
-        return FORBIDDEN;
+        return NOT_FOUND;
       }
       const target = membersOf(state, body.uid).find(
         (member) => member.crUid === body.crUid
@@ -573,7 +571,7 @@ const WORKSPACE_FIXTURES: Record<
     (scenario, state, body) => {
       const actor = actorIn(scenario, body.uid);
       if (actor == null) {
-        return FORBIDDEN;
+        return NOT_FOUND;
       }
       if (actor.role === "Developer") {
         return FORBIDDEN;
@@ -593,7 +591,7 @@ const WORKSPACE_FIXTURES: Record<
     (scenario, state, body) => {
       const gates = workspaceGates(scenario, body.uid);
       if (gates == null) {
-        return FORBIDDEN;
+        return NOT_FOUND;
       }
       if (gates.transfer.kind !== "enabled") {
         return FORBIDDEN;

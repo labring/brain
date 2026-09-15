@@ -5,11 +5,11 @@ import { AppSelect } from "@workspace/ui/components/app-select";
 import { Link2 } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
-
 import type {
   SessionWorkspace,
   WorkspaceRole,
 } from "@/features/session/session-schema";
+import { closeUnlessPending } from "./workspace-dialog-pending";
 
 import { inviteRoleOptions } from "./workspace-gating-core";
 import {
@@ -19,6 +19,8 @@ import {
 import type { AssignableRole } from "./workspace-write-schema";
 
 export const INVITE_LINK_COPIED_NOTICE = "Invite link copied.";
+export const INVITE_LINK_NOT_COPIED_NOTICE =
+  "Couldn't copy the link. Select it to copy it yourself.";
 export const INVITE_LINK_NO_DESKTOP_NOTICE =
   "Couldn't build the link: the Desktop domain is unknown.";
 
@@ -63,7 +65,7 @@ export function WorkspaceInviteDialog({
   const [role, setRole] = useState<AssignableRole>(
     roles.includes(DEFAULT_INVITE_ROLE)
       ? DEFAULT_INVITE_ROLE
-      : ((roles[0] as AssignableRole | undefined) ?? DEFAULT_INVITE_ROLE)
+      : (roles[0] ?? DEFAULT_INVITE_ROLE)
   );
   const [link, setLink] = useState<string | null>(null);
   const selectId = useId();
@@ -79,13 +81,18 @@ export function WorkspaceInviteDialog({
       return;
     }
     setLink(url);
-    if (await copyText(url)) {
-      toast(INVITE_LINK_COPIED_NOTICE);
-    }
+    toast(
+      (await copyText(url))
+        ? INVITE_LINK_COPIED_NOTICE
+        : INVITE_LINK_NOT_COPIED_NOTICE
+    );
   };
 
   return (
-    <AppDialog.Root onOpenChange={onOpenChange} open>
+    <AppDialog.Root
+      onOpenChange={closeUnlessPending(onOpenChange, pending)}
+      open
+    >
       <AppDialog.Content data-slot="workspace-invite-dialog">
         <AppDialog.Header>
           <AppDialog.Title>Invite member</AppDialog.Title>

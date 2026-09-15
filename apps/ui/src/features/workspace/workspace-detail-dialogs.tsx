@@ -3,14 +3,13 @@
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppSelect } from "@workspace/ui/components/app-select";
 import { useId, useState } from "react";
-
 import type { SessionWorkspace } from "@/features/session/session-schema";
-
+import { WorkspaceNameConfirmField } from "./workspace-confirm-field";
 import {
-  nameConfirmed,
-  WorkspaceNameConfirmField,
-} from "./workspace-confirm-field";
-import type { WorkspaceMember } from "./workspace-details-schema";
+  memberDisplayName,
+  type WorkspaceMember,
+} from "./workspace-details-schema";
+import { closeUnlessPending } from "./workspace-dialog-pending";
 import { WORKSPACE_NAME_MAX_LENGTH } from "./workspace-write-schema";
 
 /**
@@ -19,10 +18,6 @@ import { WORKSPACE_NAME_MAX_LENGTH } from "./workspace-write-schema";
  * Leave is a plain confirmation. Each is mounted only while open, so its
  * fields start fresh every time.
  */
-
-function memberDisplayName(member: WorkspaceMember): string {
-  return member.nickname.trim() === "" ? member.crName : member.nickname;
-}
 
 export function WorkspaceRenameDialog({
   onOpenChange,
@@ -39,8 +34,10 @@ export function WorkspaceRenameDialog({
   const inputId = useId();
   const trimmed = name.trim();
   const unchanged = trimmed === workspace.name;
+  // A name Desktop let through longer than the cap can only get shorter.
+  const tooLong = trimmed.length > WORKSPACE_NAME_MAX_LENGTH;
   const submit = async () => {
-    if (trimmed === "" || unchanged) {
+    if (trimmed === "" || unchanged || tooLong) {
       return;
     }
     if (await onRename(trimmed)) {
@@ -48,7 +45,10 @@ export function WorkspaceRenameDialog({
     }
   };
   return (
-    <AppDialog.Root onOpenChange={onOpenChange} open>
+    <AppDialog.Root
+      onOpenChange={closeUnlessPending(onOpenChange, pending)}
+      open
+    >
       <AppDialog.Content data-slot="workspace-rename-dialog" size="sm">
         <AppDialog.Header>
           <AppDialog.Title>Rename workspace</AppDialog.Title>
@@ -66,20 +66,27 @@ export function WorkspaceRenameDialog({
                 Workspace name
               </AppDialog.Label>
               <AppDialog.Input
+                aria-describedby={`${inputId}-limit`}
+                aria-invalid={tooLong ? true : undefined}
                 autoComplete="off"
                 autoFocus
                 id={inputId}
-                maxLength={WORKSPACE_NAME_MAX_LENGTH}
                 onChange={(event) => setName(event.target.value)}
                 value={name}
               />
+              <p
+                className="text-muted-foreground text-xs"
+                id={`${inputId}-limit`}
+              >
+                At most {WORKSPACE_NAME_MAX_LENGTH} characters.
+              </p>
             </AppDialog.Field>
           </form>
         </AppDialog.Body>
         <AppDialog.Footer>
           <AppDialog.Cancel disabled={pending} />
           <AppDialog.Action
-            disabled={trimmed === "" || unchanged}
+            disabled={trimmed === "" || unchanged || tooLong}
             loading={pending}
             onClick={() => {
               submit().catch(() => undefined);
@@ -106,7 +113,10 @@ export function WorkspaceDeleteDialog({
 }) {
   const [typed, setTyped] = useState("");
   return (
-    <AppDialog.Root onOpenChange={onOpenChange} open>
+    <AppDialog.Root
+      onOpenChange={closeUnlessPending(onOpenChange, pending)}
+      open
+    >
       <AppDialog.Content data-slot="workspace-delete-dialog">
         <AppDialog.Header>
           <AppDialog.WarningIcon />
@@ -130,7 +140,7 @@ export function WorkspaceDeleteDialog({
         <AppDialog.Footer>
           <AppDialog.Cancel disabled={pending} />
           <AppDialog.DestructiveAction
-            disabled={!nameConfirmed(typed, workspace.name)}
+            disabled={typed !== workspace.name}
             loading={pending}
             onClick={() => {
               onDelete()
@@ -169,7 +179,10 @@ export function WorkspaceTransferDialog({
   const target = candidates.find((member) => member.crUid === targetCrUid);
   const selectId = useId();
   return (
-    <AppDialog.Root onOpenChange={onOpenChange} open>
+    <AppDialog.Root
+      onOpenChange={closeUnlessPending(onOpenChange, pending)}
+      open
+    >
       <AppDialog.Content data-slot="workspace-transfer-dialog">
         <AppDialog.Header>
           <AppDialog.WarningIcon />
@@ -181,7 +194,7 @@ export function WorkspaceTransferDialog({
             <span className="font-medium text-foreground">
               {workspace.name}
             </span>
-            , its billing included.{" "}
+            .{" "}
             <span
               className="font-medium text-foreground"
               data-slot="workspace-transfer-consequence"
@@ -213,7 +226,7 @@ export function WorkspaceTransferDialog({
         <AppDialog.Footer>
           <AppDialog.Cancel disabled={pending} />
           <AppDialog.DestructiveAction
-            disabled={target == null || !nameConfirmed(typed, workspace.name)}
+            disabled={target == null || typed !== workspace.name}
             loading={pending}
             onClick={() => {
               if (target == null) {
@@ -248,7 +261,10 @@ export function WorkspaceLeaveDialog({
   workspace: SessionWorkspace;
 }) {
   return (
-    <AppDialog.Root onOpenChange={onOpenChange} open>
+    <AppDialog.Root
+      onOpenChange={closeUnlessPending(onOpenChange, pending)}
+      open
+    >
       <AppDialog.Content data-slot="workspace-leave-dialog" size="sm">
         <AppDialog.Header>
           <AppDialog.WarningIcon />

@@ -1,5 +1,10 @@
 import type { WorkspaceRole } from "@/features/session/session-schema";
 
+import {
+  ASSIGNABLE_ROLE_VALUES,
+  type AssignableRole,
+} from "./workspace-write-schema";
+
 /**
  * The Workspace Area's gating (spec §E, mirroring Desktop's `vaildManage`
  * matrix): for each action, whether the actor sees it, sees it disabled
@@ -115,15 +120,13 @@ export function gateMemberActions(
 }
 
 /** The roles a change-role control offers: never Owner (spec §E.4). */
-export const ASSIGNABLE_ROLES: readonly WorkspaceRole[] = [
-  "Manager",
-  "Developer",
-];
+export const ASSIGNABLE_ROLES: readonly AssignableRole[] =
+  ASSIGNABLE_ROLE_VALUES;
 
 /** The roles an actor may put on a Workspace Invite Link (spec §D.6). */
 export function inviteRoleOptions(
   actorRole: WorkspaceRole
-): readonly WorkspaceRole[] {
+): readonly AssignableRole[] {
   switch (actorRole) {
     case "Owner":
       return ASSIGNABLE_ROLES;

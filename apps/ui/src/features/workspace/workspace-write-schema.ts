@@ -34,26 +34,14 @@ export const workspaceRenameRequestSchema = z.object({
   uid: workspaceUidSchema,
 });
 
-export type WorkspaceRenameRequest = z.infer<
-  typeof workspaceRenameRequestSchema
->;
-
 export const workspaceDeleteRequestSchema = z.object({
   uid: workspaceUidSchema,
 });
-
-export type WorkspaceDeleteRequest = z.infer<
-  typeof workspaceDeleteRequestSchema
->;
 
 export const workspaceInviteLinkRequestSchema = z.object({
   role: assignableRoleSchema,
   uid: workspaceUidSchema,
 });
-
-export type WorkspaceInviteLinkRequest = z.infer<
-  typeof workspaceInviteLinkRequestSchema
->;
 
 /** `{ code }`: the client appends it to Desktop's `/WorkspaceInvite/?code=`. */
 export const workspaceInviteLinkResponseSchema = z.object({
@@ -70,19 +58,11 @@ export const workspaceMemberRemoveRequestSchema = z.object({
   uid: workspaceUidSchema,
 });
 
-export type WorkspaceMemberRemoveRequest = z.infer<
-  typeof workspaceMemberRemoveRequestSchema
->;
-
 export const workspaceMemberRoleRequestSchema = z.object({
   crUid: memberCrUidSchema,
   role: assignableRoleSchema,
   uid: workspaceUidSchema,
 });
-
-export type WorkspaceMemberRoleRequest = z.infer<
-  typeof workspaceMemberRoleRequestSchema
->;
 
 /**
  * `alias` arrives as the user typed it; the route trims it and sends
@@ -106,19 +86,11 @@ export const workspaceMemberAliasRequestSchema = z.object({
   uid: workspaceUidSchema,
 });
 
-export type WorkspaceMemberAliasRequest = z.input<
-  typeof workspaceMemberAliasRequestSchema
->;
-
 export const workspaceTransferRequestSchema = z.object({
   /** The member who becomes the Owner; the actor becomes a Developer. */
   crUid: memberCrUidSchema,
   uid: workspaceUidSchema,
 });
-
-export type WorkspaceTransferRequest = z.infer<
-  typeof workspaceTransferRequestSchema
->;
 
 /** What every write route but invite-link answers on success. */
 export const workspaceWriteResponseSchema = z.object({ ok: z.literal(true) });
@@ -126,3 +98,5 @@ export const workspaceWriteResponseSchema = z.object({ ok: z.literal(true) });
 export type WorkspaceWriteResponse = z.infer<
   typeof workspaceWriteResponseSchema
 >;
+
+export const WORKSPACE_WRITE_OK: WorkspaceWriteResponse = { ok: true };

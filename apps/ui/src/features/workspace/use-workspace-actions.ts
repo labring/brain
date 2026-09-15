@@ -40,10 +40,6 @@ export function workspaceLeftNotice(name: string): string {
   return `You left ${name}.`;
 }
 
-export function ownershipTransferredNotice(name: string): string {
-  return `${name} is now the Owner. You're a Developer.`;
-}
-
 /** What happens to the page after a write lands. */
 type Convergence =
   /** Re-read the list and the member table; the page re-gates from them. */
@@ -199,24 +195,14 @@ export function useWorkspaceActions(input: {
       [perform, uid]
     ),
     transfer: useCallback(
-      async (member) => {
-        const done =
-          (await perform(
-            () => transferWorkspaceOwnership({ crUid: member.crUid, uid }),
-            {
-              convergence: "refresh",
-              failureNotice: WORKSPACE_ACTION_FAILED_NOTICES.transfer,
-            }
-          )) != null;
-        if (done) {
-          toast(
-            ownershipTransferredNotice(
-              member.nickname.trim() === "" ? member.crName : member.nickname
-            )
-          );
-        }
-        return done;
-      },
+      async (member) =>
+        (await perform(
+          () => transferWorkspaceOwnership({ crUid: member.crUid, uid }),
+          {
+            convergence: "refresh",
+            failureNotice: WORKSPACE_ACTION_FAILED_NOTICES.transfer,
+          }
+        )) != null,
       [perform, uid]
     ),
   };

@@ -2,10 +2,12 @@
 
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { useId, useState } from "react";
-
 import type { SessionWorkspace } from "@/features/session/session-schema";
-
-import type { WorkspaceMember } from "./workspace-details-schema";
+import {
+  memberDisplayName,
+  type WorkspaceMember,
+} from "./workspace-details-schema";
+import { closeUnlessPending } from "./workspace-dialog-pending";
 import { WORKSPACE_ALIAS_MAX_LENGTH } from "./workspace-write-schema";
 
 /**
@@ -13,10 +15,6 @@ import { WORKSPACE_ALIAS_MAX_LENGTH } from "./workspace-write-schema";
  * submit (an empty alias clears it), removing a member is a plain
  * confirmation. Mounted only while open, so the fields start fresh.
  */
-
-export function memberDisplayName(member: WorkspaceMember): string {
-  return member.nickname.trim() === "" ? member.crName : member.nickname;
-}
 
 export function WorkspaceAliasDialog({
   member,
@@ -41,7 +39,10 @@ export function WorkspaceAliasDialog({
     }
   };
   return (
-    <AppDialog.Root onOpenChange={onOpenChange} open>
+    <AppDialog.Root
+      onOpenChange={closeUnlessPending(onOpenChange, pending)}
+      open
+    >
       <AppDialog.Content data-slot="workspace-alias-dialog" size="sm">
         <AppDialog.Header>
           <AppDialog.Title>
@@ -107,7 +108,10 @@ export function WorkspaceRemoveMemberDialog({
   workspace: SessionWorkspace;
 }) {
   return (
-    <AppDialog.Root onOpenChange={onOpenChange} open>
+    <AppDialog.Root
+      onOpenChange={closeUnlessPending(onOpenChange, pending)}
+      open
+    >
       <AppDialog.Content data-slot="workspace-remove-member-dialog" size="sm">
         <AppDialog.Header>
           <AppDialog.WarningIcon />

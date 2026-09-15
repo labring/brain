@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { WORKSPACE_ROUTES } from "@/features/workspace/server/workspace-route-table";
+import {
+  WORKSPACE_ROUTES,
+  type WorkspaceRouteEntry,
+} from "@/features/workspace/server/workspace-route-table";
 import { workspaceDetailsResponseSchema } from "@/features/workspace/workspace-details-schema";
 import { WORKSPACE_ERROR_CODES } from "@/features/workspace/workspace-errors";
 import { workspaceListResponseSchema } from "@/features/workspace/workspace-list-schema";
@@ -207,7 +210,7 @@ const OWNER_COOKIE = `${sessionDevMockCookie.name}=${sessionDevMockCookie.format
 const ACME_UID = "00000000-0000-4000-8000-000000000002";
 
 async function write(
-  entry: { apiPath: string; desktopPath: string },
+  entry: WorkspaceRouteEntry,
   body: unknown,
   cookie = OWNER_COOKIE
 ): Promise<Response> {

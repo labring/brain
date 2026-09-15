@@ -18,8 +18,9 @@ export function WorkspaceNameConfirmField({
 }) {
   return (
     <AppDialog.Field>
-      <p className="select-text text-sm/5 text-zinc-400">
-        Type <span className="font-mono text-zinc-100">{name}</span> to confirm.
+      <p className="select-text text-muted-foreground text-sm/5">
+        Type <span className="font-mono text-foreground">{name}</span> to
+        confirm.
       </p>
       <AppDialog.Input
         aria-label={`Type ${name} to confirm.`}
@@ -32,8 +33,4 @@ export function WorkspaceNameConfirmField({
       />
     </AppDialog.Field>
   );
-}
-
-export function nameConfirmed(value: string, name: string): boolean {
-  return value === name;
 }
