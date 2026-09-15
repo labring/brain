@@ -57,7 +57,9 @@ function failureOf(
 ): SessionFailure {
   switch (failure.kind) {
     case "desktop_code":
-      if (failure.code === 401) {
+      // Only the global token's rejection means the login is stale; a 401
+      // on a token Desktop just minted is a Desktop anomaly, not a logout.
+      if (step === "regionToken" && failure.code === 401) {
         return { kind: "unauthorized", step };
       }
       if (step === "regionToken" && failure.code === 409) {
@@ -97,13 +99,14 @@ export function resolveTargetWorkspace(input: {
     : { fallback: undefined, target: requested };
 }
 
+/** The list's `nstype` decides Personal; the token's claim is the fallback. */
 function personalWorkspace(
   workspaces: SessionWorkspace[],
   claimedUid: string
 ): SessionWorkspace | null {
   return (
-    workspaces.find((workspace) => workspace.uid === claimedUid) ??
     workspaces.find((workspace) => workspace.isPersonal) ??
+    workspaces.find((workspace) => workspace.uid === claimedUid) ??
     null
   );
 }

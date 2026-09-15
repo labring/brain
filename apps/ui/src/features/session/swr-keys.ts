@@ -56,5 +56,3 @@ export const SESSION_SWR_KEYS = {
   statusHintQuota: sessionKey("status-hint-quota"),
   workspaceOwner: sessionKey("workspace-owner"),
 } as const;
-
-export type SessionSwrKeyName = keyof typeof SESSION_SWR_KEYS;

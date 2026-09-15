@@ -86,12 +86,15 @@ function sessionFor(
   requestedNsid: string | null
 ): BrainSession {
   const workspaces = workspacesFor(scenario);
-  const defaultCurrent = workspaces[1] ?? PERSONAL;
   const requested =
     requestedNsid == null
       ? null
       : workspaces.find((workspace) => workspace.id === requestedNsid);
-  const current = requested ?? defaultCurrent ?? PERSONAL;
+  // Without a nsid (no Desktop shell, no Dev Bridge) the mock stages the
+  // scenario's Team Workspace so its role can be seen; a nsid it does not
+  // know lands in Personal with the notice, exactly like the real path.
+  const staged = workspaces[1] ?? PERSONAL;
+  const current = requested ?? (requestedNsid == null ? staged : PERSONAL);
   return {
     appToken: `mock-app-token-${scenario}`,
     ...(requestedNsid != null && requested == null

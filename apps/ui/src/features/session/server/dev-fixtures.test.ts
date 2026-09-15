@@ -86,5 +86,5 @@ test("a requested nsid that the scenario knows is honoured; an unknown one falls
     )?.json()
   );
   assert.equal(unknown.fallback, "not_member");
-  assert.equal(unknown.workspace.name, "Acme");
+  assert.equal(unknown.workspace.isPersonal, true);
 });

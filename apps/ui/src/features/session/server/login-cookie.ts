@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cookieValueFromHeader } from "@/lib/cookie-header";
+
 /**
  * Desktop writes its global token into the shared login cookie on the parent
  * domain (`.<registrable domain>`, not HttpOnly), so the browser attaches it
@@ -7,24 +9,6 @@ import "server-only";
  * to exactly one place — Desktop's `regionToken` — and never logs it.
  */
 export const SEALOS_AUTH_COOKIE = "sealos_auth_token";
-
-function cookieValue(header: string | null, name: string): string {
-  for (const pair of (header ?? "").split(";")) {
-    const separator = pair.indexOf("=");
-    if (separator === -1) {
-      continue;
-    }
-    if (pair.slice(0, separator).trim() === name) {
-      const raw = pair.slice(separator + 1).trim();
-      try {
-        return decodeURIComponent(raw);
-      } catch {
-        return raw;
-      }
-    }
-  }
-  return "";
-}
 
 /**
  * The global token for this request: the shared login cookie, or, when the
@@ -36,10 +20,11 @@ export function globalTokenFromRequest(
   request: Request,
   env: Record<string, string | undefined> = process.env
 ): string {
-  const fromCookie = cookieValue(
-    request.headers.get("cookie"),
-    SEALOS_AUTH_COOKIE
-  ).trim();
+  const fromCookie =
+    cookieValueFromHeader(
+      request.headers.get("cookie"),
+      SEALOS_AUTH_COOKIE
+    )?.trim() ?? "";
   if (fromCookie !== "") {
     return fromCookie;
   }

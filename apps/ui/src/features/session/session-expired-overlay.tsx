@@ -24,28 +24,85 @@ export function desktopSigninUrl(domain: string): string | null {
 }
 
 /**
- * The "session expired" overlay (spec §A.8): shown when the login cookie
- * itself is stale — the session's own 401, or a second 401 after a silent
- * re-exchange. It is click-through by design: a cross-origin frame cannot
- * navigate its top window without a user gesture, so the button hands
- * `window.top` to Desktop's sign-in page. Outside the Desktop iframe (local
- * development, where `DEV_GLOBAL_TOKEN` stands in for the cookie) there is
- * no Desktop to go to, so the button reloads once the token is refreshed.
+ * The Desktop origin when the host config never answered: the page that
+ * embedded this iframe is Desktop, and the browser records it as the
+ * referrer. Null outside an iframe or without a referrer.
+ */
+function referrerOrigin(): string | null {
+  try {
+    const referrer = document.referrer.trim();
+    return referrer === "" ? null : new URL(referrer).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Copy for the generic session error (spec §A.3): the code, never Desktop text. */
+function sessionErrorDescription(code: string): string {
+  if (code === "workspace_not_inited") {
+    return "Your Sealos account has no Workspace in this region yet. Open Sealos Desktop to finish setting it up, then reload.";
+  }
+  if (code === "desktop_timeout") {
+    return "Sealos Desktop did not answer in time. Reload to try again.";
+  }
+  return "Brain could not establish a session with Sealos Desktop. Reload to try again.";
+}
+
+/**
+ * The session overlays (spec §A.3, §A.8). "Session expired" shows when the
+ * login cookie itself is stale — the session's own 401, or a second 401
+ * after a silent re-exchange. It is click-through by design: a cross-origin
+ * frame cannot navigate its top window without a user gesture, so the
+ * button hands `window.top` to Desktop's sign-in page. Outside the Desktop
+ * iframe (local development, where `DEV_GLOBAL_TOKEN` stands in for the
+ * cookie) there is no Desktop to go to, so the button reloads once the
+ * token is refreshed. Any other establish failure shows the generic session
+ * error with a reload.
  */
 export function SessionExpiredOverlay() {
   const status = useAtomValue(sessionStatusAtom);
   const desktopDomain = useAtomValue(desktopDomainAtom);
-  const signinUrl = desktopSigninUrl(desktopDomain);
   const inIframe = isInsideDesktopIframe();
+  const signinUrl = inIframe
+    ? (desktopSigninUrl(desktopDomain) ??
+      desktopSigninUrl(referrerOrigin() ?? ""))
+    : null;
 
   const handleSignIn = useCallback(() => {
-    if (signinUrl != null && inIframe) {
+    if (signinUrl != null) {
       const top = window.top ?? window;
       top.location.href = signinUrl;
       return;
     }
     window.location.reload();
-  }, [inIframe, signinUrl]);
+  }, [signinUrl]);
+
+  const handleReload = useCallback(() => {
+    window.location.reload();
+  }, []);
+
+  if (status.kind === "error") {
+    return (
+      <AppDialog.Root onOpenChange={() => undefined} open>
+        <AppDialog.Content data-slot="session-error" size="sm">
+          <AppDialog.Header>
+            <AppDialog.WarningIcon />
+            <AppDialog.Title>Session unavailable</AppDialog.Title>
+          </AppDialog.Header>
+          <AppDialog.Body>
+            <AppDialog.Description>
+              {sessionErrorDescription(status.code)}
+            </AppDialog.Description>
+          </AppDialog.Body>
+          <AppDialog.Footer>
+            <AppDialog.Action autoFocus onClick={handleReload}>
+              Reload
+            </AppDialog.Action>
+          </AppDialog.Footer>
+        </AppDialog.Content>
+      </AppDialog.Root>
+    );
+  }
 
   return (
     <AppDialog.Root
@@ -66,7 +123,7 @@ export function SessionExpiredOverlay() {
         </AppDialog.Body>
         <AppDialog.Footer>
           <AppDialog.Action autoFocus onClick={handleSignIn}>
-            {inIframe ? "Sign in again" : "Reload"}
+            {signinUrl == null ? "Reload" : "Sign in again"}
           </AppDialog.Action>
         </AppDialog.Footer>
       </AppDialog.Content>

@@ -31,14 +31,15 @@ export function createSessionFetch(options: {
   const fetchImpl: BrainFetch =
     options.fetchImpl ?? ((url, init) => fetch(url, init));
 
-  const send = (input: string, init: RequestInit | undefined) =>
-    fetchImpl(input, {
-      ...init,
-      headers: {
-        ...(init?.headers as Record<string, string> | undefined),
-        ...regionTokenRequestHeaders(options.store.get(regionalTokenAtom)),
-      },
-    });
+  const send = (input: string, init: RequestInit | undefined) => {
+    const headers = new Headers(init?.headers);
+    for (const [name, value] of Object.entries(
+      regionTokenRequestHeaders(options.store.get(regionalTokenAtom))
+    )) {
+      headers.set(name, value);
+    }
+    return fetchImpl(input, { ...init, headers });
+  };
 
   return async (input, init) => {
     const first = await send(input, init);

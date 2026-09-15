@@ -51,7 +51,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
  * can answer, so an unanswered read is given up quickly instead of holding
  * the session for the SDK's full timeout.
  */
-const OUTSIDE_IFRAME_SDK_TIMEOUT_MS = 1500;
+const OUTSIDE_IFRAME_SDK_TIMEOUT_MS = 2000;
 const INSIDE_IFRAME_SDK_TIMEOUT_MS = 12_000;
 
 function sdkTimeoutMs(): number {

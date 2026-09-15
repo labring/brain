@@ -5,7 +5,6 @@ import {
   SESSION_ERROR_CODES,
   sessionRequestSchema,
 } from "../session-schema";
-import type { DesktopAuthApi } from "./desktop-auth-api";
 import { createDesktopAuthApi } from "./desktop-auth-api";
 import {
   createDesktopClient,
@@ -13,11 +12,7 @@ import {
   desktopApiBaseUrlFromEnv,
 } from "./desktop-client";
 import { globalTokenFromRequest } from "./login-cookie";
-import {
-  type EstablishSessionOutcome,
-  establishBrainSession,
-  type SessionFailure,
-} from "./session-service";
+import { establishBrainSession, type SessionFailure } from "./session-service";
 
 /**
  * `POST /api/session` (ADR-0083, spec §A): the single entry that establishes
@@ -36,10 +31,6 @@ export type SessionLog = (
 
 export interface SessionHandlerDependencies {
   env?: Record<string, string | undefined>;
-  establish?: (
-    input: { globalToken: string; nsid: string | null },
-    desktop: DesktopAuthApi
-  ) => Promise<EstablishSessionOutcome>;
   fetchDesktop?: DesktopFetch;
   log?: SessionLog;
 }
@@ -69,29 +60,44 @@ function sessionResponse(session: BrainSession): Response {
   return Response.json(session, { headers: { "cache-control": "no-store" } });
 }
 
+/** The request body: absent or blank means `{}`; anything else must be JSON. */
+async function requestPayload(
+  request: Request
+): Promise<{ payload: unknown } | { invalid: true }> {
+  const text = (await request.text().catch(() => null))?.trim() ?? "";
+  if (text === "") {
+    return { payload: {} };
+  }
+  try {
+    return { payload: JSON.parse(text) };
+  } catch {
+    return { invalid: true };
+  }
+}
+
 export function createSessionHandler(
   dependencies: SessionHandlerDependencies = {}
 ): (request: Request) => Promise<Response> {
   const env = dependencies.env ?? process.env;
-  const establish = dependencies.establish ?? establishBrainSession;
   const log: SessionLog =
     dependencies.log ??
     ((message, fields) => console.warn(`[session] ${message}`, fields));
 
   return async function handler(request: Request): Promise<Response> {
-    const payload: unknown =
-      request.headers.get("content-length") === "0"
-        ? {}
-        : await request.json().catch(() => null);
-    const parsed = sessionRequestSchema.safeParse(payload ?? {});
-    if (!parsed.success) {
+    const body = await requestPayload(request);
+    const parsed =
+      "invalid" in body
+        ? null
+        : sessionRequestSchema.safeParse(body.payload ?? {});
+    if (parsed == null || !parsed.success) {
       return errorResponse(SESSION_ERROR_CODES.invalidRequest, 400);
     }
     const nsid = parsed.data.nsid?.trim() ?? "";
+    const requestedNsid = nsid !== "";
 
     const globalToken = globalTokenFromRequest(request, env);
     if (globalToken === "") {
-      log("no login cookie on the request", { nsid: nsid !== "" });
+      log("no login cookie on the request", { requestedNsid });
       return errorResponse(SESSION_ERROR_CODES.sessionExpired, 401);
     }
 
@@ -104,15 +110,12 @@ export function createSessionHandler(
       createDesktopClient({ baseUrl, fetch: dependencies.fetchDesktop })
     );
 
-    const outcome = await establish(
-      { globalToken, nsid: nsid === "" ? null : nsid },
+    const outcome = await establishBrainSession(
+      { globalToken, nsid: requestedNsid ? nsid : null },
       desktop
     );
     if (!outcome.ok) {
-      log("establish failed", {
-        ...outcome.failure,
-        requestedNsid: nsid !== "",
-      });
+      log("establish failed", { ...outcome.failure, requestedNsid });
       return sessionFailureResponse(outcome.failure);
     }
     if (outcome.session.fallback != null) {

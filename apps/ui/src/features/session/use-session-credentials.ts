@@ -1,6 +1,7 @@
 "use client";
 
 import { useAtomValue } from "jotai";
+import { useMemo } from "react";
 
 import {
   appTokenAtom,
@@ -20,11 +21,16 @@ export function useSessionCredentials(): SessionCredentials & {
   const kubeconfig = useAtomValue(kubeconfigAtom).trim();
   const namespace = useAtomValue(namespaceAtom).trim();
   const regionalToken = useAtomValue(regionalTokenAtom).trim();
-  return {
-    appToken,
-    kubeconfig,
-    namespace,
-    ready: appToken !== "" && kubeconfig !== "" && namespace !== "",
-    regionalToken,
-  };
+  // One stable record per credential set, so consumers can hold it in
+  // hook dependencies without re-running on every render.
+  return useMemo(
+    () => ({
+      appToken,
+      kubeconfig,
+      namespace,
+      ready: appToken !== "" && kubeconfig !== "" && namespace !== "",
+      regionalToken,
+    }),
+    [appToken, kubeconfig, namespace, regionalToken]
+  );
 }

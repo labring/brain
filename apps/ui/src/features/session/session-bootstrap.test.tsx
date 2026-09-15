@@ -205,6 +205,23 @@ test("a 401 from /api/session raises the session-expired overlay and holds no cr
   });
 });
 
+test("any other establish failure raises the generic session error with a reload", async () => {
+  sessionRoute.respond = () =>
+    Response.json({ error: "desktop_unavailable" }, { status: 502 });
+  await withBootstrap(() => {
+    assert.deepEqual(getDefaultStore().get(sessionStatusAtom), {
+      code: "desktop_unavailable",
+      kind: "error",
+    });
+    assert.notEqual(
+      document.querySelector('[data-slot="session-error"]'),
+      null,
+      "error overlay is up"
+    );
+    assert.equal(document.querySelector('[data-slot="session-expired"]'), null);
+  });
+});
+
 test("desktopSigninUrl points at the Desktop sign-in page for the deployment", () => {
   assert.equal(desktopSigninUrl("cloud.test"), "https://cloud.test/signin");
   assert.equal(

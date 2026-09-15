@@ -307,12 +307,39 @@ describe("POST /api/session", () => {
     ]);
   });
 
-  it("rejects a body that is not the session request shape", async () => {
+  it("rejects a body that is not the session request shape, and one that is not JSON", async () => {
     const { calls, handler } = handlerWith();
     const response = await handler(sessionRequest({ body: { nsid: 42 } }));
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "invalid_session_request" });
+
+    const notJson = await handler(
+      new Request("https://brain.test/api/session", {
+        body: "nsid=ns-team",
+        headers: { cookie: `sealos_auth_token=${GLOBAL_TOKEN}` },
+        method: "POST",
+      })
+    );
+    expect(notJson.status).toBe(400);
     expect(calls).toEqual([]);
+  });
+
+  it("treats a 401 on a token Desktop just minted as a Desktop anomaly, not a logout", async () => {
+    const { handler, logs } = handlerWith({
+      ...defaultDesktopAnswers(),
+      "/api/auth/namespace/switch": {
+        code: 401,
+        message: "token verify error",
+      },
+    });
+    const response = await handler(sessionRequest({ body: { nsid: TEAM.id } }));
+    expect(response.status).toBe(502);
+    expect(logs[0]?.fields).toMatchObject({
+      code: 401,
+      kind: "desktop_error",
+      step: "switch",
+    });
+    expectNoTokenInLogs(logs);
   });
 
   it("accepts an empty body", async () => {

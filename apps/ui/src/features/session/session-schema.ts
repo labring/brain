@@ -82,9 +82,6 @@ export const SESSION_ERROR_CODES = {
   workspaceNotInited: "workspace_not_inited",
 } as const;
 
-export type SessionErrorCode =
-  (typeof SESSION_ERROR_CODES)[keyof typeof SESSION_ERROR_CODES];
-
 export const sessionErrorSchema = z.object({
   error: z.string(),
 });
