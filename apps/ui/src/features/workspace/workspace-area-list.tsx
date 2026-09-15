@@ -9,13 +9,10 @@ import { recordBillingReturnRoute } from "@/features/billing/billing-return-rout
 import type { SessionWorkspace } from "@/features/session/session-schema";
 
 import { workspaceAreaPath } from "./workspace-area-route-core";
+import { workspaceRoleLabel } from "./workspace-plan-slot";
 
 const ROW_CLASS =
   "flex h-9 shrink-0 items-center gap-2 rounded-md p-2 text-left text-sm leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 lg:w-full";
-
-function roleLabel(workspace: SessionWorkspace): string {
-  return workspace.isPersonal ? "Personal" : workspace.role;
-}
 
 /**
  * The Workspace Area's list (spec §D.3): every Workspace the user belongs
@@ -72,7 +69,7 @@ export function WorkspaceAreaList({
               />
             ) : null}
             <span className="shrink-0 font-normal text-muted-foreground text-xs">
-              {roleLabel(workspace)}
+              {workspaceRoleLabel(workspace)}
             </span>
           </Link>
         );

@@ -124,6 +124,18 @@ const teamUserDtoSchema = z.object({
   uid: z.string().nullish(),
 });
 
+/** A Desktop timestamp — ISO text or an epoch number — as ISO text; "" when absent. */
+function isoTimestamp(value: string | number | null | undefined): string {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 function memberFromDto(
   dto: z.infer<typeof teamUserDtoSchema>
 ): WorkspaceMember | null {
@@ -139,7 +151,7 @@ function memberFromDto(
     avatarUrl: dto.avatarUrl ?? "",
     crName: dto.k8s_username,
     crUid: dto.crUid,
-    joinedAt: joined == null ? "" : String(joined),
+    joinedAt: isoTimestamp(joined),
     nickname: dto.nickname ?? "",
     role,
     userUid: dto.uid ?? "",

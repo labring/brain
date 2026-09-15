@@ -21,9 +21,10 @@ import {
   type WorkspaceGateInput,
 } from "./workspace-gating-core";
 import { WorkspaceMembersPanel } from "./workspace-members-panel";
+import { planNameFor } from "./workspace-plan-slot";
 import { readWorkspaceReturnRoute } from "./workspace-return-route";
 
-/** The area's icon; matches the Manage Workspaces row of the Switcher. */
+/** The area's icon: the members glyph, in the title bar's accent. */
 function WorkspaceAreaIcon() {
   return (
     <UsersRound
@@ -57,10 +58,9 @@ function WorkspaceDetail({
       actorRole: workspace.role,
       isCurrent,
       isPersonal: workspace.isPersonal,
-      // The member count is the one fact the gates wait on; until the
-      // members land, transfer is judged as if there were someone to
-      // transfer to (Desktop is the authority either way).
-      memberCount: members?.length ?? 2,
+      // The member count is the one fact the gates wait on; the ⋯ menu
+      // stays closed until it is known, so no verdict is guessed.
+      memberCount: members?.length ?? 0,
     }),
     [isCurrent, members, workspace.isPersonal, workspace.role]
   );
@@ -73,6 +73,7 @@ function WorkspaceDetail({
       <WorkspaceDetailHeader
         gates={gates}
         isCurrent={isCurrent}
+        membersLoaded={members != null}
         planName={planName}
         workspace={workspace}
       />
@@ -153,7 +154,7 @@ export function WorkspaceArea() {
             isCurrent={managed.uid === current.uid}
             key={managed.uid}
             meCrName={user?.crName ?? ""}
-            planName={plans == null ? undefined : (plans[managed.id] ?? null)}
+            planName={planNameFor(plans, managed.id)}
             workspace={managed}
           />
         )}

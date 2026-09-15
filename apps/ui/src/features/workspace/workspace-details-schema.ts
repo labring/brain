@@ -39,6 +39,12 @@ export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
 
 export const workspaceDetailsResponseSchema = z.object({
   members: z.array(workspaceMemberSchema),
+  /**
+   * Desktop's own view of the Workspace. Its `isPersonal` comes from
+   * Desktop's `details` rule (`id === 'ns-' + crName`), not from the
+   * membership row `list` uses; the Workspace Area keeps the list's entry
+   * for the header and reads only `members` from here.
+   */
   workspace: sessionWorkspaceSchema,
 });
 

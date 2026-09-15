@@ -10,7 +10,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { PlanBadge } from "@workspace/ui/components/plan-badge";
 import {
   Tooltip,
   TooltipContent,
@@ -34,6 +33,7 @@ import type {
   WorkspaceActionGate,
   WorkspaceActionGates,
 } from "./workspace-gating-core";
+import { PlanSlot } from "./workspace-plan-slot";
 
 export const WORKSPACE_ID_COPIED_NOTICE = "Workspace ID copied";
 
@@ -45,21 +45,6 @@ function copyWorkspaceId(id: string): void {
     .writeText(id)
     .then(() => toast(WORKSPACE_ID_COPIED_NOTICE))
     .catch(() => undefined);
-}
-
-/** The plan badge, the quiet PAYG word, or nothing while the plan is unknown. */
-function PlanSlot({ planName }: { planName: string | null | undefined }) {
-  if (planName === undefined) {
-    return null;
-  }
-  if (planName === null) {
-    return (
-      <span className="text-muted-foreground text-xs" data-slot="plan-payg">
-        PAYG
-      </span>
-    );
-  }
-  return <PlanBadge className="shrink-0" planName={planName} />;
 }
 
 /** A disabled control explained by a tooltip (a state gate). */
@@ -124,7 +109,14 @@ function MenuAction({
  * Workspace a divider, Transfer ownership, and Delete workspace, each
  * disabled with its reason on a second line when a state gate holds.
  */
-function WorkspaceActionsMenu({ gates }: { gates: WorkspaceActionGates }) {
+function WorkspaceActionsMenu({
+  gates,
+  ready,
+}: {
+  gates: WorkspaceActionGates;
+  /** False until the members landed: transfer's gate waits on their count. */
+  ready: boolean;
+}) {
   const dangerous =
     gates.transfer.kind !== "hidden" || gates.delete.kind !== "hidden";
   return (
@@ -134,6 +126,7 @@ function WorkspaceActionsMenu({ gates }: { gates: WorkspaceActionGates }) {
           <AppIconButton
             aria-label="Workspace actions"
             data-slot="workspace-actions-menu"
+            disabled={!ready}
             size="lg"
             variant="secondary"
           >
@@ -184,11 +177,14 @@ function WorkspaceActionsMenu({ gates }: { gates: WorkspaceActionGates }) {
 export function WorkspaceDetailHeader({
   gates,
   isCurrent,
+  membersLoaded,
   planName,
   workspace,
 }: {
   gates: WorkspaceActionGates;
   isCurrent: boolean;
+  /** The ⋯ menu opens only once the member count behind its gates is known. */
+  membersLoaded: boolean;
   planName: string | null | undefined;
   workspace: SessionWorkspace;
 }) {
@@ -212,7 +208,7 @@ export function WorkspaceDetailHeader({
           <h2 className="truncate font-semibold text-foreground text-lg leading-7">
             {workspace.name}
           </h2>
-          <PlanSlot planName={planName} />
+          <PlanSlot className="shrink-0" planName={planName} />
           {isCurrent ? (
             <Badge
               className="bg-blue-400/10 text-blue-400"
@@ -229,16 +225,16 @@ export function WorkspaceDetailHeader({
               : `You're ${workspace.role}`}
           </span>
           <span aria-hidden>·</span>
-          <button
+          <AppButton
             aria-label="Copy workspace ID"
-            className="inline-flex h-5 items-center gap-1 rounded-sm px-1 font-mono text-muted-foreground text-xs transition-colors hover:bg-input/30 hover:text-foreground"
-            data-slot="workspace-copy-id"
+            className="h-5 gap-1 rounded-sm px-1 font-mono font-normal text-muted-foreground text-xs hover:text-foreground"
             onClick={() => copyWorkspaceId(workspace.id)}
-            type="button"
+            size="sm"
+            variant="quiet"
           >
             {workspace.id}
             <Copy aria-hidden className="size-3" />
-          </button>
+          </AppButton>
         </div>
       </div>
       {gates.leave.kind === "hidden" ? null : (
@@ -254,7 +250,9 @@ export function WorkspaceDetailHeader({
           </AppButton>
         </WithReason>
       )}
-      {showMenu ? <WorkspaceActionsMenu gates={gates} /> : null}
+      {showMenu ? (
+        <WorkspaceActionsMenu gates={gates} ready={membersLoaded} />
+      ) : null}
     </div>
   );
 }

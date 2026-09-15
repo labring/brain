@@ -1,6 +1,5 @@
 "use client";
 
-import { PlanBadge } from "@workspace/ui/components/plan-badge";
 import {
   Popover,
   PopoverContent,
@@ -25,6 +24,11 @@ import { useCloseOnSidebarToggle } from "@/features/shell/use-close-on-sidebar-t
 import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
 import { useWorkspaceList } from "@/features/workspace/use-workspace-list";
 import { useWorkspacePlans } from "@/features/workspace/use-workspace-plans";
+import {
+  PlanSlot,
+  planNameFor,
+  workspaceRoleLabel,
+} from "@/features/workspace/workspace-plan-slot";
 import { recordWorkspaceReturnRoute } from "@/features/workspace/workspace-return-route";
 import {
   workspaceSwitchLanding,
@@ -63,35 +67,17 @@ function fadeClass(expanded: boolean): string {
     : "opacity-0 duration-200 ease-out";
 }
 
-/** Plan badge, or the quiet PAYG word for a Workspace without a subscription. */
-function PlanSlot({ badge }: { badge: WorkspaceSwitcherBadge | null }) {
+/** The current Workspace's badge as the shared plan slot reads it. */
+function planNameFromBadge(
+  badge: WorkspaceSwitcherBadge | null
+): string | null | undefined {
   if (badge == null) {
-    return null;
+    return undefined;
   }
-  if (badge.kind === "payg") {
-    return (
-      <span className="text-muted-foreground text-xs" data-slot="plan-payg">
-        PAYG
-      </span>
-    );
-  }
-  return <PlanBadge className="h-4 text-xs" planName={badge.planName} />;
+  return badge.kind === "payg" ? null : badge.planName;
 }
 
-function roleLabel(workspace: SessionWorkspace): string {
-  return workspace.isPersonal ? "Personal" : workspace.role;
-}
-
-function badgeFromPlan(
-  plans: Record<string, string | null> | undefined,
-  workspace: SessionWorkspace
-): WorkspaceSwitcherBadge | null {
-  if (plans == null || !(workspace.id in plans)) {
-    return null;
-  }
-  const planName = plans[workspace.id];
-  return planName == null ? { kind: "payg" } : { kind: "plan", planName };
-}
+const SWITCHER_BADGE_CLASS = "h-4 text-xs";
 
 function WorkspaceSwitcherMenuRow({
   href,
@@ -151,10 +137,13 @@ function WorkspaceSwitcherMenu({
             {current.name}
           </span>
           <span className="mt-0.5 block truncate text-muted-foreground text-xs">
-            {roleLabel(current)}
+            {workspaceRoleLabel(current)}
           </span>
         </span>
-        <PlanSlot badge={currentBadge} />
+        <PlanSlot
+          className={SWITCHER_BADGE_CLASS}
+          planName={planNameFromBadge(currentBadge)}
+        />
       </div>
       {others.length === 0 ? null : (
         <>
@@ -184,9 +173,12 @@ function WorkspaceSwitcherMenu({
                   {workspace.name}
                 </span>
                 <span className="shrink-0 text-muted-foreground text-xs">
-                  {roleLabel(workspace)}
+                  {workspaceRoleLabel(workspace)}
                 </span>
-                <PlanSlot badge={badgeFromPlan(plans, workspace)} />
+                <PlanSlot
+                  className={SWITCHER_BADGE_CLASS}
+                  planName={planNameFor(plans, workspace.id)}
+                />
               </button>
             ))}
             {switchBlock == null ? null : (
@@ -355,7 +347,10 @@ export function AppSidebarWorkspaceSwitcher() {
             fadeClass(expanded)
           )}
         >
-          <PlanSlot badge={badge} />
+          <PlanSlot
+            className={SWITCHER_BADGE_CLASS}
+            planName={planNameFromBadge(badge)}
+          />
           <ChevronsUpDown aria-hidden className="size-3.5" strokeWidth={1.8} />
         </span>
       </PopoverTrigger>

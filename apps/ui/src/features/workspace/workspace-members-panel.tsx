@@ -24,6 +24,7 @@ import type { WorkspaceMember } from "./workspace-details-schema";
 import {
   ASSIGNABLE_ROLES,
   gateMemberActions,
+  type MemberActionGates,
   type WorkspaceActionGate,
   type WorkspaceGateInput,
 } from "./workspace-gating-core";
@@ -97,20 +98,16 @@ function RoleCell({
 }
 
 function MemberRow({
-  gateInput,
+  gates,
   isSelf,
   member,
   showActions,
 }: {
-  gateInput: WorkspaceGateInput;
+  gates: MemberActionGates;
   isSelf: boolean;
   member: WorkspaceMember;
   showActions: boolean;
 }) {
-  const gates = gateMemberActions(gateInput, {
-    isSelf,
-    targetRole: member.role,
-  });
   const name = memberName(member);
   return (
     <TableRow
@@ -144,15 +141,15 @@ function MemberRow({
             )}
           </div>
           {gates.setAlias.kind === "enabled" ? (
-            <button
+            <AppButton
               aria-label={`${member.alias == null ? "Set" : "Edit"} alias for ${name}`}
-              className="inline-flex shrink-0 items-center gap-1 self-center text-muted-foreground text-xs opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
-              data-slot="workspace-member-alias-edit"
-              type="button"
+              className="shrink-0 self-center text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
+              size="sm"
+              variant="quiet"
             >
-              <Pencil aria-hidden className="size-3.5" />
+              <Pencil aria-hidden />
               {member.alias == null ? "Set alias" : "Edit alias"}
-            </button>
+            </AppButton>
           ) : null}
         </div>
       </TableCell>
@@ -190,14 +187,16 @@ function MembersTable({
   meCrName: string;
   members: readonly WorkspaceMember[];
 }) {
+  const rows = members.map((member) => {
+    const isSelf = member.crName === meCrName;
+    return {
+      gates: gateMemberActions(gateInput, { isSelf, targetRole: member.role }),
+      isSelf,
+      member,
+    };
+  });
   // The action column exists only when the actor can remove someone.
-  const showActions = members.some(
-    (member) =>
-      gateMemberActions(gateInput, {
-        isSelf: member.crName === meCrName,
-        targetRole: member.role,
-      }).remove.kind === "enabled"
-  );
+  const showActions = rows.some((row) => row.gates.remove.kind === "enabled");
   return (
     <div
       className="min-h-0 shrink overflow-y-auto rounded-lg border border-border [&>[data-slot=table-container]]:overflow-visible"
@@ -206,6 +205,7 @@ function MembersTable({
       <Table>
         <TableHeader className="sticky top-0 z-10">
           <TableRow className="hover:bg-transparent">
+            {/* Column widths are the design's (spec §D.5: 46 / 22 / 22, the rest to actions). */}
             <TableHead className={cn(HEAD_CLASS, "w-[46%]")}>Member</TableHead>
             <TableHead className={cn(HEAD_CLASS, "w-[22%]")}>Role</TableHead>
             <TableHead className={cn(HEAD_CLASS, "w-[22%]")}>Joined</TableHead>
@@ -217,12 +217,12 @@ function MembersTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {members.map((member) => (
+          {rows.map((row) => (
             <MemberRow
-              gateInput={gateInput}
-              isSelf={member.crName === meCrName}
-              key={member.crUid}
-              member={member}
+              gates={row.gates}
+              isSelf={row.isSelf}
+              key={row.member.crUid}
+              member={row.member}
               showActions={showActions}
             />
           ))}
@@ -308,12 +308,17 @@ export function WorkspaceMembersPanel({
           <UsersRound aria-hidden className="size-4" />
           Members
           {members == null ? null : (
-            <span
-              className="font-normal text-muted-foreground text-sm"
-              data-slot="workspace-members-count"
-            >
-              {members.length}
-            </span>
+            <>
+              <span aria-hidden className="font-normal text-muted-foreground">
+                ·
+              </span>
+              <span
+                className="font-normal text-muted-foreground text-sm"
+                data-slot="workspace-members-count"
+              >
+                {members.length}
+              </span>
+            </>
           )}
         </h3>
         {inviteGate.kind === "hidden" ? null : (

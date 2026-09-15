@@ -44,11 +44,11 @@ const ME_USER = {
   status: 1,
   uid: "user-uid-1",
 };
-/** A row without `joinTime` (Desktop's DTO leaves it optional). */
+/** A row without `joinTime` (Desktop's DTO leaves it optional), created at an epoch. */
 const DEV_USER = {
   avatarUrl: "",
   crUid: "cr-uid-dev",
-  createdTime: "2026-03-01T00:00:00.000Z",
+  createdTime: Date.UTC(2026, 2, 1),
   k8s_username: "dev00001",
   nickname: "Dev",
   role: 2,
@@ -143,7 +143,7 @@ describe("POST /api/workspace/details", () => {
         avatarUrl: "",
         crName: "dev00001",
         crUid: "cr-uid-dev",
-        // No joinTime: the CR's creation time stands in.
+        // No joinTime: the CR's creation time stands in, an epoch made ISO.
         joinedAt: "2026-03-01T00:00:00.000Z",
         nickname: "Dev",
         role: "Developer",

@@ -63,6 +63,8 @@ export function gateWorkspaceActions(
   }
   return {
     delete: dangerous ? unlessCurrent : HIDDEN,
+    // Owner and Manager invite (spec §D.5); the Personal Workspace is not
+    // excepted — §E.2 withholds only its delete and transfer.
     invite: input.actorRole === "Developer" ? HIDDEN : ENABLED,
     // Leaving is removing yourself; the Owner leaves only by transferring.
     leave: owner ? HIDDEN : unlessCurrent,
