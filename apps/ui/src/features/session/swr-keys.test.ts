@@ -44,4 +44,8 @@ test("keys keep their prefix as the first element for the dev-mock matchers", ()
     "notifications-feed"
   );
   assert.equal(SESSION_SWR_KEYS.statusHintQuota(BASE)[0], "status-hint-quota");
+  assert.equal(
+    SESSION_SWR_KEYS.billingWorkspacePlans(BASE)[0],
+    "billing-workspace-plans"
+  );
 });

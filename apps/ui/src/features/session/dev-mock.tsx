@@ -19,7 +19,7 @@ const sessionDevMockSource = createDevMockCookieSource(sessionDevMockCookie);
 export function SessionDevMockTweaks() {
   useDevTweaksMock(SESSION_DEV_MOCK_KEY, {
     defaultScenario: DEFAULT_SESSION_DEV_SCENARIO,
-    note: "Serves POST /api/session from fixtures (fake credentials, one scenario per Workspace Role); toggling reloads the page",
+    note: "Serves POST /api/session and /api/workspace/* from fixtures (fake credentials, one scenario per Workspace Role); toggling reloads the page",
     // The session is established once at mount; a reload is the one honest
     // way to re-establish it from (or off) the fixtures.
     revalidate: reloadForDevMock,

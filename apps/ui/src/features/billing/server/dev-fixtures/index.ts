@@ -35,6 +35,8 @@ import { WORKSPACE_OWNER_FIXTURE_PATHNAME } from "./pathnames";
 interface FixtureContext {
   body: Record<string, unknown>;
   scenario: BillingDevScenario;
+  /** The request's query string, for the GET routes that read it. */
+  searchParams: URLSearchParams;
   workspace: string;
 }
 
@@ -630,7 +632,33 @@ function appCostsPayload(context: FixtureContext): unknown {
   };
 }
 
+/**
+ * The session Dev Mock's Sandbox Workspace (`features/session/server/
+ * dev-fixtures.ts`): the one Switcher row that always reads PAYG, so a
+ * mock session shows a badge-less row beside the scenario's plan.
+ */
+const PAYG_SWITCHER_WORKSPACE = "ns-mocksand";
+
 const FIXTURES: Record<string, (context: FixtureContext) => unknown> = {
+  // Brain's own read (spec §C.5): the plan per Workspace for the Switcher.
+  // Every requested Workspace carries the scenario's plan (so the current
+  // Workspace agrees with the Plan view), except the Sandbox, which is PAYG.
+  [BILLING_ROUTES.workspacePlans.upstreamPathname]: ({
+    scenario,
+    searchParams,
+  }) => {
+    const plans: Record<string, string | null> = {};
+    for (const workspace of searchParams.getAll("workspace")) {
+      const subscription = subscriptionPayload(scenario, workspace);
+      plans[workspace] =
+        workspace === PAYG_SWITCHER_WORKSPACE ||
+        subscription.type === "PAYG" ||
+        subscription.Status === "DELETED"
+          ? null
+          : String(subscription.PlanName);
+    }
+    return { plans };
+  },
   // Brain's own read (ADR-0082): the Workspace Owner standing off the
   // namespace's platform marks, answered under a Brain dispatch key.
   [WORKSPACE_OWNER_FIXTURE_PATHNAME]: ({ scenario }) =>
@@ -1031,6 +1059,7 @@ export async function billingDevMockResponse(
   const context: FixtureContext = {
     body,
     scenario,
+    searchParams: new URL(request.url).searchParams,
     workspace: billingDevMockWorkspace(body.workspace),
   };
 

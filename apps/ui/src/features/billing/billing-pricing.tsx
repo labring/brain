@@ -63,7 +63,12 @@ import {
 } from "@/features/billing/billing-pricing-data";
 import { settleSubscriptionChange } from "@/features/billing/billing-subscription-settlement";
 import type { BillingCurrency } from "@/features/billing/config-core";
-import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import {
+  appTokenAtom,
+  currentWorkspaceAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/lib/auth-store";
 import { errorDescription } from "@/lib/toast-utils";
 
 export const PRICING_CYCLES = [
@@ -842,6 +847,8 @@ export default function BillingPricing({
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const workspace = useAtomValue(namespaceAtom).trim();
+  // Payment authority is the session's Workspace Role (spec §J.1).
+  const workspaceRole = useAtomValue(currentWorkspaceAtom)?.role ?? null;
   const credentialsReady =
     appToken.trim() !== "" && kubeconfig.trim() !== "" && workspace !== "";
   const {
@@ -865,7 +872,13 @@ export default function BillingPricing({
     credentialsReady
       ? (["billing-plan-snapshot", workspace, kubeconfig, appToken] as const)
       : null,
-    () => loadBillingPlanSnapshot({ appToken, kubeconfig, workspace }),
+    () =>
+      loadBillingPlanSnapshot({
+        appToken,
+        kubeconfig,
+        workspace,
+        workspaceRole,
+      }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
   const settlementCancelRef = useRef<(() => void) | null>(null);

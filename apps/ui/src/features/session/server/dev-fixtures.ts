@@ -1,5 +1,5 @@
 import { resolveDevMock } from "@/features/dev-mock/server/resolve";
-
+import { WORKSPACE_ROUTES } from "@/features/workspace/server/workspace-route-table";
 import {
   type SessionDevScenario,
   sessionDevMockCookie,
@@ -12,6 +12,8 @@ import type { BrainSession, SessionWorkspace } from "../session-schema";
  * credentials are inert fakes — a kubeconfig no apiserver accepts, tokens
  * no verifier signs — so a mock session can never reach a real cluster or
  * account; the other Dev Mocks answer the routes that would consume them.
+ * The same scenario answers the `/api/workspace/*` routes (spec §B.4), so
+ * the Switcher's list refresh agrees with the session it was staged from.
  */
 
 const MOCK_KUBECONFIG = (namespace: string) => `apiVersion: v1
@@ -131,4 +133,41 @@ export async function sessionDevMockResponse(
   return Response.json(sessionFor(resolution.scenario, nsid), {
     headers: { "cache-control": "no-store" },
   });
+}
+
+const WORKSPACE_FIXTURES: Record<
+  string,
+  (scenario: SessionDevScenario) => unknown
+> = {
+  [WORKSPACE_ROUTES.list.desktopPath]: (scenario) => workspacesFor(scenario),
+};
+
+/** Answers a `/api/workspace/*` route by its Desktop path from the scenario. */
+export function workspaceDevMockResponse(
+  desktopPath: string,
+  request: Request
+): Promise<Response | null> {
+  const resolution = resolveDevMock(sessionDevMockCookie, request, "session");
+  if (resolution.kind === "off") {
+    return Promise.resolve(null);
+  }
+  if (resolution.kind === "invalid") {
+    return Promise.resolve(resolution.response);
+  }
+  const fixture = WORKSPACE_FIXTURES[desktopPath];
+  if (fixture == null) {
+    return Promise.resolve(
+      Response.json(
+        {
+          error: `Session mock mode does not support this operation (${desktopPath} has no fixture).`,
+        },
+        { status: 501 }
+      )
+    );
+  }
+  return Promise.resolve(
+    Response.json(fixture(resolution.scenario), {
+      headers: { "cache-control": "no-store" },
+    })
+  );
 }

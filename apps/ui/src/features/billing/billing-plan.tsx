@@ -64,7 +64,12 @@ import {
   fetchFreeChatTurnsUsage,
 } from "@/features/chat/persistence/client";
 import { observeSubscriptionChangeQuietly } from "@/features/notifications/subscription-change-observer";
-import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import {
+  appTokenAtom,
+  currentWorkspaceAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
 export interface BillingStripeReturn {
@@ -385,6 +390,8 @@ export function BillingPlan({
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const workspace = useAtomValue(namespaceAtom).trim();
+  // Payment authority is the session's Workspace Role (spec §J.1).
+  const workspaceRole = useAtomValue(currentWorkspaceAtom)?.role ?? null;
   const [actionPending, setActionPending] =
     useState<SubscriptionLifecycleAction | null>(null);
   const [cardManagementPending, setCardManagementPending] = useState(false);
@@ -422,7 +429,13 @@ export function BillingPlan({
     credentialsReady
       ? (["billing-plan-snapshot", workspace, kubeconfig, appToken] as const)
       : null,
-    () => loadBillingPlanSnapshot({ appToken, kubeconfig, workspace }),
+    () =>
+      loadBillingPlanSnapshot({
+        appToken,
+        kubeconfig,
+        workspace,
+        workspaceRole,
+      }),
     { revalidateOnFocus: false, shouldRetryOnError: false }
   );
   const creditsKey =
@@ -644,6 +657,7 @@ export function BillingPlan({
               appToken,
               kubeconfig,
               workspace: targetWorkspace,
+              workspaceRole,
             });
       if (nextSnapshot == null) {
         throw new Error("The refreshed subscription is unavailable.");
@@ -674,7 +688,7 @@ export function BillingPlan({
       }
       return nextSnapshot;
     },
-    [appToken, currency, kubeconfig, refreshSnapshot, workspace]
+    [appToken, currency, kubeconfig, refreshSnapshot, workspace, workspaceRole]
   );
 
   if (!credentialsReady || snapshotLoading) {

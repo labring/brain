@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
-import { deriveAppSidebarAccountPresentation } from "./app-sidebar-account-presentation";
+import { deriveWorkspaceSwitcherPresentation } from "./app-sidebar-workspace-presentation";
 
 const NOW = new Date("2026-08-25T12:00:00Z");
 
@@ -16,7 +16,6 @@ function summary(
     lifecycle: "active",
     planName: "PRO",
     recoveryVoice: "renew",
-    role: null,
     warningDeadlineAt: null,
     warningStage: null,
     ...overrides,
@@ -24,14 +23,14 @@ function summary(
 }
 
 test("an active paid plan shows its badge and stays quiet", () => {
-  assert.deepEqual(deriveAppSidebarAccountPresentation(summary({}), NOW), {
+  assert.deepEqual(deriveWorkspaceSwitcherPresentation(summary({}), NOW), {
     badge: { kind: "plan", planName: "PRO" },
     hint: null,
   });
 });
 
 test("a missing summary yields neither badge nor hint", () => {
-  assert.deepEqual(deriveAppSidebarAccountPresentation(null, NOW), {
+  assert.deepEqual(deriveWorkspaceSwitcherPresentation(null, NOW), {
     badge: null,
     hint: null,
   });
@@ -39,7 +38,7 @@ test("a missing summary yields neither badge nor hint", () => {
 
 test("a Pay-As-You-Go workspace fills the badge slot with PAYG", () => {
   assert.deepEqual(
-    deriveAppSidebarAccountPresentation(
+    deriveWorkspaceSwitcherPresentation(
       summary({ isPayg: true, planName: "PAYG" }),
       NOW
     ),
@@ -48,7 +47,7 @@ test("a Pay-As-You-Go workspace fills the badge slot with PAYG", () => {
 });
 
 test("an Active Free Trial counts the days it has left", () => {
-  const presentation = deriveAppSidebarAccountPresentation(
+  const presentation = deriveWorkspaceSwitcherPresentation(
     summary({
       currentPeriodEndAt: "2026-08-28T12:00:00Z",
       isActiveFreeTrial: true,
@@ -64,7 +63,7 @@ test("an Active Free Trial counts the days it has left", () => {
 });
 
 test("an Active Free Trial with one day left speaks in the singular", () => {
-  const presentation = deriveAppSidebarAccountPresentation(
+  const presentation = deriveWorkspaceSwitcherPresentation(
     summary({
       currentPeriodEndAt: "2026-08-26T06:00:00Z",
       isActiveFreeTrial: true,
@@ -76,7 +75,7 @@ test("an Active Free Trial with one day left speaks in the singular", () => {
 });
 
 test("a cancelling subscription announces its end date", () => {
-  const presentation = deriveAppSidebarAccountPresentation(
+  const presentation = deriveWorkspaceSwitcherPresentation(
     summary({ lifecycle: "cancelling" }),
     NOW
   );
@@ -84,7 +83,7 @@ test("a cancelling subscription announces its end date", () => {
 });
 
 test("a cancelling subscription without a parsable end date stays quiet", () => {
-  const presentation = deriveAppSidebarAccountPresentation(
+  const presentation = deriveWorkspaceSwitcherPresentation(
     summary({ currentPeriodEndAt: "", lifecycle: "cancelling" }),
     NOW
   );
@@ -92,7 +91,7 @@ test("a cancelling subscription without a parsable end date stays quiet", () => 
 });
 
 test("a payment-due subscription warns in the danger tone", () => {
-  const presentation = deriveAppSidebarAccountPresentation(
+  const presentation = deriveWorkspaceSwitcherPresentation(
     summary({ lifecycle: "payment-due" }),
     NOW
   );
@@ -103,7 +102,7 @@ test("a payment-due subscription warns in the danger tone", () => {
 });
 
 test("a blank plan name drops the badge but keeps the hint", () => {
-  const presentation = deriveAppSidebarAccountPresentation(
+  const presentation = deriveWorkspaceSwitcherPresentation(
     summary({ lifecycle: "payment-due", planName: " " }),
     NOW
   );

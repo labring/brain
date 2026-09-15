@@ -128,6 +128,11 @@ interface ProjectsExplorerReadModel {
    * consumers render those rows inert (the generated Projects do not exist).
    */
   devMockActive: boolean;
+  /**
+   * True once the Project list answered (or the Dev Mock stands in for it):
+   * an empty `states.projects` is then a fact, not a pending read.
+   */
+  projectsLoaded: boolean;
   /** Revalidate the projects list (e.g. after creating a project). */
   refreshProjects: () => Promise<unknown>;
   states: ProjectExplorerStates;
@@ -279,6 +284,7 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
     ns,
     pinnedProjectLimit,
     projects,
+    projectsLoaded: devMock !== null || rawProjects !== undefined,
     states,
     togglePinnedProject,
   };
@@ -287,11 +293,17 @@ function useProjectsExplorerModel(options: ProjectsExplorerReadModelOptions) {
 export function useProjectsExplorerReadModel(
   options: ProjectsExplorerReadModelOptions
 ): ProjectsExplorerReadModel {
-  const { data, devMockActive, mutate, states } =
+  const { data, devMockActive, mutate, projectsLoaded, states } =
     useProjectsExplorerModel(options);
   return useMemo(
-    () => ({ data, devMockActive, refreshProjects: mutate, states }),
-    [data, devMockActive, mutate, states]
+    () => ({
+      data,
+      devMockActive,
+      projectsLoaded,
+      refreshProjects: mutate,
+      states,
+    }),
+    [data, devMockActive, mutate, projectsLoaded, states]
   );
 }
 
@@ -309,6 +321,7 @@ export function useProjectsExplorer(
     ns,
     pinnedProjectLimit,
     projects,
+    projectsLoaded,
     states,
     togglePinnedProject,
   } = useProjectsExplorerModel(options);
@@ -475,5 +488,12 @@ export function useProjectsExplorer(
     ]
   );
 
-  return { actions, data, devMockActive, states, refreshProjects: mutate };
+  return {
+    actions,
+    data,
+    devMockActive,
+    projectsLoaded,
+    refreshProjects: mutate,
+    states,
+  };
 }

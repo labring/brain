@@ -1,22 +1,24 @@
 import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-plan-data";
 
-export type AppSidebarAccountBadge =
+export type WorkspaceSwitcherBadge =
   | { kind: "payg" }
   | { kind: "plan"; planName: string };
 
-export interface AppSidebarAccountHint {
+export interface WorkspaceSwitcherHint {
   text: string;
   tone: "danger" | "warn";
 }
 
 /**
- * What the account row shows for the Workspace Subscription: the badge slot
- * on the right and, for attention states, the hint that replaces the user-ID
- * second line (AIM-308). Quiet states carry no hint.
+ * What the Workspace Switcher row shows for the current Workspace
+ * Subscription (spec §C.3): the badge slot on the right and, for attention
+ * states (payment-due, cancelling, an ending trial), the hint that grows the
+ * row to two lines. Quiet states carry no hint. The plan is a Workspace
+ * fact, so this lives on the Switcher row and never on the account row.
  */
-export interface AppSidebarAccountPresentation {
-  badge: AppSidebarAccountBadge | null;
-  hint: AppSidebarAccountHint | null;
+export interface WorkspaceSwitcherPresentation {
+  badge: WorkspaceSwitcherBadge | null;
+  hint: WorkspaceSwitcherHint | null;
 }
 
 const HINT_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
@@ -34,10 +36,10 @@ function parsedDate(iso: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function deriveAppSidebarAccountPresentation(
+export function deriveWorkspaceSwitcherPresentation(
   summary: WorkspaceSubscriptionSummary | null,
   now: Date
-): AppSidebarAccountPresentation {
+): WorkspaceSwitcherPresentation {
   if (summary == null) {
     return { badge: null, hint: null };
   }

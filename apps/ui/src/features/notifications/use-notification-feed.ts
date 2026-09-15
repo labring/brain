@@ -6,7 +6,7 @@ import {
   NOTIFICATION_CR_REFRESH_INTERVAL_MS,
   useNotificationCRList,
 } from "@workspace/api/hooks";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -20,7 +20,7 @@ import {
   isNotificationUnread,
 } from "@/features/shell/app-sidebar-notifications-model";
 import { notificationReadIdsAtom } from "@/features/shell/app-sidebar-notifications-store";
-import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
+import { currentWorkspaceAtom } from "@/lib/auth-store";
 
 import {
   fetchNotificationFeed,
@@ -65,7 +65,9 @@ export function useNotificationFeed(): NotificationFeed {
     ready: credentialsReady,
   } = credentials;
   const [readIds, setReadIds] = useAtom(notificationReadIdsAtom);
-  const { data: subscription } = useWorkspaceSubscriptionSummary();
+  // The Workspace Role is the session's membership fact (spec §J.1), not
+  // the subscription record's role field, which PAYG Workspaces leave empty.
+  const workspaceRole = useAtomValue(currentWorkspaceAtom)?.role ?? null;
 
   const credentialKey = kubeconfigCredentialKey(kubeconfig);
 
@@ -195,7 +197,7 @@ export function useNotificationFeed(): NotificationFeed {
       if (!credentialsReady) {
         return;
       }
-      const plan = planReadDispatch(targets, subscription?.role);
+      const plan = planReadDispatch(targets, workspaceRole);
       const credentials = { appToken, kubeconfig, namespace };
       // The receipt is the read state's source of truth (`readIds` is
       // session-only): a failed write rolls the optimistic ids back so the
@@ -236,7 +238,7 @@ export function useNotificationFeed(): NotificationFeed {
       refreshBrainFeed,
       refreshCRList,
       setReadIds,
-      subscription?.role,
+      workspaceRole,
     ]
   );
 

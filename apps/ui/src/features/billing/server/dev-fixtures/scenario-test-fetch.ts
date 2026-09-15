@@ -17,27 +17,25 @@ const ROUTE_TO_UPSTREAM = new Map<string, string>(
   ])
 );
 
-function requestPathname(input: Parameters<BillingFetch>[0]): string {
+function requestUrl(input: Parameters<BillingFetch>[0]): URL {
   if (typeof input === "string") {
-    return input;
+    return new URL(input, "http://localhost");
   }
   if (input instanceof URL) {
-    return input.pathname;
+    return input;
   }
-  return new URL(input.url, "http://localhost").pathname;
+  return new URL(input.url, "http://localhost");
 }
 
 export function scenarioTestFetch(scenario: string): BillingFetch {
   return async (input, init) => {
-    const pathname = requestPathname(input);
-    const upstream = ROUTE_TO_UPSTREAM.get(pathname);
+    const url = requestUrl(input);
+    const upstream = ROUTE_TO_UPSTREAM.get(url.pathname);
     if (upstream == null) {
-      throw new Error(`route ${pathname} has no upstream mapping`);
+      throw new Error(`route ${url.pathname} has no upstream mapping`);
     }
-    const request = new Request(
-      new URL(pathname, "http://localhost"),
-      init ?? undefined
-    );
+    // The query rides along: the GET routes read it (workspace-plans).
+    const request = new Request(url, init ?? undefined);
     request.headers.set("cookie", `${BILLING_DEV_MOCK_COOKIE}=${scenario}`);
     const response = await billingDevMockResponse(upstream, request);
     if (response == null) {

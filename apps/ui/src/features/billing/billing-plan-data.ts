@@ -1,6 +1,6 @@
 import { Quantity } from "@workspace/shared";
 import { z } from "zod";
-
+import type { WorkspaceRole } from "@/features/session/session-schema";
 import { isActiveFreeTrialSubscription } from "@/lib/account-service/free-trial-core";
 import {
   type BillingCredentials,
@@ -192,7 +192,8 @@ const subscriptionSchema = z.object({
   // Absent for PAYG workspaces: the upstream embeds a nil subscription and
   // serializes only `{"type":"PAYG"}`.
   Workspace: z.string().default(""),
-  role: z.enum(["MANAGER", "DEVELOPER", "OWNER"]).optional(),
+  // The record also names a `role`; Brain no longer reads it (spec §J.1):
+  // the Workspace Role comes from the Brain Session's membership list.
   type: z.enum(["SUBSCRIPTION", "PAYG"]).optional(),
 });
 const subscriptionResponseSchema = z.object({
@@ -308,7 +309,7 @@ export function isDeletedSubscriptionRecord(status: string): boolean {
 
 // Present a deleted subscription as the no-subscription PAYG shape: stale
 // plan, period, and invoice facts must not leak into a workspace that can
-// simply subscribe again. The record's role survives for `canManage`.
+// simply subscribe again.
 function normalizeDeletedSubscriptionRecord(
   subscription: z.infer<typeof subscriptionSchema>
 ): z.infer<typeof subscriptionSchema> {
@@ -482,7 +483,15 @@ function availableWorkspaceData(
 }
 
 export async function loadBillingPlanSnapshot(
-  credentials: BillingCredentials & { workspace: string },
+  credentials: BillingCredentials & {
+    workspace: string;
+    /**
+     * The caller's Workspace Role in `workspace` from the Brain Session
+     * (spec §J.1). Only the Workspace Owner manages payments — what
+     * account-service enforces — so an unknown role fails closed.
+     */
+    workspaceRole?: WorkspaceRole | null;
+  },
   dependencies: BillingPlanLoaderDependencies = {}
 ): Promise<BillingPlanSnapshot> {
   const fetch = dependencies.fetch ?? globalThis.fetch;
@@ -606,14 +615,12 @@ export async function loadBillingPlanSnapshot(
             last4: paymentMethod.card.last4,
           },
     current: {
-      // Subscription state and payment authority are orthogonal: whenever the
-      // record names a role (including a normalized deleted one), only the
-      // OWNER manages payments; a roleless PAYG record has no membership
-      // facts, so managing stays open.
-      canManage:
-        subscription.role == null
-          ? subscription.type === "PAYG"
-          : subscription.role === "OWNER",
+      // Subscription state and payment authority are orthogonal: only the
+      // Workspace Owner manages payments, whatever the subscription's state.
+      // The role is the session's membership fact (spec §J.1) — the
+      // subscription record's own role field used to leave a PAYG Workspace
+      // open to every member, which account-service then refused.
+      canManage: credentials.workspaceRole === "Owner",
       cancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
       currentPeriodEndAt: subscription.CurrentPeriodEndAt,
       invoiceId: subscription.InvoiceInfo?.ID ?? null,
@@ -746,9 +753,6 @@ export async function loadBillingPlans(
     .sort((left, right) => left.order - right.order);
 }
 
-/** The caller's membership role in the workspace as the subscription record names it. */
-export type WorkspaceSubscriptionRole = "DEVELOPER" | "MANAGER" | "OWNER";
-
 /**
  * The Workspace Subscription facts the App Sidebar account section needs —
  * a two-request read (region, then the region-addressed subscription route)
@@ -761,8 +765,6 @@ export interface WorkspaceSubscriptionSummary {
   lifecycle: SubscriptionLifecycle;
   planName: string;
   recoveryVoice: RecoveryVoice;
-  /** Null when the record names no role (PAYG workspaces). */
-  role: WorkspaceSubscriptionRole | null;
   /**
    * The Deletion Countdown's next deadline, derived client-side exactly as
    * the Plan view derives it (ADR-0063). Set only while `warningStage` is.
@@ -820,7 +822,6 @@ export async function loadWorkspaceSubscriptionSummary(
     lifecycle,
     planName: subscription.PlanName,
     recoveryVoice: recoveryVoice(subscription.PlanName),
-    role: subscription.role ?? null,
     warningDeadlineAt: subscriptionWarningDeadline({
       currentPeriodEndAt: subscription.CurrentPeriodEndAt,
       expireAt: subscription.ExpireAt ?? null,

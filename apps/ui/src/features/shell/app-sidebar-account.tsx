@@ -1,6 +1,5 @@
 "use client";
 
-import { PlanBadge } from "@workspace/ui/components/plan-badge";
 import {
   Popover,
   PopoverContent,
@@ -26,7 +25,6 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -35,11 +33,6 @@ import type { WorkspaceSubscriptionSummary } from "@/features/billing/billing-pl
 import { recordBillingReturnRoute } from "@/features/billing/billing-return-route";
 import { loadWorkspaceQuotaSnapshot } from "@/features/billing/workspace-quota-client";
 import { fetchFreeChatTurnsUsage } from "@/features/chat/persistence/client";
-import {
-  type AppSidebarAccountBadge,
-  type AppSidebarAccountHint,
-  deriveAppSidebarAccountPresentation,
-} from "@/features/shell/app-sidebar-account-presentation";
 import {
   AI_CREDITS_ROW_LABEL,
   aiUsageRowFromCredits,
@@ -63,7 +56,7 @@ import {
 } from "@/lib/auth-store";
 import { useSealosDesktopUrl } from "@/lib/sealos-desktop-url";
 
-const HINT_TEXT_CLASS: Record<AppSidebarAccountHint["tone"], string> = {
+const HINT_TEXT_CLASS: Record<"danger" | "warn", string> = {
   danger: "text-red-400",
   warn: "text-amber-400",
 };
@@ -110,20 +103,6 @@ function AppSidebarAccountAvatar({
       )}
     </span>
   );
-}
-
-function AppSidebarAccountBadgeSlot({
-  badge,
-}: {
-  badge: AppSidebarAccountBadge | null;
-}) {
-  if (badge == null) {
-    return null;
-  }
-  if (badge.kind === "payg") {
-    return <span className="text-muted-foreground text-xs">PAYG</span>;
-  }
-  return <PlanBadge className="h-4 text-xs" planName={badge.planName} />;
 }
 
 const USAGE_BAR_CLASS: Record<"danger" | "warn", string> = {
@@ -650,15 +629,14 @@ function AppSidebarAccountMenuRows({
 }
 
 /**
- * The account popover's body: identity, copyable ID, status hint, the menu
- * rows (Usage, Billing, Sealos Desktop), and the Upgrade entry.
+ * The account popover's body: identity, copyable ID, the menu rows (Usage,
+ * Billing, Sealos Desktop), and the Upgrade entry. The plan badge and the
+ * subscription hint are Workspace facts and live on the Workspace Switcher.
  */
 function AppSidebarAccountMenuView({
   aiRow,
-  badge,
   copied,
   displayName,
-  hint,
   onCopyId,
   onToggleUsage,
   quotaRows,
@@ -669,10 +647,8 @@ function AppSidebarAccountMenuView({
   userName,
 }: {
   aiRow: AppSidebarQuotaRow | null;
-  badge: AppSidebarAccountBadge | null;
   copied: boolean;
   displayName: string;
-  hint: AppSidebarAccountHint | null;
   onCopyId: () => void;
   onToggleUsage: () => void;
   quotaRows: AppSidebarQuotaRow[] | null;
@@ -693,7 +669,6 @@ function AppSidebarAccountMenuView({
         <span className="min-w-0 flex-1 truncate font-medium text-sm">
           {displayName}
         </span>
-        <AppSidebarAccountBadgeSlot badge={badge} />
       </div>
       {userId === "" ? null : (
         <button
@@ -709,11 +684,6 @@ function AppSidebarAccountMenuView({
             <Copy aria-hidden className="size-3" strokeWidth={1.8} />
           )}
         </button>
-      )}
-      {hint == null ? null : (
-        <div className={cn("text-xs", HINT_TEXT_CLASS[hint.tone])}>
-          {hint.text}
-        </div>
       )}
       <div aria-hidden className="h-px w-full bg-border" />
       <AppSidebarAccountMenuRows
@@ -736,11 +706,13 @@ function AppSidebarAccountMenuView({
 }
 
 /**
- * The App Sidebar's account section (AIM-308): identity row with the plan
- * badge, opening the compact account popover — identity, copyable user ID,
- * status hint, the menu rows (Usage with the quota bars folded into its
- * expansion, Billing, the Sealos Desktop Entry), and the upgrade entry.
- * Replaces the old Upgrade button as the sidebar's single quota surface.
+ * The App Sidebar's account section (AIM-308): the identity row (name and
+ * user ID), opening the compact account popover — identity, copyable user
+ * ID, the menu rows (Usage with the quota bars folded into its expansion,
+ * Billing, the Sealos Desktop Entry), and the upgrade entry. Replaces the
+ * old Upgrade button as the sidebar's single quota surface. The plan badge
+ * and the subscription hint moved to the Workspace Switcher (spec §C.3):
+ * they are facts about the Workspace, not about the user.
  *
  * The usage section's first open renders skeleton rows at the final
  * geometry; the AI and quota slots then fill independently. Reopens show the
@@ -759,16 +731,10 @@ export function AppSidebarAccount() {
   const credentialsReady =
     appToken !== "" && kubeconfig !== "" && workspace !== "";
 
+  // The subscription still decides the AI usage slot (ADR-0065); the badge
+  // and hint it used to feed here now render on the Workspace Switcher.
   const { data: subscriptionSummary, isLoading: subscriptionPending } =
     useWorkspaceSubscriptionSummary();
-  const { badge, hint } = useMemo(
-    () =>
-      deriveAppSidebarAccountPresentation(
-        subscriptionSummary ?? null,
-        new Date()
-      ),
-    [subscriptionSummary]
-  );
 
   const [open, setOpen] = useState(false);
   // Collapsed anchor: the row keeps its full expanded width under the rail's
@@ -838,9 +804,7 @@ export function AppSidebarAccount() {
   const copyUserId = useCallback(() => copy(userId), [copy, userId]);
 
   const displayName = userName === "" ? "Account" : userName;
-  const secondLine = hint?.text ?? (userId === "" ? null : `ID: ${userId}`);
-  const secondLineClass =
-    hint == null ? "text-muted-foreground" : HINT_TEXT_CLASS[hint.tone];
+  const secondLine = userId === "" ? null : `ID: ${userId}`;
 
   const aiPresentation = deriveAiSlotPresentation(
     credentialsReady,
@@ -915,25 +879,12 @@ export function AppSidebarAccount() {
           </span>
           {secondLine == null ? null : (
             <span
-              className={cn(
-                "mt-0.5 block truncate text-xs tabular-nums",
-                secondLineClass
-              )}
+              className="mt-0.5 block truncate text-muted-foreground text-xs tabular-nums"
               data-slot="app-sidebar-account-status"
             >
               {secondLine}
             </span>
           )}
-        </span>
-        <span
-          className={cn(
-            "relative flex shrink-0 items-center pr-2 transition-opacity motion-reduce:transition-none",
-            expanded
-              ? "opacity-100 duration-300 ease-sidebar"
-              : "opacity-0 duration-200 ease-out"
-          )}
-        >
-          <AppSidebarAccountBadgeSlot badge={badge} />
         </span>
       </PopoverTrigger>
       {/* Collapsed rail: anchor the icon slot, sideOffset 6 (the rail-wide
@@ -948,10 +899,8 @@ export function AppSidebarAccount() {
       >
         <AppSidebarAccountMenuView
           aiRow={aiSlot.data}
-          badge={badge}
           copied={copied}
           displayName={displayName}
-          hint={hint}
           onCopyId={copyUserId}
           onToggleUsage={toggleUsage}
           quotaRows={quotaSlot.data}

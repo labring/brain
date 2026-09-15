@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-
+import { WORKSPACE_ROUTES } from "@/features/workspace/server/workspace-route-table";
+import { workspaceListResponseSchema } from "@/features/workspace/workspace-list-schema";
 import {
   SESSION_DEV_SCENARIOS,
   sessionDevMockCookie,
 } from "../dev-mock-cookie";
+
 import { brainSessionSchema } from "../session-schema";
-import { sessionDevMockResponse } from "./dev-fixtures";
+import {
+  sessionDevMockResponse,
+  workspaceDevMockResponse,
+} from "./dev-fixtures";
 
 function request(input: { body?: unknown; cookie?: string }): Request {
   return new Request("https://brain.test/api/session", {
@@ -87,4 +92,39 @@ test("a requested nsid that the scenario knows is honoured; an unknown one falls
   );
   assert.equal(unknown.fallback, "not_member");
   assert.equal(unknown.workspace.isPersonal, true);
+});
+
+// Spec §B.4: the same scenario answers every Workspace route, with the list
+// the session itself staged, so the Switcher's refresh never disagrees
+// with the session it started from.
+test("every scenario answers every Workspace route with the session's own list", async () => {
+  for (const scenario of SESSION_DEV_SCENARIOS) {
+    const cookie = `${sessionDevMockCookie.name}=${sessionDevMockCookie.format({ enabled: true, scenario })}`;
+    const session = brainSessionSchema.parse(
+      await (await sessionDevMockResponse(request({ cookie })))?.json()
+    );
+    for (const entry of Object.values(WORKSPACE_ROUTES)) {
+      const response = await workspaceDevMockResponse(
+        entry.desktopPath,
+        new Request(`https://brain.test${entry.apiPath}`, {
+          headers: { cookie },
+        })
+      );
+      assert.equal(response?.status, 200, `${scenario} ${entry.apiPath}`);
+      if (entry === WORKSPACE_ROUTES.list) {
+        assert.deepEqual(
+          workspaceListResponseSchema.parse(await response?.json()),
+          session.workspaces,
+          scenario
+        );
+      }
+    }
+  }
+  assert.equal(
+    await workspaceDevMockResponse(
+      WORKSPACE_ROUTES.list.desktopPath,
+      new Request("https://brain.test/api/workspace/list")
+    ),
+    null
+  );
 });

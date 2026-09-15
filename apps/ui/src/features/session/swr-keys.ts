@@ -46,6 +46,8 @@ function sessionKey<P extends string>(prefix: P) {
  */
 export const SESSION_SWR_KEYS = {
   appSidebarSubscription: sessionKey("app-sidebar-subscription"),
+  /** The Switcher's plan badges; the `billing-` prefix is the billing mock's. */
+  billingWorkspacePlans: sessionKey("billing-workspace-plans"),
   githubConnection: sessionKey("github-connection"),
   githubUserRepos: sessionKey("github-user-repos"),
   notificationsCredits: sessionKey("notifications-credits"),
@@ -54,5 +56,7 @@ export const SESSION_SWR_KEYS = {
   statusHintBalance: sessionKey("status-hint-balance"),
   statusHintPlans: sessionKey("status-hint-plans"),
   statusHintQuota: sessionKey("status-hint-quota"),
+  /** The Switcher's list refresh through `GET /api/workspace/list`. */
+  workspaceList: sessionKey("workspace-list"),
   workspaceOwner: sessionKey("workspace-owner"),
 } as const;

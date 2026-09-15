@@ -115,6 +115,12 @@ export const BILLING_ROUTES = {
     apiPath: "/api/billing/workspace-owner",
     upstreamPathname: "brain:workspace/owner",
   },
+  // Brain's own read (spec §C.5): the plan name per Workspace for the
+  // Workspace Switcher, assembled from per-Workspace subscription reads.
+  workspacePlans: {
+    apiPath: "/api/billing/workspace-plans",
+    upstreamPathname: "brain:workspace/plans",
+  },
   workspaceQuota: {
     apiPath: "/api/billing/workspace-quota",
     upstreamPathname: "/account/v1alpha1/workspace/get-resource-quota",

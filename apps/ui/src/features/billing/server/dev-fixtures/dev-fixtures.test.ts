@@ -19,6 +19,7 @@ import {
   formatBillingDevMockCookie,
 } from "../../dev-mock-cookie";
 import { parseWorkspaceOwnerStanding } from "../../workspace-owner";
+import { loadWorkspacePlans } from "../../workspace-plans-data";
 import { BILLING_ROUTES } from "../billing-route-table";
 import { judgeWorkspaceBillingStanding } from "../billing-standing-core";
 import { billingDevMockResponse, freeChatTurnsFixture } from "./index";
@@ -89,9 +90,10 @@ const CREDITLESS_SCENARIOS = new Set([
 ]);
 
 function loadPlanForScenario(scenario: string) {
-  return loadBillingPlanSnapshot(CREDENTIALS, {
-    fetch: mockFetchFor(scenario),
-  });
+  return loadBillingPlanSnapshot(
+    { ...CREDENTIALS, workspaceRole: "Owner" },
+    { fetch: mockFetchFor(scenario) }
+  );
 }
 
 test("the free-turns fixture spends the trial's allowance with the scenario (ADR-0073)", () => {
@@ -646,4 +648,21 @@ test("unknown scenarios fail loud instead of falling through", async () => {
     mockRequest("/api/billing/regions", "dept")
   );
   assert.equal(response?.status, 500);
+});
+
+test("every scenario answers the Switcher's plan read: the scenario's plan everywhere, PAYG for the Sandbox", async () => {
+  for (const scenario of BILLING_DEV_SCENARIOS) {
+    const plans = await loadWorkspacePlans(
+      CREDENTIALS,
+      ["ns-test", "ns-mocksand"],
+      mockFetchFor(scenario)
+    );
+    const snapshot = await loadPlanForScenario(scenario);
+    assert.equal(
+      plans["ns-test"],
+      snapshot.current.isPayg ? null : snapshot.current.planName,
+      `${scenario}: the current Workspace's badge matches the Plan view`
+    );
+    assert.equal(plans["ns-mocksand"], null, `${scenario}: Sandbox is PAYG`);
+  }
 });

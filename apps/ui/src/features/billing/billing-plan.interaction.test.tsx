@@ -12,7 +12,12 @@ import {
   restoreGlobal,
   withTestDom,
 } from "@/features/project-canvas/react-test-harness";
-import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import {
+  appTokenAtom,
+  currentWorkspaceAtom,
+  kubeconfigAtom,
+  namespaceAtom,
+} from "@/lib/auth-store";
 import { CANCEL_PLAN_PREVIEW_PENDING_MS } from "./billing-cancel-plan-dialog-tweaks";
 import { formatBillingDate, formatBillingDateTime } from "./billing-datetime";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
@@ -553,6 +558,16 @@ async function renderPlanPage(
   store.set(appTokenAtom, "desktop-app-token");
   store.set(kubeconfigAtom, "apiVersion: v1");
   store.set(namespaceAtom, "workspace-a");
+  // Payment authority is the session's Workspace Role (spec §J.1): the
+  // viewer is the Workspace Owner here.
+  store.set(currentWorkspaceAtom, {
+    createdAt: "2026-01-01T00:00:00.000Z",
+    id: "workspace-a",
+    isPersonal: false,
+    name: "Workspace A",
+    role: "Owner",
+    uid: "uid-workspace-a",
+  });
   let rendered: ReturnType<typeof render> | undefined;
   await act(() => {
     rendered = render(
