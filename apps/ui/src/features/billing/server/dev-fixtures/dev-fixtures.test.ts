@@ -18,6 +18,11 @@ import {
   BILLING_DEV_SCENARIOS,
   formatBillingDevMockCookie,
 } from "../../dev-mock-cookie";
+import {
+  WORKSPACE_NAME_CONFLICT_CODE,
+  workspaceCreationResponseSchema,
+  workspaceCreationRetryResponseSchema,
+} from "../../workspace-creation-schema";
 import { parseWorkspaceOwnerStanding } from "../../workspace-owner";
 import { loadWorkspacePlans } from "../../workspace-plans-data";
 import { BILLING_ROUTES } from "../billing-route-table";
@@ -665,4 +670,85 @@ test("every scenario answers the Switcher's plan read: the scenario's plan every
     );
     assert.equal(plans["ns-mocksand"], null, `${scenario}: Sandbox is PAYG`);
   }
+});
+
+function workspaceCreateRequest(
+  entry: { apiPath: string },
+  body: Record<string, unknown>
+): Request {
+  return mockRequest(entry.apiPath, "active", {
+    body: JSON.stringify({
+      payMethod: "stripe",
+      period: "1m",
+      planName: "Pro",
+      regionDomain: "mock.sealos.run",
+      ...body,
+    }),
+    method: "POST",
+  });
+}
+
+test("workspace creation answers a created Workspace and a checkout URL back into Billing", async () => {
+  const entry = BILLING_ROUTES.workspaceCreate;
+  const response = await billingDevMockResponse(
+    entry.upstreamPathname,
+    workspaceCreateRequest(entry, { name: "  Robotics " })
+  );
+  assert.equal(response?.status, 200);
+  assert.equal(scenarioFromSetCookie(response as Response), null);
+  const payload = workspaceCreationResponseSchema.parse(await response?.json());
+  assert.equal(payload.workspace.name, "Robotics");
+  assert.ok(payload.workspace.id.startsWith("ns-"));
+  assert.equal(payload.payment.status, "started");
+  if (payload.payment.status !== "started") {
+    return;
+  }
+  // The mock skips Stripe: the top-level redirect lands straight on the
+  // Billing Area's Stripe return for the new Workspace, on this origin.
+  const landing = new URL(payload.payment.redirectUrl);
+  assert.equal(landing.origin, "http://localhost");
+  assert.equal(landing.pathname, "/billing");
+  assert.equal(landing.searchParams.get("stripeState"), "success");
+  assert.equal(landing.searchParams.get("workspaceId"), payload.workspace.id);
+  assert.ok(landing.searchParams.get("payId"));
+});
+
+test("workspace creation mocks the taken name, the failed first payment, and its retry", async () => {
+  const entry = BILLING_ROUTES.workspaceCreate;
+  const conflict = await billingDevMockResponse(
+    entry.upstreamPathname,
+    workspaceCreateRequest(entry, { name: "Conflict" })
+  );
+  assert.equal(conflict?.status, 409);
+  const conflictPayload = (await conflict?.json()) as { code: string };
+  assert.equal(conflictPayload.code, WORKSPACE_NAME_CONFLICT_CODE);
+
+  const failed = await billingDevMockResponse(
+    entry.upstreamPathname,
+    workspaceCreateRequest(entry, { name: "Payfail Labs" })
+  );
+  assert.equal(failed?.status, 200);
+  const failedPayload = workspaceCreationResponseSchema.parse(
+    await failed?.json()
+  );
+  assert.equal(failedPayload.payment.status, "failed");
+
+  const retryEntry = BILLING_ROUTES.workspaceCreateRetryPayment;
+  const retried = await billingDevMockResponse(
+    retryEntry.upstreamPathname,
+    workspaceCreateRequest(retryEntry, {
+      workspaceId: failedPayload.workspace.id,
+    })
+  );
+  assert.equal(retried?.status, 200);
+  const retriedPayload = workspaceCreationRetryResponseSchema.parse(
+    await retried?.json()
+  );
+  assert.equal(retriedPayload.payment.status, "started");
+
+  const invalid = await billingDevMockResponse(
+    entry.upstreamPathname,
+    workspaceCreateRequest(entry, { name: "" })
+  );
+  assert.equal(invalid?.status, 400);
 });

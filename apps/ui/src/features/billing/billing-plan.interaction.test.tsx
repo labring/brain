@@ -21,6 +21,14 @@ import {
 import { CANCEL_PLAN_PREVIEW_PENDING_MS } from "./billing-cancel-plan-dialog-tweaks";
 import { formatBillingDate, formatBillingDateTime } from "./billing-datetime";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
+import {
+  readBillingReturnRoute,
+  recordBillingReturnRoute,
+} from "./billing-return-route";
+import {
+  consumePendingWorkspaceCreation,
+  recordPendingWorkspaceCreation,
+} from "./workspace-creation-return";
 
 const SNAPSHOT: BillingPlanSnapshot = {
   availability: {
@@ -239,6 +247,137 @@ test("Free payment-due renewal opens the paid plan picker", async () => {
   });
 });
 
+test("create mode opens Workspace Creation regardless of role or lifecycle and is consumed from the URL", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanWorkflow } = await import("./billing-plan");
+    const replacements: string[] = [];
+    let rendered: ReturnType<typeof render> | undefined;
+
+    window.history.replaceState({}, "", "/billing?mode=create&source=switcher");
+
+    // Creation is never gated by the current Workspace (CONTEXT: Workspace
+    // Creation): a Developer in a locked Workspace still creates their own.
+    const snapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        canManage: false,
+        lifecycle: "unavailable",
+      },
+    };
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanWorkflow
+            balance={<span>$3.00</span>}
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            existingWorkspaceNames={["private team", "Acme"]}
+            gpuEnabled
+            initialMode="create"
+            onRefreshSnapshot={() => Promise.resolve(snapshot)}
+            replaceUrl={(url) => replacements.push(url)}
+            snapshot={snapshot}
+          />
+        );
+      });
+
+      const dialog = rendered?.getByRole("dialog", { name: "New Workspace" });
+      assert.ok(dialog);
+      assert.ok(
+        within(dialog).getByRole("textbox", { name: "Workspace name" })
+      );
+      assert.ok(
+        within(dialog).getAllByRole("button", { name: "Subscribe" }).length > 0
+      );
+      assert.equal(
+        rendered?.queryByRole("dialog", { name: "Choose Your Workspace Plan" }),
+        null
+      );
+      assert.deepEqual(replacements, ["/billing?source=switcher"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a Stripe return for the Workspace this tab created concludes as a creation and forgets the return route", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanWorkflow } = await import("./billing-plan");
+    const replacements: string[] = [];
+    const refreshedSnapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        planName: "Team",
+        priceMicroUnits: 50_000_000,
+        resources: [{ label: "CPU", value: "12" }],
+        workspace: "ns-new00001",
+      },
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    // Entered the Billing Area from a Project of the old Workspace, created
+    // a Workspace, and came back through Desktop's Stripe callback.
+    window.history.replaceState({}, "", "/project/abc");
+    recordBillingReturnRoute();
+    recordPendingWorkspaceCreation("ns-new00001");
+    window.history.replaceState(
+      {},
+      "",
+      "/billing?stripeState=success&payId=payment-1&workspaceId=ns-new00001"
+    );
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanWorkflow
+            balance={<span>$3.00</span>}
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onRefreshSnapshot={() => Promise.resolve(refreshedSnapshot)}
+            replaceUrl={(url) => replacements.push(url)}
+            snapshot={SNAPSHOT}
+            stripeReturn={{ payId: "payment-1", workspaceId: "ns-new00001" }}
+            workspaceName="Robotics"
+          />
+        );
+      });
+
+      const dialog = rendered?.getByRole("dialog", { name: "Team" });
+      const text = dialog?.textContent ?? "";
+      assert.ok(text.includes("Workspace created"));
+      assert.ok(text.includes("Robotics"));
+      assert.ok(text.includes("12"));
+      assert.equal(text.includes("Charged today"), false);
+
+      // The recorded entry point named the old Workspace's route; close
+      // returns home instead, and the creation record is spent.
+      assert.equal(readBillingReturnRoute(), "/");
+      assert.equal(window.sessionStorage.getItem("billing-return-route"), null);
+      assert.equal(consumePendingWorkspaceCreation("ns-new00001"), false);
+
+      await act(() => {
+        const done = rendered?.getByRole("button", { name: "Done" });
+        if (done != null) {
+          fireEvent.click(done);
+        }
+      });
+      assert.deepEqual(replacements, ["/billing"]);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("Stripe return refreshes before congratulations and clears on close", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanWorkflow } = await import("./billing-plan");
@@ -301,6 +440,7 @@ test("Stripe return refreshes before congratulations and clears on close", async
       );
       assert.ok(congratulations.includes("$50.00"));
       assert.equal(congratulations.includes("Charged today"), false);
+      assert.equal(congratulations.includes("Workspace created"), false);
       assert.deepEqual(replacements, []);
 
       await act(() => {

@@ -1,4 +1,5 @@
 import BillingPlan, {
+  type BillingPlanMode,
   type BillingStripeReturn,
 } from "@/features/billing/billing-plan";
 import {
@@ -14,14 +15,18 @@ function firstSearchParam(value: string | string[] | undefined): string | null {
   return normalized ? normalized : null;
 }
 
+/** `?mode=upgrade` opens the plan change, `?mode=create` Workspace Creation. */
+function billingPlanMode(value: string | null): BillingPlanMode | null {
+  return value === "upgrade" || value === "create" ? value : null;
+}
+
 export default async function BillingPlanPage({
   searchParams,
 }: {
   searchParams: Promise<BillingPageSearchParams>;
 }) {
   const query = await searchParams;
-  const initialMode =
-    firstSearchParam(query.mode) === "upgrade" ? "upgrade" : null;
+  const initialMode = billingPlanMode(firstSearchParam(query.mode));
   const stripeState = firstSearchParam(query.stripeState);
   const payId = firstSearchParam(query.payId);
   const workspaceId = firstSearchParam(query.workspaceId);

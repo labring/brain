@@ -31,3 +31,32 @@ test("without a window the return route reads home and records nothing", () => {
   assert.equal(area.read(), "/");
   assert.doesNotThrow(() => area.record());
 });
+
+test("clearing an area's return route forgets the recorded entry point", () => {
+  const storage = new Map<string, string>();
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      location: { pathname: "/project/abc", search: "?tab=logs" },
+      sessionStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    },
+  });
+  try {
+    area.record();
+    assert.equal(area.read(), "/project/abc?tab=logs");
+    area.clear();
+    assert.equal(area.read(), "/");
+    assert.equal(storage.has("workspace-return-route"), false);
+  } finally {
+    if (previous === undefined) {
+      Reflect.deleteProperty(globalThis, "window");
+    } else {
+      Object.defineProperty(globalThis, "window", previous);
+    }
+  }
+});

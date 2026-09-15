@@ -8,6 +8,13 @@ import {
   resolveDevMock,
 } from "@/features/dev-mock/server/resolve";
 
+import {
+  WORKSPACE_NAME_CONFLICT_CODE,
+  WORKSPACE_NAME_CONFLICT_MESSAGE,
+  type WorkspaceCreationPayment,
+  workspaceCreationRequestSchema,
+  workspaceCreationRetryRequestSchema,
+} from "../../workspace-creation-schema";
 import { workspacePlanNameFromSubscription } from "../../workspace-plan-name";
 import { WORKSPACE_OWNER_FIXTURE_PATHNAME } from "./pathnames";
 
@@ -35,6 +42,8 @@ import { WORKSPACE_OWNER_FIXTURE_PATHNAME } from "./pathnames";
 
 interface FixtureContext {
   body: Record<string, unknown>;
+  /** The request's origin, for answers that carry a URL back into Brain. */
+  origin: string;
   scenario: BillingDevScenario;
   /** The request's query string, for the GET routes that read it. */
   searchParams: URLSearchParams;
@@ -907,6 +916,44 @@ interface WriteFixtureResult {
   /** Scenario the successful write moves the session to. */
   nextScenario: BillingDevScenario;
   payload: unknown;
+  /** Answers other than 200 (a 409 for a taken name, a 400 for a bad body). */
+  status?: number;
+}
+
+const MOCK_CREATED_WORKSPACE_ID = "ns-mock-created";
+const MOCK_CREATED_WORKSPACE_UID = "mock-created-0000-4000-8000-000000000000";
+/** A creation name containing this fails Step 2, so the retry dialog can be clicked through. */
+const MOCK_PAYMENT_FAILURE_MARK = "payfail";
+/** This creation name (case-insensitively) is "already taken", like Desktop's 409. */
+const MOCK_TAKEN_WORKSPACE_NAME = "conflict";
+
+/**
+ * Workspace Creation's Step 2 as the mock answers it: no Stripe hop — the
+ * "checkout URL" is the Billing Area's own Stripe return for the new
+ * Workspace on this origin, so the top-level redirect lands where the real
+ * round-trip would.
+ */
+function mockWorkspaceCreationPayment(
+  context: FixtureContext,
+  workspaceId: string,
+  failureMark: string
+): WorkspaceCreationPayment {
+  if (failureMark.toLowerCase().includes(MOCK_PAYMENT_FAILURE_MARK)) {
+    return {
+      error: "Mock payment refused (the name says so).",
+      status: "failed",
+    };
+  }
+  const landing = new URL("/billing", context.origin);
+  landing.searchParams.set("stripeState", "success");
+  landing.searchParams.set("payId", MOCK_CHECKOUT_PAY_ID);
+  landing.searchParams.set("workspaceId", workspaceId);
+  return {
+    invoiceId: MOCK_CHECKOUT_INVOICE_ID,
+    payId: MOCK_CHECKOUT_PAY_ID,
+    redirectUrl: landing.toString(),
+    status: "started",
+  };
 }
 
 /**
@@ -939,6 +986,67 @@ const WRITE_FIXTURES: Record<
     nextScenario: context.scenario,
     payload: { id: "mock-cancellation-survey", ok: true },
   }),
+  // Workspace Creation (spec §G): the two-step write answers in place —
+  // creation is not a subscription state of the current Workspace, so the
+  // scenario stays. The name picks the branch: "conflict" is taken, a name
+  // with "payfail" creates the Workspace but fails its first payment.
+  [BILLING_ROUTES.workspaceCreate.upstreamPathname]: (context) => {
+    const parsed = workspaceCreationRequestSchema.safeParse(context.body);
+    if (!parsed.success) {
+      return {
+        nextScenario: context.scenario,
+        payload: { error: "Invalid workspace creation request." },
+        status: 400,
+      };
+    }
+    const { name } = parsed.data;
+    if (name.toLowerCase() === MOCK_TAKEN_WORKSPACE_NAME) {
+      return {
+        nextScenario: context.scenario,
+        payload: {
+          code: WORKSPACE_NAME_CONFLICT_CODE,
+          error: WORKSPACE_NAME_CONFLICT_MESSAGE,
+        },
+        status: 409,
+      };
+    }
+    return {
+      nextScenario: context.scenario,
+      payload: {
+        payment: mockWorkspaceCreationPayment(
+          context,
+          MOCK_CREATED_WORKSPACE_ID,
+          name
+        ),
+        workspace: {
+          id: MOCK_CREATED_WORKSPACE_ID,
+          name,
+          uid: MOCK_CREATED_WORKSPACE_UID,
+        },
+      },
+    };
+  },
+  [BILLING_ROUTES.workspaceCreateRetryPayment.upstreamPathname]: (context) => {
+    const parsed = workspaceCreationRetryRequestSchema.safeParse(context.body);
+    if (!parsed.success) {
+      return {
+        nextScenario: context.scenario,
+        payload: { error: "Invalid workspace payment retry request." },
+        status: 400,
+      };
+    }
+    const { workspaceId } = parsed.data;
+    return {
+      nextScenario: context.scenario,
+      payload: {
+        payment: mockWorkspaceCreationPayment(
+          context,
+          workspaceId,
+          workspaceId
+        ),
+      },
+    };
+  },
   "/account/v1alpha1/workspace-subscription/pay": (context) => {
     const operator =
       typeof context.body.operator === "string" ? context.body.operator : "";
@@ -1056,10 +1164,12 @@ export async function billingDevMockResponse(
     typeof payload === "object" && payload != null
       ? (payload as Record<string, unknown>)
       : {};
+  const requestUrl = new URL(request.url);
   const context: FixtureContext = {
     body,
+    origin: requestUrl.origin,
     scenario,
-    searchParams: new URL(request.url).searchParams,
+    searchParams: requestUrl.searchParams,
     workspace: billingDevMockWorkspace(body.workspace),
   };
 
@@ -1072,6 +1182,7 @@ export async function billingDevMockResponse(
           result.nextScenario === scenario
             ? undefined
             : transitionHeaders(result.nextScenario),
+        status: result.status ?? 200,
       });
     }
   }

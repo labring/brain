@@ -19,6 +19,13 @@ import type { BillingPlanSnapshot } from "@/features/billing/billing-plan-data";
 import type { BillingCurrency } from "@/features/billing/config-core";
 
 /**
+ * What a settled payment concluded: a plan change on the current Workspace,
+ * or Workspace Creation's first subscription — the Stripe return of a
+ * Workspace this tab created (spec §G.5), worded as such.
+ */
+export type SettledPaymentConclusion = "changed" | "created";
+
+/**
  * Holds the conclusion both checkout surfaces show, so the wiring between a
  * settled payment and the congratulations dialog exists once. The refresh
  * hands over the snapshot it produced; the success callback opens the dialog
@@ -27,19 +34,28 @@ import type { BillingCurrency } from "@/features/billing/config-core";
  */
 export function useSettledPaymentCongratulations() {
   const [congratulations, setCongratulations] = useState<
-    (SettledPayment & { snapshot: BillingPlanSnapshot }) | null
+    | (SettledPayment & {
+        conclusion: SettledPaymentConclusion;
+        snapshot: BillingPlanSnapshot;
+      })
+    | null
   >(null);
   const settledSnapshotRef = useRef<BillingPlanSnapshot | null>(null);
 
   const open = useCallback(
-    (snapshot: BillingPlanSnapshot, chargedMicroUnits: number | null) => {
-      setCongratulations({ chargedMicroUnits, snapshot });
+    (
+      snapshot: BillingPlanSnapshot,
+      chargedMicroUnits: number | null,
+      conclusion: SettledPaymentConclusion = "changed"
+    ) => {
+      setCongratulations({ chargedMicroUnits, conclusion, snapshot });
     },
     []
   );
 
   return {
     chargedMicroUnits: congratulations?.chargedMicroUnits ?? null,
+    conclusion: congratulations?.conclusion ?? "changed",
     dismiss: useCallback(() => setCongratulations(null), []),
     onPaymentSuccess: useCallback(
       ({ chargedMicroUnits }: SettledPayment) => {
@@ -64,10 +80,16 @@ export function useSettledPaymentCongratulations() {
 interface BillingPlanCongratulationsDialogProps {
   /** See `SettledPayment`. A `null` amount drops the charged-today row. */
   chargedMicroUnits?: number | null;
+  conclusion?: SettledPaymentConclusion;
   currency: BillingCurrency;
   onClose: () => void;
   /** The refreshed subscription. `null` keeps the dialog closed. */
   snapshot: BillingPlanSnapshot | null;
+  /**
+   * The Workspace's display name, for a creation's conclusion; the
+   * subscription itself only knows the namespace.
+   */
+  workspaceName?: string | null;
 }
 
 /**
@@ -79,9 +101,11 @@ interface BillingPlanCongratulationsDialogProps {
  */
 export function BillingPlanCongratulationsDialog({
   chargedMicroUnits = null,
+  conclusion = "changed",
   currency,
   onClose,
   snapshot,
+  workspaceName = null,
 }: BillingPlanCongratulationsDialogProps) {
   const current = snapshot?.current ?? null;
   const recipe = current == null ? null : planCardRecipe(current.planName);
@@ -107,6 +131,11 @@ export function BillingPlanCongratulationsDialog({
                   : cn("bg-linear-to-br", recipe.wash)
               )}
             >
+              {conclusion === "created" ? (
+                <p className="font-semibold text-muted-foreground text-xs uppercase tracking-widest">
+                  Workspace created
+                </p>
+              ) : null}
               <AppDialog.Title
                 className={cn(
                   "h-auto font-semibold text-4xl/11 tracking-tight",
@@ -115,7 +144,11 @@ export function BillingPlanCongratulationsDialog({
               >
                 {current.planName}
               </AppDialog.Title>
-              <AppDialog.Description>{current.workspace}</AppDialog.Description>
+              <AppDialog.Description>
+                {conclusion === "created" && workspaceName
+                  ? workspaceName
+                  : current.workspace}
+              </AppDialog.Description>
             </div>
 
             <AppDialog.Body className="gap-3.5 px-6 pt-5 pb-6">

@@ -109,6 +109,17 @@ export const BILLING_ROUTES = {
     apiPath: "/api/billing/workspace-consumption",
     upstreamPathname: "/account/v1alpha1/costs/workspace/consumption",
   },
+  // Brain's own two-step write (spec §G.3): Desktop `namespace/create`,
+  // then account-service's pay — no single upstream, so a Brain dispatch key.
+  workspaceCreate: {
+    apiPath: "/api/billing/workspace-create",
+    upstreamPathname: "brain:workspace/create",
+  },
+  // Step 2 alone, for a Workspace whose first payment could not start (§G.7).
+  workspaceCreateRetryPayment: {
+    apiPath: "/api/billing/workspace-create/retry-payment",
+    upstreamPathname: "brain:workspace/create/retry-payment",
+  },
   // Brain's own read (ADR-0082): the Workspace Owner standing off the
   // namespace, judged with the verified crName — no account-service upstream.
   workspaceOwner: {

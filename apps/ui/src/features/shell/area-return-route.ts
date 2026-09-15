@@ -7,6 +7,8 @@
  * entry, cleared storage, tampered value) falls back to home.
  */
 export interface AreaReturnRoute {
+  /** Forgets the recorded route; close then falls back to home. */
+  clear(): void;
   /** The recorded route, sanitized; "/" when nothing usable is recorded. */
   read(): string;
   /** Records the current route unless it already lies inside the area. */
@@ -29,6 +31,16 @@ export function createAreaReturnRoute(area: {
     return "/";
   };
   return {
+    clear() {
+      if (typeof window === "undefined") {
+        return;
+      }
+      try {
+        window.sessionStorage.removeItem(area.storageKey);
+      } catch {
+        // Nothing stored where storage is unavailable; see `record`.
+      }
+    },
     read() {
       if (typeof window === "undefined") {
         return "/";

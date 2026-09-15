@@ -23,6 +23,7 @@ import {
 export const DESKTOP_AUTH_PATHS = {
   info: "/api/auth/info",
   namespaceAbdicate: "/api/auth/namespace/abdicate",
+  namespaceCreate: "/api/auth/namespace/create",
   namespaceDelete: "/api/auth/namespace/delete",
   namespaceDetails: "/api/auth/namespace/details",
   namespaceInviteCode: "/api/auth/namespace/getInviteCode",
@@ -115,6 +116,27 @@ function workspaceFromDto(
     uid: dto.uid,
   };
 }
+
+/**
+ * `namespace/create`'s answer: the new Team Workspace as Desktop describes
+ * it. Only the identifiers and the name matter to Workspace Creation — the
+ * subscription payment addresses it by `id`, the Switcher by `uid`.
+ */
+export interface DesktopCreatedWorkspace {
+  id: string;
+  name: string;
+  uid: string;
+}
+
+export const desktopCreatedWorkspaceSchema = z
+  .object({ namespace: namespaceDtoSchema })
+  .transform(
+    (data): DesktopCreatedWorkspace => ({
+      id: data.namespace.id,
+      name: data.namespace.teamName,
+      uid: data.namespace.uid,
+    })
+  );
 
 /** The user's Workspaces in Brain's shape, in Desktop's order (Personal first). */
 export const desktopWorkspaceListSchema = namespaceListDataSchema.transform(
@@ -221,6 +243,15 @@ export interface DesktopAuthApi {
     workspaceUid: string,
     targetCrUid: string
   ): Promise<DesktopCallResult<null>>;
+  /**
+   * Creates a Team Workspace for a subscription (spec §G.3). Desktop's
+   * `create` verifies the app token too, so the call carries it raw — no
+   * encoding, no scheme — and needs no regional token.
+   */
+  namespaceCreate(
+    appToken: string,
+    name: string
+  ): Promise<DesktopCallResult<DesktopCreatedWorkspace>>;
   namespaceDelete(
     regionalToken: string,
     workspaceUid: string
@@ -298,6 +329,14 @@ export function createDesktopAuthApi(client: DesktopClient): DesktopAuthApi {
         { ns_uid: workspaceUid, targetUserCrUid: targetCrUid },
         voidDataSchema
       ),
+    namespaceCreate: (appToken, name) =>
+      client.call({
+        authorization: appToken,
+        body: { teamName: name, userType: "subscription" },
+        dataSchema: desktopCreatedWorkspaceSchema,
+        method: "POST",
+        path: DESKTOP_AUTH_PATHS.namespaceCreate,
+      }),
     namespaceDelete: (regionalToken, workspaceUid) =>
       post(
         regionalToken,

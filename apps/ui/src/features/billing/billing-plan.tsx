@@ -8,6 +8,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -32,6 +33,7 @@ import {
 } from "@/features/billing/billing-plan-change-dialog";
 import {
   BillingPlanCongratulationsDialog,
+  type SettledPaymentConclusion,
   useSettledPaymentCongratulations,
 } from "@/features/billing/billing-plan-congratulations-dialog";
 import {
@@ -49,16 +51,22 @@ import {
   BillingBalanceValue,
   BillingPlanSurface,
 } from "@/features/billing/billing-plan-surface";
+import { clearBillingReturnRoute } from "@/features/billing/billing-return-route";
 import {
   accountBalanceSwrKey,
   accountCreditsSwrKey,
   aiCreditsSwrKey,
   settleSubscriptionChange,
 } from "@/features/billing/billing-subscription-settlement";
+import {
+  BillingWorkspaceCreationDialog,
+  type BillingWorkspaceCreationServices,
+} from "@/features/billing/billing-workspace-creation-dialog";
 import { submitCancellationSurvey } from "@/features/billing/cancellation-survey/client";
 import { EMPTY_CANCELLATION_SURVEY_ANSWERS } from "@/features/billing/cancellation-survey/reasons";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { useWorkspaceOwnerStanding } from "@/features/billing/use-workspace-owner-standing";
+import { consumePendingWorkspaceCreation } from "@/features/billing/workspace-creation-return";
 import {
   type FreeChatTurnsUsage,
   fetchFreeChatTurnsUsage,
@@ -69,6 +77,7 @@ import {
   currentWorkspaceAtom,
   kubeconfigAtom,
   namespaceAtom,
+  workspacesAtom,
 } from "@/lib/auth-store";
 import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 
@@ -77,17 +86,28 @@ export interface BillingStripeReturn {
   workspaceId: string;
 }
 
+/**
+ * What `/billing?mode=` opens on arrival: the plan-change dialog for the
+ * current Workspace, or Workspace Creation (spec §G.1) — the latter never
+ * gated by the current Workspace's role or subscription state.
+ */
+export type BillingPlanMode = "create" | "upgrade";
+
 interface BillingPlanWorkflowProps {
   actionPending?: SubscriptionLifecycleAction | null;
   balance: ReactNode;
   cardManagementPending?: boolean;
   /** Injected by tests; production uses the checkout dialog's own defaults. */
   checkoutServices?: BillingPlanChangeServices;
+  /** Injected by tests; production uses the creation dialog's own defaults. */
+  creationServices?: BillingWorkspaceCreationServices;
   credentials: BillingCredentials;
   credits?: ReactNode;
   currency: BillingCurrency;
+  /** The session's Workspace names, for creation's inline duplicate check. */
+  existingWorkspaceNames?: readonly string[];
   gpuEnabled: boolean;
-  initialMode?: "upgrade" | null;
+  initialMode?: BillingPlanMode | null;
   invoiceCancellationPending?: boolean;
   onCancelInvoice?: (invoiceId: string) => void;
   onLifecycleAction?: SubscriptionLifecycleHandler;
@@ -99,6 +119,8 @@ interface BillingPlanWorkflowProps {
   stripeReturn?: BillingStripeReturn | null;
   /** Whether the viewer is proven to be the Workspace Owner (ADR-0082). */
   viewerIsOwner?: boolean;
+  /** The current Workspace's display name, for a creation's conclusion. */
+  workspaceName?: string | null;
 }
 
 function currentUrlWithout(parameters: readonly string[]): string {
@@ -115,9 +137,11 @@ export function BillingPlanWorkflow({
   balance,
   cardManagementPending = false,
   checkoutServices,
+  creationServices,
   credentials,
   credits = null,
   currency,
+  existingWorkspaceNames = [],
   gpuEnabled,
   initialMode = null,
   invoiceCancellationPending = false,
@@ -130,9 +154,11 @@ export function BillingPlanWorkflow({
   snapshot,
   stripeReturn = null,
   viewerIsOwner = false,
+  workspaceName = null,
 }: BillingPlanWorkflowProps) {
   const stripeAcknowledgedKeyRef = useRef<string | null>(null);
   const stripeRefreshRef = useRef<{
+    conclusion: SettledPaymentConclusion;
     key: string;
     request: Promise<BillingPlanSnapshot>;
   } | null>(null);
@@ -145,6 +171,10 @@ export function BillingPlanWorkflow({
   const [planDialogOpen, setPlanDialogOpen] = useState(
     initialMode === "upgrade" && planDialogActionable
   );
+  // Workspace Creation is open to every signed-in user (CONTEXT): no gate.
+  const [creationDialogOpen, setCreationDialogOpen] = useState(
+    initialMode === "create"
+  );
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const congratulations = useSettledPaymentCongratulations();
   const {
@@ -155,9 +185,10 @@ export function BillingPlanWorkflow({
 
   // The mode parameter is consumed once per arrival: the state above handles
   // the deep-link mount, and this handles a later client-side navigation back
-  // to ?mode=upgrade. Opening during render keeps the picker from painting a
-  // frame without it. Stripping the parameter is a URL side effect, so it
-  // stays in an effect — and runs whether or not the picker opened.
+  // to ?mode=upgrade or ?mode=create. Opening during render keeps the dialog
+  // from painting a frame without it. Stripping the parameter is a URL side
+  // effect, so it stays in an effect — and runs whether or not a dialog
+  // opened.
   const [consumedMode, setConsumedMode] = useState(initialMode);
   if (consumedMode !== initialMode) {
     setConsumedMode(initialMode);
@@ -165,9 +196,12 @@ export function BillingPlanWorkflow({
       setSelectedPlanId(null);
       setPlanDialogOpen(true);
     }
+    if (initialMode === "create") {
+      setCreationDialogOpen(true);
+    }
   }
   useEffect(() => {
-    if (initialMode === "upgrade") {
+    if (initialMode != null) {
       replaceUrl(currentUrlWithout(["mode"]));
     }
   }, [initialMode, replaceUrl]);
@@ -183,12 +217,20 @@ export function BillingPlanWorkflow({
     }
     let refresh = stripeRefreshRef.current;
     if (refresh?.key !== key) {
+      // Read once per arrival, alongside the refresh: a creation's record is
+      // spent on the first read, and the recorded return route belongs to the
+      // Workspace the creation left (spec §G.5) — close returns home.
+      clearBillingReturnRoute();
       refresh = {
+        conclusion: consumePendingWorkspaceCreation(stripeReturn.workspaceId)
+          ? "created"
+          : "changed",
         key,
         request: onRefreshSnapshot(stripeReturn.workspaceId),
       };
       stripeRefreshRef.current = refresh;
     }
+    const { conclusion } = refresh;
 
     let active = true;
     refresh.request
@@ -198,10 +240,11 @@ export function BillingPlanWorkflow({
           // Close and open in the same commit: the plan dialog's backdrop
           // hands off to the congratulations one without a bright gap.
           setPlanDialogOpen(false);
+          setCreationDialogOpen(false);
           setSelectedPlanId(null);
           // The redirect leg carries no quote, so it concludes without a
           // charged-today row.
-          openCongratulations(nextSnapshot, null);
+          openCongratulations(nextSnapshot, null, conclusion);
         }
       })
       .catch((error: unknown) => {
@@ -271,11 +314,24 @@ export function BillingPlanWorkflow({
         services={checkoutServices}
         snapshot={snapshot}
       />
+      <BillingWorkspaceCreationDialog
+        credentials={credentials}
+        currency={currency}
+        existingWorkspaceNames={existingWorkspaceNames}
+        gpuEnabled={gpuEnabled}
+        onOpenChange={setCreationDialogOpen}
+        open={creationDialogOpen}
+        plans={snapshot.plans}
+        regionDomain={snapshot.current.regionDomain}
+        services={creationServices}
+      />
       <BillingPlanCongratulationsDialog
         chargedMicroUnits={congratulations.chargedMicroUnits}
+        conclusion={congratulations.conclusion}
         currency={currency}
         onClose={handleCongratulationsClose}
         snapshot={congratulations.snapshot}
+        workspaceName={workspaceName}
       />
     </>
   );
@@ -383,15 +439,21 @@ export function BillingPlan({
 }: {
   currency: BillingCurrency;
   gpuEnabled: boolean;
-  initialMode?: "upgrade" | null;
+  initialMode?: BillingPlanMode | null;
   replaceUrl: (url: string) => void;
   stripeReturn?: BillingStripeReturn | null;
 }) {
   const appToken = useAtomValue(appTokenAtom);
   const kubeconfig = useAtomValue(kubeconfigAtom);
   const workspace = useAtomValue(namespaceAtom).trim();
+  const currentWorkspace = useAtomValue(currentWorkspaceAtom);
   // Payment authority is the session's Workspace Role (spec §J.1).
-  const workspaceRole = useAtomValue(currentWorkspaceAtom)?.role ?? null;
+  const workspaceRole = currentWorkspace?.role ?? null;
+  const sessionWorkspaces = useAtomValue(workspacesAtom);
+  const existingWorkspaceNames = useMemo(
+    () => sessionWorkspaces.map((entry) => entry.name),
+    [sessionWorkspaces]
+  );
   const [actionPending, setActionPending] =
     useState<SubscriptionLifecycleAction | null>(null);
   const [cardManagementPending, setCardManagementPending] = useState(false);
@@ -750,6 +812,7 @@ export function BillingPlan({
         />
       }
       currency={currency}
+      existingWorkspaceNames={existingWorkspaceNames}
       gpuEnabled={gpuEnabled}
       initialMode={initialMode}
       invoiceCancellationPending={invoiceCancellationPending}
@@ -761,6 +824,15 @@ export function BillingPlan({
       snapshot={snapshot}
       stripeReturn={stripeReturn}
       viewerIsOwner={viewerIsOwner}
+      // Desktop switches to the created Workspace before calling back, so
+      // the session's current Workspace is the created one; anything else
+      // (a stale session) falls back to the namespace rather than misnaming.
+      workspaceName={
+        currentWorkspace != null &&
+        currentWorkspace.id === stripeReturn?.workspaceId
+          ? currentWorkspace.name
+          : null
+      }
     />
   );
 }
@@ -773,7 +845,7 @@ export default function BillingPlanRoute({
 }: {
   currency: BillingCurrency;
   gpuEnabled: boolean;
-  initialMode?: "upgrade" | null;
+  initialMode?: BillingPlanMode | null;
   stripeReturn?: BillingStripeReturn | null;
 }) {
   const router = useRouter();
