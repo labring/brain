@@ -1,5 +1,7 @@
 import { createAreaReturnRoute } from "@/features/shell/area-return-route";
 
+import { isPendingWorkspaceCreation } from "./workspace-creation-return";
+
 /**
  * The Billing Area's return address: the close button returns to the in-app
  * route the user entered from. Only an internal path outside /billing
@@ -7,12 +9,13 @@ import { createAreaReturnRoute } from "@/features/shell/area-return-route";
  * navigate into /billing (the App Sidebar entries); a click while already
  * inside the Billing Area keeps the original entry point.
  *
- * A Stripe Checkout Round-Trip voids the record: the page arrives on
- * `?stripeState=…` from outside, and after Workspace Creation the recorded
- * route belongs to the Workspace the user left (spec §G.5). Reading through
- * that arrival forgets the record, so the close button — which reads once,
- * during hydration — lands on home rather than on a route from another
- * Workspace.
+ * Workspace Creation's Stripe Checkout Round-Trip voids the record: the
+ * page arrives on `?stripeState=…&workspaceId=…` in the created Workspace,
+ * and the recorded route belongs to the one the user left (spec §G.5).
+ * Reading through that arrival forgets the record, so the close button —
+ * which reads once, during hydration — lands on home rather than on a
+ * route from another Workspace. A plan change's return stays in the same
+ * Workspace and keeps its entry point.
  */
 const billingReturnRoute = createAreaReturnRoute({
   prefix: "/billing",
@@ -31,19 +34,22 @@ export function clearBillingReturnRoute(): void {
   billingReturnRoute.clear();
 }
 
-const STRIPE_RETURN_PARAMETER = "stripeState";
-
-function arrivedFromStripe(): boolean {
+/** Whether the page is the Stripe return of a Workspace this tab created. */
+function arrivedFromCreation(): boolean {
   if (typeof window === "undefined") {
     return false;
   }
-  return new URLSearchParams(window.location.search).has(
-    STRIPE_RETURN_PARAMETER
+  const query = new URLSearchParams(window.location.search);
+  const workspaceId = query.get("workspaceId");
+  return (
+    query.has("stripeState") &&
+    workspaceId != null &&
+    isPendingWorkspaceCreation(workspaceId)
   );
 }
 
 export function readBillingReturnRoute(): string {
-  if (arrivedFromStripe()) {
+  if (arrivedFromCreation()) {
     billingReturnRoute.clear();
     return "/";
   }

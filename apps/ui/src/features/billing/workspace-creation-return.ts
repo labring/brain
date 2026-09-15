@@ -21,6 +21,18 @@ export function recordPendingWorkspaceCreation(workspaceId: string): void {
   }
 }
 
+/** Whether `workspaceId` is the Workspace this tab was creating; the record stays. */
+export function isPendingWorkspaceCreation(workspaceId: string): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.sessionStorage.getItem(STORAGE_KEY) === workspaceId;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether `workspaceId` is the Workspace this tab was creating; forgets the record either way. */
 export function consumePendingWorkspaceCreation(workspaceId: string): boolean {
   if (typeof window === "undefined") {

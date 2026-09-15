@@ -260,6 +260,8 @@ describe(`POST ${CREATE_PATH}`, () => {
       { ...VALID_CREATE_BODY, planName: "" },
       { ...VALID_CREATE_BODY, period: "2m" },
       { ...VALID_CREATE_BODY, payMethod: "cash" },
+      // A balance payment would settle without a redirect (spec §G.4).
+      { ...VALID_CREATE_BODY, payMethod: "balance" },
       { ...VALID_CREATE_BODY, regionDomain: undefined },
     ]) {
       const response = await create(billingRequest(CREATE_PATH, { body }));

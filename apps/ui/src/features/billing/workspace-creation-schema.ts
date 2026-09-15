@@ -11,30 +11,36 @@ import { workspaceNameSchema } from "@/features/workspace/workspace-write-schema
  * add, never the client's to choose.
  */
 
-const paymentRequestFields = {
+/**
+ * The first payment's terms. Brain's creation always goes to Stripe
+ * Checkout (spec §G.4): a balance payment would settle without a redirect,
+ * and the routes read "no redirect" as a failed payment, so the schema
+ * admits no other method.
+ */
+export const workspacePaymentTermsSchema = z.object({
   cardId: z.string().trim().min(1).optional(),
-  payMethod: z.enum(["stripe", "balance"]),
+  payMethod: z.literal("stripe"),
   period: z.enum(["1m", "1y"]),
   planName: z.string().trim().min(1),
   promotionCode: z.string().trim().min(1).optional(),
   regionDomain: z.string().trim().min(1),
-};
+});
+
+export type WorkspacePaymentTerms = z.infer<typeof workspacePaymentTermsSchema>;
 
 /** `POST /api/billing/workspace-create`: name the Workspace and its first plan. */
-export const workspaceCreationRequestSchema = z.object({
-  ...paymentRequestFields,
-  name: workspaceNameSchema,
-});
+export const workspaceCreationRequestSchema =
+  workspacePaymentTermsSchema.extend({ name: workspaceNameSchema });
 
 export type WorkspaceCreationRequest = z.infer<
   typeof workspaceCreationRequestSchema
 >;
 
 /** `POST /api/billing/workspace-create/retry-payment`: Step 2 again for a created Workspace. */
-export const workspaceCreationRetryRequestSchema = z.object({
-  ...paymentRequestFields,
-  workspaceId: z.string().trim().min(1),
-});
+export const workspaceCreationRetryRequestSchema =
+  workspacePaymentTermsSchema.extend({
+    workspaceId: z.string().trim().min(1),
+  });
 
 export type WorkspaceCreationRetryRequest = z.infer<
   typeof workspaceCreationRetryRequestSchema

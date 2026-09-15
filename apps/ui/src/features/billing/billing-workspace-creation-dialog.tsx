@@ -165,6 +165,10 @@ export function BillingWorkspaceCreationDialog({
     }
     setSubmitting(true);
     setError(null);
+    // The top-level navigation takes a moment to unload the page; the
+    // button stays in its submitting state so a second press cannot create
+    // a second Workspace in the meantime.
+    let handedOff = false;
     try {
       const { payment, workspace } = await services.createWorkspace({
         appToken: credentials.appToken,
@@ -174,7 +178,7 @@ export function BillingWorkspaceCreationDialog({
         regionDomain,
       });
       if (payment.status === "started") {
-        // The page is leaving; the button stays in its submitting state.
+        handedOff = true;
         handOffToStripe(workspace, payment);
         return;
       }
@@ -193,7 +197,9 @@ export function BillingWorkspaceCreationDialog({
       }
       setError(errorDescription(cause, "The Workspace could not be created."));
     } finally {
-      setSubmitting(false);
+      if (!handedOff) {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -203,6 +209,7 @@ export function BillingWorkspaceCreationDialog({
     }
     setSubmitting(true);
     setError(null);
+    let handedOff = false;
     try {
       const payment = await services.retryPayment({
         appToken: credentials.appToken,
@@ -212,6 +219,7 @@ export function BillingWorkspaceCreationDialog({
         workspaceId: workspace.id,
       });
       if (payment.status === "started") {
+        handedOff = true;
         handOffToStripe(workspace, payment);
         return;
       }
@@ -224,7 +232,9 @@ export function BillingWorkspaceCreationDialog({
         )
       );
     } finally {
-      setSubmitting(false);
+      if (!handedOff) {
+        setSubmitting(false);
+      }
     }
   };
 

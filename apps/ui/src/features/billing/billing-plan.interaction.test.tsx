@@ -394,6 +394,8 @@ test("Stripe return refreshes before congratulations and clears on close", async
     };
     let rendered: ReturnType<typeof render> | undefined;
 
+    window.history.replaceState({}, "", "/project/abc");
+    recordBillingReturnRoute();
     window.history.replaceState(
       {},
       "",
@@ -441,6 +443,8 @@ test("Stripe return refreshes before congratulations and clears on close", async
       assert.ok(congratulations.includes("$50.00"));
       assert.equal(congratulations.includes("Charged today"), false);
       assert.equal(congratulations.includes("Workspace created"), false);
+      // The same Workspace: close still returns where the user came from.
+      assert.equal(readBillingReturnRoute(), "/project/abc");
       assert.deepEqual(replacements, []);
 
       await act(() => {

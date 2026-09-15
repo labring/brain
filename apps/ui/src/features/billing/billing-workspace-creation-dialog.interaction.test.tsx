@@ -233,6 +233,15 @@ test("a valid name and plan confirm, create, and hand the top window to Stripe",
       ]);
       // The return leg tells a creation from a plan change by this record.
       assert.equal(consumePendingWorkspaceCreation(CREATED.id), true);
+      // The page is unloading; a second press must not create a second one.
+      const creating = within(confirm).getByRole("button", {
+        name: "Creating…",
+      });
+      assert.equal(creating.hasAttribute("disabled"), true);
+      assert.equal(
+        within(confirm).queryByRole("button", { name: "Create & Pay" }),
+        null
+      );
     } finally {
       await act(() => rendered.unmount());
     }
@@ -317,6 +326,12 @@ test("a failed first payment offers to retry it or leave the created Workspace a
         { input: STARTED.redirectUrl, kind: "redirect" },
       ]);
       assert.equal(consumePendingWorkspaceCreation(CREATED.id), true);
+      assert.equal(
+        within(failed)
+          .getByRole("button", { name: "Starting payment…" })
+          .hasAttribute("disabled"),
+        true
+      );
     } finally {
       await act(() => rendered.unmount());
     }

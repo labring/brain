@@ -935,10 +935,13 @@ const MOCK_TAKEN_WORKSPACE_NAME = "conflict";
  */
 function mockWorkspaceCreationPayment(
   context: FixtureContext,
-  workspaceId: string,
-  failureMark: string
+  input: {
+    /** Text whose "payfail" fails the payment: the creation's name; nothing on a retry. */
+    failWhenMarked: string;
+    workspaceId: string;
+  }
 ): WorkspaceCreationPayment {
-  if (failureMark.toLowerCase().includes(MOCK_PAYMENT_FAILURE_MARK)) {
+  if (input.failWhenMarked.toLowerCase().includes(MOCK_PAYMENT_FAILURE_MARK)) {
     return {
       error: "Mock payment refused (the name says so).",
       status: "failed",
@@ -947,7 +950,7 @@ function mockWorkspaceCreationPayment(
   const landing = new URL("/billing", context.origin);
   landing.searchParams.set("stripeState", "success");
   landing.searchParams.set("payId", MOCK_CHECKOUT_PAY_ID);
-  landing.searchParams.set("workspaceId", workspaceId);
+  landing.searchParams.set("workspaceId", input.workspaceId);
   return {
     invoiceId: MOCK_CHECKOUT_INVOICE_ID,
     payId: MOCK_CHECKOUT_PAY_ID,
@@ -1013,11 +1016,10 @@ const WRITE_FIXTURES: Record<
     return {
       nextScenario: context.scenario,
       payload: {
-        payment: mockWorkspaceCreationPayment(
-          context,
-          MOCK_CREATED_WORKSPACE_ID,
-          name
-        ),
+        payment: mockWorkspaceCreationPayment(context, {
+          failWhenMarked: name,
+          workspaceId: MOCK_CREATED_WORKSPACE_ID,
+        }),
         workspace: {
           id: MOCK_CREATED_WORKSPACE_ID,
           name,
@@ -1035,15 +1037,14 @@ const WRITE_FIXTURES: Record<
         status: 400,
       };
     }
-    const { workspaceId } = parsed.data;
+    // A retry always starts: the failed first payment was the name's doing.
     return {
       nextScenario: context.scenario,
       payload: {
-        payment: mockWorkspaceCreationPayment(
-          context,
-          workspaceId,
-          workspaceId
-        ),
+        payment: mockWorkspaceCreationPayment(context, {
+          failWhenMarked: "",
+          workspaceId: parsed.data.workspaceId,
+        }),
       },
     };
   },

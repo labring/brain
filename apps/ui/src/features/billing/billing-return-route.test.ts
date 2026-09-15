@@ -6,6 +6,7 @@ import {
   recordBillingReturnRoute,
   sanitizeBillingReturnRoute,
 } from "./billing-return-route";
+import { recordPendingWorkspaceCreation } from "./workspace-creation-return";
 
 function withWindow(
   location: { pathname: string; search: string },
@@ -53,18 +54,32 @@ test("sanitizeBillingReturnRoute falls back to home for unusable values", () => 
   assert.equal(sanitizeBillingReturnRoute("/billing?mode=upgrade"), "/");
 });
 
-test("a Stripe return voids the recorded entry point: it names the old Workspace's route", () => {
+test("a creation's Stripe return voids the recorded entry point: it names the old Workspace's route", () => {
   withWindow({ pathname: "/project/abc", search: "" }, (storage) => {
     recordBillingReturnRoute();
+    recordPendingWorkspaceCreation("ns-new");
     assert.equal(readBillingReturnRoute(), "/project/abc");
 
     window.location.pathname = "/billing";
     window.location.search = "?stripeState=success&payId=p1&workspaceId=ns-new";
     assert.equal(readBillingReturnRoute(), "/");
-    assert.equal(storage.size, 0);
+    assert.equal(storage.has("billing-return-route"), false);
 
     // Once the return parameters are stripped, nothing recorded remains.
     window.location.search = "";
     assert.equal(readBillingReturnRoute(), "/");
+  });
+});
+
+test("a plan change's Stripe return keeps the entry point: it is the same Workspace", () => {
+  withWindow({ pathname: "/project/abc", search: "" }, () => {
+    recordBillingReturnRoute();
+    window.location.pathname = "/billing";
+    window.location.search = "?stripeState=success&payId=p1&workspaceId=ns-abc";
+    assert.equal(readBillingReturnRoute(), "/project/abc");
+
+    // Another tab's creation record names a different Workspace: kept too.
+    recordPendingWorkspaceCreation("ns-other");
+    assert.equal(readBillingReturnRoute(), "/project/abc");
   });
 });

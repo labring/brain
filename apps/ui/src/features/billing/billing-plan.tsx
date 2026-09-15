@@ -218,13 +218,15 @@ export function BillingPlanWorkflow({
     let refresh = stripeRefreshRef.current;
     if (refresh?.key !== key) {
       // Read once per arrival, alongside the refresh: a creation's record is
-      // spent on the first read, and the recorded return route belongs to the
-      // Workspace the creation left (spec §G.5) — close returns home.
-      clearBillingReturnRoute();
+      // spent on the first read. Its recorded return route belongs to the
+      // Workspace the creation left (spec §G.5), so close returns home; a
+      // plan change came back to the same Workspace and keeps its own.
+      const created = consumePendingWorkspaceCreation(stripeReturn.workspaceId);
+      if (created) {
+        clearBillingReturnRoute();
+      }
       refresh = {
-        conclusion: consumePendingWorkspaceCreation(stripeReturn.workspaceId)
-          ? "created"
-          : "changed",
+        conclusion: created ? "created" : "changed",
         key,
         request: onRefreshSnapshot(stripeReturn.workspaceId),
       };

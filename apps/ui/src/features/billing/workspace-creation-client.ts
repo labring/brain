@@ -61,10 +61,7 @@ function creationRequester(
   dependencies: WorkspaceCreationDependencies
 ) {
   return createBillingJsonRequester({
-    credentials: {
-      appToken: credentials.appToken,
-      kubeconfig: credentials.kubeconfig,
-    },
+    credentials,
     fallbackErrorMessage,
     fetch: dependencies.fetch ?? globalThis.fetch,
   });

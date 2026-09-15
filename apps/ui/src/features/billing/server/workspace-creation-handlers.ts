@@ -20,8 +20,7 @@ import {
   WORKSPACE_NAME_CONFLICT_CODE,
   WORKSPACE_NAME_CONFLICT_MESSAGE,
   type WorkspaceCreationPayment,
-  type WorkspaceCreationRequest,
-  type WorkspaceCreationRetryRequest,
+  type WorkspacePaymentTerms,
   workspaceCreationRequestSchema,
   workspaceCreationRetryRequestSchema,
 } from "../workspace-creation-schema";
@@ -58,13 +57,10 @@ export interface WorkspaceCreationRouteDependencies
 
 type RouteHandler = (request: Request) => Promise<Response>;
 
-interface PaymentRequestFields {
-  cardId?: string;
-  payMethod: "balance" | "stripe";
-  period: "1m" | "1y";
-  planName: string;
-  promotionCode?: string;
-  regionDomain: string;
+/** The account-service actor a Billing write runs as. */
+interface PayingActor {
+  userId: string;
+  userUid: string;
 }
 
 function errorResponse(error: string, status: number, code?: string): Response {
@@ -78,18 +74,40 @@ function jsonResponse(payload: unknown): Response {
   return Response.json(payload, { headers: { "cache-control": "no-store" } });
 }
 
-async function parsedBody<T>(
+/**
+ * The preamble both routes share: the Workspace Actor proven the way every
+ * Billing write proves it (a missing binding or legacy id → 401), then the
+ * route's zod body (→ 400). account-service still addresses the actor by
+ * the legacy id as well.
+ */
+async function authorizedCreationRequest<T>(
   request: Request,
+  dependencies: WorkspaceCreationRouteDependencies,
   schema: z.ZodType<T>,
   invalidMessage: string
 ): Promise<
-  { body: T; response?: never } | { body?: never; response: Response }
+  | { actor: PayingActor; body: T; response?: never }
+  | { actor?: never; body?: never; response: Response }
 > {
+  const actor = await authorizeBillingActor(
+    request,
+    dependencies.authorizeWorkspaceActor
+  );
+  if (!actor.ok) {
+    return { response: actor.response };
+  }
+  if (actor.userId === "") {
+    return { response: errorResponse("Authentication is required.", 401) };
+  }
   const payload: unknown = await request.json().catch(() => null);
   const parsed = schema.safeParse(payload);
-  return parsed.success
-    ? { body: parsed.data }
-    : { response: errorResponse(invalidMessage, 400) };
+  if (!parsed.success) {
+    return { response: errorResponse(invalidMessage, 400) };
+  }
+  return {
+    actor: { userId: actor.userId, userUid: actor.userUid },
+    body: parsed.data,
+  };
 }
 
 const DESKTOP_CODE_STATUSES: Record<number, number> = {
@@ -142,9 +160,9 @@ const PAYMENT_FAILED_FALLBACK =
  */
 async function startWorkspacePayment(
   dependencies: WorkspaceCreationRouteDependencies,
-  actor: { userId: string; userUid: string },
+  actor: PayingActor,
   workspaceId: string,
-  fields: PaymentRequestFields
+  fields: WorkspacePaymentTerms
 ): Promise<WorkspaceCreationPayment> {
   const body = {
     ...(fields.cardId == null ? {} : { cardId: fields.cardId }),
@@ -230,23 +248,14 @@ export function createBillingWorkspaceCreateHandler(
   const entry = BILLING_ROUTES.workspaceCreate;
   return async function handler(request: Request): Promise<Response> {
     const log = routeLog(dependencies, entry.apiPath);
-    const actor = await authorizeBillingActor(
+    const { actor, body, response } = await authorizedCreationRequest(
       request,
-      dependencies.authorizeWorkspaceActor
-    );
-    if (!actor.ok) {
-      return actor.response;
-    }
-    if (actor.userId === "") {
-      return errorResponse("Authentication is required.", 401);
-    }
-    const parsed = await parsedBody<WorkspaceCreationRequest>(
-      request,
+      dependencies,
       workspaceCreationRequestSchema,
       "Invalid workspace creation request."
     );
-    if (parsed.response != null) {
-      return parsed.response;
+    if (response != null) {
+      return response;
     }
     const desktop = desktopForCreation(dependencies, log);
     if (!desktop.ok) {
@@ -255,7 +264,7 @@ export function createBillingWorkspaceCreateHandler(
 
     const created = await desktop.desktop.namespaceCreate(
       appTokenFromRequest(request),
-      parsed.body.name
+      body.name
     );
     if (!created.ok) {
       log(
@@ -267,9 +276,9 @@ export function createBillingWorkspaceCreateHandler(
     const workspace: CreatedWorkspace = created.data;
     const payment = await startWorkspacePayment(
       dependencies,
-      { userId: actor.userId, userUid: actor.userUid },
+      actor,
       workspace.id,
-      parsed.body
+      body
     );
     if (payment.status === "failed") {
       log("Workspace created but its first payment did not start", {
@@ -280,34 +289,31 @@ export function createBillingWorkspaceCreateHandler(
   };
 }
 
-/** `POST /api/billing/workspace-create/retry-payment`: Step 2 alone. */
+/**
+ * `POST /api/billing/workspace-create/retry-payment`: Step 2 alone. The
+ * Workspace named is not the one the actor's kubeconfig proves — it was
+ * just created — so Brain cannot vouch for it; account-service's pay is
+ * the authority that the actor owns the Workspace it subscribes, as it is
+ * for every Billing write.
+ */
 export function createBillingWorkspaceCreateRetryPaymentHandler(
   dependencies: WorkspaceCreationRouteDependencies
 ): RouteHandler {
   return async function handler(request: Request): Promise<Response> {
-    const actor = await authorizeBillingActor(
+    const { actor, body, response } = await authorizedCreationRequest(
       request,
-      dependencies.authorizeWorkspaceActor
-    );
-    if (!actor.ok) {
-      return actor.response;
-    }
-    if (actor.userId === "") {
-      return errorResponse("Authentication is required.", 401);
-    }
-    const parsed = await parsedBody<WorkspaceCreationRetryRequest>(
-      request,
+      dependencies,
       workspaceCreationRetryRequestSchema,
       "Invalid workspace payment retry request."
     );
-    if (parsed.response != null) {
-      return parsed.response;
+    if (response != null) {
+      return response;
     }
     const payment = await startWorkspacePayment(
       dependencies,
-      { userId: actor.userId, userUid: actor.userUid },
-      parsed.body.workspaceId,
-      parsed.body
+      actor,
+      body.workspaceId,
+      body
     );
     return jsonResponse({ payment });
   };
