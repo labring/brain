@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { WORKSPACE_ROUTES } from "@/features/workspace/server/workspace-route-table";
+import { workspaceDetailsResponseSchema } from "@/features/workspace/workspace-details-schema";
+import { WORKSPACE_ERROR_CODES } from "@/features/workspace/workspace-errors";
 import { workspaceListResponseSchema } from "@/features/workspace/workspace-list-schema";
 import {
   SESSION_DEV_SCENARIOS,
@@ -107,7 +109,9 @@ test("every scenario answers every Workspace route with the session's own list",
       const response = await workspaceDevMockResponse(
         entry.desktopPath,
         new Request(`https://brain.test${entry.apiPath}`, {
-          headers: { cookie },
+          body: JSON.stringify({ uid: session.workspace.uid }),
+          headers: { "content-type": "application/json", cookie },
+          method: "POST",
         })
       );
       assert.equal(response?.status, 200, `${scenario} ${entry.apiPath}`);
@@ -118,8 +122,63 @@ test("every scenario answers every Workspace route with the session's own list",
           scenario
         );
       }
+      if (entry === WORKSPACE_ROUTES.details) {
+        // The staged Workspace's members, with the mock user in the role
+        // the session gave them, so the Workspace Area gates as staged.
+        const details = workspaceDetailsResponseSchema.parse(
+          await response?.json()
+        );
+        assert.deepEqual(details.workspace, session.workspace, scenario);
+        const me = details.members.find(
+          (candidate) => candidate.crName === session.user.crName
+        );
+        assert.equal(me?.role, session.workspace.role, scenario);
+        assert.equal(
+          details.members.filter((candidate) => candidate.role === "Owner")
+            .length,
+          1,
+          `${scenario} has exactly one Owner`
+        );
+      }
+    }
+    // Every Workspace in the list has a details answer, not just the staged one.
+    for (const workspace of session.workspaces) {
+      const response = await workspaceDevMockResponse(
+        WORKSPACE_ROUTES.details.desktopPath,
+        new Request("https://brain.test/api/workspace/details", {
+          body: JSON.stringify({ uid: workspace.uid }),
+          headers: { "content-type": "application/json", cookie },
+          method: "POST",
+        })
+      );
+      const details = workspaceDetailsResponseSchema.parse(
+        await response?.json()
+      );
+      assert.equal(details.workspace.uid, workspace.uid, scenario);
+      assert.ok(
+        details.members.some(
+          (candidate) => candidate.crName === session.user.crName
+        ),
+        `${scenario} ${workspace.name} lists the mock user`
+      );
     }
   }
+  // A uid outside the scenario's list is Desktop's 404, translated.
+  const unknown = await workspaceDevMockResponse(
+    WORKSPACE_ROUTES.details.desktopPath,
+    new Request("https://brain.test/api/workspace/details", {
+      body: JSON.stringify({ uid: "00000000-0000-4000-8000-0000000000ff" }),
+      headers: {
+        "content-type": "application/json",
+        cookie: `${sessionDevMockCookie.name}=${sessionDevMockCookie.format({ enabled: true, scenario: "owner-team" })}`,
+      },
+      method: "POST",
+    })
+  );
+  assert.equal(unknown?.status, 404);
+  assert.deepEqual(await unknown?.json(), {
+    error: WORKSPACE_ERROR_CODES.notFound,
+  });
   assert.equal(
     await workspaceDevMockResponse(
       WORKSPACE_ROUTES.list.desktopPath,

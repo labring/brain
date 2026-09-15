@@ -15,6 +15,10 @@ export interface WorkspaceRouteEntry {
 }
 
 export const WORKSPACE_ROUTES = {
+  details: {
+    apiPath: "/api/workspace/details",
+    desktopPath: "/api/auth/namespace/details",
+  },
   list: {
     apiPath: "/api/workspace/list",
     desktopPath: "/api/auth/namespace/list",

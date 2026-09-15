@@ -1,6 +1,12 @@
 import { resolveDevMock } from "@/features/dev-mock/server/resolve";
 import { WORKSPACE_ROUTES } from "@/features/workspace/server/workspace-route-table";
 import {
+  type WorkspaceDetailsResponse,
+  type WorkspaceMember,
+  workspaceDetailsRequestSchema,
+} from "@/features/workspace/workspace-details-schema";
+import { WORKSPACE_ERROR_CODES } from "@/features/workspace/workspace-errors";
+import {
   type SessionDevScenario,
   sessionDevMockCookie,
 } from "../dev-mock-cookie";
@@ -70,6 +76,98 @@ const MOCK_USER = {
   userUid: "00000000-0000-4000-8000-00000000aaaa",
 };
 
+function member(
+  crUid: string,
+  nickname: string,
+  role: WorkspaceMember["role"],
+  joinedAt: string,
+  alias: string | null = null
+): WorkspaceMember {
+  return {
+    alias,
+    avatarUrl: "",
+    crName: crUid === "cr-mock" ? MOCK_USER.crName : crUid.replace("cr-", ""),
+    crUid,
+    joinedAt,
+    nickname,
+    role,
+    userUid: crUid === "cr-mock" ? MOCK_USER.userUid : `uid-${crUid}`,
+  };
+}
+
+const ME = (role: WorkspaceMember["role"], joinedAt: string) =>
+  member("cr-mock", MOCK_USER.name, role, joinedAt);
+
+/**
+ * The members of each Workspace per scenario (spec §B.4): the mock user
+ * holds the role the scenario names, beside enough other members that
+ * every gate in the Workspace Area has a row to act on — an Owner to
+ * protect, a Manager, Developers with and without an alias.
+ */
+function membersFor(
+  scenario: SessionDevScenario,
+  workspaceUid: string
+): WorkspaceMember[] {
+  if (workspaceUid === PERSONAL.uid) {
+    return [ME("Owner", PERSONAL.createdAt)];
+  }
+  if (workspaceUid === SANDBOX.uid) {
+    return [
+      member("cr-kai", "Kai", "Owner", "2026-03-01T09:00:00.000Z"),
+      member(
+        "cr-ming",
+        "Ming",
+        "Manager",
+        "2026-03-02T09:00:00.000Z",
+        "Docs PM"
+      ),
+      ME("Developer", "2026-03-05T09:00:00.000Z"),
+      member("cr-su", "Su Lan", "Developer", "2026-05-18T09:00:00.000Z"),
+    ];
+  }
+  switch (scenario) {
+    case "owner-team":
+      return [
+        ME("Owner", ACME("Owner").createdAt),
+        member(
+          "cr-lin",
+          "Lin Wei",
+          "Manager",
+          "2026-02-20T09:00:00.000Z",
+          "Frontend lead"
+        ),
+        member("cr-chen", "Chen Jie", "Developer", "2026-04-11T09:00:00.000Z"),
+        member(
+          "cr-zhao",
+          "zhao.xiaoming",
+          "Developer",
+          "2026-07-01T09:00:00.000Z",
+          "Summer intern"
+        ),
+      ];
+    case "manager":
+      return [
+        member("cr-rui", "Rui", "Owner", ACME("Owner").createdAt),
+        ME("Manager", "2026-02-15T09:00:00.000Z"),
+        member("cr-yu", "Yu", "Manager", "2026-02-25T09:00:00.000Z"),
+        member("cr-qi", "Qi", "Developer", "2026-07-30T09:00:00.000Z"),
+      ];
+    default:
+      return [
+        member("cr-kai", "Kai", "Owner", ACME("Owner").createdAt),
+        member(
+          "cr-ming",
+          "Ming",
+          "Manager",
+          "2026-02-15T09:00:00.000Z",
+          "Docs PM"
+        ),
+        ME("Developer", "2026-03-05T09:00:00.000Z"),
+        member("cr-su", "Su Lan", "Developer", "2026-05-18T09:00:00.000Z"),
+      ];
+  }
+}
+
 function workspacesFor(scenario: SessionDevScenario): SessionWorkspace[] {
   switch (scenario) {
     case "personal-only":
@@ -135,11 +233,43 @@ export async function sessionDevMockResponse(
   });
 }
 
+function mockJson(payload: unknown, status = 200): Response {
+  return Response.json(payload, {
+    headers: { "cache-control": "no-store" },
+    status,
+  });
+}
+
+async function detailsFixture(
+  scenario: SessionDevScenario,
+  request: Request
+): Promise<Response> {
+  const payload: unknown = await request.json().catch(() => null);
+  const parsed = workspaceDetailsRequestSchema.safeParse(payload ?? {});
+  if (!parsed.success) {
+    return mockJson({ error: WORKSPACE_ERROR_CODES.invalidRequest }, 400);
+  }
+  const workspace = workspacesFor(scenario).find(
+    (candidate) => candidate.uid === parsed.data.uid
+  );
+  if (workspace == null) {
+    // Desktop answers 404 for a Workspace the caller is not in.
+    return mockJson({ error: WORKSPACE_ERROR_CODES.notFound }, 404);
+  }
+  const details: WorkspaceDetailsResponse = {
+    members: membersFor(scenario, workspace.uid),
+    workspace,
+  };
+  return mockJson(details);
+}
+
 const WORKSPACE_FIXTURES: Record<
   string,
-  (scenario: SessionDevScenario) => unknown
+  (scenario: SessionDevScenario, request: Request) => Promise<Response>
 > = {
-  [WORKSPACE_ROUTES.list.desktopPath]: (scenario) => workspacesFor(scenario),
+  [WORKSPACE_ROUTES.details.desktopPath]: detailsFixture,
+  [WORKSPACE_ROUTES.list.desktopPath]: (scenario) =>
+    Promise.resolve(mockJson(workspacesFor(scenario))),
 };
 
 /** Answers a `/api/workspace/*` route by its Desktop path from the scenario. */
@@ -165,9 +295,5 @@ export function workspaceDevMockResponse(
       )
     );
   }
-  return Promise.resolve(
-    Response.json(fixture(resolution.scenario), {
-      headers: { "cache-control": "no-store" },
-    })
-  );
+  return fixture(resolution.scenario, request);
 }

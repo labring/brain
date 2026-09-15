@@ -56,6 +56,8 @@ export const SESSION_SWR_KEYS = {
   statusHintBalance: sessionKey("status-hint-balance"),
   statusHintPlans: sessionKey("status-hint-plans"),
   statusHintQuota: sessionKey("status-hint-quota"),
+  /** The Workspace Area's Managed Workspace read, `POST /api/workspace/details`. */
+  workspaceDetails: sessionKey("workspace-details"),
   /** The Switcher's list refresh through `GET /api/workspace/list`. */
   workspaceList: sessionKey("workspace-list"),
   workspaceOwner: sessionKey("workspace-owner"),
