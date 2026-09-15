@@ -22,8 +22,15 @@ import {
 
 export const DESKTOP_AUTH_PATHS = {
   info: "/api/auth/info",
+  namespaceAbdicate: "/api/auth/namespace/abdicate",
+  namespaceDelete: "/api/auth/namespace/delete",
   namespaceDetails: "/api/auth/namespace/details",
+  namespaceInviteCode: "/api/auth/namespace/getInviteCode",
   namespaceList: "/api/auth/namespace/list",
+  namespaceModifyRole: "/api/auth/namespace/modifyRole",
+  namespaceRemoveUser: "/api/auth/namespace/removeUser",
+  namespaceRename: "/api/auth/namespace/rename",
+  namespaceSetAlias: "/api/auth/namespace/setAlias",
   namespaceSwitch: "/api/auth/namespace/switch",
   regionToken: "/api/auth/regionToken",
 } as const;
@@ -42,6 +49,20 @@ const DESKTOP_ROLES: Record<number, WorkspaceRole> = {
   1: "Manager",
   2: "Developer",
 };
+
+/** The role code Desktop's write routes take (`role`, `tRole`). */
+const DESKTOP_ROLE_CODES: Record<WorkspaceRole, number> = {
+  Developer: 2,
+  Manager: 1,
+  Owner: 0,
+};
+
+/** Desktop answers the write routes with `data: null`; nothing is read from it. */
+const voidDataSchema = z.unknown().transform((): null => null);
+
+const inviteCodeDataSchema = z.object({ code: z.string().min(1) });
+
+export type InviteCodeData = z.infer<typeof inviteCodeDataSchema>;
 
 /** `NSType { Team = 0, Private = 1 }` in Desktop. */
 const DESKTOP_NSTYPE_PRIVATE = 1;
@@ -194,13 +215,53 @@ export const desktopWorkspaceDetailsSchema = z
 
 export interface DesktopAuthApi {
   authInfo(regionalToken: string): Promise<DesktopCallResult<AuthInfoData>>;
+  /** Transfers ownership to `targetCrUid`; the caller becomes a Developer. */
+  namespaceAbdicate(
+    regionalToken: string,
+    workspaceUid: string,
+    targetCrUid: string
+  ): Promise<DesktopCallResult<null>>;
+  namespaceDelete(
+    regionalToken: string,
+    workspaceUid: string
+  ): Promise<DesktopCallResult<null>>;
   namespaceDetails(
     regionalToken: string,
     workspaceUid: string
   ): Promise<DesktopCallResult<DesktopWorkspaceDetails>>;
+  /** A Workspace Invite Link code for `role` (never Owner; the schema forbids it). */
+  namespaceInviteCode(
+    regionalToken: string,
+    workspaceUid: string,
+    role: WorkspaceRole
+  ): Promise<DesktopCallResult<InviteCodeData>>;
   namespaceList(
     regionalToken: string
   ): Promise<DesktopCallResult<SessionWorkspace[]>>;
+  namespaceModifyRole(
+    regionalToken: string,
+    workspaceUid: string,
+    targetCrUid: string,
+    role: WorkspaceRole
+  ): Promise<DesktopCallResult<null>>;
+  /** Removes a member; the caller's own crUid means leaving. */
+  namespaceRemoveUser(
+    regionalToken: string,
+    workspaceUid: string,
+    targetCrUid: string
+  ): Promise<DesktopCallResult<null>>;
+  namespaceRename(
+    regionalToken: string,
+    workspaceUid: string,
+    name: string
+  ): Promise<DesktopCallResult<null>>;
+  /** Sets a member's alias in this Workspace; null clears it. */
+  namespaceSetAlias(
+    regionalToken: string,
+    workspaceUid: string,
+    targetCrUid: string,
+    alias: string | null
+  ): Promise<DesktopCallResult<null>>;
   namespaceSwitch(
     regionalToken: string,
     workspaceUid: string
@@ -209,6 +270,19 @@ export interface DesktopAuthApi {
 }
 
 export function createDesktopAuthApi(client: DesktopClient): DesktopAuthApi {
+  const post = <T>(
+    regionalToken: string,
+    path: string,
+    body: unknown,
+    dataSchema: z.ZodType<T>
+  ) =>
+    client.call({
+      authorization: encodedTokenAuthorization(regionalToken),
+      body,
+      dataSchema,
+      method: "POST",
+      path,
+    });
   return {
     authInfo: (regionalToken) =>
       client.call({
@@ -217,6 +291,20 @@ export function createDesktopAuthApi(client: DesktopClient): DesktopAuthApi {
         method: "GET",
         path: DESKTOP_AUTH_PATHS.info,
       }),
+    namespaceAbdicate: (regionalToken, workspaceUid, targetCrUid) =>
+      post(
+        regionalToken,
+        DESKTOP_AUTH_PATHS.namespaceAbdicate,
+        { ns_uid: workspaceUid, targetUserCrUid: targetCrUid },
+        voidDataSchema
+      ),
+    namespaceDelete: (regionalToken, workspaceUid) =>
+      post(
+        regionalToken,
+        DESKTOP_AUTH_PATHS.namespaceDelete,
+        { ns_uid: workspaceUid },
+        voidDataSchema
+      ),
     namespaceDetails: (regionalToken, workspaceUid) =>
       client.call({
         authorization: encodedTokenAuthorization(regionalToken),
@@ -225,6 +313,13 @@ export function createDesktopAuthApi(client: DesktopClient): DesktopAuthApi {
         method: "POST",
         path: DESKTOP_AUTH_PATHS.namespaceDetails,
       }),
+    namespaceInviteCode: (regionalToken, workspaceUid, role) =>
+      post(
+        regionalToken,
+        DESKTOP_AUTH_PATHS.namespaceInviteCode,
+        { ns_uid: workspaceUid, role: DESKTOP_ROLE_CODES[role] },
+        inviteCodeDataSchema
+      ),
     namespaceList: (regionalToken) =>
       client.call({
         authorization: encodedTokenAuthorization(regionalToken),
@@ -232,6 +327,38 @@ export function createDesktopAuthApi(client: DesktopClient): DesktopAuthApi {
         method: "GET",
         path: DESKTOP_AUTH_PATHS.namespaceList,
       }),
+    namespaceModifyRole: (regionalToken, workspaceUid, targetCrUid, role) =>
+      post(
+        regionalToken,
+        DESKTOP_AUTH_PATHS.namespaceModifyRole,
+        {
+          ns_uid: workspaceUid,
+          tRole: DESKTOP_ROLE_CODES[role],
+          targetUserCrUid: targetCrUid,
+        },
+        voidDataSchema
+      ),
+    namespaceRemoveUser: (regionalToken, workspaceUid, targetCrUid) =>
+      post(
+        regionalToken,
+        DESKTOP_AUTH_PATHS.namespaceRemoveUser,
+        { ns_uid: workspaceUid, targetUserCrUid: targetCrUid },
+        voidDataSchema
+      ),
+    namespaceRename: (regionalToken, workspaceUid, name) =>
+      post(
+        regionalToken,
+        DESKTOP_AUTH_PATHS.namespaceRename,
+        { ns_uid: workspaceUid, teamName: name },
+        voidDataSchema
+      ),
+    namespaceSetAlias: (regionalToken, workspaceUid, targetCrUid, alias) =>
+      post(
+        regionalToken,
+        DESKTOP_AUTH_PATHS.namespaceSetAlias,
+        { alias, ns_uid: workspaceUid, targetUserCrUid: targetCrUid },
+        voidDataSchema
+      ),
     namespaceSwitch: (regionalToken, workspaceUid) =>
       client.call({
         authorization: encodedTokenAuthorization(regionalToken),

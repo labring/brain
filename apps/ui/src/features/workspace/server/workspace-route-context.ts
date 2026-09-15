@@ -45,6 +45,24 @@ export function workspaceJsonResponse(payload: unknown): Response {
   return Response.json(payload, { headers: { "cache-control": "no-store" } });
 }
 
+/**
+ * The request body as JSON: absent or blank is `{}` (then invalid against
+ * every route's schema), unparseable is null.
+ */
+export async function workspaceRequestPayload(
+  request: Request
+): Promise<unknown | null> {
+  const text = (await request.text().catch(() => null))?.trim() ?? "";
+  if (text === "") {
+    return {};
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 const DESKTOP_CODE_RESPONSES: Record<number, [string, number]> = {
   400: [WORKSPACE_ERROR_CODES.invalidRequest, 400],
   401: [WORKSPACE_ERROR_CODES.sessionExpired, 401],

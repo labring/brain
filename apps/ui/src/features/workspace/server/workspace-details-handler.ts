@@ -11,6 +11,7 @@ import {
   type WorkspaceRouteDependencies,
   workspaceErrorResponse,
   workspaceJsonResponse,
+  workspaceRequestPayload,
   workspaceRouteContext,
 } from "./workspace-route-context";
 import { WORKSPACE_ROUTES } from "./workspace-route-table";
@@ -21,19 +22,6 @@ import { WORKSPACE_ROUTES } from "./workspace-route-table";
  * `{ workspace, members }` in Brain's shape. Desktop is the authority on
  * membership — a caller outside the Workspace gets its 404, translated.
  */
-
-/** The request body must be JSON; absent or blank is `{}` (then invalid). */
-async function requestPayload(request: Request): Promise<unknown | null> {
-  const text = (await request.text().catch(() => null))?.trim() ?? "";
-  if (text === "") {
-    return {};
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
 
 export function createWorkspaceDetailsHandler(
   dependencies: WorkspaceRouteDependencies = {}
@@ -47,7 +35,7 @@ export function createWorkspaceDetailsHandler(
     if (!context.ok) {
       return context.response;
     }
-    const payload = await requestPayload(request);
+    const payload = await workspaceRequestPayload(request);
     const parsed =
       payload == null ? null : workspaceDetailsRequestSchema.safeParse(payload);
     if (parsed == null || !parsed.success) {

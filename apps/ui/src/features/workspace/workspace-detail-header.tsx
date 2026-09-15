@@ -24,16 +24,26 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
 import type { SessionWorkspace } from "@/features/session/session-schema";
 
+import type { WorkspaceActions } from "./use-workspace-actions";
+import {
+  WorkspaceDeleteDialog,
+  WorkspaceLeaveDialog,
+  WorkspaceRenameDialog,
+  WorkspaceTransferDialog,
+} from "./workspace-detail-dialogs";
+import type { WorkspaceMember } from "./workspace-details-schema";
 import type {
   WorkspaceActionGate,
   WorkspaceActionGates,
 } from "./workspace-gating-core";
 import { PlanSlot } from "./workspace-plan-slot";
+
+type HeaderDialog = "delete" | "leave" | "rename" | "transfer";
 
 export const WORKSPACE_ID_COPIED_NOTICE = "Workspace ID copied";
 
@@ -78,16 +88,22 @@ function MenuAction({
   gate,
   icon,
   label,
+  onSelect,
   variant,
 }: {
   gate: WorkspaceActionGate;
   icon: ReactNode;
   label: string;
+  onSelect: () => void;
   variant?: "default" | "destructive";
 }) {
   const reason = disabledReason(gate);
   return (
-    <DropdownMenuItem disabled={reason != null} variant={variant}>
+    <DropdownMenuItem
+      disabled={reason != null}
+      onClick={onSelect}
+      variant={variant}
+    >
       {icon}
       <span className="flex min-w-0 flex-col">
         <span>{label}</span>
@@ -111,9 +127,11 @@ function MenuAction({
  */
 function WorkspaceActionsMenu({
   gates,
+  onOpen,
   ready,
 }: {
   gates: WorkspaceActionGates;
+  onOpen: (dialog: HeaderDialog) => void;
   /** False until the members landed: transfer's gate waits on their count. */
   ready: boolean;
 }) {
@@ -140,6 +158,7 @@ function WorkspaceActionsMenu({
             gate={gates.rename}
             icon={<Pencil aria-hidden />}
             label="Rename…"
+            onSelect={() => onOpen("rename")}
           />
         )}
         {gates.rename.kind !== "hidden" && dangerous ? (
@@ -150,6 +169,7 @@ function WorkspaceActionsMenu({
             gate={gates.transfer}
             icon={<ArrowLeftRight aria-hidden />}
             label="Transfer ownership…"
+            onSelect={() => onOpen("transfer")}
           />
         )}
         {gates.delete.kind === "hidden" ? null : (
@@ -157,6 +177,7 @@ function WorkspaceActionsMenu({
             gate={gates.delete}
             icon={<Trash2 aria-hidden />}
             label="Delete workspace…"
+            onSelect={() => onOpen("delete")}
             variant="destructive"
           />
         )}
@@ -172,22 +193,36 @@ function WorkspaceActionsMenu({
  * workspace", and the copyable namespace id. On the right a non-Owner's
  * Leave workspace button (disabled with a tooltip while it is the current
  * Workspace) or the Owner's ⋯ menu. The controls are rendered from the
- * gates; the operations behind them arrive with the write routes.
+ * gates and open the dialogs that run the writes (spec §D.7): Rename
+ * takes effect on submit, Delete and Transfer ask for the name, Leave
+ * asks once.
  */
 export function WorkspaceDetailHeader({
+  actions,
   gates,
   isCurrent,
-  membersLoaded,
+  meCrName,
+  members,
   planName,
   workspace,
 }: {
+  actions: WorkspaceActions;
   gates: WorkspaceActionGates;
   isCurrent: boolean;
-  /** The ⋯ menu opens only once the member count behind its gates is known. */
-  membersLoaded: boolean;
+  meCrName: string;
+  /** Undefined until the members landed: the ⋯ menu and Leave wait on them. */
+  members: readonly WorkspaceMember[] | undefined;
   planName: string | null | undefined;
   workspace: SessionWorkspace;
 }) {
+  const [dialog, setDialog] = useState<HeaderDialog | null>(null);
+  const closeDialog = (open: boolean) => {
+    if (!open) {
+      setDialog(null);
+    }
+  };
+  const me = members?.find((member) => member.crName === meCrName);
+  const others = (members ?? []).filter((member) => member.crName !== meCrName);
   const leaveReason = disabledReason(gates.leave);
   const showMenu =
     gates.rename.kind !== "hidden" ||
@@ -242,7 +277,8 @@ export function WorkspaceDetailHeader({
           <AppButton
             aria-label="Leave workspace"
             className="shrink-0"
-            disabled={leaveReason != null}
+            disabled={leaveReason != null || me == null}
+            onClick={() => setDialog("leave")}
             variant="secondary"
           >
             <LogOut aria-hidden />
@@ -251,7 +287,44 @@ export function WorkspaceDetailHeader({
         </WithReason>
       )}
       {showMenu ? (
-        <WorkspaceActionsMenu gates={gates} ready={membersLoaded} />
+        <WorkspaceActionsMenu
+          gates={gates}
+          onOpen={setDialog}
+          ready={members != null}
+        />
+      ) : null}
+      {dialog === "rename" ? (
+        <WorkspaceRenameDialog
+          onOpenChange={closeDialog}
+          onRename={actions.rename}
+          pending={actions.pending}
+          workspace={workspace}
+        />
+      ) : null}
+      {dialog === "delete" ? (
+        <WorkspaceDeleteDialog
+          onDelete={actions.deleteWorkspace}
+          onOpenChange={closeDialog}
+          pending={actions.pending}
+          workspace={workspace}
+        />
+      ) : null}
+      {dialog === "transfer" ? (
+        <WorkspaceTransferDialog
+          candidates={others}
+          onOpenChange={closeDialog}
+          onTransfer={actions.transfer}
+          pending={actions.pending}
+          workspace={workspace}
+        />
+      ) : null}
+      {dialog === "leave" && me != null ? (
+        <WorkspaceLeaveDialog
+          onLeave={() => actions.leave(me)}
+          onOpenChange={closeDialog}
+          pending={actions.pending}
+          workspace={workspace}
+        />
       ) : null}
     </div>
   );

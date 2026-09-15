@@ -7,10 +7,29 @@ import {
 } from "@/features/workspace/workspace-details-schema";
 import { WORKSPACE_ERROR_CODES } from "@/features/workspace/workspace-errors";
 import {
+  gateMemberActions,
+  gateWorkspaceActions,
+} from "@/features/workspace/workspace-gating-core";
+import {
+  type WorkspaceInviteLinkResponse,
+  type WorkspaceWriteResponse,
+  workspaceDeleteRequestSchema,
+  workspaceInviteLinkRequestSchema,
+  workspaceMemberAliasRequestSchema,
+  workspaceMemberRemoveRequestSchema,
+  workspaceMemberRoleRequestSchema,
+  workspaceRenameRequestSchema,
+  workspaceTransferRequestSchema,
+} from "@/features/workspace/workspace-write-schema";
+import {
   type SessionDevScenario,
   sessionDevMockCookie,
 } from "../dev-mock-cookie";
-import type { BrainSession, SessionWorkspace } from "../session-schema";
+import type {
+  BrainSession,
+  SessionWorkspace,
+  WorkspaceRole,
+} from "../session-schema";
 
 /**
  * Session dev-mock fixtures (dev and demo builds only): one Brain Session
@@ -19,7 +38,10 @@ import type { BrainSession, SessionWorkspace } from "../session-schema";
  * no verifier signs — so a mock session can never reach a real cluster or
  * account; the other Dev Mocks answer the routes that would consume them.
  * The same scenario answers the `/api/workspace/*` routes (spec §B.4), so
- * the Switcher's list refresh agrees with the session it was staged from.
+ * the Switcher's list refresh agrees with the session it was staged from;
+ * the write routes change the scenario's state in memory (for the process's
+ * lifetime), so a rename, a role change, a removal, a transfer, or a delete
+ * shows on the next read exactly as it would against Desktop.
  */
 
 const MOCK_KUBECONFIG = (namespace: string) => `apiVersion: v1
@@ -104,7 +126,7 @@ const ME = (role: WorkspaceMember["role"], joinedAt: string) =>
  * every gate in the Workspace Area has a row to act on — an Owner to
  * protect, a Manager, Developers with and without an alias.
  */
-function membersFor(
+function seedMembersFor(
   scenario: SessionDevScenario,
   workspaceUid: string
 ): WorkspaceMember[] {
@@ -168,7 +190,7 @@ function membersFor(
   }
 }
 
-function workspacesFor(scenario: SessionDevScenario): SessionWorkspace[] {
+function seedWorkspacesFor(scenario: SessionDevScenario): SessionWorkspace[] {
   switch (scenario) {
     case "personal-only":
       return [PERSONAL];
@@ -179,6 +201,52 @@ function workspacesFor(scenario: SessionDevScenario): SessionWorkspace[] {
     default:
       return [PERSONAL, ACME("Developer")];
   }
+}
+
+/**
+ * A scenario's mutable state: the list and each Workspace's members, seeded
+ * from the fixtures on first use and changed by the write fixtures. Lives
+ * for the dev server's process; `resetWorkspaceDevMockState` puts every
+ * scenario back to its seed (tests, and a dev tweak if one is ever wanted).
+ */
+interface ScenarioState {
+  members: Map<string, WorkspaceMember[]>;
+  workspaces: SessionWorkspace[];
+}
+
+const scenarioStates = new Map<SessionDevScenario, ScenarioState>();
+
+function stateFor(scenario: SessionDevScenario): ScenarioState {
+  let state = scenarioStates.get(scenario);
+  if (state == null) {
+    const workspaces = seedWorkspacesFor(scenario);
+    state = {
+      members: new Map(
+        workspaces.map((workspace) => [
+          workspace.uid,
+          seedMembersFor(scenario, workspace.uid),
+        ])
+      ),
+      workspaces,
+    };
+    scenarioStates.set(scenario, state);
+  }
+  return state;
+}
+
+export function resetWorkspaceDevMockState(): void {
+  scenarioStates.clear();
+}
+
+function workspacesFor(scenario: SessionDevScenario): SessionWorkspace[] {
+  return stateFor(scenario).workspaces;
+}
+
+function membersFor(
+  scenario: SessionDevScenario,
+  workspaceUid: string
+): WorkspaceMember[] {
+  return stateFor(scenario).members.get(workspaceUid) ?? [];
 }
 
 function sessionFor(
@@ -263,6 +331,120 @@ async function detailsFixture(
   return mockJson(details);
 }
 
+const WRITE_OK: WorkspaceWriteResponse = { ok: true };
+
+type WriteOutcome =
+  | { kind: "ok"; body?: unknown }
+  | { kind: "error"; code: string; status: number };
+
+const FORBIDDEN: WriteOutcome = {
+  code: WORKSPACE_ERROR_CODES.forbidden,
+  kind: "error",
+  status: 403,
+};
+const NOT_FOUND: WriteOutcome = {
+  code: WORKSPACE_ERROR_CODES.notFound,
+  kind: "error",
+  status: 404,
+};
+
+function outcomeResponse(outcome: WriteOutcome): Response {
+  return outcome.kind === "ok"
+    ? mockJson(outcome.body ?? WRITE_OK)
+    : mockJson({ error: outcome.code }, outcome.status);
+}
+
+/** The mock user's own membership row and role in a Workspace of the scenario. */
+function actorIn(
+  scenario: SessionDevScenario,
+  workspaceUid: string
+): { role: WorkspaceRole; workspace: SessionWorkspace } | null {
+  const workspace = workspacesFor(scenario).find(
+    (candidate) => candidate.uid === workspaceUid
+  );
+  return workspace == null ? null : { role: workspace.role, workspace };
+}
+
+function replaceWorkspace(
+  state: ScenarioState,
+  uid: string,
+  patch: Partial<SessionWorkspace>
+): void {
+  state.workspaces = state.workspaces.map((workspace) =>
+    workspace.uid === uid ? { ...workspace, ...patch } : workspace
+  );
+}
+
+function patchMember(
+  state: ScenarioState,
+  workspaceUid: string,
+  crUid: string,
+  patch: Partial<WorkspaceMember>
+): void {
+  state.members.set(
+    workspaceUid,
+    membersOf(state, workspaceUid).map((member) =>
+      member.crUid === crUid ? { ...member, ...patch } : member
+    )
+  );
+}
+
+function membersOf(state: ScenarioState, workspaceUid: string) {
+  return state.members.get(workspaceUid) ?? [];
+}
+
+function dropWorkspace(state: ScenarioState, uid: string): void {
+  state.workspaces = state.workspaces.filter(
+    (workspace) => workspace.uid !== uid
+  );
+  state.members.delete(uid);
+}
+
+/**
+ * The write fixtures apply Desktop's own rules (spec §E, the same gating
+ * module the page reads) to the scenario's state: what the page hides or
+ * disables, Desktop refuses, so a stale page meets the same 403 / 404 here
+ * as in staging. Bodies are validated with the routes' own schemas.
+ */
+function writeFixture<TBody>(
+  schema: {
+    safeParse: (
+      payload: unknown
+    ) => { success: true; data: TBody } | { success: false };
+  },
+  apply: (
+    scenario: SessionDevScenario,
+    state: ScenarioState,
+    body: TBody
+  ) => WriteOutcome
+) {
+  return async (
+    scenario: SessionDevScenario,
+    request: Request
+  ): Promise<Response> => {
+    const payload: unknown = await request.json().catch(() => null);
+    const parsed = schema.safeParse(payload ?? {});
+    if (!parsed.success) {
+      return mockJson({ error: WORKSPACE_ERROR_CODES.invalidRequest }, 400);
+    }
+    return outcomeResponse(apply(scenario, stateFor(scenario), parsed.data));
+  };
+}
+
+/** The Workspace-level gates as Desktop judges them (no "current" here: Desktop's own check is UI-gated). */
+function workspaceGates(scenario: SessionDevScenario, uid: string) {
+  const actor = actorIn(scenario, uid);
+  if (actor == null) {
+    return null;
+  }
+  return gateWorkspaceActions({
+    actorRole: actor.role,
+    isCurrent: false,
+    isPersonal: actor.workspace.isPersonal,
+    memberCount: membersFor(scenario, uid).length,
+  });
+}
+
 const WORKSPACE_FIXTURES: Record<
   string,
   (scenario: SessionDevScenario, request: Request) => Promise<Response>
@@ -270,6 +452,177 @@ const WORKSPACE_FIXTURES: Record<
   [WORKSPACE_ROUTES.details.desktopPath]: detailsFixture,
   [WORKSPACE_ROUTES.list.desktopPath]: (scenario) =>
     Promise.resolve(mockJson(workspacesFor(scenario))),
+  [WORKSPACE_ROUTES.rename.desktopPath]: writeFixture(
+    workspaceRenameRequestSchema,
+    (scenario, state, body) => {
+      const gates = workspaceGates(scenario, body.uid);
+      if (gates == null) {
+        return NOT_FOUND;
+      }
+      if (gates.rename.kind !== "enabled") {
+        return FORBIDDEN;
+      }
+      replaceWorkspace(state, body.uid, { name: body.name });
+      return { kind: "ok" };
+    }
+  ),
+  [WORKSPACE_ROUTES.delete.desktopPath]: writeFixture(
+    workspaceDeleteRequestSchema,
+    (scenario, state, body) => {
+      const gates = workspaceGates(scenario, body.uid);
+      if (gates == null) {
+        return NOT_FOUND;
+      }
+      if (gates.delete.kind !== "enabled") {
+        return FORBIDDEN;
+      }
+      dropWorkspace(state, body.uid);
+      return { kind: "ok" };
+    }
+  ),
+  [WORKSPACE_ROUTES.inviteLink.desktopPath]: writeFixture(
+    workspaceInviteLinkRequestSchema,
+    (scenario, _state, body) => {
+      const gates = workspaceGates(scenario, body.uid);
+      if (gates == null) {
+        return NOT_FOUND;
+      }
+      if (gates.invite.kind !== "enabled") {
+        return FORBIDDEN;
+      }
+      const response: WorkspaceInviteLinkResponse = {
+        code: `mock-${body.role.toLowerCase()}-${crypto.randomUUID()}`,
+      };
+      return { body: response, kind: "ok" };
+    }
+  ),
+  [WORKSPACE_ROUTES.memberRemove.desktopPath]: writeFixture(
+    workspaceMemberRemoveRequestSchema,
+    (scenario, state, body) => {
+      const actor = actorIn(scenario, body.uid);
+      if (actor == null) {
+        return FORBIDDEN;
+      }
+      const target = membersOf(state, body.uid).find(
+        (member) => member.crUid === body.crUid
+      );
+      if (target == null) {
+        return NOT_FOUND;
+      }
+      const isSelf = target.crName === MOCK_USER.crName;
+      if (isSelf) {
+        // Leaving: any non-Owner may; the Owner leaves only by transferring.
+        if (actor.role === "Owner") {
+          return FORBIDDEN;
+        }
+        dropWorkspace(state, body.uid);
+        return { kind: "ok" };
+      }
+      const gates = gateMemberActions(
+        {
+          actorRole: actor.role,
+          isCurrent: false,
+          isPersonal: actor.workspace.isPersonal,
+          memberCount: membersOf(state, body.uid).length,
+        },
+        { isSelf, targetRole: target.role }
+      );
+      if (gates.remove.kind !== "enabled") {
+        return FORBIDDEN;
+      }
+      state.members.set(
+        body.uid,
+        membersOf(state, body.uid).filter(
+          (member) => member.crUid !== body.crUid
+        )
+      );
+      return { kind: "ok" };
+    }
+  ),
+  [WORKSPACE_ROUTES.memberRole.desktopPath]: writeFixture(
+    workspaceMemberRoleRequestSchema,
+    (scenario, state, body) => {
+      const actor = actorIn(scenario, body.uid);
+      if (actor == null) {
+        return FORBIDDEN;
+      }
+      const target = membersOf(state, body.uid).find(
+        (member) => member.crUid === body.crUid
+      );
+      if (target == null) {
+        return NOT_FOUND;
+      }
+      const gates = gateMemberActions(
+        {
+          actorRole: actor.role,
+          isCurrent: false,
+          isPersonal: actor.workspace.isPersonal,
+          memberCount: membersOf(state, body.uid).length,
+        },
+        { isSelf: target.crName === MOCK_USER.crName, targetRole: target.role }
+      );
+      if (gates.changeRole.kind !== "enabled") {
+        return FORBIDDEN;
+      }
+      patchMember(state, body.uid, body.crUid, { role: body.role });
+      return { kind: "ok" };
+    }
+  ),
+  [WORKSPACE_ROUTES.memberAlias.desktopPath]: writeFixture(
+    workspaceMemberAliasRequestSchema,
+    (scenario, state, body) => {
+      const actor = actorIn(scenario, body.uid);
+      if (actor == null) {
+        return FORBIDDEN;
+      }
+      if (actor.role === "Developer") {
+        return FORBIDDEN;
+      }
+      const target = membersOf(state, body.uid).find(
+        (member) => member.crUid === body.crUid
+      );
+      if (target == null) {
+        return NOT_FOUND;
+      }
+      patchMember(state, body.uid, body.crUid, { alias: body.alias });
+      return { kind: "ok" };
+    }
+  ),
+  [WORKSPACE_ROUTES.transfer.desktopPath]: writeFixture(
+    workspaceTransferRequestSchema,
+    (scenario, state, body) => {
+      const gates = workspaceGates(scenario, body.uid);
+      if (gates == null) {
+        return FORBIDDEN;
+      }
+      if (gates.transfer.kind !== "enabled") {
+        return FORBIDDEN;
+      }
+      const target = membersOf(state, body.uid).find(
+        (member) => member.crUid === body.crUid
+      );
+      if (target == null) {
+        return NOT_FOUND;
+      }
+      if (target.crName === MOCK_USER.crName) {
+        return {
+          code: WORKSPACE_ERROR_CODES.conflict,
+          kind: "error",
+          status: 409,
+        };
+      }
+      // Desktop's `abdicate`: the target becomes Owner, the old Owner a Developer.
+      const me = membersOf(state, body.uid).find(
+        (member) => member.crName === MOCK_USER.crName
+      );
+      patchMember(state, body.uid, body.crUid, { role: "Owner" });
+      if (me != null) {
+        patchMember(state, body.uid, me.crUid, { role: "Developer" });
+      }
+      replaceWorkspace(state, body.uid, { role: "Developer" });
+      return { kind: "ok" };
+    }
+  ),
 };
 
 /** Answers a `/api/workspace/*` route by its Desktop path from the scenario. */

@@ -4,6 +4,7 @@ import { WORKSPACE_ROUTES } from "@/features/workspace/server/workspace-route-ta
 import { workspaceDetailsResponseSchema } from "@/features/workspace/workspace-details-schema";
 import { WORKSPACE_ERROR_CODES } from "@/features/workspace/workspace-errors";
 import { workspaceListResponseSchema } from "@/features/workspace/workspace-list-schema";
+import { workspaceInviteLinkResponseSchema } from "@/features/workspace/workspace-write-schema";
 import {
   SESSION_DEV_SCENARIOS,
   sessionDevMockCookie,
@@ -11,6 +12,7 @@ import {
 
 import { brainSessionSchema } from "../session-schema";
 import {
+  resetWorkspaceDevMockState,
   sessionDevMockResponse,
   workspaceDevMockResponse,
 } from "./dev-fixtures";
@@ -106,6 +108,8 @@ test("every scenario answers every Workspace route with the session's own list",
       await (await sessionDevMockResponse(request({ cookie })))?.json()
     );
     for (const entry of Object.values(WORKSPACE_ROUTES)) {
+      // A write that lands (delete, say) must not shape the next route's read.
+      resetWorkspaceDevMockState();
       const response = await workspaceDevMockResponse(
         entry.desktopPath,
         new Request(`https://brain.test${entry.apiPath}`, {
@@ -114,7 +118,15 @@ test("every scenario answers every Workspace route with the session's own list",
           method: "POST",
         })
       );
-      assert.equal(response?.status, 200, `${scenario} ${entry.apiPath}`);
+      // The read routes answer 200; a write route with a body this bare
+      // answers its own 400, never the 501 of a missing fixture.
+      assert.notEqual(response?.status, 501, `${scenario} ${entry.apiPath}`);
+      if (
+        entry === WORKSPACE_ROUTES.list ||
+        entry === WORKSPACE_ROUTES.details
+      ) {
+        assert.equal(response?.status, 200, `${scenario} ${entry.apiPath}`);
+      }
       if (entry === WORKSPACE_ROUTES.list) {
         assert.deepEqual(
           workspaceListResponseSchema.parse(await response?.json()),
@@ -186,4 +198,231 @@ test("every scenario answers every Workspace route with the session's own list",
     ),
     null
   );
+});
+
+// Spec §B.4: the writes take effect in memory, so the Workspace Area can be
+// driven end to end against the mock — and the session and list agree with
+// what was written.
+const OWNER_COOKIE = `${sessionDevMockCookie.name}=${sessionDevMockCookie.format({ enabled: true, scenario: "owner-team" })}`;
+const ACME_UID = "00000000-0000-4000-8000-000000000002";
+
+async function write(
+  entry: { apiPath: string; desktopPath: string },
+  body: unknown,
+  cookie = OWNER_COOKIE
+): Promise<Response> {
+  const response = await workspaceDevMockResponse(
+    entry.desktopPath,
+    new Request(`https://brain.test${entry.apiPath}`, {
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json", cookie },
+      method: "POST",
+    })
+  );
+  assert.ok(response);
+  return response;
+}
+
+async function readDetails(uid: string, cookie = OWNER_COOKIE) {
+  return workspaceDetailsResponseSchema.parse(
+    await (await write(WORKSPACE_ROUTES.details, { uid }, cookie)).json()
+  );
+}
+
+async function readList(cookie = OWNER_COOKIE) {
+  return workspaceListResponseSchema.parse(
+    await (await write(WORKSPACE_ROUTES.list, {}, cookie)).json()
+  );
+}
+
+test("dev-mock writes: rename, role, alias, and remove take effect for the next read", async () => {
+  resetWorkspaceDevMockState();
+  assert.equal(
+    (
+      await write(WORKSPACE_ROUTES.rename, {
+        name: "Acme Robotics",
+        uid: ACME_UID,
+      })
+    ).status,
+    200
+  );
+  assert.equal(
+    (await readList()).find((w) => w.uid === ACME_UID)?.name,
+    "Acme Robotics"
+  );
+  const session = brainSessionSchema.parse(
+    await (
+      await sessionDevMockResponse(request({ cookie: OWNER_COOKIE }))
+    )?.json()
+  );
+  assert.equal(session.workspace.name, "Acme Robotics");
+
+  assert.equal(
+    (
+      await write(WORKSPACE_ROUTES.memberRole, {
+        crUid: "cr-chen",
+        role: "Manager",
+        uid: ACME_UID,
+      })
+    ).status,
+    200
+  );
+  assert.equal(
+    (await readDetails(ACME_UID)).members.find((m) => m.crUid === "cr-chen")
+      ?.role,
+    "Manager"
+  );
+
+  await write(WORKSPACE_ROUTES.memberAlias, {
+    alias: "  Platform  ",
+    crUid: "cr-chen",
+    uid: ACME_UID,
+  });
+  assert.equal(
+    (await readDetails(ACME_UID)).members.find((m) => m.crUid === "cr-chen")
+      ?.alias,
+    "Platform"
+  );
+  await write(WORKSPACE_ROUTES.memberAlias, {
+    alias: "",
+    crUid: "cr-chen",
+    uid: ACME_UID,
+  });
+  assert.equal(
+    (await readDetails(ACME_UID)).members.find((m) => m.crUid === "cr-chen")
+      ?.alias,
+    null
+  );
+
+  assert.equal(
+    (
+      await write(WORKSPACE_ROUTES.memberRemove, {
+        crUid: "cr-chen",
+        uid: ACME_UID,
+      })
+    ).status,
+    200
+  );
+  assert.equal(
+    (await readDetails(ACME_UID)).members.some((m) => m.crUid === "cr-chen"),
+    false
+  );
+  resetWorkspaceDevMockState();
+});
+
+test("dev-mock writes: transfer demotes the mock user, delete and leave drop the Workspace from the list", async () => {
+  resetWorkspaceDevMockState();
+  assert.equal(
+    (await write(WORKSPACE_ROUTES.transfer, { crUid: "cr-lin", uid: ACME_UID }))
+      .status,
+    200
+  );
+  const afterTransfer = await readDetails(ACME_UID);
+  assert.equal(
+    afterTransfer.members.find((m) => m.crUid === "cr-lin")?.role,
+    "Owner"
+  );
+  assert.equal(
+    afterTransfer.members.find((m) => m.crUid === "cr-mock")?.role,
+    "Developer"
+  );
+  assert.equal(
+    (await readList()).find((w) => w.uid === ACME_UID)?.role,
+    "Developer"
+  );
+  // No longer the Owner: delete is Desktop's 403, translated.
+  assert.equal(
+    (await write(WORKSPACE_ROUTES.delete, { uid: ACME_UID })).status,
+    403
+  );
+  // Leaving is removing yourself.
+  assert.equal(
+    (
+      await write(WORKSPACE_ROUTES.memberRemove, {
+        crUid: "cr-mock",
+        uid: ACME_UID,
+      })
+    ).status,
+    200
+  );
+  assert.equal(
+    (await readList()).some((w) => w.uid === ACME_UID),
+    false
+  );
+  assert.equal(
+    (await write(WORKSPACE_ROUTES.details, { uid: ACME_UID })).status,
+    404
+  );
+
+  resetWorkspaceDevMockState();
+  const SANDBOX_UID = "00000000-0000-4000-8000-000000000003";
+  // The mock user is a Developer in Sandbox: no delete.
+  assert.equal(
+    (await write(WORKSPACE_ROUTES.delete, { uid: SANDBOX_UID })).status,
+    403
+  );
+  assert.equal(
+    (await write(WORKSPACE_ROUTES.delete, { uid: ACME_UID })).status,
+    200
+  );
+  assert.deepEqual(
+    (await readList()).map((w) => w.uid),
+    ["00000000-0000-4000-8000-000000000001", SANDBOX_UID]
+  );
+  resetWorkspaceDevMockState();
+});
+
+test("dev-mock writes: an invite link answers a code, and the role matrix holds", async () => {
+  resetWorkspaceDevMockState();
+  const link = await write(WORKSPACE_ROUTES.inviteLink, {
+    role: "Manager",
+    uid: ACME_UID,
+  });
+  assert.equal(link.status, 200);
+  const { code } = workspaceInviteLinkResponseSchema.parse(await link.json());
+  assert.ok(code.length > 8);
+
+  const manager = `${sessionDevMockCookie.name}=${sessionDevMockCookie.format({ enabled: true, scenario: "manager" })}`;
+  assert.equal(
+    (
+      await write(
+        WORKSPACE_ROUTES.rename,
+        { name: "X", uid: ACME_UID },
+        manager
+      )
+    ).status,
+    403
+  );
+  assert.equal(
+    (
+      await write(
+        WORKSPACE_ROUTES.inviteLink,
+        { role: "Developer", uid: ACME_UID },
+        manager
+      )
+    ).status,
+    200
+  );
+  // A Manager removes Developers only.
+  assert.equal(
+    (
+      await write(
+        WORKSPACE_ROUTES.memberRemove,
+        { crUid: "cr-yu", uid: ACME_UID },
+        manager
+      )
+    ).status,
+    403
+  );
+  assert.equal(
+    (
+      await write(
+        WORKSPACE_ROUTES.memberRemove,
+        { crUid: "cr-qi", uid: ACME_UID },
+        manager
+      )
+    ).status,
+    200
+  );
+  resetWorkspaceDevMockState();
 });

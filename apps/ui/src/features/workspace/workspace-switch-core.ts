@@ -15,6 +15,22 @@ const BRAIN_APP_KEY = "system-brain";
 const DESKTOP_DOMAIN_SCHEME_RE = /^https?:\/\//i;
 const TRAILING_SLASHES_RE = /\/+$/;
 
+/**
+ * Desktop's origin from its cloud domain (the SDK host config's
+ * `cloud.domain`, or the kubeconfig's routing domain outside the iframe):
+ * `https://` unless a scheme is already there, trailing slashes dropped.
+ * Null for an empty domain — no Desktop link can be built yet.
+ */
+export function desktopOrigin(cloudDomain: string): string | null {
+  const trimmed = cloudDomain.trim().replace(TRAILING_SLASHES_RE, "");
+  if (trimmed === "") {
+    return null;
+  }
+  return DESKTOP_DOMAIN_SCHEME_RE.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+}
+
 function isInsideArea(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
@@ -47,13 +63,10 @@ export function workspaceSwitchUrl(input: {
   landing: string;
   workspaceUid: string;
 }): string | null {
-  const trimmed = input.cloudDomain.trim().replace(TRAILING_SLASHES_RE, "");
-  if (trimmed === "") {
+  const origin = desktopOrigin(input.cloudDomain);
+  if (origin == null) {
     return null;
   }
-  const origin = DESKTOP_DOMAIN_SCHEME_RE.test(trimmed)
-    ? trimmed
-    : `https://${trimmed}`;
   const [path = "/", ...query] = input.landing.split("?");
   const openapp = encodeURIComponent(
     `${BRAIN_APP_KEY}?${path}?${query.join("?")}`

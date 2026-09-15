@@ -19,6 +19,7 @@ import type { SessionWorkspace } from "@/features/session/session-schema";
 import {
   appTokenAtom,
   currentWorkspaceAtom,
+  desktopDomainAtom,
   kubeconfigAtom,
   namespaceAtom,
   regionalTokenAtom,
@@ -76,6 +77,8 @@ mock.module("sonner", () => ({
 
 const ACME_NAME_RE = /Acme/;
 const ACME_ID_RE = /ns-acme/;
+const RENAMED_RE = /Acme Robotics/;
+const DEVELOPER_RE = /Developer/;
 
 const ME = {
   avatar: "",
@@ -177,6 +180,17 @@ const fixtures = {
     "ns-solo": null,
   } as Record<string, string | null>,
   scenario: "owner" as Scenario,
+  /** When set, every write route answers this status with a Brain error code. */
+  writeStatus: null as number | null,
+};
+/**
+ * The stand-in's own state: the list and members the scenario starts with,
+ * changed by the writes the way Desktop would change them, so a re-read
+ * after a write shows the change and the page's convergence can be seen.
+ */
+const state = {
+  list: [] as SessionWorkspace[],
+  members: {} as Record<string, WorkspaceMember[]>,
 };
 const requests: {
   body: unknown;
@@ -185,25 +199,88 @@ const requests: {
   url: string;
 }[] = [];
 
+function errorResponse(status: number, error: string): Response {
+  return new Response(JSON.stringify({ error }), {
+    headers: { "content-type": "application/json" },
+    status,
+  });
+}
+
+function membersOf(uid: string): WorkspaceMember[] {
+  return state.members[uid] ?? [];
+}
+
+function patchMember(
+  uid: string,
+  crUid: string,
+  patch: Partial<WorkspaceMember>
+): void {
+  state.members[uid] = membersOf(uid).map((member) =>
+    member.crUid === crUid ? { ...member, ...patch } : member
+  );
+}
+
+function answerWrite(url: string, body: Record<string, unknown>): Response {
+  if (fixtures.writeStatus != null) {
+    return errorResponse(fixtures.writeStatus, "workspace_forbidden");
+  }
+  const uid = body.uid as string;
+  const crUid = body.crUid as string;
+  switch (url) {
+    case "/api/workspace/rename":
+      state.list = state.list.map((workspace) =>
+        workspace.uid === uid
+          ? { ...workspace, name: body.name as string }
+          : workspace
+      );
+      break;
+    case "/api/workspace/delete":
+      state.list = state.list.filter((workspace) => workspace.uid !== uid);
+      break;
+    case "/api/workspace/invite-link":
+      return jsonResponse({ code: `code-${body.role as string}` });
+    case "/api/workspace/member/remove":
+      if (crUid === "cr-ada") {
+        state.list = state.list.filter((workspace) => workspace.uid !== uid);
+      } else {
+        state.members[uid] = membersOf(uid).filter(
+          (member) => member.crUid !== crUid
+        );
+      }
+      break;
+    case "/api/workspace/member/role":
+      patchMember(uid, crUid, { role: body.role as WorkspaceMember["role"] });
+      break;
+    case "/api/workspace/member/alias":
+      patchMember(uid, crUid, { alias: body.alias as string | null });
+      break;
+    case "/api/workspace/transfer":
+      patchMember(uid, crUid, { role: "Owner" });
+      patchMember(uid, "cr-ada", { role: "Developer" });
+      state.list = state.list.map((workspace) =>
+        workspace.uid === uid ? { ...workspace, role: "Developer" } : workspace
+      );
+      break;
+    default:
+      return new Response("{}", { status: 404 });
+  }
+  return jsonResponse({ ok: true });
+}
+
 function answer(url: string, body: unknown): Response {
   if (url === "/api/workspace/list") {
-    return jsonResponse(WORKSPACES[fixtures.scenario]);
+    return jsonResponse(state.list);
   }
   if (url === "/api/workspace/details") {
     const uid = (body as { uid: string }).uid;
-    const workspace = WORKSPACES[fixtures.scenario].find(
-      (candidate) => candidate.uid === uid
-    );
+    const workspace = state.list.find((candidate) => candidate.uid === uid);
     if (workspace == null) {
-      return new Response(JSON.stringify({ error: "workspace_not_found" }), {
-        headers: { "content-type": "application/json" },
-        status: 404,
-      });
+      return errorResponse(404, "workspace_not_found");
     }
-    const members = workspace.isPersonal
-      ? PERSONAL_MEMBERS
-      : MEMBERS[`${fixtures.scenario}:${uid}`];
-    return jsonResponse({ members, workspace });
+    return jsonResponse({ members: membersOf(uid), workspace });
+  }
+  if (url.startsWith("/api/workspace/")) {
+    return answerWrite(url, (body ?? {}) as Record<string, unknown>);
   }
   if (url.startsWith("/api/billing/workspace-plans?")) {
     return jsonResponse({ plans: fixtures.plans });
@@ -222,7 +299,7 @@ function fetchStub(input: unknown, init?: RequestInit): Promise<Response> {
 // Base UI resolves its isomorphic layout effect at module load — with no
 // DOM registered it becomes a permanent noop and menus can never open.
 const moduleDom = installTestDom();
-const { render } = await import("@testing-library/react/pure");
+const { fireEvent, render } = await import("@testing-library/react/pure");
 const { JotaiProvider } = await import("@/features/shell/jotai-provider");
 const { WorkspaceArea } = await import("./workspace-area");
 const { WORKSPACE_NOT_IN_LIST_NOTICE } = await import(
@@ -231,6 +308,13 @@ const { WORKSPACE_NOT_IN_LIST_NOTICE } = await import(
 const { WORKSPACE_ID_COPIED_NOTICE } = await import(
   "./workspace-detail-header"
 );
+const {
+  PERMISSIONS_CHANGED_NOTICE,
+  workspaceDeletedNotice,
+  workspaceLeftNotice,
+} = await import("./use-workspace-actions");
+const { INVITE_LINK_COPIED_NOTICE } = await import("./workspace-invite-dialog");
+const { INVITE_LINK_VALIDITY_NOTE } = await import("./workspace-invite-core");
 await moduleDom.restore();
 
 let dom: TestDom;
@@ -243,8 +327,18 @@ let sessionCounter = 0;
 // test's details across the credential-keyed cache.
 function hydrate(scenario: Scenario, currentUid: string) {
   fixtures.scenario = scenario;
+  fixtures.writeStatus = null;
   sessionCounter += 1;
   const workspaces = WORKSPACES[scenario];
+  state.list = [...workspaces];
+  state.members = Object.fromEntries(
+    workspaces.map((workspace) => [
+      workspace.uid,
+      workspace.isPersonal
+        ? [...PERSONAL_MEMBERS]
+        : [...(MEMBERS[`${scenario}:${workspace.uid}`] ?? [])],
+    ])
+  );
   const current = workspaces.find((workspace) => workspace.uid === currentUid);
   assert.ok(current, `${currentUid} is in the ${scenario} list`);
   const store = getDefaultStore();
@@ -255,6 +349,7 @@ function hydrate(scenario: Scenario, currentUid: string) {
   store.set(currentWorkspaceAtom, current);
   store.set(workspacesAtom, workspaces);
   store.set(sessionUserAtom, ME);
+  store.set(desktopDomainAtom, "cloud.test");
 }
 
 beforeEach(() => {
@@ -580,4 +675,421 @@ test("copying the workspace id writes the namespace id and says so", async () =>
   });
   assert.deepEqual(copied, ["ns-acme"]);
   assert.deepEqual(toasts, [WORKSPACE_ID_COPIED_NOTICE]);
+});
+
+// ---- the writes (spec §D.6–D.8) -------------------------------------------
+
+async function press(element: HTMLElement | null, what: string) {
+  assert.ok(element, what);
+  await actAndDrain(() => {
+    element.dispatchEvent(
+      new MouseEvent("pointerdown", { bubbles: true, button: 0 })
+    );
+    element.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0 })
+    );
+    element.click();
+  });
+}
+
+async function type(input: HTMLElement | null, value: string, what: string) {
+  assert.ok(input, what);
+  await actAndDrain(() => {
+    fireEvent.change(input, { target: { value } });
+  });
+}
+
+/** The visible options of an open select popup, in order. */
+function selectOptions(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+}
+
+async function chooseOption(text: string) {
+  const option = selectOptions().find((candidate) =>
+    (candidate.textContent ?? "").startsWith(text)
+  );
+  await press(option ?? null, `the "${text}" option is offered`);
+}
+
+function dialogAction(slot: string, label: string): HTMLElement | null {
+  const dialog = bySlot(slot);
+  assert.ok(dialog, `the ${slot} dialog is open`);
+  return (
+    [...dialog.querySelectorAll<HTMLElement>("button")].find(
+      (button) => button.textContent?.trim() === label
+    ) ?? null
+  );
+}
+
+function writesTo(url: string) {
+  return requests.filter((r) => r.url === url);
+}
+
+function readsAfter(index: number, url: string): number {
+  return requests.slice(index).filter((r) => r.url === url).length;
+}
+
+test("Rename: the dialog submits the trimmed name, then the list, header, and session show it", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  await openActionsMenu();
+  await press(
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((item) => item.textContent?.startsWith("Rename")) ?? null,
+    "the Rename item"
+  );
+  const dialog = bySlot("workspace-rename-dialog");
+  assert.ok(dialog);
+  const rename = dialogAction("workspace-rename-dialog", "Rename");
+  assert.equal(
+    rename?.hasAttribute("disabled"),
+    true,
+    "unchanged name: disabled"
+  );
+  await type(
+    dialog.querySelector("input"),
+    "  Acme Robotics ",
+    "the name input"
+  );
+  const before = requests.length;
+  await press(dialogAction("workspace-rename-dialog", "Rename"), "Rename");
+
+  assert.deepEqual(
+    writesTo("/api/workspace/rename").map((r) => r.body),
+    [{ name: "Acme Robotics", uid: "uid-acme" }]
+  );
+  assert.equal(readsAfter(before, "/api/workspace/list"), 1, "list re-read");
+  assert.equal(
+    readsAfter(before, "/api/workspace/details"),
+    1,
+    "details re-read"
+  );
+  assert.equal(bySlot("workspace-rename-dialog"), null, "the dialog closed");
+  assert.match(
+    bySlot("workspace-detail-header")?.textContent ?? "",
+    RENAMED_RE
+  );
+  assert.match(
+    allBySlot("workspace-area-row")[1]?.textContent ?? "",
+    RENAMED_RE
+  );
+  assert.equal(
+    getDefaultStore().get(currentWorkspaceAtom)?.name,
+    "Acme Robotics"
+  );
+  assert.deepEqual(route.replaced, []);
+});
+
+test("Change role: the select offers Manager and Developer only, and the choice is sent and re-read", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  await press(byLabel("Role of Chen Jie"), "the role select");
+  assert.deepEqual(
+    selectOptions().map((option) => option.textContent?.trim()),
+    ["Manager", "Developer"]
+  );
+  const before = requests.length;
+  await chooseOption("Manager");
+  assert.deepEqual(
+    writesTo("/api/workspace/member/role").map((r) => r.body),
+    [{ crUid: "cr-chen", role: "Manager", uid: "uid-acme" }]
+  );
+  assert.equal(readsAfter(before, "/api/workspace/details"), 1);
+  const chen = allBySlot("workspace-member-row").find((row) =>
+    row.textContent?.includes("Chen Jie")
+  );
+  assert.equal(chen?.getAttribute("data-member-role"), "Manager");
+});
+
+test("Alias: saved empty it is sent as null and the subline goes; set, it is sent trimmed", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  await press(byLabel("Edit alias for Lin Wei"), "the alias pencil");
+  const dialog = bySlot("workspace-alias-dialog");
+  assert.ok(dialog);
+  assert.equal(
+    dialog.querySelector("input")?.getAttribute("value"),
+    "Frontend lead"
+  );
+  await type(dialog.querySelector("input"), "   ", "the alias input");
+  await press(dialogAction("workspace-alias-dialog", "Save"), "Save");
+  assert.deepEqual(
+    writesTo("/api/workspace/member/alias").map((r) => r.body),
+    [{ alias: null, crUid: "cr-lin", uid: "uid-acme" }]
+  );
+  assert.equal(bySlot("workspace-alias-dialog"), null);
+  assert.equal(bySlot("workspace-member-alias"), null, "the subline is gone");
+
+  await press(byLabel("Set alias for Chen Jie"), "the alias pencil");
+  await type(
+    bySlot("workspace-alias-dialog")?.querySelector("input") ?? null,
+    " Platform ",
+    "the alias input"
+  );
+  await press(dialogAction("workspace-alias-dialog", "Save"), "Save");
+  assert.deepEqual(writesTo("/api/workspace/member/alias")[1]?.body, {
+    alias: "Platform",
+    crUid: "cr-chen",
+    uid: "uid-acme",
+  });
+  assert.equal(bySlot("workspace-member-alias")?.textContent, "Platform");
+});
+
+test("Remove member: a plain confirmation, then the row is gone", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  await press(byLabel("Remove Chen Jie"), "the remove icon");
+  assert.equal(
+    writesTo("/api/workspace/member/remove").length,
+    0,
+    "nothing sent before confirming"
+  );
+  await press(
+    dialogAction("workspace-remove-member-dialog", "Remove"),
+    "Remove"
+  );
+  assert.deepEqual(
+    writesTo("/api/workspace/member/remove").map((r) => r.body),
+    [{ crUid: "cr-chen", uid: "uid-acme" }]
+  );
+  assert.deepEqual(memberRowNames(), ["Ada Lovelace", "Lin Wei"]);
+  assert.equal(bySlot("workspace-members-count")?.textContent, "2");
+});
+
+test("Delete: the name must be typed; afterwards the page moves to the current Workspace, which stays current", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-solo");
+  await openActionsMenu();
+  await press(
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((item) => item.textContent?.startsWith("Delete")) ?? null,
+    "the Delete item"
+  );
+  const dialog = bySlot("workspace-delete-dialog");
+  assert.ok(dialog);
+  const confirm = dialog.querySelector<HTMLElement>(
+    '[aria-label="Type Solo to confirm."]'
+  );
+  assert.ok(confirm, "the typed confirmation");
+  assert.equal(
+    dialogAction("workspace-delete-dialog", "Delete workspace")?.hasAttribute(
+      "disabled"
+    ),
+    true
+  );
+  await type(confirm, "solo", "the confirmation");
+  assert.equal(
+    dialogAction("workspace-delete-dialog", "Delete workspace")?.hasAttribute(
+      "disabled"
+    ),
+    true,
+    "case matters"
+  );
+  await type(confirm, "Solo", "the confirmation");
+  assert.equal(
+    dialogAction("workspace-delete-dialog", "Delete workspace")?.hasAttribute(
+      "disabled"
+    ),
+    false
+  );
+  await press(
+    dialogAction("workspace-delete-dialog", "Delete workspace"),
+    "Delete workspace"
+  );
+
+  assert.deepEqual(
+    writesTo("/api/workspace/delete").map((r) => r.body),
+    [{ uid: "uid-solo" }]
+  );
+  assert.deepEqual(route.replaced, ["/workspace/uid-acme"]);
+  assert.ok(toasts.includes(workspaceDeletedNotice("Solo")));
+  assert.equal(
+    getDefaultStore().get(currentWorkspaceAtom)?.uid,
+    "uid-acme",
+    "the current Workspace never switches"
+  );
+  assert.deepEqual(
+    allBySlot("workspace-area-row").map((row) =>
+      row.textContent?.includes("Solo")
+    ),
+    [false, false]
+  );
+});
+
+test("Transfer: a new owner and the typed name, the consequence spelled out; afterwards the actor is gated as a Developer", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  await openActionsMenu();
+  await press(
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-slot="dropdown-menu-item"]'
+      ),
+    ].find((item) => item.textContent?.startsWith("Transfer")) ?? null,
+    "the Transfer item"
+  );
+  const dialog = bySlot("workspace-transfer-dialog");
+  assert.ok(dialog);
+  assert.equal(
+    bySlot("workspace-transfer-consequence")?.textContent,
+    "You will become a Developer."
+  );
+  const action = () =>
+    dialogAction("workspace-transfer-dialog", "Transfer ownership");
+  assert.equal(action()?.hasAttribute("disabled"), true);
+  await press(byLabel("New owner"), "the new-owner select");
+  assert.deepEqual(
+    selectOptions().map((option) => option.textContent?.trim()),
+    ["Lin Wei · Manager", "Chen Jie · Developer"]
+  );
+  await chooseOption("Lin Wei");
+  assert.equal(
+    action()?.hasAttribute("disabled"),
+    true,
+    "the name is still to type"
+  );
+  await type(
+    dialog.querySelector('[aria-label="Type Acme to confirm."]'),
+    "Acme",
+    "the confirmation"
+  );
+  assert.equal(action()?.hasAttribute("disabled"), false);
+  await press(action(), "Transfer ownership");
+
+  assert.deepEqual(
+    writesTo("/api/workspace/transfer").map((r) => r.body),
+    [{ crUid: "cr-lin", uid: "uid-acme" }]
+  );
+  assert.equal(bySlot("workspace-transfer-dialog"), null);
+  assert.equal(
+    bySlot("workspace-detail-role")?.textContent,
+    "You're Developer"
+  );
+  assert.equal(byLabel("Workspace actions"), null, "no ⋯ menu for a Developer");
+  assert.equal(
+    byLabel("Leave workspace")?.hasAttribute("disabled"),
+    true,
+    "leave waits for a switch"
+  );
+  assert.equal(byLabel("Invite member"), null);
+  assert.equal(
+    getDefaultStore().get(currentWorkspaceAtom)?.role,
+    "Developer",
+    "the session's role follows"
+  );
+  assert.deepEqual(route.replaced, []);
+});
+
+test("Leave: a plain confirmation removing the actor's own membership, then the page moves to the current Workspace", async () => {
+  hydrate("manager", "uid-personal");
+  await mountArea("uid-acme");
+  await press(byLabel("Leave workspace"), "Leave workspace");
+  assert.equal(writesTo("/api/workspace/member/remove").length, 0);
+  await press(dialogAction("workspace-leave-dialog", "Leave"), "Leave");
+  assert.deepEqual(
+    writesTo("/api/workspace/member/remove").map((r) => r.body),
+    [{ crUid: "cr-ada", uid: "uid-acme" }]
+  );
+  assert.deepEqual(route.replaced, ["/workspace/uid-personal"]);
+  assert.ok(toasts.includes(workspaceLeftNotice("Acme")));
+  assert.equal(
+    getDefaultStore().get(currentWorkspaceAtom)?.uid,
+    "uid-personal"
+  );
+});
+
+test("Desktop's 403 on a write: the list and members are re-read, the page re-gates, and it says the permissions changed", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  fixtures.writeStatus = 403;
+  // Meanwhile the actor was demoted: the re-read must show that.
+  state.list = state.list.map((workspace) =>
+    workspace.uid === "uid-acme" ? { ...workspace, role: "Manager" } : workspace
+  );
+  patchMember("uid-acme", "cr-ada", { role: "Manager" });
+  patchMember("uid-acme", "cr-lin", { role: "Owner" });
+  const before = requests.length;
+  await press(byLabel("Remove Chen Jie"), "the remove icon");
+  await press(
+    dialogAction("workspace-remove-member-dialog", "Remove"),
+    "Remove"
+  );
+
+  assert.equal(readsAfter(before, "/api/workspace/list"), 1);
+  assert.equal(readsAfter(before, "/api/workspace/details"), 1);
+  assert.ok(toasts.includes(PERMISSIONS_CHANGED_NOTICE));
+  assert.equal(bySlot("workspace-detail-role")?.textContent, "You're Manager");
+  assert.equal(byLabel("Workspace actions"), null);
+  assert.equal(
+    byLabel("Remove Chen Jie") != null,
+    true,
+    "a Manager still removes Developers"
+  );
+  assert.equal(byLabel("Remove Lin Wei"), null);
+  assert.deepEqual(route.replaced, []);
+});
+
+test("Invite: the Owner picks Manager or Developer (Developer first), copies a Desktop link that stays on show, and a role change clears it", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  await press(byLabel("Invite member"), "Invite member");
+  const dialog = bySlot("workspace-invite-dialog");
+  assert.ok(dialog);
+  assert.ok(dialog.textContent?.includes(INVITE_LINK_VALIDITY_NOTE));
+  assert.match(byLabel("Invite role")?.textContent ?? "", DEVELOPER_RE);
+  assert.equal(bySlot("workspace-invite-link"), null);
+
+  await press(
+    dialogAction("workspace-invite-dialog", "Copy invite link"),
+    "Copy invite link"
+  );
+  assert.deepEqual(
+    writesTo("/api/workspace/invite-link").map((r) => r.body),
+    [{ role: "Developer", uid: "uid-acme" }]
+  );
+  const link = "https://cloud.test/WorkspaceInvite/?code=code-Developer";
+  assert.equal(bySlot("workspace-invite-link")?.textContent, link);
+  assert.deepEqual(copied, [link]);
+  assert.ok(toasts.includes(INVITE_LINK_COPIED_NOTICE));
+
+  await press(byLabel("Invite role"), "the role select");
+  assert.deepEqual(
+    selectOptions().map((option) => option.textContent?.trim()),
+    ["Manager", "Developer"]
+  );
+  await chooseOption("Manager");
+  assert.equal(
+    bySlot("workspace-invite-link"),
+    null,
+    "a role change clears the link"
+  );
+  await press(
+    dialogAction("workspace-invite-dialog", "Copy invite link"),
+    "Copy invite link"
+  );
+  assert.deepEqual(writesTo("/api/workspace/invite-link")[1]?.body, {
+    role: "Manager",
+    uid: "uid-acme",
+  });
+  assert.equal(
+    bySlot("workspace-invite-link")?.textContent,
+    "https://cloud.test/WorkspaceInvite/?code=code-Manager"
+  );
+});
+
+test("Invite: a Manager is offered Developer only", async () => {
+  hydrate("manager", "uid-personal");
+  await mountArea("uid-acme");
+  await press(byLabel("Invite member"), "Invite member");
+  await press(byLabel("Invite role"), "the role select");
+  assert.deepEqual(
+    selectOptions().map((option) => option.textContent?.trim()),
+    ["Developer"]
+  );
 });

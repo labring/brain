@@ -19,7 +19,11 @@ import {
 } from "@workspace/ui/components/table";
 import { cn } from "@workspace/ui/lib/utils";
 import { Pencil, UserMinus, UserRoundPlus, UsersRound } from "lucide-react";
+import { useState } from "react";
 
+import type { SessionWorkspace } from "@/features/session/session-schema";
+
+import type { WorkspaceActions } from "./use-workspace-actions";
 import type { WorkspaceMember } from "./workspace-details-schema";
 import {
   ASSIGNABLE_ROLES,
@@ -28,6 +32,24 @@ import {
   type WorkspaceActionGate,
   type WorkspaceGateInput,
 } from "./workspace-gating-core";
+import { WorkspaceInviteDialog } from "./workspace-invite-dialog";
+import {
+  WorkspaceAliasDialog,
+  WorkspaceRemoveMemberDialog,
+} from "./workspace-member-dialogs";
+import { assignableRoleSchema } from "./workspace-write-schema";
+
+type PanelDialog =
+  | { kind: "alias"; member: WorkspaceMember }
+  | { kind: "invite" }
+  | { kind: "remove"; member: WorkspaceMember };
+
+/** What a member row can open, and the writes behind its controls. */
+interface RowActions {
+  changeRole: WorkspaceActions["changeRole"];
+  open: (dialog: PanelDialog) => void;
+  pending: boolean;
+}
 
 export const MEMBERS_LOAD_FAILED_NOTICE = "Couldn't load the members.";
 
@@ -69,18 +91,26 @@ function MemberAvatar({ member }: { member: WorkspaceMember }) {
 }
 
 function RoleCell({
+  actions,
   gate,
   member,
 }: {
+  actions: RowActions;
   gate: WorkspaceActionGate;
   member: WorkspaceMember;
 }) {
   if (gate.kind === "enabled") {
-    // The operation behind the choice arrives with the write routes; the
-    // control is rendered where it will live so the gating is reviewable.
+    // Choosing takes effect at once (spec §D.7); the table re-reads after.
     return (
       <AppSelect
         aria-label={`Role of ${memberName(member)}`}
+        disabled={actions.pending}
+        onValueChange={(next) => {
+          const role = assignableRoleSchema.safeParse(next);
+          if (role.success && role.data !== member.role) {
+            actions.changeRole(member, role.data).catch(() => undefined);
+          }
+        }}
         options={ROLE_OPTIONS}
         triggerClassName="-ml-2 h-8 w-32 border-transparent bg-transparent px-2 text-sm hover:bg-input/30"
         value={member.role}
@@ -98,11 +128,13 @@ function RoleCell({
 }
 
 function MemberRow({
+  actions,
   gates,
   isSelf,
   member,
   showActions,
 }: {
+  actions: RowActions;
   gates: MemberActionGates;
   isSelf: boolean;
   member: WorkspaceMember;
@@ -144,6 +176,8 @@ function MemberRow({
             <AppButton
               aria-label={`${member.alias == null ? "Set" : "Edit"} alias for ${name}`}
               className="shrink-0 self-center text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/row:opacity-100"
+              data-slot="workspace-member-alias-edit"
+              onClick={() => actions.open({ kind: "alias", member })}
               size="sm"
               variant="quiet"
             >
@@ -154,7 +188,7 @@ function MemberRow({
         </div>
       </TableCell>
       <TableCell className={CELL_CLASS}>
-        <RoleCell gate={gates.changeRole} member={member} />
+        <RoleCell actions={actions} gate={gates.changeRole} member={member} />
       </TableCell>
       <TableCell className={cn(CELL_CLASS, "text-muted-foreground")}>
         {formatJoinedDate(member.joinedAt)}
@@ -166,6 +200,7 @@ function MemberRow({
               aria-label={`Remove ${name}`}
               className="text-muted-foreground hover:text-red-400"
               data-slot="workspace-member-remove"
+              onClick={() => actions.open({ kind: "remove", member })}
               size="md"
               variant="quiet"
             >
@@ -179,10 +214,12 @@ function MemberRow({
 }
 
 function MembersTable({
+  actions,
   gateInput,
   meCrName,
   members,
 }: {
+  actions: RowActions;
   gateInput: WorkspaceGateInput;
   meCrName: string;
   members: readonly WorkspaceMember[];
@@ -219,6 +256,7 @@ function MembersTable({
         <TableBody>
           {rows.map((row) => (
             <MemberRow
+              actions={actions}
               gates={row.gates}
               isSelf={row.isSelf}
               key={row.member.crUid}
@@ -234,11 +272,13 @@ function MembersTable({
 
 /** The table once the members landed; otherwise why they have not. */
 function MembersBody({
+  actions,
   error,
   gateInput,
   meCrName,
   members,
 }: {
+  actions: RowActions;
   error: Error | undefined;
   gateInput: WorkspaceGateInput;
   meCrName: string;
@@ -247,6 +287,7 @@ function MembersBody({
   if (members != null) {
     return (
       <MembersTable
+        actions={actions}
         gateInput={gateInput}
         meCrName={meCrName}
         members={members}
@@ -282,22 +323,42 @@ function MembersBody({
  * quiet select where the actor may change it, text otherwise, Owner in
  * blue) / Joined / the remove icon where the actor may remove that row —
  * the whole column is absent when no row is removable. No Status column:
- * everyone listed has joined.
+ * everyone listed has joined. The controls open the dialogs that run the
+ * writes: alias and role take effect on submit, removal asks once, the
+ * invite dialog hands out a Workspace Invite Link.
  */
 export function WorkspaceMembersPanel({
+  actions,
+  cloudDomain,
   error,
   gateInput,
   inviteGate,
   meCrName,
   members,
+  workspace,
 }: {
+  actions: WorkspaceActions;
+  /** Desktop's cloud domain for the invite link; "" while unknown. */
+  cloudDomain: string;
   error: Error | undefined;
   gateInput: WorkspaceGateInput;
   inviteGate: WorkspaceActionGate;
   meCrName: string;
   /** Undefined while the members are loading. */
   members: readonly WorkspaceMember[] | undefined;
+  workspace: SessionWorkspace;
 }) {
+  const [dialog, setDialog] = useState<PanelDialog | null>(null);
+  const closeDialog = (open: boolean) => {
+    if (!open) {
+      setDialog(null);
+    }
+  };
+  const rowActions: RowActions = {
+    changeRole: actions.changeRole,
+    open: setDialog,
+    pending: actions.pending,
+  };
   return (
     <section
       className="flex min-h-0 flex-1 flex-col gap-4 rounded-t-lg bg-input/30 p-4"
@@ -322,18 +383,50 @@ export function WorkspaceMembersPanel({
           )}
         </h3>
         {inviteGate.kind === "hidden" ? null : (
-          <AppButton aria-label="Invite member" variant="secondary">
+          <AppButton
+            aria-label="Invite member"
+            onClick={() => setDialog({ kind: "invite" })}
+            variant="secondary"
+          >
             <UserRoundPlus aria-hidden />
             Invite member
           </AppButton>
         )}
       </div>
       <MembersBody
+        actions={rowActions}
         error={error}
         gateInput={gateInput}
         meCrName={meCrName}
         members={members}
       />
+      {dialog?.kind === "alias" ? (
+        <WorkspaceAliasDialog
+          member={dialog.member}
+          onOpenChange={closeDialog}
+          onSave={(alias) => actions.setAlias(dialog.member, alias)}
+          pending={actions.pending}
+        />
+      ) : null}
+      {dialog?.kind === "remove" ? (
+        <WorkspaceRemoveMemberDialog
+          member={dialog.member}
+          onOpenChange={closeDialog}
+          onRemove={() => actions.removeMember(dialog.member)}
+          pending={actions.pending}
+          workspace={workspace}
+        />
+      ) : null}
+      {dialog?.kind === "invite" ? (
+        <WorkspaceInviteDialog
+          actorRole={gateInput.actorRole}
+          cloudDomain={cloudDomain}
+          onCreateLink={actions.createInviteLink}
+          onOpenChange={closeDialog}
+          pending={actions.pending}
+          workspace={workspace}
+        />
+      ) : null}
     </section>
   );
 }

@@ -2,51 +2,22 @@
 
 import useSWR from "swr";
 
-import { sessionFetch } from "@/features/session/session-fetch";
 import { SESSION_SWR_KEYS } from "@/features/session/swr-keys";
 import { useSessionCredentials } from "@/features/session/use-session-credentials";
 
+import { WORKSPACE_ROUTES } from "./server/workspace-route-table";
 import {
   type WorkspaceDetailsResponse,
   workspaceDetailsResponseSchema,
 } from "./workspace-details-schema";
+import { postWorkspaceJson } from "./workspace-request";
 
-export const WORKSPACE_DETAILS_API_PATH = "/api/workspace/details";
-
-/** A failed details read, carrying Brain's status and error code. */
-export class WorkspaceDetailsError extends Error {
-  readonly code: string;
-  readonly status: number;
-
-  constructor(status: number, code: string) {
-    super(`workspace details ${status} ${code}`);
-    this.name = "WorkspaceDetailsError";
-    this.code = code;
-    this.status = status;
-  }
-}
-
-async function fetchWorkspaceDetails(
-  uid: string
-): Promise<WorkspaceDetailsResponse> {
-  const response = await sessionFetch(WORKSPACE_DETAILS_API_PATH, {
-    body: JSON.stringify({ uid }),
-    cache: "no-store",
-    headers: { "content-type": "application/json" },
-    method: "POST",
-  });
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null);
-    const code =
-      typeof payload === "object" &&
-      payload != null &&
-      "error" in payload &&
-      typeof payload.error === "string"
-        ? payload.error
-        : "unknown";
-    throw new WorkspaceDetailsError(response.status, code);
-  }
-  return workspaceDetailsResponseSchema.parse(await response.json());
+function fetchWorkspaceDetails(uid: string): Promise<WorkspaceDetailsResponse> {
+  return postWorkspaceJson(
+    WORKSPACE_ROUTES.details.apiPath,
+    { uid },
+    workspaceDetailsResponseSchema
+  );
 }
 
 /**
@@ -57,7 +28,7 @@ async function fetchWorkspaceDetails(
  */
 export function useWorkspaceDetails(uid: string | null): {
   data: WorkspaceDetailsResponse | undefined;
-  /** A `WorkspaceDetailsError` for a refused read; any other Error otherwise. */
+  /** A `WorkspaceRequestError` for a refused read; any other Error otherwise. */
   error: Error | undefined;
 } {
   const credentials = useSessionCredentials();
