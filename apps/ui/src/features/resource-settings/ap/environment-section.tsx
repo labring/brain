@@ -490,8 +490,6 @@ interface EditableEnvRowsProps {
   onRevealResolvedValue: (index: number) => Promise<void> | void;
   onSaveRow: (index: number) => void;
   onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
-  /** When set, saved-row reveal/copy controls disable with this reason. */
-  resolveDisabledReason?: string;
   resolvedValuesAvailable: boolean;
   revealedValues: ReadonlyMap<number, string>;
   savedRows: readonly ApEnvVar[];
@@ -519,7 +517,6 @@ interface SavedEnvValueControlProps {
   index: number;
   onCopyResolvedValue: (index: number) => Promise<void> | void;
   onRevealResolvedValue: (index: number) => Promise<void> | void;
-  resolveDisabledReason?: string;
   resolvedValuesAvailable: boolean;
   revealedValue?: string;
   row: ApEnvVar;
@@ -853,7 +850,6 @@ function SavedEnvValueControl({
   index,
   onCopyResolvedValue,
   onRevealResolvedValue,
-  resolveDisabledReason,
   revealedValue,
   resolvedValuesAvailable,
   row,
@@ -890,10 +886,8 @@ function SavedEnvValueControl({
             aria-pressed={revealed}
             busy={revealBusy}
             className="text-muted-foreground hover:text-foreground"
-            disabled={resolveDisabledReason != null}
             onClick={handleRevealClick}
             size="sm"
-            title={resolveDisabledReason}
             type="button"
             variant="quiet"
           >
@@ -906,10 +900,8 @@ function SavedEnvValueControl({
               "text-muted-foreground hover:text-foreground",
               copied && "text-foreground"
             )}
-            disabled={resolveDisabledReason != null}
             onClick={handleCopyClick}
             size="sm"
-            title={resolveDisabledReason}
             type="button"
             variant="quiet"
           >
@@ -1040,7 +1032,6 @@ interface DraftEnvRowProps {
   onRevealResolvedValue: (index: number) => Promise<void> | void;
   onSaveRow: (index: number) => void;
   onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
-  resolveDisabledReason?: string;
   resolvedValuesAvailable: boolean;
   revealedValue?: string;
   row: ApEnvVar;
@@ -1083,7 +1074,6 @@ function CollapsedEnvValueControl({
   onCopyResolvedValue,
   onRevealResolvedValue,
   onUpdateRow,
-  resolveDisabledReason,
   resolvedValuesAvailable,
   revealedValue,
   row,
@@ -1096,7 +1086,6 @@ function CollapsedEnvValueControl({
   onCopyResolvedValue: (index: number) => Promise<void> | void;
   onRevealResolvedValue: (index: number) => Promise<void> | void;
   onUpdateRow: (index: number, patch: Partial<ApEnvRow>) => void;
-  resolveDisabledReason?: string;
   resolvedValuesAvailable: boolean;
   revealedValue?: string;
   row: ApEnvVar;
@@ -1108,7 +1097,6 @@ function CollapsedEnvValueControl({
         index={index}
         onCopyResolvedValue={onCopyResolvedValue}
         onRevealResolvedValue={onRevealResolvedValue}
-        resolveDisabledReason={resolveDisabledReason}
         resolvedValuesAvailable={resolvedValuesAvailable}
         revealedValue={revealedValue}
         row={row}
@@ -1169,7 +1157,6 @@ function DraftEnvRow({
   onRevealResolvedValue,
   onSaveRow,
   onUpdateRow,
-  resolveDisabledReason,
   resolvedValuesAvailable,
   revealedValue,
   row,
@@ -1238,7 +1225,6 @@ function DraftEnvRow({
           onCopyResolvedValue={onCopyResolvedValue}
           onRevealResolvedValue={onRevealResolvedValue}
           onUpdateRow={onUpdateRow}
-          resolveDisabledReason={resolveDisabledReason}
           resolvedValuesAvailable={resolvedValuesAvailable}
           revealedValue={revealedValue}
           row={row}
@@ -1277,7 +1263,6 @@ export function EditableEnvRows({
   onRevealResolvedValue,
   onSaveRow,
   onUpdateRow,
-  resolveDisabledReason,
   revealedValues,
   resolvedValuesAvailable,
   savedRows,
@@ -1318,7 +1303,6 @@ export function EditableEnvRows({
           onRevealResolvedValue={onRevealResolvedValue}
           onSaveRow={onSaveRow}
           onUpdateRow={onUpdateRow}
-          resolveDisabledReason={resolveDisabledReason}
           resolvedValuesAvailable={resolvedValuesAvailable}
           revealedValue={revealedValues.get(index)}
           row={row}

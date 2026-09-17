@@ -277,11 +277,6 @@ export interface ApSettingsSectionsProps {
   env: ApEnvVar[];
   /** Canonical AP Environment Raw Source. When omitted, direct saved env rows are projected into `.env` source. */
   envRawSource?: string;
-  /**
-   * Whether `onEnvResolvedValue`'s preconditions (workload, credentials, target) hold.
-   * When explicitly false, saved-row reveal/copy controls render disabled with a reason.
-   */
-  envResolvedValueReady?: boolean;
   /** Identity boundary used to clear transient resolved values when switching AP resources. */
   envResolvedValueScope?: string;
   /** Full image reference (repository + tag/digest). */
@@ -377,7 +372,6 @@ export function useApSettingsSections({
   replicasQuota,
   replicaStrategy,
   envResolvedValueScope,
-  envResolvedValueReady,
   onResourceQuotasCommit,
   onEnvResolvedValue,
   onSettingsDraftCommit,
@@ -804,12 +798,6 @@ export function useApSettingsSections({
   );
 
   const resolvedEnvValuesAvailable = onEnvResolvedValue != null;
-  // When the resolver exists but its preconditions (credentials, target) do not,
-  // the saved-row controls disable up front instead of failing at click time.
-  const envResolveDisabledReason =
-    resolvedEnvValuesAvailable && envResolvedValueReady === false
-      ? "Workspace credentials are not ready yet."
-      : undefined;
   const revealResetKey = JSON.stringify([
     envResolvedValueScope ?? "",
     envEditorMode,
@@ -2397,7 +2385,6 @@ export function useApSettingsSections({
               onRevealResolvedValue={revealResolvedEnvValue}
               onSaveRow={handleSaveEnvRow}
               onUpdateRow={handleUpdateEnvRow}
-              resolveDisabledReason={envResolveDisabledReason}
               resolvedValuesAvailable={resolvedEnvValuesAvailable}
               revealedValues={revealedEnvValues}
               savedRows={committedEnvRows}

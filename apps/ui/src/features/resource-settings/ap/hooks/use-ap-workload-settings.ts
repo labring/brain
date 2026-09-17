@@ -101,6 +101,39 @@ function resourceQuotaPatchDraft(next: ResourceQuotaCommitDraft): {
  * Fetches the AP/DB product resource, maps it to AP settings props, and exposes
  * JSON Patch–backed mutators for AP workloads (DB stays read-only in the pane).
  */
+/**
+ * Extracts a human-readable message from a Go API (Huma) error body —
+ * `{"title","status","detail","errors":[{"message"}]}` — so reveal/copy
+ * toasts show "AP not found" instead of the raw JSON envelope.
+ */
+export async function apiErrorMessage(response: Response): Promise<string> {
+  const text = (await response.text()).trim();
+  if (text === "") {
+    return `Request failed (${response.status}).`;
+  }
+  try {
+    const body = JSON.parse(text) as {
+      detail?: unknown;
+      errors?: unknown;
+      title?: unknown;
+    };
+    if (typeof body.detail === "string" && body.detail.trim() !== "") {
+      return body.detail;
+    }
+    const firstError = Array.isArray(body.errors) ? body.errors[0] : undefined;
+    const message = (firstError as { message?: unknown } | undefined)?.message;
+    if (typeof message === "string" && message.trim() !== "") {
+      return message;
+    }
+    if (typeof body.title === "string" && body.title.trim() !== "") {
+      return `${body.title} (${response.status}).`;
+    }
+  } catch {
+    // Not a JSON error body — fall through to the raw text.
+  }
+  return text;
+}
+
 export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   const {
     name,
@@ -234,21 +267,13 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         method: "GET",
       });
       if (!response.ok) {
-        throw new Error(await response.text());
+        throw new Error(await apiErrorMessage(response));
       }
       const body = (await response.json()) as { value?: unknown };
       return typeof body.value === "string" ? body.value : "";
     },
     [isApWorkload, kubeconfig, name, namespace, readOnly]
   );
-  // Mirrors `resolveEnvValue`'s pre-fetch guards so the UI can disable
-  // reveal/copy up front instead of surfacing a guaranteed failure on click.
-  const envResolvedValueReady =
-    isApWorkload &&
-    !readOnly &&
-    kubeconfig.trim() !== "" &&
-    name.trim() !== "" &&
-    namespace.trim() !== "";
 
   const onImageChange = useCallback(
     async (image: string) => {
@@ -529,7 +554,6 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   return {
     claimPayload: claimPayload as K8sGetResponse | undefined,
     display,
-    envResolvedValueReady,
     error: error ?? (isApWorkload ? apsError : undefined),
     ignoreEnv,
     ignoreImage,
