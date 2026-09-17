@@ -88,7 +88,7 @@ _Avoid_: primary entry, primary port, primary address, launch link, main domain,
 
 A cluster-internal URL for an AP, derived from one App Listening Port. Once the port exists its Private Address is known — never model it as pending.
 
-Observed Launchpad WS/WSS Ingress markers identify WebSocket ports: their private scheme is `ws`, and their public scheme is `wss` when TLS covers the host (`ws` otherwise). HTTP ports retain HTTP/HTTPS addresses. Match evidence by Service and port; the same hostname may expose distinct protocols or ports and must not collapse those Public Addresses.
+Observed Launchpad WS/WSS Ingress markers identify WebSocket ports: their private scheme is `ws`. The marker *adds* a public `wss` address when TLS covers the host (`ws` otherwise) beside that host's HTTP(S) Public Address; it does not replace or hide the web URL. HTTP ports retain HTTP/HTTPS addresses. Match evidence by Service, port, and URL scheme, so HTTPS and WSS on one hostname are distinct Public Addresses and must not collapse.
 
 ### Public Address
 
@@ -116,7 +116,7 @@ _Avoid_: AP Public Access Node health, standalone public access monitor.
 
 ### AP Public Access Node
 
-A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). It groups Public Addresses by the App Listening Port they target, each group headed by its port number and, when set, the Port Display Name. Two cases draw no group header, since it would tell the reader nothing the node's addresses do not: an AP with a single Public Address, however its port is named, and an AP whose only port has no Port Display Name. In those cases the node names the port nowhere else; the Open control's label and AP Network Settings do. Rows show the domain, not the Public Address kind. Its header carries the address count and one Open control that opens the Default Open Port; no per-address health is aggregated there, and nothing else on the node marks the Default Open Port. Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner; selecting it opens the AP's Network Settings View.
+A presentation-only Project Canvas node derived from an AP's Public Addresses (user-visible label: Public access). It lists every Public Address the AP has — HTTP(S) and WS(S) siblings of the same host both appear; one URL never hides another. WS/WSS rows stay copy-only. It groups Public Addresses by the App Listening Port they target, each group headed by its port number and, when set, the Port Display Name. Two cases draw no group header, since it would tell the reader nothing the node's addresses do not: an AP with a single Public Address, however its port is named, and an AP whose only port has no Port Display Name. In those cases the node names the port nowhere else; the Open control's label and AP Network Settings do. Rows show the domain, not the Public Address kind. Its header carries the address count and one Open control that opens the Default Open Port; no per-address health is aggregated there, and nothing else on the node marks the Default Open Port. Not a Brain product resource, backend API view, Kubernetes resource, or Settings Owner; selecting it opens the AP's Network Settings View.
 
 ### AP Network Settings
 

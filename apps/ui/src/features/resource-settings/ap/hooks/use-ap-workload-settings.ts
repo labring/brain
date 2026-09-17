@@ -98,6 +98,39 @@ function resourceQuotaPatchDraft(next: ResourceQuotaCommitDraft): {
 }
 
 /**
+ * Extracts a human-readable message from a Go API (Huma) error body —
+ * `{"title","status","detail","errors":[{"message"}]}` — so reveal/copy
+ * toasts show "AP not found" instead of the raw JSON envelope.
+ */
+export async function apiErrorMessage(response: Response): Promise<string> {
+  const text = (await response.text()).trim();
+  if (text === "") {
+    return `Request failed (${response.status}).`;
+  }
+  try {
+    const body = JSON.parse(text) as {
+      detail?: unknown;
+      errors?: unknown;
+      title?: unknown;
+    };
+    if (typeof body.detail === "string" && body.detail.trim() !== "") {
+      return body.detail;
+    }
+    const firstError = Array.isArray(body.errors) ? body.errors[0] : undefined;
+    const message = (firstError as { message?: unknown } | undefined)?.message;
+    if (typeof message === "string" && message.trim() !== "") {
+      return message;
+    }
+    if (typeof body.title === "string" && body.title.trim() !== "") {
+      return `${body.title} (${response.status}).`;
+    }
+  } catch {
+    // Not a JSON error body — fall through to the raw text.
+  }
+  return text;
+}
+
+/**
  * Fetches the AP/DB product resource, maps it to AP settings props, and exposes
  * JSON Patch–backed mutators for AP workloads (DB stays read-only in the pane).
  */
@@ -234,7 +267,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
         method: "GET",
       });
       if (!response.ok) {
-        throw new Error(await response.text());
+        throw new Error(await apiErrorMessage(response));
       }
       const body = (await response.json()) as { value?: unknown };
       return typeof body.value === "string" ? body.value : "";

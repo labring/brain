@@ -337,6 +337,53 @@ test("Public Access groups Public Addresses by port in port order with the port'
   );
 });
 
+test("Public Access keeps HTTPS and WSS Public Addresses on the same port", () => {
+  const groups = publicAccessGroups(
+    apWithNetwork({
+      appListeningPorts: [{ displayName: "app", port: 3000 }],
+      publicAddresses: [
+        {
+          host: "proxy.example.com",
+          id: "pa_https",
+          port: 3000,
+          status: "accessible",
+          type: "observed",
+          url: "https://proxy.example.com/",
+        },
+        {
+          host: "proxy.example.com",
+          id: "pa_wss",
+          port: 3000,
+          status: "accessible",
+          type: "observed",
+          url: "wss://proxy.example.com/",
+        },
+      ],
+    })
+  );
+
+  assert.deepEqual(
+    groups.map((group) => ({
+      addresses: group.addresses.map((address) => ({
+        id: address.id,
+        value: address.value,
+      })),
+      name: group.name,
+      port: group.port,
+    })),
+    [
+      {
+        addresses: [
+          { id: "pa_https", value: "https://proxy.example.com/" },
+          { id: "pa_wss", value: "wss://proxy.example.com/" },
+        ],
+        name: "app",
+        port: 3000,
+      },
+    ]
+  );
+});
+
 test("Public Access keeps two Public Addresses on one port in one group, even with a shared host", () => {
   const groups = publicAccessGroups(
     apWithNetwork({
@@ -462,6 +509,39 @@ test("Public Access opens the first declared port with an HTTP address when noth
       })
     ),
     { label: "Open S3 API", port: 9000, url: "https://s3.example.com/" }
+  );
+});
+
+test("Public Access Open uses the HTTPS sibling when the same port also has WSS", () => {
+  assert.deepEqual(
+    publicAccessOpen(
+      apWithNetwork({
+        appListeningPorts: [{ displayName: "app", port: 3000 }],
+        publicAddresses: [
+          {
+            host: "proxy.example.com",
+            id: "pa_wss",
+            port: 3000,
+            status: "accessible",
+            type: "observed",
+            url: "wss://proxy.example.com/",
+          },
+          {
+            host: "proxy.example.com",
+            id: "pa_https",
+            port: 3000,
+            status: "accessible",
+            type: "observed",
+            url: "https://proxy.example.com/",
+          },
+        ],
+      })
+    ),
+    {
+      label: "Open app",
+      port: 3000,
+      url: "https://proxy.example.com/",
+    }
   );
 });
 

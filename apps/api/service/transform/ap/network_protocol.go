@@ -7,7 +7,8 @@ import (
 )
 
 // Project protocol evidence into the read model, including rows the adapter
-// already populated from desired state. This never changes routing intent or health.
+// already populated from desired state. This never changes routing intent or
+// health, and never hides an HTTP(S) Public Address behind a WebSocket URL.
 func projectObservedNetworkProtocols(status map[string]interface{}, ingresses, services []map[string]interface{}) {
 	names, ports := observedServiceLookup(services)
 	if len(names) == 0 {
@@ -16,28 +17,16 @@ func projectObservedNetworkProtocols(status map[string]interface{}, ingresses, s
 	endpoints := observedIngressEndpoints(ingresses, names, ports)
 	network := networkStatusCopy(status)
 	addresses := publicAddressRowsFromValue(network["publicAddresses"])
-	for _, address := range addresses {
-		port, _ := privatePortFromValue(address["port"])
-		scheme := ""
-		for _, endpoint := range endpoints {
-			if endpoint.host != address["host"] || endpoint.port != port {
-				continue
-			}
-			if scheme != "" && scheme != endpoint.scheme {
-				scheme = ""
+	for _, row := range observedPublicAddressRows(ingresses, names, ports) {
+		matched := false
+		for _, current := range addresses {
+			if publicAddressesShareHostPortScheme(current, row) {
+				matched = true
 				break
 			}
-			scheme = endpoint.scheme
 		}
-		if scheme != "" {
-			current, _ := address["url"].(string)
-			parsed, err := url.Parse(current)
-			if err == nil && parsed.Hostname() == address["host"] {
-				parsed.Scheme = scheme
-				address["url"] = parsed.String()
-			} else {
-				address["url"] = fmt.Sprintf("%s://%s/", scheme, address["host"])
-			}
+		if !matched {
+			addresses = append(addresses, row)
 		}
 	}
 	if len(addresses) > 0 {
@@ -87,19 +76,61 @@ func projectObservedNetworkProtocols(status map[string]interface{}, ingresses, s
 }
 
 func privateProtocolForEndpoints(endpoints []observedIngressEndpoint, serviceKey string) string {
-	scheme := ""
+	http := false
+	websocket := false
 	for _, endpoint := range endpoints {
 		if endpoint.serviceKey != serviceKey {
 			continue
 		}
-		candidate := "http"
 		if endpoint.scheme == "ws" || endpoint.scheme == "wss" {
-			candidate = "ws"
+			websocket = true
+			continue
 		}
-		if scheme != "" && scheme != candidate {
-			return ""
-		}
-		scheme = candidate
+		http = true
 	}
-	return scheme
+	// A WS-marked port still uses a ws private scheme (Launchpad). Public
+	// HTTP(S) siblings of that port are separate Public Addresses.
+	if websocket {
+		return "ws"
+	}
+	if http {
+		return "http"
+	}
+	return ""
+}
+
+func publicAddressURLScheme(row map[string]interface{}) string {
+	raw, _ := row["url"].(string)
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" {
+		return ""
+	}
+	return strings.ToLower(parsed.Scheme)
+}
+
+// publicAddressProtocolRole is web (http/https) vs websocket (ws/wss). TLS
+// does not make a second Public Address; a WS marker does.
+func publicAddressProtocolRole(row map[string]interface{}) string {
+	switch publicAddressURLScheme(row) {
+	case "ws", "wss":
+		return "websocket"
+	case "http", "https":
+		return "web"
+	default:
+		return ""
+	}
+}
+
+func publicAddressesShareHostPortScheme(left, right map[string]interface{}) bool {
+	leftPort, _ := privatePortFromValue(left["port"])
+	rightPort, _ := privatePortFromValue(right["port"])
+	if left["host"] != right["host"] || leftPort != rightPort || leftPort == 0 {
+		return false
+	}
+	leftRole := publicAddressProtocolRole(left)
+	rightRole := publicAddressProtocolRole(right)
+	if leftRole == "" || rightRole == "" {
+		return true
+	}
+	return leftRole == rightRole
 }

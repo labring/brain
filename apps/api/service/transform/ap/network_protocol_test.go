@@ -43,21 +43,24 @@ func TestAPNetworkMatchesLaunchpadProtocolsAndPorts(t *testing.T) {
 					out := APWithIngressesAndServicesFromList(ap, ingresses, []map[string]interface{}{service})
 					network := out["status"].(map[string]interface{})["network"].(map[string]interface{})
 					addresses := publicAddressRowsFromValue(network["publicAddresses"])
-					if len(addresses) != 2 {
-						t.Fatalf("got %d addresses, want both ports", len(addresses))
-					}
+					urlsByPort := map[int]map[string]bool{}
 					for _, address := range addresses {
 						port, _ := privatePortFromValue(address["port"])
-						scheme := "http"
-						if port == 5200 {
-							scheme = "ws"
+						url, _ := address["url"].(string)
+						if urlsByPort[port] == nil {
+							urlsByPort[port] = map[string]bool{}
 						}
-						if secure {
-							scheme += "s"
-						}
-						if want := scheme + "://game.example.com/"; address["url"] != want {
-							t.Fatalf("port %d: %v, want %s", port, address["url"], want)
-						}
+						urlsByPort[port][url] = true
+					}
+					web, socket := "http://game.example.com/", "ws://game.example.com/"
+					if secure {
+						web, socket = "https://game.example.com/", "wss://game.example.com/"
+					}
+					if !urlsByPort[5200][web] || !urlsByPort[5200][socket] {
+						t.Fatalf("port 5200: %v, want both %s and %s", urlsByPort[5200], web, socket)
+					}
+					if !urlsByPort[5201][web] || urlsByPort[5201][socket] {
+						t.Fatalf("port 5201: %v, want only %s", urlsByPort[5201], web)
 					}
 					rows := network["appListeningPorts"].([]interface{})
 					if rows[0].(map[string]interface{})["privateAddress"] != "ws://game-service.demo.svc.cluster.local:5200" {
@@ -105,16 +108,27 @@ func TestAPNetworkDoesNotInventWebSocketWithoutRoutingEvidence(t *testing.T) {
 	}
 }
 
-func TestAPNetworkCorrectsExistingPublicProtocolWithoutChangingHealthOrPath(t *testing.T) {
+func TestAPNetworkKeepsHttpsWhenAddingObservedWebSocketSibling(t *testing.T) {
 	status := networkProtocolFixture(t, `{"network":{"publicAddresses":[{"id":"existing","host":"game.example.com","port":5200,"status":"blocked","url":"https://game.example.com/socket?version=2"}]}}`)
 	service := networkProtocolFixture(t, `{"metadata":{"name":"game-service","namespace":"demo"},"spec":{"ports":[{"port":5200},{"port":5201}]}}`)
 	ingress := networkProtocolFixture(t, `{"metadata":{"annotations":{"nginx.ingress.kubernetes.io/backend-protocol":"WS"}},"spec":{"tls":[{"hosts":["game.example.com"]}],"rules":[{"host":"game.example.com","http":{"paths":[{"backend":{"service":{"name":"game-service","port":{"number":5200}}}}]}}]}}`)
 	projectObservedNetworkProtocols(status, []map[string]interface{}{ingress}, []map[string]interface{}{service})
 	addresses := publicAddressRowsFromValue(status["network"].(map[string]interface{})["publicAddresses"])
-	if len(addresses) != 1 || addresses[0]["url"] != "wss://game.example.com/socket?version=2" || addresses[0]["status"] != "blocked" || addresses[0]["id"] != "existing" {
-		t.Fatal(addresses)
+	urls := map[string]map[string]interface{}{}
+	for _, address := range addresses {
+		url, _ := address["url"].(string)
+		urls[url] = address
 	}
-	// Reading again keeps the same resource identity and URL.
+	existing := urls["https://game.example.com/socket?version=2"]
+	if existing == nil || existing["status"] != "blocked" || existing["id"] != "existing" {
+		t.Fatal("HTTPS Public Address must stay, including health and identity", addresses)
+	}
+	if urls["wss://game.example.com/"] == nil {
+		t.Fatal("WS-marked Ingress must add a WebSocket sibling, not replace HTTPS", addresses)
+	}
+	if urls["https://game.example.com/"] != nil {
+		t.Fatal("http and https on one host and port are one web address, not two", addresses)
+	}
 	before, _ := json.Marshal(status)
 	projectObservedNetworkProtocols(status, []map[string]interface{}{ingress}, []map[string]interface{}{service})
 	after, _ := json.Marshal(status)

@@ -26,6 +26,19 @@ type apWorkload struct {
 	StatefulSet *appsv1.StatefulSet
 }
 
+func apWorkloadContainer(workload *apWorkload) (corev1.Container, bool) {
+	if workload == nil {
+		return corev1.Container{}, false
+	}
+	if workload.Deployment != nil && len(workload.Deployment.Spec.Template.Spec.Containers) > 0 {
+		return workload.Deployment.Spec.Template.Spec.Containers[0], true
+	}
+	if workload.StatefulSet != nil && len(workload.StatefulSet.Spec.Template.Spec.Containers) > 0 {
+		return workload.StatefulSet.Spec.Template.Spec.Containers[0], true
+	}
+	return corev1.Container{}, false
+}
+
 func (workload apWorkload) Name() string {
 	if workload.Deployment != nil {
 		return workload.Deployment.Name
