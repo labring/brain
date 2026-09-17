@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { render } from "@testing-library/react/pure";
+import { fireEvent, render } from "@testing-library/react/pure";
 import type { ReactNode } from "react";
 import type { ProjectDbTarget } from "@/features/panes/target-identity";
 import {
@@ -16,6 +16,8 @@ import {
 } from "../settings-provider-db";
 
 const NAMESPACE = "ns-switch-test";
+const PGSQL_HOST_PATTERN = /PGSQL-LEAK-HOST/;
+const REDIS_HOST_PATTERN = /REDIS-HOST/;
 const RESOURCES_SECTION_PATTERN = /Replicas & Resources/;
 
 function dbClaim(input: {
@@ -98,6 +100,79 @@ function providerElement(input: {
   );
 }
 
+test("a revealed connection DSN does not leak onto another DB node's rows", async () => {
+  await withTestDom(async (actAndDrain) => {
+    const POSTGRES_DSN = "postgresql://u:pw@PGSQL-LEAK-HOST:5432/db";
+    const REDIS_DSN = "redis://u:pw@REDIS-HOST:6379/0";
+    const { override } = stubFetch((url) => {
+      if (url.includes("connection-string")) {
+        return jsonResponse({
+          value: url.includes("affine-redis") ? REDIS_DSN : POSTGRES_DSN,
+        });
+      }
+      if (url.includes("affine-redis")) {
+        return jsonResponse(REDIS_CLAIM);
+      }
+      if (url.includes("affine-postgresql")) {
+        return jsonResponse(POSTGRES_CLAIM);
+      }
+      return jsonResponse({});
+    });
+    let rendered: ReturnType<typeof render> | undefined;
+
+    try {
+      await actAndDrain(() => {
+        rendered = render(
+          providerElement({
+            kubeconfig: "kubeconfig-switch-test",
+            target: postgresTarget(),
+          })
+        );
+      });
+      assert.ok(rendered, "initial render");
+      const view = rendered;
+
+      await actAndDrain(() => {
+        fireEvent.click(view.getByLabelText("Reveal Private Connection"));
+      });
+      assert.match(
+        view.container.textContent ?? "",
+        PGSQL_HOST_PATTERN,
+        "the postgres DSN is revealed on its own pane"
+      );
+
+      await actAndDrain(() => {
+        view.rerender(
+          providerElement({
+            kubeconfig: "kubeconfig-switch-test",
+            target: redisTarget(),
+          })
+        );
+      });
+      assert.doesNotMatch(
+        view.container.textContent ?? "",
+        PGSQL_HOST_PATTERN,
+        "the postgres DSN must not render on the redis pane"
+      );
+
+      await actAndDrain(() => {
+        fireEvent.click(view.getByLabelText("Reveal Private Connection"));
+      });
+      assert.match(
+        view.container.textContent ?? "",
+        REDIS_HOST_PATTERN,
+        "revealing on the redis pane resolves the redis DSN"
+      );
+    } finally {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
+      restoreGlobal(override);
+    }
+    await actAndDrain(() => undefined);
+  });
+});
+
 test("dbSettingsDataFromExactResource only accepts claims that match the target", () => {
   const target = postgresTarget();
   const matching = dbSettingsDataFromExactResource(POSTGRES_CLAIM, target);
@@ -179,6 +254,9 @@ test("DB settings provider ignores a fetched claim that belongs to another DB", 
         "the settings sections stay in their loading/unavailable state"
       );
     } finally {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
       restoreGlobal(override);
     }
     await actAndDrain(() => undefined);
@@ -256,6 +334,9 @@ test("DB settings provider revalidates a quickly revisited node inside SWR's ded
         "a quick revisit must not serve the stale cached claim"
       );
     } finally {
+      await actAndDrain(() => {
+        rendered?.unmount();
+      });
       restoreGlobal(override);
     }
     await actAndDrain(() => undefined);

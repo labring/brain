@@ -275,6 +275,7 @@ function DatabaseSettingsConnectionAddressRow({
   publicConnectionEnabled,
   revealAvailable,
   revealedValue,
+  rowKeyScope,
 }: {
   connection: DatabaseNodeConnection;
   controlsDisabled: boolean;
@@ -285,8 +286,10 @@ function DatabaseSettingsConnectionAddressRow({
   publicConnectionEnabled: boolean;
   revealAvailable: boolean;
   revealedValue?: string;
+  /** Workload identity prefix so reveal state never crosses DB Services. */
+  rowKeyScope: string;
 }) {
-  const rowKey = getDatabaseNodeConnectionKey(connection, index);
+  const rowKey = `${rowKeyScope}:${getDatabaseNodeConnectionKey(connection, index)}`;
 
   return (
     <DatabaseConnectionRow
@@ -351,6 +354,7 @@ function DatabaseSettingsConnectionAddressList({
   publicConnectionEnabled,
   revealAvailable,
   revealedRow,
+  rowKeyScope,
 }: {
   connections: readonly DatabaseNodeConnection[];
   controlsDisabled: boolean;
@@ -360,6 +364,7 @@ function DatabaseSettingsConnectionAddressList({
   publicConnectionEnabled: boolean;
   revealAvailable: boolean;
   revealedRow: RevealedRow | null;
+  rowKeyScope: string;
 }) {
   const visibleConnections = connections.filter(shouldShowConnectionAddress);
 
@@ -381,7 +386,7 @@ function DatabaseSettingsConnectionAddressList({
         data-slot="database-settings-connection-address-list"
       >
         {visibleConnections.map((connection, index) => {
-          const rowKey = getDatabaseNodeConnectionKey(connection, index);
+          const rowKey = `${rowKeyScope}:${getDatabaseNodeConnectionKey(connection, index)}`;
           return (
             <DatabaseSettingsConnectionAddressRow
               connection={connection}
@@ -396,6 +401,7 @@ function DatabaseSettingsConnectionAddressList({
               revealedValue={
                 revealedRow?.key === rowKey ? revealedRow.value : undefined
               }
+              rowKeyScope={rowKeyScope}
             />
           );
         })}
@@ -502,11 +508,18 @@ export function useDatabaseSettingsSections({
   const workloadName = data.workload.name.trim();
   const workloadNamespace = data.workload.namespace.trim();
   const workload = data.workload;
+  const identityKey = `${workloadNamespace}/${workloadName}`;
   const { authReady: revealAvailable, resolveConnectionString } =
     useDbConnectionStringResolver({
       kubeconfig: readOnly ? undefined : kubeconfig,
     });
-  const { revealedRow, toggleRevealedRow } = useRevealedRow();
+  const { clearRevealedRow, revealedRow, toggleRevealedRow } = useRevealedRow();
+  // The pane retargets in place when the user switches DB nodes; a revealed
+  // connection DSN belongs to one DB Service and must not survive the switch.
+  // biome-ignore lint/correctness/useExhaustiveDependencies(identityKey): the effect re-runs precisely on DB Service switches to drop the revealed DSN.
+  useEffect(() => {
+    clearRevealedRow();
+  }, [clearRevealedRow, identityKey]);
   const revealConnection = useCallback<DatabaseSettingsConnectionRevealHandler>(
     (connection, rowKey) => {
       toggleRevealedRow(rowKey, () =>
@@ -530,7 +543,6 @@ export function useDatabaseSettingsSections({
   const desiredMemoryLimit = desired?.memoryLimit;
   const desiredReplicas = desired?.replicas;
   const desiredStorageSize = desired?.storageSize;
-  const identityKey = `${workloadNamespace}/${workloadName}`;
   const submissionStore = useMemo(
     () => getBrowserSettingsSubmissionStore(),
     []
@@ -1050,6 +1062,7 @@ export function useDatabaseSettingsSections({
             publicConnectionEnabled={draft.exposeNodePort}
             revealAvailable={revealAvailable}
             revealedRow={revealedRow}
+            rowKeyScope={identityKey}
           />
         ),
         icon: Network,

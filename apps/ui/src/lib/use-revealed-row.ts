@@ -19,6 +19,8 @@ export interface RevealedRow {
  * silently, since nothing failed and there is nothing to show.
  */
 export function useRevealedRow(): {
+  /** Hides (and discards) the revealed row immediately. */
+  clearRevealedRow: () => void;
   revealedRow: RevealedRow | null;
   toggleRevealedRow: (
     key: string,
@@ -75,5 +77,5 @@ export function useRevealedRow(): {
     [clearHideTimeout, hideRevealedRow]
   );
 
-  return { revealedRow, toggleRevealedRow };
+  return { clearRevealedRow: hideRevealedRow, revealedRow, toggleRevealedRow };
 }
