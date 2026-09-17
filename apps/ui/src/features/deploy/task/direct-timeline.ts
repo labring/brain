@@ -190,14 +190,26 @@ function templatePublicAccessCardsFromDoc(
     }
     const webProtocol = tlsHosts.has(host) ? "https" : "http";
     const websocketProtocol = tlsHosts.has(host) ? "wss" : "ws";
-    return ingressPaths(rule).map((path) =>
-      ingressAccessEndpointCard({
+    return ingressPaths(rule).flatMap((path) => {
+      const web = ingressAccessEndpointCard({
         host,
         identity,
         path,
-        protocol: declaresWebSocket ? websocketProtocol : webProtocol,
-      })
-    );
+        protocol: webProtocol,
+      });
+      if (!declaresWebSocket) {
+        return [web];
+      }
+      return [
+        web,
+        ingressAccessEndpointCard({
+          host,
+          identity,
+          path,
+          protocol: websocketProtocol,
+        }),
+      ];
+    });
   });
 }
 
@@ -221,7 +233,11 @@ function selectPrimaryTemplatePublicAccessCards(
       card.resultRef.protocol === "ws" || card.resultRef.protocol === "wss"
         ? "websocket"
         : "web";
-    const key = `${role}:${url.hostname}`;
+    const observerName =
+      card.resultRef.observer.kind === "ingress"
+        ? card.resultRef.observer.name
+        : "";
+    const key = `${role}:${observerName}:${url.hostname}`;
     const group = cardsByRoleAndHost.get(key) ?? {
       cardsByPath: new Map<string, DeploymentResultResourceCard>(),
       paths: [],
@@ -233,8 +249,10 @@ function selectPrimaryTemplatePublicAccessCards(
     cardsByRoleAndHost.set(key, group);
   }
   // Ingress paths describe routing implementation, not a list of product
-  // entry points. Keep one primary address per host and protocol role, chosen
-  // by the shared entry-path rule, without probing every fallback route.
+  // entry points. Keep one primary address per Ingress, host, and protocol
+  // role, chosen by the shared entry-path rule. Distinct Ingresses on the
+  // same host (a WS game and an HTTP admin panel) stay separate so one
+  // public URL cannot hide another.
   return [...cardsByRoleAndHost.values()].flatMap(({ cardsByPath, paths }) => {
     const card = cardsByPath.get(primaryIngressPath(paths));
     return card == null ? [] : [card];

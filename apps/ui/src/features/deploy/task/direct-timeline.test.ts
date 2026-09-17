@@ -185,7 +185,7 @@ spec:
   ]);
 });
 
-test("an explicitly WebSocket-backed Ingress keeps only its primary path", () => {
+test("a WebSocket-backed Ingress keeps its Web address beside the WebSocket address", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resourceYamls: [
       `
@@ -215,7 +215,10 @@ spec:
         ? [card.resultRef.protocol, card.resultRef.url]
         : null
     ),
-    [["wss", "wss://game.example.sealos.run/"]]
+    [
+      ["https", "https://game.example.sealos.run/"],
+      ["wss", "wss://game.example.sealos.run/"],
+    ]
   );
 });
 

@@ -85,6 +85,22 @@ test("template provider ingress resources become one primary card per host and p
   assert.deepEqual(cards, [
     {
       events: [],
+      id: "AccessEndpoint:ns-demo:ingress:eaglercraft-demo:https:eaglercraft-demo.example.sealos.run:/",
+      required: true,
+      resultRef: {
+        id: "ingress:eaglercraft-demo:https:eaglercraft-demo.example.sealos.run:/",
+        kind: "AccessEndpoint",
+        label: "Web address",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "eaglercraft-demo" },
+        protocol: "https",
+        url: "https://eaglercraft-demo.example.sealos.run/",
+      },
+      status: "creating",
+      title: "Web address",
+    },
+    {
+      events: [],
       id: "AccessEndpoint:ns-demo:ingress:eaglercraft-demo:wss:eaglercraft-demo.example.sealos.run:/",
       required: true,
       resultRef: {

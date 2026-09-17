@@ -2,12 +2,13 @@
 
 ## Status
 
-Accepted; amended in place (the entry-path rule, below). ADR-0081 adds
-Template Entries beside this contract, not inside it: a Template Entry is
-not a Deployment Access Endpoint and is not probed — its host is an Ingress
-host whose required endpoint this ADR already verifies — and it borrows only
-the naming rule for the port an entry reaches. CONTEXT.md's former "no
-Template-Instance-level open link" no longer holds.
+Accepted; amended in place (the entry-path rule, below, and the public-URL
+display rule of 2026-09-17). ADR-0081 adds Template Entries beside this
+contract, not inside it: a Template Entry is not a Deployment Access Endpoint
+and is not probed — its host is an Ingress host whose required endpoint this
+ADR already verifies — and it borrows only the naming rule for the port an
+entry reaches. CONTEXT.md's former "no Template-Instance-level open link" no
+longer holds.
 
 ## Context
 
@@ -46,12 +47,13 @@ prefix, namespace, port, or cluster convention.
 
 A template Ingress supplies host, TLS, and ordered path candidates, but those
 paths are routing implementation rather than independent user entry points.
-Brain groups candidates by hostname and endpoint role, retaining at most one
-HTTP(S) address and one WS(S) address for each host. A declared root path wins;
-a path-only app retains one primary path chosen by the entry-path rule below.
-Only retained entries are probed and gate completion. This keeps `/api`, static
-assets, and secondary admin routes from becoming deployment requirements when
-the primary app is already usable.
+Brain groups candidates by Ingress identity, hostname, and protocol role,
+retaining at most one HTTP(S) address and one WS(S) address for each Ingress
+host. Distinct Ingresses on the same host keep their own Public Addresses. A
+declared root path wins; a path-only app retains one primary path chosen by
+the entry-path rule below. Only retained entries are probed and gate
+completion. This keeps `/api`, static assets, and secondary admin routes from
+becoming deployment requirements when the primary app is already usable.
 
 For an inferred non-root HTTP(S) Ingress candidate returning 404, observation
 may verify `/` on the same origin. Only a successful root probe replaces the
@@ -66,12 +68,14 @@ compatibility and verifies one matching WS or WSS address; it is not treated as
 general ingress-nginx protocol semantics, and Brain never derives WebSocket
 support from TLS or a product name.
 
-A WS/WSS-marked Ingress supplies only the matching WebSocket endpoint, never
-an additional required HTTP GET endpoint. A separate HTTP Ingress on the same
-host retains its own primary path, including an admin path. AP Network projects
-the same protocol evidence by Service and backend port, preserving separate
-public addresses on a shared hostname and correcting generated URL schemes
-without changing routing health or desired configuration.
+A WS/WSS-marked Ingress still lists its HTTP(S) Public Address when TLS or an
+HTTP backend is present on that host. The marker *adds* a WebSocket Public
+Address; it does not replace or hide the web URL. A separate HTTP Ingress on
+the same host (an admin path, a second port) remains its own Public Address.
+True socket-only URLs stay copy-only in the UI (they are not Open targets).
+AP Network projects protocol evidence by Service, backend port, and URL
+scheme, so HTTPS and WSS on one hostname are distinct Public Addresses and
+must not collapse.
 
 Agent-managed completion accepts at most eight `accessEndpoints`, each with a
 stable id, label, and exact URL. The v1 `publicUrl` field remains an input
@@ -109,9 +113,10 @@ using it` is reserved for results with an actionable verified entry.
 
 - nginx and other direct web deployments wait for both workload readiness and
   a resolved, reachable platform address, then show that exact address.
-- Templates show one primary verified web address per Ingress hostname.
-  Catalog templates carrying the legacy WS/WSS marker also show one separately
-  verified WebSocket address. Richer product-specific labels and probes still
+- Templates show one primary verified web address per Ingress hostname, and
+  a WebSocket address when that Ingress carries the legacy WS/WSS marker.
+  Distinct Ingresses on the same host keep their own Public Addresses; one
+  URL does not hide another. Richer product-specific labels and probes still
   belong in a future versioned Template Runtime Contract.
 - GitHub deployments can report multiple independently labelled web and
   WebSocket endpoints while old deployment skills continue to work.
@@ -145,3 +150,16 @@ automatic Default Open Port rule prefers a port whose HTTP Public Address
 enters at the root before any port that enters under a path; otherwise a
 backend port declared before the page port (`/api/v1` on Pangolin, `/mqtt`
 on EMQX) would have become the Open target.
+
+## Amendment: public URL display is not exclusive (2026-09-17)
+
+The Launchpad-alignment text of 2026-09-07 said a WS/WSS-marked Ingress
+supplies only the matching WebSocket endpoint. That hid a working HTTP(S)
+page whenever one Ingress served both a website and a WebSocket (GitHub-
+generated templates, dual-protocol apps). The canvas lists every public
+URL the app has. A WS/WSS marker *adds* a WebSocket Public Address beside
+HTTP(S); it does not replace or hide the web URL, and no Public Address
+may hide another. True socket-only URLs stay copy-only (they are not Open
+targets) without dropping a sibling HTTP(S) URL. The AP Product View that
+feeds the Public Access Node is the same projection AP Network Settings,
+Default Open, and GitHub success cards read.

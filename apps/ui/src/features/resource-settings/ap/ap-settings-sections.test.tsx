@@ -1209,6 +1209,66 @@ test("read-only network view renders addresses without mutation controls", () =>
   assert.doesNotMatch(html, DELETE_PUBLIC_ADDRESS_RE);
 });
 
+test("AP network lists HTTPS and WSS siblings of the same port", async () => {
+  const dom = await installTestDom();
+  const previous = setActEnvironment(true);
+  const consoleError = spyOn(console, "error").mockImplementation(
+    () => undefined
+  );
+  const view = render(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[]}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      network={{
+        appListeningPorts: [
+          {
+            port: 3000,
+            privateAddress: "ws://proxy.demo.svc.cluster.local:3000",
+          },
+        ],
+        privatePort: 3000,
+        publicAddresses: [
+          {
+            host: "proxy.example.com",
+            port: 3000,
+            status: "accessible",
+            url: "https://proxy.example.com/",
+          },
+          {
+            host: "proxy.example.com",
+            port: 3000,
+            status: "accessible",
+            url: "wss://proxy.example.com/",
+          },
+        ],
+      }}
+      onEnvChange={noop}
+      onImageChange={noop}
+      onNetworkChange={noop}
+      readOnly
+    />
+  );
+  try {
+    assert.ok(view.getByText("https://proxy.example.com/"));
+    assert.ok(view.getByText("wss://proxy.example.com/"));
+    assert.ok(
+      view.container.querySelector('a[href="https://proxy.example.com/"]')
+    );
+    assert.equal(
+      view.container.querySelector('a[href="wss://proxy.example.com/"]'),
+      null
+    );
+    assert.equal(consoleError.mock.calls.length, 0);
+  } finally {
+    consoleError.mockRestore();
+    view.unmount();
+    restoreActEnvironment(previous);
+    await dom.restore();
+  }
+});
+
 test("AP network preserves WebSocket and web addresses on separate ports", async () => {
   const dom = await installTestDom();
   const previous = setActEnvironment(true);

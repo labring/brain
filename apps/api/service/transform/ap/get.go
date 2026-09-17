@@ -408,9 +408,7 @@ func mergeObservedPublicAccessStatus(status map[string]interface{}, ingresses, s
 	for _, row := range rows {
 		matched := false
 		for _, current := range existing {
-			currentPort, _ := privatePortFromValue(current["port"])
-			observedPort, _ := privatePortFromValue(row["port"])
-			if current["host"] == row["host"] && currentPort == observedPort {
+			if publicAddressesShareHostPortScheme(current, row) {
 				matched = true
 				break
 			}
@@ -592,6 +590,23 @@ func (ports observedServicePorts) hasPort(port int) bool {
 	return ports.numbers[port]
 }
 
+// ingressPublicSchemes is the public URL schemes one Ingress rule host
+// exposes. A WS/WSS backend-protocol marker adds a WebSocket URL beside
+// HTTP(S); it does not replace the web URL the host already serves.
+func ingressPublicSchemes(tls bool, ingress map[string]interface{}) []string {
+	web := "http"
+	socket := "ws"
+	if tls {
+		web = "https"
+		socket = "wss"
+	}
+	protocol := strings.ToUpper(strings.TrimSpace(getString(ingress, "metadata", "annotations", "nginx.ingress.kubernetes.io/backend-protocol")))
+	if protocol == "WS" || protocol == "WSS" {
+		return []string{web, socket}
+	}
+	return []string{web}
+}
+
 func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames map[string]bool, servicePorts map[string]observedServicePorts) []observedIngressEndpoint {
 	endpoints := []observedIngressEndpoint{}
 	includeAllServices := len(serviceNames) == 0
@@ -632,32 +647,23 @@ func observedIngressEndpoints(ingresses []map[string]interface{}, serviceNames m
 				if port <= 0 || !ports.hasPort(port) {
 					continue
 				}
-				scheme := "http"
-				if tlsHosts[host] {
-					scheme = "https"
-				}
-				protocol := strings.ToUpper(strings.TrimSpace(getString(ingress, "metadata", "annotations", "nginx.ingress.kubernetes.io/backend-protocol")))
-				if protocol == "WS" || protocol == "WSS" {
-					scheme = "ws"
-					if tlsHosts[host] {
-						scheme = "wss"
-					}
-				}
 				key := fmt.Sprintf("%s|%s|%d", host, serviceName, port)
-				if index, seen := seenEndpoints[key+"|"+scheme]; seen {
-					retainIngressPath(&endpoints[index], getString(path, "path"))
-					continue
+				for _, scheme := range ingressPublicSchemes(tlsHosts[host], ingress) {
+					if index, seen := seenEndpoints[key+"|"+scheme]; seen {
+						retainIngressPath(&endpoints[index], getString(path, "path"))
+						continue
+					}
+					endpoint := observedIngressEndpoint{
+						host:       host,
+						key:        key,
+						port:       port,
+						scheme:     scheme,
+						serviceKey: serviceName + ":" + strconv.Itoa(port),
+					}
+					retainIngressPath(&endpoint, getString(path, "path"))
+					seenEndpoints[key+"|"+scheme] = len(endpoints)
+					endpoints = append(endpoints, endpoint)
 				}
-				endpoint := observedIngressEndpoint{
-					host:       host,
-					key:        key,
-					port:       port,
-					scheme:     scheme,
-					serviceKey: serviceName + ":" + strconv.Itoa(port),
-				}
-				retainIngressPath(&endpoint, getString(path, "path"))
-				seenEndpoints[key+"|"+scheme] = len(endpoints)
-				endpoints = append(endpoints, endpoint)
 			}
 		}
 	}
@@ -669,7 +675,7 @@ func observedPublicAddressRows(ingresses []map[string]interface{}, serviceNames 
 	for _, endpoint := range observedIngressEndpoints(ingresses, serviceNames, servicePorts) {
 		rows = append(rows, map[string]interface{}{
 			"host":   endpoint.host,
-			"id":     "observed-" + stablePlatformAddressHostLabel(endpoint.key, 12),
+			"id":     "observed-" + stablePlatformAddressHostLabel(endpoint.key+"|"+endpoint.scheme, 12),
 			"port":   endpoint.port,
 			"status": "accessible",
 			"type":   "observed",
