@@ -14,6 +14,54 @@ import {
   upsertResultResourceCard,
 } from "./timeline";
 
+function canonicalAccessUrl(url: string): string {
+  try {
+    return new URL(url).href;
+  } catch {
+    return url.trim();
+  }
+}
+
+function accessEndpointLabelForUrl(url: string): string {
+  try {
+    const protocol = new URL(url).protocol;
+    if (protocol === "ws:" || protocol === "wss:") {
+      return "WebSocket address";
+    }
+  } catch {
+    // fall through
+  }
+  return "Web address";
+}
+
+/**
+ * Adds Public Addresses the AP Product View already lists (the canvas set)
+ * that the Agent did not declare. One URL cannot hide another.
+ */
+export function unionManagedAccessEndpoints(
+  declared: readonly ManagedAccessEndpoint[],
+  observedUrls: readonly string[]
+): ManagedAccessEndpoint[] {
+  const seen = new Set(
+    declared.map((endpoint) => canonicalAccessUrl(endpoint.url))
+  );
+  const extra: ManagedAccessEndpoint[] = [];
+  for (const url of observedUrls) {
+    const trimmed = url.trim();
+    const canonical = canonicalAccessUrl(trimmed);
+    if (trimmed === "" || canonical === "" || seen.has(canonical)) {
+      continue;
+    }
+    seen.add(canonical);
+    extra.push({
+      id: `ap-public-${extra.length + 1}`,
+      label: accessEndpointLabelForUrl(trimmed),
+      url: trimmed,
+    });
+  }
+  return extra.length === 0 ? [...declared] : [...declared, ...extra];
+}
+
 function runningCard(input: {
   latestStatusText: string;
   ref: DeploymentResultResourceRef;

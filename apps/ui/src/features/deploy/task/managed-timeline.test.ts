@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   attachManagedDeploymentTimelineSuccess,
   managedDeploymentTimelineResultCards,
+  unionManagedAccessEndpoints,
 } from "./managed-timeline";
 import type { DeploymentTaskTimelineSnapshot } from "./timeline";
 
@@ -46,6 +47,33 @@ function timeline(): DeploymentTaskTimelineSnapshot {
 }
 
 describe("managed deployment Timeline evidence", () => {
+  it("adds AP Public Addresses the Agent omitted so HTTPS cannot hide behind WSS", () => {
+    const cards = managedDeploymentTimelineResultCards({
+      accessEndpoints: unionManagedAccessEndpoints(
+        [
+          {
+            id: "public-ws",
+            label: "WebSocket address",
+            url: "wss://web.ns-demo.sealos.run/",
+          },
+        ],
+        ["https://web.ns-demo.sealos.run/", "wss://web.ns-demo.sealos.run/"]
+      ),
+      namespace: "ns-demo",
+      resources,
+    });
+
+    expect(
+      cards
+        .filter((card) => card.resultRef.kind === "AccessEndpoint")
+        .map((card) =>
+          card.resultRef.kind === "AccessEndpoint" ? card.resultRef.url : null
+        )
+    ).toEqual([
+      "wss://web.ns-demo.sealos.run/",
+      "https://web.ns-demo.sealos.run/",
+    ]);
+  });
   it("keeps runtime and endpoint evidence but excludes supporting objects", () => {
     const cards = managedDeploymentTimelineResultCards({
       accessEndpoints: [

@@ -346,6 +346,15 @@ describe("template deployment failure cleanup (AIM-33)", () => {
     ];
     expect(publicAccessRefs).toEqual([
       {
+        id: "ingress:eaglercraft-demo:https:eaglercraft-demo.example.sealos.run:/",
+        kind: "AccessEndpoint",
+        label: "Web address",
+        namespace: "ns-demo",
+        observer: { kind: "ingress", name: "eaglercraft-demo" },
+        protocol: "https",
+        url: "https://eaglercraft-demo.example.sealos.run/",
+      },
+      {
         id: "ingress:eaglercraft-demo:wss:eaglercraft-demo.example.sealos.run:/",
         kind: "AccessEndpoint",
         label: "WebSocket address",

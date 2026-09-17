@@ -136,7 +136,10 @@ import {
   verifyManagedWorkloadReadiness,
 } from "./managed-deployment-verifier";
 import { probeManagedPublicUrl } from "./managed-public-probe";
-import { attachManagedDeploymentTimelineSuccess } from "./managed-timeline";
+import {
+  attachManagedDeploymentTimelineSuccess,
+  unionManagedAccessEndpoints,
+} from "./managed-timeline";
 import { deployOutputProgressSummary } from "./output-progress";
 import { deploymentTaskSourceProduct } from "./projection";
 import {
@@ -188,7 +191,10 @@ import {
   withoutSensitiveArgs,
 } from "./sensitive-inputs";
 import { getDeployTaskById, getDeployTaskTimelineSnapshot } from "./service";
-import { resolveDeploymentSuccessOpenUrl } from "./success-open-url";
+import {
+  resolveDeploymentSuccessOpenUrl,
+  resolveDeploymentSuccessPublicView,
+} from "./success-open-url";
 import { templateProviderTemplateEntries } from "./template-provider-entries";
 import { templateProviderPublicAccessCards } from "./template-provider-public-access";
 import {
@@ -3979,7 +3985,7 @@ async function runManagedDeploymentLifecycleCore(input: {
       // Like the deterministic runners, the record's Open control follows the
       // Default Open Port of the workloads the agent created, when the AP
       // Product View can describe one of them.
-      const primaryEntryUrl = await resolveDeploymentSuccessOpenUrl({
+      const publicView = await resolveDeploymentSuccessPublicView({
         candidates: completion.resources.flatMap((resource) =>
           resource.kind === "Deployment" || resource.kind === "StatefulSet"
             ? [{ name: resource.name, namespace: input.task.namespace }]
@@ -3991,9 +3997,12 @@ async function runManagedDeploymentLifecycleCore(input: {
         update: (timeline) => {
           const updatedAt = new Date().toISOString();
           return attachManagedDeploymentTimelineSuccess(timeline, {
-            accessEndpoints: completion.accessEndpoints,
+            accessEndpoints: unionManagedAccessEndpoints(
+              completion.accessEndpoints,
+              publicView.urls
+            ),
             namespace: input.task.namespace,
-            primaryEntryUrl,
+            primaryEntryUrl: publicView.openUrl,
             ...deploymentTaskSourceProduct(input.task.source),
             resources: completion.resources,
             updatedAt,

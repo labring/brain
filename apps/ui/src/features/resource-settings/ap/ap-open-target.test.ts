@@ -59,6 +59,32 @@ test("Open target: a stale stored port falls back to the automatic rule", () => 
   });
 });
 
+test("Open target: HTTPS on the same port as WSS is the Open target, not a WS-only skip", () => {
+  const target = resolveApOpenTarget({
+    addresses: [
+      {
+        accessible: true,
+        kind: "platform",
+        port: 3000,
+        url: "wss://proxy.demo.sealos.run/",
+      },
+      {
+        accessible: true,
+        kind: "platform",
+        port: 3000,
+        url: "https://proxy.demo.sealos.run/",
+      },
+    ],
+    ports: [{ displayName: "app", port: 3000 }],
+  });
+
+  assert.deepEqual(target, {
+    label: "Open app",
+    port: 3000,
+    url: "https://proxy.demo.sealos.run/",
+  });
+});
+
 test("Open target: automatic rule picks the first declared port with an HTTP address, skipping WS-only ports", () => {
   const target = resolveApOpenTarget({
     addresses: [
