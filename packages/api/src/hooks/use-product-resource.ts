@@ -64,6 +64,9 @@ export function useBrainProductResource(
         query: query ?? undefined,
         select: (raw) => k8sGetResponseSchema.parse(raw),
       }),
-    { refreshInterval }
+    // Settings surfaces retarget this hook as the user switches resource nodes;
+    // SWR's default dedupe window would suppress revalidation on a quick
+    // revisit and keep serving the previously cached claim as card values.
+    { dedupingInterval: 0, refreshInterval }
   );
 }

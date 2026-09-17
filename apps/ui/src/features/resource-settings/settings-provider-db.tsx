@@ -34,11 +34,24 @@ export function dbSettingsDataFromExactResource(
     return null;
   }
   const resource = k8sGetClaimBody(data);
-  return resource == null
-    ? null
-    : dbResourceToSettingsData(resource, {
-        namespaceFallback: target.namespace,
-      });
+  if (resource == null) {
+    return null;
+  }
+  // Only a claim that actually belongs to the target may back its cards; a
+  // cached claim for another DB would render that DB's spec under this pane.
+  const metadata = asRecord(resource.metadata);
+  const name = typeof metadata?.name === "string" ? metadata.name : undefined;
+  const namespace =
+    typeof metadata?.namespace === "string" ? metadata.namespace : undefined;
+  if (
+    name !== target.name ||
+    (namespace !== undefined && namespace !== target.namespace)
+  ) {
+    return null;
+  }
+  return dbResourceToSettingsData(resource, {
+    namespaceFallback: target.namespace,
+  });
 }
 
 function resolvedDbSettingsView(view: string | undefined) {
