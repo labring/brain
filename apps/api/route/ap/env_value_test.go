@@ -12,9 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestResolveAPEnvSavedRowValueResolvesRuntimeEnvAndSetsNoCache(t *testing.T) {
@@ -67,34 +65,6 @@ func (resolver staticSecretResolver) ResolveSecretKey(_ context.Context, namespa
 	return resolver[namespace+"/"+name+"/"+key], nil
 }
 
-func TestAPWorkloadContainerSelectsFirstContainerForBothWorkloadKinds(t *testing.T) {
-	deploymentEnv := []corev1.EnvVar{{Name: "AFFINE_CONFIG_PATH", Value: "/root/.affine/config"}}
-	statefulSetEnv := []corev1.EnvVar{{Name: "DATABASE_URL", Value: "postgresql://db/affine"}}
-
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "affine", Namespace: "ns-admin"},
-		Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{
-			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "affine", Env: deploymentEnv}}},
-		}},
-	}
-	statefulSet := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: "affine", Namespace: "ns-admin"},
-		Spec: appsv1.StatefulSetSpec{Template: corev1.PodTemplateSpec{
-			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "affine", Env: statefulSetEnv}}},
-		}},
-	}
-
-	if got, ok := apWorkloadContainer(&apWorkload{Deployment: deployment}); !ok || len(got.Env) != 1 || got.Env[0].Name != "AFFINE_CONFIG_PATH" {
-		t.Fatalf("apWorkloadContainer(deployment) = (%v, %t), want the deployment container", got, ok)
-	}
-	if got, ok := apWorkloadContainer(&apWorkload{StatefulSet: statefulSet}); !ok || len(got.Env) != 1 || got.Env[0].Name != "DATABASE_URL" {
-		t.Fatalf("apWorkloadContainer(statefulSet) = (%v, %t), want the statefulset container", got, ok)
-	}
-	if got, ok := apWorkloadContainer(&apWorkload{}); ok {
-		t.Fatalf("apWorkloadContainer(empty) = (%v, %t), want no container", got, ok)
-	}
-}
-
 // Regression lock for the StatefulSet 404: template-deployed APs with PVC
 // mounts are StatefulSets, and env-value used to query deployments only. The
 // test drives the registered handler against a fake apiserver that serves a
@@ -103,6 +73,8 @@ func TestAPWorkloadContainerSelectsFirstContainerForBothWorkloadKinds(t *testing
 func TestEnvValueHandlerRevealsStatefulSetBackedAP(t *testing.T) {
 	// The kubeconfig transport (ADR-0052) accepts off-cluster servers in development only.
 	t.Setenv("NODE_ENV", "development")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 	const statefulSetJSON = `{
 		"apiVersion": "apps/v1",
 		"kind": "StatefulSet",

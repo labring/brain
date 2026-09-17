@@ -98,10 +98,6 @@ function resourceQuotaPatchDraft(next: ResourceQuotaCommitDraft): {
 }
 
 /**
- * Fetches the AP/DB product resource, maps it to AP settings props, and exposes
- * JSON Patch–backed mutators for AP workloads (DB stays read-only in the pane).
- */
-/**
  * Extracts a human-readable message from a Go API (Huma) error body —
  * `{"title","status","detail","errors":[{"message"}]}` — so reveal/copy
  * toasts show "AP not found" instead of the raw JSON envelope.
@@ -134,6 +130,10 @@ export async function apiErrorMessage(response: Response): Promise<string> {
   return text;
 }
 
+/**
+ * Fetches the AP/DB product resource, maps it to AP settings props, and exposes
+ * JSON Patch–backed mutators for AP workloads (DB stays read-only in the pane).
+ */
 export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   const {
     name,
