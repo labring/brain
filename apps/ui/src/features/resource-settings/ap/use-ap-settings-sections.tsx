@@ -33,7 +33,7 @@ import {
   REVEAL_DURATION_MS,
 } from "@/lib/secret-reveal";
 import { isStorageShrink } from "@/lib/storage-size";
-import { toastErrorDetail } from "@/lib/toast-utils";
+import { errorDescription, toastErrorDetail } from "@/lib/toast-utils";
 import {
   classifyPendingSettingsEntry,
   getBrowserPendingSettingsStore,
@@ -1299,10 +1299,10 @@ export function useApSettingsSections({
       let value: string | undefined;
       try {
         value = await resolveSavedEnvValue(index);
-      } catch {
+      } catch (e) {
         toastErrorDetail(
           "Reveal failed.",
-          "The environment value could not be resolved."
+          errorDescription(e, "The environment value could not be resolved.")
         );
         return;
       }
@@ -1352,10 +1352,10 @@ export function useApSettingsSections({
           resolveAvailable: pendingValue !== undefined,
           resolveValue: () => pendingValue ?? Promise.resolve(""),
         });
-      } catch {
+      } catch (e) {
         toastErrorDetail(
           "Copy failed.",
-          "The environment value could not be resolved."
+          errorDescription(e, "The environment value could not be resolved.")
         );
         return;
       }

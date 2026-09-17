@@ -2,14 +2,12 @@ package ap
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,7 +15,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"sealos/api/middleware"
-	k8ssvc "sealos/api/service/k8s"
 )
 
 type apEnvSecretResolver interface {
@@ -75,33 +72,25 @@ func registerEnvValue(grp huma.API) {
 			return nil, huma.Error500InternalServerError("failed to resolve request context", err)
 		}
 
-		jsonBytes, err := k8ssvc.Get(cfg, k8ssvc.GetOptions{
-			LabelSelector: apDeploymentLabelSelector(""),
-			Resource:      "deployments",
-			Name:          strings.TrimSpace(input.Name),
-			Namespace:     resolved.Namespace,
-		})
+		workload, err := currentAPWorkload(cfg, resolved.Namespace, strings.TrimSpace(input.Name))
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil, huma.Error404NotFound("AP not found", err)
 			}
 			return nil, huma.Error500InternalServerError("failed to get AP", err)
 		}
-		var deployment appsv1.Deployment
-		if err := json.Unmarshal(jsonBytes, &deployment); err != nil {
-			return nil, huma.Error500InternalServerError("failed to parse AP", err)
-		}
-		if err := requireBrainAPDeployment(deployment); err != nil {
+		if err := requireBrainAPWorkload(*workload); err != nil {
 			return nil, huma.Error404NotFound("AP not found", err)
 		}
 		clientset, err := kubernetes.NewForConfig(restConfig)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to initialize Kubernetes client", err)
 		}
+		container, _ := apWorkloadContainer(workload)
 		value, err := resolveAPEnvSavedRowValue(ctx, resolveAPEnvSavedRowValueInput{
-			Env:            apDeploymentEnv(deployment),
+			Env:            container.Env,
 			Name:           input.EnvName,
-			Namespace:      deployment.Namespace,
+			Namespace:      workload.Namespace(),
 			SecretResolver: kubernetesAPEnvSecretResolver{client: clientset},
 		})
 		if err != nil {
@@ -118,13 +107,6 @@ func registerEnvValue(grp huma.API) {
 
 func apEnvResolvedValueNoCacheHeader() string {
 	return apEnvResolvedValueCacheControl
-}
-
-func apDeploymentEnv(deployment appsv1.Deployment) []corev1.EnvVar {
-	if len(deployment.Spec.Template.Spec.Containers) == 0 {
-		return nil
-	}
-	return deployment.Spec.Template.Spec.Containers[0].Env
 }
 
 func resolveAPEnvSavedRowValue(ctx context.Context, input resolveAPEnvSavedRowValueInput) (string, error) {
