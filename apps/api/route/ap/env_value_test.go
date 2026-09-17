@@ -67,7 +67,7 @@ func (resolver staticSecretResolver) ResolveSecretKey(_ context.Context, namespa
 	return resolver[namespace+"/"+name+"/"+key], nil
 }
 
-func TestAPWorkloadEnvReadsFirstContainerForBothWorkloadKinds(t *testing.T) {
+func TestAPWorkloadContainerSelectsFirstContainerForBothWorkloadKinds(t *testing.T) {
 	deploymentEnv := []corev1.EnvVar{{Name: "AFFINE_CONFIG_PATH", Value: "/root/.affine/config"}}
 	statefulSetEnv := []corev1.EnvVar{{Name: "DATABASE_URL", Value: "postgresql://db/affine"}}
 
@@ -84,14 +84,14 @@ func TestAPWorkloadEnvReadsFirstContainerForBothWorkloadKinds(t *testing.T) {
 		}},
 	}
 
-	if got := apWorkloadEnv(&apWorkload{Deployment: deployment}); len(got) != 1 || got[0].Name != "AFFINE_CONFIG_PATH" {
-		t.Fatalf("apWorkloadEnv(deployment) = %v, want the deployment container env", got)
+	if got, ok := apWorkloadContainer(&apWorkload{Deployment: deployment}); !ok || len(got.Env) != 1 || got.Env[0].Name != "AFFINE_CONFIG_PATH" {
+		t.Fatalf("apWorkloadContainer(deployment) = (%v, %t), want the deployment container", got, ok)
 	}
-	if got := apWorkloadEnv(&apWorkload{StatefulSet: statefulSet}); len(got) != 1 || got[0].Name != "DATABASE_URL" {
-		t.Fatalf("apWorkloadEnv(statefulSet) = %v, want the statefulset container env", got)
+	if got, ok := apWorkloadContainer(&apWorkload{StatefulSet: statefulSet}); !ok || len(got.Env) != 1 || got.Env[0].Name != "DATABASE_URL" {
+		t.Fatalf("apWorkloadContainer(statefulSet) = (%v, %t), want the statefulset container", got, ok)
 	}
-	if got := apWorkloadEnv(&apWorkload{}); got != nil {
-		t.Fatalf("apWorkloadEnv(empty) = %v, want nil", got)
+	if got, ok := apWorkloadContainer(&apWorkload{}); ok {
+		t.Fatalf("apWorkloadContainer(empty) = (%v, %t), want no container", got, ok)
 	}
 }
 

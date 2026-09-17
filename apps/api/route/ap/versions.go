@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
@@ -283,19 +282,6 @@ func apWorkloadImagePullPolicy(workload *apWorkload) string {
 		return ""
 	}
 	return string(container.ImagePullPolicy)
-}
-
-func apWorkloadContainer(workload *apWorkload) (corev1.Container, bool) {
-	if workload == nil {
-		return corev1.Container{}, false
-	}
-	if workload.Deployment != nil && len(workload.Deployment.Spec.Template.Spec.Containers) > 0 {
-		return workload.Deployment.Spec.Template.Spec.Containers[0], true
-	}
-	if workload.StatefulSet != nil && len(workload.StatefulSet.Spec.Template.Spec.Containers) > 0 {
-		return workload.StatefulSet.Spec.Template.Spec.Containers[0], true
-	}
-	return corev1.Container{}, false
 }
 
 func currentAPVersionHash(cfg *clientcmdapi.Config, workload *apWorkload) (string, error) {

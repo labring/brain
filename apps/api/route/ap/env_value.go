@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -87,8 +86,9 @@ func registerEnvValue(grp huma.API) {
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to initialize Kubernetes client", err)
 		}
+		container, _ := apWorkloadContainer(workload)
 		value, err := resolveAPEnvSavedRowValue(ctx, resolveAPEnvSavedRowValueInput{
-			Env:            apWorkloadEnv(workload),
+			Env:            container.Env,
 			Name:           input.EnvName,
 			Namespace:      workload.Namespace(),
 			SecretResolver: kubernetesAPEnvSecretResolver{client: clientset},
@@ -107,29 +107,6 @@ func registerEnvValue(grp huma.API) {
 
 func apEnvResolvedValueNoCacheHeader() string {
 	return apEnvResolvedValueCacheControl
-}
-
-func apWorkloadEnv(workload *apWorkload) []corev1.EnvVar {
-	if workload == nil {
-		return nil
-	}
-	if workload.Deployment != nil {
-		return apDeploymentEnv(*workload.Deployment)
-	}
-	if workload.StatefulSet != nil {
-		if len(workload.StatefulSet.Spec.Template.Spec.Containers) == 0 {
-			return nil
-		}
-		return workload.StatefulSet.Spec.Template.Spec.Containers[0].Env
-	}
-	return nil
-}
-
-func apDeploymentEnv(deployment appsv1.Deployment) []corev1.EnvVar {
-	if len(deployment.Spec.Template.Spec.Containers) == 0 {
-		return nil
-	}
-	return deployment.Spec.Template.Spec.Containers[0].Env
 }
 
 func resolveAPEnvSavedRowValue(ctx context.Context, input resolveAPEnvSavedRowValueInput) (string, error) {
