@@ -14,6 +14,14 @@ import { ApiUrl } from "../utils";
 export type BrainProductResourceKind = "AP" | "DB";
 
 export interface UseBrainProductResourceOptions {
+  /**
+   * Overrides SWR's request-dedupe window for this hook instance. Surfaces
+   * that retarget in place (settings panes) pass 0: without it, revisiting a
+   * previously fetched resource inside SWR's default 2s window is a cache hit
+   * that skips revalidation and keeps serving the earlier claim. Polling
+   * callers stay on the default so their interval fetches keep coalescing.
+   */
+  dedupingInterval?: number;
   kind: BrainProductResourceKind;
   kubeconfig?: string;
   name: string;
@@ -28,7 +36,7 @@ function productRoute(kind: BrainProductResourceKind) {
 export function useBrainProductResource(
   options: UseBrainProductResourceOptions
 ) {
-  const { kind, name, namespace } = options;
+  const { dedupingInterval, kind, name, namespace } = options;
   const kubeconfig = options.kubeconfig ?? "";
   const refreshInterval = options.refreshInterval ?? 0;
   const credentialKey = useMemo(
@@ -64,9 +72,9 @@ export function useBrainProductResource(
         query: query ?? undefined,
         select: (raw) => k8sGetResponseSchema.parse(raw),
       }),
-    // Settings surfaces retarget this hook as the user switches resource nodes;
-    // SWR's default dedupe window would suppress revalidation on a quick
-    // revisit and keep serving the previously cached claim as card values.
-    { dedupingInterval: 0, refreshInterval }
+    {
+      ...(dedupingInterval === undefined ? {} : { dedupingInterval }),
+      refreshInterval,
+    }
   );
 }
