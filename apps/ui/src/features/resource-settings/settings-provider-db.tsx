@@ -26,6 +26,35 @@ import { useResourceDisplayNameRename } from "./use-resource-display-name-rename
 
 const DB_SETTINGS_FULL_VIEW = "full";
 
+/**
+ * Defense in depth: only a claim whose metadata matches the target exactly
+ * (name and namespace; both must be present) may back the pane. A claim that
+ * belongs to any other DB — or one without identifying metadata — is ignored,
+ * so the pane falls back to its loading state instead of rendering foreign
+ * data. The card-refresh bug itself is fixed by revalidation (see the
+ * `dedupingInterval` option below), not by this guard.
+ */
+function dbClaimBodyForTarget(
+  data: ReturnType<typeof useBrainProductResource>["data"],
+  target: ProjectDbTarget | null
+): Record<string, unknown> | undefined {
+  if (target == null) {
+    return undefined;
+  }
+  const resource = k8sGetClaimBody(data);
+  if (resource == null) {
+    return undefined;
+  }
+  const metadata = asRecord(resource.metadata);
+  const name = typeof metadata?.name === "string" ? metadata.name : undefined;
+  const namespace =
+    typeof metadata?.namespace === "string" ? metadata.namespace : undefined;
+  if (name !== target.name || namespace !== target.namespace) {
+    return undefined;
+  }
+  return resource;
+}
+
 export function dbSettingsDataFromExactResource(
   data: ReturnType<typeof useBrainProductResource>["data"],
   target: ProjectDbTarget | null
@@ -33,7 +62,7 @@ export function dbSettingsDataFromExactResource(
   if (target == null) {
     return null;
   }
-  const resource = k8sGetClaimBody(data);
+  const resource = dbClaimBodyForTarget(data, target);
   return resource == null
     ? null
     : dbResourceToSettingsData(resource, {
@@ -76,6 +105,11 @@ export function DbSettingsProvider({
   const resolvedView = resolvedDbSettingsView(view);
   const dbTarget = target.kind === "DB" ? target : null;
   const dbResource = useBrainProductResource({
+    // The pane retargets this hook in place as the user switches DB nodes.
+    // Revisiting a node inside SWR's default 2s dedupe window would be a
+    // cache hit with no revalidation, keeping the earlier claim's card
+    // values on screen — disable the window so every revisit refetches.
+    dedupingInterval: 0,
     kind: "DB",
     kubeconfig: dbTarget == null ? "" : (kubeconfig ?? ""),
     name: dbTarget?.name ?? "",
@@ -97,7 +131,9 @@ export function DbSettingsProvider({
   });
   const workload = data?.workload;
   const updating = workload == null ? false : isUpdating(workload);
-  const resourceMetadata = asRecord(k8sGetClaimBody(dbResource.data)?.metadata);
+  const resourceMetadata = asRecord(
+    dbClaimBodyForTarget(dbResource.data, dbTarget)?.metadata
+  );
   const displayName =
     dbTarget == null
       ? ""
