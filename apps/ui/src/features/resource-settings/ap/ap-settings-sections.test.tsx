@@ -221,6 +221,12 @@ const COPY_MYSQL_ENV_VALUE_RE =
   /aria-label="Copy environment variable MYSQL_DATABASE_URL"/;
 const REVEAL_MYSQL_ENV_VALUE_RE =
   /aria-label="Reveal environment variable MYSQL_DATABASE_URL"/;
+const DISABLED_REVEAL_ENV_VALUE_RE =
+  /disabled=""[^>]*aria-label="Reveal environment variable DATABASE_URL"/;
+const DISABLED_COPY_ENV_VALUE_RE =
+  /disabled=""[^>]*aria-label="Copy environment variable DATABASE_URL"/;
+const ENV_RESOLVE_DISABLED_REASON_RE =
+  /title="Workspace credentials are not ready yet\."/;
 const CNAME_RE = /CNAME/;
 const EDIT_PUBLIC_ADDRESS_RE = /aria-label="Public Address actions for [^"]+"/;
 const DELETE_PUBLIC_ADDRESS_RE = EDIT_PUBLIC_ADDRESS_RE;
@@ -339,6 +345,25 @@ test("AP settings pane masks clean saved structured environment rows", () => {
   assert.match(html, REVEAL_ENV_VALUE_UNPRESSED_RE);
   assert.doesNotMatch(html, HIDE_ENV_VALUE_RE);
   assert.match(html, COPY_ENV_VALUE_RE);
+});
+
+test("AP settings pane disables saved-row reveal/copy when the resolver is not ready", () => {
+  const html = renderToStaticMarkup(
+    <TestApSettingsSections
+      cpuQuota={{ onValueChange: noop, value: 1 }}
+      env={[{ name: "DATABASE_URL", value: "postgres://db:5432/app" }]}
+      envResolvedValueReady={false}
+      image="ghcr.io/acme/api:latest"
+      memoryQuota={{ onValueChange: noop, value: 512 }}
+      onEnvChange={noop}
+      onEnvResolvedValue={async () => "postgres://db:5432/app"}
+      onImageChange={noop}
+    />
+  );
+
+  assert.match(html, DISABLED_REVEAL_ENV_VALUE_RE);
+  assert.match(html, DISABLED_COPY_ENV_VALUE_RE);
+  assert.match(html, ENV_RESOLVE_DISABLED_REASON_RE);
 });
 
 test("AP settings pane shows raw draft values for dirty structured rows", () => {

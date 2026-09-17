@@ -146,6 +146,7 @@ interface ApSettingsSectionsHookInput {
   display: ApWorkloadSettingsState["display"];
   draftRoutingDomain: string;
   effectiveReadOnly: boolean;
+  envResolvedValueReady: ApWorkloadSettingsState["envResolvedValueReady"];
   ignoreEnv: ApWorkloadSettingsState["ignoreEnv"];
   ignoreImage: ApWorkloadSettingsState["ignoreImage"];
   ignoreNetwork: ApWorkloadSettingsState["ignoreNetwork"];
@@ -174,6 +175,7 @@ function apSettingsSectionsHookProps({
   display,
   draftRoutingDomain,
   effectiveReadOnly,
+  envResolvedValueReady,
   ignoreEnv,
   ignoreImage,
   ignoreNetwork,
@@ -210,6 +212,7 @@ function apSettingsSectionsHookProps({
     dbDsnReferenceSources,
     env: display.env,
     envRawSource: display.envRawSource,
+    envResolvedValueReady: canEditAp ? envResolvedValueReady : undefined,
     envResolvedValueScope:
       apTarget == null ? undefined : `${apTarget.namespace}/${apTarget.name}`,
     image: display.image,
@@ -535,6 +538,7 @@ export function ApSettingsProvider({
   const {
     claimPayload,
     display,
+    envResolvedValueReady,
     error,
     ignoreEnv,
     ignoreImage,
@@ -612,6 +616,7 @@ export function ApSettingsProvider({
       display,
       draftRoutingDomain,
       effectiveReadOnly,
+      envResolvedValueReady,
       ignoreEnv,
       ignoreImage,
       ignoreNetwork,

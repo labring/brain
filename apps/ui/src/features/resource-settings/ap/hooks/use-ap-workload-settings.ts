@@ -241,6 +241,14 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
     },
     [isApWorkload, kubeconfig, name, namespace, readOnly]
   );
+  // Mirrors `resolveEnvValue`'s pre-fetch guards so the UI can disable
+  // reveal/copy up front instead of surfacing a guaranteed failure on click.
+  const envResolvedValueReady =
+    isApWorkload &&
+    !readOnly &&
+    kubeconfig.trim() !== "" &&
+    name.trim() !== "" &&
+    namespace.trim() !== "";
 
   const onImageChange = useCallback(
     async (image: string) => {
@@ -521,6 +529,7 @@ export function useApWorkloadSettings(options: UseApWorkloadSettingsOptions) {
   return {
     claimPayload: claimPayload as K8sGetResponse | undefined,
     display,
+    envResolvedValueReady,
     error: error ?? (isApWorkload ? apsError : undefined),
     ignoreEnv,
     ignoreImage,
