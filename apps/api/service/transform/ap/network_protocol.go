@@ -108,16 +108,29 @@ func publicAddressURLScheme(row map[string]interface{}) string {
 	return strings.ToLower(parsed.Scheme)
 }
 
+// publicAddressProtocolRole is web (http/https) vs websocket (ws/wss). TLS
+// does not make a second Public Address; a WS marker does.
+func publicAddressProtocolRole(row map[string]interface{}) string {
+	switch publicAddressURLScheme(row) {
+	case "ws", "wss":
+		return "websocket"
+	case "http", "https":
+		return "web"
+	default:
+		return ""
+	}
+}
+
 func publicAddressesShareHostPortScheme(left, right map[string]interface{}) bool {
 	leftPort, _ := privatePortFromValue(left["port"])
 	rightPort, _ := privatePortFromValue(right["port"])
 	if left["host"] != right["host"] || leftPort != rightPort || leftPort == 0 {
 		return false
 	}
-	leftScheme := publicAddressURLScheme(left)
-	rightScheme := publicAddressURLScheme(right)
-	if leftScheme == "" || rightScheme == "" {
+	leftRole := publicAddressProtocolRole(left)
+	rightRole := publicAddressProtocolRole(right)
+	if leftRole == "" || rightRole == "" {
 		return true
 	}
-	return leftScheme == rightScheme
+	return leftRole == rightRole
 }

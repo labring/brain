@@ -126,6 +126,9 @@ func TestAPNetworkKeepsHttpsWhenAddingObservedWebSocketSibling(t *testing.T) {
 	if urls["wss://game.example.com/"] == nil {
 		t.Fatal("WS-marked Ingress must add a WebSocket sibling, not replace HTTPS", addresses)
 	}
+	if urls["https://game.example.com/"] != nil {
+		t.Fatal("http and https on one host and port are one web address, not two", addresses)
+	}
 	before, _ := json.Marshal(status)
 	projectObservedNetworkProtocols(status, []map[string]interface{}{ingress}, []map[string]interface{}{service})
 	after, _ := json.Marshal(status)

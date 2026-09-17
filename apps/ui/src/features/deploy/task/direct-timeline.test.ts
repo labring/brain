@@ -264,7 +264,39 @@ spec:
   );
 });
 
-test("a root route wins over auxiliary routes for the same hostname", () => {
+test("a root route wins over auxiliary routes on the same Ingress", () => {
+  const cards = resultResourceCardsFromArtifactSummary({
+    resourceYamls: [
+      `
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+  namespace: ns-demo
+spec:
+  tls:
+    - hosts: [app.example.sealos.run]
+  rules:
+    - host: app.example.sealos.run
+      http:
+        paths:
+          - path: /api
+          - path: /admin.css
+          - path: /
+          - path: /dynmap
+`,
+    ],
+  });
+
+  assert.deepEqual(
+    cards.map((card) =>
+      card.resultRef.kind === "AccessEndpoint" ? card.resultRef.url : null
+    ),
+    ["https://app.example.sealos.run/"]
+  );
+});
+
+test("distinct Ingresses on the same host keep their own Public Addresses", () => {
   const cards = resultResourceCardsFromArtifactSummary({
     resourceYamls: [
       `
@@ -305,7 +337,7 @@ spec:
     cards.map((card) =>
       card.resultRef.kind === "AccessEndpoint" ? card.resultRef.url : null
     ),
-    ["https://app.example.sealos.run/"]
+    ["https://app.example.sealos.run/api", "https://app.example.sealos.run/"]
   );
 });
 
