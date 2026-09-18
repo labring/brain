@@ -488,6 +488,13 @@ const WORKSPACE_FIXTURES: Record<
       if (gates.invite.kind !== "enabled") {
         return FORBIDDEN;
       }
+      const actor = actorIn(scenario, body.uid);
+      if (body.role === "Manager" && actor?.role !== "Owner") {
+        // The rule the route handler proves against `namespace/list`: a
+        // Manager link requires an Owner actor — Desktop leaves this hole
+        // open, Brain closes it (spec §E.4).
+        return FORBIDDEN;
+      }
       const response: WorkspaceInviteLinkResponse = {
         code: `mock-${body.role.toLowerCase()}-${crypto.randomUUID()}`,
       };

@@ -313,7 +313,10 @@ const {
   workspaceDeletedNotice,
   workspaceLeftNotice,
 } = await import("./use-workspace-actions");
-const { INVITE_LINK_COPIED_NOTICE } = await import("./workspace-invite-dialog");
+const {
+  INVITE_LINK_COPIED_NOTICE,
+  INVITE_LINK_NO_DESKTOP_NOTICE,
+} = await import("./workspace-invite-dialog");
 const { INVITE_LINK_VALIDITY_NOTE } = await import("./workspace-invite-core");
 await moduleDom.restore();
 
@@ -1092,4 +1095,18 @@ test("Invite: a Manager is offered Developer only", async () => {
     selectOptions().map((option) => option.textContent?.trim()),
     ["Developer"]
   );
+});
+
+test("Invite: without a Desktop domain no code is minted — a working link is never replaced by one the user cannot see", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  getDefaultStore().set(desktopDomainAtom, "");
+  await press(byLabel("Invite member"), "Invite member");
+  await press(
+    dialogAction("workspace-invite-dialog", "Copy invite link"),
+    "Copy invite link"
+  );
+  assert.equal(writesTo("/api/workspace/invite-link").length, 0);
+  assert.equal(bySlot("workspace-invite-link"), null);
+  assert.ok(toasts.includes(INVITE_LINK_NO_DESKTOP_NOTICE));
 });

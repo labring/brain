@@ -22,6 +22,8 @@ const explorer = {
   freshProjects: null as ProjectExplorerProject[] | null,
   projects: [] as ProjectExplorerProject[],
   projectsLoaded: false,
+  /** When set, the revalidation rejects — the SWR verdict never lands. */
+  refreshFails: false,
   refreshes: 0,
 };
 const toasts: string[] = [];
@@ -43,11 +45,15 @@ mock.module("@/features/projects/explorer/use-projects-explorer", () => ({
       projectsLoaded: explorer.projectsLoaded,
       refreshProjects: () => {
         explorer.refreshes += 1;
+        if (explorer.refreshFails) {
+          return Promise.reject(new Error("offline"));
+        }
         if (explorer.freshProjects != null) {
           explorer.projects = explorer.freshProjects;
           rerender((n) => n + 1);
         }
-        return Promise.resolve(undefined);
+        // SWR's mutate resolves with the fresh list on success.
+        return Promise.resolve(explorer.projects);
       },
       states: { pinnedProjectIds: [], projects: explorer.projects },
     };
@@ -89,6 +95,7 @@ beforeEach(() => {
   explorer.freshProjects = null;
   explorer.projects = [];
   explorer.projectsLoaded = false;
+  explorer.refreshFails = false;
   explorer.refreshes = 0;
   toasts.length = 0;
 });
@@ -127,6 +134,16 @@ test("a stale cached list that misses a Project created elsewhere stays once the
   explorer.projects = [project("alpha")];
   explorer.projectsLoaded = true;
   explorer.freshProjects = [project("alpha"), project("created-elsewhere")];
+  await mountGuard();
+  assert.equal(explorer.refreshes, 1);
+  assert.deepEqual(route.replaced, []);
+  assert.deepEqual(toasts, []);
+});
+
+test("a refresh that fails confirms nothing: the page stays and no toast is served", async () => {
+  explorer.projects = [project("alpha")];
+  explorer.projectsLoaded = true;
+  explorer.refreshFails = true;
   await mountGuard();
   assert.equal(explorer.refreshes, 1);
   assert.deepEqual(route.replaced, []);

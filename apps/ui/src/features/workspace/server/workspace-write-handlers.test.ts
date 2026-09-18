@@ -21,7 +21,7 @@ const {
   createWorkspaceTransferHandler,
 } = await import("./workspace-write-handlers");
 const { WORKSPACE_ROUTES } = await import("./workspace-route-table");
-const { createFakeDesktop, TEAM } = await import(
+const { createFakeDesktop, PERSONAL, TEAM } = await import(
   "@/features/session/server/desktop-test-double"
 );
 
@@ -326,17 +326,82 @@ describe("POST /api/workspace/member/alias", () => {
 });
 
 describe("POST /api/workspace/invite-link", () => {
-  it("sends Desktop the Manager code for a Manager link", async () => {
+  const managerLinkAnswers: FakeDesktopOptions["answers"] = {
+    [WORKSPACE_ROUTES.list.desktopPath]: {
+      code: 200,
+      data: { namespaces: [PERSONAL, TEAM] },
+    },
+    [WORKSPACE_ROUTES.inviteLink.desktopPath]: {
+      code: 200,
+      data: { code: "0f2c1a9e-invite-code" },
+    },
+  };
+
+  it("proves the actor is the Owner before sending Desktop the Manager code", async () => {
+    const ownedTeam = {
+      ...TEAM,
+      id: "ns-owned01",
+      role: 0,
+      uid: "33333333-3333-4333-8333-333333333333",
+    };
+    const { calls, handler } = handlerWith(createWorkspaceInviteLinkHandler, {
+      ...managerLinkAnswers,
+      [WORKSPACE_ROUTES.list.desktopPath]: {
+        code: 200,
+        data: { namespaces: [PERSONAL, ownedTeam] },
+      },
+    });
+    const response = await handler(
+      writeRequest(WORKSPACE_ROUTES.inviteLink.apiPath, {
+        body: { role: "Manager", uid: ownedTeam.uid },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ code: "0f2c1a9e-invite-code" });
+    expect(calls[0]?.path).toBe(WORKSPACE_ROUTES.list.desktopPath);
+    expect(calls[1]?.body).toEqual({ ns_uid: ownedTeam.uid, role: 1 });
+  });
+
+  it("refuses a Manager link from a non-Owner actor — the hole Desktop leaves open", async () => {
     const { calls, handler } = handlerWith(
       createWorkspaceInviteLinkHandler,
-      successAnswer(WORKSPACE_ROUTES.inviteLink.desktopPath)
+      managerLinkAnswers
     );
-    await handler(
+    const response = await handler(
       writeRequest(WORKSPACE_ROUTES.inviteLink.apiPath, {
+        // The double's TEAM carries this actor as a Manager.
         body: { role: "Manager", uid: TEAM.uid },
       })
     );
-    expect(calls[0]?.body).toEqual({ ns_uid: TEAM.uid, role: 1 });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: WORKSPACE_ERROR_CODES.forbidden,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.path).toBe(WORKSPACE_ROUTES.list.desktopPath);
+  });
+
+  it("mints a Developer link without the Owner proof call", async () => {
+    const { calls, handler } = handlerWith(
+      createWorkspaceInviteLinkHandler,
+      {
+        [WORKSPACE_ROUTES.inviteLink.desktopPath]: {
+          code: 200,
+          data: { code: "0f2c1a9e-invite-code" },
+        },
+      }
+    );
+    const response = await handler(
+      writeRequest(WORKSPACE_ROUTES.inviteLink.apiPath, {
+        body: { role: "Developer", uid: TEAM.uid },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body).toEqual({ ns_uid: TEAM.uid, role: 2 });
   });
 
   it("answers 502 when Desktop's data carries no code", async () => {

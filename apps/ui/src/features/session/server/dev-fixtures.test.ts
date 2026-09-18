@@ -406,6 +406,18 @@ test("dev-mock writes: an invite link answers a code, and the role matrix holds"
     ).status,
     200
   );
+  // A Manager never mints a Manager link — the same Owner proof the route
+  // handler runs against `namespace/list`.
+  assert.equal(
+    (
+      await write(
+        WORKSPACE_ROUTES.inviteLink,
+        { role: "Manager", uid: ACME_UID },
+        manager
+      )
+    ).status,
+    403
+  );
   // A Manager removes Developers only.
   assert.equal(
     (

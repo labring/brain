@@ -71,6 +71,13 @@ export function WorkspaceInviteDialog({
   const selectId = useId();
 
   const createLink = async () => {
+    if (workspaceInviteUrl({ cloudDomain, code: "x" }) == null) {
+      // Desktop upserts the code per { inviter, workspace, role }; minting
+      // without a domain to build the link on would replace a working link
+      // with one the user cannot see, so refuse before the POST.
+      toast(INVITE_LINK_NO_DESKTOP_NOTICE);
+      return;
+    }
     const code = await onCreateLink(role);
     if (code == null) {
       return;
@@ -109,6 +116,7 @@ export function WorkspaceInviteDialog({
             <AppDialog.Label htmlFor={selectId}>Role</AppDialog.Label>
             <AppSelect
               aria-label="Invite role"
+              disabled={pending}
               id={selectId}
               onValueChange={(next) => {
                 setRole(next as AssignableRole);

@@ -23,9 +23,11 @@ export const PROJECT_NOT_IN_WORKSPACE_NOTICE =
  *
  * The list is an SWR cache that does not revalidate on focus, so a Project
  * created in another tab is absent from it until something refreshes. A
- * first "leave" verdict therefore revalidates once and only acts if the
- * fresh list still lacks the Project — a real Project is never bounced by
- * a stale cache.
+ * first "leave" verdict therefore revalidates once and only acts when the
+ * refresh came back with a list that still lacks the Project — a real
+ * Project is never bounced by a stale cache, and a refresh that failed
+ * (401, 5xx, offline) confirms nothing, so the guard keeps standing rather
+ * than judging from the stale verdict.
  */
 export function ProjectWorkspaceGuard() {
   const projectId = useProjectId();
@@ -41,29 +43,31 @@ export function ProjectWorkspaceGuard() {
         projectId,
         projectIds: states.projects.map((project) => project.id),
       });
-  // The Project id whose absence a revalidation has confirmed.
-  const [verifiedMissing, setVerifiedMissing] = useState<string | null>(null);
+  // The Project id whose absence a completed revalidation has re-judged.
+  const [revalidatedFor, setRevalidatedFor] = useState<string | null>(null);
 
   useEffect(() => {
     if (decision !== "leave") {
+      setRevalidatedFor((current) => (current == null ? current : null));
       return;
     }
-    if (verifiedMissing !== projectId) {
-      let cancelled = false;
-      refreshProjects()
-        .catch(() => undefined)
-        .then(() => {
-          if (!cancelled) {
-            setVerifiedMissing(projectId);
-          }
-        });
-      return () => {
-        cancelled = true;
-      };
+    if (revalidatedFor === projectId) {
+      router.replace("/project");
+      toast(PROJECT_NOT_IN_WORKSPACE_NOTICE);
+      return;
     }
-    router.replace("/project");
-    toast(PROJECT_NOT_IN_WORKSPACE_NOTICE);
-  }, [decision, projectId, refreshProjects, router, verifiedMissing]);
+    let cancelled = false;
+    refreshProjects()
+      .then((fresh) => {
+        if (!cancelled && fresh !== undefined) {
+          setRevalidatedFor(projectId);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [decision, projectId, refreshProjects, revalidatedFor, router]);
 
   return null;
 }

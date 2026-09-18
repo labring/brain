@@ -8,7 +8,6 @@ import type { DesktopCallResult } from "@/features/session/server/desktop-client
 import { WORKSPACE_ERROR_CODES } from "../workspace-errors";
 import {
   WORKSPACE_WRITE_OK,
-  type WorkspaceInviteLinkResponse,
   workspaceDeleteRequestSchema,
   workspaceInviteLinkRequestSchema,
   workspaceMemberAliasRequestSchema,
@@ -110,18 +109,68 @@ export function createWorkspaceDeleteHandler(
 /**
  * `POST /api/workspace/invite-link { uid, role }` → `namespace/getInviteCode`,
  * answered as `{ code }`; the client builds the Desktop link around it.
+ * Desktop's `getInviteCode` rejects Owner but lets a Manager mint a Manager
+ * link — the same class of hole the schema's never-Owner closes — so Brain
+ * closes it itself (spec §E.4): a Manager link requires an Owner actor,
+ * proven by the actor's own membership from `namespace/list`. Developer
+ * links need no extra call; Desktop gates them for Managers too.
  */
 export function createWorkspaceInviteLinkHandler(
   dependencies: WorkspaceRouteDependencies = {}
 ): WorkspaceRouteHandler {
-  return createWorkspaceWriteHandler(
-    WORKSPACE_ROUTES.inviteLink,
-    workspaceInviteLinkRequestSchema,
-    (desktop, token, body) =>
-      desktop.namespaceInviteCode(token, body.uid, body.role),
-    (data): WorkspaceInviteLinkResponse => ({ code: data.code }),
-    dependencies
-  );
+  return async function handler(request: Request): Promise<Response> {
+    const context = workspaceRouteContext(
+      request,
+      dependencies,
+      WORKSPACE_ROUTES.inviteLink.apiPath
+    );
+    if (!context.ok) {
+      return context.response;
+    }
+    const payload = await workspaceRequestPayload(request);
+    const parsed =
+      payload == null
+        ? null
+        : workspaceInviteLinkRequestSchema.safeParse(payload);
+    if (parsed == null || !parsed.success) {
+      return workspaceErrorResponse(WORKSPACE_ERROR_CODES.invalidRequest, 400);
+    }
+    const body = parsed.data;
+    if (body.role === "Manager") {
+      const listed = await context.desktop.namespaceList(
+        context.regionalToken
+      );
+      if (!listed.ok) {
+        context.log("Desktop list failed", {
+          ...desktopFailureLogFields(listed),
+          desktopPath: WORKSPACE_ROUTES.list.desktopPath,
+        });
+        return desktopFailureResponse(listed);
+      }
+      const actorRole = listed.data.find(
+        (workspace) => workspace.uid === body.uid
+      )?.role;
+      if (actorRole !== "Owner") {
+        context.log("non-Owner actor tried to mint a Manager invite", {
+          actorRole: actorRole ?? "none",
+        });
+        return workspaceErrorResponse(WORKSPACE_ERROR_CODES.forbidden, 403);
+      }
+    }
+    const result = await context.desktop.namespaceInviteCode(
+      context.regionalToken,
+      body.uid,
+      body.role
+    );
+    if (!result.ok) {
+      context.log("Desktop write failed", {
+        ...desktopFailureLogFields(result),
+        desktopPath: WORKSPACE_ROUTES.inviteLink.desktopPath,
+      });
+      return desktopFailureResponse(result);
+    }
+    return workspaceJsonResponse({ code: result.data.code });
+  };
 }
 
 /** `POST /api/workspace/member/remove { uid, crUid }` → `namespace/removeUser`. */
