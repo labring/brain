@@ -4,7 +4,11 @@ import { useSetAtom, useStore } from "jotai";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
-import { desktopDomainAtom, desktopLanguageAtom } from "@/lib/auth-store";
+import {
+  desktopDomainAtom,
+  desktopLanguageAtom,
+  sessionStatusAtom,
+} from "@/lib/auth-store";
 
 import {
   connectDesktopSdk,
@@ -13,6 +17,7 @@ import {
   readDesktopLanguage,
   readDesktopShellState,
 } from "./desktop-sdk";
+import { SESSION_ERROR_CODES } from "./session-schema";
 import { SessionExpiredOverlay } from "./session-expired-overlay";
 import { establishSession } from "./session-store";
 
@@ -23,9 +28,11 @@ export const NOT_MEMBER_NOTICE =
  * Establishes the Brain Session after mount (ADR-0083, spec §A.5): inside
  * the Desktop iframe it first reads Desktop's current `nsid` through the
  * SDK, then `POST /api/session { nsid }`; outside one it posts without a
- * `nsid` and lands in the Personal Workspace. Until the session lands the
- * shell keeps its existing empty-credentials state; a 401 raises the
- * "session expired" overlay this component also mounts.
+ * `nsid` and lands in the Personal Workspace. Inside the iframe a missed
+ * SDK handshake raises the generic session error instead of guessing
+ * Personal — the shell is the only source of the current Workspace. Until
+ * the session lands the shell keeps its existing empty-credentials state;
+ * a 401 raises the "session expired" overlay this component also mounts.
  */
 export function SessionBootstrap() {
   const store = useStore();
@@ -39,10 +46,11 @@ export function SessionBootstrap() {
     });
 
     const run = async () => {
+      const insideIframe = isInsideDesktopIframe();
       const [shell, language, domain] = await Promise.all([
         readDesktopShellState(),
         readDesktopLanguage(),
-        isInsideDesktopIframe() ? readDesktopDomain() : Promise.resolve(null),
+        insideIframe ? readDesktopDomain() : Promise.resolve(null),
       ]);
       if (cancelled) {
         return;
@@ -50,6 +58,19 @@ export function SessionBootstrap() {
       setDesktopLanguage(language ?? "en");
       if (domain != null) {
         setDesktopDomain(domain);
+      }
+      if (insideIframe && shell == null) {
+        // Desktop's shell is the only source of the current Workspace. A
+        // missed handshake is not "no shell": guessing Personal here would
+        // mint credentials for the wrong Workspace while Desktop's chrome
+        // still shows a Team one. The generic error overlay's reload
+        // retries the handshake; outside an iframe (local development)
+        // Personal remains the honest landing.
+        store.set(sessionStatusAtom, {
+          code: SESSION_ERROR_CODES.desktopUnavailable,
+          kind: "error",
+        });
+        return;
       }
       const result = await establishSession(store, {
         nsid: shell?.nsid ?? null,

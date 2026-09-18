@@ -25,11 +25,16 @@ const DEV_ENV = {
 
 function sessionRequest(input: {
   body?: unknown;
+  contentType?: string;
   cookie?: string | null;
+  origin?: string | null;
 }): Request {
   const headers: Record<string, string> = {
-    "content-type": "application/json",
+    "content-type": input.contentType ?? "application/json",
   };
+  if (input.origin != null) {
+    headers.origin = input.origin;
+  }
   if (input.cookie !== null) {
     headers.cookie =
       input.cookie ?? `other=1; sealos_auth_token=${GLOBAL_TOKEN}; theme=dark`;
@@ -77,6 +82,41 @@ function expectNoTokenInLogs(logs: LogEntry[]) {
 }
 
 describe("POST /api/session", () => {
+  it("refuses a foreign Origin before anything else (CSRF)", async () => {
+    const { calls, handler, logs } = handlerWith();
+    const response = await handler(
+      sessionRequest({ body: { nsid: TEAM.id }, origin: "https://evil.test" })
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "session_forbidden" });
+    expect(calls.length).toBe(0);
+    expectNoTokenInLogs(logs);
+  });
+
+  it("accepts an Origin naming this app's own origin", async () => {
+    const { handler } = handlerWith();
+    const response = await handler(
+      sessionRequest({ body: {}, origin: "https://brain.test" })
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("refuses a JSON body that does not travel as application/json (CSRF)", async () => {
+    const { calls, handler } = handlerWith();
+    const response = await handler(
+      sessionRequest({
+        body: { nsid: TEAM.id },
+        contentType: "text/plain",
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_session_request" });
+    expect(calls.length).toBe(0);
+  });
+
   it("lands a Team nsid through regionToken → list → switch ∥ info with the kubeconfig namespace rewritten", async () => {
     const { calls, handler, logs } = handlerWith();
     const response = await handler(sessionRequest({ body: { nsid: TEAM.id } }));

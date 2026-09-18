@@ -77,6 +77,7 @@ export type SessionRequest = z.infer<typeof sessionRequestSchema>;
 export const SESSION_ERROR_CODES = {
   desktopTimeout: "desktop_timeout",
   desktopUnavailable: "desktop_unavailable",
+  forbidden: "session_forbidden",
   invalidRequest: "invalid_session_request",
   sessionExpired: "session_expired",
   workspaceNotInited: "workspace_not_inited",

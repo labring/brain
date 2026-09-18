@@ -60,6 +60,8 @@ function sessionResponse(session: BrainSession): Response {
   return Response.json(session, { headers: { "cache-control": "no-store" } });
 }
 
+const JSON_CONTENT_TYPE_RE = /^application\/json\b/i;
+
 /** The request body: absent or blank means `{}`; anything else must be JSON. */
 async function requestPayload(
   request: Request
@@ -68,10 +70,39 @@ async function requestPayload(
   if (text === "") {
     return { payload: {} };
   }
+  if (!JSON_CONTENT_TYPE_RE.test(request.headers.get("content-type") ?? "")) {
+    return { invalid: true };
+  }
   try {
     return { payload: JSON.parse(text) };
   } catch {
     return { invalid: true };
+  }
+}
+
+/**
+ * Whether the request's `Origin` names this app. The route is
+ * cookie-authenticated and can trigger Desktop's `namespace/switch`, so a
+ * sibling page on the shared cloud domain must not reach it: a present
+ * `Origin` must match the request's own host (the `Host` header wins over
+ * `request.url` behind an ingress that rewrites the internal host). An
+ * absent `Origin` — a non-browser client such as the smoke script — still
+ * passes the content-type gate below.
+ */
+function originAllowed(request: Request): boolean {
+  const origin = request.headers.get("origin")?.trim() ?? "";
+  if (origin === "" || origin === "null") {
+    return true;
+  }
+  const host = request.headers.get("host")?.trim() ?? "";
+  try {
+    const parsed = new URL(origin);
+    if (host !== "" && parsed.host === host) {
+      return true;
+    }
+    return parsed.origin === new URL(request.url).origin;
+  } catch {
+    return false;
   }
 }
 
@@ -84,6 +115,10 @@ export function createSessionHandler(
     ((message, fields) => console.warn(`[session] ${message}`, fields));
 
   return async function handler(request: Request): Promise<Response> {
+    if (!originAllowed(request)) {
+      log("session request from a foreign origin", {});
+      return errorResponse(SESSION_ERROR_CODES.forbidden, 403);
+    }
     const body = await requestPayload(request);
     const parsed =
       "invalid" in body

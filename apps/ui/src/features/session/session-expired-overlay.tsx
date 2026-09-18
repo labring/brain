@@ -23,20 +23,6 @@ export function desktopSigninUrl(domain: string): string | null {
   return `${origin}/signin`;
 }
 
-/**
- * The Desktop origin when the host config never answered: the page that
- * embedded this iframe is Desktop, and the browser records it as the
- * referrer. Null outside an iframe or without a referrer.
- */
-function referrerOrigin(): string | null {
-  try {
-    const referrer = document.referrer.trim();
-    return referrer === "" ? null : new URL(referrer).origin;
-  } catch {
-    return null;
-  }
-}
-
 /** Copy for the generic session error (spec §A.3): the code, never Desktop text. */
 function sessionErrorDescription(code: string): string {
   if (code === "workspace_not_inited") {
@@ -63,10 +49,11 @@ export function SessionExpiredOverlay() {
   const status = useAtomValue(sessionStatusAtom);
   const desktopDomain = useAtomValue(desktopDomainAtom);
   const inIframe = isInsideDesktopIframe();
-  const signinUrl = inIframe
-    ? (desktopSigninUrl(desktopDomain) ??
-      desktopSigninUrl(referrerOrigin() ?? ""))
-    : null;
+  // The sign-in target comes only from the SDK host config's domain: the
+  // embedding page is not proven to be Desktop (there is no frame-ancestors
+  // policy), so a referrer fallback would aim `window.top` at a stranger.
+  // Without a domain the button below reloads instead.
+  const signinUrl = inIframe ? desktopSigninUrl(desktopDomain) : null;
 
   const handleSignIn = useCallback(() => {
     if (signinUrl != null) {
