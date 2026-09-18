@@ -12,7 +12,6 @@ import {
   patchProjectCanvasLayout,
 } from "@/features/project-canvas/layout/repository";
 import { authorizeRequestNamespace } from "@/lib/request-kubeconfig-auth";
-import { hasDevCredentialBypass } from "@/lib/server-credentials";
 
 export const runtime = "nodejs";
 
@@ -24,10 +23,6 @@ async function authorizeNamespace(
   request: Request,
   namespace: string
 ): Promise<Response | null> {
-  if (hasDevCredentialBypass()) {
-    return null;
-  }
-
   const authorization = await authorizeRequestNamespace(request, {
     namespace,
     subject: "Canvas layout",

@@ -5,6 +5,7 @@ import { ChatDevMockTweaks } from "@/features/chat/dev-mock";
 import { DeployTaskDevMockTweaks } from "@/features/deploy/task/dev-mock";
 import { NotificationsDevMockTweaks } from "@/features/notifications/dev-mock";
 import { ProjectsExplorerDevMock } from "@/features/projects/explorer/projects-dev-mock";
+import { SessionDevMockTweaks } from "@/features/session/dev-mock";
 
 /**
  * The app-global Dev Mock registry: every Dev Mock registers here, once, next
@@ -20,6 +21,7 @@ import { ProjectsExplorerDevMock } from "@/features/projects/explorer/projects-d
 export function DevMocks() {
   return (
     <>
+      <SessionDevMockTweaks />
       <BillingDevMockTweaks />
       <NotificationsDevMockTweaks />
       <ChatDevMockTweaks />

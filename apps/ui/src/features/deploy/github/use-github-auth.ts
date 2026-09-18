@@ -1,6 +1,5 @@
 "use client";
 
-import { useAtomValue } from "jotai";
 import { useCallback, useEffect, useRef } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import {
@@ -11,8 +10,9 @@ import {
   parseInstallReturnPathParam,
 } from "@/features/deploy/github/types";
 import { githubReposSWRKey } from "@/features/deploy/github/use-github-repos";
+import { SESSION_SWR_KEYS } from "@/features/session/swr-keys";
+import { useSessionCredentials } from "@/features/session/use-session-credentials";
 import { appTokenRequestHeaders } from "@/lib/app-token-header";
-import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 const GITHUB_APP_INSTALL_POPUP_NAME = "brain-github-app-install";
@@ -196,13 +196,12 @@ export function useGithubAuth(options?: {
   enabled?: boolean;
 }): UseGithubAuthResult {
   const enabled = options?.enabled ?? true;
-  const appToken = useAtomValue(appTokenAtom);
-  const kubeconfig = useAtomValue(kubeconfigAtom);
-  const namespace = useAtomValue(namespaceAtom).trim();
-  const canCheck = enabled && namespace !== "" && kubeconfig.trim() !== "";
+  const credentials = useSessionCredentials();
+  const { appToken, kubeconfig, namespace } = credentials;
+  const canCheck = enabled && namespace !== "" && kubeconfig !== "";
   const { mutate: mutateCache } = useSWRConfig();
   const swrKey = canCheck
-    ? (["github-connection", namespace, kubeconfig, appToken] as const)
+    ? SESSION_SWR_KEYS.githubConnection(credentials)
     : null;
 
   const { data, error, isLoading, mutate } = useSWR(
@@ -231,11 +230,11 @@ export function useGithubAuth(options?: {
       return;
     }
     mutate().catch(() => undefined);
-    const reposKey = githubReposSWRKey({ appToken, kubeconfig, namespace });
+    const reposKey = githubReposSWRKey(credentials);
     if (reposKey != null) {
       mutateCache(reposKey).catch(() => undefined);
     }
-  }, [appToken, canCheck, kubeconfig, mutate, mutateCache, namespace]);
+  }, [canCheck, credentials, mutate, mutateCache]);
 
   const handleInstallComplete = useCallback(
     (data: unknown, options?: { applyReturnPath?: boolean }) => {

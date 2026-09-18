@@ -109,6 +109,9 @@ ui:
       port: 3000
   env:
     ACCOUNT_API_BASE_URL: ""
+    # Desktop upstream for the Brain Session (ADR-0083); derived to the
+    # in-cluster Desktop frontend Service when left empty.
+    DESKTOP_API_BASE_URL: ""
     AP_USER_DOMAIN: ""
     AP_USER_DOMAIN_TLS_SECRET_NAME: ""
     API_URL: ""

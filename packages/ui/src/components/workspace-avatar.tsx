@@ -17,27 +17,38 @@ const WORKSPACE_AVATAR_COLORS = [
 
 export interface WorkspaceAvatarProps {
   className?: string;
+  /**
+   * Render the marble as a rounded square instead of a disc (the Workspace
+   * Switcher's shape). The marble variant masks itself to a circle, so a
+   * container radius alone cannot change the shape; seed and palette are
+   * unchanged, so the same Workspace still renders the same marble.
+   */
+  square?: boolean;
   /** The workspace's namespace id (`ns-…`), the generation seed. */
   workspaceId: string;
 }
 
 export function WorkspaceAvatar({
   className,
+  square = false,
   workspaceId,
 }: WorkspaceAvatarProps) {
   return (
     <span
       aria-hidden
       className={cn(
-        "inline-flex size-5 shrink-0 overflow-hidden rounded-full",
+        "inline-flex size-5 shrink-0 overflow-hidden",
+        square ? "rounded-md" : "rounded-full",
         className
       )}
+      data-shape={square ? "square" : "round"}
       data-slot="workspace-avatar"
     >
       <Avatar
         colors={WORKSPACE_AVATAR_COLORS}
         name={workspaceId}
         size="100%"
+        square={square}
         variant="marble"
       />
     </span>

@@ -32,7 +32,7 @@ const MIXED = [
 ];
 
 test("every id gets a receipt; Owners and Managers also patch the CRs once each", () => {
-  for (const role of ["OWNER", "MANAGER"] as const) {
+  for (const role of ["Owner", "Manager"] as const) {
     const plan = planReadDispatch(MIXED, role);
     assert.deepEqual(plan.receiptIds, [
       "db:m1",
@@ -44,10 +44,10 @@ test("every id gets a receipt; Owners and Managers also patch the CRs once each"
 });
 
 test("Developers skip the CR patch but still get the receipt", () => {
-  const plan = planReadDispatch(MIXED, "DEVELOPER");
+  const plan = planReadDispatch(MIXED, "Developer");
   assert.equal(plan.receiptIds.length, 3);
   assert.deepEqual(plan.crNames, []);
-  assert.equal(shouldSyncCRReadLabel("DEVELOPER"), false);
+  assert.equal(shouldSyncCRReadLabel("Developer"), false);
 });
 
 test("an unknown role tries the patch (the cluster decides)", () => {

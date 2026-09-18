@@ -18,13 +18,16 @@ import type {
   ProjectExplorerProject,
   ProjectExplorerStates,
 } from "@/features/projects/explorer/project-explorer.types";
+import type { SessionWorkspace } from "@/features/session/session-schema";
 import {
   appTokenAtom,
-  desktopUserAvatarAtom,
-  desktopUserIdAtom,
-  desktopUserNameAtom,
+  currentWorkspaceAtom,
+  desktopDomainAtom,
   kubeconfigAtom,
   namespaceAtom,
+  regionalTokenAtom,
+  sessionUserAtom,
+  workspacesAtom,
 } from "@/lib/auth-store";
 
 const projects: ProjectExplorerProject[] = [
@@ -167,19 +170,101 @@ async function billingFetchStub(input: unknown): Promise<Response> {
     }
     return jsonResponse(aiUsage.freeTurns);
   }
+  if (url === "/api/workspace/list") {
+    return jsonResponse(workspaceRoutes.list);
+  }
+  if (url.startsWith("/api/billing/workspace-plans?")) {
+    if (workspaceRoutes.plans == null) {
+      return new Response("{}", { status: 500 });
+    }
+    return jsonResponse({ plans: workspaceRoutes.plans });
+  }
   return new Response("{}", { status: 404 });
 }
 
+// The Brain Session's Workspace list: Personal first, as Desktop orders it.
+const PERSONAL_WORKSPACE: SessionWorkspace = {
+  createdAt: "2026-01-05T09:00:00.000Z",
+  id: "ns-personal",
+  isPersonal: true,
+  name: "private team",
+  role: "Owner",
+  uid: "uid-personal",
+};
+const ACME_WORKSPACE: SessionWorkspace = {
+  createdAt: "2026-02-14T09:00:00.000Z",
+  id: "ns-acme",
+  isPersonal: false,
+  name: "Acme",
+  role: "Manager",
+  uid: "uid-acme",
+};
+const SANDBOX_WORKSPACE: SessionWorkspace = {
+  createdAt: "2026-03-01T09:00:00.000Z",
+  id: "ns-sandbox",
+  isPersonal: false,
+  name: "Sandbox",
+  role: "Developer",
+  uid: "uid-sandbox",
+};
+const SESSION_WORKSPACES = [
+  PERSONAL_WORKSPACE,
+  ACME_WORKSPACE,
+  SANDBOX_WORKSPACE,
+];
+// What `GET /api/workspace/list` and `GET /api/billing/workspace-plans`
+// answer; null plans = the route fails.
+const workspaceRoutes = {
+  list: SESSION_WORKSPACES as SessionWorkspace[],
+  plans: {
+    "ns-acme": "Pro",
+    "ns-personal": "Hobby",
+    "ns-sandbox": null,
+  } as Record<string, string | null> | null,
+};
+// The Desktop iframe facts the Switcher reads (spec §C.6), stood in for.
+const switchEnvironment = { inIframe: true, navigations: [] as string[] };
+const ACME_SWITCH_LABEL = '[aria-label="Switch to Acme"]';
+const ACME_NAME_RE = /Acme/;
+const MANAGER_ROLE_RE = /Manager/;
+const PERSONAL_ROLE_RE = /Personal/;
+const DEVELOPER_ROLE_RE = /Developer/;
+
 // Each scenario gets its own workspace so SWR's cache never replays another
-// test's subscription summary.
+// test's subscription summary. The session lands in the Acme Workspace.
 function hydrateAccountAtoms(workspace: string) {
   const store = getDefaultStore();
   store.set(appTokenAtom, "desktop-app-token");
   store.set(kubeconfigAtom, "apiVersion: v1");
   store.set(namespaceAtom, workspace);
-  store.set(desktopUserIdAtom, ACCOUNT_USER.id);
-  store.set(desktopUserNameAtom, ACCOUNT_USER.name);
-  store.set(desktopUserAvatarAtom, "");
+  store.set(regionalTokenAtom, `regional-${workspace}`);
+  store.set(currentWorkspaceAtom, { ...ACME_WORKSPACE, id: workspace });
+  store.set(workspacesAtom, SESSION_WORKSPACES);
+  store.set(desktopDomainAtom, "cloud.test");
+  store.set(sessionUserAtom, {
+    avatar: "",
+    crName: "ada",
+    name: ACCOUNT_USER.name,
+    userId: ACCOUNT_USER.id,
+    userUid: "user-uid-ada",
+  });
+}
+
+async function openWorkspaceSwitcher(): Promise<Element> {
+  const row = document.querySelector<HTMLButtonElement>(
+    '[data-slot="app-sidebar-workspace"]'
+  );
+  assert.ok(row);
+  await actAndDrain(() => {
+    row.click();
+  });
+  const card = document.querySelector(
+    '[data-slot="app-sidebar-workspace-card"]'
+  );
+  assert.ok(card);
+  const popover = card.closest('[data-slot="popover-content"]');
+  assert.ok(popover);
+  return popover;
 }
 
 mock.module("next/navigation", () => ({
@@ -209,6 +294,13 @@ mock.module("@/features/projects/explorer/use-projects-explorer", () => ({
     refreshProjects: async () => undefined,
     states: explorer.states,
   }),
+}));
+
+mock.module("@/features/workspace/workspace-switch-environment", () => ({
+  isSwitchAvailable: () => switchEnvironment.inIframe,
+  navigateTopWindow: (url: string) => {
+    switchEnvironment.navigations.push(url);
+  },
 }));
 
 mock.module("@labring/sealos-desktop-sdk/app", () => ({
@@ -266,6 +358,14 @@ async function withSidebar(
     aiUsage.credits = null;
     aiUsage.freeTurns = null;
     aiUsage.hold = null;
+    workspaceRoutes.list = SESSION_WORKSPACES;
+    workspaceRoutes.plans = {
+      "ns-acme": "Pro",
+      "ns-personal": "Hobby",
+      "ns-sandbox": null,
+    };
+    switchEnvironment.inIframe = true;
+    switchEnvironment.navigations = [];
     restoreGlobal(fetchOverride);
     restoreActEnvironment(previousActEnvironment);
     await dom.restore();
@@ -300,52 +400,102 @@ test("the shell renders Collapsed when no remembered state is provided", async (
   }, "unset");
 });
 
-test("a remembered Expanded state renders Expanded and collapses from the header button", async () => {
+test("a remembered Expanded state renders Expanded and the brand slot collapses it in place", async () => {
   await withSidebar(async () => {
     assert.equal(sidebarState(), "expanded");
-    const collapse = document.querySelector<HTMLButtonElement>(
+    // The brand slot is the only collapse / expand control: no wordmark,
+    // no separate collapse button.
+    const brand = document.querySelector<HTMLButtonElement>(
       '[aria-label="Collapse sidebar"]'
     );
-    assert.ok(collapse);
-    assert.equal(collapse.getAttribute("aria-expanded"), "true");
-    assert.equal(collapse.getAttribute("aria-controls"), "app-sidebar-nav");
+    assert.ok(brand);
+    assert.equal(brand.getAttribute("aria-expanded"), "true");
+    assert.equal(brand.getAttribute("aria-controls"), "app-sidebar-nav");
+    assert.equal(brand.getAttribute("data-slot"), "app-sidebar-collapse");
+    assert.equal(
+      document.querySelectorAll('[aria-label$="sidebar"]').length,
+      1
+    );
+    assert.equal(
+      document
+        .querySelector('[data-slot="sidebar-header"]')
+        ?.textContent?.includes("Sealos"),
+      false
+    );
 
     await actAndDrain(() => {
-      // Activating the header button focuses it first (mouse or keyboard);
+      // Activating the brand slot focuses it first (mouse or keyboard);
       // the focus transfer only fires when focus sat inside the sidebar.
-      collapse.focus();
-      collapse.click();
+      brand.focus();
+      brand.click();
     });
 
     assert.equal(sidebarState(), "collapsed");
     assert.equal(cookieValue(SIDEBAR_COOKIE_NAME), "false");
-    const expand = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Expand sidebar"]'
-    );
-    assert.ok(expand);
-    assert.equal(expand.getAttribute("aria-expanded"), "false");
-    assert.equal(document.activeElement, expand);
+    // Same element, flipped: label, expanded state, data-slot — and focus
+    // never left it.
+    assert.equal(brand.getAttribute("aria-label"), "Expand sidebar");
+    assert.equal(brand.getAttribute("aria-expanded"), "false");
+    assert.equal(brand.getAttribute("data-slot"), "app-sidebar-expand");
+    assert.equal(document.activeElement, brand);
   });
 });
 
-test("collapsed logo slot expands the sidebar and moves focus to collapse", async () => {
+test("the collapsed brand slot expands the sidebar in place and keeps focus", async () => {
   await withSidebar(async () => {
     assert.equal(sidebarState(), "collapsed");
-    const expand = document.querySelector<HTMLButtonElement>(
+    const brand = document.querySelector<HTMLButtonElement>(
       '[aria-label="Expand sidebar"]'
     );
-    assert.ok(expand);
+    assert.ok(brand);
+    assert.equal(brand.getAttribute("data-slot"), "app-sidebar-expand");
     await actAndDrain(() => {
-      expand.focus();
-      expand.click();
+      brand.focus();
+      brand.click();
     });
     assert.equal(sidebarState(), "expanded");
     assert.equal(cookieValue(SIDEBAR_COOKIE_NAME), "true");
-    assert.equal(
-      document.activeElement,
-      document.querySelector('[aria-label="Collapse sidebar"]')
-    );
+    assert.equal(brand.getAttribute("aria-label"), "Collapse sidebar");
+    assert.equal(brand.getAttribute("data-slot"), "app-sidebar-collapse");
+    assert.equal(document.activeElement, brand);
   }, false);
+});
+
+test("the brand swap keeps only the opacity crossfade under reduced motion", async () => {
+  const motionClasses = () =>
+    [
+      ...(document
+        .querySelector('[data-slot="app-sidebar-brand"]')
+        ?.querySelectorAll("*") ?? []),
+    ].flatMap((el) => [...el.classList]);
+  await withSidebar(() => {
+    const classes = motionClasses();
+    assert.ok(classes.some((cls) => cls.includes("scale-80")));
+    assert.ok(classes.some((cls) => cls.includes("blur-[2px]")));
+    assert.ok(classes.includes("ease-out-strong"));
+  });
+  await withSidebar(
+    () => {
+      const classes = motionClasses();
+      assert.equal(
+        classes.some((cls) => cls.includes("scale-")),
+        false
+      );
+      assert.equal(
+        classes.some((cls) => cls.includes("blur-")),
+        false
+      );
+      assert.ok(classes.includes("transition-opacity"));
+    },
+    true,
+    () => {
+      window.matchMedia = ((query: string) => ({
+        addEventListener: () => undefined,
+        matches: query.includes("prefers-reduced-motion"),
+        removeEventListener: () => undefined,
+      })) as unknown as typeof window.matchMedia;
+    }
+  );
 });
 
 test("Cmd+B toggles the sidebar except inside an editable target", async () => {
@@ -431,11 +581,13 @@ test("a collapsed Projects group reopens on the icon rail and restores on expand
     assert.ok(grid.className.includes("grid-rows-[1fr]"));
     assert.ok(document.querySelector('a[href="/project/beta"]'));
 
-    // Expanding brings the session collapse flag back.
+    // Expanding brings the session collapse flag back. Both queries hit the
+    // same brand-slot element; its label flipped with the state.
     const expand = document.querySelector<HTMLButtonElement>(
       '[aria-label="Expand sidebar"]'
     );
     assert.ok(expand);
+    assert.equal(expand, collapse);
     await actAndDrain(() => {
       expand.click();
     });
@@ -515,6 +667,10 @@ test("tooltips belong to Collapsed; Expanded uses a title fallback", async () =>
       '[aria-label="Collapse sidebar"]'
     );
     assert.ok(collapse);
+    // The Expanded brand slot has neither a tooltip nor a title: its glyph
+    // only appears on hover, and the tooltip exists only in the rail.
+    assert.equal(collapse.getAttribute("title"), null);
+    assert.equal(collapse.getAttribute("data-slot"), "app-sidebar-collapse");
     await actAndDrain(() => {
       collapse.click();
     });
@@ -526,7 +682,7 @@ test("tooltips belong to Collapsed; Expanded uses a title fallback", async () =>
   });
 });
 
-test("the account row shows the session identity with the plan badge", async () => {
+test("the account row shows the session identity; the plan badge sits on the Workspace Switcher row", async () => {
   billing.subscription = proSubscription();
   await withSidebar(
     () => {
@@ -542,9 +698,32 @@ test("the account row shows the session identity with the plan badge", async () 
           ?.textContent?.trim(),
         `ID: ${ACCOUNT_USER.id}`
       );
+      // The plan is a Workspace fact: never on the account row.
+      assert.equal(row.querySelector('[data-slot="plan-badge"]'), null);
+      assert.equal(row.textContent?.includes("PAYG"), false);
+
+      const switcher = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-workspace"]'
+      );
+      assert.ok(switcher);
       assert.equal(
-        row.querySelector('[data-slot="plan-badge"]')?.textContent?.trim(),
+        switcher.getAttribute("aria-label"),
+        "Workspace: Acme. Switch workspace"
+      );
+      assert.equal(
+        switcher
+          .querySelector('[data-slot="workspace-avatar"]')
+          ?.getAttribute("data-shape"),
+        "square"
+      );
+      assert.equal(
+        switcher.querySelector('[data-slot="plan-badge"]')?.textContent?.trim(),
         "PRO"
+      );
+      // Single line: no status hint in a quiet state.
+      assert.equal(
+        switcher.querySelector('[data-slot="app-sidebar-workspace-status"]'),
+        null
       );
     },
     true,
@@ -552,16 +731,21 @@ test("the account row shows the session identity with the plan badge", async () 
   );
 });
 
-test("an attention lifecycle replaces the ID line with a status hint", async () => {
+test("an attention lifecycle grows the Switcher row a second line; the account ID line stays", async () => {
   billing.subscription = proSubscription({ Status: "debt" });
   await withSidebar(
     () => {
-      const status = document.querySelector(
-        '[data-slot="app-sidebar-account-status"]'
+      assert.equal(
+        document
+          .querySelector('[data-slot="app-sidebar-workspace-status"]')
+          ?.textContent?.trim(),
+        "Payment due · service limited"
       );
       assert.equal(
-        status?.textContent?.trim(),
-        "Payment due · service limited"
+        document
+          .querySelector('[data-slot="app-sidebar-account-status"]')
+          ?.textContent?.trim(),
+        `ID: ${ACCOUNT_USER.id}`
       );
     },
     true,
@@ -569,15 +753,22 @@ test("an attention lifecycle replaces the ID line with a status hint", async () 
   );
 });
 
-test("a failed subscription read degrades to the quiet ID line without a badge", async () => {
+test("a failed subscription read leaves the Switcher row single-line without a badge", async () => {
   billing.subscription = null;
   await withSidebar(
     () => {
-      const row = document.querySelector('[data-slot="app-sidebar-account"]');
-      assert.ok(row);
-      assert.equal(row.querySelector('[data-slot="plan-badge"]'), null);
+      const switcher = document.querySelector(
+        '[data-slot="app-sidebar-workspace"]'
+      );
+      assert.ok(switcher);
+      assert.equal(switcher.querySelector('[data-slot="plan-badge"]'), null);
+      assert.equal(switcher.querySelector('[data-slot="plan-payg"]'), null);
       assert.equal(
-        row
+        switcher.querySelector('[data-slot="app-sidebar-workspace-status"]'),
+        null
+      );
+      assert.equal(
+        document
           .querySelector('[data-slot="app-sidebar-account-status"]')
           ?.textContent?.trim(),
         `ID: ${ACCOUNT_USER.id}`
@@ -585,6 +776,265 @@ test("a failed subscription read degrades to the quiet ID line without a badge",
     },
     true,
     () => hydrateAccountAtoms("ws-account-degraded")
+  );
+});
+
+test("the Switcher popover lists the current card, Switch to, New and Manage — and no pending invitations", async () => {
+  billing.subscription = proSubscription();
+  await withSidebar(
+    async () => {
+      const popover = await openWorkspaceSwitcher();
+      const card = popover.querySelector(
+        '[data-slot="app-sidebar-workspace-card"]'
+      );
+      assert.ok(card);
+      assert.match(card.textContent ?? "", ACME_NAME_RE);
+      assert.match(card.textContent ?? "", MANAGER_ROLE_RE);
+      assert.equal(
+        card.querySelector('[data-slot="plan-badge"]')?.textContent?.trim(),
+        "PRO"
+      );
+
+      // Every other Workspace, Personal first, with role and plan.
+      const rows = [
+        ...popover.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="app-sidebar-workspace-switch"]'
+        ),
+      ];
+      assert.deepEqual(
+        rows.map((row) => row.getAttribute("aria-label")),
+        ["Switch to private team", "Switch to Sandbox"]
+      );
+      assert.match(rows[0]?.textContent ?? "", PERSONAL_ROLE_RE);
+      assert.equal(
+        rows[0]?.querySelector('[data-slot="plan-badge"]')?.textContent?.trim(),
+        "Hobby"
+      );
+      assert.match(rows[1]?.textContent ?? "", DEVELOPER_ROLE_RE);
+      assert.ok(rows[1]?.querySelector('[data-slot="plan-payg"]'));
+      assert.equal(
+        rows.every((row) => !row.disabled),
+        true
+      );
+      assert.equal(
+        popover.querySelector(
+          '[data-slot="app-sidebar-workspace-switch-notice"]'
+        ),
+        null
+      );
+
+      assert.ok(popover.querySelector('a[href="/billing?mode=create"]'));
+      assert.ok(popover.querySelector('a[href="/workspace/uid-acme"]'));
+      assert.equal(popover.textContent?.includes("Pending"), false);
+      assert.equal(popover.textContent?.includes("Usage"), false);
+      assert.equal(popover.textContent?.includes("Billing"), false);
+      assert.equal(
+        popover.querySelector('a[href="/billing?mode=upgrade"]'),
+        null
+      );
+    },
+    true,
+    () => hydrateAccountAtoms("ws-switcher-popover")
+  );
+});
+
+test("choosing another Workspace hands the top window to Desktop's deep link, landing by area", async () => {
+  billing.subscription = proSubscription();
+  await withSidebar(
+    async () => {
+      window.history.replaceState(null, "", "/billing?mode=upgrade");
+      const popover = await openWorkspaceSwitcher();
+      const acme = popover.querySelector<HTMLButtonElement>(
+        '[aria-label="Switch to Sandbox"]'
+      );
+      assert.ok(acme);
+      await actAndDrain(() => {
+        acme.click();
+      });
+      assert.deepEqual(switchEnvironment.navigations, [
+        "https://cloud.test/?openapp=system-brain%3F%2Fbilling%3Fmode%3Dupgrade&workspaceUid=uid-sandbox",
+      ]);
+      // The popover closed on the way out.
+      assert.equal(
+        document.querySelector('[data-slot="app-sidebar-workspace-card"]'),
+        null
+      );
+
+      // From inside a Project the switch lands on the Project list.
+      window.history.replaceState(null, "", "/project/alpha?pane=chat");
+      const reopened = await openWorkspaceSwitcher();
+      const personal = reopened.querySelector<HTMLButtonElement>(
+        '[aria-label="Switch to private team"]'
+      );
+      assert.ok(personal);
+      await actAndDrain(() => {
+        personal.click();
+      });
+      assert.equal(
+        switchEnvironment.navigations[1],
+        "https://cloud.test/?openapp=system-brain%3F%2Fproject%3F&workspaceUid=uid-personal"
+      );
+    },
+    true,
+    () => hydrateAccountAtoms("ws-switcher-switch")
+  );
+});
+
+test("outside the Desktop iframe the Switch to rows are disabled with a notice; New and Manage stay", async () => {
+  billing.subscription = proSubscription();
+  switchEnvironment.inIframe = false;
+  await withSidebar(
+    async () => {
+      const popover = await openWorkspaceSwitcher();
+      const rows = [
+        ...popover.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="app-sidebar-workspace-switch"]'
+        ),
+      ];
+      assert.equal(rows.length, 2);
+      assert.equal(
+        rows.every((row) => row.disabled),
+        true
+      );
+      assert.ok(
+        popover.querySelector(
+          '[data-slot="app-sidebar-workspace-switch-notice"]'
+        )
+      );
+      await actAndDrain(() => {
+        rows[0]?.click();
+      });
+      assert.deepEqual(switchEnvironment.navigations, []);
+      assert.ok(popover.querySelector('a[href="/billing?mode=create"]'));
+      assert.ok(popover.querySelector('a[href="/workspace/uid-acme"]'));
+    },
+    true,
+    () => hydrateAccountAtoms("ws-switcher-standalone")
+  );
+});
+
+test("inside Desktop, the rows wait for the host config's domain instead of guessing one", async () => {
+  billing.subscription = proSubscription();
+  await withSidebar(
+    async () => {
+      const popover = await openWorkspaceSwitcher();
+      const rows = [
+        ...popover.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="app-sidebar-workspace-switch"]'
+        ),
+      ];
+      assert.equal(
+        rows.every((row) => row.disabled),
+        true
+      );
+      assert.equal(
+        popover
+          .querySelector('[data-slot="app-sidebar-workspace-switch-notice"]')
+          ?.textContent?.includes("Waiting for Sealos Desktop"),
+        true
+      );
+    },
+    true,
+    () => {
+      hydrateAccountAtoms("ws-switcher-no-domain");
+      getDefaultStore().set(desktopDomainAtom, "");
+    }
+  );
+});
+
+test("a failed plans read leaves the Switch to rows without badges", async () => {
+  billing.subscription = proSubscription();
+  workspaceRoutes.plans = null;
+  await withSidebar(
+    async () => {
+      const popover = await openWorkspaceSwitcher();
+      const rows = [
+        ...popover.querySelectorAll(
+          '[data-slot="app-sidebar-workspace-switch"]'
+        ),
+      ];
+      assert.equal(rows.length, 2);
+      for (const row of rows) {
+        assert.equal(row.querySelector('[data-slot="plan-badge"]'), null);
+        assert.equal(row.querySelector('[data-slot="plan-payg"]'), null);
+      }
+    },
+    true,
+    () => hydrateAccountAtoms("ws-switcher-plans-failed")
+  );
+});
+
+test("the Switcher follows the refreshed Workspace list from the route", async () => {
+  billing.subscription = proSubscription();
+  workspaceRoutes.list = [
+    PERSONAL_WORKSPACE,
+    ACME_WORKSPACE,
+    {
+      ...SANDBOX_WORKSPACE,
+      id: "ns-new",
+      name: "Newly joined",
+      uid: "uid-new",
+    },
+  ];
+  await withSidebar(
+    async () => {
+      const popover = await openWorkspaceSwitcher();
+      assert.ok(popover.querySelector('[aria-label="Switch to Newly joined"]'));
+      assert.equal(
+        popover.querySelector('[aria-label="Switch to Sandbox"]'),
+        null
+      );
+    },
+    true,
+    () => hydrateAccountAtoms("ws-switcher-refresh")
+  );
+});
+
+test("Cmd+B closes an open Switcher popover", async () => {
+  billing.subscription = proSubscription();
+  await withSidebar(
+    async () => {
+      await openWorkspaceSwitcher();
+      await actAndDrain(() => {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "b",
+            metaKey: true,
+            bubbles: true,
+          })
+        );
+      });
+      assert.equal(sidebarState(), "collapsed");
+      assert.equal(
+        document.querySelector('[data-slot="app-sidebar-workspace-card"]'),
+        null
+      );
+    },
+    true,
+    () => hydrateAccountAtoms("ws-switcher-cmd-b")
+  );
+});
+
+test("the collapsed rail keeps the Workspace Switcher as an avatar that opens the popover", async () => {
+  billing.subscription = proSubscription();
+  await withSidebar(
+    async () => {
+      assert.equal(sidebarState(), "collapsed");
+      const switcher = document.querySelector<HTMLButtonElement>(
+        '[data-slot="app-sidebar-workspace"]'
+      );
+      assert.ok(switcher);
+      assert.equal(
+        switcher.getAttribute("aria-label"),
+        "Workspace: Acme. Switch workspace"
+      );
+      assert.ok(switcher.querySelector('[data-slot="workspace-avatar"]'));
+      const popover = await openWorkspaceSwitcher();
+      assert.ok(popover.querySelector(ACME_SWITCH_LABEL) == null);
+      assert.ok(popover.querySelector('[aria-label="Switch to Sandbox"]'));
+    },
+    false,
+    () => hydrateAccountAtoms("ws-switcher-rail")
   );
 });
 

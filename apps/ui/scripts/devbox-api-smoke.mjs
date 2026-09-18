@@ -25,8 +25,10 @@ function namespaceFromKubeconfig(kubeconfig) {
 }
 
 const env = readDotenv(".env");
+// This smoke script talks to the Devbox API directly with a kubeconfig of
+// its own; it is not on the Brain Session path.
 const kubeconfig = decodeURIComponent(
-  env.NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG || ""
+  env.DEVBOX_SMOKE_ENCODED_KUBECONFIG || ""
 );
 const namespace = namespaceFromKubeconfig(kubeconfig);
 const devboxApiBaseUrl = (env.DEVBOX_API_BASE_URL || "").replace(/\/+$/, "");

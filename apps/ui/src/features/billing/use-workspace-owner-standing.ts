@@ -1,10 +1,9 @@
 "use client";
 
-import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
-import { useAtomValue } from "jotai";
 import useSWR from "swr";
 
-import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
+import { SESSION_SWR_KEYS } from "@/features/session/swr-keys";
+import { useSessionCredentials } from "@/features/session/use-session-credentials";
 
 import { loadWorkspaceOwnerStanding } from "./workspace-owner-data";
 
@@ -18,20 +17,10 @@ import { loadWorkspaceOwnerStanding } from "./workspace-owner-data";
 export function useWorkspaceOwnerStanding(
   options: { refreshInterval?: number } = {}
 ) {
-  const appToken = useAtomValue(appTokenAtom).trim();
-  const kubeconfig = useAtomValue(kubeconfigAtom).trim();
-  const workspace = useAtomValue(namespaceAtom).trim();
-  const credentialsReady =
-    appToken !== "" && kubeconfig !== "" && workspace !== "";
+  const credentials = useSessionCredentials();
+  const { appToken, kubeconfig } = credentials;
   return useSWR(
-    credentialsReady
-      ? ([
-          "workspace-owner",
-          workspace,
-          kubeconfigCredentialKey(kubeconfig),
-          appToken,
-        ] as const)
-      : null,
+    credentials.ready ? SESSION_SWR_KEYS.workspaceOwner(credentials) : null,
     () => loadWorkspaceOwnerStanding({ appToken, kubeconfig }),
     {
       refreshInterval: options.refreshInterval,

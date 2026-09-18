@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { WorkspaceRole } from "@/features/session/session-schema";
+
 import { BillingRequestError } from "./billing-data-client";
 import {
   cancelSubscriptionInvoice,
@@ -359,7 +361,8 @@ test("keeps core Plan data available when auxiliary requests fail", async () => 
 
 function loadSnapshotWithSubscription(
   overrides: Record<string, unknown>,
-  extraResponses: Record<string, unknown> = {}
+  extraResponses: Record<string, unknown> = {},
+  workspaceRole: WorkspaceRole | null = "Owner"
 ) {
   const responses: Record<string, unknown> = {
     ...RESPONSES,
@@ -381,6 +384,7 @@ function loadSnapshotWithSubscription(
       appToken: "desktop-app-token",
       kubeconfig: "apiVersion: v1",
       workspace: "workspace-a",
+      workspaceRole,
     },
     {
       fetch: (input) =>
@@ -426,12 +430,14 @@ test("presents a deleted subscription as the subscribable-again PAYG shape", asy
 });
 
 test("keeps payment authority role-gated for a deleted subscription", async () => {
-  // Subscription state and payment authority are orthogonal: the record's
-  // role survives normalization, so only the OWNER manages payments.
-  const snapshot = await loadSnapshotWithSubscription({
-    Status: "DELETED",
-    role: "DEVELOPER",
-  });
+  // Subscription state and payment authority are orthogonal: the session's
+  // Workspace Role decides (spec §J.1), so only the Owner manages payments
+  // — whatever role the subscription record itself still names.
+  const snapshot = await loadSnapshotWithSubscription(
+    { Status: "DELETED", role: "OWNER" },
+    {},
+    "Developer"
+  );
 
   assert.equal(snapshot.current.lifecycle, "active");
   assert.equal(snapshot.current.isPayg, true);
@@ -615,6 +621,7 @@ test("a PAYG workspace treats every plan as a fresh subscription", async () => {
       appToken: "desktop-app-token",
       kubeconfig: "apiVersion: v1",
       workspace: "workspace-a",
+      workspaceRole: "Owner",
     },
     {
       fetch: (input) => {
@@ -1175,7 +1182,6 @@ test("loads the sidebar subscription summary with only region-addressed reads", 
     lifecycle: "active",
     planName: "Pro",
     recoveryVoice: "renew",
-    role: "OWNER",
     warningDeadlineAt: null,
     warningStage: null,
   });
@@ -1202,7 +1208,6 @@ test("the sidebar summary reports an Active Free Trial and its period end", asyn
     lifecycle: "active",
     planName: "Free",
     recoveryVoice: "resubscribe",
-    role: "OWNER",
     warningDeadlineAt: null,
     warningStage: null,
   });
@@ -1229,7 +1234,6 @@ test("the sidebar summary presents a deleted subscription as PAYG", async () => 
     lifecycle: "active",
     planName: "PAYG",
     recoveryVoice: "renew",
-    role: "OWNER",
     warningDeadlineAt: null,
     warningStage: null,
   });

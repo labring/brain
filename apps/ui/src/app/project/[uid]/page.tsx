@@ -4,6 +4,7 @@ import { useAtomValue } from "jotai";
 import { BrainModuleView } from "@/features/analytics/brain-module-view";
 import { useProjectId } from "@/features/panes/use-project-id";
 import { ProjectCanvasWorkbench } from "@/features/project-canvas/workbench/project-canvas-workbench";
+import { ProjectWorkspaceGuard } from "@/features/projects/project-workspace-guard";
 import { kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 export default function ProjectIdPage() {
@@ -12,6 +13,7 @@ export default function ProjectIdPage() {
   const namespace = useAtomValue(namespaceAtom);
   return (
     <>
+      <ProjectWorkspaceGuard />
       <BrainModuleView projectId={uid} viewName="project_dashboard" />
       <ProjectCanvasWorkbench
         kubeconfig={kubeconfig}

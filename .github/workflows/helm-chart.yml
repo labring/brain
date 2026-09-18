@@ -38,3 +38,6 @@ jobs:
 
       - name: Verify account-service URL configuration
         run: bash charts/brain-system/tests/account-api-env.sh
+
+      - name: Verify Desktop URL configuration
+        run: bash charts/brain-system/tests/desktop-api-env.sh

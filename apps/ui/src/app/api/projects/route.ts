@@ -14,7 +14,6 @@ import {
   updateProject,
 } from "@/lib/project-persistence/projects";
 import { authorizeRequestNamespace } from "@/lib/request-kubeconfig-auth";
-import { hasDevCredentialBypass } from "@/lib/server-credentials";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,10 +47,6 @@ async function authorizeNamespace(
   | { denied: null; encodedKubeconfig: string }
   | { denied: Response; encodedKubeconfig?: never }
 > {
-  if (hasDevCredentialBypass()) {
-    return { denied: null, encodedKubeconfig: "" };
-  }
-
   const authorization = await authorizeRequestNamespace(request, {
     namespace,
     subject: "Project",

@@ -1,10 +1,7 @@
 "use client";
 
-import { kubeconfigCredentialKey } from "@workspace/api/credential-key";
-import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-
 import { loadAccountBalanceTerms } from "@/features/billing/account-balance";
 import { loadAccountCredits } from "@/features/billing/account-credits";
 import { planUpgradeCeiling } from "@/features/billing/billing-plan-catalog";
@@ -13,8 +10,9 @@ import { accountCreditsSwrKey } from "@/features/billing/billing-subscription-se
 import { loadWorkspaceQuotaData } from "@/features/billing/billing-usage-data";
 import { useWorkspaceOwnerStanding } from "@/features/billing/use-workspace-owner-standing";
 import { observeWorkspaceQuotaSnapshotForInbox } from "@/features/notifications/quota-observation";
+import { SESSION_SWR_KEYS } from "@/features/session/swr-keys";
+import { useSessionCredentials } from "@/features/session/use-session-credentials";
 import { useWorkspaceSubscriptionSummary } from "@/features/shell/use-workspace-subscription-summary";
-import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 import type { StatusHintInputs } from "./status-hint-model";
 
@@ -51,12 +49,13 @@ function planCeilingFrom(
  * state unknown — never lit, never cleared.
  */
 export function useStatusHintInputs(): StatusHintInputs {
-  const appToken = useAtomValue(appTokenAtom).trim();
-  const kubeconfig = useAtomValue(kubeconfigAtom).trim();
-  const workspace = useAtomValue(namespaceAtom).trim();
-  const credentialsReady =
-    appToken !== "" && kubeconfig !== "" && workspace !== "";
-  const credentialKey = kubeconfigCredentialKey(kubeconfig);
+  const credentials = useSessionCredentials();
+  const {
+    appToken,
+    kubeconfig,
+    namespace: workspace,
+    ready: credentialsReady,
+  } = credentials;
 
   const subscription = useWorkspaceSubscriptionSummary({
     refreshInterval: STATUS_HINT_REFRESH_INTERVAL_MS,
@@ -72,9 +71,7 @@ export function useStatusHintInputs(): StatusHintInputs {
     shouldRetryOnError: false,
   };
   const balance = useSWR(
-    credentialsReady
-      ? (["status-hint-balance", credentialKey, appToken] as const)
-      : null,
+    credentialsReady ? SESSION_SWR_KEYS.statusHintBalance(credentials) : null,
     () => loadAccountBalanceTerms({ appToken, kubeconfig }),
     swrOptions
   );
@@ -90,9 +87,7 @@ export function useStatusHintInputs(): StatusHintInputs {
   // cannot disagree for minutes, and a recovery between chat turns still
   // releases the live key.
   const quota = useSWR(
-    credentialsReady
-      ? (["status-hint-quota", workspace, credentialKey, appToken] as const)
-      : null,
+    credentialsReady ? SESSION_SWR_KEYS.statusHintQuota(credentials) : null,
     () =>
       loadWorkspaceQuotaData({ appToken, kubeconfig, namespace: workspace }),
     {
@@ -116,9 +111,7 @@ export function useStatusHintInputs(): StatusHintInputs {
   // ceiling, so the catalog rides the same cadence; an unanswered read
   // leaves the ceiling unknown, never assumed.
   const plans = useSWR(
-    credentialsReady
-      ? (["status-hint-plans", credentialKey, appToken] as const)
-      : null,
+    credentialsReady ? SESSION_SWR_KEYS.statusHintPlans(credentials) : null,
     () => loadBillingPlans({ appToken, kubeconfig }),
     swrOptions
   );

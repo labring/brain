@@ -45,9 +45,11 @@ const CREDENTIALS = {
 };
 
 function loadSnapshotForScenario(scenario: string) {
-  return loadBillingPlanSnapshot(CREDENTIALS, {
-    fetch: scenarioTestFetch(scenario),
-  });
+  // The viewer is the Workspace Owner (spec §J.1): payment actions render.
+  return loadBillingPlanSnapshot(
+    { ...CREDENTIALS, workspaceRole: "Owner" },
+    { fetch: scenarioTestFetch(scenario) }
+  );
 }
 
 async function renderScenario(

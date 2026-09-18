@@ -42,6 +42,8 @@ import type {
 import { createAppSidebarProjectGroups } from "@/features/shell/app-sidebar.groups";
 import { AppSidebarAccount } from "@/features/shell/app-sidebar-account";
 import { AppSidebarNotifications } from "@/features/shell/app-sidebar-notifications";
+import { AppSidebarWorkspaceSwitcher } from "@/features/shell/app-sidebar-workspace-switcher";
+import { useReducedMotion } from "@/features/shell/use-reduced-motion";
 import { appTokenAtom, kubeconfigAtom, namespaceAtom } from "@/lib/auth-store";
 
 const APP_SIDEBAR_NAV_ID = "app-sidebar-nav";
@@ -265,74 +267,107 @@ function AppSidebarGroupHeading({
   );
 }
 
+/**
+ * The brand row (spec §C.1, CONTEXT.md App Sidebar): the logo slot is the
+ * App Sidebar's only collapse / expand control. At rest it shows the Sealos
+ * mark; while the pointer is anywhere over the sidebar, or the button has
+ * focus, the mark crossfades into the PanelLeft glyph and the click
+ * collapses (Expanded) or expands (Collapsed). One element in both states:
+ * its `data-slot`, `aria-label`, and `aria-expanded` flip with the state,
+ * so the focus transfer still lands on it and focus never leaves it after
+ * a toggle. No wordmark, no separate collapse button; the tooltip only
+ * exists in the Collapsed rail.
+ *
+ * Motion: the mark is an image and PanelLeft a path set, so there is no
+ * true morph — the swap is a 200ms crossfade on `--ease-out-strong` with a
+ * scale (0.8 ⇄ 1) and a 2px blur hint so the two read as one change.
+ * Under `prefers-reduced-motion` only the opacity crossfade remains.
+ * The hover variant is written out literally (`[[data-slot=sidebar-container]:hover_&]`)
+ * so Tailwind's scanner sees the full class names.
+ */
+const BRAND_SWAP_TRANSITION =
+  "transition-[opacity,scale,filter] duration-200 ease-out-strong";
+const BRAND_SWAP_TRANSITION_REDUCED =
+  "transition-opacity duration-200 ease-out-strong";
+const LOGO_REST = "opacity-100";
+const LOGO_REST_MOTION = "scale-100 blur-none";
+const LOGO_SWAPPED =
+  "group-focus-visible/brand:opacity-0 [[data-slot=sidebar-container]:hover_&]:opacity-0";
+const LOGO_SWAPPED_MOTION =
+  "group-focus-visible/brand:scale-80 group-focus-visible/brand:blur-[2px] [[data-slot=sidebar-container]:hover_&]:scale-80 [[data-slot=sidebar-container]:hover_&]:blur-[2px]";
+const GLYPH_REST = "opacity-0";
+const GLYPH_REST_MOTION = "scale-80 blur-[2px]";
+const GLYPH_SWAPPED =
+  "group-focus-visible/brand:opacity-100 [[data-slot=sidebar-container]:hover_&]:opacity-100";
+const GLYPH_SWAPPED_MOTION =
+  "group-focus-visible/brand:scale-100 group-focus-visible/brand:blur-none [[data-slot=sidebar-container]:hover_&]:scale-100 [[data-slot=sidebar-container]:hover_&]:blur-none";
+
 function AppSidebarHeader() {
   const { setOpen, state } = useSidebar();
   const expanded = state === "expanded";
+  const reducedMotion = useReducedMotion();
+  const label = expanded ? "Collapse sidebar" : "Expand sidebar";
 
-  // One DOM tree for both states: the logo never leaves the icon slot. While
-  // expanded the logo button is inert (the PanelLeft button on the right
-  // collapses); once collapsed it becomes the expand control, swapping to a
-  // PanelLeft glyph on hover.
   return (
     <div className="flex h-11 shrink-0 items-center">
-      <AppIconButton
-        aria-controls={APP_SIDEBAR_NAV_ID}
-        aria-expanded={expanded ? undefined : false}
-        aria-hidden={expanded || undefined}
-        aria-label="Expand sidebar"
-        className={cn(
-          "group/expand shrink-0 border-0 text-neutral-50",
-          expanded && "pointer-events-none"
-        )}
-        data-slot="app-sidebar-expand"
-        onClick={() => {
-          setOpen(true);
-        }}
-        size="lg"
-        tabIndex={expanded ? -1 : undefined}
-        type="button"
-        variant="quiet"
-      >
-        <span aria-hidden className="relative block size-5">
-          <BrandLogo className="absolute inset-0 size-5 opacity-100 transition-opacity duration-150 group-hover/expand:opacity-0 group-focus-visible/expand:opacity-0 motion-reduce:transition-none" />
-          <PanelLeft
-            className="absolute top-1/2 left-1/2 size-4 -translate-x-1/2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover/expand:opacity-100 group-focus-visible/expand:opacity-100 motion-reduce:transition-none"
-            strokeWidth={1.33}
-          />
-        </span>
-      </AppIconButton>
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate whitespace-nowrap font-semibold text-neutral-50 text-sm transition-opacity motion-reduce:transition-none",
-          expanded
-            ? "opacity-100 duration-300 ease-sidebar"
-            : "opacity-0 duration-200 ease-out"
-        )}
-      >
-        Sealos
-      </span>
-      <AppIconButton
-        aria-controls={APP_SIDEBAR_NAV_ID}
-        aria-expanded
-        aria-hidden={expanded ? undefined : true}
-        aria-label="Collapse sidebar"
-        className={cn(
-          "shrink-0 border-0 text-neutral-50 transition-opacity motion-reduce:transition-none",
-          expanded
-            ? "opacity-100 duration-300 ease-sidebar"
-            : "pointer-events-none opacity-0 duration-150 ease-out"
-        )}
-        data-slot="app-sidebar-collapse"
-        onClick={() => {
-          setOpen(false);
-        }}
-        size="lg"
-        tabIndex={expanded ? undefined : -1}
-        type="button"
-        variant="quiet"
-      >
-        <PanelLeft aria-hidden className="size-4" strokeWidth={1.33} />
-      </AppIconButton>
+      <Tooltip disabled={expanded}>
+        <TooltipTrigger
+          render={
+            <AppIconButton
+              aria-controls={APP_SIDEBAR_NAV_ID}
+              aria-expanded={expanded}
+              aria-label={label}
+              className="group/brand shrink-0 border-0 text-neutral-50"
+              data-slot={
+                expanded ? "app-sidebar-collapse" : "app-sidebar-expand"
+              }
+              onClick={() => {
+                setOpen(!expanded);
+              }}
+              size="lg"
+              type="button"
+              variant="quiet"
+            >
+              <span
+                aria-hidden
+                className="relative block size-5"
+                data-slot="app-sidebar-brand"
+              >
+                <BrandLogo
+                  className={cn(
+                    "absolute inset-0 size-5",
+                    LOGO_REST,
+                    LOGO_SWAPPED,
+                    reducedMotion
+                      ? BRAND_SWAP_TRANSITION_REDUCED
+                      : [
+                          BRAND_SWAP_TRANSITION,
+                          LOGO_REST_MOTION,
+                          LOGO_SWAPPED_MOTION,
+                        ]
+                  )}
+                />
+                <PanelLeft
+                  className={cn(
+                    "absolute top-1/2 left-1/2 size-4 -translate-x-1/2 -translate-y-1/2",
+                    GLYPH_REST,
+                    GLYPH_SWAPPED,
+                    reducedMotion
+                      ? BRAND_SWAP_TRANSITION_REDUCED
+                      : [
+                          BRAND_SWAP_TRANSITION,
+                          GLYPH_REST_MOTION,
+                          GLYPH_SWAPPED_MOTION,
+                        ]
+                  )}
+                  strokeWidth={1.33}
+                />
+              </span>
+            </AppIconButton>
+          }
+        />
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -580,6 +615,11 @@ function AppSidebarChrome({
       <div className="flex h-full min-h-0 w-(--sidebar-width) flex-col px-2 py-2.5 transition-[padding] duration-200 ease-out group-data-[collapsible=icon]:pb-3.5 motion-reduce:transition-none">
         <SidebarHeader className="p-0">
           <AppSidebarHeader />
+          {/* Brand → Switcher 12px: 8px here plus the 4px the h-9 logo
+              button leaves inside the h-11 brand row. */}
+          <div className="mt-2">
+            <AppSidebarWorkspaceSwitcher />
+          </div>
         </SidebarHeader>
         <SidebarContent className="min-h-0 overflow-hidden p-0 group-data-[collapsible=icon]:overflow-hidden">
           <nav
@@ -589,9 +629,12 @@ function AppSidebarChrome({
           >
             {/* Spacing rule — Expanded: rows 2px apart, sections 12px
                 apart; Collapsed rail: rows 4px apart, sections 8px apart.
-                Every gap below is one of those four values (the account row
-                is the documented exception). */}
-            <div className="flex flex-col gap-0.5 pt-3 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:gap-1 group-data-[collapsible=icon]:pt-2 motion-reduce:transition-none">
+                Every gap below is one of those four values, with two
+                documented exceptions: the account row (footer), and the
+                Switcher → navigation gap here, which is 8px in both states
+                (spec §C.2) so the top block reads as one unit above the
+                navigation. */}
+            <div className="flex flex-col gap-0.5 pt-2 transition-[gap,padding] duration-200 ease-out group-data-[collapsible=icon]:gap-1 motion-reduce:transition-none">
               <AppSidebarNavRow
                 active={projectsActive}
                 href="/project"

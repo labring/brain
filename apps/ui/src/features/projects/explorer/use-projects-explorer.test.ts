@@ -10,7 +10,7 @@ test("project history empty state separates missing credentials from database fa
     ),
     {
       description:
-        "Project history is waiting for workspace credentials. Open Brain inside Sealos Desktop or configure NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG for local development.",
+        "Project history is waiting for workspace credentials. Open Brain inside Sealos Desktop, or set DEV_GLOBAL_TOKEN for local development.",
       title: "Workspace credentials unavailable",
     }
   );
