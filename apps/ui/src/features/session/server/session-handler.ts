@@ -84,19 +84,32 @@ async function requestPayload(
  * Whether the request's `Origin` names this app. The route is
  * cookie-authenticated and can trigger Desktop's `namespace/switch`, so a
  * sibling page on the shared cloud domain must not reach it: a present
- * `Origin` must match the request's own host (the `Host` header wins over
- * `request.url` behind an ingress that rewrites the internal host). An
- * absent `Origin` — a non-browser client such as the smoke script — still
- * passes the content-type gate below.
+ * `Origin` must name this app's origin over HTTPS (HTTP origins pass only
+ * outside production, for local development), matching the `Host` header —
+ * which wins over `request.url` behind an ingress that rewrites the
+ * internal host. `Origin: null` is a browser (a sandboxed frame, some
+ * redirects), not a missing header, and is refused; an absent `Origin` —
+ * a non-browser client such as the smoke script — still passes the
+ * content-type gate below.
  */
-function originAllowed(request: Request): boolean {
+function originAllowed(
+  request: Request,
+  env: Record<string, string | undefined>
+): boolean {
   const origin = request.headers.get("origin")?.trim() ?? "";
-  if (origin === "" || origin === "null") {
+  if (origin === "") {
     return true;
   }
-  const host = request.headers.get("host")?.trim() ?? "";
   try {
+    // `Origin: null` and any malformed value fail the parse and are refused.
     const parsed = new URL(origin);
+    const schemeAllowed =
+      parsed.protocol === "https:" ||
+      (env.NODE_ENV !== "production" && parsed.protocol === "http:");
+    if (!schemeAllowed) {
+      return false;
+    }
+    const host = request.headers.get("host")?.trim() ?? "";
     if (host !== "" && parsed.host === host) {
       return true;
     }
@@ -115,7 +128,7 @@ export function createSessionHandler(
     ((message, fields) => console.warn(`[session] ${message}`, fields));
 
   return async function handler(request: Request): Promise<Response> {
-    if (!originAllowed(request)) {
+    if (!originAllowed(request, env)) {
       log("session request from a foreign origin", {});
       return errorResponse(SESSION_ERROR_CODES.forbidden, 403);
     }

@@ -103,6 +103,28 @@ describe("POST /api/session", () => {
     expect(response.status).toBe(200);
   });
 
+  it("refuses Origin: null — a sandboxed browser frame, not a non-browser client", async () => {
+    const { calls, handler } = handlerWith();
+    const response = await handler(sessionRequest({ body: {}, origin: "null" }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "session_forbidden" });
+    expect(calls.length).toBe(0);
+  });
+
+  it("refuses an HTTP Origin against the HTTPS app in production", async () => {
+    const { handler } = handlerWith(defaultDesktopAnswers(), {
+      ...DEV_ENV,
+      NODE_ENV: "production",
+    });
+    const response = await handler(
+      sessionRequest({ body: {}, origin: "http://brain.test" })
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "session_forbidden" });
+  });
+
   it("refuses a JSON body that does not travel as application/json (CSRF)", async () => {
     const { calls, handler } = handlerWith();
     const response = await handler(
