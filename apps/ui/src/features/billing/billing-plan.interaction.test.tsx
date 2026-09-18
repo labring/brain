@@ -378,6 +378,114 @@ test("a Stripe return for the Workspace this tab created concludes as a creation
   });
 });
 
+test("a cancelled Checkout spends the creation record but keeps the entry point and draws no conclusion", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanWorkflow } = await import("./billing-plan");
+    let rendered: ReturnType<typeof render> | undefined;
+
+    window.history.replaceState({}, "", "/project/abc");
+    recordBillingReturnRoute();
+    recordPendingWorkspaceCreation("ns-new00001", "pay-1");
+    window.history.replaceState(
+      {},
+      "",
+      "/billing?stripeState=cancel&workspaceId=ns-new00001"
+    );
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanWorkflow
+            balance={<span>$3.00</span>}
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onRefreshSnapshot={() => Promise.resolve(SNAPSHOT)}
+            replaceUrl={() => undefined}
+            snapshot={SNAPSHOT}
+            stripeCancelWorkspaceId="ns-new00001"
+          />
+        );
+      });
+
+      // The round-trip is over: the record is spent, so a later plan change
+      // for this Workspace can never be reworded as a creation.
+      assert.equal(consumePendingWorkspaceCreation("ns-new00001"), false);
+      // The user continues where they were: the entry point survives.
+      assert.equal(readBillingReturnRoute(), "/project/abc");
+      // A cancel concludes nothing.
+      assert.equal(
+        (rendered?.baseElement.textContent ?? "").includes("Workspace created"),
+        false
+      );
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a later plan change for an abandoned creation pays under its own id and reads as a plan change", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanWorkflow } = await import("./billing-plan");
+    const refreshedSnapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        planName: "Team",
+        priceMicroUnits: 50_000_000,
+        resources: [{ label: "CPU", value: "12" }],
+      },
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    window.history.replaceState({}, "", "/project/abc");
+    recordBillingReturnRoute();
+    // The creation's Checkout was abandoned; the plan change for that same
+    // Workspace returns under its own, different pay id.
+    recordPendingWorkspaceCreation("workspace-a", "pay-creation");
+    window.history.replaceState(
+      {},
+      "",
+      "/billing?stripeState=success&payId=payment-1&workspaceId=workspace-a"
+    );
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanWorkflow
+            balance={<span>$3.00</span>}
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onRefreshSnapshot={() => Promise.resolve(refreshedSnapshot)}
+            replaceUrl={() => undefined}
+            snapshot={SNAPSHOT}
+            stripeReturn={{ payId: "payment-1", workspaceId: "workspace-a" }}
+          />
+        );
+      });
+
+      assert.ok(rendered?.getByRole("dialog", { name: "Team" }));
+      assert.equal(
+        (rendered?.baseElement.textContent ?? "").includes("Workspace created"),
+        false
+      );
+      // The entry point survives — this was a plan change — and the stale
+      // creation record is spent.
+      assert.equal(readBillingReturnRoute(), "/project/abc");
+      assert.equal(consumePendingWorkspaceCreation("workspace-a"), false);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
 test("Stripe return refreshes before congratulations and clears on close", async () => {
   await withTestDom(async (act) => {
     const { BillingPlanWorkflow } = await import("./billing-plan");

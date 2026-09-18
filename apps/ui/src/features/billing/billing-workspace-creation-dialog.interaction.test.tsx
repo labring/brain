@@ -466,3 +466,177 @@ test("a payment that settles without a checkout hop closes the dialog as done", 
     }
   });
 });
+
+/** Mounts the dialog the way the workflow does — `open` only hides it. */
+async function mountReopenableDialog(
+  act: Parameters<Parameters<typeof withTestDom>[0]>[0],
+  services: BillingWorkspaceCreationServices,
+  onOpenChange: (open: boolean) => void
+) {
+  const { BillingWorkspaceCreationDialog } = await import(
+    "./billing-workspace-creation-dialog"
+  );
+  const element = (open: boolean) => (
+    <BillingWorkspaceCreationDialog
+      credentials={CREDENTIALS}
+      currency="usd"
+      existingWorkspaceNames={EXISTING_NAMES}
+      gpuEnabled
+      onOpenChange={onOpenChange}
+      open={open}
+      plans={PLANS}
+      regionDomain="us.example.test"
+      services={services}
+    />
+  );
+  let rendered: ReturnType<typeof render> | undefined;
+  await act(() => {
+    rendered = render(element(true));
+  });
+  if (rendered == null) {
+    throw new Error("dialog did not render");
+  }
+  const setOpen = async (open: boolean) => {
+    await act(() => {
+      rendered?.rerender(element(open));
+    });
+  };
+  return { rendered, setOpen };
+}
+
+test("reopening after Later starts fresh: no stacked offer, no leftover name", async () => {
+  await withTestDom(async (act) => {
+    const closes: boolean[] = [];
+    const { services } = fakeServices({
+      createWorkspace: () =>
+        Promise.resolve({
+          payment: { error: "card declined", status: "failed" as const },
+          workspace: CREATED,
+        }),
+    });
+    const { rendered, setOpen } = await mountReopenableDialog(
+      act,
+      services,
+      (open) => closes.push(open)
+    );
+    try {
+      await typeName(act, rendered, "Robotics");
+      await pickPro(act, rendered);
+      await act(() => {
+        fireEvent.click(rendered.getByRole("button", { name: "Create & Pay" }));
+      });
+      assert.ok(rendered.getByRole("dialog", { name: "Workspace created" }));
+      await act(() => {
+        fireEvent.click(rendered.getByRole("button", { name: "Later" }));
+      });
+      assert.deepEqual(closes, [false]);
+
+      await setOpen(false);
+      await setOpen(true);
+
+      assert.equal(
+        rendered.queryByRole("dialog", { name: "Workspace created" }),
+        null,
+        "the failed-payment offer does not survive the close"
+      );
+      assert.equal(nameInput(rendered).value, "");
+      assert.equal(rendered.queryByRole("alert"), null);
+    } finally {
+      await act(() => rendered.unmount());
+    }
+  });
+});
+
+test("reopening after a settled creation is not stuck submitting", async () => {
+  await withTestDom(async (act) => {
+    const closes: boolean[] = [];
+    const { services } = fakeServices({
+      createWorkspace: () =>
+        Promise.resolve({
+          payment: {
+            invoiceId: "inv-1",
+            payId: "pay-1",
+            status: "settled" as const,
+          },
+          workspace: CREATED,
+        }),
+    });
+    const { rendered, setOpen } = await mountReopenableDialog(
+      act,
+      services,
+      (open) => closes.push(open)
+    );
+    try {
+      await typeName(act, rendered, "Robotics");
+      await pickPro(act, rendered);
+      await act(() => {
+        fireEvent.click(rendered.getByRole("button", { name: "Create & Pay" }));
+      });
+      assert.deepEqual(closes, [false]);
+
+      await setOpen(false);
+      await setOpen(true);
+
+      // A fresh picker: the name is empty and a new attempt can confirm.
+      assert.equal(nameInput(rendered).value, "");
+      assert.equal(
+        rendered.queryByRole("button", { name: "Creating…" }),
+        null,
+        "not stuck submitting"
+      );
+      await typeName(act, rendered, "Second try");
+      await pickPro(act, rendered);
+      assert.ok(rendered.getByRole("dialog", { name: "Create Workspace" }));
+      assert.ok(
+        rendered.getByRole("button", { name: "Create & Pay" }),
+        "the confirm action is reachable again"
+      );
+    } finally {
+      await act(() => rendered.unmount());
+    }
+  });
+});
+
+test("a name the actor's Personal Workspace carries is a taken name, never a Retry-payment offer", async () => {
+  await withTestDom(async (act) => {
+    const store = getDefaultStore();
+    store.set(workspacesAtom, [
+      {
+        createdAt: "2026-09-15T00:00:00.000Z",
+        id: "ns-personal",
+        isPersonal: true,
+        name: "Robotics",
+        role: "Owner" as const,
+        uid: "uid-personal",
+      },
+    ]);
+    const { calls, services } = fakeServices({
+      createWorkspace: () => Promise.reject(new WorkspaceNameConflictError()),
+    });
+    const rendered = await mountDialog(act, services);
+    try {
+      await typeName(act, rendered, "Robotics");
+      await pickPro(act, rendered);
+      await act(() => {
+        fireEvent.click(rendered.getByRole("button", { name: "Create & Pay" }));
+      });
+
+      assert.equal(
+        rendered.getByRole("alert").textContent,
+        "A Workspace with this name already exists."
+      );
+      assert.equal(
+        rendered.queryByRole("dialog", { name: "Workspace created" }),
+        null,
+        "the Personal Workspace is never offered a creation payment retry"
+      );
+      assert.equal(
+        calls.some((call) => call.kind === "retry"),
+        false
+      );
+    } finally {
+      await act(() => rendered.unmount());
+      store.set(workspacesAtom, []);
+    }
+  });
+});

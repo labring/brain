@@ -66,7 +66,10 @@ import { submitCancellationSurvey } from "@/features/billing/cancellation-survey
 import { EMPTY_CANCELLATION_SURVEY_ANSWERS } from "@/features/billing/cancellation-survey/reasons";
 import type { BillingCurrency } from "@/features/billing/config-core";
 import { useWorkspaceOwnerStanding } from "@/features/billing/use-workspace-owner-standing";
-import { consumePendingWorkspaceCreation } from "@/features/billing/workspace-creation-return";
+import {
+  consumePendingWorkspaceCreation,
+  readPendingWorkspaceCreation,
+} from "@/features/billing/workspace-creation-return";
 import {
   type FreeChatTurnsUsage,
   fetchFreeChatTurnsUsage,
@@ -116,6 +119,7 @@ interface BillingPlanWorkflowProps {
   replaceUrl: (url: string) => void;
   schedulePoll?: (callback: () => void, delay: number) => () => void;
   snapshot: BillingPlanSnapshot;
+  stripeCancelWorkspaceId?: string | null;
   stripeReturn?: BillingStripeReturn | null;
   /** Whether the viewer is proven to be the Workspace Owner (ADR-0082). */
   viewerIsOwner?: boolean;
@@ -152,6 +156,7 @@ export function BillingPlanWorkflow({
   replaceUrl,
   schedulePoll,
   snapshot,
+  stripeCancelWorkspaceId = null,
   stripeReturn = null,
   viewerIsOwner = false,
   workspaceName = null,
@@ -207,6 +212,17 @@ export function BillingPlanWorkflow({
   }, [initialMode, replaceUrl]);
 
   useEffect(() => {
+    if (stripeCancelWorkspaceId == null) {
+      return;
+    }
+    // A cancelled Checkout still ends the creation's round-trip: spend the
+    // record, so a later plan change for that Workspace reads as a plan
+    // change. The recorded entry point stays — the user continues where
+    // they were — and a cancel opens no conclusion dialog.
+    consumePendingWorkspaceCreation(stripeCancelWorkspaceId);
+  }, [stripeCancelWorkspaceId]);
+
+  useEffect(() => {
     if (stripeReturn == null) {
       return;
     }
@@ -217,11 +233,24 @@ export function BillingPlanWorkflow({
     }
     let refresh = stripeRefreshRef.current;
     if (refresh?.key !== key) {
-      // Read once per arrival, alongside the refresh: a creation's record is
-      // spent on the first read. Its recorded return route belongs to the
-      // Workspace the creation left (spec §G.5), so close returns home; a
-      // plan change came back to the same Workspace and keeps its own.
-      const created = consumePendingWorkspaceCreation(stripeReturn.workspaceId);
+      // Read once per arrival, alongside the refresh: a creation's record
+      // is spent on the first read — any return for the recorded Workspace
+      // spends it, so an abandoned creation Checkout never rewords a later
+      // plan change for the same Workspace. The conclusion is a creation
+      // only when the recorded pay id (when Desktop's answer carried one)
+      // is this return's; a plan change pays under its own. A creation's
+      // recorded return route belongs to the Workspace the creation left
+      // (spec §G.5), so close returns home; a plan change came back to the
+      // same Workspace and keeps its own.
+      const pending = readPendingWorkspaceCreation();
+      const recordedHere =
+        pending != null && pending.workspaceId === stripeReturn.workspaceId;
+      const created =
+        recordedHere &&
+        (pending?.payId == null || pending.payId === stripeReturn.payId);
+      if (recordedHere) {
+        consumePendingWorkspaceCreation(stripeReturn.workspaceId);
+      }
       if (created) {
         clearBillingReturnRoute();
       }
@@ -437,12 +466,14 @@ export function BillingPlan({
   gpuEnabled,
   initialMode = null,
   replaceUrl,
+  stripeCancelWorkspaceId = null,
   stripeReturn = null,
 }: {
   currency: BillingCurrency;
   gpuEnabled: boolean;
   initialMode?: BillingPlanMode | null;
   replaceUrl: (url: string) => void;
+  stripeCancelWorkspaceId?: string | null;
   stripeReturn?: BillingStripeReturn | null;
 }) {
   const appToken = useAtomValue(appTokenAtom);
@@ -824,6 +855,7 @@ export function BillingPlan({
       onRefreshSnapshot={refreshPlanSnapshot}
       replaceUrl={replaceUrl}
       snapshot={snapshot}
+      stripeCancelWorkspaceId={stripeCancelWorkspaceId}
       stripeReturn={stripeReturn}
       viewerIsOwner={viewerIsOwner}
       // Desktop switches to the created Workspace before calling back, so
@@ -843,11 +875,13 @@ export default function BillingPlanRoute({
   currency,
   gpuEnabled,
   initialMode = null,
+  stripeCancelWorkspaceId = null,
   stripeReturn = null,
 }: {
   currency: BillingCurrency;
   gpuEnabled: boolean;
   initialMode?: BillingPlanMode | null;
+  stripeCancelWorkspaceId?: string | null;
   stripeReturn?: BillingStripeReturn | null;
 }) {
   const router = useRouter();
@@ -859,6 +893,7 @@ export default function BillingPlanRoute({
       replaceUrl={(url) => {
         router.replace(url, { scroll: false });
       }}
+      stripeCancelWorkspaceId={stripeCancelWorkspaceId}
       stripeReturn={stripeReturn}
     />
   );

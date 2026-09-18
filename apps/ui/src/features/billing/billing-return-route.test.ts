@@ -54,20 +54,45 @@ test("sanitizeBillingReturnRoute falls back to home for unusable values", () => 
   assert.equal(sanitizeBillingReturnRoute("/billing?mode=upgrade"), "/");
 });
 
-test("a creation's Stripe return voids the recorded entry point: it names the old Workspace's route", () => {
+test("a creation's Stripe return reads as home — a pure read; the page's effect voids the entry point", () => {
   withWindow({ pathname: "/project/abc", search: "" }, (storage) => {
     recordBillingReturnRoute();
-    recordPendingWorkspaceCreation("ns-new");
+    recordPendingWorkspaceCreation("ns-new", "p1");
     assert.equal(readBillingReturnRoute(), "/project/abc");
 
     window.location.pathname = "/billing";
     window.location.search = "?stripeState=success&payId=p1&workspaceId=ns-new";
     assert.equal(readBillingReturnRoute(), "/");
-    assert.equal(storage.has("billing-return-route"), false);
+    // Pure: deciding never mutates — the workflow's return effect clears.
+    assert.equal(storage.has("billing-return-route"), true);
 
-    // Once the return parameters are stripped, nothing recorded remains.
+    // Once the return parameters are stripped, nothing creation-flavored
+    // remains, but the entry point itself still stands until the effect.
     window.location.search = "";
-    assert.equal(readBillingReturnRoute(), "/");
+    assert.equal(readBillingReturnRoute(), "/project/abc");
+  });
+});
+
+test("a cancelled Checkout keeps the entry point: the user continues where they were", () => {
+  withWindow({ pathname: "/project/abc", search: "" }, () => {
+    recordBillingReturnRoute();
+    recordPendingWorkspaceCreation("ns-new", "p1");
+    window.location.pathname = "/billing";
+    window.location.search = "?stripeState=cancel&workspaceId=ns-new";
+    assert.equal(readBillingReturnRoute(), "/project/abc");
+  });
+});
+
+test("a later plan change for an abandoned creation pays under its own id: it reads as a plan change", () => {
+  withWindow({ pathname: "/project/abc", search: "" }, () => {
+    recordBillingReturnRoute();
+    // The creation's Checkout was abandoned; a plan change for that same
+    // Workspace returns with its own, different pay id.
+    recordPendingWorkspaceCreation("ns-new", "p-creation");
+    window.location.pathname = "/billing";
+    window.location.search =
+      "?stripeState=success&payId=p-plan&workspaceId=ns-new";
+    assert.equal(readBillingReturnRoute(), "/project/abc");
   });
 });
 

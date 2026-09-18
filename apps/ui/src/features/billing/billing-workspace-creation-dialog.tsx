@@ -5,7 +5,7 @@ import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { DialogClose } from "@workspace/ui/components/dialog";
 import { useStore } from "jotai";
 import { X } from "lucide-react";
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { formatBillingAmount } from "@/features/billing/billing-amount";
 import type { BillingCredentials } from "@/features/billing/billing-data-client";
@@ -129,20 +129,30 @@ export function BillingWorkspaceCreationDialog({
   const refreshWorkspaces = useWorkspaceRefresh();
   const [name, setName] = useState("");
   const [nameIssue, setNameIssue] = useState<WorkspaceNameIssue | null>(null);
-  // Names Desktop already refused this session: the field says so on the
-  // next attempt without another round-trip.
-  const [takenNames, setTakenNames] = useState<string[]>([]);
   const [stage, setStage] = useState<CreationStage>({ kind: "pick" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pickerPlans = useMemo(() => creationPlans(plans), [plans]);
   const trimmedName = name.trim();
 
+  // A closed dialog is a finished attempt: the workflow keeps this dialog
+  // mounted (`open` only hides it), so reopening must not inherit the last
+  // attempt's stage, name, or a submitting state frozen for a Stripe hop
+  // that never came. `handedOff`'s freeze is for a real top-window hand-off
+  // — the page is leaving — never for a plain close.
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+    setStage({ kind: "pick" });
+    setSubmitting(false);
+    setError(null);
+    setName("");
+    setNameIssue(null);
+  }, [open]);
+
   const selectPlan = (planId: string) => {
-    const issue = workspaceNameIssue(name, [
-      ...existingWorkspaceNames,
-      ...takenNames,
-    ]);
+    const issue = workspaceNameIssue(name, existingWorkspaceNames);
     setNameIssue(issue);
     if (issue != null) {
       inputRef.current?.focus();
@@ -160,7 +170,7 @@ export function BillingWorkspaceCreationDialog({
     workspace: CreatedWorkspace,
     payment: Extract<WorkspaceCreationPayment, { status: "started" }>
   ) => {
-    recordPendingWorkspaceCreation(workspace.id);
+    recordPendingWorkspaceCreation(workspace.id, payment.payId);
     services.redirectTop(payment.redirectUrl);
   };
 
@@ -208,14 +218,18 @@ export function BillingWorkspaceCreationDialog({
       if (cause instanceof WorkspaceNameConflictError) {
         // A 409 on a name this dialog just submitted can be Desktop having
         // created the Workspace while its answer never landed (a timeout,
-        // a malformed envelope). Re-read the list: if the actor now owns
-        // the name, offer the payment retry instead of "taken" — the user
-        // already owns a Workspace they cannot pay for otherwise.
+        // a malformed envelope). Re-read the list: if the actor now owns a
+        // *Team* Workspace of that name — the creation's subject, never the
+        // Personal one a name may share with its user — offer the payment
+        // retry instead of "taken". The name stays retriable either way:
+        // a list that has not caught up shows the taken verdict, and the
+        // next attempt re-runs this recovery.
         await refreshWorkspaces({ details: false }).catch(() => undefined);
         const owned = store
           .get(workspacesAtom)
           .find(
             (candidate) =>
+              !candidate.isPersonal &&
               candidate.role === "Owner" &&
               candidate.name.trim().toLowerCase() === trimmedName.toLowerCase()
           );
@@ -233,7 +247,6 @@ export function BillingWorkspaceCreationDialog({
           });
           return;
         }
-        setTakenNames((names) => [...names, trimmedName]);
         setNameIssue("duplicate");
         setStage({ kind: "pick" });
         return;

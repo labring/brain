@@ -105,7 +105,9 @@ describe("POST /api/session", () => {
 
   it("refuses Origin: null — a sandboxed browser frame, not a non-browser client", async () => {
     const { calls, handler } = handlerWith();
-    const response = await handler(sessionRequest({ body: {}, origin: "null" }));
+    const response = await handler(
+      sessionRequest({ body: {}, origin: "null" })
+    );
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: "session_forbidden" });

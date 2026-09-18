@@ -34,12 +34,18 @@ export default async function BillingPlanPage({
     stripeState === "success" && payId != null && workspaceId != null
       ? { payId, workspaceId }
       : null;
+  // A cancelled Checkout still ends the round-trip it belonged to: the page
+  // spends a pending Workspace Creation record for that Workspace so a
+  // later plan change is never reworded as a creation.
+  const stripeCancelWorkspaceId =
+    stripeState === "cancel" && workspaceId != null ? workspaceId : null;
 
   return (
     <BillingPlan
       currency={getBillingCurrency()}
       gpuEnabled={getBillingGpuEnabled()}
       initialMode={initialMode}
+      stripeCancelWorkspaceId={stripeCancelWorkspaceId}
       stripeReturn={stripeReturn}
     />
   );

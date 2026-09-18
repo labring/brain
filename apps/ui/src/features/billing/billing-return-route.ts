@@ -1,6 +1,6 @@
 import { createAreaReturnRoute } from "@/features/shell/area-return-route";
 
-import { isPendingWorkspaceCreation } from "./workspace-creation-return";
+import { readPendingWorkspaceCreation } from "./workspace-creation-return";
 
 /**
  * The Billing Area's return address: the close button returns to the in-app
@@ -11,11 +11,14 @@ import { isPendingWorkspaceCreation } from "./workspace-creation-return";
  *
  * Workspace Creation's Stripe Checkout Round-Trip voids the record: the
  * page arrives on `?stripeState=…&workspaceId=…` in the created Workspace,
- * and the recorded route belongs to the one the user left (spec §G.5).
- * Reading through that arrival forgets the record, so the close button —
- * which reads once, during hydration — lands on home rather than on a
- * route from another Workspace. A plan change's return stays in the same
- * Workspace and keeps its entry point.
+ * and the recorded route belongs to the one the user left (spec §G.5), so
+ * close lands on home rather than on a route from another Workspace. A
+ * plan change's return stays in the same Workspace and keeps its entry
+ * point. `read` is pure — it decides, but never mutates: the billing
+ * workflow's Stripe-return effect spends the creation record and voids the
+ * entry point once per arrival, and a cancel return keeps the entry point
+ * (the user continues where they were) while still spending the record, so
+ * a later plan change for that Workspace is never reworded as a creation.
  */
 const billingReturnRoute = createAreaReturnRoute({
   prefix: "/billing",
@@ -34,24 +37,33 @@ export function clearBillingReturnRoute(): void {
   billingReturnRoute.clear();
 }
 
-/** Whether the page is the Stripe return of a Workspace this tab created. */
-function arrivedFromCreation(): boolean {
+/**
+ * Whether the page is a Stripe *success* return of a Workspace this tab was
+ * creating: the pending record's Workspace matches the URL's, and its pay
+ * id — when Desktop's answer carried one — matches too, so a later plan
+ * change for the same Workspace never reads as a creation.
+ */
+function arrivedFromCreationLanding(): boolean {
   if (typeof window === "undefined") {
     return false;
   }
   const query = new URLSearchParams(window.location.search);
+  if (query.get("stripeState") !== "success") {
+    return false;
+  }
+  const pending = readPendingWorkspaceCreation();
   const workspaceId = query.get("workspaceId");
-  return (
-    query.has("stripeState") &&
-    workspaceId != null &&
-    isPendingWorkspaceCreation(workspaceId)
-  );
+  if (
+    pending == null ||
+    workspaceId == null ||
+    pending.workspaceId !== workspaceId
+  ) {
+    return false;
+  }
+  const payId = query.get("payId");
+  return pending.payId == null || pending.payId === payId;
 }
 
 export function readBillingReturnRoute(): string {
-  if (arrivedFromCreation()) {
-    billingReturnRoute.clear();
-    return "/";
-  }
-  return billingReturnRoute.read();
+  return arrivedFromCreationLanding() ? "/" : billingReturnRoute.read();
 }
