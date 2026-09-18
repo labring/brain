@@ -2,14 +2,38 @@
 
 All notable changes to Brain are documented in this file.
 
-## [Unreleased]
+## [2.0.15] - 2026-09-18
 
 ### Changed
 
 - Rename the Langfuse endpoint environment variable to `LANGFUSE_BASE_URL`
   for Chat Assistant tracing and newly created GitHub Deploy Devboxes.
   Deployments must rename `LANGFUSE_HOST`; the old name is no longer read or
-  forwarded. Recreate existing Devboxes to apply the updated environment.
+  forwarded. Recreate existing Devboxes to apply the updated environment. (#351)
+- Show every public URL on the canvas. A WS-marked Ingress now adds a
+  WebSocket address instead of replacing its HTTPS page, so HTTPS and WS
+  siblings appear together in Canvas Public Access, AP Network Settings,
+  Default Open, and success cards. (#354)
+
+### Fixed
+
+- Surface the real error when revealing a saved environment variable, and
+  resolve env values on StatefulSet-backed APs as well as Deployments. (#353)
+- Revalidate DB resource claims when switching between database nodes so
+  Settings does not keep the previous node's replicas, CPU, memory, or
+  storage. (#355)
+- Clear a revealed DB connection DSN when switching database nodes so the
+  next node cannot display or copy the previous database's connection
+  string. (#356)
+
+### Upgrade Notes
+
+- Rename `LANGFUSE_HOST` to `LANGFUSE_BASE_URL` on every cluster. The old
+  name is no longer read or forwarded; tracing fails silently if it is left
+  unchanged. Recreate existing GitHub Deploy Devboxes so they pick up the
+  new variable. Historical changelog entries retain `LANGFUSE_HOST`.
+- No database migrations or other new operator-configured environment
+  variables are required beyond that rename.
 
 ## [2.0.14] - 2026-09-10
 
