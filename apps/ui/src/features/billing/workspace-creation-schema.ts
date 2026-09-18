@@ -71,6 +71,16 @@ export const workspaceCreationPaymentSchema = z.discriminatedUnion("status", [
     error: z.string(),
     status: z.literal("failed"),
   }),
+  z.object({
+    invoiceId: z.string().nullable(),
+    payId: z.string().nullable(),
+    /**
+     * The payment settled without a checkout URL — account-service's
+     * balance-style path, which the terms rule out but must still be read
+     * as paid, never as a failed payment the page would offer to retry.
+     */
+    status: z.literal("settled"),
+  }),
 ]);
 
 export type WorkspaceCreationPayment = z.infer<

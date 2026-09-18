@@ -313,10 +313,8 @@ const {
   workspaceDeletedNotice,
   workspaceLeftNotice,
 } = await import("./use-workspace-actions");
-const {
-  INVITE_LINK_COPIED_NOTICE,
-  INVITE_LINK_NO_DESKTOP_NOTICE,
-} = await import("./workspace-invite-dialog");
+const { INVITE_LINK_COPIED_NOTICE, INVITE_LINK_NO_DESKTOP_NOTICE } =
+  await import("./workspace-invite-dialog");
 const { INVITE_LINK_VALIDITY_NOTE } = await import("./workspace-invite-core");
 await moduleDom.restore();
 

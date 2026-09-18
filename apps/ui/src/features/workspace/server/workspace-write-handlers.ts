@@ -137,9 +137,7 @@ export function createWorkspaceInviteLinkHandler(
     }
     const body = parsed.data;
     if (body.role === "Manager") {
-      const listed = await context.desktop.namespaceList(
-        context.regionalToken
-      );
+      const listed = await context.desktop.namespaceList(context.regionalToken);
       if (!listed.ok) {
         context.log("Desktop list failed", {
           ...desktopFailureLogFields(listed),

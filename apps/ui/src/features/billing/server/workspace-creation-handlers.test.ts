@@ -96,12 +96,40 @@ function paymentAnswer(): Response {
   });
 }
 
+const CREATE_PATH = BILLING_ROUTES.workspaceCreate.apiPath;
+const RETRY_PATH = BILLING_ROUTES.workspaceCreateRetryPayment.apiPath;
+const PLANS_PATH = BILLING_ROUTES.plans.upstreamPathname;
+
+/** The priced-plan catalog answer: Pro priced, Free not. */
+function planListAnswer(): Response {
+  return Response.json({
+    plans: [
+      {
+        ID: "plan-free",
+        MaxResources: {},
+        Name: "Free",
+        Prices: [{ BillingCycle: "1m", Price: 0 }],
+      },
+      {
+        ID: "plan-pro",
+        MaxResources: {},
+        Name: "Pro",
+        Prices: [
+          { BillingCycle: "1m", Price: 999 },
+          { BillingCycle: "1y", Price: 9999 },
+        ],
+      },
+    ],
+  });
+}
+
 function harness(
   input: {
     answers?: FakeDesktopOptions["answers"];
     authorize?: () => Promise<WorkspaceActorAuthorization>;
     env?: Record<string, string | undefined>;
     pay?: (request: AccountServiceRequest) => Response;
+    planList?: (request: AccountServiceRequest) => Response;
   } = {}
 ) {
   const desktop = createFakeDesktop({
@@ -119,6 +147,9 @@ function harness(
     log: (message, fields) => logs.push({ fields, message }),
     requestAccountService: (request) => {
       accountRequests.push(request);
+      if (request.pathname === PLANS_PATH) {
+        return Promise.resolve((input.planList ?? planListAnswer)(request));
+      }
       return Promise.resolve((input.pay ?? paymentAnswer)(request));
     },
   };
@@ -130,9 +161,6 @@ function harness(
     retry: createBillingWorkspaceCreateRetryPaymentHandler(dependencies),
   };
 }
-
-const CREATE_PATH = BILLING_ROUTES.workspaceCreate.apiPath;
-const RETRY_PATH = BILLING_ROUTES.workspaceCreateRetryPayment.apiPath;
 
 describe(`POST ${CREATE_PATH}`, () => {
   it("creates the Workspace with the raw app token, then starts the payment as Brain", async () => {
@@ -159,8 +187,11 @@ describe(`POST ${CREATE_PATH}`, () => {
         path: DESKTOP_CREATE_PATH,
       },
     ]);
-    expect(accountRequests).toHaveLength(1);
-    const pay = accountRequests[0];
+    expect(accountRequests.map((request) => request.pathname)).toEqual([
+      PLANS_PATH,
+      PAY_PATH,
+    ]);
+    const pay = accountRequests[1];
     expect(pay?.pathname).toBe(PAY_PATH);
     expect(pay?.actor).toEqual({ userId: "user-alice", userUid: "uid-alice" });
     expect(pay?.init?.method).toBe("POST");
@@ -194,7 +225,77 @@ describe(`POST ${CREATE_PATH}`, () => {
       code: WORKSPACE_NAME_CONFLICT_CODE,
       error: WORKSPACE_NAME_CONFLICT_MESSAGE,
     });
-    expect(accountRequests).toEqual([]);
+    expect(accountRequests.map((request) => request.pathname)).toEqual([
+      PLANS_PATH,
+    ]);
+  });
+
+  it("refuses a plan the catalog does not price, before Desktop creates anything", async () => {
+    const { accountRequests, create, desktopCalls } = harness();
+    const response = await create(
+      billingRequest(CREATE_PATH, {
+        body: { ...VALID_CREATE_BODY, planName: "Free" },
+      })
+    );
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { error: string };
+    expect(payload.error).toContain("priced");
+    expect(desktopCalls).toEqual([]);
+    expect(accountRequests.map((request) => request.pathname)).toEqual([
+      PLANS_PATH,
+    ]);
+  });
+
+  it("refuses creation when the plan catalog cannot be read, before Desktop creates anything", async () => {
+    const { create, desktopCalls } = harness({
+      planList: () => Response.json({ error: "down" }, { status: 500 }),
+    });
+    const response = await create(
+      billingRequest(CREATE_PATH, { body: VALID_CREATE_BODY })
+    );
+
+    expect(response.status).toBe(502);
+    expect(desktopCalls).toEqual([]);
+  });
+
+  it("reads a paid answer without a checkout URL as settled, not failed", async () => {
+    const { create } = harness({
+      pay: () =>
+        Response.json({
+          invoiceID: "invoice-1",
+          payID: "pay-1",
+          success: true,
+        }),
+    });
+    const response = await create(
+      billingRequest(CREATE_PATH, { body: VALID_CREATE_BODY })
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      payment: { invoiceId: "invoice-1", payId: "pay-1", status: "settled" },
+      workspace: { id: CREATED.id, name: "Robotics", uid: CREATED.uid },
+    });
+  });
+
+  it("answers 200 with a failed payment — never an error that hides the Workspace — when the pay call throws", async () => {
+    const { create } = harness({
+      pay: () => {
+        throw new Error("connection reset");
+      },
+    });
+    const response = await create(
+      billingRequest(CREATE_PATH, { body: VALID_CREATE_BODY })
+    );
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      payment: { status: string };
+      workspace: { id: string };
+    };
+    expect(payload.workspace.id).toBe(CREATED.id);
+    expect(payload.payment.status).toBe("failed");
   });
 
   it("translates Desktop's other refusals and transport failures without its message text", async () => {
@@ -216,7 +317,9 @@ describe(`POST ${CREATE_PATH}`, () => {
       const payload = (await response.json()) as { error: string };
       expect(payload.error).not.toContain("max workspaces");
       expect(payload.error).not.toContain("failed to create team");
-      expect(accountRequests).toEqual([]);
+      expect(
+        accountRequests.filter((request) => request.pathname === PAY_PATH)
+      ).toEqual([]);
       expect(JSON.stringify(logs)).not.toContain(APP_TOKEN);
       expect(JSON.stringify(logs)).not.toContain("encoded-kubeconfig");
     }
@@ -325,8 +428,11 @@ describe(`POST ${RETRY_PATH}`, () => {
       },
     });
     expect(desktopCalls).toEqual([]);
-    expect(accountRequests).toHaveLength(1);
-    expect(JSON.parse(String(accountRequests[0]?.init?.body))).toEqual({
+    expect(accountRequests.map((request) => request.pathname)).toEqual([
+      PLANS_PATH,
+      PAY_PATH,
+    ]);
+    expect(JSON.parse(String(accountRequests[1]?.init?.body))).toEqual({
       operator: "created",
       payApp: "system-brain",
       payMethod: "stripe",

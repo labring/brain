@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { fireEvent, render, within } from "@testing-library/react/pure";
+import { getDefaultStore } from "jotai";
 
 import { withTestDom } from "@/features/project-canvas/react-test-harness";
+import { workspacesAtom } from "@/lib/auth-store";
 import type { BillingPlanSnapshot } from "./billing-plan-data";
 import type { BillingWorkspaceCreationServices } from "./billing-workspace-creation-dialog";
 import { WorkspaceNameConflictError } from "./workspace-creation-client";
@@ -362,6 +364,103 @@ test("Later closes the whole dialog without touching the created Workspace", asy
       });
       assert.deepEqual(closes, [false]);
       assert.deepEqual(calls, []);
+    } finally {
+      await act(() => rendered.unmount());
+    }
+  });
+});
+
+test("a 409 on a name the actor already owns is a created Workspace awaiting its payment, not a taken name", async () => {
+  await withTestDom(async (act) => {
+    // Desktop created the Workspace but its answer never landed; the
+    // refreshed session list now shows the actor owning the name.
+    const store = getDefaultStore();
+    store.set(workspacesAtom, [
+      {
+        createdAt: "2026-09-15T00:00:00.000Z",
+        id: CREATED.id,
+        isPersonal: false,
+        name: "Robotics",
+        role: "Owner" as const,
+        uid: CREATED.uid,
+      },
+    ]);
+    const { calls, services } = fakeServices({
+      createWorkspace: () => Promise.reject(new WorkspaceNameConflictError()),
+    });
+    const rendered = await mountDialog(act, services);
+    try {
+      await typeName(act, rendered, "Robotics");
+      await pickPro(act, rendered);
+      await act(() => {
+        fireEvent.click(rendered.getByRole("button", { name: "Create & Pay" }));
+      });
+
+      // Not the duplicate field verdict — the payment-failed offer.
+      assert.equal(rendered.getByRole("alert") == null, false);
+      const failed = rendered.getByRole("dialog", {
+        name: "Workspace created",
+      });
+      assert.ok((failed.textContent ?? "").includes("Robotics"));
+
+      await act(() => {
+        fireEvent.click(
+          within(failed).getByRole("button", { name: "Retry payment" })
+        );
+      });
+      assert.deepEqual(calls, [
+        {
+          input: {
+            ...CREDENTIALS,
+            planName: "Pro",
+            regionDomain: "us.example.test",
+            workspaceId: CREATED.id,
+          },
+          kind: "retry",
+        },
+        { input: STARTED.redirectUrl, kind: "redirect" },
+      ]);
+    } finally {
+      await act(() => rendered.unmount());
+      store.set(workspacesAtom, []);
+    }
+  });
+});
+
+test("a payment that settles without a checkout hop closes the dialog as done", async () => {
+  await withTestDom(async (act) => {
+    const closes: boolean[] = [];
+    const { calls, services } = fakeServices({
+      createWorkspace: () =>
+        Promise.resolve({
+          payment: {
+            invoiceId: "inv-1",
+            payId: "pay-1",
+            status: "settled" as const,
+          },
+          workspace: CREATED,
+        }),
+    });
+    const rendered = await mountDialog(act, services, (open) =>
+      closes.push(open)
+    );
+    try {
+      await typeName(act, rendered, "Robotics");
+      await pickPro(act, rendered);
+      await act(() => {
+        fireEvent.click(rendered.getByRole("button", { name: "Create & Pay" }));
+      });
+
+      assert.deepEqual(closes, [false]);
+      // No Stripe hand-off, no failed-payment offer.
+      assert.equal(
+        calls.some((call) => call.kind === "redirect"),
+        false
+      );
+      assert.equal(
+        rendered.queryByRole("dialog", { name: "Workspace created" }),
+        null
+      );
     } finally {
       await act(() => rendered.unmount());
     }

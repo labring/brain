@@ -384,15 +384,12 @@ describe("POST /api/workspace/invite-link", () => {
   });
 
   it("mints a Developer link without the Owner proof call", async () => {
-    const { calls, handler } = handlerWith(
-      createWorkspaceInviteLinkHandler,
-      {
-        [WORKSPACE_ROUTES.inviteLink.desktopPath]: {
-          code: 200,
-          data: { code: "0f2c1a9e-invite-code" },
-        },
-      }
-    );
+    const { calls, handler } = handlerWith(createWorkspaceInviteLinkHandler, {
+      [WORKSPACE_ROUTES.inviteLink.desktopPath]: {
+        code: 200,
+        data: { code: "0f2c1a9e-invite-code" },
+      },
+    });
     const response = await handler(
       writeRequest(WORKSPACE_ROUTES.inviteLink.apiPath, {
         body: { role: "Developer", uid: TEAM.uid },

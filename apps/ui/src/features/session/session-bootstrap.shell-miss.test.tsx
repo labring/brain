@@ -13,7 +13,11 @@ import {
   setActEnvironment,
   type TestDom,
 } from "@/features/project-canvas/react-test-harness";
-import { appTokenAtom, kubeconfigAtom, sessionStatusAtom } from "@/lib/auth-store";
+import {
+  appTokenAtom,
+  kubeconfigAtom,
+  sessionStatusAtom,
+} from "@/lib/auth-store";
 
 import type { BrainSession } from "./session-schema";
 

@@ -15,6 +15,7 @@ import {
 import { desktopFailureLogFields } from "@/features/workspace/server/workspace-route-context";
 import { appTokenFromRequest } from "@/lib/app-token";
 
+import { billingPlansResponseSchema } from "../billing-plan-catalog";
 import {
   type CreatedWorkspace,
   WORKSPACE_NAME_CONFLICT_CODE,
@@ -154,6 +155,43 @@ const PAYMENT_FAILED_FALLBACK =
   "The subscription payment could not be started.";
 
 /**
+ * The priced plan names account-service's catalog answers with: creation
+ * always chooses a priced plan (spec §G.2), and the picker's list is not
+ * authority — a crafted POST naming "Free" must be refused before Desktop
+ * creates anything. Null when the catalog could not be read: creation then
+ * fails closed rather than create a Workspace it cannot bill.
+ */
+async function pricedPlanNames(
+  dependencies: WorkspaceCreationRouteDependencies,
+  actor: PayingActor
+): Promise<Set<string> | null> {
+  try {
+    const response = await dependencies.requestAccountService({
+      actor,
+      init: { body: JSON.stringify({}), method: "POST" },
+      pathname: BILLING_ROUTES.plans.upstreamPathname,
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return null;
+    }
+    const parsed = billingPlansResponseSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      return null;
+    }
+    const names = new Set<string>();
+    for (const plan of parsed.data.plans) {
+      if (plan.Prices.some((price) => price.Price > 0)) {
+        names.add(plan.Name.trim());
+      }
+    }
+    return names;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Step 2: account-service's pay for the created Workspace. Any refusal —
  * an upstream error status, a non-JSON body, `success: false`, no checkout
  * URL — is a failed payment the page can retry, never a route error.
@@ -195,8 +233,19 @@ async function startWorkspacePayment(
       : {};
   const redirectUrl =
     typeof checkout.redirectUrl === "string" ? checkout.redirectUrl.trim() : "";
-  if (checkout.success !== true || redirectUrl === "") {
+  if (checkout.success !== true) {
     return { error: PAYMENT_FAILED_FALLBACK, status: "failed" };
+  }
+  if (redirectUrl === "") {
+    // account-service's balance-style path settles without a checkout URL.
+    // The terms admit Stripe only, but a paid answer must be read as paid,
+    // never as a failed payment the page would offer to retry.
+    return {
+      invoiceId:
+        typeof checkout.invoiceID === "string" ? checkout.invoiceID : null,
+      payId: typeof checkout.payID === "string" ? checkout.payID : null,
+      status: "settled",
+    };
   }
   return {
     invoiceId:
@@ -257,6 +306,14 @@ export function createBillingWorkspaceCreateHandler(
     if (response != null) {
       return response;
     }
+    const priced = await pricedPlanNames(dependencies, actor);
+    if (priced == null) {
+      log("plan catalog unreadable; refusing to create", {});
+      return errorResponse("The plan catalog is unavailable. Try again.", 502);
+    }
+    if (!priced.has(body.planName.trim())) {
+      return errorResponse("Choose a priced Subscription Plan.", 400);
+    }
     const desktop = desktopForCreation(dependencies, log);
     if (!desktop.ok) {
       return desktop.response;
@@ -274,11 +331,19 @@ export function createBillingWorkspaceCreateHandler(
       return desktopCreateFailureResponse(created);
     }
     const workspace: CreatedWorkspace = created.data;
+    // The Workspace exists now, so a pay call that throws is an outcome,
+    // never an error that would hide its id from the page.
     const payment = await startWorkspacePayment(
       dependencies,
       actor,
       workspace.id,
       body
+    ).catch(
+      () =>
+        ({
+          error: PAYMENT_FAILED_FALLBACK,
+          status: "failed",
+        }) as const
     );
     if (payment.status === "failed") {
       log("Workspace created but its first payment did not start", {
@@ -300,6 +365,10 @@ export function createBillingWorkspaceCreateRetryPaymentHandler(
   dependencies: WorkspaceCreationRouteDependencies
 ): RouteHandler {
   return async function handler(request: Request): Promise<Response> {
+    const log = routeLog(
+      dependencies,
+      BILLING_ROUTES.workspaceCreateRetryPayment.apiPath
+    );
     const { actor, body, response } = await authorizedCreationRequest(
       request,
       dependencies,
@@ -309,11 +378,25 @@ export function createBillingWorkspaceCreateRetryPaymentHandler(
     if (response != null) {
       return response;
     }
+    const priced = await pricedPlanNames(dependencies, actor);
+    if (priced == null) {
+      log("plan catalog unreadable; refusing to retry", {});
+      return errorResponse("The plan catalog is unavailable. Try again.", 502);
+    }
+    if (!priced.has(body.planName.trim())) {
+      return errorResponse("Choose a priced Subscription Plan.", 400);
+    }
     const payment = await startWorkspacePayment(
       dependencies,
       actor,
       body.workspaceId,
       body
+    ).catch(
+      () =>
+        ({
+          error: PAYMENT_FAILED_FALLBACK,
+          status: "failed",
+        }) as const
     );
     return jsonResponse({ payment });
   };

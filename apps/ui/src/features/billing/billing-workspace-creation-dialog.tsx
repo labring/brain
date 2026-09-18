@@ -3,6 +3,7 @@
 import { AppDialog } from "@workspace/ui/components/app-dialog";
 import { AppInputField } from "@workspace/ui/components/app-input-field";
 import { DialogClose } from "@workspace/ui/components/dialog";
+import { useStore } from "jotai";
 import { X } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 
@@ -11,7 +12,9 @@ import type { BillingCredentials } from "@/features/billing/billing-data-client"
 import type { BillingPlanSnapshot } from "@/features/billing/billing-plan-data";
 import { BillingPlanPicker } from "@/features/billing/billing-plan-picker";
 import type { BillingCurrency } from "@/features/billing/config-core";
+import { useWorkspaceRefresh } from "@/features/workspace/use-workspace-refresh";
 import { WORKSPACE_NAME_MAX_LENGTH } from "@/features/workspace/workspace-write-schema";
+import { workspacesAtom } from "@/lib/auth-store";
 import { errorDescription } from "@/lib/toast-utils";
 
 import {
@@ -122,6 +125,8 @@ export function BillingWorkspaceCreationDialog({
 }: BillingWorkspaceCreationDialogProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  const store = useStore();
+  const refreshWorkspaces = useWorkspaceRefresh();
   const [name, setName] = useState("");
   const [nameIssue, setNameIssue] = useState<WorkspaceNameIssue | null>(null);
   // Names Desktop already refused this session: the field says so on the
@@ -177,9 +182,20 @@ export function BillingWorkspaceCreationDialog({
         planName: plan.name,
         regionDomain,
       });
+      // A Workspace now exists whatever the payment did; the session list
+      // (the duplicate-name check and the Switcher both read it) must show
+      // it at once, or a second create under a new name would go through.
+      refreshWorkspaces({ details: false }).catch(() => undefined);
       if (payment.status === "started") {
         handedOff = true;
         handOffToStripe(workspace, payment);
+        return;
+      }
+      if (payment.status === "settled") {
+        // Paid without a checkout hop (the terms rule the path out; read
+        // it as done): close rather than offer a payment that exists.
+        handedOff = true;
+        onOpenChange(false);
         return;
       }
       setStage({
@@ -190,6 +206,33 @@ export function BillingWorkspaceCreationDialog({
       });
     } catch (cause) {
       if (cause instanceof WorkspaceNameConflictError) {
+        // A 409 on a name this dialog just submitted can be Desktop having
+        // created the Workspace while its answer never landed (a timeout,
+        // a malformed envelope). Re-read the list: if the actor now owns
+        // the name, offer the payment retry instead of "taken" — the user
+        // already owns a Workspace they cannot pay for otherwise.
+        await refreshWorkspaces({ details: false }).catch(() => undefined);
+        const owned = store
+          .get(workspacesAtom)
+          .find(
+            (candidate) =>
+              candidate.role === "Owner" &&
+              candidate.name.trim().toLowerCase() === trimmedName.toLowerCase()
+          );
+        if (owned != null) {
+          setStage({
+            error:
+              "The Workspace was created, but its payment was never started.",
+            kind: "payment-failed",
+            plan,
+            workspace: {
+              id: owned.id,
+              name: owned.name,
+              uid: owned.uid,
+            },
+          });
+          return;
+        }
         setTakenNames((names) => [...names, trimmedName]);
         setNameIssue("duplicate");
         setStage({ kind: "pick" });
@@ -221,6 +264,11 @@ export function BillingWorkspaceCreationDialog({
       if (payment.status === "started") {
         handedOff = true;
         handOffToStripe(workspace, payment);
+        return;
+      }
+      if (payment.status === "settled") {
+        handedOff = true;
+        onOpenChange(false);
         return;
       }
       setError(payment.error);
