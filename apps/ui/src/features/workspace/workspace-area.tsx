@@ -11,10 +11,8 @@ import { AreaShell } from "@/features/shell/area-shell";
 import {
   currentWorkspaceAtom,
   desktopDomainAtom,
-  kubeconfigAtom,
   sessionUserAtom,
 } from "@/lib/auth-store";
-import { routingDomainFromKubeconfig } from "@/lib/kubeconfig-routing-domain";
 
 import { useWorkspaceActions } from "./use-workspace-actions";
 import { useWorkspaceDetails } from "./use-workspace-details";
@@ -44,19 +42,14 @@ function WorkspaceAreaIcon() {
 
 /**
  * Desktop's cloud domain for the links the area builds (spec §B.2): the
- * SDK host config inside the iframe, else the kubeconfig's routing domain
- * (the card-management route derives it the same way server-side).
+ * SDK host config only, never the kubeconfig's apiserver host — that is
+ * not Desktop, and an invite link built on it points nowhere while still
+ * invalidating the previous code. An empty SDK domain means "cannot build
+ * links yet": the invite dialog refuses to mint, the same gate the
+ * Switcher applies (spec §C.6).
  */
 function useDesktopCloudDomain(): string {
-  const desktopDomain = useAtomValue(desktopDomainAtom).trim();
-  const kubeconfig = useAtomValue(kubeconfigAtom);
-  return useMemo(
-    () =>
-      desktopDomain === ""
-        ? routingDomainFromKubeconfig(kubeconfig)
-        : desktopDomain,
-    [desktopDomain, kubeconfig]
-  );
+  return useAtomValue(desktopDomainAtom).trim();
 }
 
 /**

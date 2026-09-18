@@ -20,6 +20,11 @@ const explorer = {
   devMockActive: false,
   /** What the next revalidation answers with; null keeps the list as is. */
   freshProjects: null as ProjectExplorerProject[] | null,
+  /**
+   * When set, the revalidation resolves this payload verbatim without
+   * touching the rendered list — the snapshot has not painted yet.
+   */
+  freshPayloadOnly: null as { projects: ProjectExplorerProject[] } | null,
   projects: [] as ProjectExplorerProject[],
   projectsLoaded: false,
   /** When set, the revalidation rejects — the SWR verdict never lands. */
@@ -48,12 +53,15 @@ mock.module("@/features/projects/explorer/use-projects-explorer", () => ({
         if (explorer.refreshFails) {
           return Promise.reject(new Error("offline"));
         }
+        if (explorer.freshPayloadOnly != null) {
+          return Promise.resolve(explorer.freshPayloadOnly);
+        }
         if (explorer.freshProjects != null) {
           explorer.projects = explorer.freshProjects;
           rerender((n) => n + 1);
         }
-        // SWR's mutate resolves with the fresh list on success.
-        return Promise.resolve(explorer.projects);
+        // SWR's mutate resolves with the raw `/api/projects` payload.
+        return Promise.resolve({ projects: explorer.projects });
       },
       states: { pinnedProjectIds: [], projects: explorer.projects },
     };
@@ -93,6 +101,7 @@ beforeEach(() => {
   route.replaced = [];
   explorer.devMockActive = false;
   explorer.freshProjects = null;
+  explorer.freshPayloadOnly = null;
   explorer.projects = [];
   explorer.projectsLoaded = false;
   explorer.refreshFails = false;
@@ -144,6 +153,20 @@ test("a refresh that fails confirms nothing: the page stays and no toast is serv
   explorer.projects = [project("alpha")];
   explorer.projectsLoaded = true;
   explorer.refreshFails = true;
+  await mountGuard();
+  assert.equal(explorer.refreshes, 1);
+  assert.deepEqual(route.replaced, []);
+  assert.deepEqual(toasts, []);
+});
+
+test("a payload that carries the Project holds the guard even before the rendered list paints", async () => {
+  route.pathname = "/project/created-elsewhere";
+  explorer.projects = [project("alpha")];
+  explorer.projectsLoaded = true;
+  // The revalidation found it, but the hook's snapshot still lacks it.
+  explorer.freshPayloadOnly = {
+    projects: [project("alpha"), project("created-elsewhere")],
+  };
   await mountGuard();
   assert.equal(explorer.refreshes, 1);
   assert.deepEqual(route.replaced, []);

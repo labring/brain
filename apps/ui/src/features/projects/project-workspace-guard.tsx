@@ -24,11 +24,40 @@ export const PROJECT_NOT_IN_WORKSPACE_NOTICE =
  * The list is an SWR cache that does not revalidate on focus, so a Project
  * created in another tab is absent from it until something refreshes. A
  * first "leave" verdict therefore revalidates once and only acts when the
- * refresh came back with a list that still lacks the Project — a real
- * Project is never bounced by a stale cache, and a refresh that failed
- * (401, 5xx, offline) confirms nothing, so the guard keeps standing rather
- * than judging from the stale verdict.
+ * revalidation's *payload* came back as a list that still lacks the
+ * Project — a real Project is never bounced by a stale cache or by a
+ * rendered snapshot that has not painted yet, and a refresh that failed
+ * (401, 5xx, offline) or answered an unusable shape confirms nothing, so
+ * the guard keeps standing rather than judging from the stale verdict.
  */
+/**
+ * The revalidation's payload — the raw `/api/projects` answer — or null
+ * when it did not come back as a usable list. The guard judges only the
+ * payload: the hook's rendered snapshot may not have painted yet.
+ */
+function freshProjectIdsOf(fresh: unknown): string[] | null {
+  if (typeof fresh !== "object" || fresh == null) {
+    return null;
+  }
+  const projects = (fresh as { projects?: unknown }).projects;
+  if (!Array.isArray(projects)) {
+    return null;
+  }
+  const ids: string[] = [];
+  for (const project of projects) {
+    if (
+      typeof project !== "object" ||
+      project == null ||
+      !("id" in project) ||
+      typeof (project as { id: unknown }).id !== "string"
+    ) {
+      return null;
+    }
+    ids.push((project as { id: string }).id);
+  }
+  return ids;
+}
+
 export function ProjectWorkspaceGuard() {
   const projectId = useProjectId();
   const router = useRouter();
@@ -59,9 +88,17 @@ export function ProjectWorkspaceGuard() {
     let cancelled = false;
     refreshProjects()
       .then((fresh) => {
-        if (!cancelled && fresh !== undefined) {
-          setRevalidatedFor(projectId);
+        if (cancelled) {
+          return;
         }
+        const freshIds = freshProjectIdsOf(fresh);
+        // Only a payload that came back as a list may confirm the verdict;
+        // one that carries the Project stays the guard's hand until the
+        // rendered snapshot flips the decision.
+        if (freshIds == null || freshIds.includes(projectId)) {
+          return;
+        }
+        setRevalidatedFor(projectId);
       })
       .catch(() => undefined);
     return () => {

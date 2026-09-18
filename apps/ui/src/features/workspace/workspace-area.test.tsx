@@ -1108,3 +1108,37 @@ test("Invite: without a Desktop domain no code is minted — a working link is n
   assert.equal(bySlot("workspace-invite-link"), null);
   assert.ok(toasts.includes(INVITE_LINK_NO_DESKTOP_NOTICE));
 });
+
+test("Invite: the kubeconfig's apiserver host is not Desktop — no link is built on it", async () => {
+  hydrate("owner", "uid-acme");
+  await mountArea("uid-acme");
+  getDefaultStore().set(desktopDomainAtom, "");
+  getDefaultStore().set(
+    kubeconfigAtom,
+    [
+      "apiVersion: v1",
+      "clusters:",
+      "- cluster:",
+      "    server: https://apiserver.test:6443",
+      "  name: c",
+      "contexts:",
+      "- context:",
+      "    cluster: c",
+      "    namespace: ns-acme",
+      "    user: u",
+      "  name: c",
+      "current-context: c",
+      "kind: Config",
+      "users:",
+      "- name: u",
+    ].join("\n")
+  );
+  await press(byLabel("Invite member"), "Invite member");
+  await press(
+    dialogAction("workspace-invite-dialog", "Copy invite link"),
+    "Copy invite link"
+  );
+  assert.equal(writesTo("/api/workspace/invite-link").length, 0);
+  assert.equal(bySlot("workspace-invite-link"), null);
+  assert.ok(toasts.includes(INVITE_LINK_NO_DESKTOP_NOTICE));
+});
