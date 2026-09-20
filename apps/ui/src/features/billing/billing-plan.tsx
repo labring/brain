@@ -237,17 +237,19 @@ export function BillingPlanWorkflow({
       // is spent on the first read — any return for the recorded Workspace
       // spends it, so an abandoned creation Checkout never rewords a later
       // plan change for the same Workspace. The conclusion is a creation
-      // only when the recorded pay id (when Desktop's answer carried one)
-      // is this return's; a plan change pays under its own. A creation's
-      // recorded return route belongs to the Workspace the creation left
-      // (spec §G.5), so close returns home; a plan change came back to the
-      // same Workspace and keeps its own.
+      // only when the recorded pay id is this return's — fail closed, so a
+      // record without one (Desktop omitted it, or a legacy record) reads
+      // as the safer plan-change wording rather than rewording later
+      // returns as creations. A creation's recorded return route belongs to
+      // the Workspace the creation left (spec §G.5), so close returns home;
+      // a plan change came back to the same Workspace and keeps its own.
       const pending = readPendingWorkspaceCreation();
       const recordedHere =
         pending != null && pending.workspaceId === stripeReturn.workspaceId;
       const created =
         recordedHere &&
-        (pending?.payId == null || pending.payId === stripeReturn.payId);
+        pending?.payId != null &&
+        pending.payId === stripeReturn.payId;
       if (recordedHere) {
         consumePendingWorkspaceCreation(stripeReturn.workspaceId);
       }

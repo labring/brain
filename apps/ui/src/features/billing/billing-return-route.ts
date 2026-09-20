@@ -40,8 +40,9 @@ export function clearBillingReturnRoute(): void {
 /**
  * Whether the page is a Stripe *success* return of a Workspace this tab was
  * creating: the pending record's Workspace matches the URL's, and its pay
- * id — when Desktop's answer carried one — matches too, so a later plan
- * change for the same Workspace never reads as a creation.
+ * id is a non-empty match for the URL's — fail closed, so a record without
+ * one (Desktop omitted it, or a legacy record) never rewords a later return
+ * as a creation landing.
  */
 function arrivedFromCreationLanding(): boolean {
   if (typeof window === "undefined") {
@@ -61,7 +62,7 @@ function arrivedFromCreationLanding(): boolean {
     return false;
   }
   const payId = query.get("payId");
-  return pending.payId == null || pending.payId === payId;
+  return pending.payId != null && pending.payId === payId;
 }
 
 export function readBillingReturnRoute(): string {

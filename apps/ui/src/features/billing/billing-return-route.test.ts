@@ -96,6 +96,17 @@ test("a later plan change for an abandoned creation pays under its own id: it re
   });
 });
 
+test("a record without a pay id never reads as a creation landing: fail closed", () => {
+  withWindow({ pathname: "/project/abc", search: "" }, () => {
+    recordBillingReturnRoute();
+    // Desktop's checkout answer carried no pay id (or a legacy record).
+    recordPendingWorkspaceCreation("ns-new");
+    window.location.pathname = "/billing";
+    window.location.search = "?stripeState=success&payId=p1&workspaceId=ns-new";
+    assert.equal(readBillingReturnRoute(), "/project/abc");
+  });
+});
+
 test("a plan change's Stripe return keeps the entry point: it is the same Workspace", () => {
   withWindow({ pathname: "/project/abc", search: "" }, () => {
     recordBillingReturnRoute();

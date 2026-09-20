@@ -325,7 +325,7 @@ test("a Stripe return for the Workspace this tab created concludes as a creation
     // a Workspace, and came back through Desktop's Stripe callback.
     window.history.replaceState({}, "", "/project/abc");
     recordBillingReturnRoute();
-    recordPendingWorkspaceCreation("ns-new00001");
+    recordPendingWorkspaceCreation("ns-new00001", "payment-1");
     window.history.replaceState(
       {},
       "",
@@ -478,6 +478,63 @@ test("a later plan change for an abandoned creation pays under its own id and re
       );
       // The entry point survives — this was a plan change — and the stale
       // creation record is spent.
+      assert.equal(readBillingReturnRoute(), "/project/abc");
+      assert.equal(consumePendingWorkspaceCreation("workspace-a"), false);
+    } finally {
+      await act(() => rendered?.unmount());
+    }
+  });
+});
+
+test("a record without a pay id concludes as a plan change: fail closed", async () => {
+  await withTestDom(async (act) => {
+    const { BillingPlanWorkflow } = await import("./billing-plan");
+    const refreshedSnapshot: BillingPlanSnapshot = {
+      ...SNAPSHOT,
+      current: {
+        ...SNAPSHOT.current,
+        planName: "Team",
+        priceMicroUnits: 50_000_000,
+        resources: [{ label: "CPU", value: "12" }],
+      },
+    };
+    let rendered: ReturnType<typeof render> | undefined;
+
+    window.history.replaceState({}, "", "/project/abc");
+    recordBillingReturnRoute();
+    // Desktop's checkout answer carried no pay id (or a legacy record):
+    // never reword a return as a creation on a wildcard.
+    recordPendingWorkspaceCreation("workspace-a");
+    window.history.replaceState(
+      {},
+      "",
+      "/billing?stripeState=success&payId=payment-1&workspaceId=workspace-a"
+    );
+
+    try {
+      await act(() => {
+        rendered = render(
+          <BillingPlanWorkflow
+            balance={<span>$3.00</span>}
+            credentials={{
+              appToken: "desktop-app-token",
+              kubeconfig: "apiVersion: v1",
+            }}
+            currency="usd"
+            gpuEnabled
+            onRefreshSnapshot={() => Promise.resolve(refreshedSnapshot)}
+            replaceUrl={() => undefined}
+            snapshot={SNAPSHOT}
+            stripeReturn={{ payId: "payment-1", workspaceId: "workspace-a" }}
+          />
+        );
+      });
+
+      assert.ok(rendered?.getByRole("dialog", { name: "Team" }));
+      assert.equal(
+        (rendered?.baseElement.textContent ?? "").includes("Workspace created"),
+        false
+      );
       assert.equal(readBillingReturnRoute(), "/project/abc");
       assert.equal(consumePendingWorkspaceCreation("workspace-a"), false);
     } finally {
