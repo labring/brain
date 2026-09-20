@@ -25,7 +25,6 @@ function subscription(
     lifecycle: "active",
     planName: "Hobby",
     recoveryVoice: "renew",
-    role: "OWNER",
     warningDeadlineAt: null,
     warningStage: null,
     ...overrides,
@@ -146,7 +145,6 @@ test("a missing deadline speaks of deletion without inventing a date", () => {
 const PAYG: Partial<WorkspaceSubscriptionSummary> = {
   isPayg: true,
   planName: "PAYG",
-  role: null,
 };
 
 test("Account Debt lights up on a billed PAYG workspace at zero available and never mentions a subscription", () => {

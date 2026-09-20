@@ -1,5 +1,10 @@
 # Key Personal Resources by the Global User UID
 
+## Status
+
+Accepted; the token-minting frequency premise and the local-development
+minting paragraph are revised by ADR-0083.
+
 Personal resources (Assistant Conversations, GitHub Connections) have been
 owned by `(namespace, crName)` since ADR-0056. `crName` is a per-region
 identity: the same human holds a different `crName` in every region, so

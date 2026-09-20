@@ -12,12 +12,13 @@ const { BillingEscalationDialog } = await import(
 const { OnboardingGate } = await import(
   "@/features/onboarding/onboarding-gate"
 );
+const { SessionBootstrap } = await import(
+  "@/features/session/session-bootstrap"
+);
 const { StatusHintBanner } = await import(
   "@/features/status-hint/status-hint-banner"
 );
-const { DevboxBootstrap, SealosSdkBootstrap } = await import(
-  "@/features/shell/auth-bootstrap"
-);
+const { DevboxBootstrap } = await import("@/features/shell/devbox-bootstrap");
 const { default: ProjectLayout } = await import("./layout");
 
 /**
@@ -51,7 +52,14 @@ test("project layout mounts the Devbox warmup", () => {
   const mounted = mountedComponents(ProjectLayout({ children: null }));
 
   assert.ok(mounted.has(DevboxBootstrap), "DevboxBootstrap is mounted");
-  assert.ok(mounted.has(SealosSdkBootstrap), "SealosSdkBootstrap is mounted");
+});
+
+// The Brain Session (ADR-0083) is the layout's only credential source; an
+// unmounted bootstrap leaves every credential atom empty forever.
+test("project layout mounts the session bootstrap", () => {
+  const mounted = mountedComponents(ProjectLayout({ children: null }));
+
+  assert.ok(mounted.has(SessionBootstrap), "SessionBootstrap is mounted");
 });
 
 // The Onboarding Gate covers the whole console surface from this layout

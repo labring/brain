@@ -1,19 +1,17 @@
 import { BillingEscalationDialog } from "@/features/billing-escalation/billing-escalation-dialog";
 import { OnboardingGate } from "@/features/onboarding/onboarding-gate";
+import { SessionBootstrap } from "@/features/session/session-bootstrap";
 import {
   AppShellChrome,
   AppShellSidebar,
   AppShellView,
 } from "@/features/shell/app-shell";
 import { AppSidebarCookieBridge } from "@/features/shell/app-sidebar-cookie-bridge";
-import AuthBootstrap, {
-  DevboxBootstrap,
-  SealosSdkBootstrap,
-} from "@/features/shell/auth-bootstrap";
+import { DevboxBootstrap } from "@/features/shell/devbox-bootstrap";
 import ProjectWorkspaceLayout from "@/features/shell/project-workspace-layout";
 import { StatusHintBanner } from "@/features/status-hint/status-hint-banner";
 
-/** Desktop iframe auth is resolved on the client through the Sealos SDK. */
+/** The Brain Session is established on the client from the shared login cookie (ADR-0083). */
 export const dynamic = "force-dynamic";
 
 export default function ProjectLayout({
@@ -23,8 +21,7 @@ export default function ProjectLayout({
 }>) {
   return (
     <AppShellChrome>
-      <AuthBootstrap serverEncodedKubeconfig="" serverNamespace="" />
-      <SealosSdkBootstrap />
+      <SessionBootstrap />
       <DevboxBootstrap />
       <OnboardingGate />
       <AppSidebarCookieBridge>

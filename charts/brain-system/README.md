@@ -89,7 +89,9 @@ without renaming its Kubernetes resources.
 
 When left empty, `ui.env.API_URL` and `ui.env.APP_URL` are derived from the API/UI Ingress hosts rendered by this chart.
 
-`ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty. `ui.env.ACCOUNT_API_BASE_URL` derives to the in-cluster `http://account-service.account-system.svc:2333` address when left empty.
+`ui.env.DATABASE_URL` and `api.env.DATABASE_URL` are derived from the chart-created `brain-pg-conn-credential` Secret when left empty. `api.env.DB_PUBLIC_HOST`, `api.env.WHODB_URL`, and `ui.env.DEVBOX_API_BASE_URL` are also derived from the release namespace or platform cloud domain when left empty. `ui.env.ACCOUNT_API_BASE_URL` derives to the in-cluster `http://account-service.account-system.svc:2333` address when left empty. `ui.env.DESKTOP_API_BASE_URL` derives to the in-cluster Desktop frontend Service `http://sealos-desktop.sealos.svc:3000` when left empty; the UI server exchanges the shared Desktop login cookie there to establish the Brain Session (ADR-0083), so the page never calls Desktop itself.
+
+The Brain Session also depends on the Desktop deployment: Desktop's postMessage `allowedOrigins` (the `desktop-frontend` chart's `desktopConfig.allowedOrigins`, or `allowedAllOrigins`) must include the Brain UI origin (`https://<brain prefix>.<cloudDomain>`), which is not in Desktop's default allowlist, or the SDK handshake that reads Desktop's current Workspace is refused.
 
 `ui.env.BILLING_CURRENCY` controls the Billing Area's cluster-level display currency and defaults to `usd`. `ui.env.BILLING_GPU_ENABLED` controls GPU quota and pricing rows and defaults to `false`. Both values are read by the UI server at request time.
 

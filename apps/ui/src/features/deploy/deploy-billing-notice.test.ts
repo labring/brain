@@ -41,7 +41,6 @@ const PAYG: WorkspaceSubscriptionSummary = {
   lifecycle: "active",
   planName: "PAYG",
   recoveryVoice: "renew",
-  role: null,
   warningDeadlineAt: null,
   warningStage: null,
 };
@@ -49,7 +48,6 @@ const HOBBY: WorkspaceSubscriptionSummary = {
   ...PAYG,
   isPayg: false,
   planName: "Hobby",
-  role: "OWNER",
 };
 
 const QUIET: StatusHintInputs = {

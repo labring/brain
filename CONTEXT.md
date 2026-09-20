@@ -22,9 +22,15 @@ _Avoid_: Favorite Project, starred Project, recent Project.
 
 ### App Sidebar
 
-The persistent left-edge product navigation surface containing product-level navigation, Project navigation (Pinned Projects and all other Projects), and app-level actions. It is outside the Project Canvas and is not a Side Pane or a Project list. It has exactly two user-controlled states, and these are their canonical names: **Expanded** (icons with text labels) and **Collapsed** (an icon rail with tooltips). Before the user has ever changed it, the App Sidebar is Collapsed; thereafter the user's last chosen state is remembered per browser. State changes only by explicit user action and is independent of viewport width.
+The persistent left-edge product navigation surface containing product-level navigation, Project navigation (Pinned Projects and all other Projects), and app-level actions. It is outside the Project Canvas and is not a Side Pane or a Project list. It has exactly two user-controlled states, and these are their canonical names: **Expanded** (icons with text labels) and **Collapsed** (an icon rail with tooltips). Before the user has ever changed it, the App Sidebar is Collapsed; thereafter the user's last chosen state is remembered per browser. State changes only by explicit user action and is independent of viewport width. Its brand slot — the Sealos mark at the top — is the App Sidebar's only collapse/expand control: it shows the mark while the pointer is away and becomes the control (collapse when Expanded, expand when Collapsed) while the pointer is over the App Sidebar or the control has focus; there is no separate collapse button.
 
-_Avoid_: Project list, left Side Pane, Project Shortcut (retired term), open/closed sidebar, full/mini sidebar, rail mode.
+_Avoid_: Project list, left Side Pane, Project Shortcut (retired term), open/closed sidebar, full/mini sidebar, rail mode, collapse button (as a control apart from the brand slot).
+
+### Workspace Switcher
+
+The row under the App Sidebar's brand slot that names the current Workspace — its Workspace avatar, display name, and the plan of its Workspace Subscription (Pay-As-You-Go when it has none) — and the popover that row opens: a card for the current Workspace (avatar, Personal or the user's Workspace Role, plan), the other Workspaces the user belongs to in the current region with their Workspace Role and plan, a create-Workspace row, and the manage row that is the Workspace Area's single entry. The plan is a Workspace fact and shows here, not on the account row; when the Workspace Subscription needs attention (payment-due, cancelling) the row grows a second line carrying that hint. In the Collapsed rail only the avatar remains and still opens the popover. It carries no pending-invitation count and no Sealos wordmark. Choosing another Workspace here is the only action that switches; afterwards the user stays on the same page of the Billing Area or Workspace Area, and lands on the Project list from anywhere inside a Project.
+
+_Avoid_: team switcher, namespace switcher, workspace dropdown, workspace menu.
 
 ### Sealos Desktop Entry
 
@@ -238,11 +244,47 @@ The condition where a domain's observed desired configuration changes to a value
 
 ## Authorization & Identity
 
+### Workspace
+
+The user-visible collaboration boundary on the platform: one Kubernetes `ns-…` namespace and the Desktop "team" it corresponds to, holding Projects, workloads, and a Workspace Subscription. Every user has exactly one **Personal Workspace** — created with the account, never deletable, never transferable — and may own or belong to any number of **Team Workspaces**. A Workspace is identified by its stable uid; its display name is a label users may change.
+
+_Avoid_: team, namespace (as user-visible words), ns.
+
+### Workspace Role
+
+The membership level a Workspace Actor holds in one Workspace: Owner (exactly one per Workspace, the Workspace Owner), Manager, or Developer. It comes from the platform's membership record for that Workspace, not from the subscription record's role field, and a user's role differs per Workspace.
+
+_Avoid_: permission level, team role, subscription role.
+
+### Workspace Area
+
+The product area under the `/workspace` URL prefix where users manage Workspaces themselves — display name, members and their Workspace Roles, invitations, ownership, and deletion. It is entered from a single entry, the manage row in the App Sidebar's Workspace switcher, and presented as one surface: a list of every Workspace the user belongs to beside the detail of the Managed Workspace. Subscription and cost are not its business; those belong to the Billing Area — and so does Workspace Creation, which the list's create row merely opens.
+
+_Avoid_: team center, workspace settings, members page, manage dialog.
+
+### Managed Workspace
+
+The Workspace whose detail the Workspace Area is showing and operating on, chosen from the area's list or named in its URL and defaulting to the current Workspace. It is a selection local to the Workspace Area: changing it never switches the current Workspace that the rest of Brain works in, so a user can manage — or delete — a Workspace they are not currently in.
+
+_Avoid_: selected workspace, current Workspace (for the one being managed), target workspace.
+
+### Workspace Invite Link
+
+The only way a member joins a Team Workspace: a link an Owner or Manager generates in the Workspace Area for one Workspace Role, which the invitee opens and accepts on the Sealos Desktop. It is short-lived, and generating another for the same Workspace and role replaces it. Accepting adds the invitee to the Workspace at once; there is no pending state, so a Workspace's member list never shows someone who has not yet joined, and Brain holds no inbox of invitations awaiting the user.
+
+_Avoid_: invitation (as a pending object), invite by user ID, pending invite, invite request.
+
 ### Workspace Actor
 
 The verified human identity acting within a workspace namespace, established by cross-checking the request kubeconfig's live workspace access against the desktop-minted proof binding it to the global user id. Actor verification and namespace authorization are separate checks: one establishes who is acting, the other where that actor may act. A Desktop session user id, an unverified app-token claim, or a namespace-authorized workload ServiceAccount is not a Workspace Actor.
 
 _Avoid_: Desktop user id, namespace member id.
+
+### Brain Session
+
+The set of Desktop-issued credentials Brain holds in one browser tab — the regional token, the app token, and the kubeconfig — exchanged from Desktop's shared login cookie and kept only in page memory; Brain never persists it. The Workspace it points at is Desktop's current Workspace, which Brain follows rather than remembers.
+
+_Avoid_: login, Desktop session, SDK session, token (unqualified).
 
 ## Deployment
 
@@ -664,9 +706,15 @@ Account-level money and workspace subscriptions, owned by the platform's account
 
 ### Billing Area
 
-The product area under the `/billing` URL prefix where users manage the current workspace's Workspace Subscription and inspect costs, usage quota, and pricing. It is entered from a single entry — the Billing row in the App Sidebar's account popover — and presented as one surface with Plan, Costs, Usage, and Pricing tabs; the Plan view is the area's index and the landing point of a Stripe Checkout Round-Trip.
+The product area under the `/billing` URL prefix where users manage the current workspace's Workspace Subscription and inspect costs, usage quota, and pricing, and where Workspace Creation happens. It is entered from the Billing row in the App Sidebar's account popover, or in creation mode from a create row (Workspace Switcher popover, Workspace Area list), and presented as one surface with Plan, Costs, Usage, and Pricing tabs; the Plan view is the area's index and the landing point of a Stripe Checkout Round-Trip.
 
 _Avoid_: cost center, billing app, separate billing pages.
+
+### Workspace Creation
+
+Bringing a new Team Workspace into being from Brain: the user names it and chooses its initial Subscription Plan in one step, in the Billing Area's creation mode, and pays through a Stripe Checkout Round-Trip that lands in the new Workspace. A Workspace is created the moment its name and plan are submitted — before payment — so an abandoned payment leaves a Workspace that exists without a Workspace Subscription; the platform reports it as Pay-As-You-Go and it subscribes like any other. Creation is open to every signed-in user and is never gated by the current Workspace's subscription state. Brain creates no Pay-As-You-Go Workspace: a plan is always chosen, which is why creation lives beside subscription rather than in the Workspace Area.
+
+_Avoid_: new team, add workspace, create mode (as the name of the concept), PAYG workspace creation.
 
 ### Billing Region
 

@@ -6,11 +6,12 @@ or iframe mode.
 
 ## Prerequisites
 
-1. Configure `apps/ui/.env.local` with a working
-   `NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG`, `DATABASE_URL`, Devbox deployment
-   settings, and GitHub OAuth settings.
-2. Configure `JWT_INTERNAL`, then run `bun scripts/mint-dev-app-token.mjs` from
-   `apps/ui` and set the emitted token as `NEXT_PUBLIC_DEV_APP_TOKEN`.
+1. Configure `apps/ui/.env.local` with a working `DATABASE_URL`, Devbox
+   deployment settings, and GitHub OAuth settings.
+2. Configure the Brain Session path (ADR-0083): `DESKTOP_API_BASE_URL`
+   pointing at a staging Desktop, that Desktop's real `JWT_INTERNAL`, and
+   `DEV_GLOBAL_TOKEN` copied from the `sealos_auth_token` cookie of a browser
+   signed in to it. The App Token is then minted by Desktop at every start.
 3. Start Brain locally with `bun dev` from the repository root.
 4. Connect GitHub once in the local UI for the development user represented by
    the App Token.

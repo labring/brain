@@ -12,6 +12,8 @@
  * typos fail loud instead of silently serving real data.
  */
 
+import { cookieValueFromHeader } from "@/lib/cookie-header";
+
 const OFF_PREFIX = "off:";
 
 export interface DevMockState<S extends string> {
@@ -50,26 +52,6 @@ export interface DevMockCookie<S extends string> extends DevMockCookieDef<S> {
   setCookieHeader(state: DevMockState<S>): string;
 }
 
-function cookieValue(header: string | null, name: string): string | undefined {
-  for (const pair of (header ?? "").split(";")) {
-    const separator = pair.indexOf("=");
-    if (separator === -1) {
-      continue;
-    }
-    if (pair.slice(0, separator).trim() === name) {
-      const raw = pair.slice(separator + 1).trim();
-      try {
-        return decodeURIComponent(raw);
-      } catch {
-        // A malformed %-sequence (some other cookie's doing) must surface as
-        // an invalid value, not throw out of every load().
-        return raw;
-      }
-    }
-  }
-  return undefined;
-}
-
 export function defineDevMockCookie<S extends string>(
   def: DevMockCookieDef<S>
 ): DevMockCookie<S> {
@@ -82,9 +64,9 @@ export function defineDevMockCookie<S extends string>(
     documentCookie: (state) =>
       `${def.name}=${format(state)}; path=/; samesite=lax`,
     format,
-    fromCookieHeader: (header) => cookieValue(header, def.name),
+    fromCookieHeader: (header) => cookieValueFromHeader(header, def.name),
     fromRequest: (request) =>
-      cookieValue(request.headers.get("cookie"), def.name),
+      cookieValueFromHeader(request.headers.get("cookie"), def.name),
     is,
     parse: (raw) => {
       const value = raw?.trim() ?? "";

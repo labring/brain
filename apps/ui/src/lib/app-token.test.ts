@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 import { SignJWT } from "jose";
@@ -342,64 +341,4 @@ test("reads the bare app token from the request header", () => {
     appTokenFromRequest(new Request("https://brain.test/api/chat/threads")),
     ""
   );
-});
-
-test("a script-minted dev token passes the production verifier for the dev kubeconfig", () => {
-  const saJwt = [
-    Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString(
-      "base64url"
-    ),
-    Buffer.from(
-      JSON.stringify({ sub: `system:serviceaccount:user-system:${CR_NAME}` })
-    ).toString("base64url"),
-    "signature",
-  ].join(".");
-  const devKubeconfig = encodeURIComponent(`
-apiVersion: v1
-clusters:
-  - name: cluster
-    cluster:
-      server: https://example.test
-contexts:
-  - name: current
-    context:
-      cluster: cluster
-      namespace: ns-dev
-      user: dev-user
-current-context: current
-users:
-  - name: dev-user
-    user:
-      token: ${saJwt}
-`);
-
-  const minted = spawnSync(
-    process.execPath,
-    ["scripts/mint-dev-app-token.mjs"],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        JWT_INTERNAL: SECRET,
-        NEXT_PUBLIC_DEV_ENCODED_KUBECONFIG: devKubeconfig,
-      },
-    }
-  );
-  assert.equal(minted.status, 0, minted.stderr);
-  const token = minted.stdout.trim();
-  assert.notEqual(token, "");
-
-  return verifyAppTokenBinding({
-    config: { secret: SECRET },
-    expectedCrName: CR_NAME,
-    token,
-  }).then((verification) => {
-    assert.equal(verification.ok, true);
-    if (verification.ok) {
-      assert.equal(verification.binding.crName, CR_NAME);
-      assert.equal(verification.expired, false);
-      assert.notEqual(verification.binding.mintedAt, null);
-      assert.notEqual(verification.binding.userUid, "");
-    }
-  });
 });

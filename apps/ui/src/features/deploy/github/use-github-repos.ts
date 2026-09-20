@@ -1,29 +1,23 @@
 "use client";
 
-import { useAtomValue } from "jotai";
 import useSWR from "swr";
 import type { GithubDeployerRepo } from "@/features/deploy/github-deployer/github-deployer.types";
-import { appTokenAtom, kubeconfigAtom } from "@/lib/auth-store";
+import {
+  SESSION_SWR_KEYS,
+  type SessionCredentials,
+} from "@/features/session/swr-keys";
+import { useSessionCredentials } from "@/features/session/use-session-credentials";
 import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 interface GithubReposResponse {
   repos: GithubDeployerRepo[];
 }
 
-export function githubReposSWRKey(input: {
-  appToken: string;
-  kubeconfig: string;
-  namespace: string;
-}) {
+export function githubReposSWRKey(input: SessionCredentials) {
   const namespace = input.namespace.trim();
   const kubeconfig = input.kubeconfig.trim();
   return namespace !== "" && kubeconfig !== ""
-    ? ([
-        "github-user-repos",
-        namespace,
-        input.kubeconfig,
-        input.appToken,
-      ] as const)
+    ? SESSION_SWR_KEYS.githubUserRepos(input)
     : null;
 }
 
@@ -52,11 +46,11 @@ export function useGithubRepos(input: {
   isAuthorized: boolean;
   namespace: string | undefined;
 }) {
-  const appToken = useAtomValue(appTokenAtom);
-  const kubeconfig = useAtomValue(kubeconfigAtom);
+  const session = useSessionCredentials();
+  const { appToken, kubeconfig } = session;
   const namespace = input.namespace?.trim() ?? "";
   const swrKey = input.isAuthorized
-    ? githubReposSWRKey({ appToken, kubeconfig, namespace })
+    ? githubReposSWRKey({ ...session, namespace })
     : null;
 
   const { data, error, isLoading, mutate } = useSWR(
