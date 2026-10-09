@@ -5,7 +5,9 @@ import { createSealosApp, sealosApp } from "@labring/sealos-desktop-sdk/app";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useHydrateAtoms } from "jotai/utils";
 import { useEffect } from "react";
+import { configureBrainAnalyticsTransport } from "@/features/analytics/brain-analytics-transport";
 import { scheduleChatDevboxWarmup } from "@/features/chat/devbox/devbox.actions";
+import { readMarketingAttribution } from "@/features/marketing/attribution-client";
 import { applySealosSdkHydration } from "@/features/shell/auth-bootstrap-core";
 import {
   appTokenAtom,
@@ -87,6 +89,29 @@ export function SealosSdkBootstrap() {
   useEffect(() => {
     let cancelled = false;
     const cleanup = createSealosApp();
+    readMarketingAttribution();
+    if (window.parent !== window) {
+      sealosApp
+        .getHostConfig()
+        .then((config) => {
+          if (cancelled) {
+            return;
+          }
+          const supported =
+            "analytics" in config.features &&
+            config.features.analytics === true;
+          configureBrainAnalyticsTransport(
+            supported
+              ? (payload) => sealosApp.runEvents("trackAnalyticsEvent", payload)
+              : null
+          );
+        })
+        .catch(() => {
+          if (!cancelled) {
+            configureBrainAnalyticsTransport(null);
+          }
+        });
+    }
     let unsubscribeLanguage: (() => void) | undefined;
 
     const hydrate = async () => {

@@ -1,12 +1,12 @@
 "use client";
 
-import { sendGTMEvent } from "@next/third-parties/google";
 import type { CancellationReasonKey } from "@/features/billing/cancellation-survey/reasons";
 import type {
   ProjectDrawerSurfaceEntry,
   ProjectMainSurfaceEntry,
   ProjectSideSurfaceEntry,
 } from "@/features/panes/surface-state";
+import { sendBrainAnalyticsEvent } from "./brain-analytics-transport";
 
 export const BRAIN_GTM_MAX_PAYLOAD_BYTES = 2048;
 
@@ -133,7 +133,7 @@ export function trackBrainGtmEvent(event: BrainGtmEvent): boolean {
       console.warn("[Brain GTM] Event payload exceeds the 2KB limit.", payload);
       return false;
     }
-    sendGTMEvent(payload);
+    sendBrainAnalyticsEvent(payload);
     return true;
   } catch (error) {
     try {
