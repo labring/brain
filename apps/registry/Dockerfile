@@ -2,6 +2,9 @@
 # 1. Builder – install the frozen workspace, build Next.js
 # ------------------------------------------------------------------
 FROM oven/bun:1.3.5 AS builder
+# Without Node, Bun's fallback runs Next.js under Bun and crashes while
+# loading the production page runtime. Match the runner's Node major.
+COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
 
 RUN apt-get update && \
@@ -15,7 +18,7 @@ RUN apt-get update && \
 COPY . .
 RUN bun install --frozen-lockfile
 
-RUN cd apps/registry && bun run build && \
+RUN cd apps/registry && /usr/local/bin/node node_modules/next/dist/bin/next build && \
     rm -rf node_modules/.cache && \
     rm -rf .next/cache
 

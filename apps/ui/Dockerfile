@@ -1,7 +1,10 @@
 # ------------------------------------------------------------------
-# 1. Base – Bun (shared WORKDIR)
+# 1. Base – Bun for dependency installation, Node for Next.js
 # ------------------------------------------------------------------
 FROM oven/bun:1.3.5 AS base
+# Without Node, Bun's fallback runs Next.js under Bun and crashes while
+# loading the production page runtime. Match the runner's Node major.
+COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 WORKDIR /app
 
 # ------------------------------------------------------------------
@@ -32,7 +35,7 @@ ENV NEXT_PUBLIC_DEMO_MOCK=$NEXT_PUBLIC_DEMO_MOCK
 
 # Docker COPY requires the source path even when the app has no public assets.
 RUN mkdir -p apps/ui/public && \
-    cd apps/ui && bun run build && \
+    cd apps/ui && /usr/local/bin/node node_modules/next/dist/bin/next build && \
     rm -rf node_modules/.cache && \
     rm -rf .next/cache
 
