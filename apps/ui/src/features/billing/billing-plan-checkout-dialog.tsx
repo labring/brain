@@ -246,7 +246,7 @@ function paymentStatusCopy(status: PaymentWaitStatus): PaymentStatusCopy {
     icon: (
       <LoaderCircle
         aria-hidden
-        className="size-10 animate-spin text-blue-400 motion-reduce:[animation-duration:3s]"
+        className="size-10 animate-spin text-blue-600 dark:text-blue-400 motion-reduce:[animation-duration:3s]"
         strokeWidth={1.5}
       />
     ),
@@ -411,7 +411,7 @@ function DowngradeStage({
   return (
     <>
       <AppDialog.Header>
-        <AppDialog.Icon className="text-blue-400">
+        <AppDialog.Icon className="text-blue-600 dark:text-blue-400">
           <CircleCheckBig aria-hidden strokeWidth={1.75} />
         </AppDialog.Icon>
         <AppDialog.Title>Downgrade to {plan.name}</AppDialog.Title>
@@ -454,7 +454,7 @@ function DowngradeStage({
           <p className="text-muted-foreground text-sm">
             You are now in the process of changing your subscription, and the
             change will{" "}
-            <span className="font-medium text-blue-400">
+            <span className="font-medium text-blue-600 dark:text-blue-400">
               {"take effect on the following month's subscription date."}
             </span>
           </p>
@@ -569,7 +569,7 @@ function PromotionCodeField({
   if (!open) {
     return (
       <AppButton
-        className="h-auto self-start p-0 text-blue-400 hover:text-blue-400"
+        className="h-auto self-start p-0 text-blue-600 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-400"
         disabled={disabled}
         onClick={() => setOpen(true)}
         variant="link"
@@ -782,10 +782,7 @@ function QuoteStage({
                         strokeWidth={1.75}
                       />
                     </TooltipTrigger>
-                    <TooltipContent
-                      className="dark"
-                      positionerClassName="z-[52]"
-                    >
+                    <TooltipContent positionerClassName="z-[52]">
                       Prorated charge for the remainder of the current billing
                       cycle.
                     </TooltipContent>
@@ -814,7 +811,7 @@ function QuoteStage({
               )}
               {card != null && onManageCard != null ? (
                 <AppButton
-                  className="h-auto self-start p-0 text-blue-400 hover:text-blue-400"
+                  className="h-auto self-start p-0 text-blue-600 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-400"
                   onClick={onManageCard}
                   variant="link"
                 >

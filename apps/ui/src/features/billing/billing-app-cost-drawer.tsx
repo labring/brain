@@ -349,7 +349,7 @@ export function BillingAppCostDrawer({
                           key={`day-${tableRow.day}`}
                         >
                           <TableCell
-                            className="bg-white/8 font-normal text-foreground"
+                            className="bg-muted font-normal text-foreground dark:bg-white/8"
                             colSpan={COLUMN_COUNT}
                           >
                             <span className="sticky left-4 inline-block">
