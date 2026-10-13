@@ -1,6 +1,18 @@
 name: Docker Images
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/docker-images.yml"
+      - ".dockerignore"
+      - "apps/ui/Dockerfile"
+      - "apps/ui/package.json"
+      - "apps/ui/next.config.mjs"
+      - "apps/registry/Dockerfile"
+      - "apps/registry/package.json"
+      - "apps/registry/next.config.mjs"
+      - "package.json"
+      - "bun.lock"
   push:
     branches:
       - main
@@ -59,6 +71,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -85,7 +98,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
