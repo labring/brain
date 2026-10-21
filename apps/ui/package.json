@@ -27,7 +27,7 @@
     "@langfuse/otel": "5.11.0",
     "@langfuse/tracing": "5.11.0",
     "@langfuse/vercel-ai-sdk": "5.11.0",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@monaco-editor/react": "^4.7.0",
     "@next/third-parties": "16.3.6",
     "@opentelemetry/sdk-node": "0.222.0",
