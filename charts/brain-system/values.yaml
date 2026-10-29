@@ -127,6 +127,10 @@ ui:
     JWT_INTERNAL: ""
     MARKETING_EVENTS_INGEST_SECRET: ""
     MARKETING_CONSENT_SIGNING_KEY: ""
+    # Optional trusted Desktop authority for acquisition lookup + lifecycle delivery.
+    # Configure together; the secret must match the authority's server-only setting.
+    MARKETING_ATTRIBUTION_API_BASE_URL: ""
+    ACQUISITION_INGEST_SECRET: ""
     GITHUB_APP_ID: ""
     GITHUB_APP_PRIVATE_KEY: ""
     # Optional. Model id for GitHub Deploy Codex gateway sessions. Blank uses

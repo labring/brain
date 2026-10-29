@@ -34,6 +34,7 @@ import {
   createDeployTaskInputSchema,
   deployTaskStatusSchema,
 } from "@/features/deploy/task/types";
+import { deploymentAccountAttribution } from "@/features/marketing/acquisition-client";
 import { marketingAttributionSnapshotSchema } from "@/features/marketing/types";
 import { appTokenFromRequest } from "@/lib/app-token";
 import { IdentityBindingSupersededError } from "@/lib/identity-fingerprint-core";
@@ -290,7 +291,7 @@ export async function POST(request: Request) {
       : marketingAttributionSnapshotSchema.safeParse(
           parsed.data.marketingAttribution
         );
-  const marketingAttribution = attributionParse?.success
+  let marketingAttribution = attributionParse?.success
     ? attributionParse.data
     : undefined;
   const bindingResolution = await resolveCredentialBinding({
@@ -306,6 +307,11 @@ export async function POST(request: Request) {
   }
   const { billingActor, credentialBinding, marketingConsentSubject } =
     bindingResolution;
+
+  marketingAttribution = await deploymentAccountAttribution(
+    marketingConsentSubject,
+    marketingAttribution
+  );
 
   const {
     encodedKubeconfig,

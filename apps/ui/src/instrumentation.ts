@@ -49,6 +49,10 @@ export async function register() {
   if (!process.env.DATABASE_URL?.trim()) {
     return;
   }
+  const { startMarketingLifecyclePublisher } = await import(
+    "@/features/marketing/lifecycle-publisher"
+  );
+  startMarketingLifecyclePublisher();
   try {
     const { startDeployTaskEngine } = await import(
       "@/features/deploy/task/engine/server"
