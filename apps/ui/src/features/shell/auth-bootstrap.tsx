@@ -19,6 +19,7 @@ import {
   namespaceAtom,
 } from "@/lib/auth-store";
 import { namespaceFromKubeconfigText } from "@/lib/kubeconfig-namespace-core";
+import { personalResourceAuthHeaders } from "@/lib/personal-resource-headers";
 
 /** Hydrates kubeconfig / namespace into Jotai from server props or dev env overrides. */
 
@@ -78,6 +79,29 @@ export default function AuthBootstrap({
 
 /** Hydrates credentials from the Sealos Desktop iframe SDK when available. */
 export function SealosSdkBootstrap() {
+  const activeAppToken = useAtomValue(appTokenAtom);
+  const activeKubeconfig = useAtomValue(kubeconfigAtom);
+  const activeNamespace = useAtomValue(namespaceAtom);
+
+  useEffect(() => {
+    if (!(activeAppToken && activeKubeconfig && activeNamespace)) {
+      return;
+    }
+    const controller = new AbortController();
+    const query = new URLSearchParams({ namespace: activeNamespace });
+    // The server derives the UID from both credentials; no browser-provided
+    // account or source is accepted by this bootstrap endpoint.
+    fetch(`/api/marketing/acquisition?${query}`, {
+      headers: personalResourceAuthHeaders({
+        appToken: activeAppToken,
+        kubeconfig: activeKubeconfig,
+      }),
+      method: "POST",
+      signal: controller.signal,
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [activeAppToken, activeKubeconfig, activeNamespace]);
+
   const setAppToken = useSetAtom(appTokenAtom);
   const setDesktopLanguage = useSetAtom(desktopLanguageAtom);
   const setDesktopUserAvatar = useSetAtom(desktopUserAvatarAtom);

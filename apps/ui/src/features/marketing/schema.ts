@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
+  index,
+  integer,
   jsonb,
   numeric,
   pgSchema,
@@ -107,6 +109,18 @@ export const marketingLifecycleEvents = ns.table(
     transactionId: text("transaction_id"),
     currency: text("currency"),
     value: numeric("value", { precision: 24, scale: 6 }),
+    forwardedAt: timestamp("forwarded_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    forwardAttempts: integer("forward_attempts").default(0).notNull(),
+    nextForwardAt: timestamp("next_forward_at", {
+      mode: "date",
+      withTimezone: true,
+    })
+      .defaultNow()
+      .notNull(),
+    lastForwardError: text("last_forward_error"),
     createdAt: timestamp("created_at", { mode: "date", withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -115,5 +129,10 @@ export const marketingLifecycleEvents = ns.table(
     uniqueIndex("lifecycle_events_action_transaction_idx")
       .on(table.eventName, table.transactionId)
       .where(sql`${table.transactionId} IS NOT NULL`),
+    index("lifecycle_events_forward_pending_idx")
+      .on(table.nextForwardAt)
+      .where(
+        sql`${table.forwardedAt} IS NULL AND ${table.forwardAttempts} < 10`
+      ),
   ]
 );
